@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #08090b;
+  --foreground: #f3f4f6;
+  
+  --primary: #00e5ff;
+  --primary-foreground: #08090b;
+  
+  --secondary: #161920;
+  --secondary-foreground: #e4e4e7;
+  
+  --card: #0f1115;
+  --card-foreground: #f3f4f6;
+  
+  --muted: #1a1e26;
+  --muted-foreground: #9ca3af;
+  
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+  
+  --border: #1e2430;
+  --glow: rgba(0, 229, 255, 0.15);
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #08090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e2430;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2d3748;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(15, 17, 21, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.glass-premium {
+  background: linear-gradient(135deg, rgba(15, 17, 21, 0.8) 0%, rgba(8, 9, 11, 0.9) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 229, 255, 0.08);
+}
+
+/* Cyber grid background */
+.cyber-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.radial-glow {
+  background: radial-gradient(circle 600px at 50% 200px, rgba(0, 229, 255, 0.04), transparent 80%);
+}
