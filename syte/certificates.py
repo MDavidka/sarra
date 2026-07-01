@@ -1,8 +1,7 @@
 import subprocess
-from pathlib import Path
 
 from syte.config import settings
-from syte.database import list_projects
+from syte.database import get_setting, list_projects
 
 
 async def async_generate_caddyfile() -> str:
@@ -10,13 +9,27 @@ async def async_generate_caddyfile() -> str:
         "# Syte-managed Caddy configuration",
         "# Auto-generated — do not edit manually",
         "",
-        f":{settings.port} {{",
-        "    reverse_proxy 127.0.0.1:8787",
-        "}",
-        "",
     ]
 
+    gui_domain = await get_setting("gui_domain", "")
     public_ip = settings.resolved_public_ip
+
+    if gui_domain:
+        lines.extend([
+            f"{gui_domain} {{",
+            f"    reverse_proxy 127.0.0.1:{settings.port}",
+            f"    tls {settings.admin_email}",
+            "}",
+            "",
+        ])
+    else:
+        lines.extend([
+            f":{settings.port} {{",
+            f"    reverse_proxy 127.0.0.1:{settings.port}",
+            "}",
+            "",
+        ])
+
     projects = await list_projects()
 
     for project in projects:
@@ -76,9 +89,18 @@ async def apply_proxy_config() -> tuple[bool, str]:
         return True, f"Saved to {fallback} (no write access to {config_path})."
 
 
+async def set_gui_domain(domain: str, email: str) -> tuple[bool, str]:
+    """Configure custom domain for the Syte web GUI and issue TLS."""
+    settings.admin_email = email
+    ok, cert_msg = await issue_certificate(domain, email)
+    ok2, proxy_msg = await apply_proxy_config()
+    return ok or ok2, f"{cert_msg}\n{proxy_msg}"
+
+
 async def issue_certificate(domain: str, email: str) -> tuple[bool, str]:
     """Request TLS certificate for a custom domain via Caddy or certbot."""
-    settings.admin_email = email
+    if email:
+        settings.admin_email = email
 
     result = subprocess.run(
         [

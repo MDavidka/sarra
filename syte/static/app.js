@@ -19,6 +19,11 @@ function showView(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
+  refreshIcons();
+}
+
+function refreshIcons() {
+  if (window.lucide) lucide.createIcons();
 }
 
 function toast(msg) {
@@ -45,6 +50,10 @@ async function loadSystem() {
     document.getElementById('sys-ip').textContent = sys.public_ip;
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
+    const guiUrl = document.getElementById('gui-url');
+    if (guiUrl) guiUrl.textContent = sys.gui_url;
+    const ver = document.getElementById('syte-version');
+    if (ver) ver.textContent = 'v' + sys.version;
   } catch (e) { /* offline */ }
 }
 
@@ -52,7 +61,6 @@ async function loadProjects() {
   try {
     projects = await api('/projects');
     renderServices();
-    populateSelects();
   } catch (e) {
     console.error(e);
   }
@@ -85,16 +93,6 @@ function renderServices() {
   `).join('');
 }
 
-function populateSelects() {
-  ['set-project', 'update-project'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    sel.innerHTML = projects.map(p =>
-      `<option value="${p.id}">${esc(p.name)} (port ${p.port})</option>`
-    ).join('');
-  });
-}
-
 async function openService(id) {
   const p = projects.find(x => x.id === id);
   if (!p) return;
@@ -122,6 +120,7 @@ async function openService(id) {
   `;
 
   document.getElementById('modal').classList.remove('hidden');
+  refreshIcons();
 
   try {
     const { logs } = await api(`/projects/${id}/logs`);
@@ -202,46 +201,40 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 });
 
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
-  const projectId = document.getElementById('set-project').value;
-  const domain = document.getElementById('set-domain').value;
-  if (!projectId || !domain) return toast('Select a service and enter a domain');
+  const domain = document.getElementById('set-domain').value.trim();
+  if (!domain) return toast('Enter a domain for the web GUI');
 
   try {
     const res = await api('/settings', {
       method: 'PUT',
       body: JSON.stringify({
-        custom_domain: domain,
-        domain_project_id: projectId,
+        gui_domain: domain,
         admin_email: document.getElementById('set-email').value || undefined,
       }),
     });
-    toast(res.messages?.join(' ') || 'Domain applied');
-    await loadProjects();
+    toast(res.messages?.join(' ') || 'GUI domain applied');
+    if (res.gui_url) {
+      document.getElementById('gui-url').textContent = res.gui_url;
+    }
+    await loadSystem();
   } catch (e) {
     toast('Error: ' + e.message);
   }
 });
 
-document.getElementById('update-btn')?.addEventListener('click', async () => {
-  const id = document.getElementById('update-project').value;
-  if (!id) return;
-
-  const btn = document.getElementById('update-btn');
+document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('update-syte-btn');
   btn.disabled = true;
-  btn.textContent = 'Updating…';
 
   try {
-    const res = await api(`/projects/${id}/update`, { method: 'POST' });
+    const res = await api('/system/update', { method: 'POST' });
     const box = document.getElementById('update-result');
     box.textContent = res.message;
     box.classList.remove('hidden');
-    toast('Update complete');
-    await loadProjects();
+    toast('Syte is updating and will restart…');
   } catch (e) {
     toast('Update failed: ' + e.message);
-  } finally {
     btn.disabled = false;
-    btn.textContent = 'Pull & Restart';
   }
 });
 
@@ -255,9 +248,11 @@ async function loadSettings() {
     const ip = document.getElementById('set-ip');
     const email = document.getElementById('set-email');
     const domain = document.getElementById('set-domain');
+    const ver = document.getElementById('syte-version');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
-    if (domain && s.custom_domain) domain.value = s.custom_domain;
+    if (domain && s.gui_domain) domain.value = s.gui_domain;
+    if (ver && s.version) ver.textContent = 'v' + s.version;
   } catch { /* */ }
 }
 
@@ -271,3 +266,4 @@ function esc(s) {
 loadSystem();
 loadProjects();
 loadSettings();
+refreshIcons();

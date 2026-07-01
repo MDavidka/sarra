@@ -7,23 +7,29 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
+    <header class="topbar">
       <div class="logo">
-        <span class="logo-mark">◆</span>
+        <i data-lucide="diamond" class="logo-icon"></i>
         <span class="logo-text">Syte</span>
       </div>
-      <nav>
-        <button class="nav-item active" data-view="dashboard">Dashboard</button>
-        <button class="nav-item" data-view="new-service">New Service</button>
-        <button class="nav-item" data-view="settings">Settings</button>
-      </nav>
-      <div class="sidebar-footer">
-        <div class="system-badge" id="sys-ip">—</div>
-      </div>
-    </aside>
+      <div class="system-badge" id="sys-ip">—</div>
+    </header>
+
+    <nav class="nav-bar" aria-label="Main navigation">
+      <button class="nav-item active" data-view="dashboard" title="Dashboard" aria-label="Dashboard">
+        <i data-lucide="layout-dashboard"></i>
+      </button>
+      <button class="nav-item" data-view="new-service" title="New Service" aria-label="New Service">
+        <i data-lucide="plus-circle"></i>
+      </button>
+      <button class="nav-item" data-view="settings" title="Settings" aria-label="Settings">
+        <i data-lucide="settings"></i>
+      </button>
+    </nav>
 
     <main class="content">
       <!-- Dashboard -->
@@ -33,7 +39,10 @@
             <h1>Services</h1>
             <p class="subtitle">Deployed apps on this workspace VM</p>
           </div>
-          <button class="btn btn-primary" onclick="showView('new-service')">+ New Service</button>
+          <button class="btn btn-primary btn-icon" onclick="showView('new-service')" title="New Service">
+            <i data-lucide="plus"></i>
+            <span class="btn-label">New Service</span>
+          </button>
         </header>
         <div id="services-list" class="services-grid"></div>
         <div id="empty-state" class="empty-state hidden">
@@ -91,13 +100,13 @@
         <header class="page-header">
           <div>
             <h1>Settings</h1>
-            <p class="subtitle">Server configuration, domains &amp; updates</p>
+            <p class="subtitle">Server configuration, GUI domain &amp; updates</p>
           </div>
         </header>
 
         <div class="settings-grid">
           <div class="form-card">
-            <h2>Server</h2>
+            <h2><i data-lucide="server" class="card-icon"></i> Server</h2>
             <div class="form-group">
               <label for="set-ip">Public IP</label>
               <input type="text" id="set-ip" placeholder="Auto-detected">
@@ -110,30 +119,31 @@
           </div>
 
           <div class="form-card">
-            <h2>Custom Domain</h2>
-            <p class="hint block">Syte issues TLS certificates automatically via Caddy.</p>
-            <div class="form-group">
-              <label for="set-project">Service</label>
-              <select id="set-project"></select>
-            </div>
+            <h2><i data-lucide="globe" class="card-icon"></i> Web GUI Domain</h2>
+            <p class="hint block">Set a custom domain for this Syte web interface. Syte issues TLS certificates automatically via Caddy.</p>
             <div class="form-group">
               <label for="set-domain">Domain</label>
-              <input type="text" id="set-domain" placeholder="app.yourdomain.com">
+              <input type="text" id="set-domain" placeholder="syte.yourdomain.com">
+            </div>
+            <div class="form-group">
+              <label>Current GUI URL</label>
+              <div class="gui-url" id="gui-url">—</div>
             </div>
             <button class="btn btn-primary" id="save-domain-btn">Apply Domain &amp; Issue Certificate</button>
           </div>
 
           <div class="form-card full-width">
-            <h2>Update Service</h2>
-            <p class="hint block">Pull the newest git version to the VM and restart the app. All data in the workspace <code>/data</code> directory is preserved.</p>
-            <div class="form-row">
-              <div class="form-group flex-grow">
-                <label for="update-project">Service to Update</label>
-                <select id="update-project"></select>
+            <h2><i data-lucide="refresh-cw" class="card-icon"></i> Update Syte</h2>
+            <p class="hint block">Pull the newest Syte version from git, refresh dependencies, and restart. All workspace data on the VM is preserved.</p>
+            <div class="version-row">
+              <div>
+                <span class="version-label">Installed version</span>
+                <span class="version-value" id="syte-version">—</span>
               </div>
-              <div class="form-group align-end">
-                <button class="btn btn-primary" id="update-btn">Pull &amp; Restart</button>
-              </div>
+              <button class="btn btn-primary btn-icon" id="update-syte-btn">
+                <i data-lucide="download"></i>
+                <span class="btn-label">Update Syte</span>
+              </button>
             </div>
             <div id="update-result" class="result-box hidden"></div>
           </div>
@@ -146,7 +156,9 @@
   <div id="modal" class="modal hidden">
     <div class="modal-backdrop" onclick="closeModal()"></div>
     <div class="modal-content">
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">
+        <i data-lucide="x"></i>
+      </button>
       <h2 id="modal-title"></h2>
       <div id="modal-body"></div>
       <div class="modal-actions" id="modal-actions"></div>

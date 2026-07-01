@@ -6,9 +6,9 @@
 
 - **Workspace per project** — each deployed app gets an isolated directory on the VM (`/var/lib/syte/workspaces/<id>/`)
 - **Public publishing** — apps are exposed on the server's public IP and an assigned port
-- **Custom domains** — configure domains in Settings; Syte issues certificates via Caddy (automatic HTTPS)
-- **Git deploy & update** — clone from git on deploy; pull latest and restart from Settings (data in `/data` is preserved)
-- **Web GUI** — responsive black-and-white interface for managing services
+- **Custom GUI domain** — configure a domain for the Syte web interface in Settings; Syte issues certificates via Caddy (automatic HTTPS)
+- **Syte self-update** — pull the newest Syte version from git and restart from Settings (workspace data preserved)
+- **Web GUI** — responsive black-and-white interface with Lucide icon navigation
 
 ## Quick Start
 
@@ -59,20 +59,26 @@ chmod +x scripts/*.sh
 |------|-------------|
 | **Dashboard** | View all deployed services, status, and public URLs |
 | **New Service** | Deploy an app from git (or empty workspace) with start command and env vars |
-| **Settings** | Public IP, admin email, custom domain + certificate, git pull & restart |
+| **Settings** | Public IP, admin email, web GUI domain + certificate, Syte self-update |
 
-### Custom Domain & Certificates
+### Web GUI Domain & Certificates
 
 1. Point your domain's DNS A record to the server's public IP
-2. Open **Settings → Custom Domain**
-3. Select the service and enter the domain
+2. Open **Settings → Web GUI Domain**
+3. Enter the domain (e.g. `syte.yourdomain.com`)
 4. Syte configures Caddy and issues a Let's Encrypt certificate automatically
 
-### Update a Service
+### Update Syte
 
-1. Open **Settings → Update Service**
-2. Select the service and click **Pull & Restart**
-3. Syte runs `git pull`, restarts the app, and keeps all data in the workspace `data/` directory
+1. Open **Settings → Update Syte**
+2. Click **Update Syte**
+3. Syte pulls the latest git version, refreshes dependencies, and restarts. All workspace data on the VM is preserved.
+
+### Update a Deployed Service
+
+1. Open a service from the Dashboard
+2. Click **Pull & Restart**
+3. Syte runs `git pull`, restarts the app, and keeps data in the workspace `data/` directory
 
 ## Workspace Layout
 
@@ -95,7 +101,7 @@ chmod +x scripts/*.sh
 | `GET` | `/api/projects` | List services |
 | `POST` | `/api/projects` | Deploy new service |
 | `POST` | `/api/projects/{id}/update` | Git pull & restart |
-| `POST` | `/api/projects/{id}/domain` | Set domain & issue cert |
+| `POST` | `/api/system/update` | Pull newest Syte version & restart |
 | `PUT` | `/api/settings` | Save server settings |
 | `GET` | `/api/projects/{id}/logs` | View logs |
 

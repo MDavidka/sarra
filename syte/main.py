@@ -20,7 +20,8 @@ from syte.database import (
     update_project,
 )
 from syte import deployment, process_manager
-from syte.certificates import apply_proxy_config
+from syte.certificates import apply_proxy_config, set_gui_domain
+from syte.self_update import update_syte
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -57,8 +58,7 @@ class DomainRequest(BaseModel):
 class SettingsRequest(BaseModel):
     public_ip: str | None = None
     admin_email: str | None = None
-    custom_domain: str | None = None
-    domain_project_id: str | None = None
+    gui_domain: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -78,14 +78,23 @@ async def health():
 @app.get("/api/system")
 async def system_info():
     projects = await list_projects()
+    gui_url = await _gui_url()
     return {
         "version": __version__,
         "public_ip": settings.resolved_public_ip,
         "admin_email": settings.admin_email,
-        "gui_url": f"http://{settings.resolved_public_ip}:{settings.port}",
+        "gui_url": gui_url,
+        "gui_domain": await get_setting("gui_domain", ""),
         "workspaces_dir": str(settings.resolved_workspaces_dir),
         "service_count": len(projects),
     }
+
+
+async def _gui_url() -> str:
+    domain = await get_setting("gui_domain", "")
+    if domain:
+        return f"https://{domain}"
+    return f"http://{settings.resolved_public_ip}:{settings.port}"
 
 
 @app.get("/api/settings")
@@ -93,8 +102,8 @@ async def get_settings():
     return {
         "public_ip": await get_setting("public_ip", settings.resolved_public_ip),
         "admin_email": await get_setting("admin_email", settings.admin_email),
-        "custom_domain": await get_setting("custom_domain", ""),
-        "domain_project_id": await get_setting("domain_project_id", ""),
+        "gui_domain": await get_setting("gui_domain", ""),
+        "version": __version__,
     }
 
 
@@ -111,18 +120,30 @@ async def save_settings(body: SettingsRequest):
         settings.admin_email = body.admin_email
         messages.append(f"Admin email set to {body.admin_email}")
 
-    if body.custom_domain and body.domain_project_id:
-        project, msg = await deployment.set_custom_domain(
-            body.domain_project_id, body.custom_domain, settings.admin_email
-        )
-        await set_setting("custom_domain", body.custom_domain)
-        await set_setting("domain_project_id", body.domain_project_id)
-        messages.append(msg)
-        return {"ok": True, "messages": messages, "project": project}
+    if body.gui_domain is not None:
+        domain = body.gui_domain.strip()
+        if domain:
+            await set_setting("gui_domain", domain)
+            ok, msg = await set_gui_domain(domain, settings.admin_email)
+            messages.append(msg)
+        else:
+            await set_setting("gui_domain", "")
+            ok, msg = await apply_proxy_config()
+            messages.append("GUI domain removed." if ok else msg)
+        return {"ok": True, "messages": messages, "gui_url": await _gui_url()}
 
     ok, msg = await apply_proxy_config()
     messages.append(msg)
     return {"ok": ok, "messages": messages}
+
+
+@app.post("/api/system/update")
+async def api_update_syte():
+    """Pull newest Syte version and restart to apply changes."""
+    ok, message = update_syte()
+    if not ok:
+        raise HTTPException(500, message)
+    return {"ok": True, "message": message}
 
 
 @app.get("/api/projects")
