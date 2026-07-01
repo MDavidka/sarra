@@ -1,7 +1,9 @@
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
+from syte import __version__
 from syte.workspace import read_env_vars, run_cmd, workspace_path
 
 DOCKERFILE_NAMES = ("Dockerfile", "dockerfile", "Dockerfile.prod", "Dockerfile.production")
@@ -116,18 +118,17 @@ def deploy_docker(
     data_dir = workspace_path(project_id) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    build_log = _build_log_path(project_id)
-    build_log.write_text(f"Building {image} from {dockerfile.name}\n")
-
-    stop_docker(project_id)
-    run_cmd(["docker", "rmi", image])
-
     build_cmd = [
         "docker", "build",
         "-t", image,
         "-f", str(dockerfile),
         str(repo),
     ]
+    build_log.write_text(
+        f"Syte v{__version__} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        f"Command: {' '.join(build_cmd)}\n"
+        f"Building {image} from {dockerfile.name}\n"
+    )
     code, out = run_cmd(build_cmd)
     _append_build_log(project_id, "docker build", out or "(no output)")
     if code != 0:

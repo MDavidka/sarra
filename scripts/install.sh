@@ -89,6 +89,7 @@ if [[ "$INSTALL_SYSTEM" == true ]]; then
   systemctl start syte 2>/dev/null || true
   echo "    Services enabled: syte, caddy (24/7)"
   echo "    Manage with: sudo ./scripts/restart.sh"
+  curl -fsS "http://127.0.0.1:${SYTE_PORT:-8787}/api/health" 2>/dev/null && echo "" || true
 fi
 
 echo ""
