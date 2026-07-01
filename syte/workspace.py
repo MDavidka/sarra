@@ -40,6 +40,10 @@ def read_env_vars(raw: str | dict) -> dict[str, str]:
         return {}
 
 
+def command_exists(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
+
 def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
     merged_env = {**os.environ, **(env or {})}
     result = subprocess.run(
@@ -84,14 +88,54 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bo
     return code == 0, out or "Repository cloned."
 
 
-def detect_start_command(project_id: str) -> str:
-    repo = workspace_path(project_id) / "app"
-    if (repo / "package.json").exists():
+def _node_start_command(repo: Path) -> str | None:
+    if not (repo / "package.json").exists():
+        return None
+    if command_exists("npm"):
         return "npm install && npm start"
+    if command_exists("yarn"):
+        return "yarn install && yarn start"
+    if command_exists("pnpm"):
+        return "pnpm install && pnpm start"
+    if command_exists("node"):
+        pkg = json.loads((repo / "package.json").read_text())
+        main = pkg.get("main", "index.js")
+        return f"node {main}"
+    return None
+
+
+def detect_start_command(project_id: str) -> tuple[str | None, str | None]:
+    """Return (command, error_message). error is set when detection fails."""
+    repo = workspace_path(project_id) / "app"
+
+    node_cmd = _node_start_command(repo)
+    if node_cmd:
+        return node_cmd, None
+    if (repo / "package.json").exists():
+        return None, (
+            "Node.js project detected but npm/yarn/pnpm is not installed. "
+            "Run sudo ./scripts/install.sh to install nodejs, or add a Dockerfile."
+        )
+
     if (repo / "requirements.txt").exists():
-        return "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && python main.py"
+        if command_exists("python3"):
+            return (
+                "python3 -m venv .venv && . .venv/bin/activate && "
+                "pip install -r requirements.txt && python main.py"
+            ), None
+        return None, "Python project detected but python3 is not installed."
+
     if (repo / "go.mod").exists():
-        return "go build -o app . && ./app"
+        if command_exists("go"):
+            return "go build -o app . && ./app", None
+        return None, "Go project detected but go is not installed."
+
     if (repo / "Cargo.toml").exists():
-        return "cargo build --release && ./target/release/$(basename $(pwd))"
-    return "echo 'No start command detected'"
+        if command_exists("cargo"):
+            return "cargo build --release && ./target/release/$(basename $(pwd))", None
+        return None, "Rust project detected but cargo is not installed."
+
+    if repo.exists() and any(repo.iterdir()):
+        return None, "Could not detect start command. Add a Dockerfile or set one manually."
+
+    return "python3 -m http.server ${PORT:-3000}", None

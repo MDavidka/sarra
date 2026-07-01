@@ -14,6 +14,35 @@ def _run(cmd: list[str]) -> tuple[int, str]:
         return 127, f"Command not found: {cmd[0]}"
 
 
+def ensure_caddy() -> tuple[bool, str]:
+    """Ensure Caddy reverse proxy is enabled and running (24/7 GUI + domains)."""
+    if not shutil.which("caddy"):
+        return False, "Caddy not installed — install for HTTPS domains."
+
+    messages = []
+    for cmd in (
+        ["systemctl", "enable", "caddy"],
+        ["systemctl", "start", "caddy"],
+    ):
+        code, out = _run(cmd)
+        if code != 0 and "not found" not in out.lower():
+            messages.append(out)
+
+    code, out = _run(["systemctl", "is-active", "caddy"])
+    if code == 0:
+        return True, "Caddy is running."
+
+    config = settings.caddy_config_path
+    fallback = settings.data_dir / "Caddyfile"
+    cfg = config if config.exists() else fallback
+    if cfg.exists():
+        code, out = _run(["caddy", "run", "--config", str(cfg), "--adapter", "caddyfile"])
+        if code == 0:
+            return True, "Caddy started."
+
+    return False, "; ".join(messages) or "Could not start Caddy."
+
+
 async def async_generate_caddyfile() -> str:
     gui_domain = await get_setting("gui_domain", "")
     public_ip = settings.resolved_public_ip
@@ -100,17 +129,20 @@ async def apply_proxy_config() -> tuple[bool, str]:
     if code != 0:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
-    code, out = _run(["caddy", "reload", "--config", str(written)])
-    if code == 0:
-        return True, "Proxy configuration applied."
+    for cmd in (
+        ["systemctl", "reload", "caddy"],
+        ["systemctl", "restart", "caddy"],
+        ["caddy", "reload", "--config", str(written)],
+    ):
+        code, out = _run(cmd)
+        if code == 0:
+            ensure_caddy()
+            return True, "Proxy configuration applied."
 
-    code, out = _run(["caddy", "run", "--config", str(written), "--adapter", "caddyfile"])
-    if code == 0:
-        return True, "Caddy started with new configuration."
-
+    ensure_caddy()
     return True, (
         f"Caddy config saved to {written}. "
-        "Run: sudo systemctl reload caddy"
+        "Run: sudo systemctl restart caddy"
     )
 
 

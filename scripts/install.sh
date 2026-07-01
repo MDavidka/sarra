@@ -18,7 +18,7 @@ fi
 if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
   echo "==> Installing system dependencies"
   apt-get update -qq
-  apt-get install -y -qq python3 python3-pip python3-venv git curl
+  apt-get install -y -qq python3 python3-pip python3-venv git curl nodejs npm
 
   if ! command -v docker &>/dev/null; then
     echo "==> Installing Docker (for Dockerfile deployments)"
@@ -68,12 +68,15 @@ chmod 755 "$DATA_DIR"
 
 # Systemd service
 if [[ "$INSTALL_SYSTEM" == true ]]; then
-  echo "==> Installing systemd service"
+  echo "==> Installing systemd services"
   sed "s|__SYTE_DIR__|${SYTE_DIR}|g; s|__DATA_DIR__|${DATA_DIR}|g" \
     "$SYTE_DIR/systemd/syte.service" > /etc/systemd/system/syte.service
   systemctl daemon-reload
   systemctl enable syte
-  echo "    systemctl start syte"
+  systemctl enable caddy 2>/dev/null || true
+  systemctl start caddy 2>/dev/null || true
+  systemctl restart syte 2>/dev/null || true
+  echo "    Services enabled: syte, caddy (24/7)"
 fi
 
 echo ""

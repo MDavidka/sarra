@@ -1,6 +1,8 @@
 [Unit]
 Description=Syte Deployment Service
-After=network.target
+After=network-online.target docker.service
+Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -10,8 +12,8 @@ Environment=SYTE_DATA_DIR=__DATA_DIR__
 Environment=SYTE_WORKSPACES_DIR=__DATA_DIR__/workspaces
 Environment=SYTE_DB_PATH=__DATA_DIR__/syte.db
 ExecStart=__SYTE_DIR__/.venv/bin/uvicorn syte.main:app --host 0.0.0.0 --port 8787 --app-dir __SYTE_DIR__
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

@@ -22,11 +22,10 @@ def _next_port(existing: list[dict]) -> int:
     return port
 
 
-def _resolve_deploy(project_id: str, start_command: str | None) -> dict:
+def _resolve_deploy(project_id: str, start_command: str | None) -> tuple[dict, str | None]:
     """After git clone, detect Dockerfile or fall back to shell deploy."""
     dockerfile = find_dockerfile(project_id)
     if dockerfile:
-        repo = dockerfile.parent
         app_root = ensure_workspace(project_id) / "app"
         try:
             rel = dockerfile.relative_to(app_root)
@@ -36,13 +35,28 @@ def _resolve_deploy(project_id: str, start_command: str | None) -> dict:
             "deploy_type": "docker",
             "dockerfile_path": str(rel),
             "start_command": f"docker:{rel}",
-        }
-    cmd = start_command or detect_start_command(project_id)
+        }, None
+
+    if start_command:
+        return {
+            "deploy_type": "shell",
+            "dockerfile_path": None,
+            "start_command": start_command,
+        }, None
+
+    cmd, err = detect_start_command(project_id)
+    if err:
+        return {
+            "deploy_type": "shell",
+            "dockerfile_path": None,
+            "start_command": "",
+        }, err
+
     return {
         "deploy_type": "shell",
         "dockerfile_path": None,
-        "start_command": cmd,
-    }
+        "start_command": cmd or "",
+    }, None
 
 
 async def deploy_service(
@@ -66,7 +80,7 @@ async def deploy_service(
         "branch": branch,
         "port": port,
         "domain": domain,
-        "start_command": start_command or "npm start",
+        "start_command": start_command or "",
         "env_vars": env_vars or {},
         "deploy_type": "shell",
     })
@@ -84,14 +98,30 @@ async def deploy_service(
         if not ok:
             return project, "\n".join(messages)
 
-        deploy_info = _resolve_deploy(project_id, start_command)
+        deploy_info, deploy_err = _resolve_deploy(project_id, start_command)
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
+
+        if deploy_err:
+            messages.append(deploy_err)
+            return project, "\n".join(messages)
 
         if deploy_info["deploy_type"] == "docker":
             messages.append(f"Dockerfile found: {deploy_info['dockerfile_path']}")
         else:
             messages.append("No Dockerfile — using shell deployment.")
+    elif not start_command:
+        cmd, err = detect_start_command(project_id)
+        if err:
+            messages.append(err)
+            return project, "\n".join(messages)
+        if cmd:
+            await update_project(project_id, {"start_command": cmd})
+            project = await get_project(project_id)
+
+    if not project.get("start_command") and project.get("deploy_type") != "docker":
+        messages.append("No start command configured.")
+        return project, "\n".join(messages)
 
     ok, msg = process_manager.start_project(
         project_id,
@@ -130,10 +160,13 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
         return project, "\n".join(messages)
 
     if project.get("git_url"):
-        deploy_info = _resolve_deploy(project_id, None)
+        deploy_info, deploy_err = _resolve_deploy(project_id, None)
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
         deploy_type = project.get("deploy_type", "shell")
+        if deploy_err:
+            messages.append(deploy_err)
+            return project, "\n".join(messages)
         if deploy_info["deploy_type"] == "docker":
             messages.append(f"Dockerfile: {deploy_info['dockerfile_path']}")
 

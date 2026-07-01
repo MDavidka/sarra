@@ -1,5 +1,6 @@
 import json
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from syte.database import (
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.self_update import update_syte
+from syte import supervisor
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 NO_CACHE = "no-cache, no-store, must-revalidate"
@@ -44,7 +46,15 @@ async def lifespan(app: FastAPI):
     custom_email = await get_setting("admin_email")
     if custom_email:
         settings.admin_email = custom_email
+    await supervisor.startup()
+    task = asyncio.create_task(supervisor.supervisor_loop())
     yield
+    supervisor.stop_supervisor()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Syte", version=__version__, lifespan=lifespan)
