@@ -69,7 +69,7 @@
 
   <h2>AI workflow: deploy a website from Git</h2>
   <ol class="steps">
-    <li><code>POST /api/create_project</code> with git_url → get <code>uuid</code></li>
+    <li><code>POST /api/create_project</code> with <code>git_url</code> and <code>"deploy": true</code> → <code>uuid</code></li>
     <li>Stream <code>GET /api/projects/{uuid}/logs/stream?live=1</code> (SSE)</li>
     <li><code>GET /api/workspace_get?uuid=</code> → check <code>url</code> and <code>running</code></li>
     <li><code>POST /api/set_domain</code> → optional custom HTTPS domain</li>
@@ -79,18 +79,26 @@
   -d '{
     "name": "my-site",
     "git_url": "https://github.com/user/repo.git",
-    "branch": "main"
+    "branch": "main",
+    "deploy": true
   }'</pre>
 
   <h2>AI workflow: build a website from scratch (no git)</h2>
   <ol class="steps">
-    <li><code>POST /api/create_project</code> with name only → uuid</li>
-    <li><code>POST /api/write_file</code> — create package.json, Dockerfile, source files</li>
-    <li><code>POST /api/execute_command</code> — run <em>any</em> shell command (npm install, mkdir, etc.)</li>
-    <li><code>POST /api/issue_deploy</code> — build &amp; start</li>
+    <li><code>POST /api/create_project</code> with <code>name</code> only — empty workspace, no deploy</li>
+    <li>Use <code>execute_command.body</code> from the response (uuid pre-filled)</li>
+    <li><code>POST /api/write_file</code> — create package.json, Dockerfile, source files anytime</li>
+    <li><code>POST /api/issue_deploy</code> — build &amp; start when ready</li>
     <li><code>GET /api/get_logs?uuid=</code> — verify success</li>
   </ol>
-  <pre>curl -X POST https://YOUR_HOST/api/execute_command \
+  <pre>curl -X POST https://YOUR_HOST/api/create_project \
+  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
+  -d '{"name": "my-site"}'
+
+# Response includes execute_command.body — copy and edit command:
+# {"uuid":"my-site-abc123","command":"npm install","cwd":"app","timeout":300}
+
+curl -X POST https://YOUR_HOST/api/execute_command \
   -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
   -d '{
     "uuid": "my-site-abc123",
@@ -166,18 +174,31 @@
 
   <details open><summary><span class="m post">POST</span> /api/create_project</summary>
     <div class="detail-body">
+      <p>Creates an <strong>empty project</strong>. Git and files are optional — add anytime, deploy anytime.</p>
       <table>
         <tr><th>field</th><th>required</th><th>description</th></tr>
-        <tr><td>name</td><td>yes</td><td>display name</td></tr>
+        <tr><td>name</td><td>yes</td><td>display name (only required field)</td></tr>
         <tr><td>uuid</td><td>no</td><td>custom id (auto-generated if omitted)</td></tr>
-        <tr><td>git_url</td><td>no</td><td>full https git URL</td></tr>
+        <tr><td>git_url</td><td>no</td><td>cloned on <code>issue_deploy</code>, not required at create</td></tr>
         <tr><td>git_provider</td><td>no</td><td>shorthand: github.com/user/repo.git</td></tr>
         <tr><td>branch</td><td>no</td><td>default main</td></tr>
         <tr><td>start_command</td><td>no</td><td>shell fallback if no Dockerfile</td></tr>
         <tr><td>domain</td><td>no</td><td>custom HTTPS domain</td></tr>
         <tr><td>env_vars</td><td>no</td><td>key-value env</td></tr>
+        <tr><td>deploy</td><td>no</td><td>default <code>false</code> — set <code>true</code> to deploy immediately</td></tr>
       </table>
-      <p>Starts deploy in background. Use <code>stream_url</code> from response for live logs.</p>
+      <p>Response includes <code>uuid</code>, <code>execute_command.body</code> (pre-filled for AI agents), <code>issue_deploy.body</code>, <code>next_steps</code>, and <code>paths</code>.</p>
+      <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "status": "created",
+  "execute_command": {
+    "method": "POST",
+    "path": "/api/execute_command",
+    "body": {"uuid": "my-site-a1b2c3", "command": "npm install", "cwd": "app", "timeout": 300}
+  },
+  "issue_deploy": {"method": "POST", "path": "/api/issue_deploy", "body": {"uuid": "my-site-a1b2c3"}}
+}</pre>
     </div>
   </details>
 

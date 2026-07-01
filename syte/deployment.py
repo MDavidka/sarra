@@ -130,8 +130,12 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
     elif not project.get("start_command") and not start_command:
         cmd, err = detect_start_command(project_id)
         if err:
-            messages.append(err)
-            await update_project(project_id, {"status": "stopped"})
+            messages.append(
+                "Nothing to deploy yet. Add files (write_file/upload_file), "
+                "run execute_command to scaffold, add a Dockerfile, or set start_command — "
+                "then call issue_deploy again."
+            )
+            await update_project(project_id, {"status": "created"})
             return "\n".join(messages)
         if cmd:
             await update_project(project_id, {"start_command": cmd})
@@ -158,7 +162,7 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
     return "\n".join(messages)
 
 
-async def begin_deploy_service(
+async def create_project_record(
     name: str,
     git_url: str | None = None,
     branch: str = "main",
@@ -167,8 +171,9 @@ async def begin_deploy_service(
     domain: str | None = None,
     git_provider: str | None = None,
     project_uuid: str | None = None,
+    deploy_now: bool = False,
 ) -> tuple[dict | None, str]:
-    """Create project and start deploy in background (real-time log streaming)."""
+    """Create an empty project workspace. Git and files are optional — add anytime, deploy anytime."""
     from syte.database import list_projects
 
     projects = await list_projects()
@@ -194,17 +199,48 @@ async def begin_deploy_service(
         "domain": domain,
         "start_command": start_command or "",
         "env_vars": env_vars or {},
-        "deploy_type": "docker" if resolved_git else "shell",
+        "deploy_type": "docker",
     })
 
     ensure_workspace(project_id)
     if env_vars:
         write_env_file(project_id, env_vars)
 
-    asyncio.create_task(run_deploy_job(project_id, start_command))
+    await update_project(project_id, {"status": "created"})
+    project = await get_project(project_id)
+
+    if deploy_now:
+        asyncio.create_task(run_deploy_job(project_id, start_command))
+        return project, f"Project {project_id} created. Deploy started in background."
+
     return project, (
-        f"Deploy started for {project_id}. "
-        f"Stream logs: GET /api/projects/{project_id}/logs/stream"
+        f"Empty project {project_id} created. "
+        f"No git or files required — add anytime via write_file/execute_command, "
+        f"then POST /api/issue_deploy when ready."
+    )
+
+
+async def begin_deploy_service(
+    name: str,
+    git_url: str | None = None,
+    branch: str = "main",
+    start_command: str | None = None,
+    env_vars: dict | None = None,
+    domain: str | None = None,
+    git_provider: str | None = None,
+    project_uuid: str | None = None,
+) -> tuple[dict | None, str]:
+    """Create project and immediately start deploy (GUI flow)."""
+    return await create_project_record(
+        name=name,
+        git_url=git_url,
+        branch=branch,
+        start_command=start_command,
+        env_vars=env_vars,
+        domain=domain,
+        git_provider=git_provider,
+        project_uuid=project_uuid,
+        deploy_now=True,
     )
 
 

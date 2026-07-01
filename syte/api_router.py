@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, Field
 
 from syte import deployment, process_manager
+from syte.api_responses import build_create_project_response
 from syte.auth import verify_api_token
 from syte.certificates import apply_proxy_config
 from syte.config import settings
@@ -72,17 +73,21 @@ class SetEnvRequest(BaseModel):
 
 
 class CreateProjectRequest(BaseModel):
-    name: str
-    uuid: str | None = None
-    git_url: str | None = None
+    name: str = Field(..., description="Project display name (only required field)")
+    uuid: str | None = Field(None, description="Optional custom UUID")
+    git_url: str | None = Field(None, description="Optional — cloned on issue_deploy, not required at create")
     git_provider: str | None = Field(
         None,
-        description="Shorthand: github.com/user/repo.git → https://github.com/user/repo.git",
+        description="Shorthand: github.com/user/repo.git",
     )
     branch: str = "main"
     start_command: str | None = None
     domain: str | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
+    deploy: bool = Field(
+        False,
+        description="If true, start deploy immediately after create. Default: false (empty workspace only).",
+    )
 
 
 def _http_error(status: int, error: str, message: str):
@@ -248,7 +253,8 @@ async def api_get_logs(
 
 @router.post("/create_project")
 async def api_create_project(body: CreateProjectRequest, _token: dict = Depends(verify_api_token)):
-    project, message = await deployment.begin_deploy_service(
+    """Create empty project (no git/files required). Returns uuid + how to call execute_command."""
+    project, message = await deployment.create_project_record(
         name=body.name,
         git_url=body.git_url,
         branch=body.branch,
@@ -257,19 +263,12 @@ async def api_create_project(body: CreateProjectRequest, _token: dict = Depends(
         domain=body.domain,
         git_provider=body.git_provider,
         project_uuid=body.uuid,
+        deploy_now=body.deploy,
     )
     if not project:
         _http_error(400, "create_failed", message)
     ws = await workspace_api.workspace_get(project["id"])
-    return {
-        "ok": True,
-        "uuid": project["id"],
-        "name": project["name"],
-        "port": project["port"],
-        "message": message,
-        "workspace": ws,
-        "stream_url": f"/api/projects/{project['id']}/logs/stream?live=1",
-    }
+    return build_create_project_response(project, ws, message)
 
 
 @router.post("/issue_deploy")

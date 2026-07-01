@@ -21,6 +21,7 @@ def ensure_workspace(project_id: str) -> Path:
     path = workspace_path(project_id)
     path.mkdir(parents=True, exist_ok=True)
     (path / "data").mkdir(exist_ok=True)
+    (path / "app").mkdir(exist_ok=True)
     return path
 
 
