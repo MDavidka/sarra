@@ -82,14 +82,18 @@ if [[ "$INSTALL_SYSTEM" == true ]]; then
   systemctl daemon-reload
   systemctl enable syte
   systemctl enable caddy 2>/dev/null || true
+  chmod +x "$SYTE_DIR/scripts/"*.sh
+  "$SYTE_DIR/scripts/stop.sh" 2>/dev/null || true
   systemctl start caddy 2>/dev/null || true
-  systemctl restart syte 2>/dev/null || true
+  systemctl start syte 2>/dev/null || true
   echo "    Services enabled: syte, caddy (24/7)"
+  echo "    Manage with: sudo ./scripts/restart.sh"
 fi
 
 echo ""
 echo "✓ Syte installed."
-echo "  Start the web GUI:  ./scripts/start.sh"
+echo "  Start the web GUI:  sudo ./scripts/restart.sh"
 if [[ "$INSTALL_SYSTEM" == true ]]; then
-  echo "  Or as a service:    sudo systemctl start syte"
+  echo "  Or:                 sudo systemctl start syte"
+  echo "  Do NOT also run ./scripts/start.sh — only one instance on port 8787"
 fi

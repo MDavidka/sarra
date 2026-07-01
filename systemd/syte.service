@@ -11,9 +11,12 @@ WorkingDirectory=__SYTE_DIR__
 Environment=SYTE_DATA_DIR=__DATA_DIR__
 Environment=SYTE_WORKSPACES_DIR=__DATA_DIR__/workspaces
 Environment=SYTE_DB_PATH=__DATA_DIR__/syte.db
+ExecStartPre=/bin/bash -c 'pkill -f "uvicorn syte.main:app" 2>/dev/null || true; sleep 1; fuser -k 8787/tcp 2>/dev/null || true'
 ExecStart=__SYTE_DIR__/.venv/bin/uvicorn syte.main:app --host 0.0.0.0 --port 8787 --app-dir __SYTE_DIR__
 Restart=always
-RestartSec=3
+RestartSec=5
+TimeoutStopSec=10
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
