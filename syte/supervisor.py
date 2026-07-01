@@ -2,12 +2,14 @@ import asyncio
 import logging
 
 from syte.certificates import apply_proxy_config, ensure_caddy
-from syte.database import list_projects
+from syte.database import list_projects, update_project
 from syte import process_manager
+from syte.workspace import command_exists
 
 logger = logging.getLogger("syte.supervisor")
 
 _running = False
+_fail_counts: dict[str, int] = {}
 
 
 async def maintain() -> None:
@@ -19,21 +21,44 @@ async def maintain() -> None:
             continue
         pid = project["id"]
         deploy_type = project.get("deploy_type", "shell")
+        start_cmd = project.get("start_command", "")
+
+        if deploy_type == "shell" and "npm" in (start_cmd or "").lower():
+            if not command_exists("npm"):
+                logger.error("Stopping %s — npm not installed", pid)
+                await update_project(pid, {"status": "stopped"})
+                _fail_counts.pop(pid, None)
+                continue
+
         if process_manager.is_running(pid, deploy_type):
+            _fail_counts.pop(pid, None)
             continue
-        logger.warning("Restarting service %s (%s)", pid, deploy_type)
+
+        fails = _fail_counts.get(pid, 0) + 1
+        _fail_counts[pid] = fails
+        if fails > 3:
+            logger.error("Giving up on %s after %d failed restarts", pid, fails)
+            await update_project(pid, {"status": "stopped"})
+            _fail_counts.pop(pid, None)
+            continue
+
+        logger.warning("Restarting service %s (%s), attempt %d", pid, deploy_type, fails)
         ok, msg = process_manager.start_project(
             pid,
             project["port"],
-            project["start_command"],
+            start_cmd,
             project.get("env_vars", "{}"),
             deploy_type,
             project.get("dockerfile_path"),
         )
         if ok:
             logger.info("Restarted %s: %s", pid, msg)
+            _fail_counts.pop(pid, None)
         else:
             logger.error("Failed to restart %s: %s", pid, msg)
+            if fails >= 2:
+                await update_project(pid, {"status": "stopped"})
+                _fail_counts.pop(pid, None)
 
 
 async def supervisor_loop(interval: int = 30) -> None:

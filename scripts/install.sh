@@ -25,6 +25,14 @@ if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
     apt-get install -y -qq docker.io 2>/dev/null || echo "Docker install skipped — install manually for Dockerfile deploys"
   fi
 
+  if ! command -v npm &>/dev/null; then
+    echo "==> Installing Node.js + npm"
+    apt-get install -y -qq nodejs npm 2>/dev/null || {
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null || true
+      apt-get install -y -qq nodejs 2>/dev/null || echo "Node.js install skipped"
+    }
+  fi
+
   if ! command -v caddy &>/dev/null; then
     echo "==> Installing Caddy (reverse proxy + auto TLS)"
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl 2>/dev/null || true

@@ -68,8 +68,12 @@ async function loadSystem() {
     if (ipEl) ipEl.textContent = sys.public_ip;
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
+    const directUrl = document.getElementById('direct-url');
+    if (directUrl) directUrl.textContent = sys.direct_url || sys.gui_url;
     const guiUrl = document.getElementById('gui-url');
-    if (guiUrl) guiUrl.textContent = sys.gui_url;
+    if (guiUrl) {
+      guiUrl.textContent = sys.domain_url || sys.gui_domain || 'not configured';
+    }
     const ver = document.getElementById('syte-version');
     if (ver) ver.textContent = 'v' + sys.version;
   } catch (e) { /* offline */ }
@@ -224,7 +228,9 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 });
 
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
-  const domain = document.getElementById('set-domain').value.trim();
+  let domain = document.getElementById('set-domain').value.trim();
+  domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  document.getElementById('set-domain').value = domain;
   const email = document.getElementById('set-email').value.trim();
   if (!domain) return toast('enter a domain for the web gui');
   if (!email || !email.includes('@') || email.endsWith('@localhost')) {
@@ -242,8 +248,11 @@ document.getElementById('save-domain-btn')?.addEventListener('click', async () =
     });
     const msg = Array.isArray(res.messages) ? res.messages.join(' ') : 'domain applied';
     toast(msg);
-    if (res.gui_url) {
-      document.getElementById('gui-url').textContent = res.gui_url;
+    if (res.direct_url) {
+      document.getElementById('direct-url').textContent = res.direct_url;
+    }
+    if (res.domain_url) {
+      document.getElementById('gui-url').textContent = res.domain_url;
     }
     await loadSystem();
   } catch (e) {
@@ -281,7 +290,7 @@ async function loadSettings() {
     const ver = document.getElementById('syte-version');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
-    if (domain && s.gui_domain) domain.value = s.gui_domain;
+    if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
     if (ver && s.version) ver.textContent = 'v' + s.version;
   } catch { /* */ }
 }

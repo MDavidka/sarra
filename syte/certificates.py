@@ -3,6 +3,7 @@ import subprocess
 
 from syte.config import settings
 from syte.database import get_setting, list_projects
+from syte.domain_utils import normalize_domain
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
@@ -44,7 +45,7 @@ def ensure_caddy() -> tuple[bool, str]:
 
 
 async def async_generate_caddyfile() -> str:
-    gui_domain = await get_setting("gui_domain", "")
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
 
@@ -80,7 +81,7 @@ async def async_generate_caddyfile() -> str:
     projects = await list_projects()
     for project in projects:
         port = project["port"]
-        domain = project.get("domain")
+        domain = normalize_domain(project.get("domain") or "")
         name = project["name"]
 
         if domain:

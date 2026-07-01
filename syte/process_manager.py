@@ -1,6 +1,8 @@
 import os
 import signal
 import subprocess
+import time
+import shutil
 from pathlib import Path
 
 from syte.config import settings
@@ -15,10 +17,31 @@ from syte.docker_deploy import (
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
 PID_DIR = settings.data_dir / "pids"
-PID_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_pid_dir() -> None:
+    PID_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def validate_shell_command(start_command: str) -> str | None:
+    """Return error message if command cannot run on this host."""
+    if not start_command or not start_command.strip():
+        return "No start command configured."
+    cmd = start_command.lower()
+    if "npm" in cmd and not shutil.which("npm"):
+        return (
+            "npm is not installed on this server. "
+            "Run: sudo apt install -y nodejs npm — or deploy a repo with a Dockerfile."
+        )
+    if "yarn" in cmd and not shutil.which("yarn"):
+        return "yarn is not installed on this server."
+    if "pnpm" in cmd and not shutil.which("pnpm"):
+        return "pnpm is not installed on this server."
+    return None
 
 
 def pid_file(project_id: str) -> Path:
+    _ensure_pid_dir()
     return PID_DIR / f"{project_id}.pid"
 
 
@@ -75,6 +98,10 @@ def start_project(
             return False, "Dockerfile not found in workspace."
         return deploy_docker(project_id, port, dockerfile, env_vars_raw)
 
+    err = validate_shell_command(start_command)
+    if err:
+        return False, err
+
     ws = ensure_workspace(project_id)
     repo = ws / "app"
     if not repo.exists():
@@ -96,7 +123,18 @@ def start_project(
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
     )
+    time.sleep(1)
+    if proc.poll() is not None:
+        log_file.close()
+        pid_file(project_id).unlink(missing_ok=True)
+        tail = ""
+        if log_path.exists():
+            lines = log_path.read_text().splitlines()
+            tail = "\n".join(lines[-8:])
+        return False, f"Process exited immediately.\n{tail}"
+
     pid_file(project_id).write_text(str(proc.pid))
+    log_file.close()
     return True, f"Started on port {port} (PID {proc.pid}). Logs: {log_path}"
 
 

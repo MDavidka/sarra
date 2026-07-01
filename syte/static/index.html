@@ -146,11 +146,16 @@
               <p class="hint block">custom domain for this interface — tls via caddy</p>
               <div class="form-group">
                 <label for="set-domain">domain</label>
-                <input type="text" id="set-domain" placeholder="syte.yourdomain.com">
+                <input type="text" id="set-domain" placeholder="sycord.site">
+                <span class="hint">enter domain only — no https:// prefix</span>
               </div>
               <div class="form-group">
-                <label>current url</label>
-                <div class="gui-url" id="gui-url">—</div>
+                <label>direct access (ip)</label>
+                <div class="gui-url" id="direct-url">—</div>
+              </div>
+              <div class="form-group">
+                <label>custom domain</label>
+                <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
               </div>
               <button class="btn-pill btn-primary" id="save-domain-btn">apply domain</button>
             </div>

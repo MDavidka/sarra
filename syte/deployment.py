@@ -136,6 +136,9 @@ async def deploy_service(
     if ok:
         await update_project(project_id, {"status": "running"})
         project = await get_project(project_id)
+    else:
+        await update_project(project_id, {"status": "stopped"})
+        project = await get_project(project_id)
 
     await apply_proxy_config()
     return project, "\n".join(messages)
