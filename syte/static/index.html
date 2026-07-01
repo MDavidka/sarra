@@ -3,26 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Syte</title>
-  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="/static/logo.svg?v=__VERSION__" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+  <template id="logo-tpl">
+    <svg class="syte-logo" viewBox="0 0 56 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path fill="currentColor" d="M6 30V12.5C6 9.46 8.46 7 11.5 7H17c1.45 0 2.82.64 3.75 1.75L26.5 18.2c.72.86 2.08.86 2.8 0l5.75-9.45A4.75 4.75 0 0 1 38.8 7H44.5C47.54 7 50 9.46 50 12.5V30c0 1.38-1.12 2.5-2.5 2.5S45 31.38 45 30V15.2l-6.1 10.05a5.2 5.2 0 0 1-4.4 2.45 5.2 5.2 0 0 1-4.4-2.45L24.1 15.2V30c0 1.38-1.12 2.5-2.5 2.5S19 31.38 19 30Z"/>
+    </svg>
+  </template>
+
   <div class="app">
     <header class="topbar">
       <button class="logo-btn" onclick="showView('dashboard')" aria-label="Dashboard">
-        <img src="/static/logo.svg" alt="" class="brand-icon">
+        <span class="syte-logo syte-logo--brand" data-logo></span>
       </button>
       <button class="btn-pill btn-settings" data-view="settings" onclick="showView('settings')">
-        <img src="/static/logo.svg" alt="" class="pill-icon" aria-hidden="true">
+        <span class="syte-logo syte-logo--pill" data-logo></span>
         <span>settings</span>
       </button>
     </header>
 
     <main class="content">
-      <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
         <div class="stats-row">
           <div class="stat-card">
@@ -50,12 +56,11 @@
         </div>
       </section>
 
-      <!-- New Service -->
       <section id="view-new-service" class="view">
         <div class="panel panel-form">
           <div class="panel-head">
             <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
-              <img src="/static/logo.svg" alt="" class="back-icon">
+              <span class="syte-logo syte-logo--sm" data-logo></span>
             </button>
             <h1>new service</h1>
           </div>
@@ -96,12 +101,11 @@
         </div>
       </section>
 
-      <!-- Settings -->
       <section id="view-settings" class="view">
         <div class="settings-stack">
           <div class="panel panel-form">
             <div class="panel-head">
-              <img src="/static/logo.svg" alt="" class="section-icon">
+              <span class="syte-logo syte-logo--sm" data-logo></span>
               <h2>server</h2>
             </div>
             <div class="form-inner">
@@ -119,7 +123,7 @@
 
           <div class="panel panel-form">
             <div class="panel-head">
-              <img src="/static/logo.svg" alt="" class="section-icon">
+              <span class="syte-logo syte-logo--sm" data-logo></span>
               <h2>web gui domain</h2>
             </div>
             <div class="form-inner">
@@ -138,7 +142,7 @@
 
           <div class="panel panel-form">
             <div class="panel-head">
-              <img src="/static/logo.svg" alt="" class="section-icon">
+              <span class="syte-logo syte-logo--sm" data-logo></span>
               <h2>update syte</h2>
             </div>
             <div class="form-inner">
@@ -162,7 +166,7 @@
     <div class="modal-backdrop" onclick="closeModal()"></div>
     <div class="modal-content panel">
       <button class="modal-close" onclick="closeModal()" aria-label="Close">
-        <img src="/static/logo.svg" alt="" class="close-icon">
+        <span class="syte-logo syte-logo--sm" data-logo></span>
       </button>
       <h2 id="modal-title"></h2>
       <div id="modal-body"></div>
@@ -171,6 +175,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=__VERSION__"></script>
 </body>
 </html>

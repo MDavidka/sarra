@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,15 @@ from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.self_update import update_syte
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+NO_CACHE = "no-cache, no-store, must-revalidate"
+
+
+class VersionedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = NO_CACHE
+        response.headers["Pragma"] = "no-cache"
+        return response
 
 
 @asynccontextmanager
@@ -294,7 +303,12 @@ def _enrich(project: dict) -> dict:
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text()
+    html = html.replace("__VERSION__", __version__)
+    return HTMLResponse(
+        html,
+        headers={"Cache-Control": NO_CACHE, "Pragma": "no-cache"},
+    )
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", VersionedStaticFiles(directory=STATIC_DIR), name="static")

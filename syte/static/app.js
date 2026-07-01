@@ -2,6 +2,15 @@ const API = '/api';
 
 let projects = [];
 
+function injectLogos() {
+  const tpl = document.getElementById('logo-tpl');
+  if (!tpl) return;
+  document.querySelectorAll('[data-logo]').forEach(slot => {
+    if (slot.querySelector('svg')) return;
+    slot.appendChild(tpl.content.cloneNode(true));
+  });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -284,3 +293,4 @@ function esc(s) {
 loadSystem();
 loadProjects();
 loadSettings();
+injectLogos();

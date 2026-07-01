@@ -32,7 +32,7 @@ body {
   min-height: 100vh;
   max-width: 960px;
   margin: 0 auto;
-  padding: 1.25rem 1.25rem 2rem;
+  padding: 2rem 1.75rem 3rem;
 }
 
 /* Header */
@@ -40,24 +40,46 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.5rem;
-  padding: 0 0.25rem;
+  margin-bottom: 2.25rem;
+  padding: 0 0.5rem;
 }
 
 .logo-btn {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.25rem;
+  padding: 0.35rem;
   display: flex;
   align-items: center;
 }
 
-.brand-icon {
-  width: 42px;
-  height: 28px;
-  color: var(--text-muted);
-  filter: brightness(0) saturate(100%) invert(62%) sepia(0%) saturate(0%) hue-rotate(0deg);
+/* Inline logo */
+.syte-logo {
+  display: inline-flex;
+  color: #8e8e8e;
+  flex-shrink: 0;
+}
+
+.syte-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.syte-logo--brand {
+  width: 48px;
+}
+
+.syte-logo--pill {
+  width: 18px;
+}
+
+.syte-logo--sm {
+  width: 22px;
+}
+
+.btn-settings .syte-logo--pill {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 /* Pill buttons */
@@ -65,7 +87,7 @@ body {
   font-family: var(--font);
   font-size: 0.875rem;
   font-weight: 500;
-  padding: 0.65rem 1.35rem;
+  padding: 0.75rem 1.5rem;
   border-radius: var(--radius-pill);
   border: none;
   cursor: pointer;
@@ -111,10 +133,7 @@ body {
 }
 
 .pill-icon {
-  width: 16px;
-  height: 11px;
-  filter: brightness(0) saturate(100%) invert(100%);
-  opacity: 0.7;
+  display: none;
 }
 
 /* Content */
@@ -127,15 +146,15 @@ body {
 .stats-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .stat-card {
   background: var(--bg-card);
   border-radius: var(--radius-md);
-  padding: 1rem 1.1rem;
-  min-height: 72px;
+  padding: 1.25rem 1.35rem;
+  min-height: 84px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -167,22 +186,22 @@ body {
 .panel {
   background: var(--bg-card);
   border-radius: var(--radius);
-  padding: 1.5rem;
-  min-height: 420px;
+  padding: 2rem 1.75rem;
+  min-height: 440px;
   display: flex;
   flex-direction: column;
 }
 
 .panel-form {
   min-height: auto;
-  padding: 1.35rem;
+  padding: 1.75rem;
 }
 
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 1.25rem;
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
 }
 
 .panel-head h1,
@@ -195,10 +214,7 @@ body {
 
 .section-icon,
 .back-icon {
-  width: 22px;
-  height: 15px;
-  filter: brightness(0) saturate(100%) invert(62%);
-  flex-shrink: 0;
+  display: none;
 }
 
 .back-btn {
@@ -214,14 +230,14 @@ body {
 .services-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.75rem;
+  gap: 1rem;
   flex: 1;
 }
 
 .service-card {
   background: var(--bg);
   border-radius: var(--radius-md);
-  padding: 1.15rem;
+  padding: 1.35rem;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -268,7 +284,7 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 2rem;
+  padding-bottom: 2.5rem;
 }
 
 .empty-state.hidden { display: none; }
@@ -276,7 +292,7 @@ body {
 .panel-footer {
   display: flex;
   justify-content: center;
-  padding-top: 1.25rem;
+  padding-top: 1.75rem;
   margin-top: auto;
 }
 
@@ -285,7 +301,7 @@ body {
 /* Forms */
 .form-inner { display: flex; flex-direction: column; }
 
-.form-group { margin-bottom: 1rem; }
+.form-group { margin-bottom: 1.25rem; }
 
 .form-group label {
   display: block;
@@ -306,7 +322,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 0.9rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
   transition: outline 0.15s;
 }
 
@@ -318,7 +334,7 @@ body {
 
 .form-row {
   display: flex;
-  gap: 0.75rem;
+  gap: 1rem;
   flex-wrap: wrap;
 }
 
@@ -335,15 +351,16 @@ body {
 
 .form-actions {
   display: flex;
-  gap: 0.65rem;
+  gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.5rem;
 }
 
 .settings-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.25rem;
 }
 
 .gui-url {
@@ -424,27 +441,27 @@ code {
 
 .modal-close {
   position: absolute;
-  top: 1.1rem;
-  right: 1.1rem;
+  top: 1.25rem;
+  right: 1.25rem;
   background: var(--bg-input);
   border: none;
   border-radius: var(--radius-pill);
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
 }
 
-.close-icon {
-  width: 14px;
-  height: 10px;
-  filter: brightness(0) saturate(100%) invert(62%);
+.modal-close .syte-logo--sm {
+  width: 18px;
+  color: var(--text-muted);
 }
 
-.modal-close:hover .close-icon {
-  filter: brightness(0) saturate(100%) invert(100%);
+.modal-close:hover .syte-logo--sm {
+  color: var(--text);
 }
 
 #modal-title {
@@ -526,39 +543,40 @@ code {
 
 /* Responsive */
 @media (max-width: 640px) {
-  .app { padding: 1rem 0.85rem 1.5rem; }
+  .app { padding: 1.5rem 1.15rem 2.5rem; }
+
+  .topbar { margin-bottom: 1.75rem; }
 
   .stats-row {
-    gap: 0.5rem;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
   }
 
   .stat-card {
-    padding: 0.85rem;
-    min-height: 64px;
+    padding: 1rem 1.1rem;
+    min-height: 76px;
   }
-
-  .stat-value { font-size: 1.1rem; }
 
   .panel {
-    min-height: 360px;
-    padding: 1.15rem;
+    min-height: 380px;
+    padding: 1.5rem 1.25rem;
     border-radius: 24px;
   }
+
+  .panel-form { padding: 1.5rem 1.25rem; }
 
   .services-grid {
     grid-template-columns: 1fr;
   }
 
-  .btn-pill { padding: 0.6rem 1.15rem; font-size: 0.82rem; }
-
-  .pill-icon { display: none; }
+  .btn-pill { padding: 0.7rem 1.25rem; font-size: 0.82rem; }
 
   .form-actions { flex-direction: column-reverse; }
   .form-actions .btn-pill { width: 100%; }
 }
 
 @media (min-width: 641px) {
-  .app { padding: 1.75rem 2rem 2.5rem; }
+  .app { padding: 2.25rem 2.5rem 3.5rem; }
 
-  .panel { min-height: 480px; }
+  .panel { min-height: 500px; }
 }
