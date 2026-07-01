@@ -3,63 +3,223 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Syte API</title>
+  <title>Syte API — AI Documentation</title>
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    body { max-width: 520px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
-    h1 { font-size: 1.35rem; }
-    .sub { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 1.25rem; }
-    .back { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: block; margin-bottom: 1rem; }
-    .card { background: var(--bg-card); border-radius: 14px; padding: 0.9rem 1rem; margin-bottom: 0.65rem; }
-    .card h3 { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.35rem; font-weight: 500; }
-    .route { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; word-break: break-all; }
-    .m { display: inline-block; font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; }
+    body { max-width: 680px; margin: 0 auto; padding: 1rem 1rem 3rem; font-size: 0.88rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.2rem; }
+    h2 { font-size: 1rem; margin: 1.5rem 0 0.6rem; color: var(--text); }
+    .sub { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1rem; }
+    .back { color: var(--text-muted); text-decoration: none; font-size: 0.82rem; display: block; margin-bottom: 0.75rem; }
+    details { background: var(--bg-card); border-radius: 12px; margin-bottom: 0.5rem; overflow: hidden; }
+    summary { padding: 0.75rem 1rem; cursor: pointer; font-weight: 500; list-style: none; display: flex; align-items: center; gap: 0.5rem; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '▸'; color: var(--text-muted); font-size: 0.75rem; }
+    details[open] summary::before { content: '▾'; }
+    .detail-body { padding: 0 1rem 1rem; border-top: 1px solid #2a2a2a; }
+    .m { font-size: 0.62rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; }
     .get { background: #1a2e1a; color: #7dcea0; }
     .post { background: #1a2530; color: #85c1e9; }
-    .err { font-size: 0.75rem; margin-top: 0.75rem; }
-    .err div { padding: 0.35rem 0; border-bottom: 1px solid #2a2a2a; }
-    pre { background: #181818; padding: 0.65rem; border-radius: 8px; font-size: 0.68rem; overflow-x: auto; margin-top: 0.5rem; }
+    .route { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; word-break: break-all; margin: 0.5rem 0; }
+    pre { background: #0d0d0d; padding: 0.75rem; border-radius: 8px; font-size: 0.68rem; overflow-x: auto; line-height: 1.5; margin: 0.5rem 0; border: 1px solid #2a2a2a; }
+    table { width: 100%; font-size: 0.75rem; border-collapse: collapse; margin: 0.5rem 0; }
+    th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
+    th { color: var(--text-muted); font-weight: 500; }
+    .tag { display: inline-block; background: #2a2a2a; color: #aaa; font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-right: 0.25rem; }
+    .warn { color: #f0c674; font-size: 0.78rem; }
+    ol.steps { padding-left: 1.2rem; margin: 0.5rem 0; }
+    ol.steps li { margin: 0.35rem 0; color: var(--text-muted); }
+    a { color: #85c1e9; }
   </style>
 </head>
 <body>
-  <a href="/" class="back">← syte</a>
-  <h1>API</h1>
-  <p class="sub">v__VERSION__ · auth: <code>X-API-Key: syte_…</code></p>
+  <a href="/" class="back">← syte gui</a>
+  <h1>Syte API</h1>
+  <p class="sub">v__VERSION__ · for AI agents &amp; automation · <a href="/api/ai.json">ai.json</a></p>
 
-  <div class="card">
-    <h3>workspaces</h3>
-    <div class="route"><span class="m get">GET</span>/api/workspace_list</div>
-  </div>
+  <h2>Authentication</h2>
+  <p>All endpoints below require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
 
-  <div class="card">
-    <h3>deploy</h3>
-    <div class="route"><span class="m post">POST</span>/api/create_project</div>
-    <pre>{"name","uuid?","git_url?","git_provider?","branch?","env_vars?"}</pre>
-    <div class="route" style="margin-top:0.5rem"><span class="m post">POST</span>/api/issue_deploy</div>
-    <pre>{"uuid"}</pre>
-  </div>
+  <details open>
+    <summary>1. Create an API token</summary>
+    <div class="detail-body">
+      <p>In the Syte GUI: <strong>key</strong> in the navbar → create token. Or via API (no auth):</p>
+      <pre>curl -X POST https://YOUR_HOST/api/tokens \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-ai-agent"}'
 
-  <div class="card">
-    <h3>workspace files</h3>
-    <div class="route"><span class="m post">POST</span>/api/execute_command</div>
-    <pre>{"uuid","command","cwd?","timeout?"}</pre>
-    <div class="route" style="margin-top:0.5rem"><span class="m post">POST</span>/api/delete_file</div>
-    <pre>{"uuid","path"}</pre>
-    <div class="route" style="margin-top:0.5rem"><span class="m post">POST</span>/api/upload_file</div>
-    <pre>multipart: uuid, path, file</pre>
-  </div>
+# Response (save token immediately — shown once):
+# {"ok":true,"token":"syte_abc123...","prefix":"syte_abc..."}</pre>
+    </div>
+  </details>
 
-  <div class="card">
-    <h3>live logs (sse)</h3>
-    <div class="route"><span class="m get">GET</span>/api/projects/{uuid}/logs/stream?live=1</div>
-  </div>
+  <details open>
+    <summary>2. Send the token on every request</summary>
+    <div class="detail-body">
+      <p><strong>Option A</strong> — header (recommended):</p>
+      <pre>X-API-Key: syte_your_token_here</pre>
+      <p><strong>Option B</strong> — Bearer:</p>
+      <pre>Authorization: Bearer syte_your_token_here</pre>
+      <pre>curl https://YOUR_HOST/api/workspace_list \
+  -H "X-API-Key: syte_your_token_here"</pre>
+      <p class="warn">401 missing_api_key — no header sent<br>401 invalid_api_key — wrong or revoked token</p>
+    </div>
+  </details>
 
-  <div class="card err">
-    <h3>errors</h3>
-    <div><strong>401</strong> missing_api_key · invalid_api_key</div>
-    <div><strong>400</strong> invalid_path · create_failed</div>
-    <div><strong>404</strong> not_found</div>
-  </div>
+  <h2>AI workflow: deploy a website from Git</h2>
+  <ol class="steps">
+    <li><code>POST /api/create_project</code> with git_url → get <code>uuid</code></li>
+    <li>Stream <code>GET /api/projects/{uuid}/logs/stream?live=1</code> (SSE)</li>
+    <li><code>GET /api/workspace_get?uuid=</code> → check <code>url</code> and <code>running</code></li>
+    <li><code>POST /api/set_domain</code> → optional custom HTTPS domain</li>
+  </ol>
+  <pre>curl -X POST https://YOUR_HOST/api/create_project \
+  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-site",
+    "git_url": "https://github.com/user/repo.git",
+    "branch": "main"
+  }'</pre>
+
+  <h2>AI workflow: build a website from scratch (no git)</h2>
+  <ol class="steps">
+    <li><code>POST /api/create_project</code> with name only → uuid</li>
+    <li><code>POST /api/write_file</code> — create package.json, Dockerfile, source files</li>
+    <li><code>POST /api/execute_command</code> — run <em>any</em> shell command (npm install, mkdir, etc.)</li>
+    <li><code>POST /api/issue_deploy</code> — build &amp; start</li>
+    <li><code>GET /api/get_logs?uuid=</code> — verify success</li>
+  </ol>
+  <pre>curl -X POST https://YOUR_HOST/api/execute_command \
+  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
+  -d '{
+    "uuid": "my-site-abc123",
+    "command": "npm install && npm run build",
+    "cwd": "app",
+    "timeout": 600
+  }'</pre>
+
+  <h2>Endpoints</h2>
+
+  <details><summary><span class="m get">GET</span> /api/server_info</summary>
+    <div class="detail-body"><p>Server public IP, version, base URLs.</p></div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/workspace_list</summary>
+    <div class="detail-body"><p>All projects with uuid, url, port, status, running.</p></div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/workspace_get?uuid=</summary>
+    <div class="detail-body"><p>Full project detail: urls, env, git, stream_url.</p></div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/list_files?uuid=&amp;path=</summary>
+    <div class="detail-body"><p>List files/dirs. <code>path</code> relative to workspace (default root).</p></div>
+  </details>
+
+  <details open><summary><span class="m post">POST</span> /api/execute_command <span class="tag">any command</span></summary>
+    <div class="detail-body">
+      <p>Run <strong>any custom shell command</strong> inside the workspace. Not limited to specific commands.</p>
+      <table>
+        <tr><th>field</th><th>type</th><th>description</th></tr>
+        <tr><td>uuid</td><td>string</td><td>required</td></tr>
+        <tr><td>command</td><td>string</td><td>any shell command</td></tr>
+        <tr><td>cwd</td><td>string</td><td>default <code>app</code></td></tr>
+        <tr><td>timeout</td><td>int</td><td>seconds, default 300, max 1800</td></tr>
+        <tr><td>env</td><td>object</td><td>extra env vars for this run</td></tr>
+      </table>
+      <p>Examples: <code>npm install</code>, <code>npm run build</code>, <code>ls -la</code>, <code>mkdir -p src</code>, <code>cat Dockerfile</code></p>
+      <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm install"}</pre>
+    </div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/execute_commands</summary>
+    <div class="detail-body">
+      <p>Run multiple commands in sequence. Stops on first failure by default.</p>
+      <pre>{"uuid":"...","commands":[
+  {"command":"npm install","cwd":"app"},
+  {"command":"npm run build","cwd":"app","timeout":600}
+]}</pre>
+    </div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/read_file</summary>
+    <div class="detail-body"><pre>{"uuid":"...","path":"app/package.json"}</pre>
+    <p>Returns <code>content</code> (utf-8) or base64 for binary.</p></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/write_file</summary>
+    <div class="detail-body"><pre>{"uuid":"...","path":"app/index.html","content":"&lt;!DOCTYPE html&gt;..."}</pre></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/upload_file</summary>
+    <div class="detail-body"><p>multipart: <code>uuid</code>, <code>path</code>, <code>file</code></p></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/delete_file</summary>
+    <div class="detail-body"><pre>{"uuid":"...","path":"app/temp.txt"}</pre></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/set_env</summary>
+    <div class="detail-body"><pre>{"uuid":"...","env_vars":{"NODE_ENV":"production"},"merge":true}</pre></div>
+  </details>
+
+  <details open><summary><span class="m post">POST</span> /api/create_project</summary>
+    <div class="detail-body">
+      <table>
+        <tr><th>field</th><th>required</th><th>description</th></tr>
+        <tr><td>name</td><td>yes</td><td>display name</td></tr>
+        <tr><td>uuid</td><td>no</td><td>custom id (auto-generated if omitted)</td></tr>
+        <tr><td>git_url</td><td>no</td><td>full https git URL</td></tr>
+        <tr><td>git_provider</td><td>no</td><td>shorthand: github.com/user/repo.git</td></tr>
+        <tr><td>branch</td><td>no</td><td>default main</td></tr>
+        <tr><td>start_command</td><td>no</td><td>shell fallback if no Dockerfile</td></tr>
+        <tr><td>domain</td><td>no</td><td>custom HTTPS domain</td></tr>
+        <tr><td>env_vars</td><td>no</td><td>key-value env</td></tr>
+      </table>
+      <p>Starts deploy in background. Use <code>stream_url</code> from response for live logs.</p>
+    </div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/issue_deploy</summary>
+    <div class="detail-body"><pre>{"uuid":"..."}</pre><p>Git pull + rebuild + restart.</p></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/start_service / stop_service</summary>
+    <div class="detail-body"><pre>{"uuid":"..."}</pre></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/set_domain</summary>
+    <div class="detail-body"><pre>{"uuid":"...","domain":"app.example.com"}</pre><p>Auto TLS via Caddy.</p></div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/delete_project</summary>
+    <div class="detail-body"><pre>{"uuid":"..."}</pre></div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/get_logs?uuid=&amp;lines=200</summary>
+    <div class="detail-body"><p>Snapshot of build + runtime logs.</p></div>
+  </details>
+
+  <details open><summary><span class="m get">GET</span> /api/projects/{uuid}/logs/stream?live=1</summary>
+    <div class="detail-body">
+      <p>Server-Sent Events — live deploy log (current session only).</p>
+      <pre>const es = new EventSource('/api/projects/UUID/logs/stream?live=1');
+es.onmessage = e => console.log(JSON.parse(e.data).text);</pre>
+      <p>Event: <code>{"type":"build","text":"Step 1/21 ..."}</code></p>
+    </div>
+  </details>
+
+  <h2>Errors</h2>
+  <table>
+    <tr><th>HTTP</th><th>code</th><th>meaning</th></tr>
+    <tr><td>401</td><td>missing_api_key</td><td>No X-API-Key or Bearer header</td></tr>
+    <tr><td>401</td><td>invalid_api_key</td><td>Token wrong or revoked</td></tr>
+    <tr><td>400</td><td>invalid_path</td><td>Path escapes workspace</td></tr>
+    <tr><td>400</td><td>create_failed</td><td>Duplicate uuid or validation error</td></tr>
+    <tr><td>400</td><td>write_failed</td><td>Could not write file</td></tr>
+    <tr><td>404</td><td>not_found</td><td>UUID does not exist</td></tr>
+    <tr><td>404</td><td>read_failed / delete_failed</td><td>File or project missing</td></tr>
+  </table>
 </body>
 </html>

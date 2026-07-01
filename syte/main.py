@@ -120,6 +120,14 @@ async def health():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/api/ai.json", include_in_schema=False)
+async def api_ai_spec(request: Request):
+    """Machine-readable API spec for AI agents."""
+    from syte.ai_spec import build_ai_spec
+    base = str(request.base_url).rstrip("/")
+    return build_ai_spec(base)
+
+
 @app.get("/api", include_in_schema=False)
 @app.get("/api/", include_in_schema=False)
 async def api_documentation():
