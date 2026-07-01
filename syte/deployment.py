@@ -8,6 +8,8 @@ from syte.database import create_project, delete_project, get_project, update_pr
 from syte.docker_deploy import find_dockerfile
 from syte.runtime import ensure_runtime_for_command
 from syte.workspace import (
+    append_deploy_log,
+    begin_deploy_log_session,
     clone_or_pull,
     detect_start_command,
     ensure_workspace,
@@ -101,15 +103,22 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
         return "Project not found"
 
     await update_project(project_id, {"status": "deploying"})
+    begin_deploy_log_session(project_id)
     port = project["port"]
     git_url = project.get("git_url")
     branch = project.get("branch", "main")
-    messages = [f"Deploying {project_id}…"]
+    messages: list[str] = []
+
+    def log(line: str) -> None:
+        messages.append(line)
+        append_deploy_log(project_id, line)
+
+    log(f"Deploying {project_id}…")
 
     if git_url:
-        messages.append("Cloning/updating git repository…")
+        log("Cloning/updating git repository…")
         ok, msg = clone_or_pull(project_id, git_url, branch)
-        messages.append(msg)
+        log(msg)
         if not ok:
             await update_project(project_id, {"status": "stopped"})
             return "\n".join(messages)
@@ -121,16 +130,16 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
             return "\n".join(messages)
 
         if deploy_err:
-            messages.append(deploy_err)
+            log(deploy_err)
             await update_project(project_id, {"status": "stopped"})
             return "\n".join(messages)
 
         if deploy_info["deploy_type"] == "docker":
-            messages.append(f"Dockerfile: {deploy_info['dockerfile_path']}")
+            log(f"Dockerfile: {deploy_info['dockerfile_path']}")
     elif not project.get("start_command") and not start_command:
         cmd, err = detect_start_command(project_id)
         if err:
-            messages.append(
+            log(
                 "Nothing to deploy yet. Add files (write_file/upload_file), "
                 "run execute_command to scaffold, add a Dockerfile, or set start_command — "
                 "then call issue_deploy again."
@@ -142,7 +151,7 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
             project = await get_project(project_id)
 
     if not project.get("start_command") and project.get("deploy_type") != "docker":
-        messages.append("No start command configured.")
+        log("No start command configured.")
         await update_project(project_id, {"status": "stopped"})
         return "\n".join(messages)
 
@@ -155,8 +164,9 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
         project.get("deploy_type", "shell"),
         project.get("dockerfile_path"),
     )
-    messages.append(msg)
+    log(msg)
     status = "running" if ok else "stopped"
+    log(f"Deploy finished — status: {status}")
     await update_project(project_id, {"status": status})
     await apply_proxy_config()
     return "\n".join(messages)

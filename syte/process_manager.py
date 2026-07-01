@@ -161,16 +161,24 @@ def restart_docker_project(
 
 
 def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> str:
+    from syte.workspace import deploy_log_path
+
+    parts: list[str] = []
+    deploy_log = deploy_log_path(project_id)
+    if deploy_log.exists():
+        content = deploy_log.read_text(errors="replace").splitlines()
+        if content:
+            tail = content[-max(lines * 3, 300):]
+            parts.append("=== Deploy log ===\n" + "\n".join(tail))
+
     if deploy_type == "docker":
         from syte.docker_deploy import _build_log_path
         from syte.workspace import run_cmd
 
-        parts: list[str] = []
         build_log = _build_log_path(project_id)
         if build_log.exists():
-            content = build_log.read_text().splitlines()
+            content = build_log.read_text(errors="replace").splitlines()
             if content:
-                # Docker/Next.js builds are verbose — show more than container logs.
                 tail = content[-max(lines * 5, 500):]
                 parts.append("=== Build log ===\n" + "\n".join(tail))
 
@@ -178,10 +186,15 @@ def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> s
         code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
         if code == 0 and out.strip():
             parts.append("=== Container log ===\n" + out.strip())
+        elif code != 0 and out.strip():
+            parts.append("=== Container log (error) ===\n" + out.strip())
 
         return "\n\n".join(parts) if parts else "No logs yet."
+
     log_path = workspace_path(project_id) / "app.log"
-    if not log_path.exists():
-        return "No logs yet."
-    content = log_path.read_text().splitlines()
-    return "\n".join(content[-lines:])
+    if log_path.exists():
+        content = log_path.read_text(errors="replace").splitlines()
+        if content:
+            parts.append("=== App log ===\n" + "\n".join(content[-lines:]))
+
+    return "\n\n".join(parts) if parts else "No logs yet."

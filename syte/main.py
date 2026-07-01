@@ -26,6 +26,7 @@ from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, no
 from syte.self_update import update_syte
 from syte import auth
 from syte import api_router
+from syte import workspace_api
 from syte.log_stream import stream_project_logs
 import logging
 
@@ -299,14 +300,7 @@ def _running(project: dict) -> bool:
 @app.get("/api/projects")
 async def api_list_projects():
     projects = await list_projects()
-    enriched = []
-    for p in projects:
-        p = dict(p)
-        p["running"] = _running(p)
-        p["url"] = _project_url(p)
-        p["env_vars"] = _parse_env(p.get("env_vars"))
-        enriched.append(p)
-    return enriched
+    return [_enrich(dict(p)) for p in projects]
 
 
 @app.get("/api/projects/{project_id}")
@@ -314,11 +308,7 @@ async def api_get_project(project_id: str):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    project = dict(project)
-    project["running"] = _running(project)
-    project["url"] = _project_url(project)
-    project["env_vars"] = _parse_env(project.get("env_vars"))
-    return project
+    return _enrich(project)
 
 
 @app.post("/api/projects")
@@ -333,10 +323,7 @@ async def api_create_project(body: CreateServiceRequest):
     )
     if not project:
         raise HTTPException(500, message)
-    project = dict(project)
-    project["running"] = _running(project)
-    project["url"] = _project_url(project)
-    project["env_vars"] = _parse_env(project.get("env_vars"))
+    project = _enrich(project)
     return {
         "project": project,
         "message": message,
@@ -401,7 +388,7 @@ async def api_delete(project_id: str):
 
 
 @app.get("/api/projects/{project_id}/logs")
-async def api_logs(project_id: str, lines: int = 100):
+async def api_logs(project_id: str, lines: int = 500):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -410,6 +397,18 @@ async def api_logs(project_id: str, lines: int = 100):
             project_id, lines, project.get("deploy_type", "shell")
         )
     }
+
+
+@app.get("/api/projects/{project_id}/workspace/files")
+async def api_workspace_files(project_id: str, path: str = ""):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    try:
+        files = await workspace_api.list_workspace_files(project_id, path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"uuid": project_id, "path": path or "/", "files": files}
 
 
 @app.get("/api/projects/{project_id}/logs/stream")
@@ -461,10 +460,17 @@ def _project_url(project: dict) -> str:
 
 
 def _enrich(project: dict) -> dict:
+    from syte.workspace import ensure_workspace, workspace_path
+
     p = dict(project)
     p["running"] = _running(p)
     p["url"] = _project_url(p)
     p["env_vars"] = _parse_env(p.get("env_vars"))
+    ensure_workspace(p["id"])
+    ws = workspace_path(p["id"])
+    p["workspace_path"] = str(ws)
+    p["app_path"] = str(ws / "app")
+    p["data_path"] = str(ws / "data")
     return p
 
 

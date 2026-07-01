@@ -6,7 +6,7 @@ from pathlib import Path
 
 from syte.docker_deploy import _build_log_path, container_name
 from syte.process_manager import get_logs
-from syte.workspace import run_cmd, workspace_path
+from syte.workspace import deploy_log_path, run_cmd, workspace_path
 
 
 async def stream_project_logs(
@@ -17,6 +17,7 @@ async def stream_project_logs(
 ):
     """SSE generator — tails build.log, app.log, and docker container output."""
     ws = workspace_path(project_id)
+    deploy_log = deploy_log_path(project_id)
     build_log = _build_log_path(project_id)
     app_log = ws / "app.log"
 
@@ -27,7 +28,7 @@ async def stream_project_logs(
                 yield f"data: {json.dumps({'type': 'log', 'text': line})}\n\n"
 
     offsets: dict[Path, int] = {}
-    for path in (build_log, app_log):
+    for path in (deploy_log, build_log, app_log):
         offsets[path] = path.stat().st_size if path.exists() else 0
 
     if live_only:
@@ -36,7 +37,7 @@ async def stream_project_logs(
     docker_tick = 0
     last_docker_lines: set[str] = set()
     for _ in range(4500):
-        for path, label in ((build_log, "build"), (app_log, "app")):
+        for path, label in ((deploy_log, "deploy"), (build_log, "build"), (app_log, "app")):
             if not path.exists():
                 continue
             size = path.stat().st_size
@@ -56,13 +57,14 @@ async def stream_project_logs(
             code, out = await asyncio.to_thread(
                 run_cmd, ["docker", "logs", "--tail", "8", name]
             )
-            if code == 0 and out.strip():
+            if out.strip():
+                label = "container" if code == 0 else "container-err"
                 for line in out.strip().splitlines():
                     if line not in last_docker_lines:
                         last_docker_lines.add(line)
                         if len(last_docker_lines) > 200:
                             last_docker_lines.clear()
-                        yield f"data: {json.dumps({'type': 'container', 'text': line})}\n\n"
+                        yield f"data: {json.dumps({'type': label, 'text': line})}\n\n"
 
         docker_tick += 1
         if docker_tick % 10 == 0:

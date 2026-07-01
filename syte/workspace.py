@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from syte.config import settings
@@ -23,6 +24,24 @@ def ensure_workspace(project_id: str) -> Path:
     (path / "data").mkdir(exist_ok=True)
     (path / "app").mkdir(exist_ok=True)
     return path
+
+
+def deploy_log_path(project_id: str) -> Path:
+    return workspace_path(project_id) / "deploy.log"
+
+
+def begin_deploy_log_session(project_id: str) -> None:
+    ensure_workspace(project_id)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    with deploy_log_path(project_id).open("a") as f:
+        f.write(f"\n=== Deploy session {ts} ===\n")
+
+
+def append_deploy_log(project_id: str, line: str) -> None:
+    ensure_workspace(project_id)
+    with deploy_log_path(project_id).open("a") as f:
+        for part in line.splitlines() or [""]:
+            f.write(part + "\n")
 
 
 def write_env_file(project_id: str, env_vars: dict[str, str]) -> None:

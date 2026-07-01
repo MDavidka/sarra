@@ -637,6 +637,31 @@ code {
   color: var(--text-muted);
 }
 
+.workspace-files {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.workspace-files .ws-file-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.workspace-files .ws-file-row:last-child { border-bottom: none; }
+
+.workspace-files .ws-dir { color: #85c1e9; }
+.workspace-files .ws-empty { color: var(--text-dim); font-style: italic; }
+
 .form-inner.compact {
   display: flex;
   gap: 0.5rem;

@@ -50,10 +50,35 @@ function clearLogPanel(container) {
   if (container) container.innerHTML = '';
 }
 
-function startLogStream(projectId, targetEl, liveOnly = true) {
+function renderLogText(container, text) {
+  if (!container) return;
+  clearLogPanel(container);
+  if (!text || text === 'No logs yet.') {
+    appendLogLine(container, 'No deploy logs yet.', 'log-dim');
+    return;
+  }
+  text.split('\n').forEach(line => appendLogLine(container, line));
+}
+
+async function loadLogSnapshot(projectId, targetEl) {
+  if (!targetEl) return;
+  try {
+    const res = await api(`/projects/${projectId}/logs?lines=1000`);
+    renderLogText(targetEl, res.logs);
+  } catch (e) {
+    clearLogPanel(targetEl);
+    appendLogLine(targetEl, 'Could not load logs: ' + e.message, 'log-err');
+  }
+}
+
+function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = false } = {}) {
   stopLogStream();
   if (!targetEl) return;
-  clearLogPanel(targetEl);
+  if (clearFirst) clearLogPanel(targetEl);
+
+  const hint = document.getElementById('svc-log-hint');
+  let wasDeploying = true;
+
   const key = getApiKey();
   const params = new URLSearchParams();
   if (liveOnly) params.set('live', '1');
@@ -68,18 +93,28 @@ function startLogStream(projectId, targetEl, liveOnly = true) {
     } catch { /* ping */ }
   };
   logStream.onerror = () => {
-    appendLogLine(targetEl, '[stream disconnected]', 'log-warn');
+    appendLogLine(targetEl, '[stream disconnected — showing saved logs]', 'log-warn');
     stopLogStream();
+    loadLogSnapshot(projectId, targetEl);
   };
 
   deployPollTimer = setInterval(async () => {
     await loadProjects();
     const p = projects.find(x => x.id === projectId);
-    if (p && activeServiceId === projectId) {
-      updateServiceBadge(p);
-      if (p.status !== 'deploying') return;
+    if (!p || activeServiceId !== projectId) return;
+    updateServiceBadge(p);
+    if (p.status === 'deploying') {
+      wasDeploying = true;
+      if (hint) hint.textContent = 'deployment in progress…';
+      return;
     }
-  }, 3000);
+    if (wasDeploying) {
+      wasDeploying = false;
+      if (hint) hint.textContent = 'deploy finished — full log below';
+      await loadLogSnapshot(projectId, targetEl, true);
+      stopLogStream();
+    }
+  }, 2000);
 }
 
 function refreshIcons() {
@@ -240,6 +275,13 @@ function renderServiceDashboard(p, resetLogs) {
     <div class="info-cell full"><span>uuid</span><code>${esc(p.id)}</code></div>
   `;
 
+  document.getElementById('svc-workspace-body').innerHTML = `
+    <div class="info-cell full"><span>workspace</span><code>${esc(p.workspace_path || '—')}</code></div>
+    <div class="info-cell full"><span>app</span><code>${esc(p.app_path || '—')}</code></div>
+    <div class="info-cell full"><span>data</span><code>${esc(p.data_path || '—')}</code></div>
+  `;
+  loadWorkspaceFiles(p.id);
+
   const actions = document.getElementById('svc-deploy-actions');
   actions.innerHTML = `
     <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
@@ -257,13 +299,15 @@ function renderServiceDashboard(p, resetLogs) {
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
   if (resetLogs) {
-    clearLogPanel(logsEl);
     if (p.status === 'deploying') {
       hint.textContent = 'deployment in progress…';
-      startLogStream(p.id, logsEl, true);
+      loadLogSnapshot(p.id, logsEl).then(() => {
+        startLogStream(p.id, logsEl, { liveOnly: true, clearFirst: false });
+      });
     } else {
-      hint.textContent = 'press deploy to start a new session — only current deploy logs are shown';
+      hint.textContent = 'full deploy history — failures and build output';
       stopLogStream();
+      loadLogSnapshot(p.id, logsEl);
     }
   }
 
@@ -271,19 +315,51 @@ function renderServiceDashboard(p, resetLogs) {
   refreshIcons();
 }
 
+async function loadWorkspaceFiles(projectId, subpath = '') {
+  const el = document.getElementById('svc-workspace-files');
+  if (!el) return;
+  el.innerHTML = '<span class="ws-empty">loading…</span>';
+  try {
+    const q = subpath ? `?path=${encodeURIComponent(subpath)}` : '';
+    const res = await api(`/projects/${projectId}/workspace/files${q}`);
+    if (!res.files?.length) {
+      el.innerHTML = '<span class="ws-empty">empty workspace — add files via API or deploy</span>';
+      return;
+    }
+    el.innerHTML = res.files.map(f => `
+      <div class="ws-file-row">
+        <span class="${f.type === 'directory' ? 'ws-dir' : ''}">${f.type === 'directory' ? '📁' : '📄'} ${esc(f.name)}</span>
+        <span>${f.type === 'file' && f.size != null ? formatBytes(f.size) : ''}</span>
+      </div>
+    `).join('');
+  } catch (e) {
+    el.innerHTML = `<span class="ws-empty">could not list files: ${esc(e.message)}</span>`;
+  }
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 async function serviceDeploy(id) {
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
-  clearLogPanel(logsEl);
   hint.textContent = 'deployment in progress…';
-  startLogStream(id, logsEl, true);
+  clearLogPanel(logsEl);
+  appendLogLine(logsEl, 'Issuing deploy…', 'log-info');
+  startLogStream(id, logsEl, { liveOnly: true, clearFirst: false });
   try {
     const res = await api(`/projects/${id}/deploy`, { method: 'POST' });
+    appendLogLine(logsEl, res.message || 'Deploy started in background', 'log-info');
     toast(res.message || 'deploy started');
     await loadProjects();
+    loadWorkspaceFiles(id);
   } catch (e) {
     appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
     toast('Error: ' + e.message);
+    await loadLogSnapshot(id, logsEl);
   }
 }
 
@@ -297,12 +373,15 @@ async function serviceAction(id, action) {
       showView('dashboard');
     } else if (action === 'start') {
       const logsEl = document.getElementById('svc-live-logs');
-      document.getElementById('svc-log-hint').textContent = 'deployment in progress…';
+      document.getElementById('svc-log-hint').textContent = 'starting service…';
       clearLogPanel(logsEl);
-      startLogStream(id, logsEl, true);
+      appendLogLine(logsEl, 'Starting service…', 'log-info');
+      startLogStream(id, logsEl, { liveOnly: true, clearFirst: false });
       const res = await api(`/projects/${id}/start`, { method: 'POST' });
+      appendLogLine(logsEl, res.message || 'Start issued', res.project?.running ? 'log-ok' : 'log-err');
       toast(res.message);
       await loadProjects();
+      await loadLogSnapshot(id, logsEl);
     } else {
       const res = await api(`/projects/${id}/${action}`, { method: 'POST' });
       toast(res.message);
@@ -354,7 +433,10 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
     toast(`deploying: ${res.project.name}`);
     await loadProjects();
     openService(res.project.id);
-    startLogStream(res.project.id, document.getElementById('svc-live-logs'), true);
+    const logsEl = document.getElementById('svc-live-logs');
+    loadLogSnapshot(res.project.id, logsEl).then(() => {
+      startLogStream(res.project.id, logsEl, { liveOnly: true, clearFirst: false });
+    });
   } catch (err) {
     if (logPanel) appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
     toast('deploy failed: ' + err.message);
