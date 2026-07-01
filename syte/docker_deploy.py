@@ -64,6 +64,81 @@ def _is_nextjs_repo(repo: Path) -> bool:
         return False
 
 
+def _docker_build_hints(output: str) -> str:
+    lower = output.lower()
+    hints: list[str] = []
+    if "copy failed" in lower and "public" in lower:
+        hints.append(
+            "Dockerfile copies public/ but that folder is missing from the repo. "
+            "Syte can auto-create it on the next deploy, or add public/ to your git project."
+        )
+    if "copy failed" in lower and "standalone" in lower:
+        hints.append(
+            "Dockerfile expects Next.js standalone output. Add to next.config.js:\n"
+            "  output: 'standalone'"
+        )
+    if "copy failed" in lower and ".next/static" in lower:
+        hints.append(
+            "Dockerfile copies .next/static — run next build first or check next.config output settings."
+        )
+    return "\n\n".join(hints)
+
+
+def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
+    """Fix common Next.js Docker issues in the cloned workspace before build."""
+    actions: list[str] = []
+    if not _is_nextjs_repo(repo):
+        return actions
+
+    try:
+        dockerfile_text = dockerfile.read_text()
+    except OSError:
+        return actions
+
+    dockerfile_lower = dockerfile_text.lower()
+
+    if "public" in dockerfile_lower and not (repo / "public").exists():
+        public = repo / "public"
+        public.mkdir(parents=True)
+        (public / ".gitkeep").write_text("")
+        actions.append("Created missing public/ directory for Next.js Docker build.")
+
+    if ".next/standalone" in dockerfile_lower:
+        for name in ("next.config.js", "next.config.mjs", "next.config.ts"):
+            path = repo / name
+            if not path.exists():
+                continue
+            text = path.read_text()
+            if re.search(r"""output\s*:\s*['"]standalone['"]""", text):
+                break
+            if name == "next.config.js" and "module.exports" in text:
+                if re.search(r"module\.exports\s*=\s*\{", text):
+                    path.write_text(
+                        re.sub(
+                            r"module\.exports\s*=\s*\{",
+                            "module.exports = {\n  output: 'standalone',",
+                            text,
+                            count=1,
+                        )
+                    )
+                    actions.append(f"Patched {name} with output: 'standalone'.")
+                    break
+            elif name == "next.config.mjs" and "export default" in text:
+                if re.search(r"export\s+default\s*\{", text):
+                    path.write_text(
+                        re.sub(
+                            r"export\s+default\s*\{",
+                            "export default {\n  output: 'standalone',",
+                            text,
+                            count=1,
+                        )
+                    )
+                    actions.append(f"Patched {name} with output: 'standalone'.")
+                    break
+
+    return actions
+
+
 def _runtime_env_args(repo: Path, container_port: int, env_vars_raw: str | dict) -> list[str]:
     """Env vars passed to docker run (user env + sensible defaults)."""
     env = read_env_vars(env_vars_raw)
@@ -166,22 +241,31 @@ def deploy_docker(
     stop_docker(project_id)
     run_cmd(["docker", "rmi", image])
 
+    prep_actions = _prepare_docker_context(repo, dockerfile)
+
     build_cmd = [
         "docker", "build",
         "-t", image,
         "-f", str(dockerfile),
         str(repo),
     ]
-    build_log.write_text(
+    header = (
         f"Syte v{__version__} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
         f"Command: {' '.join(build_cmd)}\n"
         f"Building {image} from {dockerfile.name}\n"
     )
+    if prep_actions:
+        header += "Prepare:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n"
+    build_log.write_text(header)
     code, out = run_cmd(build_cmd)
     _append_build_log(project_id, "docker build", out or "(no output)")
     if code != 0:
         tail = _strip_ansi(out or "")
-        return False, f"Docker build failed (exit {code}).\n{tail[-4000:]}"
+        hints = _docker_build_hints(tail)
+        msg = f"Docker build failed (exit {code}).\n{tail[-4000:]}"
+        if hints:
+            msg += f"\n\nHint:\n{hints}"
+        return False, msg
 
     run_cmd_list = [
         "docker", "run", "-d",
