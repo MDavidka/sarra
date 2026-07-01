@@ -4,6 +4,14 @@ import subprocess
 from pathlib import Path
 
 from syte.config import settings
+from syte.docker_deploy import (
+    container_name,
+    deploy_docker,
+    find_dockerfile,
+    is_docker_running,
+    rebuild_docker,
+    stop_docker,
+)
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
 PID_DIR = settings.data_dir / "pids"
@@ -14,7 +22,9 @@ def pid_file(project_id: str) -> Path:
     return PID_DIR / f"{project_id}.pid"
 
 
-def is_running(project_id: str) -> bool:
+def is_running(project_id: str, deploy_type: str = "shell") -> bool:
+    if deploy_type == "docker":
+        return is_docker_running(project_id)
     pf = pid_file(project_id)
     if not pf.exists():
         return False
@@ -27,7 +37,9 @@ def is_running(project_id: str) -> bool:
         return False
 
 
-def stop_project(project_id: str) -> tuple[bool, str]:
+def stop_project(project_id: str, deploy_type: str = "shell") -> tuple[bool, str]:
+    if deploy_type == "docker":
+        return stop_docker(project_id)
     pf = pid_file(project_id)
     if not pf.exists():
         return True, "Already stopped."
@@ -41,9 +53,27 @@ def stop_project(project_id: str) -> tuple[bool, str]:
         return True, f"Process not running ({e})."
 
 
-def start_project(project_id: str, port: int, start_command: str, env_vars_raw: str | dict) -> tuple[bool, str]:
-    if is_running(project_id):
-        stop_project(project_id)
+def start_project(
+    project_id: str,
+    port: int,
+    start_command: str,
+    env_vars_raw: str | dict,
+    deploy_type: str = "shell",
+    dockerfile_path: str | None = None,
+) -> tuple[bool, str]:
+    if is_running(project_id, deploy_type):
+        stop_project(project_id, deploy_type)
+
+    if deploy_type == "docker":
+        repo = workspace_path(project_id) / "app"
+        dockerfile = find_dockerfile(project_id)
+        if dockerfile_path:
+            candidate = repo / dockerfile_path
+            if candidate.is_file():
+                dockerfile = candidate
+        if not dockerfile:
+            return False, "Dockerfile not found in workspace."
+        return deploy_docker(project_id, port, dockerfile, env_vars_raw)
 
     ws = ensure_workspace(project_id)
     repo = ws / "app"
@@ -70,7 +100,29 @@ def start_project(project_id: str, port: int, start_command: str, env_vars_raw: 
     return True, f"Started on port {port} (PID {proc.pid}). Logs: {log_path}"
 
 
-def get_logs(project_id: str, lines: int = 100) -> str:
+def restart_docker_project(
+    project_id: str,
+    port: int,
+    env_vars_raw: str | dict,
+    dockerfile_path: str | None = None,
+) -> tuple[bool, str]:
+    repo = workspace_path(project_id) / "app"
+    dockerfile = find_dockerfile(project_id)
+    if dockerfile_path:
+        candidate = repo / dockerfile_path
+        if candidate.is_file():
+            dockerfile = candidate
+    if not dockerfile:
+        return False, "Dockerfile not found after git pull."
+    return rebuild_docker(project_id, port, dockerfile, env_vars_raw)
+
+
+def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> str:
+    if deploy_type == "docker":
+        from syte.workspace import run_cmd
+        name = container_name(project_id)
+        code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
+        return out if code == 0 else "No docker logs yet."
     log_path = workspace_path(project_id) / "app.log"
     if not log_path.exists():
         return "No logs yet."

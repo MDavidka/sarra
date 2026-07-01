@@ -1,8 +1,10 @@
 import uuid
+from pathlib import Path
 
 from syte import process_manager
 from syte.certificates import apply_proxy_config
 from syte.database import create_project, delete_project, get_project, update_project
+from syte.docker_deploy import find_dockerfile
 from syte.workspace import (
     clone_or_pull,
     detect_start_command,
@@ -18,6 +20,29 @@ def _next_port(existing: list[dict]) -> int:
     while port in used:
         port += 1
     return port
+
+
+def _resolve_deploy(project_id: str, start_command: str | None) -> dict:
+    """After git clone, detect Dockerfile or fall back to shell deploy."""
+    dockerfile = find_dockerfile(project_id)
+    if dockerfile:
+        repo = dockerfile.parent
+        app_root = ensure_workspace(project_id) / "app"
+        try:
+            rel = dockerfile.relative_to(app_root)
+        except ValueError:
+            rel = Path("Dockerfile")
+        return {
+            "deploy_type": "docker",
+            "dockerfile_path": str(rel),
+            "start_command": f"docker:{rel}",
+        }
+    cmd = start_command or detect_start_command(project_id)
+    return {
+        "deploy_type": "shell",
+        "dockerfile_path": None,
+        "start_command": cmd,
+    }
 
 
 async def deploy_service(
@@ -43,6 +68,7 @@ async def deploy_service(
         "domain": domain,
         "start_command": start_command or "npm start",
         "env_vars": env_vars or {},
+        "deploy_type": "shell",
     })
 
     ensure_workspace(project_id)
@@ -52,21 +78,28 @@ async def deploy_service(
     messages = [f"Workspace created at /var/lib/syte/workspaces/{project_id}"]
 
     if git_url:
+        messages.append("Cloning git repository…")
         ok, msg = clone_or_pull(project_id, git_url, branch)
         messages.append(msg)
         if not ok:
             return project, "\n".join(messages)
 
-        if not start_command:
-            cmd = detect_start_command(project_id)
-            await update_project(project_id, {"start_command": cmd})
-            project = await get_project(project_id)
+        deploy_info = _resolve_deploy(project_id, start_command)
+        await update_project(project_id, deploy_info)
+        project = await get_project(project_id)
+
+        if deploy_info["deploy_type"] == "docker":
+            messages.append(f"Dockerfile found: {deploy_info['dockerfile_path']}")
+        else:
+            messages.append("No Dockerfile — using shell deployment.")
 
     ok, msg = process_manager.start_project(
         project_id,
         port,
         project["start_command"],
         project["env_vars"],
+        project.get("deploy_type", "shell"),
+        project.get("dockerfile_path"),
     )
     messages.append(msg)
 
@@ -83,11 +116,12 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
     if not project:
         return None, "Project not found."
 
+    deploy_type = project.get("deploy_type", "shell")
     messages = ["Pulling latest git version…"]
-    was_running = process_manager.is_running(project_id)
+    was_running = process_manager.is_running(project_id, deploy_type)
 
     if was_running:
-        _, stop_msg = process_manager.stop_project(project_id)
+        _, stop_msg = process_manager.stop_project(project_id, deploy_type)
         messages.append(stop_msg)
 
     ok, msg = clone_or_pull(project_id, project.get("git_url"), project.get("branch", "main"))
@@ -95,13 +129,30 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
     if not ok:
         return project, "\n".join(messages)
 
+    if project.get("git_url"):
+        deploy_info = _resolve_deploy(project_id, None)
+        await update_project(project_id, deploy_info)
+        project = await get_project(project_id)
+        deploy_type = project.get("deploy_type", "shell")
+        if deploy_info["deploy_type"] == "docker":
+            messages.append(f"Dockerfile: {deploy_info['dockerfile_path']}")
+
     if was_running:
-        ok, msg = process_manager.start_project(
-            project_id,
-            project["port"],
-            project["start_command"],
-            project["env_vars"],
-        )
+        if deploy_type == "docker":
+            ok, msg = process_manager.restart_docker_project(
+                project_id,
+                project["port"],
+                project["env_vars"],
+                project.get("dockerfile_path"),
+            )
+        else:
+            ok, msg = process_manager.start_project(
+                project_id,
+                project["port"],
+                project["start_command"],
+                project["env_vars"],
+                deploy_type,
+            )
         messages.append(msg)
         status = "running" if ok else "stopped"
         await update_project(project_id, {"status": status})
@@ -116,7 +167,7 @@ async def stop_service(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found."
-    ok, msg = process_manager.stop_project(project_id)
+    ok, msg = process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
     await update_project(project_id, {"status": "stopped"})
     await apply_proxy_config()
     return await get_project(project_id), msg
@@ -131,6 +182,8 @@ async def start_service(project_id: str) -> tuple[dict | None, str]:
         project["port"],
         project["start_command"],
         project["env_vars"],
+        project.get("deploy_type", "shell"),
+        project.get("dockerfile_path"),
     )
     status = "running" if ok else "stopped"
     await update_project(project_id, {"status": status})
@@ -142,7 +195,7 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
     project = await get_project(project_id)
     if not project:
         return False, "Project not found."
-    process_manager.stop_project(project_id)
+    process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()
     return True, f"Service '{project['name']}' removed. Workspace data retained on disk."

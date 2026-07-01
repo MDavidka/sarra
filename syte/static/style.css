@@ -53,33 +53,58 @@ body {
   align-items: center;
 }
 
-/* Inline logo */
-.syte-logo {
-  display: inline-flex;
-  color: #8e8e8e;
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+/* Lucide icons */
+.lucide-icon,
+.nav-item svg,
+.back-btn svg,
+.modal-close svg,
+.btn-pill svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
   flex-shrink: 0;
 }
 
-.syte-logo svg {
-  display: block;
-  width: 100%;
-  height: auto;
+.section-icon {
+  color: var(--text-muted);
 }
 
-.syte-logo--brand {
-  width: 48px;
+.nav-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+  padding: 0.35rem;
+  background: var(--bg-card);
+  border-radius: var(--radius-pill);
+  width: fit-content;
 }
 
-.syte-logo--pill {
-  width: 18px;
+.nav-item {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
 }
 
-.syte-logo--sm {
-  width: 22px;
-}
+.nav-item:hover { color: var(--text); background: var(--bg-card-hover); }
+.nav-item.active { color: var(--accent-fg); background: var(--accent); }
 
-.btn-settings .syte-logo--pill {
-  color: rgba(255, 255, 255, 0.75);
+/* Inline logo - removed */
+.syte-logo {
+  display: none;
 }
 
 /* Pill buttons */
@@ -545,7 +570,15 @@ code {
 @media (max-width: 640px) {
   .app { padding: 1.5rem 1.15rem 2.5rem; }
 
-  .topbar { margin-bottom: 1.75rem; }
+  .topbar { margin-bottom: 1.5rem; }
+
+  .nav-bar {
+    width: 100%;
+    justify-content: space-around;
+    margin-bottom: 1.5rem;
+  }
+
+  .nav-item { flex: 1; }
 
   .stats-row {
     gap: 0.75rem;

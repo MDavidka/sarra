@@ -3,12 +3,20 @@ const API = '/api';
 let projects = [];
 
 function injectLogos() {
-  const tpl = document.getElementById('logo-tpl');
-  if (!tpl) return;
-  document.querySelectorAll('[data-logo]').forEach(slot => {
-    if (slot.querySelector('svg')) return;
-    slot.appendChild(tpl.content.cloneNode(true));
+  /* brand icon is served from /static/icon.png */
+}
+
+function refreshIcons() {
+  if (window.lucide) lucide.createIcons();
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name)?.classList.add('active');
+  document.querySelectorAll('[data-view]').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === name);
   });
+  refreshIcons();
 }
 
 async function api(path, opts = {}) {
@@ -25,14 +33,6 @@ async function api(path, opts = {}) {
     throw new Error(message);
   }
   return res.json();
-}
-
-function showView(name) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.getElementById('view-' + name)?.classList.add('active');
-  document.querySelectorAll('[data-view]').forEach(el => {
-    el.classList.toggle('active', el.dataset.view === name);
-  });
 }
 
 function toast(msg) {
@@ -107,6 +107,7 @@ function renderServices() {
           ${p.running ? 'running' : 'stopped'}
         </span>
         <span class="badge" style="background:#2a2a2a;color:#8e8e8e">:${p.port}</span>
+        <span class="badge" style="background:#2a2a2a;color:#8e8e8e">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
       </div>
       <div class="service-url">
         <a href="${esc(p.url)}" target="_blank" onclick="event.stopPropagation()">${esc(p.url)}</a>
@@ -127,6 +128,7 @@ async function openService(id) {
     <div class="detail-row"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
     <div class="detail-row"><span>git</span><span style="max-width:60%;word-break:break-all;text-align:right">${esc(p.git_url || '—')}</span></div>
     <div class="detail-row"><span>branch</span><span>${esc(p.branch)}</span></div>
+    <div class="detail-row"><span>deploy</span><span>${esc(p.deploy_type || 'shell')}${p.dockerfile_path ? ' (' + esc(p.dockerfile_path) + ')' : ''}</span></div>
     <div class="detail-row"><span>workspace</span><span style="font-size:0.72rem;text-align:right">/var/lib/syte/workspaces/${esc(p.id)}</span></div>
     <div class="logs-box" id="modal-logs">loading logs…</div>
   `;
@@ -142,6 +144,7 @@ async function openService(id) {
   `;
 
   document.getElementById('modal').classList.remove('hidden');
+  refreshIcons();
 
   try {
     const { logs } = await api(`/projects/${id}/logs`);
@@ -293,4 +296,4 @@ function esc(s) {
 loadSystem();
 loadProjects();
 loadSettings();
-injectLogos();
+refreshIcons();

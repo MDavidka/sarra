@@ -33,7 +33,17 @@ async def init_db() -> None:
     settings.resolved_workspaces_dir.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.executescript(SCHEMA)
+        await _migrate(db)
         await db.commit()
+
+
+async def _migrate(db: aiosqlite.Connection) -> None:
+    async with db.execute("PRAGMA table_info(projects)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    if "deploy_type" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN deploy_type TEXT DEFAULT 'shell'")
+    if "dockerfile_path" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN dockerfile_path TEXT")
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -83,8 +93,9 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
             """INSERT INTO projects
-            (id, name, git_url, branch, port, domain, start_command, env_vars, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, name, git_url, branch, port, domain, start_command, env_vars,
+             deploy_type, dockerfile_path, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["name"],
@@ -94,6 +105,8 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("domain"),
                 data.get("start_command", "npm start"),
                 json.dumps(data.get("env_vars", {})),
+                data.get("deploy_type", "shell"),
+                data.get("dockerfile_path"),
                 "stopped",
                 now,
                 now,
@@ -110,7 +123,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
 
     allowed = {
         "name", "git_url", "branch", "port", "domain",
-        "start_command", "env_vars", "status",
+        "start_command", "env_vars", "status", "deploy_type", "dockerfile_path",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):

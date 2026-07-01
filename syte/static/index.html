@@ -5,28 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Syte</title>
-  <link rel="icon" href="/static/logo.svg?v=__VERSION__" type="image/svg+xml">
+  <link rel="icon" href="/static/icon.png?v=__VERSION__" type="image/png">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <template id="logo-tpl">
-    <svg class="syte-logo" viewBox="0 0 56 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path fill="currentColor" d="M6 30V12.5C6 9.46 8.46 7 11.5 7H17c1.45 0 2.82.64 3.75 1.75L26.5 18.2c.72.86 2.08.86 2.8 0l5.75-9.45A4.75 4.75 0 0 1 38.8 7H44.5C47.54 7 50 9.46 50 12.5V30c0 1.38-1.12 2.5-2.5 2.5S45 31.38 45 30V15.2l-6.1 10.05a5.2 5.2 0 0 1-4.4 2.45 5.2 5.2 0 0 1-4.4-2.45L24.1 15.2V30c0 1.38-1.12 2.5-2.5 2.5S19 31.38 19 30Z"/>
-    </svg>
-  </template>
-
   <div class="app">
     <header class="topbar">
       <button class="logo-btn" onclick="showView('dashboard')" aria-label="Dashboard">
-        <span class="syte-logo syte-logo--brand" data-logo></span>
+        <img src="/static/icon.png?v=__VERSION__" alt="Syte" class="brand-icon">
       </button>
       <button class="btn-pill btn-settings" data-view="settings" onclick="showView('settings')">
-        <span class="syte-logo syte-logo--pill" data-logo></span>
+        <i data-lucide="settings" class="lucide-icon"></i>
         <span>settings</span>
       </button>
     </header>
+
+    <nav class="nav-bar" aria-label="Main navigation">
+      <button class="nav-item active" data-view="dashboard" title="Dashboard" onclick="showView('dashboard')">
+        <i data-lucide="layout-dashboard"></i>
+      </button>
+      <button class="nav-item" data-view="new-service" title="New service" onclick="showView('new-service')">
+        <i data-lucide="plus-circle"></i>
+      </button>
+      <button class="nav-item" data-view="settings" title="Settings" onclick="showView('settings')">
+        <i data-lucide="settings"></i>
+      </button>
+    </nav>
 
     <main class="content">
       <section id="view-dashboard" class="view active">
@@ -48,10 +55,16 @@
         <div class="panel">
           <div id="services-list" class="services-grid"></div>
           <div id="empty-state" class="empty-state">
-            <button class="btn-pill btn-primary" onclick="showView('new-service')">+ new service</button>
+            <button class="btn-pill btn-primary" onclick="showView('new-service')">
+              <i data-lucide="plus"></i>
+              <span>new service</span>
+            </button>
           </div>
           <div id="panel-footer" class="panel-footer hidden">
-            <button class="btn-pill btn-primary" onclick="showView('new-service')">+ new service</button>
+            <button class="btn-pill btn-primary" onclick="showView('new-service')">
+              <i data-lucide="plus"></i>
+              <span>new service</span>
+            </button>
           </div>
         </div>
       </section>
@@ -60,7 +73,7 @@
         <div class="panel panel-form">
           <div class="panel-head">
             <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
-              <span class="syte-logo syte-logo--sm" data-logo></span>
+              <i data-lucide="arrow-left"></i>
             </button>
             <h1>new service</h1>
           </div>
@@ -85,8 +98,8 @@
             </div>
             <div class="form-group">
               <label for="svc-cmd">start command</label>
-              <input type="text" id="svc-cmd" placeholder="npm install && npm start">
-              <span class="hint">leave blank to auto-detect</span>
+              <input type="text" id="svc-cmd" placeholder="auto-detected if no dockerfile">
+              <span class="hint">git is cloned first — if a dockerfile is found, docker deployment is used automatically</span>
             </div>
             <div class="form-group">
               <label for="svc-env">environment variables</label>
@@ -94,7 +107,10 @@
             </div>
             <div class="form-actions">
               <button type="button" class="btn-pill btn-ghost" onclick="showView('dashboard')">cancel</button>
-              <button type="submit" class="btn-pill btn-primary" id="deploy-btn">deploy</button>
+              <button type="submit" class="btn-pill btn-primary" id="deploy-btn">
+                <i data-lucide="rocket"></i>
+                <span>deploy</span>
+              </button>
             </div>
           </form>
           <div id="deploy-result" class="result-box hidden"></div>
@@ -105,7 +121,7 @@
         <div class="settings-stack">
           <div class="panel panel-form">
             <div class="panel-head">
-              <span class="syte-logo syte-logo--sm" data-logo></span>
+              <i data-lucide="server" class="lucide-icon section-icon"></i>
               <h2>server</h2>
             </div>
             <div class="form-inner">
@@ -123,7 +139,7 @@
 
           <div class="panel panel-form">
             <div class="panel-head">
-              <span class="syte-logo syte-logo--sm" data-logo></span>
+              <i data-lucide="globe" class="lucide-icon section-icon"></i>
               <h2>web gui domain</h2>
             </div>
             <div class="form-inner">
@@ -142,7 +158,7 @@
 
           <div class="panel panel-form">
             <div class="panel-head">
-              <span class="syte-logo syte-logo--sm" data-logo></span>
+              <i data-lucide="refresh-cw" class="lucide-icon section-icon"></i>
               <h2>update syte</h2>
             </div>
             <div class="form-inner">
@@ -152,7 +168,10 @@
                   <span class="version-label">installed</span>
                   <span class="version-value" id="syte-version">—</span>
                 </div>
-                <button class="btn-pill btn-primary" id="update-syte-btn">update syte</button>
+                <button class="btn-pill btn-primary" id="update-syte-btn">
+                  <i data-lucide="download"></i>
+                  <span>update syte</span>
+                </button>
               </div>
               <div id="update-result" class="result-box hidden"></div>
             </div>
@@ -166,7 +185,7 @@
     <div class="modal-backdrop" onclick="closeModal()"></div>
     <div class="modal-content panel">
       <button class="modal-close" onclick="closeModal()" aria-label="Close">
-        <span class="syte-logo syte-logo--sm" data-logo></span>
+        <i data-lucide="x"></i>
       </button>
       <h2 id="modal-title"></h2>
       <div id="modal-body"></div>

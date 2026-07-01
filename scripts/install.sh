@@ -20,6 +20,11 @@ if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
   apt-get update -qq
   apt-get install -y -qq python3 python3-pip python3-venv git curl
 
+  if ! command -v docker &>/dev/null; then
+    echo "==> Installing Docker (for Dockerfile deployments)"
+    apt-get install -y -qq docker.io 2>/dev/null || echo "Docker install skipped — install manually for Dockerfile deploys"
+  fi
+
   if ! command -v caddy &>/dev/null; then
     echo "==> Installing Caddy (reverse proxy + auto TLS)"
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl 2>/dev/null || true
@@ -47,6 +52,13 @@ WRAPPER
 else
   "$VENV_DIR/bin/pip" install --upgrade pip -q
   "$VENV_DIR/bin/pip" install -r "$SYTE_DIR/requirements.txt" -q
+fi
+
+# Brand icon
+ICON="$SYTE_DIR/syte/static/icon.png"
+if [[ ! -f "$ICON" ]]; then
+  echo "==> Downloading brand icon"
+  curl -fsSL "https://i.ibb.co/HM3PGdS/IMG-0615.png" -o "$ICON" 2>/dev/null || true
 fi
 
 # Data directories

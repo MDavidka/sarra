@@ -169,13 +169,19 @@ async def api_update_syte():
     return {"ok": True, "message": message}
 
 
+def _running(project: dict) -> bool:
+    return process_manager.is_running(
+        project["id"], project.get("deploy_type", "shell")
+    )
+
+
 @app.get("/api/projects")
 async def api_list_projects():
     projects = await list_projects()
     enriched = []
     for p in projects:
         p = dict(p)
-        p["running"] = process_manager.is_running(p["id"])
+        p["running"] = _running(p)
         p["url"] = _project_url(p)
         p["env_vars"] = _parse_env(p.get("env_vars"))
         enriched.append(p)
@@ -188,7 +194,7 @@ async def api_get_project(project_id: str):
     if not project:
         raise HTTPException(404, "Project not found")
     project = dict(project)
-    project["running"] = process_manager.is_running(project_id)
+    project["running"] = _running(project)
     project["url"] = _project_url(project)
     project["env_vars"] = _parse_env(project.get("env_vars"))
     return project
@@ -207,7 +213,7 @@ async def api_create_project(body: CreateServiceRequest):
     if not project:
         raise HTTPException(500, message)
     project = dict(project)
-    project["running"] = process_manager.is_running(project["id"])
+    project["running"] = _running(project)
     project["url"] = _project_url(project)
     project["env_vars"] = _parse_env(project.get("env_vars"))
     return {"project": project, "message": message}
@@ -221,7 +227,7 @@ async def api_update_project(project_id: str, body: UpdateProjectRequest):
         raise HTTPException(404, "Project not found")
     ok, msg = await apply_proxy_config()
     project = dict(project)
-    project["running"] = process_manager.is_running(project_id)
+    project["running"] = _running(project)
     project["url"] = _project_url(project)
     return {"project": project, "message": msg}
 
@@ -274,7 +280,11 @@ async def api_logs(project_id: str, lines: int = 100):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return {"logs": process_manager.get_logs(project_id, lines)}
+    return {
+        "logs": process_manager.get_logs(
+            project_id, lines, project.get("deploy_type", "shell")
+        )
+    }
 
 
 def _parse_env(raw: Any) -> dict:
@@ -295,7 +305,7 @@ def _project_url(project: dict) -> str:
 
 def _enrich(project: dict) -> dict:
     p = dict(project)
-    p["running"] = process_manager.is_running(p["id"])
+    p["running"] = _running(p)
     p["url"] = _project_url(p)
     p["env_vars"] = _parse_env(p.get("env_vars"))
     return p
