@@ -25,10 +25,13 @@ async def maintain() -> None:
 
         if deploy_type == "shell" and "npm" in (start_cmd or "").lower():
             if not command_exists("npm"):
-                logger.error("Stopping %s — npm not installed", pid)
-                await update_project(pid, {"status": "stopped"})
-                _fail_counts.pop(pid, None)
-                continue
+                from syte.runtime import ensure_npm
+                ok, msg = ensure_npm()
+                if not ok:
+                    logger.error("Stopping %s — %s", pid, msg)
+                    await update_project(pid, {"status": "stopped"})
+                    _fail_counts.pop(pid, None)
+                    continue
 
         if process_manager.is_running(pid, deploy_type):
             _fail_counts.pop(pid, None)

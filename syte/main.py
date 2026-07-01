@@ -22,7 +22,7 @@ from syte.database import (
 )
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
-from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
 from syte import supervisor
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -51,6 +51,10 @@ async def lifespan(app: FastAPI):
         cleaned = normalize_domain(gui_domain)
         if cleaned != gui_domain:
             await set_setting("gui_domain", cleaned)
+    stored_ip = await get_setting("public_ip", "")
+    if stored_ip and not is_valid_ip(stored_ip):
+        await set_setting("public_ip", "")
+        settings.public_ip = ""
     await supervisor.startup()
     task = asyncio.create_task(supervisor.supervisor_loop())
     yield
@@ -99,11 +103,31 @@ async def health():
     return {"status": "ok", "version": __version__}
 
 
+def _resolved_ip() -> str:
+    stored = settings.public_ip
+    if stored and is_valid_ip(stored):
+        return stored
+    stored_db = ""  # resolved at call time via settings after init
+    return _detect_ip()
+
+
+def _detect_ip() -> str:
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip if is_valid_ip(ip) else "127.0.0.1"
+    except OSError:
+        return "127.0.0.1"
+
+
 @app.get("/api/system")
 async def system_info():
     projects = await list_projects()
-    ip = settings.resolved_public_ip
-    gui_domain = await get_setting("gui_domain", "")
+    ip = _resolved_ip()
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     direct = build_direct_url(ip, settings.port)
     return {
         "version": __version__,
@@ -112,25 +136,29 @@ async def system_info():
         "direct_url": direct,
         "gui_url": build_https_url(gui_domain) if gui_domain else direct,
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
-        "gui_domain": normalize_domain(gui_domain) if gui_domain else "",
+        "gui_domain": gui_domain,
         "workspaces_dir": str(settings.resolved_workspaces_dir),
         "service_count": len(projects),
     }
 
 
 async def _gui_url() -> str:
-    domain = await get_setting("gui_domain", "")
+    domain = normalize_domain(await get_setting("gui_domain", ""))
     if domain:
         return build_https_url(domain)
-    return build_direct_url(settings.resolved_public_ip, settings.port)
+    return build_direct_url(_resolved_ip(), settings.port)
 
 
 @app.get("/api/settings")
 async def get_settings():
+    ip = _resolved_ip()
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     return {
-        "public_ip": await get_setting("public_ip", settings.resolved_public_ip),
+        "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
-        "gui_domain": await get_setting("gui_domain", ""),
+        "gui_domain": gui_domain,
+        "direct_url": build_direct_url(ip, settings.port),
+        "domain_url": build_https_url(gui_domain) if gui_domain else "",
         "version": __version__,
     }
 
@@ -139,9 +167,12 @@ async def get_settings():
 async def save_settings(body: SettingsRequest):
     messages = []
     if body.public_ip is not None:
-        await set_setting("public_ip", body.public_ip)
-        settings.public_ip = body.public_ip
-        messages.append(f"Public IP set to {body.public_ip}")
+        ip = body.public_ip.strip()
+        if ip and not is_valid_ip(ip):
+            raise HTTPException(400, "Public IP must be an IPv4 address (e.g. 152.89.245.113), not a domain.")
+        await set_setting("public_ip", ip)
+        settings.public_ip = ip
+        messages.append(f"Public IP set to {ip}" if ip else "Public IP cleared (auto-detect)")
 
     if body.admin_email is not None:
         await set_setting("admin_email", body.admin_email)
@@ -172,9 +203,13 @@ async def save_settings(body: SettingsRequest):
             await set_setting("gui_domain", "")
             ok, msg = await apply_proxy_config()
             messages.append("GUI domain removed." if ok else msg)
-        return {"ok": True, "messages": messages, "gui_url": await _gui_url(),
-                "direct_url": build_direct_url(settings.resolved_public_ip, settings.port),
-                "domain_url": build_https_url(domain) if domain else ""}
+        return {
+            "ok": True,
+            "messages": messages,
+            "gui_url": await _gui_url(),
+            "direct_url": build_direct_url(_resolved_ip(), settings.port),
+            "domain_url": build_https_url(domain) if domain else "",
+        }
 
     ok, msg = await apply_proxy_config()
     messages.append(msg)

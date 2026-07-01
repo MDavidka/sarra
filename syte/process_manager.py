@@ -14,7 +14,7 @@ from syte.docker_deploy import (
     rebuild_docker,
     stop_docker,
 )
-from syte.workspace import ensure_workspace, read_env_vars, workspace_path
+from syte.runtime import ensure_runtime_for_command
 
 PID_DIR = settings.data_dir / "pids"
 
@@ -101,6 +101,10 @@ def start_project(
     err = validate_shell_command(start_command)
     if err:
         return False, err
+
+    ok, install_msg = ensure_runtime_for_command(start_command)
+    if not ok:
+        return False, install_msg
 
     ws = ensure_workspace(project_id)
     repo = ws / "app"

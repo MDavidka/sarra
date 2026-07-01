@@ -108,6 +108,12 @@ def detect_start_command(project_id: str) -> tuple[str | None, str | None]:
     """Return (command, error_message). error is set when detection fails."""
     repo = workspace_path(project_id) / "app"
 
+    if (repo / "package.json").exists() and not command_exists("npm"):
+        from syte.runtime import ensure_npm
+        ok, msg = ensure_npm()
+        if not ok:
+            return None, msg
+
     node_cmd = _node_start_command(repo)
     if node_cmd:
         return node_cmd, None

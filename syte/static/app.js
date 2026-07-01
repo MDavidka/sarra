@@ -69,10 +69,10 @@ async function loadSystem() {
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const directUrl = document.getElementById('direct-url');
-    if (directUrl) directUrl.textContent = sys.direct_url || sys.gui_url;
+    if (directUrl) directUrl.textContent = sys.direct_url;
     const guiUrl = document.getElementById('gui-url');
     if (guiUrl) {
-      guiUrl.textContent = sys.domain_url || sys.gui_domain || 'not configured';
+      guiUrl.textContent = sys.domain_url || 'not configured';
     }
     const ver = document.getElementById('syte-version');
     if (ver) ver.textContent = 'v' + sys.version;
@@ -287,10 +287,14 @@ async function loadSettings() {
     const ip = document.getElementById('set-ip');
     const email = document.getElementById('set-email');
     const domain = document.getElementById('set-domain');
+    const directUrl = document.getElementById('direct-url');
+    const guiUrl = document.getElementById('gui-url');
     const ver = document.getElementById('syte-version');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
+    if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
+    if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
   } catch { /* */ }
 }

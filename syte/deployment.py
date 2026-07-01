@@ -4,7 +4,7 @@ from pathlib import Path
 from syte import process_manager
 from syte.certificates import apply_proxy_config
 from syte.database import create_project, delete_project, get_project, update_project
-from syte.docker_deploy import find_dockerfile
+from syte.runtime import ensure_runtime_for_command
 from syte.workspace import (
     clone_or_pull,
     detect_start_command,
