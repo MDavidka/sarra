@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syte — Deploy</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-mark">◆</span>
+        <span class="logo-text">Syte</span>
+      </div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="new-service">New Service</button>
+        <button class="nav-item" data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="system-badge" id="sys-ip">—</div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view active">
+        <header class="page-header">
+          <div>
+            <h1>Services</h1>
+            <p class="subtitle">Deployed apps on this workspace VM</p>
+          </div>
+          <button class="btn btn-primary" onclick="showView('new-service')">+ New Service</button>
+        </header>
+        <div id="services-list" class="services-grid"></div>
+        <div id="empty-state" class="empty-state hidden">
+          <p>No services yet.</p>
+          <button class="btn btn-primary" onclick="showView('new-service')">Deploy your first app</button>
+        </div>
+      </section>
+
+      <!-- New Service -->
+      <section id="view-new-service" class="view">
+        <header class="page-header">
+          <div>
+            <h1>New Service</h1>
+            <p class="subtitle">Each project gets its own workspace on this VM</p>
+          </div>
+        </header>
+        <form id="create-form" class="form-card">
+          <div class="form-group">
+            <label for="svc-name">Service Name</label>
+            <input type="text" id="svc-name" required placeholder="my-app">
+          </div>
+          <div class="form-group">
+            <label for="svc-git">Git Repository URL</label>
+            <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="svc-branch">Branch</label>
+              <input type="text" id="svc-branch" value="main">
+            </div>
+            <div class="form-group">
+              <label for="svc-domain">Custom Domain (optional)</label>
+              <input type="text" id="svc-domain" placeholder="app.example.com">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="svc-cmd">Start Command</label>
+            <input type="text" id="svc-cmd" placeholder="npm install && npm start">
+            <span class="hint">Leave blank to auto-detect from repo</span>
+          </div>
+          <div class="form-group">
+            <label for="svc-env">Environment Variables (KEY=VALUE per line)</label>
+            <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" onclick="showView('dashboard')">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Service</button>
+          </div>
+        </form>
+        <div id="deploy-result" class="result-box hidden"></div>
+      </section>
+
+      <!-- Settings -->
+      <section id="view-settings" class="view">
+        <header class="page-header">
+          <div>
+            <h1>Settings</h1>
+            <p class="subtitle">Server configuration, domains &amp; updates</p>
+          </div>
+        </header>
+
+        <div class="settings-grid">
+          <div class="form-card">
+            <h2>Server</h2>
+            <div class="form-group">
+              <label for="set-ip">Public IP</label>
+              <input type="text" id="set-ip" placeholder="Auto-detected">
+            </div>
+            <div class="form-group">
+              <label for="set-email">Admin Email (for certificates)</label>
+              <input type="email" id="set-email" placeholder="admin@example.com">
+            </div>
+            <button class="btn btn-primary" id="save-server-btn">Save Server Settings</button>
+          </div>
+
+          <div class="form-card">
+            <h2>Custom Domain</h2>
+            <p class="hint block">Syte issues TLS certificates automatically via Caddy.</p>
+            <div class="form-group">
+              <label for="set-project">Service</label>
+              <select id="set-project"></select>
+            </div>
+            <div class="form-group">
+              <label for="set-domain">Domain</label>
+              <input type="text" id="set-domain" placeholder="app.yourdomain.com">
+            </div>
+            <button class="btn btn-primary" id="save-domain-btn">Apply Domain &amp; Issue Certificate</button>
+          </div>
+
+          <div class="form-card full-width">
+            <h2>Update Service</h2>
+            <p class="hint block">Pull the newest git version to the VM and restart the app. All data in the workspace <code>/data</code> directory is preserved.</p>
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label for="update-project">Service to Update</label>
+                <select id="update-project"></select>
+              </div>
+              <div class="form-group align-end">
+                <button class="btn btn-primary" id="update-btn">Pull &amp; Restart</button>
+              </div>
+            </div>
+            <div id="update-result" class="result-box hidden"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Service detail modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal()"></div>
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <h2 id="modal-title"></h2>
+      <div id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

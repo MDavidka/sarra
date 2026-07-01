@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DATA_DIR="${SYTE_DATA_DIR:-/var/lib/syte}"
+VENV_DIR="${SYTE_DIR}/.venv"
+
+echo "==> Installing Syte deployment service"
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Run with sudo for system-wide install: sudo ./scripts/install.sh"
+  INSTALL_SYSTEM=false
+else
+  INSTALL_SYSTEM=true
+fi
+
+# System packages (requires root)
+if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
+  echo "==> Installing system dependencies"
+  apt-get update -qq
+  apt-get install -y -qq python3 python3-pip python3-venv git curl
+
+  if ! command -v caddy &>/dev/null; then
+    echo "==> Installing Caddy (reverse proxy + auto TLS)"
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl 2>/dev/null || true
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || true
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list 2>/dev/null || true
+    apt-get update -qq && apt-get install -y -qq caddy 2>/dev/null || echo "Caddy install skipped — install manually for HTTPS"
+  fi
+fi
+
+# Python venv
+echo "==> Setting up Python environment"
+if ! python3 -m venv "$VENV_DIR" 2>/dev/null; then
+  echo "    venv unavailable — installing with pip --user"
+  pip3 install --user -r "$SYTE_DIR/requirements.txt" -q
+  cat > "$SYTE_DIR/scripts/start.sh.local" << 'WRAPPER'
+#!/usr/bin/env bash
+SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
+export SYTE_DATA_DIR="${SYTE_DATA_DIR:-/var/lib/syte}"
+mkdir -p "$SYTE_DATA_DIR/workspaces" "$SYTE_DATA_DIR/pids"
+exec python3 -m uvicorn syte.main:app --host "${SYTE_HOST:-0.0.0.0}" --port "${SYTE_PORT:-8787}" --app-dir "$SYTE_DIR"
+WRAPPER
+  chmod +x "$SYTE_DIR/scripts/start.sh.local"
+  echo "    Use ./scripts/start.sh.local to start"
+else
+  "$VENV_DIR/bin/pip" install --upgrade pip -q
+  "$VENV_DIR/bin/pip" install -r "$SYTE_DIR/requirements.txt" -q
+fi
+
+# Data directories
+echo "==> Creating data directories"
+mkdir -p "$DATA_DIR/workspaces" "$DATA_DIR/pids"
+chmod 755 "$DATA_DIR"
+
+# Systemd service
+if [[ "$INSTALL_SYSTEM" == true ]]; then
+  echo "==> Installing systemd service"
+  sed "s|__SYTE_DIR__|${SYTE_DIR}|g; s|__DATA_DIR__|${DATA_DIR}|g" \
+    "$SYTE_DIR/systemd/syte.service" > /etc/systemd/system/syte.service
+  systemctl daemon-reload
+  systemctl enable syte
+  echo "    systemctl start syte"
+fi
+
+echo ""
+echo "✓ Syte installed."
+echo "  Start the web GUI:  ./scripts/start.sh"
+if [[ "$INSTALL_SYSTEM" == true ]]; then
+  echo "  Or as a service:    sudo systemctl start syte"
+fi
