@@ -1,6 +1,48 @@
 const API = '/api';
+const API_KEY_STORAGE = 'syte_api_key';
 
 let projects = [];
+let logStream = null;
+
+function getApiKey() {
+  return localStorage.getItem(API_KEY_STORAGE) || '';
+}
+
+function setApiKey(key) {
+  if (key) localStorage.setItem(API_KEY_STORAGE, key);
+  else localStorage.removeItem(API_KEY_STORAGE);
+}
+
+function stopLogStream() {
+  if (logStream) {
+    logStream.close();
+    logStream = null;
+  }
+}
+
+function startLogStream(projectId, targetEl) {
+  stopLogStream();
+  if (!targetEl) return;
+  targetEl.textContent = '';
+  const key = getApiKey();
+  const url = key
+    ? `${API}/projects/${projectId}/logs/stream?api_key=${encodeURIComponent(key)}`
+    : `${API}/projects/${projectId}/logs/stream`;
+  logStream = new EventSource(url);
+  logStream.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.text) {
+        targetEl.textContent += msg.text + '\n';
+        targetEl.scrollTop = targetEl.scrollHeight;
+      }
+    } catch { /* ping */ }
+  };
+  logStream.onerror = () => {
+    targetEl.textContent += '\n[log stream disconnected]\n';
+    stopLogStream();
+  };
+}
 
 function injectLogos() {
   /* brand icon is served from /static/icon.png */
@@ -11,19 +53,21 @@ function refreshIcons() {
 }
 
 function showView(name) {
+  if (name !== 'new-service') stopLogStream();
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelectorAll('[data-view]').forEach(el => {
     el.classList.toggle('active', el.dataset.view === name);
   });
+  if (name === 'api-keys') loadTokens();
   refreshIcons();
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const key = getApiKey();
+  if (key) headers['X-API-Key'] = key;
+  const res = await fetch(API + path, { headers, ...opts });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     const detail = err.detail;
@@ -150,15 +194,12 @@ async function openService(id) {
   document.getElementById('modal').classList.remove('hidden');
   refreshIcons();
 
-  try {
-    const { logs } = await api(`/projects/${id}/logs`);
-    document.getElementById('modal-logs').textContent = logs;
-  } catch {
-    document.getElementById('modal-logs').textContent = 'could not load logs.';
-  }
+  const logsEl = document.getElementById('modal-logs');
+  startLogStream(id, logsEl);
 }
 
 function closeModal() {
+  stopLogStream();
   document.getElementById('modal').classList.add('hidden');
 }
 
@@ -198,18 +239,11 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   try {
     const res = await api('/projects', { method: 'POST', body: JSON.stringify(body) });
     const box = document.getElementById('deploy-result');
-    let output = res.message || '';
-    try {
-      const { logs } = await api(`/projects/${res.project.id}/logs`);
-      if (logs && logs !== 'No logs yet.') {
-        output += '\n\n' + logs;
-      }
-    } catch { /* logs may not exist yet */ }
-    box.textContent = output;
+    box.textContent = res.message || 'Deploy started…';
     box.classList.remove('hidden');
-    toast(`deployed: ${res.project.name}`);
+    startLogStream(res.project.id, box);
+    toast(`deploying: ${res.project.name}`);
     await loadProjects();
-    setTimeout(() => showView('dashboard'), 1500);
   } catch (err) {
     toast('deploy failed: ' + err.message);
   } finally {
@@ -313,7 +347,61 @@ function esc(s) {
   return d.innerHTML;
 }
 
+async function loadTokens() {
+  const list = document.getElementById('tokens-list');
+  if (!list) return;
+  try {
+    const res = await api('/tokens');
+    if (!res.tokens?.length) {
+      list.innerHTML = '<p class="hint">no tokens yet</p>';
+      return;
+    }
+    list.innerHTML = res.tokens.map(t => `
+      <div class="token-row">
+        <div>
+          <strong>${esc(t.name)}</strong>
+          <span class="hint"> ${esc(t.prefix)}…</span>
+        </div>
+        <button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button>
+      </div>
+    `).join('');
+    refreshIcons();
+  } catch {
+    list.innerHTML = '<p class="hint">could not load tokens</p>';
+  }
+}
+
+async function revokeToken(id) {
+  if (!confirm('Revoke this API token?')) return;
+  try {
+    await api(`/tokens/${id}`, { method: 'DELETE' });
+    toast('token revoked');
+    await loadTokens();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+document.getElementById('create-token-btn')?.addEventListener('click', async () => {
+  const name = document.getElementById('token-name')?.value || 'default';
+  try {
+    const res = await api('/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    const box = document.getElementById('new-token-box');
+    box.textContent = `Token (copy now):\n${res.token}`;
+    box.classList.remove('hidden');
+    setApiKey(res.token);
+    toast('token created — saved to browser');
+    await loadTokens();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+});
+
 loadSystem();
 loadProjects();
 loadSettings();
+loadTokens();
 refreshIcons();

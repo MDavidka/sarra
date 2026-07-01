@@ -17,6 +17,14 @@
       <button class="logo-btn" onclick="showView('dashboard')" aria-label="Dashboard">
         <img src="/static/icon.png?v=__VERSION__" alt="Syte" class="brand-icon">
       </button>
+      <button class="btn-pill btn-settings" data-view="api-docs" onclick="window.location.href='/api/'">
+        <i data-lucide="book-open" class="lucide-icon"></i>
+        <span>api</span>
+      </button>
+      <button class="btn-pill btn-settings" data-view="api-keys" onclick="showView('api-keys')">
+        <i data-lucide="key" class="lucide-icon"></i>
+        <span>key</span>
+      </button>
       <button class="btn-pill btn-settings" data-view="settings" onclick="showView('settings')">
         <i data-lucide="settings" class="lucide-icon"></i>
         <span>settings</span>
@@ -29,6 +37,9 @@
       </button>
       <button class="nav-item" data-view="new-service" title="New service" onclick="showView('new-service')">
         <i data-lucide="plus-circle"></i>
+      </button>
+      <button class="nav-item" data-view="api-keys" title="API keys" onclick="showView('api-keys')">
+        <i data-lucide="key"></i>
       </button>
       <button class="nav-item" data-view="settings" title="Settings" onclick="showView('settings')">
         <i data-lucide="settings"></i>
@@ -114,6 +125,28 @@
             </div>
           </form>
           <div id="deploy-result" class="result-box hidden"></div>
+        </div>
+      </section>
+
+      <section id="view-api-keys" class="view">
+        <div class="panel panel-form">
+          <div class="panel-head">
+            <i data-lucide="key" class="lucide-icon section-icon"></i>
+            <h2>api keys</h2>
+          </div>
+          <div class="form-inner">
+            <p class="hint block">create tokens for the external API — see <a href="/api/" style="color:#85c1e9">api documentation</a></p>
+            <div class="form-group">
+              <label for="token-name">token name</label>
+              <input type="text" id="token-name" placeholder="ci-deploy">
+            </div>
+            <button class="btn-pill btn-primary" id="create-token-btn">
+              <i data-lucide="plus"></i>
+              <span>create token</span>
+            </button>
+            <div id="new-token-box" class="result-box hidden"></div>
+            <div id="tokens-list" class="tokens-list"></div>
+          </div>
         </div>
       </section>
 

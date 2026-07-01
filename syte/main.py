@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,9 @@ from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
 from syte.self_update import update_syte
+from syte import auth
+from syte import api_router
+from syte.log_stream import stream_project_logs
 import logging
 
 from syte import supervisor
@@ -74,7 +77,13 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Syte", version=__version__, lifespan=lifespan)
+app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/openapi", redoc_url=None)
+
+app.include_router(api_router.router)
+
+
+class CreateTokenRequest(BaseModel):
+    name: str = "default"
 
 
 class CreateServiceRequest(BaseModel):
@@ -109,6 +118,42 @@ class UpdateProjectRequest(BaseModel):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/api", include_in_schema=False)
+@app.get("/api/", include_in_schema=False)
+async def api_documentation():
+    """API reference documentation page."""
+    html = (STATIC_DIR / "api-docs.html").read_text()
+    html = html.replace("__VERSION__", __version__)
+    return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/api/tokens")
+async def list_tokens():
+    tokens = await auth.list_tokens()
+    return {"tokens": tokens}
+
+
+@app.post("/api/tokens")
+async def create_token(body: CreateTokenRequest):
+    row = await auth.create_token(body.name)
+    return {
+        "ok": True,
+        "token": row.pop("token"),
+        "id": row["id"],
+        "name": row["name"],
+        "prefix": row["prefix"],
+        "message": "Save this token now — it will not be shown again.",
+    }
+
+
+@app.delete("/api/tokens/{token_id}")
+async def revoke_token(token_id: str):
+    ok = await auth.revoke_token(token_id)
+    if not ok:
+        raise HTTPException(404, "Token not found")
+    return {"ok": True, "message": "Token revoked"}
 
 
 def _resolved_ip() -> str:
@@ -270,7 +315,7 @@ async def api_get_project(project_id: str):
 
 @app.post("/api/projects")
 async def api_create_project(body: CreateServiceRequest):
-    project, message = await deployment.deploy_service(
+    project, message = await deployment.begin_deploy_service(
         name=body.name,
         git_url=body.git_url,
         branch=body.branch,
@@ -284,7 +329,11 @@ async def api_create_project(body: CreateServiceRequest):
     project["running"] = _running(project)
     project["url"] = _project_url(project)
     project["env_vars"] = _parse_env(project.get("env_vars"))
-    return {"project": project, "message": message}
+    return {
+        "project": project,
+        "message": message,
+        "stream_url": f"/api/projects/{project['id']}/logs/stream",
+    }
 
 
 @app.put("/api/projects/{project_id}")
@@ -353,6 +402,21 @@ async def api_logs(project_id: str, lines: int = 100):
             project_id, lines, project.get("deploy_type", "shell")
         )
     }
+
+
+@app.get("/api/projects/{project_id}/logs/stream")
+async def api_logs_stream(project_id: str, request: Request):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    if key:
+        await auth.verify_api_token_from_request(request)
+    return StreamingResponse(
+        stream_project_logs(project_id, project.get("deploy_type", "shell")),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _parse_env(raw: Any) -> dict:

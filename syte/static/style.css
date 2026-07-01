@@ -40,8 +40,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
   margin-bottom: 2.25rem;
   padding: 0 0.5rem;
+}
+
+.topbar .btn-settings {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
 }
 
 .logo-btn {
@@ -535,16 +542,32 @@ code {
 }
 
 .logs-box {
+  max-height: 320px;
+  overflow-y: auto;
   background: var(--bg-input);
   border-radius: var(--radius-sm);
   padding: 0.75rem;
   font-size: 0.72rem;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  max-height: 180px;
-  overflow-y: auto;
   white-space: pre-wrap;
   color: var(--text-muted);
   margin-top: 1rem;
+}
+
+.tokens-list {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
 }
 
 /* Toast */

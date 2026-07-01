@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syte API — __VERSION__</title>
+  <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { max-width: 820px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .sub { color: var(--text-muted); margin-bottom: 2rem; }
+    h2 { font-size: 1.1rem; margin: 2rem 0 0.75rem; border-bottom: 1px solid #2a2a2a; padding-bottom: 0.5rem; }
+    h3 { font-size: 0.95rem; margin: 1.25rem 0 0.5rem; color: var(--text-muted); }
+    .endpoint { background: var(--bg-card); border-radius: var(--radius-sm); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .method { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; background: #2a2a2a; margin-right: 0.5rem; }
+    .method-get { color: #7dcea0; }
+    .method-post { color: #85c1e9; }
+    .method-delete { color: #e57373; }
+    .path { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+    pre { background: #181818; border-radius: 10px; padding: 1rem; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5; margin: 0.5rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a2a2a; }
+    th { color: var(--text-muted); font-weight: 500; }
+    .err { color: #e57373; }
+    a { color: #85c1e9; }
+    .back { display: inline-block; margin-bottom: 1.5rem; color: var(--text-muted); text-decoration: none; }
+    .back:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <a href="/" class="back">← back to syte</a>
+  <h1>Syte API</h1>
+  <p class="sub">Version __VERSION__ — Base URL: <code id="base-url">/api</code></p>
+
+  <h2>Authentication</h2>
+  <p>All endpoints below require an API key. Create one in the Syte GUI under <strong>API Keys</strong> (navbar).</p>
+  <pre>Header:  X-API-Key: syte_xxxxxxxxxxxxxxxx
+   — or —
+Header:  Authorization: Bearer syte_xxxxxxxxxxxxxxxx</pre>
+
+  <h2>Errors</h2>
+  <table>
+    <tr><th>HTTP</th><th>error code</th><th>meaning</th></tr>
+    <tr><td class="err">401</td><td>missing_api_key</td><td>No X-API-Key or Bearer token sent</td></tr>
+    <tr><td class="err">401</td><td>invalid_api_key</td><td>Token revoked or wrong</td></tr>
+    <tr><td class="err">400</td><td>invalid_path</td><td>File path escapes workspace sandbox</td></tr>
+    <tr><td class="err">400</td><td>create_failed</td><td>Project could not be created (duplicate UUID, etc.)</td></tr>
+    <tr><td class="err">404</td><td>not_found</td><td>Project/workspace UUID does not exist</td></tr>
+    <tr><td class="err">404</td><td>delete_failed</td><td>File not found or cannot be deleted</td></tr>
+  </table>
+
+  <h2>Endpoints</h2>
+
+  <div class="endpoint">
+    <div><span class="method method-get">GET</span><span class="path">/api/workspace_list</span></div>
+    <p>List all deployment workspaces.</p>
+    <h3>Response</h3>
+    <pre>{
+  "ok": true,
+  "workspaces": [
+    {
+      "uuid": "my-app-a1b2c3",
+      "name": "my-app",
+      "status": "running",
+      "deploy_type": "docker",
+      "port": 3000,
+      "git_url": "https://github.com/user/repo.git",
+      "branch": "main",
+      "workspace_path": "/var/lib/syte/workspaces/my-app-a1b2c3"
+    }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <div><span class="method method-post">POST</span><span class="path">/api/create_project</span></div>
+    <p>Create a project and start deployment in the background. Stream logs via <code>/api/projects/{uuid}/logs/stream</code>.</p>
+    <h3>JSON body</h3>
+    <table>
+      <tr><th>field</th><th>type</th><th>required</th><th>description</th></tr>
+      <tr><td>name</td><td>string</td><td>yes</td><td>Display name</td></tr>
+      <tr><td>uuid</td><td>string</td><td>no</td><td>Custom project ID (auto-generated if omitted)</td></tr>
+      <tr><td>git_url</td><td>string</td><td>no</td><td>Full git URL</td></tr>
+      <tr><td>git_provider</td><td>string</td><td>no</td><td>Shorthand host path, e.g. <code>github.com/user/repo.git</code></td></tr>
+      <tr><td>branch</td><td>string</td><td>no</td><td>Default <code>main</code></td></tr>
+      <tr><td>start_command</td><td>string</td><td>no</td><td>Shell command if no Dockerfile</td></tr>
+      <tr><td>domain</td><td>string</td><td>no</td><td>Custom HTTPS domain</td></tr>
+      <tr><td>env_vars</td><td>object</td><td>no</td><td>Key-value environment variables</td></tr>
+    </table>
+    <h3>Example</h3>
+    <pre>curl -X POST /api/create_project \
+  -H "X-API-Key: syte_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "nexhost",
+    "git_url": "https://github.com/user/nexhost.git",
+    "branch": "main"
+  }'</pre>
+    <h3>Response</h3>
+    <pre>{
+  "ok": true,
+  "uuid": "nexhost-a1b2c3",
+  "name": "nexhost",
+  "port": 3000,
+  "message": "Deploy started...",
+  "stream_url": "/api/projects/nexhost-a1b2c3/logs/stream"
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <div><span class="method method-post">POST</span><span class="path">/api/issue_deploy</span></div>
+    <p>Re-run deploy for an existing project (git pull + rebuild/restart).</p>
+    <h3>JSON body</h3>
+    <pre>{ "uuid": "nexhost-a1b2c3" }</pre>
+  </div>
+
+  <div class="endpoint">
+    <div><span class="method method-post">POST</span><span class="path">/api/execute_command</span></div>
+    <p>Run a shell command inside a workspace (sandboxed to workspace directory).</p>
+    <h3>JSON body</h3>
+    <table>
+      <tr><th>field</th><th>type</th><th>required</th><th>description</th></tr>
+      <tr><td>uuid</td><td>string</td><td>yes</td><td>Project UUID</td></tr>
+      <tr><td>command</td><td>string</td><td>yes</td><td>Shell command</td></tr>
+      <tr><td>cwd</td><td>string</td><td>no</td><td>Relative dir, default <code>app</code></td></tr>
+      <tr><td>timeout</td><td>int</td><td>no</td><td>Seconds, default 120, max 600</td></tr>
+    </table>
+    <h3>Response</h3>
+    <pre>{ "ok": true, "exit_code": 0, "output": "..." }</pre>
+  </div>
+
+  <div class="endpoint">
+    <div><span class="method method-post">POST</span><span class="path">/api/delete_file</span></div>
+    <p>Delete a file inside a workspace.</p>
+    <h3>JSON body</h3>
+    <pre>{ "uuid": "nexhost-a1b2c3", "path": "app/temp.txt" }</pre>
+  </div>
+
+  <div class="endpoint">
+    <div><span class="method method-post">POST</span><span class="path">/api/upload_file</span></div>
+    <p>Upload a file (multipart form).</p>
+    <h3>Form fields</h3>
+    <table>
+      <tr><th>field</th><th>description</th></tr>
+      <tr><td>uuid</td><td>Project UUID</td></tr>
+      <tr><td>path</td><td>Relative destination path, e.g. <code>app/config.json</code></td></tr>
+      <tr><td>file</td><td>File binary</td></tr>
+    </table>
+    <pre>curl -X POST /api/upload_file \
+  -H "X-API-Key: syte_..." \
+  -F "uuid=nexhost-a1b2c3" \
+  -F "path=app/.env" \
+  -F "file=@.env"</pre>
+  </div>
+
+  <h2>Real-time deployment logs (SSE)</h2>
+  <div class="endpoint">
+    <div><span class="method method-get">GET</span><span class="path">/api/projects/{uuid}/logs/stream</span></div>
+    <p>Server-Sent Events stream of build and runtime logs. No auth required from browser GUI; include <code>X-API-Key</code> for programmatic access.</p>
+    <h3>Event format</h3>
+    <pre>data: {"type": "build", "text": "Step 1/21 : FROM node:22-alpine"}
+data: {"type": "container", "text": "Server listening on 3000"}
+data: {"type": "ping"}</pre>
+    <h3>JavaScript example</h3>
+    <pre>const es = new EventSource('/api/projects/UUID/logs/stream');
+es.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.text) console.log(msg.text);
+};</pre>
+  </div>
+
+  <h2>GUI endpoints (no API key)</h2>
+  <p>These are used by the web interface: <code>/api/projects</code>, <code>/api/settings</code>, <code>/api/health</code>, etc.</p>
+
+  <script>
+    document.getElementById('base-url').textContent = window.location.origin + '/api';
+  </script>
+</body>
+</html>

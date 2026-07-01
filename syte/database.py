@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS system_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
 """
 
 
@@ -147,5 +156,59 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
 async def delete_project(project_id: str) -> bool:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         cursor = await db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def create_api_token(name: str, prefix: str, token_hash: str) -> dict[str, Any]:
+    import uuid
+    token_id = uuid.uuid4().hex[:12]
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO api_tokens (id, name, prefix, token_hash, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token_id, name, prefix, token_hash, now),
+        )
+        await db.commit()
+    return {
+        "id": token_id,
+        "name": name,
+        "prefix": prefix,
+        "created_at": now,
+    }
+
+
+async def list_api_tokens() -> list[dict[str, Any]]:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, name, prefix, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_api_token_by_hash(token_hash: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM api_tokens WHERE token_hash = ?", (token_hash,)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def touch_api_token(token_id: str) -> None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "UPDATE api_tokens SET last_used_at = ? WHERE id = ?",
+            (_now(), token_id),
+        )
+        await db.commit()
+
+
+async def delete_api_token(token_id: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute("DELETE FROM api_tokens WHERE id = ?", (token_id,))
         await db.commit()
         return cursor.rowcount > 0

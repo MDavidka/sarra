@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from pathlib import Path
 
 from syte import process_manager
@@ -91,6 +92,132 @@ async def _ensure_deploy_info(project: dict) -> dict:
         return project
     await update_project(project_id, deploy_info)
     return await get_project(project_id) or project
+
+
+async def run_deploy_job(project_id: str, start_command: str | None = None) -> str:
+    """Execute deploy steps for an existing project (async, streamable logs)."""
+    project = await get_project(project_id)
+    if not project:
+        return "Project not found"
+
+    await update_project(project_id, {"status": "deploying"})
+    port = project["port"]
+    git_url = project.get("git_url")
+    branch = project.get("branch", "main")
+    messages = [f"Deploying {project_id}…"]
+
+    if git_url:
+        messages.append("Cloning/updating git repository…")
+        ok, msg = clone_or_pull(project_id, git_url, branch)
+        messages.append(msg)
+        if not ok:
+            await update_project(project_id, {"status": "stopped"})
+            return "\n".join(messages)
+
+        deploy_info, deploy_err = _resolve_deploy(project_id, start_command or project.get("start_command"))
+        await update_project(project_id, deploy_info)
+        project = await get_project(project_id)
+        if not project:
+            return "\n".join(messages)
+
+        if deploy_err:
+            messages.append(deploy_err)
+            await update_project(project_id, {"status": "stopped"})
+            return "\n".join(messages)
+
+        if deploy_info["deploy_type"] == "docker":
+            messages.append(f"Dockerfile: {deploy_info['dockerfile_path']}")
+    elif not project.get("start_command") and not start_command:
+        cmd, err = detect_start_command(project_id)
+        if err:
+            messages.append(err)
+            await update_project(project_id, {"status": "stopped"})
+            return "\n".join(messages)
+        if cmd:
+            await update_project(project_id, {"start_command": cmd})
+            project = await get_project(project_id)
+
+    if not project.get("start_command") and project.get("deploy_type") != "docker":
+        messages.append("No start command configured.")
+        await update_project(project_id, {"status": "stopped"})
+        return "\n".join(messages)
+
+    ok, msg = await asyncio.to_thread(
+        process_manager.start_project,
+        project_id,
+        port,
+        project["start_command"],
+        project["env_vars"],
+        project.get("deploy_type", "shell"),
+        project.get("dockerfile_path"),
+    )
+    messages.append(msg)
+    status = "running" if ok else "stopped"
+    await update_project(project_id, {"status": status})
+    await apply_proxy_config()
+    return "\n".join(messages)
+
+
+async def begin_deploy_service(
+    name: str,
+    git_url: str | None = None,
+    branch: str = "main",
+    start_command: str | None = None,
+    env_vars: dict | None = None,
+    domain: str | None = None,
+    git_provider: str | None = None,
+    project_uuid: str | None = None,
+) -> tuple[dict | None, str]:
+    """Create project and start deploy in background (real-time log streaming)."""
+    from syte.database import list_projects
+
+    projects = await list_projects()
+    if project_uuid:
+        project_id = project_uuid
+    else:
+        project_id = slugify(name) + "-" + uuid.uuid4().hex[:6]
+
+    if await get_project(project_id):
+        return None, f"Project UUID already exists: {project_id}"
+
+    port = _next_port(projects)
+    resolved_git = git_url
+    if git_provider and git_url and not git_url.startswith("http"):
+        resolved_git = f"https://{git_provider}/{git_url.lstrip('/')}"
+
+    project = await create_project({
+        "id": project_id,
+        "name": name,
+        "git_url": resolved_git,
+        "branch": branch,
+        "port": port,
+        "domain": domain,
+        "start_command": start_command or "",
+        "env_vars": env_vars or {},
+        "deploy_type": "docker" if resolved_git else "shell",
+    })
+
+    ensure_workspace(project_id)
+    if env_vars:
+        write_env_file(project_id, env_vars)
+
+    asyncio.create_task(run_deploy_job(project_id, start_command))
+    return project, (
+        f"Deploy started for {project_id}. "
+        f"Stream logs: GET /api/projects/{project_id}/logs/stream"
+    )
+
+
+async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
+    """Re-run deploy for an existing project (background)."""
+    project = await get_project(project_id)
+    if not project:
+        return None, "Project not found"
+    asyncio.create_task(run_deploy_job(project_id))
+    return project, (
+        f"Deploy issued for {project_id}. "
+        f"Stream logs: GET /api/projects/{project_id}/logs/stream"
+    )
 
 
 async def deploy_service(
