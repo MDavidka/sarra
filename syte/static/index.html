@@ -3,161 +3,166 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Syte — Deploy</title>
+  <title>Syte</title>
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="logo">
-        <i data-lucide="diamond" class="logo-icon"></i>
-        <span class="logo-text">Syte</span>
-      </div>
-      <div class="system-badge" id="sys-ip">—</div>
+      <button class="logo-btn" onclick="showView('dashboard')" aria-label="Dashboard">
+        <img src="/static/logo.svg" alt="" class="brand-icon">
+      </button>
+      <button class="btn-pill btn-settings" data-view="settings" onclick="showView('settings')">
+        <img src="/static/logo.svg" alt="" class="pill-icon" aria-hidden="true">
+        <span>settings</span>
+      </button>
     </header>
-
-    <nav class="nav-bar" aria-label="Main navigation">
-      <button class="nav-item active" data-view="dashboard" title="Dashboard" aria-label="Dashboard">
-        <i data-lucide="layout-dashboard"></i>
-      </button>
-      <button class="nav-item" data-view="new-service" title="New Service" aria-label="New Service">
-        <i data-lucide="plus-circle"></i>
-      </button>
-      <button class="nav-item" data-view="settings" title="Settings" aria-label="Settings">
-        <i data-lucide="settings"></i>
-      </button>
-    </nav>
 
     <main class="content">
       <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
-        <header class="page-header">
-          <div>
-            <h1>Services</h1>
-            <p class="subtitle">Deployed apps on this workspace VM</p>
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-label">services</span>
+            <span class="stat-value" id="stat-total">0</span>
           </div>
-          <button class="btn btn-primary btn-icon" onclick="showView('new-service')" title="New Service">
-            <i data-lucide="plus"></i>
-            <span class="btn-label">New Service</span>
-          </button>
-        </header>
-        <div id="services-list" class="services-grid"></div>
-        <div id="empty-state" class="empty-state hidden">
-          <p>No services yet.</p>
-          <button class="btn btn-primary" onclick="showView('new-service')">Deploy your first app</button>
+          <div class="stat-card">
+            <span class="stat-label">running</span>
+            <span class="stat-value" id="stat-running">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">host</span>
+            <span class="stat-value stat-value-sm" id="sys-ip">—</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div id="services-list" class="services-grid"></div>
+          <div id="empty-state" class="empty-state">
+            <button class="btn-pill btn-primary" onclick="showView('new-service')">+ new service</button>
+          </div>
+          <div id="panel-footer" class="panel-footer hidden">
+            <button class="btn-pill btn-primary" onclick="showView('new-service')">+ new service</button>
+          </div>
         </div>
       </section>
 
       <!-- New Service -->
       <section id="view-new-service" class="view">
-        <header class="page-header">
-          <div>
-            <h1>New Service</h1>
-            <p class="subtitle">Each project gets its own workspace on this VM</p>
+        <div class="panel panel-form">
+          <div class="panel-head">
+            <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
+              <img src="/static/logo.svg" alt="" class="back-icon">
+            </button>
+            <h1>new service</h1>
           </div>
-        </header>
-        <form id="create-form" class="form-card">
-          <div class="form-group">
-            <label for="svc-name">Service Name</label>
-            <input type="text" id="svc-name" required placeholder="my-app">
-          </div>
-          <div class="form-group">
-            <label for="svc-git">Git Repository URL</label>
-            <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
-          </div>
-          <div class="form-row">
+          <form id="create-form" class="form-inner">
             <div class="form-group">
-              <label for="svc-branch">Branch</label>
-              <input type="text" id="svc-branch" value="main">
+              <label for="svc-name">service name</label>
+              <input type="text" id="svc-name" required placeholder="my-app">
             </div>
             <div class="form-group">
-              <label for="svc-domain">Custom Domain (optional)</label>
-              <input type="text" id="svc-domain" placeholder="app.example.com">
+              <label for="svc-git">git repository</label>
+              <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
             </div>
-          </div>
-          <div class="form-group">
-            <label for="svc-cmd">Start Command</label>
-            <input type="text" id="svc-cmd" placeholder="npm install && npm start">
-            <span class="hint">Leave blank to auto-detect from repo</span>
-          </div>
-          <div class="form-group">
-            <label for="svc-env">Environment Variables (KEY=VALUE per line)</label>
-            <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-ghost" onclick="showView('dashboard')">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="deploy-btn">Deploy Service</button>
-          </div>
-        </form>
-        <div id="deploy-result" class="result-box hidden"></div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="svc-branch">branch</label>
+                <input type="text" id="svc-branch" value="main">
+              </div>
+              <div class="form-group">
+                <label for="svc-domain">domain (optional)</label>
+                <input type="text" id="svc-domain" placeholder="app.example.com">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="svc-cmd">start command</label>
+              <input type="text" id="svc-cmd" placeholder="npm install && npm start">
+              <span class="hint">leave blank to auto-detect</span>
+            </div>
+            <div class="form-group">
+              <label for="svc-env">environment variables</label>
+              <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn-pill btn-ghost" onclick="showView('dashboard')">cancel</button>
+              <button type="submit" class="btn-pill btn-primary" id="deploy-btn">deploy</button>
+            </div>
+          </form>
+          <div id="deploy-result" class="result-box hidden"></div>
+        </div>
       </section>
 
       <!-- Settings -->
       <section id="view-settings" class="view">
-        <header class="page-header">
-          <div>
-            <h1>Settings</h1>
-            <p class="subtitle">Server configuration, GUI domain &amp; updates</p>
-          </div>
-        </header>
-
-        <div class="settings-grid">
-          <div class="form-card">
-            <h2><i data-lucide="server" class="card-icon"></i> Server</h2>
-            <div class="form-group">
-              <label for="set-ip">Public IP</label>
-              <input type="text" id="set-ip" placeholder="Auto-detected">
+        <div class="settings-stack">
+          <div class="panel panel-form">
+            <div class="panel-head">
+              <img src="/static/logo.svg" alt="" class="section-icon">
+              <h2>server</h2>
             </div>
-            <div class="form-group">
-              <label for="set-email">Admin Email (for certificates)</label>
-              <input type="email" id="set-email" placeholder="admin@example.com">
-            </div>
-            <button class="btn btn-primary" id="save-server-btn">Save Server Settings</button>
-          </div>
-
-          <div class="form-card">
-            <h2><i data-lucide="globe" class="card-icon"></i> Web GUI Domain</h2>
-            <p class="hint block">Set a custom domain for this Syte web interface. Syte issues TLS certificates automatically via Caddy.</p>
-            <div class="form-group">
-              <label for="set-domain">Domain</label>
-              <input type="text" id="set-domain" placeholder="syte.yourdomain.com">
-            </div>
-            <div class="form-group">
-              <label>Current GUI URL</label>
-              <div class="gui-url" id="gui-url">—</div>
-            </div>
-            <button class="btn btn-primary" id="save-domain-btn">Apply Domain &amp; Issue Certificate</button>
-          </div>
-
-          <div class="form-card full-width">
-            <h2><i data-lucide="refresh-cw" class="card-icon"></i> Update Syte</h2>
-            <p class="hint block">Pull the newest Syte version from git, refresh dependencies, and restart. All workspace data on the VM is preserved.</p>
-            <div class="version-row">
-              <div>
-                <span class="version-label">Installed version</span>
-                <span class="version-value" id="syte-version">—</span>
+            <div class="form-inner">
+              <div class="form-group">
+                <label for="set-ip">public ip</label>
+                <input type="text" id="set-ip" placeholder="auto-detected">
               </div>
-              <button class="btn btn-primary btn-icon" id="update-syte-btn">
-                <i data-lucide="download"></i>
-                <span class="btn-label">Update Syte</span>
-              </button>
+              <div class="form-group">
+                <label for="set-email">admin email</label>
+                <input type="email" id="set-email" placeholder="admin@example.com">
+              </div>
+              <button class="btn-pill btn-primary" id="save-server-btn">save</button>
             </div>
-            <div id="update-result" class="result-box hidden"></div>
+          </div>
+
+          <div class="panel panel-form">
+            <div class="panel-head">
+              <img src="/static/logo.svg" alt="" class="section-icon">
+              <h2>web gui domain</h2>
+            </div>
+            <div class="form-inner">
+              <p class="hint block">custom domain for this interface — tls via caddy</p>
+              <div class="form-group">
+                <label for="set-domain">domain</label>
+                <input type="text" id="set-domain" placeholder="syte.yourdomain.com">
+              </div>
+              <div class="form-group">
+                <label>current url</label>
+                <div class="gui-url" id="gui-url">—</div>
+              </div>
+              <button class="btn-pill btn-primary" id="save-domain-btn">apply domain</button>
+            </div>
+          </div>
+
+          <div class="panel panel-form">
+            <div class="panel-head">
+              <img src="/static/logo.svg" alt="" class="section-icon">
+              <h2>update syte</h2>
+            </div>
+            <div class="form-inner">
+              <p class="hint block">pull newest version, refresh deps, restart — data preserved</p>
+              <div class="version-row">
+                <div>
+                  <span class="version-label">installed</span>
+                  <span class="version-value" id="syte-version">—</span>
+                </div>
+                <button class="btn-pill btn-primary" id="update-syte-btn">update syte</button>
+              </div>
+              <div id="update-result" class="result-box hidden"></div>
+            </div>
           </div>
         </div>
       </section>
     </main>
   </div>
 
-  <!-- Service detail modal -->
   <div id="modal" class="modal hidden">
     <div class="modal-backdrop" onclick="closeModal()"></div>
-    <div class="modal-content">
+    <div class="modal-content panel">
       <button class="modal-close" onclick="closeModal()" aria-label="Close">
-        <i data-lucide="x"></i>
+        <img src="/static/logo.svg" alt="" class="close-icon">
       </button>
       <h2 id="modal-title"></h2>
       <div id="modal-body"></div>

@@ -20,14 +20,10 @@ async function api(path, opts = {}) {
 
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
-  document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
-  refreshIcons();
-}
-
-function refreshIcons() {
-  if (window.lucide) lucide.createIcons();
+  document.querySelectorAll('[data-view]').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === name);
+  });
 }
 
 function toast(msg) {
@@ -48,10 +44,19 @@ function parseEnv(text) {
   return env;
 }
 
+function updateStats() {
+  const running = projects.filter(p => p.running).length;
+  const total = document.getElementById('stat-total');
+  const run = document.getElementById('stat-running');
+  if (total) total.textContent = projects.length;
+  if (run) run.textContent = running;
+}
+
 async function loadSystem() {
   try {
     const sys = await api('/system');
-    document.getElementById('sys-ip').textContent = sys.public_ip;
+    const ipEl = document.getElementById('sys-ip');
+    if (ipEl) ipEl.textContent = sys.public_ip;
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const guiUrl = document.getElementById('gui-url');
@@ -65,6 +70,7 @@ async function loadProjects() {
   try {
     projects = await api('/projects');
     renderServices();
+    updateStats();
   } catch (e) {
     console.error(e);
   }
@@ -73,22 +79,25 @@ async function loadProjects() {
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
+  const footer = document.getElementById('panel-footer');
 
   if (!projects.length) {
     list.innerHTML = '';
-    empty.classList.remove('hidden');
+    empty?.classList.remove('hidden');
+    footer?.classList.add('hidden');
     return;
   }
 
-  empty.classList.add('hidden');
+  empty?.classList.add('hidden');
+  footer?.classList.remove('hidden');
   list.innerHTML = projects.map(p => `
     <div class="service-card" onclick="openService('${p.id}')">
       <h3>${esc(p.name)}</h3>
       <div class="service-meta">
         <span class="badge ${p.running ? 'badge-running' : 'badge-stopped'}">
-          ${p.running ? 'Running' : 'Stopped'}
+          ${p.running ? 'running' : 'stopped'}
         </span>
-        <span class="badge" style="background:#222;color:#aaa">:${p.port}</span>
+        <span class="badge" style="background:#2a2a2a;color:#8e8e8e">:${p.port}</span>
       </div>
       <div class="service-url">
         <a href="${esc(p.url)}" target="_blank" onclick="event.stopPropagation()">${esc(p.url)}</a>
@@ -103,34 +112,33 @@ async function openService(id) {
 
   document.getElementById('modal-title').textContent = p.name;
   document.getElementById('modal-body').innerHTML = `
-    <div class="detail-row"><span>Status</span><span>${p.running ? 'Running' : 'Stopped'}</span></div>
-    <div class="detail-row"><span>URL</span><span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></span></div>
-    <div class="detail-row"><span>Port</span><span>${p.port}</span></div>
-    <div class="detail-row"><span>Domain</span><span>${esc(p.domain || '—')}</span></div>
-    <div class="detail-row"><span>Git</span><span style="max-width:60%;word-break:break-all">${esc(p.git_url || '—')}</span></div>
-    <div class="detail-row"><span>Branch</span><span>${esc(p.branch)}</span></div>
-    <div class="detail-row"><span>Workspace</span><span style="font-size:0.75rem">/var/lib/syte/workspaces/${esc(p.id)}</span></div>
-    <div class="logs-box" id="modal-logs">Loading logs…</div>
+    <div class="detail-row"><span>status</span><span>${p.running ? 'running' : 'stopped'}</span></div>
+    <div class="detail-row"><span>url</span><span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></span></div>
+    <div class="detail-row"><span>port</span><span>${p.port}</span></div>
+    <div class="detail-row"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
+    <div class="detail-row"><span>git</span><span style="max-width:60%;word-break:break-all;text-align:right">${esc(p.git_url || '—')}</span></div>
+    <div class="detail-row"><span>branch</span><span>${esc(p.branch)}</span></div>
+    <div class="detail-row"><span>workspace</span><span style="font-size:0.72rem;text-align:right">/var/lib/syte/workspaces/${esc(p.id)}</span></div>
+    <div class="logs-box" id="modal-logs">loading logs…</div>
   `;
 
   const actions = document.getElementById('modal-actions');
   actions.innerHTML = `
     ${p.running
-      ? `<button class="btn btn-sm btn-ghost" onclick="serviceAction('${id}','stop')">Stop</button>`
-      : `<button class="btn btn-sm btn-primary" onclick="serviceAction('${id}','start')">Start</button>`
+      ? `<button class="btn-pill btn-ghost btn-sm" onclick="serviceAction('${id}','stop')">stop</button>`
+      : `<button class="btn-pill btn-primary btn-sm" onclick="serviceAction('${id}','start')">start</button>`
     }
-    <button class="btn btn-sm btn-primary" onclick="serviceAction('${id}','update')">Pull & Restart</button>
-    <button class="btn btn-sm btn-danger" onclick="serviceAction('${id}','delete')">Remove</button>
+    <button class="btn-pill btn-primary btn-sm" onclick="serviceAction('${id}','update')">pull & restart</button>
+    <button class="btn-pill btn-danger btn-sm" onclick="serviceAction('${id}','delete')">remove</button>
   `;
 
   document.getElementById('modal').classList.remove('hidden');
-  refreshIcons();
 
   try {
     const { logs } = await api(`/projects/${id}/logs`);
     document.getElementById('modal-logs').textContent = logs;
   } catch {
-    document.getElementById('modal-logs').textContent = 'Could not load logs.';
+    document.getElementById('modal-logs').textContent = 'could not load logs.';
   }
 }
 
@@ -148,7 +156,6 @@ async function serviceAction(id, action) {
     } else {
       const res = await api(`/projects/${id}/${action}`, { method: 'POST' });
       toast(res.message);
-      if (action === 'update') toast('Update complete — data preserved.');
     }
     await loadProjects();
     if (action !== 'delete') openService(id);
@@ -161,7 +168,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   e.preventDefault();
   const btn = document.getElementById('deploy-btn');
   btn.disabled = true;
-  btn.textContent = 'Deploying…';
+  btn.textContent = 'deploying…';
 
   const body = {
     name: document.getElementById('svc-name').value,
@@ -177,14 +184,14 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
     const box = document.getElementById('deploy-result');
     box.textContent = res.message;
     box.classList.remove('hidden');
-    toast(`Deployed: ${res.project.name}`);
+    toast(`deployed: ${res.project.name}`);
     await loadProjects();
     setTimeout(() => showView('dashboard'), 1500);
   } catch (err) {
-    toast('Deploy failed: ' + err.message);
+    toast('deploy failed: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Deploy Service';
+    btn.textContent = 'deploy';
   }
 });
 
@@ -197,7 +204,7 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
         admin_email: document.getElementById('set-email').value || null,
       }),
     });
-    toast(res.messages?.join(' ') || 'Settings saved');
+    toast(res.messages?.join(' ') || 'saved');
     await loadSystem();
   } catch (e) {
     toast('Error: ' + e.message);
@@ -207,21 +214,21 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
   const domain = document.getElementById('set-domain').value.trim();
   const email = document.getElementById('set-email').value.trim();
-  if (!domain) return toast('Enter a domain for the web GUI');
+  if (!domain) return toast('enter a domain for the web gui');
   if (!email || !email.includes('@') || email.endsWith('@localhost')) {
-    return toast('Set a valid admin email first (required for TLS certificates)');
+    return toast('set a valid admin email first');
   }
 
   const btn = document.getElementById('save-domain-btn');
   btn.disabled = true;
-  btn.textContent = 'Applying…';
+  btn.textContent = 'applying…';
 
   try {
     const res = await api('/settings', {
       method: 'PUT',
       body: JSON.stringify({ gui_domain: domain, admin_email: email }),
     });
-    const msg = Array.isArray(res.messages) ? res.messages.join(' ') : 'GUI domain applied';
+    const msg = Array.isArray(res.messages) ? res.messages.join(' ') : 'domain applied';
     toast(msg);
     if (res.gui_url) {
       document.getElementById('gui-url').textContent = res.gui_url;
@@ -231,28 +238,26 @@ document.getElementById('save-domain-btn')?.addEventListener('click', async () =
     toast('Error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Apply Domain & Issue Certificate';
+    btn.textContent = 'apply domain';
   }
 });
 
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
   btn.disabled = true;
+  btn.textContent = 'updating…';
 
   try {
     const res = await api('/system/update', { method: 'POST' });
     const box = document.getElementById('update-result');
     box.textContent = res.message;
     box.classList.remove('hidden');
-    toast('Syte is updating and will restart…');
+    toast('syte is updating and will restart…');
   } catch (e) {
-    toast('Update failed: ' + e.message);
+    toast('update failed: ' + e.message);
     btn.disabled = false;
+    btn.textContent = 'update syte';
   }
-});
-
-document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => showView(btn.dataset.view));
 });
 
 async function loadSettings() {
@@ -279,4 +284,3 @@ function esc(s) {
 loadSystem();
 loadProjects();
 loadSettings();
-refreshIcons();
