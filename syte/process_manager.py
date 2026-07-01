@@ -15,6 +15,7 @@ from syte.docker_deploy import (
     stop_docker,
 )
 from syte.runtime import ensure_runtime_for_command
+from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
 PID_DIR = settings.data_dir / "pids"
 
