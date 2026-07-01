@@ -4,6 +4,7 @@ from pathlib import Path
 from syte import process_manager
 from syte.certificates import apply_proxy_config
 from syte.database import create_project, delete_project, get_project, update_project
+from syte.docker_deploy import find_dockerfile
 from syte.runtime import ensure_runtime_for_command
 from syte.workspace import (
     clone_or_pull,
@@ -57,6 +58,23 @@ def _resolve_deploy(project_id: str, start_command: str | None) -> tuple[dict, s
         "dockerfile_path": None,
         "start_command": cmd or "",
     }, None
+
+
+async def _ensure_deploy_info(project: dict) -> dict:
+    """Re-detect Dockerfile for projects created before docker detection worked."""
+    project_id = project["id"]
+    if project.get("deploy_type") == "docker":
+        return project
+    if not project.get("git_url"):
+        return project
+    dockerfile = find_dockerfile(project_id)
+    if not dockerfile:
+        return project
+    deploy_info, _ = _resolve_deploy(project_id, project.get("start_command") or None)
+    if deploy_info["deploy_type"] != "docker":
+        return project
+    await update_project(project_id, deploy_info)
+    return await get_project(project_id) or project
 
 
 async def deploy_service(
@@ -213,6 +231,7 @@ async def start_service(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found."
+    project = await _ensure_deploy_info(project)
     ok, msg = process_manager.start_project(
         project_id,
         project["port"],

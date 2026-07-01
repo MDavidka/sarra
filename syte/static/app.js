@@ -198,7 +198,14 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   try {
     const res = await api('/projects', { method: 'POST', body: JSON.stringify(body) });
     const box = document.getElementById('deploy-result');
-    box.textContent = res.message;
+    let output = res.message || '';
+    try {
+      const { logs } = await api(`/projects/${res.project.id}/logs`);
+      if (logs && logs !== 'No logs yet.') {
+        output += '\n\n' + logs;
+      }
+    } catch { /* logs may not exist yet */ }
+    box.textContent = output;
     box.classList.remove('hidden');
     toast(`deployed: ${res.project.name}`);
     await loadProjects();

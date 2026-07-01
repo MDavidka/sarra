@@ -86,6 +86,20 @@ def stop_docker(project_id: str) -> tuple[bool, str]:
     return False, out or f"Failed to stop container {name}."
 
 
+def _build_log_path(project_id: str) -> Path:
+    return workspace_path(project_id) / "build.log"
+
+
+def _append_build_log(project_id: str, label: str, output: str) -> None:
+    log_path = _build_log_path(project_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a") as log_file:
+        log_file.write(f"\n=== {label} ===\n")
+        log_file.write(output)
+        if output and not output.endswith("\n"):
+            log_file.write("\n")
+
+
 def deploy_docker(
     project_id: str,
     host_port: int,
@@ -102,16 +116,21 @@ def deploy_docker(
     data_dir = workspace_path(project_id) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    build_log = _build_log_path(project_id)
+    build_log.write_text(f"Building {image} from {dockerfile.name}\n")
+
     stop_docker(project_id)
     run_cmd(["docker", "rmi", image])
 
     build_cmd = [
         "docker", "build",
+        "--progress=plain",
         "-t", image,
         "-f", str(dockerfile),
         str(repo),
     ]
     code, out = run_cmd(build_cmd)
+    _append_build_log(project_id, "docker build", out or "(no output)")
     if code != 0:
         return False, f"Docker build failed:\n{out}"
 
@@ -126,6 +145,7 @@ def deploy_docker(
         image,
     ]
     code, out = run_cmd(run_cmd_list)
+    _append_build_log(project_id, "docker run", out or "(no output)")
     if code != 0:
         return False, f"Docker run failed:\n{out}"
 

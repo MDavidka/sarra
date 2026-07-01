@@ -162,10 +162,22 @@ def restart_docker_project(
 
 def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> str:
     if deploy_type == "docker":
+        from syte.docker_deploy import _build_log_path
         from syte.workspace import run_cmd
+
+        parts: list[str] = []
+        build_log = _build_log_path(project_id)
+        if build_log.exists():
+            content = build_log.read_text().splitlines()
+            if content:
+                parts.append("=== Build log ===\n" + "\n".join(content[-lines:]))
+
         name = container_name(project_id)
         code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
-        return out if code == 0 else "No docker logs yet."
+        if code == 0 and out.strip():
+            parts.append("=== Container log ===\n" + out.strip())
+
+        return "\n\n".join(parts) if parts else "No logs yet."
     log_path = workspace_path(project_id) / "app.log"
     if not log_path.exists():
         return "No logs yet."
