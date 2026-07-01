@@ -170,7 +170,9 @@ def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> s
         if build_log.exists():
             content = build_log.read_text().splitlines()
             if content:
-                parts.append("=== Build log ===\n" + "\n".join(content[-lines:]))
+                # Docker/Next.js builds are verbose — show more than container logs.
+                tail = content[-max(lines * 5, 500):]
+                parts.append("=== Build log ===\n" + "\n".join(tail))
 
         name = container_name(project_id)
         code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
