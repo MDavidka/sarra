@@ -118,6 +118,10 @@ def deploy_docker(
     data_dir = workspace_path(project_id) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    build_log = _build_log_path(project_id)
+    stop_docker(project_id)
+    run_cmd(["docker", "rmi", image])
+
     build_cmd = [
         "docker", "build",
         "-t", image,
