@@ -97,9 +97,9 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="svc-cmd">start command</label>
-              <input type="text" id="svc-cmd" placeholder="auto-detected if no dockerfile">
-              <span class="hint">git is cloned first — if a dockerfile is found, docker deployment is used automatically</span>
+              <label for="svc-cmd">start command (optional)</label>
+              <input type="text" id="svc-cmd" placeholder="only needed without a Dockerfile">
+              <span class="hint">docker is the default — add a Dockerfile to your repo, or provide a start command for shell deploy</span>
             </div>
             <div class="form-group">
               <label for="svc-env">environment variables</label>

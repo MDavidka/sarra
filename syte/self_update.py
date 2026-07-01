@@ -14,6 +14,11 @@ def _venv_pip() -> str | None:
     return str(venv_pip) if venv_pip.exists() else None
 
 
+def _current_branch() -> str:
+    code, out = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=INSTALL_DIR)
+    return out.strip() if code == 0 else "main"
+
+
 def update_syte() -> tuple[bool, str]:
     """Pull newest Syte from git, refresh dependencies, and schedule restart."""
     messages = [f"Current version: {__version__}"]
@@ -21,12 +26,20 @@ def update_syte() -> tuple[bool, str]:
     if not (INSTALL_DIR / ".git").exists():
         return False, "Syte install is not a git repository. Cannot pull updates."
 
+    branch = _current_branch()
+    messages.append(f"Branch: {branch}")
+
     code, out = run_cmd(["git", "fetch", "origin"], cwd=INSTALL_DIR)
     messages.append(out or "Fetched origin.")
     if code != 0:
         return False, "\n".join(messages)
 
-    code, out = run_cmd(["git", "pull", "--ff-only"], cwd=INSTALL_DIR)
+    code, out = run_cmd(
+        ["git", "pull", "--ff-only", "origin", branch],
+        cwd=INSTALL_DIR,
+    )
+    if code != 0:
+        code, out = run_cmd(["git", "pull", "--ff-only"], cwd=INSTALL_DIR)
     messages.append(out or "Repository updated.")
     if code != 0:
         return False, "\n".join(messages)
@@ -51,13 +64,14 @@ def update_syte() -> tuple[bool, str]:
 
 
 def _schedule_restart() -> None:
+    data_dir = settings.data_dir
     restart_script = (
         f"sleep 2; "
+        f"cd {INSTALL_DIR} && "
+        f"SYTE_DATA_DIR={data_dir} ./scripts/apply-caddy.sh 2>/dev/null || true; "
+        f"./scripts/restart.sh 2>/dev/null || "
         f"systemctl restart syte 2>/dev/null || "
-        f"systemctl restart syte.service 2>/dev/null || "
-        f"(cd {INSTALL_DIR} && "
-        f"SYTE_DATA_DIR={settings.data_dir} "
-        f"{INSTALL_DIR}/scripts/start.sh &)"
+        f"systemctl restart syte.service 2>/dev/null"
     )
     subprocess.Popen(
         ["bash", "-c", restart_script],

@@ -23,6 +23,7 @@ from syte.database import (
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
+from syte.self_update import update_syte
 import logging
 
 from syte import supervisor
@@ -226,7 +227,11 @@ async def save_settings(body: SettingsRequest):
 @app.post("/api/system/update")
 async def api_update_syte():
     """Pull newest Syte version and restart to apply changes."""
-    ok, message = update_syte()
+    try:
+        ok, message = update_syte()
+    except Exception as exc:
+        logger.exception("Syte update failed")
+        raise HTTPException(500, f"Update failed: {exc}") from exc
     if not ok:
         raise HTTPException(500, message)
     return {"ok": True, "message": message}

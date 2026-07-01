@@ -23,8 +23,13 @@ def _next_port(existing: list[dict]) -> int:
     return port
 
 
-def _resolve_deploy(project_id: str, start_command: str | None) -> tuple[dict, str | None]:
-    """After git clone, detect Dockerfile or fall back to shell deploy."""
+def _resolve_deploy(
+    project_id: str,
+    start_command: str | None,
+    *,
+    prefer_docker: bool = True,
+) -> tuple[dict, str | None]:
+    """After git clone, prefer Docker deploy; fall back to shell only with explicit command."""
     dockerfile = find_dockerfile(project_id)
     if dockerfile:
         app_root = ensure_workspace(project_id) / "app"
@@ -44,6 +49,17 @@ def _resolve_deploy(project_id: str, start_command: str | None) -> tuple[dict, s
             "dockerfile_path": None,
             "start_command": start_command,
         }, None
+
+    if prefer_docker:
+        return {
+            "deploy_type": "docker",
+            "dockerfile_path": None,
+            "start_command": "",
+        }, (
+            "No Dockerfile found in repository. "
+            "Add a Dockerfile for docker deployment (recommended), "
+            "or provide a start command for shell deployment."
+        )
 
     cmd, err = detect_start_command(project_id)
     if err:
@@ -100,7 +116,7 @@ async def deploy_service(
         "domain": domain,
         "start_command": start_command or "",
         "env_vars": env_vars or {},
-        "deploy_type": "shell",
+        "deploy_type": "docker" if git_url else "shell",
     })
 
     ensure_workspace(project_id)
@@ -126,8 +142,10 @@ async def deploy_service(
 
         if deploy_info["deploy_type"] == "docker":
             messages.append(f"Dockerfile found: {deploy_info['dockerfile_path']}")
+        elif start_command:
+            messages.append("No Dockerfile — using shell deployment (start command provided).")
         else:
-            messages.append("No Dockerfile — using shell deployment.")
+            messages.append("No Dockerfile — docker deployment requires a Dockerfile.")
     elif not start_command:
         cmd, err = detect_start_command(project_id)
         if err:
