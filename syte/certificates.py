@@ -52,6 +52,8 @@ async def async_generate_caddyfile() -> str:
     lines = [
         "# Syte-managed Caddy configuration",
         "# Auto-generated — do not edit manually",
+        "# Direct IP access (http://IP:port) is served by Syte/apps — not Caddy.",
+        "# Caddy only terminates TLS for named domains on :443.",
         "",
     ]
 
@@ -70,13 +72,11 @@ async def async_generate_caddyfile() -> str:
             "}",
             "",
         ])
-
-    lines.extend([
-        f":{settings.port} {{",
-        f"    reverse_proxy 127.0.0.1:{settings.port}",
-        "}",
-        "",
-    ])
+    else:
+        lines.extend([
+            f"# GUI direct access: http://{public_ip}:{settings.port}",
+            "",
+        ])
 
     projects = await list_projects()
     for project in projects:
@@ -93,10 +93,7 @@ async def async_generate_caddyfile() -> str:
             ])
         else:
             lines.extend([
-                f"# {name} — http://{public_ip}:{port}",
-                f":{port} {{",
-                f"    reverse_proxy 127.0.0.1:{port}",
-                "}",
+                f"# {name} — direct: http://{public_ip}:{port}",
                 "",
             ])
 

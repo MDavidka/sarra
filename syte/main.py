@@ -59,7 +59,10 @@ async def lifespan(app: FastAPI):
     if stored_ip and not is_valid_ip(stored_ip):
         await set_setting("public_ip", "")
         settings.public_ip = ""
-    await supervisor.startup()
+    try:
+        await supervisor.startup()
+    except Exception:
+        logger.exception("Supervisor startup failed — GUI will still start")
     task = asyncio.create_task(supervisor.supervisor_loop())
     yield
     supervisor.stop_supervisor()

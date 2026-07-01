@@ -84,6 +84,7 @@ if [[ "$INSTALL_SYSTEM" == true ]]; then
   systemctl enable caddy 2>/dev/null || true
   chmod +x "$SYTE_DIR/scripts/"*.sh
   "$SYTE_DIR/scripts/stop.sh" 2>/dev/null || true
+  "$SYTE_DIR/scripts/apply-caddy.sh" 2>/dev/null || true
   systemctl start caddy 2>/dev/null || true
   systemctl start syte 2>/dev/null || true
   echo "    Services enabled: syte, caddy (24/7)"

@@ -6,8 +6,19 @@ SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SYTE_DIR/scripts/port-check.sh"
 
 echo "==> Restarting Syte (systemd)"
-"$SYTE_DIR/scripts/stop.sh"
+systemctl stop syte 2>/dev/null || true
 sleep 1
+
+echo "==> Updating Caddy (domain-only — port ${SYTE_PORT} stays with Syte)"
+"$SYTE_DIR/scripts/apply-caddy.sh" || true
+sleep 1
+
+if port_in_use; then
+  echo "==> Freeing port ${SYTE_PORT}"
+  kill_port_listener
+  sleep 1
+fi
+
 systemctl daemon-reload 2>/dev/null || true
 systemctl reset-failed syte 2>/dev/null || true
 systemctl start syte
