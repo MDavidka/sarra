@@ -23,7 +23,11 @@ from syte.database import (
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
+import logging
+
 from syte import supervisor
+
+logger = logging.getLogger("syte")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 NO_CACHE = "no-cache, no-store, must-revalidate"

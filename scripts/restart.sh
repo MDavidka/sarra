@@ -9,8 +9,9 @@ echo "==> Restarting Syte (systemd)"
 "$SYTE_DIR/scripts/stop.sh"
 sleep 1
 systemctl daemon-reload 2>/dev/null || true
+systemctl reset-failed syte 2>/dev/null || true
 systemctl start syte
-sleep 2
+sleep 3
 
 if syte_systemd_active; then
   IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
