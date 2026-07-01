@@ -124,7 +124,6 @@ def deploy_docker(
 
     build_cmd = [
         "docker", "build",
-        "--progress=plain",
         "-t", image,
         "-f", str(dockerfile),
         str(repo),
