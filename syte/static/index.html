@@ -124,7 +124,45 @@
               </button>
             </div>
           </form>
-          <div id="deploy-result" class="result-box hidden"></div>
+          <div id="deploy-log-panel" class="logs-terminal hidden"></div>
+        </div>
+      </section>
+
+      <section id="view-service" class="view">
+        <div class="service-dashboard">
+          <div class="panel-head service-head">
+            <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
+              <i data-lucide="arrow-left"></i>
+            </button>
+            <div class="service-head-meta">
+              <h1 id="svc-title">service</h1>
+              <span id="svc-status-badge" class="badge">—</span>
+            </div>
+          </div>
+
+          <div class="svc-section svc-deploy">
+            <h2 class="svc-section-title"><i data-lucide="rocket"></i> deploy</h2>
+            <div class="svc-actions" id="svc-deploy-actions"></div>
+          </div>
+
+          <div class="svc-section svc-info">
+            <h2 class="svc-section-title"><i data-lucide="info"></i> information</h2>
+            <div id="svc-info-body" class="svc-info-grid"></div>
+          </div>
+
+          <div class="svc-section svc-domain">
+            <h2 class="svc-section-title"><i data-lucide="globe"></i> domain</h2>
+            <div class="form-inner compact">
+              <input type="text" id="svc-domain-input" placeholder="app.example.com">
+              <button class="btn-pill btn-primary btn-sm" id="svc-domain-btn">apply domain</button>
+            </div>
+          </div>
+
+          <div class="svc-section svc-logs">
+            <h2 class="svc-section-title"><i data-lucide="terminal"></i> live deployment log</h2>
+            <p class="hint" id="svc-log-hint">logs from the current deploy session only</p>
+            <div class="logs-terminal" id="svc-live-logs"></div>
+          </div>
         </div>
       </section>
 
@@ -218,18 +256,6 @@
         </div>
       </section>
     </main>
-  </div>
-
-  <div id="modal" class="modal hidden">
-    <div class="modal-backdrop" onclick="closeModal()"></div>
-    <div class="modal-content panel">
-      <button class="modal-close" onclick="closeModal()" aria-label="Close">
-        <i data-lucide="x"></i>
-      </button>
-      <h2 id="modal-title"></h2>
-      <div id="modal-body"></div>
-      <div class="modal-actions" id="modal-actions"></div>
-    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

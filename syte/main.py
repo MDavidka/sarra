@@ -405,7 +405,7 @@ async def api_logs(project_id: str, lines: int = 100):
 
 
 @app.get("/api/projects/{project_id}/logs/stream")
-async def api_logs_stream(project_id: str, request: Request):
+async def api_logs_stream(project_id: str, request: Request, live: bool = False):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -413,10 +413,26 @@ async def api_logs_stream(project_id: str, request: Request):
     if key:
         await auth.verify_api_token_from_request(request)
     return StreamingResponse(
-        stream_project_logs(project_id, project.get("deploy_type", "shell")),
+        stream_project_logs(
+            project_id,
+            project.get("deploy_type", "shell"),
+            live_only=live,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/api/projects/{project_id}/deploy")
+async def api_issue_deploy(project_id: str):
+    project, message = await deployment.issue_deploy(project_id)
+    if not project:
+        raise HTTPException(404, message)
+    return {
+        "project": _enrich(project),
+        "message": message,
+        "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
+    }
 
 
 def _parse_env(raw: Any) -> dict:

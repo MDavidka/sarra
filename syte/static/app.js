@@ -3,6 +3,8 @@ const API_KEY_STORAGE = 'syte_api_key';
 
 let projects = [];
 let logStream = null;
+let activeServiceId = null;
+let deployPollTimer = null;
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -18,34 +20,66 @@ function stopLogStream() {
     logStream.close();
     logStream = null;
   }
+  if (deployPollTimer) {
+    clearInterval(deployPollTimer);
+    deployPollTimer = null;
+  }
 }
 
-function startLogStream(projectId, targetEl) {
+function logLineClass(text) {
+  const t = (text || '').toLowerCase();
+  if (/error|failed|fatal|denied|exit code [1-9]/.test(t)) return 'log-err';
+  if (/✓|success|deployed|running|complete|started/.test(t)) return 'log-ok';
+  if (/warn|deprecated|notice/.test(t)) return 'log-warn';
+  if (/step \d|docker|building|clone|pull|===/.test(t)) return 'log-info';
+  return 'log-dim';
+}
+
+function appendLogLine(container, text, type) {
+  if (!container || !text) return;
+  const line = document.createElement('div');
+  line.className = `log-line ${logLineClass(text)}`;
+  if (type === 'build') line.classList.add('log-build');
+  if (type === 'container') line.classList.add('log-container');
+  line.textContent = text;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function clearLogPanel(container) {
+  if (container) container.innerHTML = '';
+}
+
+function startLogStream(projectId, targetEl, liveOnly = true) {
   stopLogStream();
   if (!targetEl) return;
-  targetEl.textContent = '';
+  clearLogPanel(targetEl);
   const key = getApiKey();
-  const url = key
-    ? `${API}/projects/${projectId}/logs/stream?api_key=${encodeURIComponent(key)}`
-    : `${API}/projects/${projectId}/logs/stream`;
+  const params = new URLSearchParams();
+  if (liveOnly) params.set('live', '1');
+  if (key) params.set('api_key', key);
+  const qs = params.toString();
+  const url = `${API}/projects/${projectId}/logs/stream${qs ? '?' + qs : ''}`;
   logStream = new EventSource(url);
   logStream.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.text) {
-        targetEl.textContent += msg.text + '\n';
-        targetEl.scrollTop = targetEl.scrollHeight;
-      }
+      if (msg.text) appendLogLine(targetEl, msg.text, msg.type);
     } catch { /* ping */ }
   };
   logStream.onerror = () => {
-    targetEl.textContent += '\n[log stream disconnected]\n';
+    appendLogLine(targetEl, '[stream disconnected]', 'log-warn');
     stopLogStream();
   };
-}
 
-function injectLogos() {
-  /* brand icon is served from /static/icon.png */
+  deployPollTimer = setInterval(async () => {
+    await loadProjects();
+    const p = projects.find(x => x.id === projectId);
+    if (p && activeServiceId === projectId) {
+      updateServiceBadge(p);
+      if (p.status !== 'deploying') return;
+    }
+  }, 3000);
 }
 
 function refreshIcons() {
@@ -53,13 +87,14 @@ function refreshIcons() {
 }
 
 function showView(name) {
-  if (name !== 'new-service') stopLogStream();
+  if (name !== 'new-service' && name !== 'service') stopLogStream();
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
-  document.querySelectorAll('[data-view]').forEach(el => {
+  document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.classList.toggle('active', el.dataset.view === name);
   });
   if (name === 'api-keys') loadTokens();
+  if (name === 'dashboard') activeServiceId = null;
   refreshIcons();
 }
 
@@ -73,7 +108,7 @@ async function api(path, opts = {}) {
     const detail = err.detail;
     const message = Array.isArray(detail)
       ? detail.map(d => d.msg || d).join(', ')
-      : (detail || res.statusText);
+      : (typeof detail === 'object' && detail?.message ? detail.message : (detail || res.statusText));
     throw new Error(message);
   }
   return res.json();
@@ -115,12 +150,10 @@ async function loadSystem() {
     const directUrl = document.getElementById('direct-url');
     if (directUrl) directUrl.textContent = sys.direct_url;
     const guiUrl = document.getElementById('gui-url');
-    if (guiUrl) {
-      guiUrl.textContent = sys.domain_url || 'not configured';
-    }
+    if (guiUrl) guiUrl.textContent = sys.domain_url || 'not configured';
     const ver = document.getElementById('syte-version');
     if (ver) ver.textContent = 'v' + sys.version;
-  } catch (e) { /* offline */ }
+  } catch { /* offline */ }
 }
 
 async function loadProjects() {
@@ -128,6 +161,10 @@ async function loadProjects() {
     projects = await api('/projects');
     renderServices();
     updateStats();
+    if (activeServiceId) {
+      const p = projects.find(x => x.id === activeServiceId);
+      if (p) renderServiceDashboard(p, false);
+    }
   } catch (e) {
     console.error(e);
   }
@@ -151,11 +188,9 @@ function renderServices() {
     <div class="service-card" onclick="openService('${p.id}')">
       <h3>${esc(p.name)}</h3>
       <div class="service-meta">
-        <span class="badge ${p.running ? 'badge-running' : 'badge-stopped'}">
-          ${p.running ? 'running' : 'stopped'}
-        </span>
-        <span class="badge" style="background:#2a2a2a;color:#8e8e8e">:${p.port}</span>
-        <span class="badge" style="background:#2a2a2a;color:#8e8e8e">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
+        <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
+        <span class="badge badge-dim">:${p.port}</span>
+        <span class="badge badge-dim">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
       </div>
       <div class="service-url">
         <a href="${esc(p.url)}" target="_blank" onclick="event.stopPropagation()">${esc(p.url)}</a>
@@ -164,43 +199,92 @@ function renderServices() {
   `).join('');
 }
 
-async function openService(id) {
-  const p = projects.find(x => x.id === id);
-  if (!p) return;
-
-  document.getElementById('modal-title').textContent = p.name;
-  document.getElementById('modal-body').innerHTML = `
-    <div class="detail-row"><span>status</span><span>${p.running ? 'running' : 'stopped'}</span></div>
-    <div class="detail-row"><span>url</span><span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></span></div>
-    <div class="detail-row"><span>port</span><span>${p.port}</span></div>
-    <div class="detail-row"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
-    <div class="detail-row"><span>git</span><span style="max-width:60%;word-break:break-all;text-align:right">${esc(p.git_url || '—')}</span></div>
-    <div class="detail-row"><span>branch</span><span>${esc(p.branch)}</span></div>
-    <div class="detail-row"><span>deploy</span><span>${esc(p.deploy_type || 'shell')}${p.dockerfile_path ? ' (' + esc(p.dockerfile_path) + ')' : ''}</span></div>
-    <div class="detail-row"><span>workspace</span><span style="font-size:0.72rem;text-align:right">/var/lib/syte/workspaces/${esc(p.id)}</span></div>
-    <div class="logs-box" id="modal-logs">loading logs…</div>
-  `;
-
-  const actions = document.getElementById('modal-actions');
-  actions.innerHTML = `
-    ${p.running
-      ? `<button class="btn-pill btn-ghost btn-sm" onclick="serviceAction('${id}','stop')">stop</button>`
-      : `<button class="btn-pill btn-primary btn-sm" onclick="serviceAction('${id}','start')">start</button>`
-    }
-    <button class="btn-pill btn-primary btn-sm" onclick="serviceAction('${id}','update')">pull & restart</button>
-    <button class="btn-pill btn-danger btn-sm" onclick="serviceAction('${id}','delete')">remove</button>
-  `;
-
-  document.getElementById('modal').classList.remove('hidden');
-  refreshIcons();
-
-  const logsEl = document.getElementById('modal-logs');
-  startLogStream(id, logsEl);
+function statusClass(p) {
+  if (p.status === 'deploying') return 'badge-deploying';
+  return p.running ? 'badge-running' : 'badge-stopped';
 }
 
-function closeModal() {
-  stopLogStream();
-  document.getElementById('modal').classList.add('hidden');
+function statusLabel(p) {
+  if (p.status === 'deploying') return 'deploying';
+  return p.running ? 'running' : 'stopped';
+}
+
+function updateServiceBadge(p) {
+  const badge = document.getElementById('svc-status-badge');
+  if (!badge) return;
+  badge.className = `badge ${statusClass(p)}`;
+  badge.textContent = statusLabel(p);
+}
+
+function openService(id) {
+  const p = projects.find(x => x.id === id);
+  if (!p) return;
+  activeServiceId = id;
+  renderServiceDashboard(p, true);
+  showView('service');
+}
+
+function renderServiceDashboard(p, resetLogs) {
+  document.getElementById('svc-title').textContent = p.name;
+  updateServiceBadge(p);
+
+  const domainInput = document.getElementById('svc-domain-input');
+  if (domainInput) domainInput.value = p.domain || '';
+
+  document.getElementById('svc-info-body').innerHTML = `
+    <div class="info-cell"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
+    <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
+    <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
+    <div class="info-cell"><span>branch</span><strong>${esc(p.branch || 'main')}</strong></div>
+    <div class="info-cell full"><span>git</span><span>${esc(p.git_url || '—')}</span></div>
+    <div class="info-cell full"><span>uuid</span><code>${esc(p.id)}</code></div>
+  `;
+
+  const actions = document.getElementById('svc-deploy-actions');
+  actions.innerHTML = `
+    <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
+      <i data-lucide="rocket"></i><span>deploy</span>
+    </button>
+    ${p.running
+      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>stop</span></button>`
+      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>start</span></button>`
+    }
+    <button class="btn-pill btn-danger" onclick="serviceAction('${p.id}','delete')">
+      <i data-lucide="trash-2"></i><span>remove</span>
+    </button>
+  `;
+
+  const logsEl = document.getElementById('svc-live-logs');
+  const hint = document.getElementById('svc-log-hint');
+  if (resetLogs) {
+    clearLogPanel(logsEl);
+    if (p.status === 'deploying') {
+      hint.textContent = 'deployment in progress…';
+      startLogStream(p.id, logsEl, true);
+    } else {
+      hint.textContent = 'press deploy to start a new session — only current deploy logs are shown';
+      stopLogStream();
+    }
+  }
+
+  document.getElementById('svc-domain-btn').onclick = () => saveServiceDomain(p.id);
+  refreshIcons();
+}
+
+async function serviceDeploy(id) {
+  const logsEl = document.getElementById('svc-live-logs');
+  const hint = document.getElementById('svc-log-hint');
+  clearLogPanel(logsEl);
+  hint.textContent = 'deployment in progress…';
+  startLogStream(id, logsEl, true);
+  try {
+    const res = await api(`/projects/${id}/deploy`, { method: 'POST' });
+    toast(res.message || 'deploy started');
+    await loadProjects();
+  } catch (e) {
+    appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
+    toast('Error: ' + e.message);
+  }
 }
 
 async function serviceAction(id, action) {
@@ -209,13 +293,38 @@ async function serviceAction(id, action) {
       if (!confirm('Remove this service? Workspace data is kept on disk.')) return;
       const res = await api(`/projects/${id}`, { method: 'DELETE' });
       toast(res.message);
-      closeModal();
+      activeServiceId = null;
+      showView('dashboard');
+    } else if (action === 'start') {
+      const logsEl = document.getElementById('svc-live-logs');
+      document.getElementById('svc-log-hint').textContent = 'deployment in progress…';
+      clearLogPanel(logsEl);
+      startLogStream(id, logsEl, true);
+      const res = await api(`/projects/${id}/start`, { method: 'POST' });
+      toast(res.message);
+      await loadProjects();
     } else {
       const res = await api(`/projects/${id}/${action}`, { method: 'POST' });
       toast(res.message);
+      await loadProjects();
     }
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function saveServiceDomain(id) {
+  let domain = document.getElementById('svc-domain-input')?.value.trim() || '';
+  domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  if (!domain) return toast('enter a domain');
+  try {
+    const email = (await api('/settings')).admin_email;
+    const res = await api(`/projects/${id}/domain`, {
+      method: 'POST',
+      body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
+    });
+    toast(res.message || 'domain applied');
     await loadProjects();
-    if (action !== 'delete') openService(id);
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -236,15 +345,18 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
     env_vars: parseEnv(document.getElementById('svc-env').value),
   };
 
+  const logPanel = document.getElementById('deploy-log-panel');
+  logPanel?.classList.remove('hidden');
+  clearLogPanel(logPanel);
+
   try {
     const res = await api('/projects', { method: 'POST', body: JSON.stringify(body) });
-    const box = document.getElementById('deploy-result');
-    box.textContent = res.message || 'Deploy started…';
-    box.classList.remove('hidden');
-    startLogStream(res.project.id, box);
     toast(`deploying: ${res.project.name}`);
     await loadProjects();
+    openService(res.project.id);
+    startLogStream(res.project.id, document.getElementById('svc-live-logs'), true);
   } catch (err) {
+    if (logPanel) appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
     toast('deploy failed: ' + err.message);
   } finally {
     btn.disabled = false;
@@ -277,24 +389,15 @@ document.getElementById('save-domain-btn')?.addEventListener('click', async () =
   if (!email || !email.includes('@') || email.endsWith('@localhost')) {
     return toast('set a valid admin email first');
   }
-
   const btn = document.getElementById('save-domain-btn');
   btn.disabled = true;
   btn.textContent = 'applying…';
-
   try {
     const res = await api('/settings', {
       method: 'PUT',
       body: JSON.stringify({ gui_domain: domain, admin_email: email }),
     });
-    const msg = Array.isArray(res.messages) ? res.messages.join(' ') : 'domain applied';
-    toast(msg);
-    if (res.direct_url) {
-      document.getElementById('direct-url').textContent = res.direct_url;
-    }
-    if (res.domain_url) {
-      document.getElementById('gui-url').textContent = res.domain_url;
-    }
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'domain applied');
     await loadSystem();
   } catch (e) {
     toast('Error: ' + e.message);
@@ -308,13 +411,12 @@ document.getElementById('update-syte-btn')?.addEventListener('click', async () =
   const btn = document.getElementById('update-syte-btn');
   btn.disabled = true;
   btn.textContent = 'updating…';
-
   try {
     const res = await api('/system/update', { method: 'POST' });
     const box = document.getElementById('update-result');
     box.textContent = res.message;
     box.classList.remove('hidden');
-    toast('syte is updating and will restart…');
+    toast('syte is updating…');
   } catch (e) {
     toast('update failed: ' + e.message);
     btn.disabled = false;
@@ -328,12 +430,12 @@ async function loadSettings() {
     const ip = document.getElementById('set-ip');
     const email = document.getElementById('set-email');
     const domain = document.getElementById('set-domain');
-    const directUrl = document.getElementById('direct-url');
-    const guiUrl = document.getElementById('gui-url');
-    const ver = document.getElementById('syte-version');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
+    const directUrl = document.getElementById('direct-url');
+    const guiUrl = document.getElementById('gui-url');
+    const ver = document.getElementById('syte-version');
     if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
@@ -358,10 +460,7 @@ async function loadTokens() {
     }
     list.innerHTML = res.tokens.map(t => `
       <div class="token-row">
-        <div>
-          <strong>${esc(t.name)}</strong>
-          <span class="hint"> ${esc(t.prefix)}…</span>
-        </div>
+        <div><strong>${esc(t.name)}</strong><span class="hint"> ${esc(t.prefix)}…</span></div>
         <button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button>
       </div>
     `).join('');
@@ -385,15 +484,12 @@ async function revokeToken(id) {
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
   try {
-    const res = await api('/tokens', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    });
+    const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
     const box = document.getElementById('new-token-box');
     box.textContent = `Token (copy now):\n${res.token}`;
     box.classList.remove('hidden');
     setApiKey(res.token);
-    toast('token created — saved to browser');
+    toast('token created');
     await loadTokens();
   } catch (e) {
     toast('Error: ' + e.message);
