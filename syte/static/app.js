@@ -9,7 +9,11 @@ async function api(path, opts = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText);
+    const detail = err.detail;
+    const message = Array.isArray(detail)
+      ? detail.map(d => d.msg || d).join(', ')
+      : (detail || res.statusText);
+    throw new Error(message);
   }
   return res.json();
 }
@@ -202,23 +206,32 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
   const domain = document.getElementById('set-domain').value.trim();
+  const email = document.getElementById('set-email').value.trim();
   if (!domain) return toast('Enter a domain for the web GUI');
+  if (!email || !email.includes('@') || email.endsWith('@localhost')) {
+    return toast('Set a valid admin email first (required for TLS certificates)');
+  }
+
+  const btn = document.getElementById('save-domain-btn');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
 
   try {
     const res = await api('/settings', {
       method: 'PUT',
-      body: JSON.stringify({
-        gui_domain: domain,
-        admin_email: document.getElementById('set-email').value || undefined,
-      }),
+      body: JSON.stringify({ gui_domain: domain, admin_email: email }),
     });
-    toast(res.messages?.join(' ') || 'GUI domain applied');
+    const msg = Array.isArray(res.messages) ? res.messages.join(' ') : 'GUI domain applied';
+    toast(msg);
     if (res.gui_url) {
       document.getElementById('gui-url').textContent = res.gui_url;
     }
     await loadSystem();
   } catch (e) {
     toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply Domain & Issue Certificate';
   }
 });
 

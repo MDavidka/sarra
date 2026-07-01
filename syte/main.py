@@ -121,10 +121,24 @@ async def save_settings(body: SettingsRequest):
         messages.append(f"Admin email set to {body.admin_email}")
 
     if body.gui_domain is not None:
-        domain = body.gui_domain.strip()
+        domain = body.gui_domain.strip().lower()
         if domain:
+            email = settings.admin_email
+            if not email or "@" not in email or email.endswith("@localhost"):
+                raise HTTPException(
+                    400,
+                    "A valid admin email is required before setting a GUI domain "
+                    "(used for TLS certificate registration).",
+                )
             await set_setting("gui_domain", domain)
-            ok, msg = await set_gui_domain(domain, settings.admin_email)
+            try:
+                ok, msg = await set_gui_domain(domain, email)
+            except Exception as exc:
+                await set_setting("gui_domain", "")
+                raise HTTPException(500, f"Failed to configure domain: {exc}") from exc
+            if not ok:
+                await set_setting("gui_domain", "")
+                raise HTTPException(500, msg)
             messages.append(msg)
         else:
             await set_setting("gui_domain", "")

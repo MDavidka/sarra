@@ -1,7 +1,7 @@
 import uuid
 
 from syte import process_manager
-from syte.certificates import apply_proxy_config, issue_certificate
+from syte.certificates import apply_proxy_config
 from syte.database import create_project, delete_project, get_project, update_project
 from syte.workspace import (
     clone_or_pull,
@@ -154,8 +154,11 @@ async def set_custom_domain(project_id: str, domain: str, email: str) -> tuple[d
         return None, "Project not found."
 
     await update_project(project_id, {"domain": domain})
-    ok, cert_msg = await issue_certificate(domain, email)
-    ok2, proxy_msg = await apply_proxy_config()
+    ok, proxy_msg = await apply_proxy_config()
 
     project = await get_project(project_id)
-    return project, f"{cert_msg}\n{proxy_msg}"
+    return project, (
+        f"Domain set to {domain}. "
+        f"Caddy will issue a TLS certificate once DNS points to this server.\n"
+        f"{proxy_msg}"
+    )
