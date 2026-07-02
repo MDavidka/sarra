@@ -1,6 +1,7 @@
 """Machine-readable API specification for AI agents."""
 
 from syte import __version__
+from syte.design_contract import build_design_contract_spec, build_system_prompt
 
 
 def build_ai_spec(base_url: str = "") -> dict:
@@ -13,37 +14,47 @@ def build_ai_spec(base_url: str = "") -> dict:
         "create_token": "POST /api/tokens with {\"name\": \"my-agent\"} — no auth required (GUI/local). Token shown once.",
         "example_header": "X-API-Key: syte_xxxxxxxxxxxxxxxx",
     }
+    design = build_design_contract_spec()
     return {
         "name": "Syte Deployment API",
         "version": __version__,
-        "description": "Deploy websites and apps on a Linux server. Clone git repos, run any shell command, upload files, set domains, stream live deploy logs.",
+        "description": "Deploy Next.js websites on a Linux server. Follow design_contract for all UI generation. Deploy via issue_deploy only.",
         "base_url": f"{base}/api" if base else "/api",
         "documentation": f"{base}/api/" if base else "/api/",
         "authentication": auth,
+        "system_prompt": build_system_prompt(),
+        "design_contract": design,
+        "deploy_rules": design["deploy_rules"],
         "errors": {
             "401_missing_api_key": "Send X-API-Key or Authorization: Bearer header",
             "401_invalid_api_key": "Token revoked or incorrect",
             "400_invalid_path": "File path escapes workspace sandbox",
             "400_create_failed": "Duplicate UUID or validation error",
+            "400_build_forbidden": "npm run build blocked — use POST /api/issue_deploy instead",
             "404_not_found": "Project UUID does not exist",
         },
         "workflow_create_website_from_git": [
             "1. POST /api/tokens → save token",
-            "2. POST /api/create_project {name, git_url, branch, deploy: true} → uuid + stream_url",
-            "3. GET stream_url?live=1 (SSE) → watch deploy logs",
-            "4. GET /api/workspace_get?uuid= → confirm url and running=true",
-            "5. POST /api/set_domain {uuid, domain} → optional HTTPS domain",
+            "2. POST /api/create_project {name, git_url, branch} → uuid (do NOT set deploy:true)",
+            "3. POST /api/issue_deploy {uuid} → git pull + docker build + start",
+            "4. GET /api/projects/{uuid}/logs/stream?live=1 (SSE) → watch deploy",
+            "5. GET /api/workspace_get?uuid= → confirm url and running=true",
+            "6. POST /api/validate_design?uuid= → design contract linter",
+            "7. POST /api/set_domain {uuid, domain} → optional HTTPS domain",
         ],
         "workflow_create_website_from_scratch": [
-            "1. POST /api/create_project {name} only — no git, no files required → uuid + execute_command.body",
-            "2. POST /api/write_file {uuid, path: 'app/package.json', content: '...'}",
-            "3. POST /api/write_file {uuid, path: 'app/Dockerfile', content: '...'}",
-            "4. POST execute_command.body from create_project response (or {uuid, command, cwd: 'app'})",
-            "5. POST /api/issue_deploy {uuid} → build and start when ready",
-            "6. GET /api/get_logs?uuid= → check output",
+            "1. Read system_prompt + design_contract — follow Sycord Design Contract",
+            "2. POST /api/create_project {name} only → uuid + execute_command.body",
+            "3. POST /api/write_file — scaffold Next.js + shadcn/ui + Tailwind per design_contract",
+            "4. POST /api/execute_command — npm install, npm run lint (testing ONLY, never npm run build)",
+            "5. POST /api/validate_design?uuid= → check design contract",
+            "6. POST /api/issue_deploy {uuid} → docker build + start (build runs inside Dockerfile)",
+            "7. GET /api/get_logs?uuid= → verify deploy success",
         ],
         "endpoints": [
             {"method": "GET", "path": "/api/server_info", "auth": True, "description": "Server IP, version, URLs"},
+            {"method": "GET", "path": "/api/ai.json", "auth": False, "description": "This spec + design_contract + system_prompt"},
+            {"method": "GET", "path": "/api/validate_design?uuid=", "auth": True, "description": "Run design contract linter on project"},
             {"method": "GET", "path": "/api/workspace_list", "auth": True, "description": "List all projects"},
             {"method": "GET", "path": "/api/workspace_get?uuid=", "auth": True, "description": "Single project details + URLs"},
             {"method": "GET", "path": "/api/list_files?uuid=&path=", "auth": True, "description": "List files in workspace"},
@@ -51,11 +62,11 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/write_file", "auth": True, "body": {"uuid": "str", "path": "str", "content": "str"}},
             {"method": "POST", "path": "/api/upload_file", "auth": True, "body": "multipart: uuid, path, file"},
             {"method": "POST", "path": "/api/delete_file", "auth": True, "body": {"uuid": "str", "path": "str"}},
-            {"method": "POST", "path": "/api/execute_command", "auth": True, "body": {"uuid": "str", "command": "any shell cmd", "cwd": "app", "timeout": 300, "env": {}}},
+            {"method": "POST", "path": "/api/execute_command", "auth": True, "body": {"uuid": "str", "command": "shell cmd (no build)", "cwd": "app", "timeout": 300, "env": {}}, "note": "npm run build FORBIDDEN — use issue_deploy"},
             {"method": "POST", "path": "/api/execute_commands", "auth": True, "body": {"uuid": "str", "commands": [{"command": "str", "cwd": "app"}]}},
             {"method": "POST", "path": "/api/set_env", "auth": True, "body": {"uuid": "str", "env_vars": {}, "merge": True}},
-            {"method": "POST", "path": "/api/create_project", "auth": True, "body": {"name": "str (required)", "uuid": "optional", "git_url": "optional", "git_provider": "optional", "branch": "main", "start_command": "optional", "domain": "optional", "env_vars": {}, "deploy": "bool, default false — set true to deploy immediately"}, "response_includes": "uuid, execute_command.body with filled uuid, issue_deploy.body, next_steps, paths"},
-            {"method": "POST", "path": "/api/issue_deploy", "auth": True, "body": {"uuid": "str"}},
+            {"method": "POST", "path": "/api/create_project", "auth": True, "body": {"name": "str (required)", "uuid": "optional", "git_url": "optional", "git_provider": "optional", "branch": "main", "start_command": "optional", "domain": "optional", "env_vars": {}, "deploy": "bool, default false — prefer issue_deploy"}, "response_includes": "uuid, execute_command.body, issue_deploy.body, design_contract_url"},
+            {"method": "POST", "path": "/api/issue_deploy", "auth": True, "body": {"uuid": "str"}, "description": "Git pull + docker build + restart — the ONLY way to build"},
             {"method": "POST", "path": "/api/start_service", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/stop_service", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/set_domain", "auth": True, "body": {"uuid": "str", "domain": "app.example.com"}},
@@ -65,14 +76,14 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
         "create_project_response": {
-            "description": "AI agents: use execute_command.body from this response — uuid is pre-filled",
+            "description": "AI agents: use execute_command for lint/install only; deploy via issue_deploy.body",
             "fields": {
                 "uuid": "project id for all subsequent API calls",
-                "execute_command": "POST /api/execute_command with body containing uuid, command, cwd",
-                "execute_command.body_minimal": "minimal example: {uuid, command, cwd: app}",
-                "issue_deploy": "POST /api/issue_deploy when files are ready",
-                "next_steps": "human-readable checklist",
-                "paths": "workspace, app, data directories on server",
+                "design_contract": "GET /api/ai.json → design_contract — mandatory UI rules",
+                "system_prompt": "GET /api/ai.json → system_prompt — inject as AI system instruction",
+                "execute_command": "scaffolding + npm install + npm run lint ONLY",
+                "issue_deploy": "POST /api/issue_deploy — git pull + docker build + start",
+                "validate_design": "GET /api/validate_design?uuid= — run after generation",
             },
             "example": {
                 "ok": True,
@@ -81,17 +92,23 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "execute_command": {
                     "method": "POST",
                     "path": "/api/execute_command",
-                    "body": {"uuid": "my-site-a1b2c3", "command": "npm install", "cwd": "app", "timeout": 300},
+                    "body": {"uuid": "my-site-a1b2c3", "command": "npm run lint", "cwd": "app", "timeout": 300},
                 },
                 "issue_deploy": {"method": "POST", "path": "/api/issue_deploy", "body": {"uuid": "my-site-a1b2c3"}},
             },
         },
         "execute_command_examples": [
-            {"command": "npm install", "cwd": "app"},
-            {"command": "npm run build", "cwd": "app"},
-            {"command": "ls -la", "cwd": "app"},
-            {"command": "cat package.json", "cwd": "app"},
-            {"command": "mkdir -p src/components", "cwd": "app"},
-            {"command": "npx create-next-app@latest . --yes", "cwd": "app"},
+            {"command": "npm install", "cwd": "app", "purpose": "install dependencies"},
+            {"command": "npm run lint", "cwd": "app", "purpose": "bug testing — allowed"},
+            {"command": "ls -la", "cwd": "app", "purpose": "inspect files"},
+            {"command": "mkdir -p src/components/ui", "cwd": "app", "purpose": "scaffold"},
+            {"command": "npx create-next-app@latest . --yes", "cwd": "app", "purpose": "scaffold Next.js"},
+        ],
+        "execute_command_forbidden": [
+            "npm run build",
+            "yarn build",
+            "pnpm build",
+            "next build",
+            "Use POST /api/issue_deploy {uuid} for all builds",
         ],
     }

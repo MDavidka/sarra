@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,16 @@ BLOCKED_PATTERNS = (
     "curl http | bash",
 )
 
+# Builds must go through issue_deploy (docker build), not execute_command.
+FORBIDDEN_BUILD_PATTERNS = (
+    r"\bnpm\s+run\s+build\b",
+    r"\byarn\s+build\b",
+    r"\bpnpm\s+build\b",
+    r"\bnext\s+build\b",
+    r"\bnpx\s+next\s+build\b",
+    r"\bnpm\s+run\s+production\b",
+)
+
 
 def _resolve_workspace_path(project_id: str, rel_path: str = "") -> Path:
     base = workspace_path(project_id).resolve()
@@ -40,6 +51,15 @@ def _is_blocked(command: str) -> str | None:
     lower = command.lower().strip()
     for pattern in BLOCKED_PATTERNS:
         if pattern in lower:
+            return pattern
+    return None
+
+
+def _is_forbidden_build(command: str) -> str | None:
+    """Return matched pattern if command tries to build outside issue_deploy."""
+    lower = command.lower().strip()
+    for pattern in FORBIDDEN_BUILD_PATTERNS:
+        if re.search(pattern, lower):
             return pattern
     return None
 
@@ -212,6 +232,15 @@ async def execute_command(
     blocked = _is_blocked(cmd)
     if blocked:
         return 1, f"Command blocked (host safety): {blocked}"
+
+    build_blocked = _is_forbidden_build(cmd)
+    if build_blocked:
+        return 1, (
+            "Build commands are not allowed via execute_command. "
+            "Use POST /api/issue_deploy {\"uuid\": \"...\"} instead — "
+            "that runs git pull + docker build (npm run build inside Dockerfile) + restart. "
+            "For testing, use: npm run lint"
+        )
 
     workdir = _resolve_workspace_path(project_id, cwd)
     if not workdir.is_dir():

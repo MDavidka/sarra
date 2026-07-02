@@ -67,44 +67,50 @@
     </div>
   </details>
 
-  <h2>AI workflow: deploy a website from Git</h2>
+  <h2>Sycord Design Contract</h2>
+  <p class="hint">Mandatory UI rules for every AI-generated site. Read <code>GET /api/ai.json</code> → <code>system_prompt</code> and <code>design_contract</code> before generating.</p>
+  <ul class="steps">
+    <li>Next.js + <strong>shadcn/ui</strong> + Tailwind + <strong>Lucide</strong> icons</li>
+    <li>Font: <strong>Inter</strong> via <code>--font-sans</code> on body</li>
+    <li>shadcn theme preset + one accent; dark mode required</li>
+    <li>Hero gradient below hero section (primary at 0.15–0.3 opacity)</li>
+    <li>No icons in colored circles; no <code>npm run build</code> via execute_command</li>
+  </ul>
+  <p>After generation: <code>GET /api/validate_design?uuid=</code> — automated linter</p>
+
+  <h2>Deploy rules</h2>
+  <p><strong>Build ONLY via</strong> <code>POST /api/issue_deploy {"uuid":"..."}</code> — git pull + docker build + restart.</p>
+  <p><code>execute_command</code> is for scaffolding, <code>npm install</code>, and <code>npm run lint</code> (testing). <code>npm run build</code> is <strong>blocked</strong>.</p>
+
+  <h2>AI workflow: deploy from Git</h2>
   <ol class="steps">
-    <li><code>POST /api/create_project</code> with <code>git_url</code> and <code>"deploy": true</code> → <code>uuid</code></li>
+    <li><code>POST /api/create_project</code> with <code>git_url</code> → <code>uuid</code></li>
+    <li><code>POST /api/issue_deploy {"uuid":"..."}</code> → git pull + docker build + start</li>
     <li>Stream <code>GET /api/projects/{uuid}/logs/stream?live=1</code> (SSE)</li>
-    <li><code>GET /api/workspace_get?uuid=</code> → check <code>url</code> and <code>running</code></li>
-    <li><code>POST /api/set_domain</code> → optional custom HTTPS domain</li>
+    <li><code>GET /api/validate_design?uuid=</code> → design linter</li>
+    <li><code>POST /api/set_domain</code> → optional HTTPS domain</li>
   </ol>
-  <pre>curl -X POST https://YOUR_HOST/api/create_project \
+  <pre>curl -X POST https://YOUR_HOST/api/issue_deploy \
   -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-site",
-    "git_url": "https://github.com/user/repo.git",
-    "branch": "main",
-    "deploy": true
-  }'</pre>
+  -d '{"uuid": "my-site-abc123"}'</pre>
 
-  <h2>AI workflow: build a website from scratch (no git)</h2>
+  <h2>AI workflow: build from scratch (no git)</h2>
   <ol class="steps">
-    <li><code>POST /api/create_project</code> with <code>name</code> only — empty workspace, no deploy</li>
-    <li>Use <code>execute_command.body</code> from the response (uuid pre-filled)</li>
-    <li><code>POST /api/write_file</code> — create package.json, Dockerfile, source files anytime</li>
-    <li><code>POST /api/issue_deploy</code> — build &amp; start when ready</li>
-    <li><code>GET /api/get_logs?uuid=</code> — verify success</li>
+    <li>Read <code>/api/ai.json</code> → <code>system_prompt</code> + <code>design_contract</code></li>
+    <li><code>POST /api/create_project</code> with <code>name</code> only → <code>uuid</code></li>
+    <li><code>POST /api/write_file</code> — Next.js + shadcn/ui per design contract</li>
+    <li><code>POST /api/execute_command</code> — <code>npm install</code>, <code>npm run lint</code> (NOT build)</li>
+    <li><code>GET /api/validate_design?uuid=</code> — check design rules</li>
+    <li><code>POST /api/issue_deploy {"uuid":"..."}</code> — docker build + start</li>
+    <li><code>GET /api/get_logs?uuid=</code> — verify deploy</li>
   </ol>
-  <pre>curl -X POST https://YOUR_HOST/api/create_project \
-  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{"name": "my-site"}'
-
-# Response includes execute_command.body — copy and edit command:
-# {"uuid":"my-site-abc123","command":"npm install","cwd":"app","timeout":300}
-
-curl -X POST https://YOUR_HOST/api/execute_command \
+  <pre>curl -X POST https://YOUR_HOST/api/execute_command \
   -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
   -d '{
     "uuid": "my-site-abc123",
-    "command": "npm install && npm run build",
+    "command": "npm run lint",
     "cwd": "app",
-    "timeout": 600
+    "timeout": 300
   }'</pre>
 
   <h2>Endpoints</h2>
@@ -125,19 +131,20 @@ curl -X POST https://YOUR_HOST/api/execute_command \
     <div class="detail-body"><p>List files/dirs. <code>path</code> relative to workspace (default root).</p></div>
   </details>
 
-  <details open><summary><span class="m post">POST</span> /api/execute_command <span class="tag">any command</span></summary>
+  <details open><summary><span class="m post">POST</span> /api/execute_command <span class="tag">no build</span></summary>
     <div class="detail-body">
-      <p>Run <strong>any custom shell command</strong> inside the workspace. Not limited to specific commands.</p>
+      <p>Scaffolding and <strong>lint testing</strong> only. <code>npm run build</code> is <strong>blocked</strong> — use <code>issue_deploy</code>.</p>
       <table>
         <tr><th>field</th><th>type</th><th>description</th></tr>
         <tr><td>uuid</td><td>string</td><td>required</td></tr>
-        <tr><td>command</td><td>string</td><td>any shell command</td></tr>
+        <tr><td>command</td><td>string</td><td>shell command (no build)</td></tr>
         <tr><td>cwd</td><td>string</td><td>default <code>app</code></td></tr>
         <tr><td>timeout</td><td>int</td><td>seconds, default 300, max 1800</td></tr>
         <tr><td>env</td><td>object</td><td>extra env vars for this run</td></tr>
       </table>
-      <p>Examples: <code>npm install</code>, <code>npm run build</code>, <code>ls -la</code>, <code>mkdir -p src</code>, <code>cat Dockerfile</code></p>
-      <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm install"}</pre>
+      <p>Allowed: <code>npm install</code>, <code>npm run lint</code>, <code>ls -la</code>, <code>mkdir -p src</code></p>
+      <p class="warn">Forbidden: <code>npm run build</code>, <code>yarn build</code>, <code>next build</code></p>
+      <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm run lint"}</pre>
     </div>
   </details>
 
@@ -146,8 +153,15 @@ curl -X POST https://YOUR_HOST/api/execute_command \
       <p>Run multiple commands in sequence. Stops on first failure by default.</p>
       <pre>{"uuid":"...","commands":[
   {"command":"npm install","cwd":"app"},
-  {"command":"npm run build","cwd":"app","timeout":600}
+  {"command":"npm run lint","cwd":"app","timeout":300}
 ]}</pre>
+    </div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/validate_design?uuid=</summary>
+    <div class="detail-body">
+      <p>Run Sycord Design Contract linter — checks shadcn/ui, --font-sans, Lucide, dark mode, hero gradient, etc.</p>
+      <pre>{"ok":true,"passed":7,"total":8,"checks":[...]}</pre>
     </div>
   </details>
 
@@ -187,23 +201,25 @@ curl -X POST https://YOUR_HOST/api/execute_command \
         <tr><td>env_vars</td><td>no</td><td>key-value env</td></tr>
         <tr><td>deploy</td><td>no</td><td>default <code>false</code> — set <code>true</code> to deploy immediately</td></tr>
       </table>
-      <p>Response includes <code>uuid</code>, <code>execute_command.body</code> (pre-filled for AI agents), <code>issue_deploy.body</code>, <code>next_steps</code>, and <code>paths</code>.</p>
+      <p>Response includes <code>design_contract</code>, <code>uuid</code>, <code>execute_command.body</code>, <code>issue_deploy.body</code>, <code>validate_design</code>.</p>
       <pre>{
   "ok": true,
   "uuid": "my-site-a1b2c3",
   "status": "created",
   "execute_command": {
-    "method": "POST",
-    "path": "/api/execute_command",
-    "body": {"uuid": "my-site-a1b2c3", "command": "npm install", "cwd": "app", "timeout": 300}
+    "body": {"uuid": "my-site-a1b2c3", "command": "npm run lint", "cwd": "app"}
   },
   "issue_deploy": {"method": "POST", "path": "/api/issue_deploy", "body": {"uuid": "my-site-a1b2c3"}}
 }</pre>
     </div>
   </details>
 
-  <details><summary><span class="m post">POST</span> /api/issue_deploy</summary>
-    <div class="detail-body"><pre>{"uuid":"..."}</pre><p>Git pull + rebuild + restart.</p></div>
+  <details open><summary><span class="m post">POST</span> /api/issue_deploy</summary>
+    <div class="detail-body">
+      <pre>{"uuid":"..."}</pre>
+      <p><strong>The only way to build and deploy.</strong> Git pull (if git_url) + docker build (npm run build inside Dockerfile) + container restart.</p>
+      <p><code>npm run build</code> via execute_command is blocked — build always happens here.</p>
+    </div>
   </details>
 
   <details><summary><span class="m post">POST</span> /api/start_service / stop_service</summary>

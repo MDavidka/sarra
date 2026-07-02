@@ -114,6 +114,20 @@ async def api_server_info(_token: dict = Depends(verify_api_token)):
     }
 
 
+@router.get("/validate_design")
+async def api_validate_design(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Run Sycord Design Contract linter on project workspace."""
+    from syte.design_linter import validate_design
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", f"Project not found: {uuid}")
+    return validate_design(uuid)
+
+
 @router.get("/workspace_list")
 async def api_workspace_list(_token: dict = Depends(verify_api_token)):
     workspaces = await workspace_api.workspace_list()
@@ -168,7 +182,7 @@ async def api_write_file(body: WriteFileRequest, _token: dict = Depends(verify_a
 
 @router.post("/execute_command")
 async def api_execute_command(body: ExecuteCommandRequest, _token: dict = Depends(verify_api_token)):
-    """Run any custom shell command in the workspace (npm, yarn, mkdir, ls, etc.)."""
+    """Run shell commands for scaffolding/lint — npm run build is FORBIDDEN, use issue_deploy."""
     code, output = await workspace_api.execute_command(
         body.uuid, body.command, body.cwd, body.timeout, body.env
     )
@@ -280,6 +294,7 @@ async def api_issue_deploy(body: UuidRequest, _token: dict = Depends(verify_api_
         "ok": True,
         "uuid": project["id"],
         "message": message,
+        "description": "Git pull (if git_url) + docker build (npm run build inside Dockerfile) + container restart",
         "stream_url": f"/api/projects/{project['id']}/logs/stream?live=1",
     }
 
