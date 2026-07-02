@@ -1,6 +1,7 @@
 import json
 import re
 import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +81,17 @@ def _docker_build_hints(output: str) -> str:
     if "copy failed" in lower and ".next/static" in lower:
         hints.append(
             "Dockerfile copies .next/static — run next build first or check next.config output settings."
+        )
+    if "javascript heap out of memory" in lower or "enomem" in lower or "killed" in lower:
+        hints.append(
+            "Build ran out of memory during npm/next build. "
+            "Add NODE_OPTIONS=--max-old-space-size=4096 to the Dockerfile build stage, "
+            "or increase server RAM/swap."
+        )
+    if "next build" in lower and ("error" in lower or "failed" in lower):
+        hints.append(
+            "Next.js build failed inside Docker. Scroll the build log above for the compile error — "
+            "the container is only created after a successful docker build."
         )
     return "\n\n".join(hints)
 
@@ -182,6 +194,13 @@ def container_name(project_id: str) -> str:
     return _container_name(project_id)
 
 
+def docker_container_exists(project_id: str) -> bool:
+    if not shutil.which("docker"):
+        return False
+    code, _ = run_cmd(["docker", "inspect", "-f", "{{.Id}}", _container_name(project_id)])
+    return code == 0
+
+
 def is_docker_running(project_id: str) -> bool:
     if not shutil.which("docker"):
         return False
@@ -221,6 +240,29 @@ def _append_build_log(project_id: str, label: str, output: str) -> None:
             log_file.write("\n")
 
 
+def _run_build_streaming(build_cmd: list[str], project_id: str) -> tuple[int, str]:
+    """Run docker build and stream stdout/stderr into build.log in real time."""
+    log_path = _build_log_path(project_id)
+    proc = subprocess.Popen(
+        build_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    chunks: list[str] = []
+    with log_path.open("a") as log_file:
+        log_file.write("\n=== docker build ===\n")
+        log_file.flush()
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            chunks.append(line)
+            log_file.write(line)
+            log_file.flush()
+    code = proc.wait()
+    return code, "".join(chunks).strip()
+
+
 def deploy_docker(
     project_id: str,
     host_port: int,
@@ -257,12 +299,12 @@ def deploy_docker(
     if prep_actions:
         header += "Prepare:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n"
     build_log.write_text(header)
-    code, out = run_cmd(build_cmd)
-    _append_build_log(project_id, "docker build", out or "(no output)")
+    code, out = _run_build_streaming(build_cmd, project_id)
     if code != 0:
         tail = _strip_ansi(out or "")
         hints = _docker_build_hints(tail)
-        msg = f"Docker build failed (exit {code}).\n{tail[-4000:]}"
+        _append_build_log(project_id, "docker build failed", f"exit code {code}")
+        msg = f"Docker build failed (exit {code}).\n{tail[-6000:]}"
         if hints:
             msg += f"\n\nHint:\n{hints}"
         return False, msg

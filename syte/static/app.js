@@ -111,7 +111,7 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
     if (wasDeploying) {
       wasDeploying = false;
       if (hint) hint.textContent = 'deploy finished — full log below';
-      await loadLogSnapshot(projectId, targetEl, true);
+      await loadLogSnapshot(projectId, targetEl);
       stopLogStream();
     }
   }, 2000);

@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from syte.docker_deploy import _build_log_path, container_name
+from syte.docker_deploy import _build_log_path, container_name, docker_container_exists
 from syte.process_manager import get_logs
 from syte.workspace import deploy_log_path, run_cmd, workspace_path
 
@@ -53,18 +53,18 @@ async def stream_project_logs(
                 offsets[path] = 0
 
         if deploy_type == "docker" and docker_tick % 8 == 0:
-            name = container_name(project_id)
-            code, out = await asyncio.to_thread(
-                run_cmd, ["docker", "logs", "--tail", "8", name]
-            )
-            if out.strip():
-                label = "container" if code == 0 else "container-err"
-                for line in out.strip().splitlines():
-                    if line not in last_docker_lines:
-                        last_docker_lines.add(line)
-                        if len(last_docker_lines) > 200:
-                            last_docker_lines.clear()
-                        yield f"data: {json.dumps({'type': label, 'text': line})}\n\n"
+            if await asyncio.to_thread(docker_container_exists, project_id):
+                name = container_name(project_id)
+                code, out = await asyncio.to_thread(
+                    run_cmd, ["docker", "logs", "--tail", "8", name]
+                )
+                if code == 0 and out.strip():
+                    for line in out.strip().splitlines():
+                        if line not in last_docker_lines:
+                            last_docker_lines.add(line)
+                            if len(last_docker_lines) > 200:
+                                last_docker_lines.clear()
+                            yield f"data: {json.dumps({'type': 'container', 'text': line})}\n\n"
 
         docker_tick += 1
         if docker_tick % 10 == 0:

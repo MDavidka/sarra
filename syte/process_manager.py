@@ -9,6 +9,7 @@ from syte.config import settings
 from syte.docker_deploy import (
     container_name,
     deploy_docker,
+    docker_container_exists,
     find_dockerfile,
     is_docker_running,
     rebuild_docker,
@@ -182,12 +183,17 @@ def get_logs(project_id: str, lines: int = 100, deploy_type: str = "shell") -> s
                 tail = content[-max(lines * 5, 500):]
                 parts.append("=== Build log ===\n" + "\n".join(tail))
 
-        name = container_name(project_id)
-        code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
-        if code == 0 and out.strip():
-            parts.append("=== Container log ===\n" + out.strip())
-        elif code != 0 and out.strip():
-            parts.append("=== Container log (error) ===\n" + out.strip())
+        if docker_container_exists(project_id):
+            name = container_name(project_id)
+            code, out = run_cmd(["docker", "logs", "--tail", str(lines), name])
+            if code == 0 and out.strip():
+                parts.append("=== Container log ===\n" + out.strip())
+        elif build_log.exists():
+            parts.append(
+                "=== Container ===\n"
+                "No container yet — docker build may still be running or failed. "
+                "Check the build log above for npm/next errors (container is only created after a successful build)."
+            )
 
         return "\n\n".join(parts) if parts else "No logs yet."
 
