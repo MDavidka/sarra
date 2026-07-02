@@ -7,6 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from syte import __version__
+from syte.nextjs_layout import (
+    ensure_nextjs_dockerfile,
+    find_router_dir,
+    fix_nextjs_layout,
+    is_nextjs_repo as _is_nextjs_repo_layout,
+    validate_nextjs_for_docker,
+)
 from syte.workspace import read_env_vars, run_cmd, workspace_path
 
 DOCKERFILE_NAMES = ("Dockerfile", "dockerfile", "Dockerfile.prod", "Dockerfile.production")
@@ -88,6 +95,13 @@ def _docker_build_hints(output: str) -> str:
             "Add NODE_OPTIONS=--max-old-space-size=4096 to the Dockerfile build stage, "
             "or increase server RAM/swap."
         )
+    if "couldn't find any `pages` or `app` directory" in lower or "findpagesdir" in lower:
+        hints.append(
+            "Next.js cannot find app/ or pages/ in the Docker build context.\n"
+            "Common fix: page.tsx must be at app/page.tsx (not project root).\n"
+            "With Syte workspace, use write_file path: app/app/page.tsx and app/app/layout.tsx.\n"
+            "Syte auto-moves misplaced files on deploy — retry issue_deploy after update."
+        )
     if "next build" in lower and ("error" in lower or "failed" in lower):
         hints.append(
             "Next.js build failed inside Docker. Scroll the build log above for the compile error — "
@@ -99,6 +113,14 @@ def _docker_build_hints(output: str) -> str:
 def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
     """Fix common Next.js Docker issues in the cloned workspace before build."""
     actions: list[str] = []
+
+    if _is_nextjs_repo(repo) or _is_nextjs_repo_layout(repo):
+        actions.extend(fix_nextjs_layout(repo))
+        actions.extend(ensure_nextjs_dockerfile(repo))
+
+    if (repo / "Dockerfile").is_file():
+        dockerfile = repo / "Dockerfile"
+
     if not _is_nextjs_repo(repo):
         return actions
 
@@ -149,6 +171,25 @@ def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
                     break
 
     return actions
+
+
+def _docker_build_context(repo: Path, dockerfile: Path) -> Path:
+    """Docker build context must contain package.json and app/pages source."""
+    df_dir = dockerfile.parent.resolve()
+    repo = repo.resolve()
+    if (df_dir / "package.json").exists():
+        return df_dir
+    if (repo / "package.json").exists():
+        return repo
+    return df_dir
+
+
+def _workspace_file_listing(repo: Path) -> str:
+    from syte.nextjs_layout import _tree_summary
+
+    router = find_router_dir(repo)
+    router_note = f"router: {router.relative_to(repo)}/" if router else "router: NOT FOUND"
+    return f"{router_note}\n{_tree_summary(repo)}"
 
 
 def _runtime_env_args(repo: Path, container_port: int, env_vars_raw: str | dict) -> list[str]:
@@ -284,17 +325,34 @@ def deploy_docker(
     run_cmd(["docker", "rmi", image])
 
     prep_actions = _prepare_docker_context(repo, dockerfile)
+    dockerfile = find_dockerfile(project_id) or dockerfile
+    if not dockerfile or not dockerfile.is_file():
+        return False, "Dockerfile not found in workspace."
+
+    ok, validate_msg = validate_nextjs_for_docker(repo)
+    if not ok:
+        listing = _workspace_file_listing(repo)
+        return False, f"{validate_msg}\n\nWorkspace listing:\n{listing}"
+
+    build_context = _docker_build_context(repo, dockerfile)
+    if build_context != repo:
+        try:
+            rel = build_context.relative_to(repo)
+            prep_actions.append(f"Using docker build context: {rel}/")
+        except ValueError:
+            prep_actions.append(f"Using docker build context: {build_context}")
 
     build_cmd = [
         "docker", "build",
         "-t", image,
         "-f", str(dockerfile),
-        str(repo),
+        str(build_context),
     ]
     header = (
         f"Syte v{__version__} — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
         f"Command: {' '.join(build_cmd)}\n"
         f"Building {image} from {dockerfile.name}\n"
+        f"Workspace files:\n{_workspace_file_listing(repo)}\n"
     )
     if prep_actions:
         header += "Prepare:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n"

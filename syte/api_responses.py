@@ -53,9 +53,10 @@ def build_create_project_response(project: dict, workspace: dict | None, message
             "path": "/api/write_file",
             "body": {
                 "uuid": uid,
-                "path": "app/package.json",
-                "content": '{"name":"app","scripts":{"dev":"next dev","build":"next build","lint":"next lint"}}',
+                "path": "app/app/page.tsx",
+                "content": "export default function Home() { return <main><h1>Hello</h1></main>; }",
             },
+            "note": "Syte workspace is app/ — Next.js router dir is app/app/ (not app/page.tsx at root)",
         },
         "issue_deploy": {
             "method": "POST",

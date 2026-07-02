@@ -108,6 +108,7 @@ def build_design_contract_spec() -> dict:
             "colors": "shadcn preset base + one accent; card != background; dark mode required",
             "imagery": "real images; hero gradient below hero section",
             "layout": "avoid generic 3-col icon circles; mobile-first",
+            "file_paths": "Syte workspace root is app/ — Next.js App Router files go in app/app/page.tsx, app/app/layout.tsx (double app/ is correct)",
         },
         "preflight_checklist": PREFLIGHT_CHECKLIST,
         "deploy_rules": DEPLOY_RULES,
