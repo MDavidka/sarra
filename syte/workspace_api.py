@@ -74,6 +74,7 @@ def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int)
 
 async def workspace_get(project_id: str) -> dict | None:
     from syte import process_manager
+    from syte.preview_manager import preview_meta
 
     project = await get_project(project_id)
     if not project:
@@ -102,6 +103,7 @@ async def workspace_get(project_id: str) -> dict | None:
         "app_path": str(ws / "app"),
         "data_path": str(ws / "data"),
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
+        **preview_meta(project),
     }
 
 

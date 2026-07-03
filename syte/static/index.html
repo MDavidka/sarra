@@ -156,6 +156,16 @@
             <div id="svc-workspace-files" class="workspace-files"></div>
           </div>
 
+          <div class="svc-section svc-preview">
+            <h2 class="svc-section-title"><i data-lucide="eye"></i> live preview</h2>
+            <p class="hint" id="svc-preview-hint">fast dev server with hot reload — no docker build</p>
+            <div class="svc-actions" id="svc-preview-actions"></div>
+            <div class="preview-frame-wrap hidden" id="svc-preview-wrap">
+              <iframe id="svc-preview-frame" class="preview-frame" title="Live preview"></iframe>
+            </div>
+            <div class="logs-terminal preview-logs hidden" id="svc-preview-logs"></div>
+          </div>
+
           <div class="svc-section svc-domain">
             <h2 class="svc-section-title"><i data-lucide="globe"></i> domain</h2>
             <div class="form-inner compact">

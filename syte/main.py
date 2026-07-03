@@ -27,7 +27,7 @@ from syte.self_update import update_syte
 from syte import auth
 from syte import api_router
 from syte import workspace_api
-from syte.log_stream import stream_project_logs
+from syte.log_stream import stream_preview_logs, stream_project_logs
 import logging
 
 from syte import supervisor
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/openapi", redoc_url=None)
 
-app.include_router(api_router.router)
+app.include_router(api_router.router, prefix="/api")
 
 
 class CreateTokenRequest(BaseModel):
@@ -387,6 +387,49 @@ async def api_delete(project_id: str):
     return {"ok": True, "message": message}
 
 
+@app.post("/api/projects/{project_id}/preview/start")
+async def api_preview_start(project_id: str):
+    from syte.preview_manager import start_preview
+    ok, message, meta = await start_preview(project_id)
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, **meta}
+
+
+@app.post("/api/projects/{project_id}/preview/stop")
+async def api_preview_stop(project_id: str):
+    from syte.preview_manager import get_preview_status, stop_preview
+    stop_preview(project_id)
+    from syte.database import update_project
+    await update_project(project_id, {"preview_status": "stopped"})
+    meta, _ = await get_preview_status(project_id)
+    return {"ok": True, "message": "Preview stopped", **(meta or {})}
+
+
+@app.get("/api/projects/{project_id}/preview/status")
+async def api_preview_status(project_id: str):
+    from syte.preview_manager import get_preview_status
+    meta, message = await get_preview_status(project_id)
+    if not meta:
+        raise HTTPException(404, message)
+    return {"ok": True, **meta}
+
+
+@app.get("/api/projects/{project_id}/preview/logs/stream")
+async def api_preview_logs_stream(project_id: str, request: Request, live: bool = False):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    if key:
+        await auth.verify_api_token_from_request(request)
+    return StreamingResponse(
+        stream_preview_logs(project_id, live_only=live),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/api/projects/{project_id}/logs")
 async def api_logs(project_id: str, lines: int = 500):
     project = await get_project(project_id)
@@ -460,6 +503,7 @@ def _project_url(project: dict) -> str:
 
 
 def _enrich(project: dict) -> dict:
+    from syte.preview_manager import preview_meta
     from syte.workspace import ensure_workspace, workspace_path
 
     p = dict(project)
@@ -471,6 +515,7 @@ def _enrich(project: dict) -> dict:
     p["workspace_path"] = str(ws)
     p["app_path"] = str(ws / "app")
     p["data_path"] = str(ws / "data")
+    p.update(preview_meta(p))
     return p
 
 

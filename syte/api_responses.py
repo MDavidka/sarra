@@ -28,7 +28,8 @@ def build_create_project_response(project: dict, workspace: dict | None, message
             f"POST /api/write_file — scaffold Next.js app in uuid={uid}",
             f"POST /api/execute_command — npm install, npm run lint (NOT npm run build)",
             f"GET /api/validate_design?uuid={uid} — run design linter",
-            f"POST /api/issue_deploy — {{\"uuid\": \"{uid}\"}} git pull + docker build + start",
+            f"POST /api/start_preview — {{\"uuid\": \"{uid}\"}} live HMR preview (fast)",
+            f"POST /api/issue_deploy — {{\"uuid\": \"{uid}\"}} production deploy when ready",
         ],
         "execute_command": {
             "method": "POST",
@@ -65,6 +66,18 @@ def build_create_project_response(project: dict, workspace: dict | None, message
             "body": {"uuid": uid},
         },
         "validate_design": f"/api/validate_design?uuid={uid}",
+        "start_preview": {
+            "method": "POST",
+            "path": "/api/start_preview",
+            "description": "Fast live preview (next dev / vite with HMR) — use while building, before issue_deploy",
+            "body": {"uuid": uid},
+        },
+        "stop_preview": {
+            "method": "POST",
+            "path": "/api/stop_preview",
+            "body": {"uuid": uid},
+        },
+        "preview_status": f"/api/preview_status?uuid={uid}",
         "stream_url": f"/api/projects/{uid}/logs/stream?live=1",
         "get_logs": f"/api/get_logs?uuid={uid}",
         "workspace_get": f"/api/workspace_get?uuid={uid}",

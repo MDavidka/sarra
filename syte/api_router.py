@@ -321,3 +321,38 @@ async def api_delete_project(body: UuidRequest, _token: dict = Depends(verify_ap
     if not ok:
         _http_error(404, "not_found", message)
     return {"ok": True, "message": message}
+
+
+@router.post("/start_preview")
+async def api_start_preview(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    """Start fast dev preview (next dev / vite) with HMR — seconds, not minutes."""
+    from syte.preview_manager import start_preview
+
+    ok, message, meta = await start_preview(body.uuid)
+    if not ok:
+        _http_error(400, "preview_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/stop_preview")
+async def api_stop_preview(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    from syte.database import update_project
+    from syte.preview_manager import get_preview_status, stop_preview
+
+    stop_preview(body.uuid)
+    await update_project(body.uuid, {"preview_status": "stopped"})
+    meta, _ = await get_preview_status(body.uuid)
+    return {"ok": True, "uuid": body.uuid, "message": "Preview stopped", **(meta or {})}
+
+
+@router.get("/preview_status")
+async def api_preview_status(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.preview_manager import get_preview_status
+
+    meta, message = await get_preview_status(uuid)
+    if not meta:
+        _http_error(404, "not_found", message)
+    return {"ok": True, **meta}

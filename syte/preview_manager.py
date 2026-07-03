@@ -1,0 +1,220 @@
+"""Fast dev preview servers (next dev / vite) with HMR — separate from production deploy."""
+
+import json
+import os
+import signal
+import socket
+import subprocess
+import time
+from pathlib import Path
+
+from syte.config import settings
+from syte.database import get_project, list_projects, update_project
+from syte.domain_utils import build_direct_url
+from syte.nextjs_layout import is_nextjs_repo
+from syte.workspace import command_exists, ensure_workspace, read_env_vars, workspace_path
+
+PREVIEW_PORT_START = 4000
+PREVIEW_PORT_END = 4999
+PID_DIR = settings.data_dir / "pids"
+
+
+def preview_pid_file(project_id: str) -> Path:
+    PID_DIR.mkdir(parents=True, exist_ok=True)
+    return PID_DIR / f"{project_id}.preview.pid"
+
+
+def preview_log_path(project_id: str) -> Path:
+    return workspace_path(project_id) / "preview.log"
+
+
+async def next_preview_port() -> int:
+    projects = await list_projects()
+    used = {p.get("preview_port") for p in projects if p.get("preview_port")}
+    for port in range(PREVIEW_PORT_START, PREVIEW_PORT_END + 1):
+        if port not in used:
+            return port
+    raise RuntimeError("No preview ports available (4000-4999 exhausted)")
+
+
+def _port_listening(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.25)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def detect_dev_command(repo: Path) -> str | None:
+    pkg = repo / "package.json"
+    if not pkg.exists():
+        return None
+    try:
+        data = json.loads(pkg.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    scripts = data.get("scripts", {})
+    if "dev" in scripts:
+        script = scripts["dev"].lower()
+        if "vite" in script:
+            return "npm run dev -- --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+        if "next" in script:
+            return "npm run dev -- --hostname 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+        return "npm run dev -- --port $SYTE_PREVIEW_PORT"
+
+    if is_nextjs_repo(repo):
+        return "npx next dev --hostname 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+
+    deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+    if "vite" in deps:
+        return "npx vite --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+
+    return None
+
+
+def is_preview_running(project_id: str) -> bool:
+    pf = preview_pid_file(project_id)
+    if not pf.exists():
+        return False
+    try:
+        pid = int(pf.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        pf.unlink(missing_ok=True)
+        return False
+
+
+def stop_preview(project_id: str) -> tuple[bool, str]:
+    pf = preview_pid_file(project_id)
+    if not pf.exists():
+        return True, "Preview not running."
+    try:
+        pid = int(pf.read_text().strip())
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    pf.unlink(missing_ok=True)
+    return True, "Preview stopped."
+
+
+def get_preview_logs(project_id: str, lines: int = 200) -> str:
+    log_path = preview_log_path(project_id)
+    if not log_path.exists():
+        return "No preview logs yet."
+    content = log_path.read_text(errors="replace").splitlines()
+    return "\n".join(content[-lines:])
+
+
+def preview_meta(project: dict) -> dict:
+    preview_port = project.get("preview_port")
+    running = is_preview_running(project["id"])
+    ready = running and preview_port and _port_listening(int(preview_port))
+    ip = settings.resolved_public_ip
+    preview_url = build_direct_url(ip, int(preview_port)) if preview_port else ""
+    return {
+        "preview_running": running,
+        "preview_ready": ready,
+        "preview_port": preview_port,
+        "preview_url": preview_url,
+        "preview_status": project.get("preview_status", "stopped"),
+        "preview_stream_url": f"/api/projects/{project['id']}/preview/logs/stream?live=1",
+    }
+
+
+async def start_preview(project_id: str) -> tuple[bool, str, dict]:
+    project = await get_project(project_id)
+    if not project:
+        return False, "Project not found", {}
+
+    stop_preview(project_id)
+
+    repo = ensure_workspace(project_id) / "app"
+    cmd_template = detect_dev_command(repo)
+    if not cmd_template:
+        return False, (
+            "No dev server detected. Add a \"dev\" script to package.json "
+            "(e.g. \"next dev\" or \"vite\") then retry start_preview."
+        ), {}
+
+    if "npm" in cmd_template and not command_exists("npm"):
+        from syte.runtime import ensure_npm
+        ok, msg = ensure_npm()
+        if not ok:
+            return False, msg, {}
+
+    preview_port = project.get("preview_port")
+    if not preview_port:
+        preview_port = await next_preview_port()
+
+    command = cmd_template.replace("$SYTE_PREVIEW_PORT", str(preview_port))
+    log_path = preview_log_path(project_id)
+    with log_path.open("a") as log_file:
+        log_file.write(f"\n=== Preview session (port {preview_port}) ===\n")
+        log_file.write(f"$ {command}\n")
+
+    env = {**os.environ, **read_env_vars(project.get("env_vars", "{}"))}
+    env.update({
+        "PORT": str(preview_port),
+        "SYTE_PREVIEW_PORT": str(preview_port),
+        "HOSTNAME": "0.0.0.0",
+        "NODE_ENV": "development",
+        "NEXT_TELEMETRY_DISABLED": "1",
+    })
+
+    log_file = open(log_path, "a")
+    proc = subprocess.Popen(
+        command,
+        cwd=repo,
+        shell=True,
+        env=env,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setsid,
+    )
+
+    ready = False
+    for _ in range(40):
+        time.sleep(0.25)
+        if proc.poll() is not None:
+            log_file.close()
+            tail = "\n".join(log_path.read_text(errors="replace").splitlines()[-15:])
+            await update_project(project_id, {"preview_status": "stopped"})
+            return False, f"Preview process exited.\n{tail}", {}
+        if _port_listening(int(preview_port)):
+            ready = True
+            break
+
+    preview_pid_file(project_id).write_text(str(proc.pid))
+    log_file.close()
+
+    status = "running" if ready else "starting"
+    await update_project(project_id, {
+        "preview_port": int(preview_port),
+        "preview_status": status,
+    })
+
+    project = await get_project(project_id) or project
+    meta = preview_meta(project)
+    msg = f"Preview on {meta['preview_url']}"
+    if ready:
+        msg += " — ready (HMR live)"
+    else:
+        msg += " — starting (poll preview_status)"
+    return True, msg, meta
+
+
+async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
+    project = await get_project(project_id)
+    if not project:
+        return None, "Project not found"
+    running = is_preview_running(project_id)
+    if not running and project.get("preview_status") != "stopped":
+        await update_project(project_id, {"preview_status": "stopped"})
+        project = await get_project(project_id) or project
+    elif running and project.get("preview_port"):
+        port = int(project["preview_port"])
+        status = "running" if _port_listening(port) else "starting"
+        if project.get("preview_status") != status:
+            await update_project(project_id, {"preview_status": status})
+            project = await get_project(project_id) or project
+    return preview_meta(project), "ok"

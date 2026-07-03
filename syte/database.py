@@ -53,6 +53,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN deploy_type TEXT DEFAULT 'shell'")
     if "dockerfile_path" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN dockerfile_path TEXT")
+    if "preview_port" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN preview_port INTEGER")
+    if "preview_status" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN preview_status TEXT DEFAULT 'stopped'")
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -133,6 +137,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
     allowed = {
         "name", "git_url", "branch", "port", "domain",
         "start_command", "env_vars", "status", "deploy_type", "dockerfile_path",
+        "preview_port", "preview_status",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):

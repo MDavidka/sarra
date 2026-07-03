@@ -3,8 +3,10 @@ const API_KEY_STORAGE = 'syte_api_key';
 
 let projects = [];
 let logStream = null;
+let previewStream = null;
 let activeServiceId = null;
 let deployPollTimer = null;
+let previewPollTimer = null;
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -24,6 +26,14 @@ function stopLogStream() {
     clearInterval(deployPollTimer);
     deployPollTimer = null;
   }
+}
+
+function stopPreviewStream() {
+  if (previewStream) {
+    previewStream.close();
+    previewStream = null;
+  }
+  stopPreviewPoll();
 }
 
 function logLineClass(text) {
@@ -122,7 +132,10 @@ function refreshIcons() {
 }
 
 function showView(name) {
-  if (name !== 'new-service' && name !== 'service') stopLogStream();
+  if (name !== 'new-service' && name !== 'service') {
+    stopLogStream();
+    stopPreviewStream();
+  }
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
@@ -281,6 +294,7 @@ function renderServiceDashboard(p, resetLogs) {
     <div class="info-cell full"><span>data</span><code>${esc(p.data_path || '—')}</code></div>
   `;
   loadWorkspaceFiles(p.id);
+  renderPreviewSection(p);
 
   const actions = document.getElementById('svc-deploy-actions');
   actions.innerHTML = `
@@ -313,6 +327,115 @@ function renderServiceDashboard(p, resetLogs) {
 
   document.getElementById('svc-domain-btn').onclick = () => saveServiceDomain(p.id);
   refreshIcons();
+}
+
+function renderPreviewSection(p) {
+  const actions = document.getElementById('svc-preview-actions');
+  const wrap = document.getElementById('svc-preview-wrap');
+  const frame = document.getElementById('svc-preview-frame');
+  const hint = document.getElementById('svc-preview-hint');
+  const logsEl = document.getElementById('svc-preview-logs');
+  if (!actions) return;
+
+  const live = p.preview_running && p.preview_ready;
+  actions.innerHTML = `
+    <button class="btn-pill btn-primary" onclick="servicePreviewStart('${p.id}')">
+      <i data-lucide="play"></i><span>start preview</span>
+    </button>
+    <button class="btn-pill btn-ghost" onclick="servicePreviewStop('${p.id}')">
+      <i data-lucide="square"></i><span>stop</span>
+    </button>
+    ${p.preview_url ? `<a class="btn-pill btn-ghost" href="${esc(p.preview_url)}" target="_blank"><i data-lucide="external-link"></i><span>open</span></a>` : ''}
+    ${live ? '<span class="badge-live">live</span>' : ''}
+  `;
+
+  if (p.preview_running && p.preview_url) {
+    wrap?.classList.remove('hidden');
+    if (frame && live) frame.src = p.preview_url;
+    hint.textContent = live
+      ? `preview ready — ${p.preview_url} (HMR active)`
+      : `starting preview on port ${p.preview_port || '…'}`;
+    logsEl?.classList.remove('hidden');
+    if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
+    if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);
+  } else {
+    wrap?.classList.add('hidden');
+    if (frame) frame.src = 'about:blank';
+    hint.textContent = 'fast dev server with hot reload — no docker build';
+    logsEl?.classList.add('hidden');
+    stopPreviewStream();
+  }
+  refreshIcons();
+}
+
+function startPreviewLogStream(projectId, targetEl) {
+  stopPreviewStream();
+  if (!targetEl) return;
+  const key = getApiKey();
+  const params = new URLSearchParams({ live: '1' });
+  if (key) params.set('api_key', key);
+  previewStream = new EventSource(`${API}/projects/${projectId}/preview/logs/stream?${params}`);
+  previewStream.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.text) appendLogLine(targetEl, msg.text, msg.type);
+    } catch { /* ping */ }
+  };
+}
+
+function startPreviewPoll(projectId) {
+  if (previewPollTimer) return;
+  previewPollTimer = setInterval(async () => {
+    try {
+      const st = await api(`/projects/${projectId}/preview/status`);
+      await loadProjects();
+      const p = projects.find(x => x.id === projectId);
+      if (p && activeServiceId === projectId) {
+        renderPreviewSection(p);
+        if (st.preview_ready) stopPreviewPoll();
+      }
+    } catch { /* */ }
+  }, 1500);
+}
+
+function stopPreviewPoll() {
+  if (previewPollTimer) {
+    clearInterval(previewPollTimer);
+    previewPollTimer = null;
+  }
+}
+
+async function servicePreviewStart(id) {
+  const logsEl = document.getElementById('svc-preview-logs');
+  const hint = document.getElementById('svc-preview-hint');
+  hint.textContent = 'starting preview…';
+  if (logsEl) clearLogPanel(logsEl);
+  try {
+    const res = await api(`/projects/${id}/preview/start`, { method: 'POST' });
+    toast(res.message || 'preview started');
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderPreviewSection(p);
+    if (logsEl) startPreviewLogStream(id, logsEl);
+    startPreviewPoll(id);
+  } catch (e) {
+    hint.textContent = 'preview failed';
+    if (logsEl) appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
+    toast('Error: ' + e.message);
+  }
+}
+
+async function servicePreviewStop(id) {
+  try {
+    const res = await api(`/projects/${id}/preview/stop`, { method: 'POST' });
+    toast(res.message || 'preview stopped');
+    stopPreviewStream();
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderPreviewSection(p);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
 }
 
 async function loadWorkspaceFiles(projectId, subpath = '') {

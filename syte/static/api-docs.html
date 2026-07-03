@@ -78,6 +78,15 @@
   </ul>
   <p>After generation: <code>GET /api/validate_design?uuid=</code> — automated linter</p>
 
+  <h2>Live preview (fast dev server)</h2>
+  <p>Start a dev server with HMR in seconds — no Docker build. Use while iterating, then <code>issue_deploy</code> for production.</p>
+  <pre>curl -X POST https://YOUR_HOST/api/start_preview \
+  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
+  -d '{"uuid": "my-site-abc123"}'
+
+# Response: preview_url, preview_ready, preview_stream_url
+# Edit files via write_file — preview hot-reloads automatically</pre>
+
   <h2>Deploy rules</h2>
   <p><strong>Build ONLY via</strong> <code>POST /api/issue_deploy {"uuid":"..."}</code> — git pull + docker build + restart.</p>
   <p><code>execute_command</code> is for scaffolding, <code>npm install</code>, and <code>npm run lint</code> (testing). <code>npm run build</code> is <strong>blocked</strong>.</p>

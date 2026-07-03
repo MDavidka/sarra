@@ -684,6 +684,37 @@ code {
 
 .svc-logs .logs-terminal { max-height: 360px; }
 
+.preview-frame-wrap {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #111;
+  min-height: 320px;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 50vh;
+  min-height: 320px;
+  border: none;
+  background: #fff;
+}
+
+.preview-logs {
+  margin-top: 0.5rem;
+  max-height: 120px;
+}
+
+.svc-preview .badge-live {
+  background: #1a4d2e;
+  color: #7dcea0;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  margin-left: 0.5rem;
+}
+
 .log-line { padding: 0.1rem 0; word-break: break-word; }
 .log-err { color: #e57373; }
 .log-ok { color: #7dcea0; }
