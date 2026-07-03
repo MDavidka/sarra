@@ -149,6 +149,8 @@
   <ul class="steps">
     <li><code>package.json</code> must have a <code>"dev"</code> script (<code>next dev</code> or <code>vite</code>)</li>
     <li>Run <code>npm install</code> via <code>execute_command</code> before first preview</li>
+    <li><strong>Vite:</strong> Syte auto-writes <code>vite.config.syte.mjs</code> with <code>server.allowedHosts: true</code> (fixes blocked preview host)</li>
+    <li><strong>Next.js:</strong> Syte auto-patches <code>allowedDevOrigins</code> in next.config</li>
     <li>Preview ≠ production — use <code>issue_deploy</code> to build for production</li>
   </ul>
 

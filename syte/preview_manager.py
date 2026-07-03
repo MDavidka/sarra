@@ -10,6 +10,7 @@ from pathlib import Path
 
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
+from syte.preview_config import build_preview_command, prepare_preview_hosts
 from syte.preview_domains import build_preview_urls, preview_dns_hint, resolve_preview_domain
 from syte.nextjs_layout import is_nextjs_repo
 from syte.workspace import command_exists, ensure_workspace, read_env_vars, workspace_path
@@ -160,10 +161,18 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     if not preview_port:
         preview_port = await next_preview_port()
 
-    command = cmd_template.replace("$SYTE_PREVIEW_PORT", str(preview_port))
+    preview_domain = await resolve_preview_domain(project)
+    prep_actions = prepare_preview_hosts(repo, preview_domain)
+    command = build_preview_command(repo, cmd_template).replace(
+        "$SYTE_PREVIEW_PORT", str(preview_port)
+    )
+
     log_path = preview_log_path(project_id)
     with log_path.open("a") as log_file:
         log_file.write(f"\n=== Preview session (port {preview_port}) ===\n")
+        log_file.write(f"Domain: {preview_domain}\n")
+        if prep_actions:
+            log_file.write("Config:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n")
         log_file.write(f"$ {command}\n")
 
     env = {**os.environ, **read_env_vars(project.get("env_vars", "{}"))}
@@ -202,7 +211,6 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     log_file.close()
 
     status = "running" if ready else "starting"
-    preview_domain = await resolve_preview_domain(project)
     await update_project(project_id, {
         "preview_port": int(preview_port),
         "preview_status": status,
