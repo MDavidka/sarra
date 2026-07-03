@@ -68,7 +68,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "pattern": "preview{a-z}-{appname-slug}.{gui-zone}",
                 "example": "https://previewk-mysite.sycord.site",
                 "ssl": "Automatic via wildcard *.sycord.site — no per-preview DNS",
-                "vite_allowed_hosts": "Auto: vite.config.syte.mjs with server.allowedHosts: true on start_preview",
+                "vite_allowed_hosts": "Auto: patches vite.config.* with server.allowedHosts: true on start_preview",
                 "nextjs_origins": "Auto: allowedDevOrigins patched in next.config on start_preview",
                 "not_used": "No preview.app.example.com third-level subdomains",
                 "no_gui_domain": "preview_url = preview_direct_url (http://IP:4000+)",
