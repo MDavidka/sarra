@@ -349,12 +349,15 @@ function renderPreviewSection(p) {
     ${live ? '<span class="badge-live">live</span>' : ''}
   `;
 
-  if (p.preview_running && p.preview_url) {
+    if (p.preview_running && p.preview_url) {
     wrap?.classList.remove('hidden');
-    if (frame && live) frame.src = p.preview_url;
+    if (frame && live) frame.src = p.preview_domain_url || p.preview_url;
+    const urlLabel = p.preview_domain
+      ? `${p.preview_domain_url || p.preview_url}`
+      : p.preview_url;
     hint.textContent = live
-      ? `preview ready — ${p.preview_url} (HMR active)`
-      : `starting preview on port ${p.preview_port || '…'}`;
+      ? `live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}`
+      : `starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}`;
     logsEl?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);

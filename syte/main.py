@@ -398,10 +398,9 @@ async def api_preview_start(project_id: str):
 
 @app.post("/api/projects/{project_id}/preview/stop")
 async def api_preview_stop(project_id: str):
-    from syte.preview_manager import get_preview_status, stop_preview
-    stop_preview(project_id)
-    from syte.database import update_project
-    await update_project(project_id, {"preview_status": "stopped"})
+    from syte.preview_manager import get_preview_status, stop_preview_async
+
+    await stop_preview_async(project_id)
     meta, _ = await get_preview_status(project_id)
     return {"ok": True, "message": "Preview stopped", **(meta or {})}
 

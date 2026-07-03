@@ -54,13 +54,33 @@ def build_ai_spec(base_url: str = "") -> dict:
             "9. POST /api/stop_preview {uuid} → stop dev server when done",
         ],
         "workflow_live_preview": [
-            "1. POST /api/start_preview {uuid} → {preview_url, preview_ready, preview_stream_url}",
-            "2. Open preview_url in browser — next dev / vite with HMR",
-            "3. POST /api/write_file — edits hot-reload in preview",
-            "4. GET /api/preview_status?uuid= → poll until preview_ready=true",
-            "5. GET /api/projects/{uuid}/preview/logs/stream?live=1 → dev server logs (SSE)",
+            "1. POST /api/set_domain {uuid, domain} — connect domain (preview uses preview.{domain})",
+            "2. POST /api/start_preview {uuid} → preview_url (HTTPS on connected domain)",
+            "3. GET /api/preview_status?uuid= → poll until preview_ready=true",
+            "4. Open preview_url — HMR live; POST /api/write_file edits hot-reload",
+            "5. GET /api/projects/{uuid}/preview/logs/stream?live=1 → dev server logs",
             "6. POST /api/stop_preview {uuid} when finished",
         ],
+        "preview_api": {
+            "description": "Fast live preview via next dev/vite — HTTPS on connected domain",
+            "domain_rules": {
+                "project_domain_app_example_com": "preview_url = https://preview.app.example.com",
+                "gui_domain_only_sycord_site": "preview_url = https://preview-{uuid}.sycord.site",
+                "no_domain": "preview_url = preview_direct_url (http://IP:4000+)",
+                "dns": "A record for preview hostname → server IP; Caddy auto-TLS",
+            },
+            "endpoints": {
+                "start": "POST /api/start_preview {\"uuid\":\"...\"}",
+                "status": "GET /api/preview_status?uuid=...",
+                "stop": "POST /api/stop_preview {\"uuid\":\"...\"}",
+                "logs": "GET /api/projects/{uuid}/preview/logs/stream?live=1",
+            },
+            "response_fields": [
+                "preview_url", "preview_domain", "preview_domain_url",
+                "preview_direct_url", "preview_ready", "preview_running",
+                "preview_port", "preview_stream_url", "preview_dns_hint",
+            ],
+        },
         "endpoints": [
             {"method": "GET", "path": "/api/server_info", "auth": True, "description": "Server IP, version, URLs"},
             {"method": "GET", "path": "/api/ai.json", "auth": False, "description": "This spec + design_contract + system_prompt"},

@@ -97,6 +97,22 @@ async def async_generate_caddyfile() -> str:
                 "",
             ])
 
+        preview_domain = normalize_domain(project.get("preview_domain") or "")
+        preview_port = project.get("preview_port")
+        preview_status = project.get("preview_status", "stopped")
+        if (
+            preview_domain
+            and preview_port
+            and preview_status in ("running", "starting")
+        ):
+            lines.extend([
+                f"# Preview — {name}",
+                f"{preview_domain} {{",
+                f"    reverse_proxy 127.0.0.1:{int(preview_port)}",
+                "}",
+                "",
+            ])
+
     lines.append(f"# Public IP: {public_ip}")
     return "\n".join(lines)
 

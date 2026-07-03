@@ -336,11 +336,9 @@ async def api_start_preview(body: UuidRequest, _token: dict = Depends(verify_api
 
 @router.post("/stop_preview")
 async def api_stop_preview(body: UuidRequest, _token: dict = Depends(verify_api_token)):
-    from syte.database import update_project
-    from syte.preview_manager import get_preview_status, stop_preview
+    from syte.preview_manager import get_preview_status, stop_preview_async
 
-    stop_preview(body.uuid)
-    await update_project(body.uuid, {"preview_status": "stopped"})
+    await stop_preview_async(body.uuid)
     meta, _ = await get_preview_status(body.uuid)
     return {"ok": True, "uuid": body.uuid, "message": "Preview stopped", **(meta or {})}
 

@@ -78,14 +78,79 @@
   </ul>
   <p>After generation: <code>GET /api/validate_design?uuid=</code> — automated linter</p>
 
-  <h2>Live preview (fast dev server)</h2>
-  <p>Start a dev server with HMR in seconds — no Docker build. Use while iterating, then <code>issue_deploy</code> for production.</p>
+  <h2 id="preview-api">Live Preview API</h2>
+  <p>Fast dev server with <strong>hot reload (HMR)</strong> — starts in seconds. Preview uses your <strong>connected HTTPS domain</strong> via Caddy (not raw IP:port).</p>
+
+  <h3>Preview URL (connected domain)</h3>
+  <table>
+    <tr><th>Connected domain</th><th>Preview URL</th></tr>
+    <tr><td>Project domain <code>app.example.com</code></td><td><code>https://preview.app.example.com</code></td></tr>
+    <tr><td>GUI domain only <code>sycord.site</code></td><td><code>https://preview-{uuid}.sycord.site</code></td></tr>
+    <tr><td>No domain configured</td><td>Falls back to <code>http://IP:4000+</code> (preview_direct_url)</td></tr>
+  </table>
+  <p class="warn">DNS: add an <strong>A record</strong> for the preview hostname pointing to your server IP (same as production). Caddy issues TLS automatically.</p>
+
+  <h3>Workflow</h3>
+  <ol class="steps">
+    <li><code>POST /api/set_domain</code> — connect project domain (recommended before preview)</li>
+    <li><code>POST /api/start_preview</code> <code>{"uuid":"..."}</code></li>
+    <li>Poll <code>GET /api/preview_status?uuid=</code> until <code>preview_ready: true</code></li>
+    <li>Open <code>preview_url</code> (HTTPS domain) — edits via <code>write_file</code> hot-reload</li>
+    <li><code>POST /api/stop_preview</code> when done</li>
+    <li><code>POST /api/issue_deploy</code> for production deploy</li>
+  </ol>
+
+  <h3>Start preview</h3>
   <pre>curl -X POST https://YOUR_HOST/api/start_preview \
   -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{"uuid": "my-site-abc123"}'
+  -d '{"uuid": "my-site-abc123"}'</pre>
+  <p><strong>Response fields:</strong></p>
+  <table>
+    <tr><th>field</th><th>description</th></tr>
+    <tr><td><code>preview_url</code></td><td>Primary URL — HTTPS domain when connected</td></tr>
+    <tr><td><code>preview_domain</code></td><td>Hostname e.g. <code>preview.app.example.com</code></td></tr>
+    <tr><td><code>preview_domain_url</code></td><td>HTTPS URL via Caddy</td></tr>
+    <tr><td><code>preview_direct_url</code></td><td>Fallback <code>http://IP:port</code></td></tr>
+    <tr><td><code>preview_ready</code></td><td><code>true</code> when dev server accepts connections</td></tr>
+    <tr><td><code>preview_running</code></td><td><code>true</code> while process is alive</td></tr>
+    <tr><td><code>preview_port</code></td><td>Internal port (4000–4999)</td></tr>
+    <tr><td><code>preview_stream_url</code></td><td>SSE log stream path</td></tr>
+    <tr><td><code>preview_dns_hint</code></td><td>DNS setup instructions</td></tr>
+  </table>
+  <pre>{
+  "ok": true,
+  "uuid": "my-site-abc123",
+  "preview_url": "https://preview.app.example.com",
+  "preview_domain": "preview.app.example.com",
+  "preview_domain_url": "https://preview.app.example.com",
+  "preview_direct_url": "http://152.89.245.113:4000",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_port": 4000,
+  "preview_stream_url": "/api/projects/my-site-abc123/preview/logs/stream?live=1",
+  "preview_dns_hint": "Point DNS A record preview.app.example.com → your server IP"
+}</pre>
 
-# Response: preview_url, preview_ready, preview_stream_url
-# Edit files via write_file — preview hot-reloads automatically</pre>
+  <h3>Preview status</h3>
+  <pre>curl "https://YOUR_HOST/api/preview_status?uuid=my-site-abc123" \
+  -H "X-API-Key: syte_..."</pre>
+
+  <h3>Stop preview</h3>
+  <pre>curl -X POST https://YOUR_HOST/api/stop_preview \
+  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
+  -d '{"uuid": "my-site-abc123"}'</pre>
+  <p>Removes Caddy route and stops dev server.</p>
+
+  <h3>Preview logs (SSE)</h3>
+  <pre>curl -N "https://YOUR_HOST/api/projects/my-site-abc123/preview/logs/stream?live=1" \
+  -H "X-API-Key: syte_..."</pre>
+
+  <h3>Requirements</h3>
+  <ul class="steps">
+    <li><code>package.json</code> must have a <code>"dev"</code> script (<code>next dev</code> or <code>vite</code>)</li>
+    <li>Run <code>npm install</code> via <code>execute_command</code> before first preview</li>
+    <li>Preview ≠ production — use <code>issue_deploy</code> to build for production</li>
+  </ul>
 
   <h2>Deploy rules</h2>
   <p><strong>Build ONLY via</strong> <code>POST /api/issue_deploy {"uuid":"..."}</code> — git pull + docker build + restart.</p>
@@ -165,6 +230,31 @@
   {"command":"npm run lint","cwd":"app","timeout":300}
 ]}</pre>
     </div>
+  </details>
+
+  <details open><summary><span class="m post">POST</span> /api/start_preview</summary>
+    <div class="detail-body">
+      <p>Start fast dev server (next dev / vite) with HMR. Returns <strong>HTTPS preview_url</strong> on connected domain.</p>
+      <pre>{"uuid": "my-site-abc123"}</pre>
+      <p>See <a href="#preview-api">Live Preview API</a> for full response fields and DNS setup.</p>
+    </div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/preview_status?uuid=</summary>
+    <div class="detail-body">
+      <p>Poll until <code>preview_ready: true</code>. Returns <code>preview_url</code>, <code>preview_domain</code>, <code>preview_direct_url</code>.</p>
+    </div>
+  </details>
+
+  <details><summary><span class="m post">POST</span> /api/stop_preview</summary>
+    <div class="detail-body">
+      <pre>{"uuid": "my-site-abc123"}</pre>
+      <p>Stops dev server and removes Caddy preview route.</p>
+    </div>
+  </details>
+
+  <details><summary><span class="m get">GET</span> /api/projects/{uuid}/preview/logs/stream?live=1</summary>
+    <div class="detail-body"><p>SSE stream of preview dev server output. Optional <code>api_key</code> query param.</p></div>
   </details>
 
   <details><summary><span class="m get">GET</span> /api/validate_design?uuid=</summary>

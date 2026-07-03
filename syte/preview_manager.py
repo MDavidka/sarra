@@ -10,7 +10,8 @@ from pathlib import Path
 
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
-from syte.domain_utils import build_direct_url
+from syte.domain_utils import build_direct_url, normalize_domain
+from syte.preview_domains import build_preview_urls, preview_dns_hint, resolve_preview_domain
 from syte.nextjs_layout import is_nextjs_repo
 from syte.workspace import command_exists, ensure_workspace, read_env_vars, workspace_path
 
@@ -97,6 +98,18 @@ def stop_preview(project_id: str) -> tuple[bool, str]:
     return True, "Preview stopped."
 
 
+async def stop_preview_async(project_id: str) -> tuple[bool, str]:
+    """Stop preview and remove Caddy HTTPS route."""
+    stop_preview(project_id)
+    await update_project(project_id, {
+        "preview_status": "stopped",
+        "preview_domain": None,
+    })
+    from syte.certificates import apply_proxy_config
+    await apply_proxy_config()
+    return True, "Preview stopped."
+
+
 def get_preview_logs(project_id: str, lines: int = 200) -> str:
     log_path = preview_log_path(project_id)
     if not log_path.exists():
@@ -109,15 +122,16 @@ def preview_meta(project: dict) -> dict:
     preview_port = project.get("preview_port")
     running = is_preview_running(project["id"])
     ready = running and preview_port and _port_listening(int(preview_port))
-    ip = settings.resolved_public_ip
-    preview_url = build_direct_url(ip, int(preview_port)) if preview_port else ""
+    urls = build_preview_urls(project)
+    connected = normalize_domain(project.get("domain") or "") or project.get("preview_domain", "")
     return {
         "preview_running": running,
         "preview_ready": ready,
         "preview_port": preview_port,
-        "preview_url": preview_url,
         "preview_status": project.get("preview_status", "stopped"),
         "preview_stream_url": f"/api/projects/{project['id']}/preview/logs/stream?live=1",
+        "preview_dns_hint": preview_dns_hint(urls["preview_domain"], connected) if urls["preview_domain"] else "",
+        **urls,
     }
 
 
@@ -188,14 +202,21 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     log_file.close()
 
     status = "running" if ready else "starting"
+    preview_domain = await resolve_preview_domain(project)
     await update_project(project_id, {
         "preview_port": int(preview_port),
         "preview_status": status,
+        "preview_domain": preview_domain or None,
     })
+
+    from syte.certificates import apply_proxy_config
+    await apply_proxy_config()
 
     project = await get_project(project_id) or project
     meta = preview_meta(project)
     msg = f"Preview on {meta['preview_url']}"
+    if meta.get("preview_domain"):
+        msg += f" (domain: {meta['preview_domain']})"
     if ready:
         msg += " — ready (HMR live)"
     else:

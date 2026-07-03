@@ -441,8 +441,8 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
     project = await get_project(project_id)
     if not project:
         return False, "Project not found."
-    from syte.preview_manager import stop_preview
-    stop_preview(project_id)
+    from syte.preview_manager import stop_preview_async
+    await stop_preview_async(project_id)
     process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()
@@ -455,6 +455,13 @@ async def set_custom_domain(project_id: str, domain: str, email: str) -> tuple[d
         return None, "Project not found."
 
     await update_project(project_id, {"domain": domain})
+    from syte.preview_manager import is_preview_running
+    if is_preview_running(project_id):
+        from syte.preview_domains import resolve_preview_domain
+        project = await get_project(project_id)
+        if project:
+            preview_domain = await resolve_preview_domain(project)
+            await update_project(project_id, {"preview_domain": preview_domain})
     ok, proxy_msg = await apply_proxy_config()
 
     project = await get_project(project_id)
