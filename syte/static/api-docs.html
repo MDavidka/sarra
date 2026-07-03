@@ -81,19 +81,19 @@
   <h2 id="preview-api">Live Preview API</h2>
   <p>Fast dev server with <strong>hot reload (HMR)</strong> — starts in seconds. Preview uses your <strong>connected HTTPS domain</strong> via Caddy (not raw IP:port).</p>
 
-  <h3>Preview URL (connected domain)</h3>
+  <h3>Preview URL (automatic SSL)</h3>
+  <p>Preview always uses the GUI zone with a <strong>wildcard-friendly</strong> hostname — no third-level subdomain:</p>
   <table>
-    <tr><th>Connected domain</th><th>Preview URL</th></tr>
-    <tr><td>Project domain <code>app.example.com</code></td><td><code>https://preview.app.example.com</code></td></tr>
-    <tr><td>GUI domain only <code>sycord.site</code></td><td><code>https://preview-{uuid}.sycord.site</code></td></tr>
-    <tr><td>No domain configured</td><td>Falls back to <code>http://IP:4000+</code> (preview_direct_url)</td></tr>
+    <tr><th>Pattern</th><th>Example</th></tr>
+    <tr><td><code>preview{letter}-{appname}.{zone}</code></td><td><code>https://previewk-mysite.sycord.site</code></td></tr>
   </table>
-  <p class="warn">DNS: add an <strong>A record</strong> for the preview hostname pointing to your server IP (same as production). Caddy issues TLS automatically.</p>
+  <p><code>{letter}</code> = random a–z per preview session. <code>{appname}</code> = slugified project name.</p>
+  <p class="warn">Requires wildcard DNS <code>*.sycord.site</code> → server IP (one record covers all previews). Caddy issues TLS automatically.</p>
+  <p>If GUI domain is not set, falls back to <code>preview_direct_url</code> (<code>http://IP:4000+</code>).</p>
 
   <h3>Workflow</h3>
   <ol class="steps">
-    <li><code>POST /api/set_domain</code> — connect project domain (recommended before preview)</li>
-    <li><code>POST /api/start_preview</code> <code>{"uuid":"..."}</code></li>
+    <li><code>POST /api/start_preview</code> <code>{"uuid":"..."}</code> → <code>https://previewk-mysite.sycord.site</code></li>
     <li>Poll <code>GET /api/preview_status?uuid=</code> until <code>preview_ready: true</code></li>
     <li>Open <code>preview_url</code> (HTTPS domain) — edits via <code>write_file</code> hot-reload</li>
     <li><code>POST /api/stop_preview</code> when done</li>
@@ -108,7 +108,7 @@
   <table>
     <tr><th>field</th><th>description</th></tr>
     <tr><td><code>preview_url</code></td><td>Primary URL — HTTPS domain when connected</td></tr>
-    <tr><td><code>preview_domain</code></td><td>Hostname e.g. <code>preview.app.example.com</code></td></tr>
+    <tr><td><code>preview_domain</code></td><td>Hostname e.g. <code>previewk-mysite.sycord.site</code></td></tr>
     <tr><td><code>preview_domain_url</code></td><td>HTTPS URL via Caddy</td></tr>
     <tr><td><code>preview_direct_url</code></td><td>Fallback <code>http://IP:port</code></td></tr>
     <tr><td><code>preview_ready</code></td><td><code>true</code> when dev server accepts connections</td></tr>
@@ -120,15 +120,15 @@
   <pre>{
   "ok": true,
   "uuid": "my-site-abc123",
-  "preview_url": "https://preview.app.example.com",
-  "preview_domain": "preview.app.example.com",
-  "preview_domain_url": "https://preview.app.example.com",
+  "preview_url": "https://previewk-mysite.sycord.site",
+  "preview_domain": "previewk-mysite.sycord.site",
+  "preview_domain_url": "https://previewk-mysite.sycord.site",
   "preview_direct_url": "http://152.89.245.113:4000",
   "preview_ready": true,
   "preview_running": true,
   "preview_port": 4000,
   "preview_stream_url": "/api/projects/my-site-abc123/preview/logs/stream?live=1",
-  "preview_dns_hint": "Point DNS A record preview.app.example.com → your server IP"
+  "preview_dns_hint": "Automatic SSL via wildcard *.sycord.site — no per-preview DNS record needed"
 }</pre>
 
   <h3>Preview status</h3>

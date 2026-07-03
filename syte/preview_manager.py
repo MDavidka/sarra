@@ -10,7 +10,6 @@ from pathlib import Path
 
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
-from syte.domain_utils import build_direct_url, normalize_domain
 from syte.preview_domains import build_preview_urls, preview_dns_hint, resolve_preview_domain
 from syte.nextjs_layout import is_nextjs_repo
 from syte.workspace import command_exists, ensure_workspace, read_env_vars, workspace_path
@@ -123,14 +122,15 @@ def preview_meta(project: dict) -> dict:
     running = is_preview_running(project["id"])
     ready = running and preview_port and _port_listening(int(preview_port))
     urls = build_preview_urls(project)
-    connected = normalize_domain(project.get("domain") or "") or project.get("preview_domain", "")
+    domain = urls["preview_domain"]
+    base_zone = domain.split(".", 1)[-1] if domain and "." in domain else ""
     return {
         "preview_running": running,
         "preview_ready": ready,
         "preview_port": preview_port,
         "preview_status": project.get("preview_status", "stopped"),
         "preview_stream_url": f"/api/projects/{project['id']}/preview/logs/stream?live=1",
-        "preview_dns_hint": preview_dns_hint(urls["preview_domain"], connected) if urls["preview_domain"] else "",
+        "preview_dns_hint": preview_dns_hint(urls["preview_domain"], base_zone) if urls["preview_domain"] else "",
         **urls,
     }
 
