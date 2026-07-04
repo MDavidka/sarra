@@ -453,6 +453,7 @@ body.drawer-open .sidebar-backdrop {
 .btn-ghost {
   background: var(--bg-card);
   color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .btn-ghost:hover { color: var(--text); background: var(--bg-card-hover); }
@@ -860,7 +861,8 @@ code {
 .logs-box {
   max-height: 320px;
   overflow-y: auto;
-  background: var(--bg-input);
+  background: var(--bg-terminal);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.75rem;
   font-size: 0.72rem;
