@@ -20,21 +20,21 @@ def _err(status: int, code: str, message: str):
 
 class ProjectConnectRequest(BaseModel):
     name: str = Field(..., description="Project name — used for subdomain slug")
-    stack: str = Field("nextjs", description="nextjs | python | javascript")
-    uuid: str | None = Field(None, description="Optional custom project UUID")
+    stack: str = Field("nextjs", description="nextjs | python | javascript | html5")
+    uuid: str | None = Field(None, description="Optional custom Syte project UUID — save if you provide your own")
     env_vars: dict[str, str] = Field(default_factory=dict)
 
 
 class UuidBody(BaseModel):
-    uuid: str
+    uuid: str = Field(..., description="Syte project UUID from project_connect")
 
 
 class DomainBody(BaseModel):
-    uuid: str
+    uuid: str = Field(..., description="Syte project UUID from project_connect")
     domain: str = Field(..., description="Production hostname e.g. myapp.sycord.site")
 
 
-def _project_urls(project: dict) -> dict:
+def _project_record(project: dict) -> dict:
     domain = normalize_domain(project.get("domain") or "")
     return {
         "uuid": project["id"],
@@ -46,7 +46,30 @@ def _project_urls(project: dict) -> dict:
         "app_path": str(workspace_path(project["id"]) / "app"),
         "status": project.get("status"),
         "port": project.get("port"),
+        "created_at": project.get("created_at"),
+        "updated_at": project.get("updated_at"),
     }
+
+
+def _persist_block(project_id: str) -> dict:
+    return {
+        "save_uuid": True,
+        "uuid": project_id,
+        "instruction": (
+            "Save uuid in your application database before any other Sycord API call. "
+            "Required for upload, issue_deployment, container_get, and domain."
+        ),
+        "endpoints_using_uuid": [
+            "POST /sycord/api/upload — form field uuid",
+            "POST /sycord/api/issue_deployment — JSON body.uuid",
+            "GET /sycord/api/container_get?uuid=",
+            "POST /sycord/api/domain — JSON body.uuid",
+        ],
+    }
+
+
+def _project_urls(project: dict) -> dict:
+    return _project_record(project)
 
 
 @router.get("/spec.json", include_in_schema=False)
@@ -74,15 +97,20 @@ async def api_project_connect(
     if not project:
         _err(400, "connect_failed", message)
     base_zone = await service.resolve_base_zone()
+    record = _project_record(project)
+    project_id = record["uuid"]
     return {
         "ok": True,
+        "uuid": project_id,
         "message": message,
-        **_project_urls(project),
+        "persist": _persist_block(project_id),
+        "project": record,
         "subdomain_pattern": f"{{slug}}.{base_zone}",
         "next_steps": {
+            "save_uuid": project_id,
             "upload": "POST /sycord/api/upload",
             "deploy": "POST /sycord/api/issue_deployment",
-            "container": "GET /sycord/api/container_get?uuid=",
+            "container": f"GET /sycord/api/container_get?uuid={project_id}",
         },
     }
 
@@ -123,7 +151,8 @@ async def api_domain(body: DomainBody, _token: dict = Depends(verify_api_token))
     return {
         "ok": True,
         "message": message,
-        **_project_urls(project),
+        "uuid": body.uuid,
+        "project": _project_record(project),
     }
 
 

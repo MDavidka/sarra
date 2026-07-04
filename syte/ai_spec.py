@@ -152,21 +152,32 @@ def build_ai_spec(base_url: str = "") -> dict:
         "sycord_api": {
             "description": (
                 "Separate integration API for Sycord websites and external projects. "
-                "Auto-creates workspace + {slug}.sycord.site subdomain on project_connect."
+                "project_connect returns uuid — your app MUST persist it before any other call."
             ),
             "base_url": f"{base}/sycord/api" if base else "/sycord/api",
             "documentation": f"{base}/sycord/api/" if base else "/sycord/api/",
             "spec": f"{base}/sycord/api/spec.json" if base else "/sycord/api/spec.json",
+            "uuid_persistence": {
+                "required": True,
+                "response_field": "uuid",
+                "also_in": ["persist.uuid", "project.uuid", "next_steps.save_uuid"],
+                "instruction": "Save uuid in your database after project_connect. Required for upload, issue_deployment, container_get, domain.",
+                "optional_custom_uuid": "Pass body.uuid on project_connect to use your own id",
+            },
             "stacks": ["nextjs", "python", "javascript", "html5"],
             "workflow": [
-                "1. POST /sycord/api/project_connect {name, stack} → uuid + https://{slug}.sycord.site",
-                "2. POST /sycord/api/upload — multipart file upload",
+                "1. POST /sycord/api/project_connect {name, stack} → SAVE response.uuid",
+                "2. POST /sycord/api/upload — multipart file upload (uuid required)",
                 "3. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
                 "4. GET /sycord/api/container_get?uuid= — container status",
                 "5. POST /sycord/api/domain {uuid, domain} — optional custom domain",
             ],
+            "project_connect_response": {
+                "save": "uuid",
+                "example_fields": ["uuid", "persist", "project", "next_steps.save_uuid"],
+            },
             "endpoints": [
-                {"method": "POST", "path": "/sycord/api/project_connect", "auth": True},
+                {"method": "POST", "path": "/sycord/api/project_connect", "auth": True, "returns_uuid": True},
                 {"method": "GET", "path": "/sycord/api/container_get?uuid=", "auth": True},
                 {"method": "POST", "path": "/sycord/api/upload", "auth": True},
                 {"method": "POST", "path": "/sycord/api/domain", "auth": True},
