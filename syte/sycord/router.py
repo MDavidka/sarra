@@ -65,6 +65,9 @@ def _persist_block(project_id: str) -> dict:
             "POST /sycord/api/issue_deployment — JSON body.uuid",
             "GET /sycord/api/container_get?uuid=",
             "POST /sycord/api/domain — JSON body.uuid",
+            "POST /sycord/api/preview_start — JSON body.uuid",
+            "GET /sycord/api/preview_status?uuid=",
+            "POST /sycord/api/preview_stop — JSON body.uuid",
         ],
     }
 
@@ -117,6 +120,7 @@ async def api_project_connect(
         "next_steps": {
             "save_uuid": project_id,
             "upload": "POST /sycord/api/upload",
+            "preview": f"POST /sycord/api/preview_start — body {{\"uuid\": \"{project_id}\"}}",
             "deploy": "POST /sycord/api/issue_deployment",
             "container": f"GET /sycord/api/container_get?uuid={project_id}",
         },
@@ -177,3 +181,33 @@ async def api_issue_deployment(body: UuidBody, _token: dict = Depends(verify_api
         "stream_url": f"/api/projects/{body.uuid}/logs/stream?live=1",
         "status": project.get("status"),
     }
+
+
+@router.post("/preview_start")
+async def api_preview_start(body: UuidBody, _token: dict = Depends(verify_api_token)):
+    """Start fast dev preview (next dev / vite) with HMR — seconds, not minutes."""
+    ok, message, meta = await service.preview_start(body.uuid)
+    if not ok:
+        _err(400, "preview_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.get("/preview_status")
+async def api_preview_status(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Preview dev server status — poll until preview_ready=true."""
+    meta, message = await service.preview_status(uuid)
+    if not meta:
+        _err(404, "not_found", message)
+    return {"ok": True, "uuid": uuid, **meta}
+
+
+@router.post("/preview_stop")
+async def api_preview_stop(body: UuidBody, _token: dict = Depends(verify_api_token)):
+    """Stop preview dev server."""
+    ok, message, meta = await service.preview_stop(body.uuid)
+    if not ok:
+        _err(400, "preview_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}

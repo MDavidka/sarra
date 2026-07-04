@@ -76,6 +76,7 @@
         <button class="nav-cat" data-panel="connect"><i data-lucide="plug"></i> project_connect</button>
         <button class="nav-cat" data-panel="container"><i data-lucide="box"></i> container_get</button>
         <button class="nav-cat" data-panel="upload"><i data-lucide="upload"></i> upload</button>
+        <button class="nav-cat" data-panel="preview"><i data-lucide="monitor-play"></i> preview</button>
         <button class="nav-cat" data-panel="domain"><i data-lucide="globe"></i> domain</button>
         <button class="nav-cat" data-panel="deploy"><i data-lucide="rocket"></i> issue_deployment</button>
         <button class="nav-cat" data-panel="errors"><i data-lucide="alert-circle"></i> Errors</button>
@@ -94,6 +95,7 @@
           <tr><th>syte_domain</th><td>From <code>response.project.domain</code> e.g. <code>myapp.sycord.site</code></td></tr>
           <tr><th>syte_url</th><td>From <code>response.project.url</code> — show this link to users when live</td></tr>
           <tr><th>deploy_status</th><td>Mirror <code>created</code> → <code>deploying</code> → <code>running</code></td></tr>
+          <tr><th>preview_url</th><td>Optional cache from <code>preview_start</code> / <code>preview_status</code></td></tr>
         </table>
 
         <div class="step-card">
@@ -129,7 +131,34 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 3 — User clicks Deploy</div>
+          <div class="step-num">Step 3 — Start dev preview (optional, fast)</div>
+          <p><strong>POST</strong> <code>/sycord/api/preview_start</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "preview_url": "https://previewk-myapp.sycord.site", "preview_ready": true, "preview_running": true }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Show <code>preview_url</code> to user (iframe or new tab)</li>
+            <li>If <code>preview_ready === false</code>, poll step 4 every 1–2s</li>
+            <li>Stop with <code>POST /sycord/api/preview_stop</code> when done</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 4 — Poll preview (if not ready)</div>
+          <p><strong>GET</strong> <code>/sycord/api/preview_status?uuid=myapp-a1b2c3</code></p>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "preview_ready": true, "preview_url": "https://previewk-myapp.sycord.site", "preview_status": "running" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>While <code>preview_ready === false</code> and <code>preview_running === true</code> → keep polling</li>
+            <li>When <code>preview_ready === true</code> → show <code>preview_url</code></li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 5 — User clicks Deploy</div>
           <p><strong>POST</strong> <code>/sycord/api/issue_deployment</code> · Content-Type: <code>application/json</code></p>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3" }</pre>
@@ -143,7 +172,7 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 4 — Poll until live</div>
+          <div class="step-num">Step 6 — Poll until live</div>
           <p><strong>GET</strong> <code>/sycord/api/container_get?uuid=myapp-a1b2c3</code></p>
           <h3>You send</h3>
           <p>Query param <code>uuid</code> only (no body).</p>
@@ -158,7 +187,7 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 5 — Custom domain (optional)</div>
+          <div class="step-num">Step 7 — Custom domain (optional)</div>
           <p><strong>POST</strong> <code>/sycord/api/domain</code></p>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3", "domain": "shop.example.com" }</pre>
@@ -208,6 +237,8 @@ async function deployProject(syteUuid) {
           <tr><th>When</th><th>HTTP</th><th>You send</th><th>You save / use</th></tr>
           <tr><td>Create project</td><td>POST project_connect</td><td><code>{"name","stack"}</code></td><td><code>uuid</code> → syte_uuid</td></tr>
           <tr><td>Upload file</td><td>POST upload</td><td>multipart uuid+path+file</td><td>—</td></tr>
+          <tr><td>Dev preview</td><td>POST preview_start</td><td><code>{"uuid"}</code></td><td>preview_url</td></tr>
+          <tr><td>Poll preview</td><td>GET preview_status</td><td><code>?uuid=</code></td><td>preview_url when ready</td></tr>
           <tr><td>Deploy</td><td>POST issue_deployment</td><td><code>{"uuid"}</code></td><td>status=deploying</td></tr>
           <tr><td>Poll status</td><td>GET container_get</td><td><code>?uuid=</code></td><td>url when running=true</td></tr>
           <tr><td>Custom domain</td><td>POST domain</td><td><code>{"uuid","domain"}</code></td><td>project.url</td></tr>
@@ -223,6 +254,8 @@ async function deployProject(syteUuid) {
         <ol>
           <li><code>POST /sycord/api/project_connect</code> → <strong>save <code>uuid</code></strong></li>
           <li><code>POST /sycord/api/upload</code> — push files (optional if using scaffold)</li>
+          <li><code>POST /sycord/api/preview_start</code> — fast dev preview (next dev / vite, HMR)</li>
+          <li><code>GET /sycord/api/preview_status?uuid=</code> — poll until preview ready</li>
           <li><code>POST /sycord/api/issue_deployment</code> — docker build + deploy</li>
           <li><code>GET /sycord/api/container_get?uuid=</code> — verify running</li>
           <li><code>POST /sycord/api/domain</code> — optional custom hostname</li>
@@ -288,6 +321,9 @@ await db.projects.update({
         <h2>Endpoints that need uuid</h2>
         <ul>
           <li><code>POST /sycord/api/upload</code> — form field <code>uuid</code></li>
+          <li><code>POST /sycord/api/preview_start</code> — JSON <code>{"uuid":"…"}</code></li>
+          <li><code>GET /sycord/api/preview_status?uuid=</code></li>
+          <li><code>POST /sycord/api/preview_stop</code> — JSON <code>{"uuid":"…"}</code></li>
           <li><code>POST /sycord/api/issue_deployment</code> — JSON <code>{"uuid":"…"}</code></li>
           <li><code>GET /sycord/api/container_get?uuid=</code></li>
           <li><code>POST /sycord/api/domain</code> — JSON <code>{"uuid":"…","domain":"…"}</code></li>
@@ -341,6 +377,7 @@ await db.projects.update({
   "next_steps": {
     "save_uuid": "testproject-a1b2c3",
     "upload": "POST /sycord/api/upload",
+    "preview": "POST /sycord/api/preview_start",
     "deploy": "POST /sycord/api/issue_deployment",
     "container": "GET /sycord/api/container_get?uuid=testproject-a1b2c3"
   }
@@ -398,6 +435,58 @@ await db.projects.update({
         </div>
       </div>
 
+      <div class="panel" id="panel-preview">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/preview_start</span></div>
+            <div class="endpoint-name">Start dev preview (fast HMR)</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Starts <code>next dev</code> or <code>vite</code> in seconds — no Docker build. Requires a <code>dev</code> script in <code>package.json</code>.</p>
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "message": "Preview on https://previewk-testproject.sycord.site — ready (HMR live)",
+  "preview_url": "https://previewk-testproject.sycord.site",
+  "preview_domain": "previewk-testproject.sycord.site",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_port": 4001,
+  "preview_status": "running",
+  "preview_stream_url": "/api/projects/testproject-a1b2c3/preview/logs/stream?live=1"
+}</pre>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/preview_status?uuid=</span></div>
+            <div class="endpoint-name">Preview status</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Poll every 1–2s after <code>preview_start</code> until <code>preview_ready=true</code>.</p>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "preview_url": "https://previewk-testproject.sycord.site",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_status": "running"
+}</pre>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/preview_stop</span></div>
+            <div class="endpoint-name">Stop preview</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+            <pre>{ "ok": true, "uuid": "testproject-a1b2c3", "message": "Preview stopped", "preview_running": false, "preview_status": "stopped" }</pre>
+          </div>
+        </div>
+      </div>
+
       <div class="panel" id="panel-domain">
         <div class="endpoint">
           <div class="endpoint-head">
@@ -440,6 +529,7 @@ await db.projects.update({
           <tr><th>400 invalid_stack</th><td>Unknown stack value</td></tr>
           <tr><th>400 connect_failed</th><td>Subdomain taken or validation failed</td></tr>
           <tr><th>400 upload_failed</th><td>Bad path or missing project</td></tr>
+          <tr><th>400 preview_failed</th><td>No dev script or preview process exited</td></tr>
           <tr><th>404 not_found</th><td>uuid does not exist</td></tr>
         </table>
       </div>

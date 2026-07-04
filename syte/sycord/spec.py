@@ -27,6 +27,9 @@ def project_connect_example() -> dict:
                 "POST /sycord/api/issue_deployment — body.uuid",
                 "GET /sycord/api/container_get?uuid=",
                 "POST /sycord/api/domain — body.uuid",
+                "POST /sycord/api/preview_start — body.uuid",
+                "GET /sycord/api/preview_status?uuid=",
+                "POST /sycord/api/preview_stop — body.uuid",
             ],
         },
         "project": {
@@ -44,6 +47,7 @@ def project_connect_example() -> dict:
         "subdomain_pattern": "{slug}.sycord.site",
         "next_steps": {
             "upload": "POST /sycord/api/upload",
+            "preview": "POST /sycord/api/preview_start",
             "deploy": "POST /sycord/api/issue_deployment",
             "container": "GET /sycord/api/container_get?uuid=testproject-a1b2c3",
         },
@@ -98,9 +102,11 @@ def build_sycord_spec(base_url: str = "") -> dict:
         "workflow": [
             "1. POST /sycord/api/project_connect {name, stack} → save response.uuid",
             "2. POST /sycord/api/upload {uuid, path, file} — add or update files",
-            "3. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
-            "4. GET /sycord/api/container_get?uuid= — poll until running=true",
-            "5. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
+            "3. POST /sycord/api/preview_start {uuid} — fast dev preview with HMR (~5s)",
+            "4. GET /sycord/api/preview_status?uuid= — poll until preview_ready=true",
+            "5. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
+            "6. GET /sycord/api/container_get?uuid= — poll until running=true",
+            "7. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
         ],
         "errors": {
             "401_missing_api_key": "Send X-API-Key or Authorization: Bearer",
@@ -108,6 +114,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "400_invalid_stack": f"stack must be one of: {', '.join(stacks)}",
             "400_connect_failed": "Duplicate subdomain or validation error",
             "400_upload_failed": "Bad path or project not found",
+            "400_preview_failed": "No dev script in package.json or preview process failed",
             "404_not_found": "uuid does not exist",
         },
         "backend_integration": build_backend_integration(host),
@@ -214,6 +221,72 @@ def build_sycord_spec(base_url: str = "") -> dict:
                         "message": "Deploy issued for testproject-a1b2c3…",
                         "stream_url": "/api/projects/testproject-a1b2c3/logs/stream?live=1",
                         "status": "deploying",
+                    }
+                },
+            },
+            {
+                "method": "POST",
+                "path": f"{prefix}/preview_start",
+                "auth": True,
+                "summary": "Start fast dev preview (next dev / vite, HMR, ~5s)",
+                "request": {
+                    "content_type": "application/json",
+                    "body": {"uuid": "string (required)"},
+                },
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "testproject-a1b2c3",
+                        "message": "Preview on https://previewk-testproject.sycord.site — ready (HMR live)",
+                        "preview_url": "https://previewk-testproject.sycord.site",
+                        "preview_domain": "previewk-testproject.sycord.site",
+                        "preview_domain_url": "https://previewk-testproject.sycord.site",
+                        "preview_direct_url": "http://203.0.113.10:4001",
+                        "preview_ready": True,
+                        "preview_running": True,
+                        "preview_port": 4001,
+                        "preview_status": "running",
+                        "preview_stream_url": "/api/projects/testproject-a1b2c3/preview/logs/stream?live=1",
+                    }
+                },
+            },
+            {
+                "method": "GET",
+                "path": f"{prefix}/preview_status",
+                "auth": True,
+                "summary": "Preview dev server status — poll until preview_ready=true",
+                "request": {"query": {"uuid": "string (required) — from project_connect"}},
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "testproject-a1b2c3",
+                        "preview_url": "https://previewk-testproject.sycord.site",
+                        "preview_domain": "previewk-testproject.sycord.site",
+                        "preview_ready": True,
+                        "preview_running": True,
+                        "preview_port": 4001,
+                        "preview_status": "running",
+                        "preview_stream_url": "/api/projects/testproject-a1b2c3/preview/logs/stream?live=1",
+                    }
+                },
+            },
+            {
+                "method": "POST",
+                "path": f"{prefix}/preview_stop",
+                "auth": True,
+                "summary": "Stop preview dev server",
+                "request": {
+                    "content_type": "application/json",
+                    "body": {"uuid": "string (required)"},
+                },
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "testproject-a1b2c3",
+                        "message": "Preview stopped",
+                        "preview_running": False,
+                        "preview_ready": False,
+                        "preview_status": "stopped",
                     }
                 },
             },

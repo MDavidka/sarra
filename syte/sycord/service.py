@@ -152,6 +152,29 @@ async def issue_deployment(project_id: str) -> tuple[dict | None, str]:
     return await issue_deploy(project_id)
 
 
+async def preview_start(project_id: str) -> tuple[bool, str, dict]:
+    """Start fast dev preview (next dev / vite) with HMR."""
+    from syte.preview_manager import start_preview
+
+    return await start_preview(project_id)
+
+
+async def preview_stop(project_id: str) -> tuple[bool, str, dict]:
+    """Stop preview dev server and remove HTTPS route."""
+    from syte.preview_manager import get_preview_status, stop_preview_async
+
+    await stop_preview_async(project_id)
+    meta, _ = await get_preview_status(project_id)
+    return True, "Preview stopped", meta or {}
+
+
+async def preview_status(project_id: str) -> tuple[dict | None, str]:
+    """Preview server status and URLs."""
+    from syte.preview_manager import get_preview_status
+
+    return await get_preview_status(project_id)
+
+
 def project_stack(project: dict) -> str:
     raw = project.get("env_vars") or "{}"
     try:

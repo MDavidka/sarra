@@ -29,6 +29,8 @@ def build_backend_integration(base_url: str = "") -> dict:
         "steps": [
             _step_connect(api),
             _step_upload(api),
+            _step_preview_start(api),
+            _step_preview_poll(api),
             _step_deploy(api),
             _step_container_poll(api),
             _step_domain(api),
@@ -47,6 +49,20 @@ def build_backend_integration(base_url: str = "") -> dict:
                 "you_send": "multipart: uuid, path, file",
                 "you_save": "nothing (optional log bytes)",
                 "you_show_user": "upload success toast",
+            },
+            {
+                "when": "User wants live dev preview (fast, HMR)",
+                "call": f"POST {api}/preview_start",
+                "you_send": '{"uuid":"<syte_uuid>"}',
+                "you_save": "preview_url from response (optional cache)",
+                "you_show_user": "preview_url in iframe or new tab; poll preview_status",
+            },
+            {
+                "when": "Polling preview (every 1–2s)",
+                "call": f"GET {api}/preview_status?uuid=<syte_uuid>",
+                "you_send": "query param uuid only",
+                "you_save": "preview_url when preview_ready=true",
+                "you_show_user": "Open preview_url when ready",
             },
             {
                 "when": "User clicks Deploy",
@@ -68,6 +84,13 @@ def build_backend_integration(base_url: str = "") -> dict:
                 "you_send": '{"uuid":"…","domain":"custom.sycord.site"}',
                 "you_save": "syte_domain, syte_url from response.project",
                 "you_show_user": "updated HTTPS link",
+            },
+            {
+                "when": "User stops dev preview",
+                "call": f"POST {api}/preview_stop",
+                "you_send": '{"uuid":"<syte_uuid>"}',
+                "you_save": "clear cached preview_url",
+                "you_show_user": "preview stopped state",
             },
         ],
     }
@@ -195,9 +218,88 @@ def _step_upload(api: str) -> dict:
     }
 
 
-def _step_deploy(api: str) -> dict:
+def _step_preview_start(api: str) -> dict:
     return {
         "step": 3,
+        "name": "Start dev preview (fast HMR)",
+        "endpoint": f"POST {api}/preview_start",
+        "when_to_call": (
+            "After connect (and optional upload), when user wants a live dev preview "
+            "without a full Docker deploy — typically ~5 seconds for nextjs/vite."
+        ),
+        "request": {
+            "method": "POST",
+            "headers": {"Content-Type": "application/json", "X-API-Key": "syte_YOUR_TOKEN"},
+            "body_json": {"uuid": "myapp-a1b2c3"},
+            "body_fields": {
+                "uuid": {"type": "string", "required": True, "source": "your syte_uuid column"},
+            },
+        },
+        "response": {
+            "content_type": "application/json",
+            "example": {
+                "ok": True,
+                "uuid": "myapp-a1b2c3",
+                "message": "Preview on https://previewk-myapp.sycord.site — ready (HMR live)",
+                "preview_url": "https://previewk-myapp.sycord.site",
+                "preview_domain": "previewk-myapp.sycord.site",
+                "preview_ready": True,
+                "preview_running": True,
+                "preview_port": 4001,
+                "preview_status": "running",
+                "preview_stream_url": "/api/projects/myapp-a1b2c3/preview/logs/stream?live=1",
+            },
+            "fields_to_use": {
+                "preview_url": "Show to user — HTTPS preview link (wildcard *.sycord.site)",
+                "preview_ready": "true when dev server is accepting connections",
+                "preview_running": "true while preview process is alive",
+                "preview_stream_url": "Optional — append to SYTE_URL for live preview logs (SSE)",
+            },
+        },
+        "backend_pseudocode": (
+            "const res = await postJson('/sycord/api/preview_start', { uuid: project.syte_uuid });\n"
+            "startPollingPreview(project.syte_uuid, res.preview_url);"
+        ),
+    }
+
+
+def _step_preview_poll(api: str) -> dict:
+    return {
+        "step": 4,
+        "name": "Poll preview status",
+        "endpoint": f"GET {api}/preview_status?uuid=<syte_uuid>",
+        "when_to_call": "Every 1–2 seconds after preview_start until preview_ready=true.",
+        "request": {
+            "method": "GET",
+            "headers": {"X-API-Key": "syte_YOUR_TOKEN"},
+            "query": {"uuid": "myapp-a1b2c3"},
+        },
+        "response": {
+            "content_type": "application/json",
+            "example": {
+                "ok": True,
+                "uuid": "myapp-a1b2c3",
+                "preview_url": "https://previewk-myapp.sycord.site",
+                "preview_ready": True,
+                "preview_running": True,
+                "preview_status": "running",
+            },
+            "fields_to_use": {
+                "preview_ready": "true → embed or link preview_url for user",
+                "preview_status": "starting | running | stopped",
+            },
+        },
+        "backend_pseudocode": (
+            "const st = await getJson('/sycord/api/preview_status?uuid=' + syte_uuid);\n"
+            "if (st.preview_ready) showPreview(st.preview_url);\n"
+            "else if (st.preview_running) { /* keep polling */ }"
+        ),
+    }
+
+
+def _step_deploy(api: str) -> dict:
+    return {
+        "step": 5,
         "name": "Start deployment",
         "endpoint": f"POST {api}/issue_deployment",
         "when_to_call": "User clicks Deploy in your app, or after file uploads are complete.",
@@ -233,7 +335,7 @@ def _step_deploy(api: str) -> dict:
 
 def _step_container_poll(api: str) -> dict:
     return {
-        "step": 4,
+        "step": 6,
         "name": "Poll container status",
         "endpoint": f"GET {api}/container_get?uuid=<syte_uuid>",
         "when_to_call": "Every 3–5 seconds after issue_deployment until running=true or failed.",
@@ -275,7 +377,7 @@ def _step_container_poll(api: str) -> dict:
 
 def _step_domain(api: str) -> dict:
     return {
-        "step": 5,
+        "step": 7,
         "name": "Custom domain (optional)",
         "endpoint": f"POST {api}/domain",
         "when_to_call": "User configures a custom hostname instead of the auto subdomain.",
