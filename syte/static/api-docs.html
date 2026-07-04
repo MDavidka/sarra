@@ -3,121 +3,946 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Syte API — AI Documentation</title>
-  <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <title>Syte API Reference</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    body { max-width: 680px; margin: 0 auto; padding: 1rem 1rem 3rem; font-size: 0.88rem; }
-    h1 { font-size: 1.4rem; margin-bottom: 0.2rem; }
-    h2 { font-size: 1rem; margin: 1.5rem 0 0.6rem; color: var(--text); }
-    .sub { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1rem; }
-    .back { color: var(--text-muted); text-decoration: none; font-size: 0.82rem; display: block; margin-bottom: 0.75rem; }
-    details { background: var(--bg-card); border-radius: 12px; margin-bottom: 0.5rem; overflow: hidden; }
-    summary { padding: 0.75rem 1rem; cursor: pointer; font-weight: 500; list-style: none; display: flex; align-items: center; gap: 0.5rem; }
-    summary::-webkit-details-marker { display: none; }
-    summary::before { content: '▸'; color: var(--text-muted); font-size: 0.75rem; }
-    details[open] summary::before { content: '▾'; }
-    .detail-body { padding: 0 1rem 1rem; border-top: 1px solid #2a2a2a; }
-    .m { font-size: 0.62rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 4px; margin-right: 0.35rem; }
-    .get { background: #1a2e1a; color: #7dcea0; }
-    .post { background: #1a2530; color: #85c1e9; }
-    .route { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; word-break: break-all; margin: 0.5rem 0; }
-    pre { background: #0d0d0d; padding: 0.75rem; border-radius: 8px; font-size: 0.68rem; overflow-x: auto; line-height: 1.5; margin: 0.5rem 0; border: 1px solid #2a2a2a; }
-    table { width: 100%; font-size: 0.75rem; border-collapse: collapse; margin: 0.5rem 0; }
-    th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
-    th { color: var(--text-muted); font-weight: 500; }
-    .tag { display: inline-block; background: #2a2a2a; color: #aaa; font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-right: 0.25rem; }
-    .warn { color: #f0c674; font-size: 0.78rem; }
-    ol.steps { padding-left: 1.2rem; margin: 0.5rem 0; }
-    ol.steps li { margin: 0.35rem 0; color: var(--text-muted); }
-    a { color: #85c1e9; }
+    :root {
+      --bg: #0a0a0a;
+      --bg-sidebar: #111111;
+      --bg-card: #161616;
+      --bg-card-hover: #1c1c1c;
+      --bg-input: #0d0d0d;
+      --border: #2a2a2a;
+      --border-subtle: #1f1f1f;
+      --text: #ffffff;
+      --text-muted: #8b8b8b;
+      --text-dim: #5c5c5c;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --sidebar-w: 260px;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-subtle);
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-top {
+      padding: 1rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .sidebar-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12px;
+      margin-bottom: 0.75rem;
+    }
+    .sidebar-back:hover { color: var(--text); }
+
+    .sidebar-brand {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: #222;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent-blue);
+      flex-shrink: 0;
+    }
+
+    .brand-title { font-weight: 600; font-size: 14px; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 0.15rem; line-height: 1.4; }
+
+    .sidebar-nav {
+      padding: 0.75rem 0.65rem 2rem;
+      flex: 1;
+    }
+
+    .nav-group { margin-bottom: 0.25rem; }
+
+    .nav-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 0.5rem 0.65rem 0.35rem;
+    }
+
+    .nav-link {
+      display: block;
+      padding: 0.45rem 0.75rem;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .nav-link:hover { background: var(--bg-card); color: var(--text); }
+    .nav-link.active { background: var(--bg-card); color: var(--text); font-weight: 500; }
+
+  .nav-link.sub { padding-left: 1.25rem; font-size: 12px; }
+
+    /* ── Main ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .main-inner {
+      max-width: 780px;
+      padding: 2rem 2.5rem 4rem;
+    }
+
+    .page-header { margin-bottom: 2rem; }
+    .page-header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .page-header p { color: var(--text-muted); font-size: 14px; }
+    .page-header a { color: var(--accent-blue); text-decoration: none; }
+    .page-header a:hover { text-decoration: underline; }
+
+    .section { margin-bottom: 3rem; scroll-margin-top: 1.5rem; }
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .section-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 1.25rem; }
+
+    /* ── Endpoint card ── */
+    .endpoint {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 1.25rem;
+      overflow: hidden;
+    }
+
+    .endpoint-header {
+      padding: 1rem 1.15rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .endpoint-base {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      margin-bottom: 0.5rem;
+    }
+
+    .endpoint-row {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .method {
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--mono);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .method.post { color: var(--accent-blue); }
+    .method.get { color: var(--accent-green); }
+
+    .endpoint-path {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 500;
+      flex: 1;
+      word-break: break-all;
+    }
+
+    .endpoint-name {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
+
+    .endpoint-body { padding: 0 1.15rem 1.15rem; }
+
+    .panel {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 0.85rem;
+      margin-top: 0.85rem;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .panel-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 400;
+      font-family: var(--mono);
+    }
+
+    .field {
+      margin-bottom: 0.85rem;
+    }
+
+    .field-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .field-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .field-name .req { color: var(--accent-red); margin-left: 1px; }
+    .field-name .opt { color: var(--text-dim); font-weight: 400; }
+
+    .field-type {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text-muted);
+      margin-right: 0.25rem;
+      margin-top: 0.2rem;
+    }
+
+    .field-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .field-desc code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--bg-input);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      color: var(--accent-blue);
+    }
+
+    pre {
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1rem;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.6;
+      overflow-x: auto;
+      color: #c9d1d9;
+      margin-top: 0.5rem;
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 0.65rem 0.85rem;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--accent-orange);
+      margin: 0.65rem 0;
+      line-height: 1.5;
+    }
+    .note strong { color: var(--text); font-weight: 500; }
+
+    .info-grid {
+      display: grid;
+      gap: 0.5rem;
+      margin: 0.75rem 0;
+    }
+    .info-row {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 0.5rem;
+      font-size: 12px;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-key { color: var(--text-dim); font-family: var(--mono); }
+    .info-val { color: var(--text-muted); }
+    .info-val code { font-family: var(--mono); font-size: 11px; color: var(--accent-blue); }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+      .main-inner { padding: 1.25rem 1rem 3rem; }
+    }
   </style>
 </head>
 <body>
-  <a href="/" class="back">← syte gui</a>
-  <h1>Syte API</h1>
-  <p class="sub">v__VERSION__ · for AI agents &amp; automation · <a href="/api/ai.json">ai.json</a></p>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <a href="/" class="sidebar-back">← syte gui</a>
+        <div class="sidebar-brand">
+          <div class="brand-icon">&lt;/&gt;</div>
+          <div>
+            <div class="brand-title">API</div>
+            <div class="brand-sub">RESTful API reference for programmatic access to Syte</div>
+          </div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-label">General</div>
+          <a class="nav-link" href="#auth">Authentication</a>
+          <a class="nav-link" href="#errors">Errors</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Project</div>
+          <a class="nav-link sub" href="#project-create">Create</a>
+          <a class="nav-link sub" href="#project-delete">Delete</a>
+          <a class="nav-link sub" href="#project-get">Get</a>
+          <a class="nav-link sub" href="#project-list">List</a>
+          <a class="nav-link sub" href="#project-domain">Set domain</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Workspace</div>
+          <a class="nav-link sub" href="#workspace-files">Files</a>
+          <a class="nav-link sub" href="#workspace-command">Execute command</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Start</div>
+          <a class="nav-link sub" href="#start-deploy">Issue deploy</a>
+          <a class="nav-link sub" href="#start-service">Start service</a>
+          <a class="nav-link sub" href="#start-stop">Stop service</a>
+          <a class="nav-link sub" href="#start-logs">Logs</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Preview</div>
+          <a class="nav-link sub" href="#preview-start">Start preview</a>
+          <a class="nav-link sub" href="#preview-status">Preview status</a>
+          <a class="nav-link sub" href="#preview-stop">Stop preview</a>
+          <a class="nav-link sub" href="#preview-logs">Preview logs</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Env</div>
+          <a class="nav-link sub" href="#env-set">Set env</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">Other</div>
+          <a class="nav-link sub" href="#design">Validate design</a>
+          <a class="nav-link sub" href="#server-info">Server info</a>
+        </div>
+      </nav>
+    </aside>
 
-  <h2>Authentication</h2>
-  <p>All endpoints below require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
+    <main class="main">
+      <div class="main-inner">
+        <header class="page-header">
+          <h1>Syte API</h1>
+          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a></p>
+        </header>
 
-  <details open>
-    <summary>1. Create an API token</summary>
-    <div class="detail-body">
-      <p>In the Syte GUI: <strong>key</strong> in the navbar → create token. Or via API (no auth):</p>
-      <pre>curl -X POST https://YOUR_HOST/api/tokens \
-  -H "Content-Type: application/json" \
-  -d '{"name": "my-ai-agent"}'
+        <!-- AUTH -->
+        <section class="section" id="auth">
+          <h2 class="section-title">Authentication</h2>
+          <p class="section-desc">All endpoints require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
 
-# Response (save token immediately — shown once):
-# {"ok":true,"token":"syte_abc123...","prefix":"syte_abc..."}</pre>
-    </div>
-  </details>
+          <div class="endpoint" id="auth-token">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/tokens</span>
+              </div>
+              <div class="endpoint-name">Create API token</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Label for this token (shown in GUI).</div>
+                </div>
+              </div>
+              <pre>{
+  "ok": true,
+  "token": "syte_abc123...",
+  "prefix": "syte_abc..."
+}</pre>
+              <div class="note"><strong>Token shown once.</strong> Save it immediately. Create via GUI: <strong>key</strong> in navbar.</div>
+            </div>
+          </div>
 
-  <details open>
-    <summary>2. Send the token on every request</summary>
-    <div class="detail-body">
-      <p><strong>Option A</strong> — header (recommended):</p>
-      <pre>X-API-Key: syte_your_token_here</pre>
-      <p><strong>Option B</strong> — Bearer:</p>
-      <pre>Authorization: Bearer syte_your_token_here</pre>
-      <pre>curl https://YOUR_HOST/api/workspace_list \
-  -H "X-API-Key: syte_your_token_here"</pre>
-      <p class="warn">401 missing_api_key — no header sent<br>401 invalid_api_key — wrong or revoked token</p>
-    </div>
-  </details>
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">—</span>
+                <span class="endpoint-path">All authenticated endpoints</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Authorization <span class="panel-meta">x-api-key</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">X-API-Key</span>
+                    <span class="badge">In: header</span>
+                  </div>
+                  <div class="field-desc">API key authentication. Use your generated token.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">Authorization</span>
+                    <span class="badge">In: header</span>
+                  </div>
+                  <div class="field-desc">Alternative: <code>Bearer syte_your_token_here</code></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-  <h2>Sycord Design Contract</h2>
-  <p class="hint">Mandatory UI rules for every AI-generated site. Read <code>GET /api/ai.json</code> → <code>system_prompt</code> and <code>design_contract</code> before generating.</p>
-  <ul class="steps">
-    <li>Next.js + <strong>shadcn/ui</strong> + Tailwind + <strong>Lucide</strong> icons</li>
-    <li>Font: <strong>Inter</strong> via <code>--font-sans</code> on body</li>
-    <li>shadcn theme preset + one accent; dark mode required</li>
-    <li>Hero gradient below hero section (primary at 0.15–0.3 opacity)</li>
-    <li>No icons in colored circles; no <code>npm run build</code> via execute_command</li>
-  </ul>
-  <p>After generation: <code>GET /api/validate_design?uuid=</code> — automated linter</p>
+        <!-- PROJECT -->
+        <section class="section" id="project">
+          <h2 class="section-title">Project</h2>
+          <p class="section-desc">Create, read, update, and delete deployment projects.</p>
 
-  <h2 id="preview-api">Live Preview API</h2>
-  <p>Fast dev server with <strong>hot reload (HMR)</strong> — starts in seconds. Preview uses your <strong>connected HTTPS domain</strong> via Caddy (not raw IP:port).</p>
+          <div class="endpoint" id="project-create">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/create_project</span>
+              </div>
+              <div class="endpoint-name">Create project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <span class="badge">Length 1 ≤ length</span>
+                  <div class="field-desc">Display name for the project.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Custom project ID. Auto-generated if omitted.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_url<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Git repo URL. Cloned on <code>issue_deploy</code>, not required at create.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_provider<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Shorthand: <code>github.com/user/repo.git</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">branch<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Default: <code>main</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">start_command<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Shell fallback when no Dockerfile.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Custom HTTPS production domain.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="opt">?</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  <div class="field-desc">Initial environment variables.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">deploy<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  <div class="field-desc">Default <code>false</code>. Set <code>true</code> to deploy immediately (prefer <code>issue_deploy</code>).</div>
+                </div>
+              </div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "status": "created",
+  "execute_command": {
+    "body": {"uuid": "my-site-a1b2c3", "command": "npm run lint", "cwd": "app"}
+  },
+  "issue_deploy": {
+    "method": "POST",
+    "path": "/api/issue_deploy",
+    "body": {"uuid": "my-site-a1b2c3"}
+  }
+}</pre>
+            </div>
+          </div>
 
-  <h3>Preview URL (automatic SSL)</h3>
-  <p>Preview always uses the GUI zone with a <strong>wildcard-friendly</strong> hostname — no third-level subdomain:</p>
-  <table>
-    <tr><th>Pattern</th><th>Example</th></tr>
-    <tr><td><code>preview{letter}-{appname}.{zone}</code></td><td><code>https://previewk-mysite.sycord.site</code></td></tr>
-  </table>
-  <p><code>{letter}</code> = random a–z per preview session. <code>{appname}</code> = slugified project name.</p>
-  <p class="warn">Requires wildcard DNS <code>*.sycord.site</code> → server IP (one record covers all previews). Caddy issues TLS automatically.</p>
-  <p>If GUI domain is not set, falls back to <code>preview_direct_url</code> (<code>http://IP:4000+</code>).</p>
+          <div class="endpoint" id="project-delete">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_project</span>
+              </div>
+              <div class="endpoint-name">Delete project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Project UUID to delete. Stops container and removes workspace.</div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-  <h3>Workflow</h3>
-  <ol class="steps">
-    <li><code>POST /api/start_preview</code> <code>{"uuid":"..."}</code> → <code>https://previewk-mysite.sycord.site</code></li>
-    <li>Poll <code>GET /api/preview_status?uuid=</code> until <code>preview_ready: true</code></li>
-    <li>Open <code>preview_url</code> (HTTPS domain) — edits via <code>write_file</code> hot-reload</li>
-    <li><code>POST /api/stop_preview</code> when done</li>
-    <li><code>POST /api/issue_deploy</code> for production deploy</li>
-  </ol>
+          <div class="endpoint" id="project-get">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_get?uuid=</span>
+              </div>
+              <div class="endpoint-name">Get project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query Parameters</div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Project UUID. Returns URLs, env, git info, preview status, stream URLs.</div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-  <h3>Start preview</h3>
-  <pre>curl -X POST https://YOUR_HOST/api/start_preview \
-  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{"uuid": "my-site-abc123"}'</pre>
-  <p><strong>Response fields:</strong></p>
-  <table>
-    <tr><th>field</th><th>description</th></tr>
-    <tr><td><code>preview_url</code></td><td>Primary URL — HTTPS domain when connected</td></tr>
-    <tr><td><code>preview_domain</code></td><td>Hostname e.g. <code>previewk-mysite.sycord.site</code></td></tr>
-    <tr><td><code>preview_domain_url</code></td><td>HTTPS URL via Caddy</td></tr>
-    <tr><td><code>preview_direct_url</code></td><td>Fallback <code>http://IP:port</code></td></tr>
-    <tr><td><code>preview_ready</code></td><td><code>true</code> when dev server accepts connections</td></tr>
-    <tr><td><code>preview_running</code></td><td><code>true</code> while process is alive</td></tr>
-    <tr><td><code>preview_port</code></td><td>Internal port (4000–4999)</td></tr>
-    <tr><td><code>preview_stream_url</code></td><td>SSE log stream path</td></tr>
-    <tr><td><code>preview_dns_hint</code></td><td>DNS setup instructions</td></tr>
-  </table>
-  <pre>{
+          <div class="endpoint" id="project-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_list</span>
+              </div>
+              <div class="endpoint-name">List projects</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Returns all projects with uuid, url, port, status, and running state.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-domain">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_domain</span>
+              </div>
+              <div class="endpoint-name">Set domain</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Production HTTPS domain. Auto TLS via Caddy.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- WORKSPACE -->
+        <section class="section" id="workspace">
+          <h2 class="section-title">Workspace</h2>
+          <p class="section-desc">Read, write, and manage files in the project workspace.</p>
+
+          <div class="endpoint" id="workspace-files">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/list_files?uuid=&amp;path=</span>
+              </div>
+              <div class="endpoint-name">List files</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc"><code>path</code> is relative to workspace root (default: root).</div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/read_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">e.g. <code>app/package.json</code>. Returns UTF-8 content or base64 for binary.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/write_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">content<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/upload_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Multipart: <code>uuid</code>, <code>path</code>, <code>file</code></div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-command">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_command</span>
+              </div>
+              <div class="endpoint-name">Execute command</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>npm run build is blocked.</strong> Use <code>issue_deploy</code> for production builds.</div>
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">command<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Allowed: <code>npm install</code>, <code>npm run lint</code>, <code>ls -la</code>, scaffolding.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">cwd<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Default: <code>app</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">timeout<span class="opt">?</span></span><span class="field-type">integer</span></div>
+                  <span class="badge">Default 300</span><span class="badge">Max 1800</span>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">env<span class="opt">?</span></span><span class="field-type">object</span></div>
+                  <div class="field-desc">Extra env vars for this run only.</div>
+                </div>
+              </div>
+              <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm run lint"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_commands</span>
+              </div>
+              <div class="endpoint-name">Execute commands (batch)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Run multiple commands in sequence. Stops on first failure by default.</div>
+              <pre>{"uuid":"...","commands":[
+  {"command":"npm install","cwd":"app"},
+  {"command":"npm run lint","cwd":"app","timeout":300}
+]}</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- START -->
+        <section class="section" id="start">
+          <h2 class="section-title">Start</h2>
+          <p class="section-desc">Deploy and manage production services. Build only via <code>issue_deploy</code>.</p>
+
+          <div class="endpoint" id="start-deploy">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/issue_deploy</span>
+              </div>
+              <div class="endpoint-name">Issue deploy</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>The only way to build and deploy.</strong> Git pull (if configured) + Docker build + container restart.</div>
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-service">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_service</span>
+              </div>
+              <div class="endpoint-name">Start service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Start existing container without rebuilding.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_service</span>
+              </div>
+              <div class="endpoint-name">Stop service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/get_logs?uuid=&amp;lines=200</span>
+              </div>
+              <div class="endpoint-name">Get logs (snapshot)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Snapshot of build + runtime logs.</div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/logs/stream?live=1</span>
+              </div>
+              <div class="endpoint-name">Deploy logs (SSE stream)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Server-Sent Events — live deploy log stream. Optional <code>api_key</code> query param.</div>
+              <pre>{"type":"build","text":"Step 1/21 ..."}</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- PREVIEW -->
+        <section class="section" id="preview">
+          <h2 class="section-title">Preview</h2>
+          <p class="section-desc">Fast dev server with HMR. Returns <strong>HTTPS domain URL</strong> — not raw IP.</p>
+
+          <div class="note">
+            <strong>preview_url uses the domain, not the IP.</strong>
+            When GUI domain is set (e.g. <code>sycord.site</code>), <code>preview_url</code> = <code>preview_domain_url</code>
+            (e.g. <code>https://previewk-mysite.sycord.site</code>).
+            <code>preview_direct_url</code> is included as fallback only — do not use it when domain is configured.
+          </div>
+
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">preview_url</span><span class="info-val">Primary — HTTPS domain via Caddy</span></div>
+            <div class="info-row"><span class="info-key">preview_domain</span><span class="info-val">Hostname e.g. <code>previewk-mysite.sycord.site</code></span></div>
+            <div class="info-row"><span class="info-key">preview_domain_url</span><span class="info-val">Same as <code>preview_url</code> when domain is set</span></div>
+            <div class="info-row"><span class="info-key">preview_direct_url</span><span class="info-val">Fallback <code>http://IP:port</code> — only when GUI domain unset</span></div>
+            <div class="info-row"><span class="info-key">preview_ready</span><span class="info-val"><code>true</code> when dev server accepts connections</span></div>
+          </div>
+
+          <div class="endpoint" id="preview-start">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_preview</span>
+              </div>
+              <div class="endpoint-name">Start preview</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Requires <code>package.json</code> with a <code>dev</code> script (<code>next dev</code> or <code>vite</code>).</div>
+                </div>
+              </div>
+              <pre>{
   "ok": true,
   "uuid": "my-site-abc123",
   "preview_url": "https://previewk-mysite.sycord.site",
@@ -127,237 +952,167 @@
   "preview_ready": true,
   "preview_running": true,
   "preview_port": 4000,
-  "preview_stream_url": "/api/projects/my-site-abc123/preview/logs/stream?live=1",
-  "preview_dns_hint": "Automatic SSL via wildcard *.sycord.site — no per-preview DNS record needed"
+  "preview_stream_url": "/api/projects/my-site-abc123/preview/logs/stream?live=1"
 }</pre>
+            </div>
+          </div>
 
-  <h3>Preview status</h3>
-  <pre>curl "https://YOUR_HOST/api/preview_status?uuid=my-site-abc123" \
-  -H "X-API-Key: syte_..."</pre>
+          <div class="endpoint" id="preview-status">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/preview_status?uuid=</span>
+              </div>
+              <div class="endpoint-name">Preview status</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Poll until <code>preview_ready: true</code>. Returns same URL fields as start — use <code>preview_url</code> (domain).</div>
+            </div>
+          </div>
 
-  <h3>Stop preview</h3>
-  <pre>curl -X POST https://YOUR_HOST/api/stop_preview \
-  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{"uuid": "my-site-abc123"}'</pre>
-  <p>Removes Caddy route and stops dev server.</p>
+          <div class="endpoint" id="preview-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_preview</span>
+              </div>
+              <div class="endpoint-name">Stop preview</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Stops dev server and removes Caddy preview route.</div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-  <h3>Preview logs (SSE)</h3>
-  <pre>curl -N "https://YOUR_HOST/api/projects/my-site-abc123/preview/logs/stream?live=1" \
-  -H "X-API-Key: syte_..."</pre>
+          <div class="endpoint" id="preview-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/preview/logs/stream?live=1</span>
+              </div>
+              <div class="endpoint-name">Preview logs (SSE)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Live dev server output. Requires <code>dev</code> script and <code>npm install</code> first.</div>
+            </div>
+          </div>
+        </section>
 
-  <h3>Requirements</h3>
-  <ul class="steps">
-    <li><code>package.json</code> must have a <code>"dev"</code> script (<code>next dev</code> or <code>vite</code>)</li>
-    <li>Run <code>npm install</code> via <code>execute_command</code> before first preview</li>
-    <li><strong>Vite:</strong> Syte patches <code>vite.config.*</code> with <code>server.allowedHosts: true</code> on <code>start_preview</code> (fallback: static <code>vite.config.syte.mjs</code> wrapper)</li>
-    <li><strong>Next.js:</strong> Syte auto-patches <code>allowedDevOrigins</code> in next.config</li>
-    <li>Preview ≠ production — use <code>issue_deploy</code> to build for production</li>
-  </ul>
+        <!-- ENV -->
+        <section class="section" id="env">
+          <h2 class="section-title">Env</h2>
+          <p class="section-desc">Manage project environment variables.</p>
 
-  <h2>Deploy rules</h2>
-  <p><strong>Build ONLY via</strong> <code>POST /api/issue_deploy {"uuid":"..."}</code> — git pull + docker build + restart.</p>
-  <p><code>execute_command</code> is for scaffolding, <code>npm install</code>, and <code>npm run lint</code> (testing). <code>npm run build</code> is <strong>blocked</strong>.</p>
+          <div class="endpoint" id="env-set">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_env</span>
+              </div>
+              <div class="endpoint-name">Set env</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="req">*</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  <div class="field-desc">Key-value pairs e.g. <code>{"NODE_ENV":"production"}</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">merge<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  <div class="field-desc">Default <code>true</code> — merge with existing vars. <code>false</code> replaces all.</div>
+                </div>
+              </div>
+              <pre>{"uuid":"...","env_vars":{"NODE_ENV":"production"},"merge":true}</pre>
+            </div>
+          </div>
+        </section>
 
-  <h2>AI workflow: deploy from Git</h2>
-  <ol class="steps">
-    <li><code>POST /api/create_project</code> with <code>git_url</code> → <code>uuid</code></li>
-    <li><code>POST /api/issue_deploy {"uuid":"..."}</code> → git pull + docker build + start</li>
-    <li>Stream <code>GET /api/projects/{uuid}/logs/stream?live=1</code> (SSE)</li>
-    <li><code>GET /api/validate_design?uuid=</code> → design linter</li>
-    <li><code>POST /api/set_domain</code> → optional HTTPS domain</li>
-  </ol>
-  <pre>curl -X POST https://YOUR_HOST/api/issue_deploy \
-  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{"uuid": "my-site-abc123"}'</pre>
+        <!-- OTHER -->
+        <section class="section" id="design">
+          <h2 class="section-title">Validate design</h2>
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/validate_design?uuid=</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Runs Sycord Design Contract linter — shadcn/ui, Inter font, Lucide, dark mode, hero gradient, etc.</div>
+              <pre>{"ok":true,"passed":7,"total":8,"checks":[...]}</pre>
+            </div>
+          </div>
+        </section>
 
-  <h2>AI workflow: build from scratch (no git)</h2>
-  <ol class="steps">
-    <li>Read <code>/api/ai.json</code> → <code>system_prompt</code> + <code>design_contract</code></li>
-    <li><code>POST /api/create_project</code> with <code>name</code> only → <code>uuid</code></li>
-    <li><code>POST /api/write_file</code> — Next.js + shadcn/ui per design contract</li>
-    <li><code>POST /api/execute_command</code> — <code>npm install</code>, <code>npm run lint</code> (NOT build)</li>
-    <li><code>GET /api/validate_design?uuid=</code> — check design rules</li>
-    <li><code>POST /api/issue_deploy {"uuid":"..."}</code> — docker build + start</li>
-    <li><code>GET /api/get_logs?uuid=</code> — verify deploy</li>
-  </ol>
-  <pre>curl -X POST https://YOUR_HOST/api/execute_command \
-  -H "X-API-Key: syte_..." -H "Content-Type: application/json" \
-  -d '{
-    "uuid": "my-site-abc123",
-    "command": "npm run lint",
-    "cwd": "app",
-    "timeout": 300
-  }'</pre>
+        <section class="section" id="server-info">
+          <h2 class="section-title">Server info</h2>
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/server_info</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Server public IP, version, base URLs.</div>
+            </div>
+          </div>
+        </section>
 
-  <h2>Endpoints</h2>
+        <!-- ERRORS -->
+        <section class="section" id="errors">
+          <h2 class="section-title">Errors</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">401 missing_api_key</span><span class="info-val">No X-API-Key or Bearer header</span></div>
+            <div class="info-row"><span class="info-key">401 invalid_api_key</span><span class="info-val">Token wrong or revoked</span></div>
+            <div class="info-row"><span class="info-key">400 invalid_path</span><span class="info-val">Path escapes workspace</span></div>
+            <div class="info-row"><span class="info-key">400 create_failed</span><span class="info-val">Duplicate uuid or validation error</span></div>
+            <div class="info-row"><span class="info-key">400 preview_failed</span><span class="info-val">Dev server failed to start</span></div>
+            <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">Project UUID does not exist</span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
 
-  <details><summary><span class="m get">GET</span> /api/server_info</summary>
-    <div class="detail-body"><p>Server public IP, version, base URLs.</p></div>
-  </details>
+  <script>
+    (function () {
+      const links = document.querySelectorAll('.nav-link[href^="#"]');
+      const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
 
-  <details><summary><span class="m get">GET</span> /api/workspace_list</summary>
-    <div class="detail-body"><p>All projects with uuid, url, port, status, running.</p></div>
-  </details>
+      function setActive() {
+        let current = sections[0];
+        for (const sec of sections) {
+          const rect = sec.getBoundingClientRect();
+          if (rect.top <= 120) current = sec;
+        }
+        links.forEach(a => {
+          a.classList.toggle('active', a.getAttribute('href') === '#' + current.id);
+        });
+      }
 
-  <details><summary><span class="m get">GET</span> /api/workspace_get?uuid=</summary>
-    <div class="detail-body"><p>Full project detail: urls, env, git, stream_url.</p></div>
-  </details>
-
-  <details><summary><span class="m get">GET</span> /api/list_files?uuid=&amp;path=</summary>
-    <div class="detail-body"><p>List files/dirs. <code>path</code> relative to workspace (default root).</p></div>
-  </details>
-
-  <details open><summary><span class="m post">POST</span> /api/execute_command <span class="tag">no build</span></summary>
-    <div class="detail-body">
-      <p>Scaffolding and <strong>lint testing</strong> only. <code>npm run build</code> is <strong>blocked</strong> — use <code>issue_deploy</code>.</p>
-      <table>
-        <tr><th>field</th><th>type</th><th>description</th></tr>
-        <tr><td>uuid</td><td>string</td><td>required</td></tr>
-        <tr><td>command</td><td>string</td><td>shell command (no build)</td></tr>
-        <tr><td>cwd</td><td>string</td><td>default <code>app</code></td></tr>
-        <tr><td>timeout</td><td>int</td><td>seconds, default 300, max 1800</td></tr>
-        <tr><td>env</td><td>object</td><td>extra env vars for this run</td></tr>
-      </table>
-      <p>Allowed: <code>npm install</code>, <code>npm run lint</code>, <code>ls -la</code>, <code>mkdir -p src</code></p>
-      <p class="warn">Forbidden: <code>npm run build</code>, <code>yarn build</code>, <code>next build</code></p>
-      <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm run lint"}</pre>
-    </div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/execute_commands</summary>
-    <div class="detail-body">
-      <p>Run multiple commands in sequence. Stops on first failure by default.</p>
-      <pre>{"uuid":"...","commands":[
-  {"command":"npm install","cwd":"app"},
-  {"command":"npm run lint","cwd":"app","timeout":300}
-]}</pre>
-    </div>
-  </details>
-
-  <details open><summary><span class="m post">POST</span> /api/start_preview</summary>
-    <div class="detail-body">
-      <p>Start fast dev server (next dev / vite) with HMR. Returns <strong>HTTPS preview_url</strong> on connected domain.</p>
-      <pre>{"uuid": "my-site-abc123"}</pre>
-      <p>See <a href="#preview-api">Live Preview API</a> for full response fields and DNS setup.</p>
-    </div>
-  </details>
-
-  <details><summary><span class="m get">GET</span> /api/preview_status?uuid=</summary>
-    <div class="detail-body">
-      <p>Poll until <code>preview_ready: true</code>. Returns <code>preview_url</code>, <code>preview_domain</code>, <code>preview_direct_url</code>.</p>
-    </div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/stop_preview</summary>
-    <div class="detail-body">
-      <pre>{"uuid": "my-site-abc123"}</pre>
-      <p>Stops dev server and removes Caddy preview route.</p>
-    </div>
-  </details>
-
-  <details><summary><span class="m get">GET</span> /api/projects/{uuid}/preview/logs/stream?live=1</summary>
-    <div class="detail-body"><p>SSE stream of preview dev server output. Optional <code>api_key</code> query param.</p></div>
-  </details>
-
-  <details><summary><span class="m get">GET</span> /api/validate_design?uuid=</summary>
-    <div class="detail-body">
-      <p>Run Sycord Design Contract linter — checks shadcn/ui, --font-sans, Lucide, dark mode, hero gradient, etc.</p>
-      <pre>{"ok":true,"passed":7,"total":8,"checks":[...]}</pre>
-    </div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/read_file</summary>
-    <div class="detail-body"><pre>{"uuid":"...","path":"app/package.json"}</pre>
-    <p>Returns <code>content</code> (utf-8) or base64 for binary.</p></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/write_file</summary>
-    <div class="detail-body"><pre>{"uuid":"...","path":"app/index.html","content":"&lt;!DOCTYPE html&gt;..."}</pre></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/upload_file</summary>
-    <div class="detail-body"><p>multipart: <code>uuid</code>, <code>path</code>, <code>file</code></p></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/delete_file</summary>
-    <div class="detail-body"><pre>{"uuid":"...","path":"app/temp.txt"}</pre></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/set_env</summary>
-    <div class="detail-body"><pre>{"uuid":"...","env_vars":{"NODE_ENV":"production"},"merge":true}</pre></div>
-  </details>
-
-  <details open><summary><span class="m post">POST</span> /api/create_project</summary>
-    <div class="detail-body">
-      <p>Creates an <strong>empty project</strong>. Git and files are optional — add anytime, deploy anytime.</p>
-      <table>
-        <tr><th>field</th><th>required</th><th>description</th></tr>
-        <tr><td>name</td><td>yes</td><td>display name (only required field)</td></tr>
-        <tr><td>uuid</td><td>no</td><td>custom id (auto-generated if omitted)</td></tr>
-        <tr><td>git_url</td><td>no</td><td>cloned on <code>issue_deploy</code>, not required at create</td></tr>
-        <tr><td>git_provider</td><td>no</td><td>shorthand: github.com/user/repo.git</td></tr>
-        <tr><td>branch</td><td>no</td><td>default main</td></tr>
-        <tr><td>start_command</td><td>no</td><td>shell fallback if no Dockerfile</td></tr>
-        <tr><td>domain</td><td>no</td><td>custom HTTPS domain</td></tr>
-        <tr><td>env_vars</td><td>no</td><td>key-value env</td></tr>
-        <tr><td>deploy</td><td>no</td><td>default <code>false</code> — set <code>true</code> to deploy immediately</td></tr>
-      </table>
-      <p>Response includes <code>design_contract</code>, <code>uuid</code>, <code>execute_command.body</code>, <code>issue_deploy.body</code>, <code>validate_design</code>.</p>
-      <pre>{
-  "ok": true,
-  "uuid": "my-site-a1b2c3",
-  "status": "created",
-  "execute_command": {
-    "body": {"uuid": "my-site-a1b2c3", "command": "npm run lint", "cwd": "app"}
-  },
-  "issue_deploy": {"method": "POST", "path": "/api/issue_deploy", "body": {"uuid": "my-site-a1b2c3"}}
-}</pre>
-    </div>
-  </details>
-
-  <details open><summary><span class="m post">POST</span> /api/issue_deploy</summary>
-    <div class="detail-body">
-      <pre>{"uuid":"..."}</pre>
-      <p><strong>The only way to build and deploy.</strong> Git pull (if git_url) + docker build (npm run build inside Dockerfile) + container restart.</p>
-      <p><code>npm run build</code> via execute_command is blocked — build always happens here.</p>
-    </div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/start_service / stop_service</summary>
-    <div class="detail-body"><pre>{"uuid":"..."}</pre></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/set_domain</summary>
-    <div class="detail-body"><pre>{"uuid":"...","domain":"app.example.com"}</pre><p>Auto TLS via Caddy.</p></div>
-  </details>
-
-  <details><summary><span class="m post">POST</span> /api/delete_project</summary>
-    <div class="detail-body"><pre>{"uuid":"..."}</pre></div>
-  </details>
-
-  <details><summary><span class="m get">GET</span> /api/get_logs?uuid=&amp;lines=200</summary>
-    <div class="detail-body"><p>Snapshot of build + runtime logs.</p></div>
-  </details>
-
-  <details open><summary><span class="m get">GET</span> /api/projects/{uuid}/logs/stream?live=1</summary>
-    <div class="detail-body">
-      <p>Server-Sent Events — live deploy log (current session only).</p>
-      <pre>const es = new EventSource('/api/projects/UUID/logs/stream?live=1');
-es.onmessage = e => console.log(JSON.parse(e.data).text);</pre>
-      <p>Event: <code>{"type":"build","text":"Step 1/21 ..."}</code></p>
-    </div>
-  </details>
-
-  <h2>Errors</h2>
-  <table>
-    <tr><th>HTTP</th><th>code</th><th>meaning</th></tr>
-    <tr><td>401</td><td>missing_api_key</td><td>No X-API-Key or Bearer header</td></tr>
-    <tr><td>401</td><td>invalid_api_key</td><td>Token wrong or revoked</td></tr>
-    <tr><td>400</td><td>invalid_path</td><td>Path escapes workspace</td></tr>
-    <tr><td>400</td><td>create_failed</td><td>Duplicate uuid or validation error</td></tr>
-    <tr><td>400</td><td>write_failed</td><td>Could not write file</td></tr>
-    <tr><td>404</td><td>not_found</td><td>UUID does not exist</td></tr>
-    <tr><td>404</td><td>read_failed / delete_failed</td><td>File or project missing</td></tr>
-  </table>
+      window.addEventListener('scroll', setActive, { passive: true });
+      setActive();
+    })();
+  </script>
 </body>
 </html>
