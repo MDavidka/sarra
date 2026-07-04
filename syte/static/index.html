@@ -12,266 +12,325 @@
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <button class="logo-btn" onclick="showView('dashboard')" aria-label="Dashboard">
-        <img src="/static/icon.png?v=__VERSION__" alt="Syte" class="brand-icon">
-      </button>
-      <button class="btn-pill btn-settings" data-view="api-docs" onclick="window.location.href='/api/'">
-        <i data-lucide="book-open" class="lucide-icon"></i>
-        <span>api</span>
-      </button>
-      <button class="btn-pill btn-settings" data-view="api-keys" onclick="showView('api-keys')">
-        <i data-lucide="key" class="lucide-icon"></i>
-        <span>key</span>
-      </button>
-      <button class="btn-pill btn-settings" data-view="settings" onclick="showView('settings')">
-        <i data-lucide="settings" class="lucide-icon"></i>
-        <span>settings</span>
-      </button>
-    </header>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <div class="app-shell">
+    <aside class="app-sidebar" id="app-sidebar">
+      <div class="sidebar-brand-row">
+        <img src="/static/icon.png?v=__VERSION__" alt="Syte" class="sidebar-logo">
+        <span class="sidebar-brand-name">Syte</span>
+      </div>
+      <nav class="sidebar-menu" aria-label="Main navigation">
+        <button type="button" class="sidebar-link active" data-view="dashboard">
+          <i data-lucide="home"></i><span>Home</span>
+        </button>
+        <button type="button" class="sidebar-link" data-view="server-swarm">
+          <i data-lucide="boxes"></i><span>Server Swarm</span>
+        </button>
+        <button type="button" class="sidebar-link" data-view="users">
+          <i data-lucide="users"></i><span>Users</span>
+        </button>
+        <button type="button" class="sidebar-link" data-view="logs">
+          <i data-lucide="scroll-text"></i><span>Logs</span>
+        </button>
+        <a class="sidebar-link" href="/api/" data-view="api">
+          <i data-lucide="book-open"></i><span>API</span>
+        </a>
+        <button type="button" class="sidebar-link" data-view="settings">
+          <i data-lucide="settings"></i><span>Settings</span>
+        </button>
+      </nav>
+    </aside>
 
-    <nav class="nav-bar" aria-label="Main navigation">
-      <button class="nav-item active" data-view="dashboard" title="Dashboard" onclick="showView('dashboard')">
-        <i data-lucide="layout-dashboard"></i>
-      </button>
-      <button class="nav-item" data-view="new-service" title="New service" onclick="showView('new-service')">
-        <i data-lucide="plus-circle"></i>
-      </button>
-      <button class="nav-item" data-view="api-keys" title="API keys" onclick="showView('api-keys')">
-        <i data-lucide="key"></i>
-      </button>
-      <button class="nav-item" data-view="settings" title="Settings" onclick="showView('settings')">
-        <i data-lucide="settings"></i>
-      </button>
-    </nav>
+    <div class="app-main">
+      <header class="main-topbar">
+        <button type="button" class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle menu">
+          <i data-lucide="panel-left"></i>
+        </button>
+        <span class="breadcrumb" id="breadcrumb">Projects</span>
+      </header>
 
-    <main class="content">
-      <section id="view-dashboard" class="view active">
-        <div class="stats-row">
-          <div class="stat-card">
-            <span class="stat-label">services</span>
-            <span class="stat-value" id="stat-total">0</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">running</span>
-            <span class="stat-value" id="stat-running">0</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">host</span>
-            <span class="stat-value stat-value-sm" id="sys-ip">—</span>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div id="services-list" class="services-grid"></div>
-          <div id="empty-state" class="empty-state">
-            <button class="btn-pill btn-primary" onclick="showView('new-service')">
-              <i data-lucide="plus"></i>
-              <span>new service</span>
-            </button>
-          </div>
-          <div id="panel-footer" class="panel-footer hidden">
-            <button class="btn-pill btn-primary" onclick="showView('new-service')">
-              <i data-lucide="plus"></i>
-              <span>new service</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section id="view-new-service" class="view">
-        <div class="panel panel-form">
-          <div class="panel-head">
-            <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
-              <i data-lucide="arrow-left"></i>
-            </button>
-            <h1>new service</h1>
-          </div>
-          <form id="create-form" class="form-inner">
-            <div class="form-group">
-              <label for="svc-name">service name</label>
-              <input type="text" id="svc-name" required placeholder="my-app">
-            </div>
-            <div class="form-group">
-              <label for="svc-git">git repository</label>
-              <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="svc-branch">branch</label>
-                <input type="text" id="svc-branch" value="main">
+      <main class="content">
+        <section id="view-dashboard" class="view active">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="folder-input" class="projects-icon"></i>
+                <div>
+                  <h1>Projects</h1>
+                  <p class="projects-sub">Create and manage your projects</p>
+                </div>
               </div>
-              <div class="form-group">
-                <label for="svc-domain">domain (optional)</label>
-                <input type="text" id="svc-domain" placeholder="app.example.com">
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="svc-cmd">start command (optional)</label>
-              <input type="text" id="svc-cmd" placeholder="only needed without a Dockerfile">
-              <span class="hint">docker is the default — add a Dockerfile to your repo, or provide a start command for shell deploy</span>
-            </div>
-            <div class="form-group">
-              <label for="svc-env">environment variables</label>
-              <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn-pill btn-ghost" onclick="showView('dashboard')">cancel</button>
-              <button type="submit" class="btn-pill btn-primary" id="deploy-btn">
-                <i data-lucide="rocket"></i>
-                <span>deploy</span>
+              <button type="button" class="btn-create" onclick="showView('new-service')">
+                <i data-lucide="plus"></i>
+                <span>Create Project</span>
               </button>
             </div>
-          </form>
-          <div id="deploy-log-panel" class="logs-terminal hidden"></div>
-        </div>
-      </section>
 
-      <section id="view-service" class="view">
-        <div class="service-dashboard">
-          <div class="panel-head service-head">
-            <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
-              <i data-lucide="arrow-left"></i>
-            </button>
-            <div class="service-head-meta">
-              <h1 id="svc-title">service</h1>
-              <span id="svc-status-badge" class="badge">—</span>
+            <div class="projects-toolbar">
+              <div class="search-field">
+                <input type="search" id="project-filter" placeholder="Filter projects..." autocomplete="off">
+                <i data-lucide="search" class="search-icon"></i>
+              </div>
+              <button type="button" class="toolbar-btn" disabled title="Coming soon">
+                <i data-lucide="tag"></i><span>Tags</span>
+              </button>
+              <button type="button" class="toolbar-btn icon-only" id="sort-toggle" title="Toggle sort">
+                <i data-lucide="arrow-up-down"></i>
+              </button>
+              <select class="toolbar-select" id="project-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="name">Name A–Z</option>
+              </select>
+            </div>
+
+            <div id="services-list" class="projects-grid"></div>
+            <div id="empty-state" class="projects-empty hidden">
+              <i data-lucide="folder-input" class="empty-icon"></i>
+              <p>No projects found</p>
             </div>
           </div>
+        </section>
 
-          <div class="svc-section svc-deploy">
-            <h2 class="svc-section-title"><i data-lucide="rocket"></i> deploy</h2>
-            <div class="svc-actions" id="svc-deploy-actions"></div>
-          </div>
-
-          <div class="svc-section svc-info">
-            <h2 class="svc-section-title"><i data-lucide="info"></i> information</h2>
-            <div id="svc-info-body" class="svc-info-grid"></div>
-          </div>
-
-          <div class="svc-section svc-workspace">
-            <h2 class="svc-section-title"><i data-lucide="folder"></i> workspace</h2>
-            <div id="svc-workspace-body" class="svc-info-grid"></div>
-            <div id="svc-workspace-files" class="workspace-files"></div>
-          </div>
-
-          <div class="svc-section svc-preview">
-            <h2 class="svc-section-title"><i data-lucide="eye"></i> live preview</h2>
-            <p class="hint" id="svc-preview-hint">fast dev server with hot reload — no docker build</p>
-            <div class="svc-actions" id="svc-preview-actions"></div>
-            <div class="preview-frame-wrap hidden" id="svc-preview-wrap">
-              <iframe id="svc-preview-frame" class="preview-frame" title="Live preview"></iframe>
-            </div>
-            <div class="logs-terminal preview-logs hidden" id="svc-preview-logs"></div>
-          </div>
-
-          <div class="svc-section svc-domain">
-            <h2 class="svc-section-title"><i data-lucide="globe"></i> domain</h2>
-            <div class="form-inner compact">
-              <input type="text" id="svc-domain-input" placeholder="app.example.com">
-              <button class="btn-pill btn-primary btn-sm" id="svc-domain-btn">apply domain</button>
-            </div>
-          </div>
-
-          <div class="svc-section svc-logs">
-            <h2 class="svc-section-title"><i data-lucide="terminal"></i> deployment log</h2>
-            <p class="hint" id="svc-log-hint">full deploy history — failures and build output</p>
-            <div class="logs-terminal" id="svc-live-logs"></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="view-api-keys" class="view">
-        <div class="panel panel-form">
-          <div class="panel-head">
-            <i data-lucide="key" class="lucide-icon section-icon"></i>
-            <h2>api keys</h2>
-          </div>
-          <div class="form-inner">
-            <p class="hint block">create tokens for the external API — see <a href="/api/" style="color:#85c1e9">api documentation</a></p>
-            <div class="form-group">
-              <label for="token-name">token name</label>
-              <input type="text" id="token-name" placeholder="ci-deploy">
-            </div>
-            <button class="btn-pill btn-primary" id="create-token-btn">
-              <i data-lucide="plus"></i>
-              <span>create token</span>
-            </button>
-            <div id="new-token-box" class="result-box hidden"></div>
-            <div id="tokens-list" class="tokens-list"></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="view-settings" class="view">
-        <div class="settings-stack">
-          <div class="panel panel-form">
+        <section id="view-new-service" class="view">
+          <div class="projects-card panel-form">
             <div class="panel-head">
-              <i data-lucide="server" class="lucide-icon section-icon"></i>
-              <h2>server</h2>
+              <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
+                <i data-lucide="arrow-left"></i>
+              </button>
+              <h1>Create Project</h1>
             </div>
-            <div class="form-inner">
+            <form id="create-form" class="form-inner">
               <div class="form-group">
-              <label for="set-ip">public ip</label>
-              <input type="text" id="set-ip" placeholder="152.89.245.113">
-              <span class="hint">ipv4 only — not a domain name</span>
+                <label for="svc-name">Project name</label>
+                <input type="text" id="svc-name" required placeholder="my-app">
               </div>
               <div class="form-group">
-                <label for="set-email">admin email</label>
-                <input type="email" id="set-email" placeholder="admin@example.com">
+                <label for="svc-git">Git repository</label>
+                <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
               </div>
-              <button class="btn-pill btn-primary" id="save-server-btn">save</button>
-            </div>
-          </div>
-
-          <div class="panel panel-form">
-            <div class="panel-head">
-              <i data-lucide="globe" class="lucide-icon section-icon"></i>
-              <h2>web gui domain</h2>
-            </div>
-            <div class="form-inner">
-              <p class="hint block">custom domain for this interface — tls via caddy</p>
-              <div class="form-group">
-                <label for="set-domain">domain</label>
-                <input type="text" id="set-domain" placeholder="sycord.site">
-                <span class="hint">enter domain only — no https:// prefix</span>
-              </div>
-              <div class="form-group">
-                <label>direct access (ip)</label>
-                <div class="gui-url" id="direct-url">—</div>
-              </div>
-              <div class="form-group">
-                <label>custom domain</label>
-                <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
-              </div>
-              <button class="btn-pill btn-primary" id="save-domain-btn">apply domain</button>
-            </div>
-          </div>
-
-          <div class="panel panel-form">
-            <div class="panel-head">
-              <i data-lucide="refresh-cw" class="lucide-icon section-icon"></i>
-              <h2>update syte</h2>
-            </div>
-            <div class="form-inner">
-              <p class="hint block">pull newest version, refresh deps, restart — data preserved</p>
-              <div class="version-row">
-                <div>
-                  <span class="version-label">installed</span>
-                  <span class="version-value" id="syte-version">—</span>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="svc-branch">Branch</label>
+                  <input type="text" id="svc-branch" value="main">
                 </div>
-                <button class="btn-pill btn-primary" id="update-syte-btn">
-                  <i data-lucide="download"></i>
-                  <span>update syte</span>
+                <div class="form-group">
+                  <label for="svc-domain">Domain (optional)</label>
+                  <input type="text" id="svc-domain" placeholder="app.example.com">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="svc-cmd">Start command (optional)</label>
+                <input type="text" id="svc-cmd" placeholder="only needed without a Dockerfile">
+                <span class="hint">Docker is the default — add a Dockerfile, or provide a start command for shell deploy</span>
+              </div>
+              <div class="form-group">
+                <label for="svc-env">Environment variables</label>
+                <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn-pill btn-ghost" onclick="showView('dashboard')">Cancel</button>
+                <button type="submit" class="btn-pill btn-primary" id="deploy-btn">
+                  <i data-lucide="rocket"></i>
+                  <span>Deploy</span>
                 </button>
               </div>
-              <div id="update-result" class="result-box hidden"></div>
+            </form>
+            <div id="deploy-log-panel" class="logs-terminal hidden"></div>
+          </div>
+        </section>
+
+        <section id="view-service" class="view">
+          <div class="service-dashboard">
+            <div class="panel-head service-head">
+              <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
+                <i data-lucide="arrow-left"></i>
+              </button>
+              <div class="service-head-meta">
+                <h1 id="svc-title">service</h1>
+                <span id="svc-status-badge" class="badge">—</span>
+              </div>
+            </div>
+
+            <div class="svc-section svc-deploy">
+              <h2 class="svc-section-title"><i data-lucide="rocket"></i> Deploy</h2>
+              <div class="svc-actions" id="svc-deploy-actions"></div>
+            </div>
+
+            <div class="svc-section svc-info">
+              <h2 class="svc-section-title"><i data-lucide="info"></i> Information</h2>
+              <div id="svc-info-body" class="svc-info-grid"></div>
+            </div>
+
+            <div class="svc-section svc-workspace">
+              <h2 class="svc-section-title"><i data-lucide="folder"></i> Workspace</h2>
+              <div id="svc-workspace-body" class="svc-info-grid"></div>
+              <div id="svc-workspace-files" class="workspace-files"></div>
+            </div>
+
+            <div class="svc-section svc-preview">
+              <h2 class="svc-section-title"><i data-lucide="eye"></i> Live preview</h2>
+              <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — no docker build</p>
+              <div class="svc-actions" id="svc-preview-actions"></div>
+              <div class="preview-frame-wrap hidden" id="svc-preview-wrap">
+                <iframe id="svc-preview-frame" class="preview-frame" title="Live preview"></iframe>
+              </div>
+              <div class="logs-terminal preview-logs hidden" id="svc-preview-logs"></div>
+            </div>
+
+            <div class="svc-section svc-domain">
+              <h2 class="svc-section-title"><i data-lucide="globe"></i> Domain</h2>
+              <div class="form-inner compact">
+                <input type="text" id="svc-domain-input" placeholder="app.example.com">
+                <button class="btn-pill btn-primary btn-sm" id="svc-domain-btn">Apply domain</button>
+              </div>
+            </div>
+
+            <div class="svc-section svc-logs">
+              <h2 class="svc-section-title"><i data-lucide="terminal"></i> Deployment log</h2>
+              <p class="hint" id="svc-log-hint">Full deploy history — failures and build output</p>
+              <div class="logs-terminal" id="svc-live-logs"></div>
             </div>
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <section id="view-server-swarm" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="boxes" class="projects-icon"></i>
+                <div>
+                  <h1>Server Swarm</h1>
+                  <p class="projects-sub">Server status and deployment overview</p>
+                </div>
+              </div>
+            </div>
+            <div class="swarm-grid" id="swarm-stats">
+              <div class="swarm-stat"><span class="swarm-label">Public IP</span><span class="swarm-value" id="swarm-ip">—</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Version</span><span class="swarm-value" id="swarm-version">—</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Projects</span><span class="swarm-value" id="swarm-total">0</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Running</span><span class="swarm-value" id="swarm-running">0</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">GUI URL</span><span class="swarm-value" id="swarm-gui-url">—</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">Direct URL</span><span class="swarm-value" id="swarm-direct-url">—</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-users" class="view">
+          <div class="projects-card panel-form">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="users" class="projects-icon"></i>
+                <div>
+                  <h1>Users</h1>
+                  <p class="projects-sub">API tokens for programmatic access</p>
+                </div>
+              </div>
+            </div>
+            <div class="form-inner">
+              <p class="hint block">Create tokens for the external API — see <a href="/api/" class="link">API documentation</a></p>
+              <div class="form-group">
+                <label for="token-name">Token name</label>
+                <input type="text" id="token-name" placeholder="ci-deploy">
+              </div>
+              <button class="btn-pill btn-primary" id="create-token-btn">
+                <i data-lucide="plus"></i>
+                <span>Create token</span>
+              </button>
+              <div id="new-token-box" class="result-box hidden"></div>
+              <div id="tokens-list" class="tokens-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-logs" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="scroll-text" class="projects-icon"></i>
+                <div>
+                  <h1>Logs</h1>
+                  <p class="projects-sub">Deployment logs across all projects</p>
+                </div>
+              </div>
+            </div>
+            <div id="logs-project-list" class="logs-list"></div>
+            <div id="logs-empty" class="projects-empty hidden">
+              <i data-lucide="scroll-text" class="empty-icon"></i>
+              <p>No projects yet</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view">
+          <div class="settings-stack">
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="server" class="projects-icon"></i>
+                <div><h1>Server</h1></div>
+              </div>
+              <div class="form-inner">
+                <div class="form-group">
+                  <label for="set-ip">Public IP</label>
+                  <input type="text" id="set-ip" placeholder="152.89.245.113">
+                  <span class="hint">IPv4 only — not a domain name</span>
+                </div>
+                <div class="form-group">
+                  <label for="set-email">Admin email</label>
+                  <input type="email" id="set-email" placeholder="admin@example.com">
+                </div>
+                <button class="btn-pill btn-primary" id="save-server-btn">Save</button>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="globe" class="projects-icon"></i>
+                <div><h1>Web GUI domain</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Custom domain for this interface — TLS via Caddy</p>
+                <div class="form-group">
+                  <label for="set-domain">Domain</label>
+                  <input type="text" id="set-domain" placeholder="sycord.site">
+                  <span class="hint">Enter domain only — no https:// prefix</span>
+                </div>
+                <div class="form-group">
+                  <label>Direct access (IP)</label>
+                  <div class="gui-url" id="direct-url">—</div>
+                </div>
+                <div class="form-group">
+                  <label>Custom domain</label>
+                  <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
+                </div>
+                <button class="btn-pill btn-primary" id="save-domain-btn">Apply domain</button>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="refresh-cw" class="projects-icon"></i>
+                <div><h1>Update Syte</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Pull newest version, refresh deps, restart — data preserved</p>
+                <div class="version-row">
+                  <div>
+                    <span class="version-label">Installed</span>
+                    <span class="version-value" id="syte-version">—</span>
+                  </div>
+                  <button class="btn-pill btn-primary" id="update-syte-btn">
+                    <i data-lucide="download"></i>
+                    <span>Update Syte</span>
+                  </button>
+                </div>
+                <div id="update-result" class="result-box hidden"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

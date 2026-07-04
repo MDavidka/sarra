@@ -7,6 +7,8 @@ let previewStream = null;
 let activeServiceId = null;
 let deployPollTimer = null;
 let previewPollTimer = null;
+let projectFilterText = '';
+let projectSortMode = 'newest';
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -127,6 +129,30 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
   }, 2000);
 }
 
+const BREADCRUMBS = {
+  dashboard: 'Projects',
+  'new-service': 'Create Project',
+  service: 'Project',
+  'server-swarm': 'Server Swarm',
+  users: 'Users',
+  logs: 'Logs',
+  settings: 'Settings',
+};
+
+function setBreadcrumb(text) {
+  const el = document.getElementById('breadcrumb');
+  if (el) el.textContent = text;
+}
+
+function openDrawer() {
+  if (!window.matchMedia('(max-width: 768px)').matches) return;
+  document.body.classList.add('drawer-open');
+}
+
+function closeDrawer() {
+  document.body.classList.remove('drawer-open');
+}
+
 function refreshIcons() {
   if (window.lucide) lucide.createIcons();
 }
@@ -138,11 +164,27 @@ function showView(name) {
   }
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
-  document.querySelectorAll('.nav-item[data-view]').forEach(el => {
-    el.classList.toggle('active', el.dataset.view === name);
+
+  const sidebarActive = name === 'new-service' || name === 'service' ? 'dashboard' : name;
+  document.querySelectorAll('.sidebar-link').forEach(el => {
+    if (el.tagName === 'A') {
+      el.classList.remove('active');
+      return;
+    }
+    el.classList.toggle('active', el.dataset.view === sidebarActive);
   });
-  if (name === 'api-keys') loadTokens();
+
+  if (name === 'users') loadTokens();
   if (name === 'dashboard') activeServiceId = null;
+  if (name === 'server-swarm') renderServerSwarm();
+  if (name === 'logs') renderLogsList();
+  if (name === 'service') {
+    const p = projects.find(x => x.id === activeServiceId);
+    setBreadcrumb(p?.name || 'Project');
+  } else {
+    setBreadcrumb(BREADCRUMBS[name] || 'Syte');
+  }
+  closeDrawer();
   refreshIcons();
 }
 
@@ -182,17 +224,33 @@ function parseEnv(text) {
 
 function updateStats() {
   const running = projects.filter(p => p.running).length;
-  const total = document.getElementById('stat-total');
-  const run = document.getElementById('stat-running');
-  if (total) total.textContent = projects.length;
-  if (run) run.textContent = running;
+  const swarmTotal = document.getElementById('swarm-total');
+  const swarmRunning = document.getElementById('swarm-running');
+  if (swarmTotal) swarmTotal.textContent = projects.length;
+  if (swarmRunning) swarmRunning.textContent = running;
+}
+
+function filteredProjects() {
+  let list = [...projects];
+  const q = projectFilterText.trim().toLowerCase();
+  if (q) {
+    list = list.filter(p =>
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.id || '').toLowerCase().includes(q) ||
+      (p.domain || '').toLowerCase().includes(q)
+    );
+  }
+  if (projectSortMode === 'name') {
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } else if (projectSortMode === 'oldest') {
+    list.reverse();
+  }
+  return list;
 }
 
 async function loadSystem() {
   try {
     const sys = await api('/system');
-    const ipEl = document.getElementById('sys-ip');
-    if (ipEl) ipEl.textContent = sys.public_ip;
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const directUrl = document.getElementById('direct-url');
@@ -201,7 +259,47 @@ async function loadSystem() {
     if (guiUrl) guiUrl.textContent = sys.domain_url || 'not configured';
     const ver = document.getElementById('syte-version');
     if (ver) ver.textContent = 'v' + sys.version;
+    renderServerSwarm(sys);
   } catch { /* offline */ }
+}
+
+function renderServerSwarm(sys) {
+  const running = projects.filter(p => p.running).length;
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val ?? '—';
+  };
+  if (sys) {
+    set('swarm-ip', sys.public_ip);
+    set('swarm-version', 'v' + sys.version);
+    set('swarm-gui-url', sys.domain_url || 'not configured');
+    set('swarm-direct-url', sys.direct_url);
+  }
+  set('swarm-total', projects.length);
+  set('swarm-running', running);
+}
+
+function renderLogsList() {
+  const list = document.getElementById('logs-project-list');
+  const empty = document.getElementById('logs-empty');
+  if (!list) return;
+  if (!projects.length) {
+    list.innerHTML = '';
+    empty?.classList.remove('hidden');
+    refreshIcons();
+    return;
+  }
+  empty?.classList.add('hidden');
+  list.innerHTML = projects.map(p => `
+    <div class="log-row-item" onclick="openService('${p.id}')">
+      <div>
+        <strong>${esc(p.name)}</strong>
+        <div class="hint">${esc(p.id)}</div>
+      </div>
+      <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
+    </div>
+  `).join('');
+  refreshIcons();
 }
 
 async function loadProjects() {
@@ -221,18 +319,17 @@ async function loadProjects() {
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
-  const footer = document.getElementById('panel-footer');
+  const visible = filteredProjects();
 
-  if (!projects.length) {
+  if (!visible.length) {
     list.innerHTML = '';
     empty?.classList.remove('hidden');
-    footer?.classList.add('hidden');
+    refreshIcons();
     return;
   }
 
   empty?.classList.add('hidden');
-  footer?.classList.remove('hidden');
-  list.innerHTML = projects.map(p => `
+  list.innerHTML = visible.map(p => `
     <div class="service-card" onclick="openService('${p.id}')">
       <h3>${esc(p.name)}</h3>
       <div class="service-meta">
@@ -245,6 +342,7 @@ function renderServices() {
       </div>
     </div>
   `).join('');
+  refreshIcons();
 }
 
 function statusClass(p) {
@@ -709,3 +807,39 @@ loadProjects();
 loadSettings();
 loadTokens();
 refreshIcons();
+
+document.getElementById('project-filter')?.addEventListener('input', (e) => {
+  projectFilterText = e.target.value;
+  renderServices();
+});
+
+document.getElementById('project-sort')?.addEventListener('change', (e) => {
+  projectSortMode = e.target.value;
+  renderServices();
+});
+
+document.getElementById('sort-toggle')?.addEventListener('click', () => {
+  const sel = document.getElementById('project-sort');
+  if (!sel) return;
+  const opts = ['newest', 'oldest', 'name'];
+  const idx = opts.indexOf(sel.value);
+  sel.value = opts[(idx + 1) % opts.length];
+  projectSortMode = sel.value;
+  renderServices();
+});
+
+document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
+  if (el.tagName === 'A') return;
+  el.addEventListener('click', () => showView(el.dataset.view));
+});
+
+document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
+document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDrawer();
+});
+
+window.addEventListener('resize', () => {
+  if (!window.matchMedia('(max-width: 768px)').matches) closeDrawer();
+});

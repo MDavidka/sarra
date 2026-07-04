@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Syte API Reference</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
     :root {
       --bg: #0a0a0a;
@@ -114,7 +115,9 @@
     }
 
     .nav-cat {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
       padding: 0.55rem 0.85rem;
       border-radius: 8px;
       color: var(--text-muted);
@@ -127,6 +130,13 @@
       width: 100%;
       text-align: left;
       font-family: var(--font);
+    }
+    .nav-cat svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2;
+      flex-shrink: 0;
+      opacity: 0.85;
     }
     .nav-cat:hover { background: var(--bg-card); color: var(--text); }
     .nav-cat.active {
@@ -487,6 +497,7 @@
         min-height: 48px;
         display: flex;
         align-items: center;
+        gap: 0.6rem;
         color: #999;
         border-radius: 8px;
       }
@@ -583,13 +594,27 @@
         </div>
       </div>
       <nav class="sidebar-nav" id="sidebar-nav">
-        <button type="button" class="nav-cat active" data-cat="auth"><span class="lbl-full">Authentication</span><span class="lbl-short">Auth</span></button>
-        <button type="button" class="nav-cat" data-cat="project">Project</button>
-        <button type="button" class="nav-cat" data-cat="workspace">Workspace</button>
-        <button type="button" class="nav-cat" data-cat="start">Start</button>
-        <button type="button" class="nav-cat" data-cat="preview">Preview</button>
-        <button type="button" class="nav-cat" data-cat="env">Env</button>
-        <button type="button" class="nav-cat" data-cat="design">Design</button>
+        <button type="button" class="nav-cat active" data-cat="auth">
+          <i data-lucide="shield"></i><span class="lbl-full">Authentication</span><span class="lbl-short">Auth</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="project">
+          <i data-lucide="folder"></i><span>Project</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="workspace">
+          <i data-lucide="files"></i><span>Workspace</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="start">
+          <i data-lucide="rocket"></i><span>Start</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="preview">
+          <i data-lucide="eye"></i><span>Preview</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="env">
+          <i data-lucide="braces"></i><span>Env</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="design">
+          <i data-lucide="palette"></i><span>Design</span>
+        </button>
       </nav>
     </aside>
 
@@ -1328,6 +1353,7 @@
         history.replaceState(null, '', '#' + cat);
         window.scrollTo(0, 0);
         closeDrawer();
+        if (window.lucide) lucide.createIcons();
       }
 
       cats.forEach(b => b.addEventListener('click', () => showCat(b.dataset.cat)));
@@ -1350,6 +1376,8 @@
       window.addEventListener('hashchange', () => {
         showCat(location.hash.replace('#', '') || 'auth');
       });
+
+      if (window.lucide) lucide.createIcons();
     })();
   </script>
 </body>
