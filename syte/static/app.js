@@ -14,6 +14,7 @@ let appContext = 'non-conected';
 let statsPollTimer = null;
 let activeSvcTab = 'general';
 let logsAutoScroll = true;
+let serverPublicIp = '';
 
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
@@ -266,7 +267,7 @@ function showView(name) {
   if (name === 'sycord') refreshIcons();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
-    setBreadcrumb(p?.name || 'Project');
+    setBreadcrumb(p ? displayTitle(p) : 'Project');
   } else {
     setBreadcrumb(BREADCRUMBS[name] || 'Syte');
   }
@@ -337,6 +338,7 @@ function filteredProjects() {
 async function loadSystem() {
   try {
     const sys = await api('/system');
+    if (sys.public_ip) serverPublicIp = sys.public_ip;
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const directUrl = document.getElementById('direct-url');
@@ -347,6 +349,13 @@ async function loadSystem() {
     if (ver) ver.textContent = 'v' + sys.version;
     renderServerSwarm(sys);
     renderLoadStats(sys);
+    if (activeServiceId) {
+      const p = projects.find(x => x.id === activeServiceId);
+      if (p) {
+        const conn = document.getElementById('svc-conn');
+        if (conn) conn.textContent = hostPortLabel(p);
+      }
+    }
   } catch { /* offline */ }
 }
 
@@ -459,14 +468,24 @@ function detectStack(p) {
   return 'shell';
 }
 
-function connLabel(p) {
-  if (p.domain) return p.domain;
-  try {
-    const u = new URL(p.url);
-    return u.host;
-  } catch {
-    return p.url || '—';
+function displayTitle(p) {
+  return p.domain || p.name || 'service';
+}
+
+function hostPortLabel(p) {
+  if (!p.domain) {
+    try {
+      const u = new URL(p.url);
+      if (u.host) return u.host;
+    } catch { /* */ }
   }
+  if (serverPublicIp && p.port) return `${serverPublicIp}:${p.port}`;
+  if (p.port) return `:${p.port}`;
+  return '—';
+}
+
+function connLabel(p) {
+  return hostPortLabel(p);
 }
 
 function switchSvcTab(tab) {
@@ -486,12 +505,12 @@ function renderQuickActions(p) {
   const el = document.getElementById('svc-quick-actions');
   if (!el) return;
   el.innerHTML = `
-    <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
+    <button type="button" class="svc-action-btn svc-action-deploy" onclick="serviceDeploy('${p.id}')">
       <i data-lucide="rocket"></i><span>Deploy</span>
     </button>
     ${p.running
-      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop server</span></button>`
-      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start server</span></button>`
+      ? `<button type="button" class="svc-action-btn svc-action-secondary" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop server</span></button>`
+      : `<button type="button" class="svc-action-btn svc-action-secondary" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start server</span></button>`
     }
   `;
 }
@@ -565,7 +584,7 @@ function openService(id) {
 }
 
 function renderServiceDashboard(p, resetLogs) {
-  document.getElementById('svc-title').textContent = p.name;
+  document.getElementById('svc-title').textContent = displayTitle(p);
   updateServiceStatusDot(p);
   renderStackBadge(p);
   renderServiceEmbed(p);
@@ -856,7 +875,7 @@ async function saveServiceEdit() {
     const p = projects.find(x => x.id === id);
     if (p) {
       renderServiceDashboard(p, false);
-      setBreadcrumb(p.name);
+      setBreadcrumb(displayTitle(p));
     }
   } catch (e) {
     toast('Error: ' + e.message);
