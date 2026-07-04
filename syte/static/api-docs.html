@@ -135,6 +135,40 @@
       font-weight: 500;
     }
 
+    .brand-chevron {
+      margin-left: auto;
+      color: var(--text-dim);
+      font-size: 12px;
+      flex-shrink: 0;
+      align-self: center;
+      opacity: 0.6;
+      display: none;
+    }
+
+    .sidebar-brand { position: relative; }
+
+    .mobile-toolbar,
+    .sidebar-backdrop,
+    .sidebar-utils { display: none; }
+
+    .util-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .util-btn:hover { background: var(--bg-card); color: var(--text); }
+    .util-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+
     .cat-panel { display: none; }
     .cat-panel.active { display: block; }
 
@@ -345,6 +379,43 @@
 
     @media (max-width: 768px) {
       body { font-size: 13px; }
+      body.drawer-open { overflow: hidden; }
+
+      .mobile-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 120;
+        padding: 0.5rem 0.75rem;
+        padding-top: calc(0.5rem + env(safe-area-inset-top, 0));
+        background: var(--bg);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+
+      .mobile-toolbar-title {
+        font-weight: 600;
+        font-size: 15px;
+        flex: 1;
+      }
+
+      .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+        z-index: 180;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+      }
+      body.drawer-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
 
       .layout {
         flex-direction: column;
@@ -352,61 +423,80 @@
       }
 
       .sidebar {
-        position: sticky;
+        position: fixed;
         top: 0;
         left: 0;
-        width: 100%;
-        height: auto;
-        max-height: none;
-        border-right: none;
-        border-bottom: 1px solid var(--border-subtle);
+        width: min(300px, 88vw);
+        height: 100dvh;
+        max-height: 100dvh;
+        transform: translateX(-105%);
+        transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 200;
+        border-right: 1px solid var(--border-subtle);
+        box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
         padding-top: env(safe-area-inset-top, 0);
       }
+      body.drawer-open .sidebar {
+        transform: translateX(0);
+      }
+
+      .sidebar-utils {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.65rem 0.85rem 0.25rem;
+      }
+
+      .utils-right { display: flex; gap: 0.25rem; }
 
       .sidebar-top {
-        padding: 0.65rem 0.85rem 0.5rem;
+        padding: 0.35rem 0.85rem 0.75rem;
         border-bottom: none;
       }
 
-      .sidebar-back {
-        margin-bottom: 0.5rem;
-        font-size: 13px;
-        min-height: 44px;
-        align-items: center;
-      }
+      .sidebar-back { display: none; }
 
       .sidebar-brand {
-        padding: 0.65rem 0.75rem;
+        padding: 0.85rem 0.9rem;
+        background: var(--bg-card);
       }
 
-      .brand-sub { display: none; }
+      .brand-sub {
+        display: block;
+        font-size: 11px;
+        line-height: 1.45;
+      }
 
       .sidebar-nav {
-        flex-direction: row;
-        overflow-x: auto;
-        overflow-y: hidden;
-        padding: 0 0.65rem calc(0.65rem + env(safe-area-inset-bottom, 0));
-        gap: 0.35rem;
+        flex-direction: column;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 0.35rem 0.65rem calc(1.5rem + env(safe-area-inset-bottom, 0));
+        gap: 2px;
         -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        overscroll-behavior-x: contain;
       }
-      .sidebar-nav::-webkit-scrollbar { display: none; }
 
       .nav-cat {
-        width: auto;
-        white-space: nowrap;
+        width: 100%;
+        white-space: normal;
         flex-shrink: 0;
-        padding: 0.5rem 0.85rem;
-        font-size: 13px;
-        min-height: 44px;
-        display: inline-flex;
+        padding: 0.7rem 0.9rem;
+        font-size: 15px;
+        min-height: 48px;
+        display: flex;
         align-items: center;
+        color: #999;
+        border-radius: 8px;
+      }
+      .nav-cat:hover { background: #1a1a1a; color: #ccc; }
+      .nav-cat.active {
+        background: #222;
+        color: #fff;
+        font-weight: 500;
       }
 
-      .nav-cat .lbl-full { display: none; }
-      .nav-cat .lbl-short { display: inline; }
+      .nav-cat .lbl-full { display: inline; }
+      .nav-cat .lbl-short { display: none; }
 
       .main {
         margin-left: 0;
@@ -422,7 +512,7 @@
       .page-header h1 { font-size: 1.35rem; }
       .page-header p { font-size: 12px; word-break: break-word; }
 
-      .section { margin-bottom: 2rem; scroll-margin-top: 7.5rem; }
+      .section { margin-bottom: 2rem; scroll-margin-top: 1rem; }
       .section-title { font-size: 1.1rem; }
 
       .endpoint { border-radius: 8px; margin-bottom: 1rem; }
@@ -457,8 +547,28 @@
   </style>
 </head>
 <body>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
   <div class="layout">
-    <aside class="sidebar">
+    <header class="mobile-toolbar">
+      <button type="button" class="util-btn" id="drawer-open" aria-label="Open menu">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+      </button>
+      <span class="mobile-toolbar-title">API</span>
+      <a href="/" class="util-btn" aria-label="Syte GUI">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      </a>
+    </header>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-utils">
+        <a href="/" class="util-btn" aria-label="Syte GUI">
+          <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </a>
+        <div class="utils-right">
+          <button type="button" class="util-btn" id="drawer-close" aria-label="Close menu">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+          </button>
+        </div>
+      </div>
       <div class="sidebar-top">
         <a href="/" class="sidebar-back">← syte gui</a>
         <div class="sidebar-brand">
@@ -467,6 +577,7 @@
             <div class="brand-title">API</div>
             <div class="brand-sub">RESTful API reference for programmatic access to Syte</div>
           </div>
+          <span class="brand-chevron" aria-hidden="true">⇅</span>
         </div>
       </div>
       <nav class="sidebar-nav" id="sidebar-nav">
@@ -1189,22 +1300,47 @@
       const cats = document.querySelectorAll('.nav-cat');
       const panels = document.querySelectorAll('.cat-panel');
       const valid = new Set([...cats].map(b => b.dataset.cat));
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const drawerOpen = document.getElementById('drawer-open');
+      const drawerClose = document.getElementById('drawer-close');
+
+      function isMobile() {
+        return window.matchMedia('(max-width: 768px)').matches;
+      }
+
+      function openDrawer() {
+        if (!isMobile()) return;
+        document.body.classList.add('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'false');
+      }
+
+      function closeDrawer() {
+        document.body.classList.remove('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'true');
+      }
 
       function showCat(id) {
         const cat = valid.has(id) ? id : 'auth';
         cats.forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
         panels.forEach(p => p.classList.toggle('active', p.dataset.cat === cat));
         history.replaceState(null, '', '#' + cat);
-        const activeBtn = document.querySelector('.nav-cat.active');
-        if (activeBtn) {
-          activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        }
-        const main = document.querySelector('.main');
-        if (main) main.scrollTo(0, 0);
         window.scrollTo(0, 0);
+        closeDrawer();
       }
 
       cats.forEach(b => b.addEventListener('click', () => showCat(b.dataset.cat)));
+
+      drawerOpen?.addEventListener('click', openDrawer);
+      drawerClose?.addEventListener('click', closeDrawer);
+      backdrop?.addEventListener('click', closeDrawer);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDrawer();
+      });
+
+      window.addEventListener('resize', () => {
+        if (!isMobile()) closeDrawer();
+      });
 
       const hash = location.hash.replace('#', '');
       showCat(hash || 'auth');
