@@ -187,13 +187,15 @@
               <div class="svc-identity-main">
                 <div class="svc-name-row">
                   <h1 class="svc-name" id="svc-title">service</h1>
-                  <button type="button" class="svc-icon-btn" id="svc-edit-name-btn" title="Rename project" aria-label="Rename">
+                  <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name & domain" aria-label="Edit">
                     <i data-lucide="square-pen"></i>
                   </button>
                   <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
                 </div>
-                <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
-                <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
+                <div class="svc-identity-details">
+                  <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
+                  <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
+                </div>
               </div>
               <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch">
                 <i data-lucide="git-branch"></i>
@@ -202,13 +204,13 @@
               </button>
             </div>
 
+            <div class="svc-quick-actions" id="svc-quick-actions"></div>
+
             <nav class="svc-tabs" id="svc-tabs" aria-label="Service sections">
               <button type="button" class="svc-tab active" data-svc-tab="general">General</button>
               <button type="button" class="svc-tab" data-svc-tab="env">Environment</button>
-              <button type="button" class="svc-tab" data-svc-tab="deployments">Deployments</button>
               <button type="button" class="svc-tab" data-svc-tab="logs">Logs</button>
               <button type="button" class="svc-tab" data-svc-tab="preview">Preview</button>
-              <button type="button" class="svc-tab" data-svc-tab="domain">Domain</button>
             </nav>
 
             <div class="svc-tab-panels">
@@ -229,12 +231,6 @@
                     <i data-lucide="save"></i><span>Save environment</span>
                   </button>
                 </div>
-              </div>
-
-              <div class="svc-tab-panel" id="svc-panel-deployments" data-svc-panel="deployments">
-                <p class="hint block">Build and manage the production container</p>
-                <div class="svc-actions" id="svc-deploy-actions"></div>
-                <div class="svc-deploy-meta" id="svc-deploy-meta"></div>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
@@ -273,13 +269,25 @@
                   <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div class="svc-tab-panel" id="svc-panel-domain" data-svc-panel="domain">
-                <p class="hint block">Production HTTPS domain — Caddy issues TLS once DNS points here</p>
-                <div class="form-inner compact svc-domain-form">
-                  <input type="text" id="svc-domain-input" placeholder="app.example.com">
-                  <button type="button" class="btn-pill btn-primary btn-sm" id="svc-domain-btn">Apply domain</button>
-                </div>
+          <div id="svc-edit-modal" class="svc-edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="svc-edit-title">
+            <div class="svc-edit-backdrop" id="svc-edit-backdrop"></div>
+            <div class="svc-edit-dialog">
+              <h3 id="svc-edit-title">Edit project</h3>
+              <div class="form-group">
+                <label for="svc-edit-name-input">Name</label>
+                <input type="text" id="svc-edit-name-input" placeholder="my-app">
+              </div>
+              <div class="form-group">
+                <label for="svc-edit-domain-input">Domain</label>
+                <input type="text" id="svc-edit-domain-input" placeholder="app.example.com">
+                <span class="hint">HTTPS via Caddy once DNS points here</span>
+              </div>
+              <div class="svc-edit-actions">
+                <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
+                <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
               </div>
             </div>
           </div>

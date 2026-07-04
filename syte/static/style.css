@@ -1129,6 +1129,26 @@ code {
 
 .svc-identity-main { flex: 1; min-width: 0; }
 
+.svc-identity-details {
+  padding-left: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.svc-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0.35rem;
+  padding-left: 0.85rem;
+}
+
+.svc-quick-actions .btn-pill {
+  min-width: 7.5rem;
+  justify-content: center;
+}
+
 .svc-name-row {
   display: flex;
   align-items: center;
@@ -1190,7 +1210,6 @@ code {
   font-size: 0.88rem;
   color: var(--text-muted);
   text-decoration: none;
-  margin-bottom: 0.55rem;
   word-break: break-all;
 }
 
@@ -1228,6 +1247,7 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+  padding-left: 0.85rem;
 }
 
 .svc-tab {
@@ -1307,6 +1327,51 @@ code {
 }
 
 .svc-domain-form { margin-top: 0.25rem; }
+
+.svc-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.svc-edit-modal.hidden { display: none !important; }
+
+.svc-edit-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+}
+
+.svc-edit-dialog {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem 1.35rem;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+.svc-edit-dialog h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.svc-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.svc-danger-row { margin-top: 0.5rem; }
 
 /* Logs panel — dark terminal (Dokploy-style) */
 .logs-panel {

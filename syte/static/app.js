@@ -470,6 +470,8 @@ function connLabel(p) {
 }
 
 function switchSvcTab(tab) {
+  const allowed = ['general', 'env', 'logs', 'preview'];
+  if (!allowed.includes(tab)) tab = 'general';
   activeSvcTab = tab;
   document.querySelectorAll('.svc-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
@@ -478,6 +480,36 @@ function switchSvcTab(tab) {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
   refreshIcons();
+}
+
+function renderQuickActions(p) {
+  const el = document.getElementById('svc-quick-actions');
+  if (!el) return;
+  el.innerHTML = `
+    <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
+      <i data-lucide="rocket"></i><span>Deploy</span>
+    </button>
+    ${p.running
+      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop server</span></button>`
+      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start server</span></button>`
+    }
+  `;
+}
+
+function openServiceEditModal(p) {
+  const modal = document.getElementById('svc-edit-modal');
+  const nameInput = document.getElementById('svc-edit-name-input');
+  const domainInput = document.getElementById('svc-edit-domain-input');
+  if (!modal || !nameInput || !domainInput) return;
+  nameInput.value = p.name || '';
+  domainInput.value = p.domain || '';
+  modal.classList.remove('hidden');
+  modal.dataset.projectId = p.id;
+  nameInput.focus();
+}
+
+function closeServiceEditModal() {
+  document.getElementById('svc-edit-modal')?.classList.add('hidden');
 }
 
 function updateServiceStatusDot(p) {
@@ -544,21 +576,26 @@ function renderServiceDashboard(p, resetLogs) {
   const uuidPill = document.getElementById('svc-uuid-pill');
   if (uuidPill) uuidPill.textContent = `UUID: ${p.id}`;
 
-  const domainInput = document.getElementById('svc-domain-input');
-  if (domainInput) domainInput.value = p.domain || '';
-
   const envInput = document.getElementById('svc-env-input');
   if (envInput) envInput.value = formatEnv(p.env_vars);
+
+  renderQuickActions(p);
 
   document.getElementById('svc-info-body').innerHTML = `
     <div class="info-cell"><span>status</span><strong>${esc(statusLabel(p))}</strong></div>
     <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
     <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
     <div class="info-cell"><span>stack</span><strong>${esc(detectStack(p))}</strong></div>
+    <div class="info-cell full"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
     <div class="info-cell full"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
     <div class="info-cell full"><span>git</span><span>${esc(p.git_url || '—')}</span></div>
     <div class="info-cell"><span>branch</span><strong>${esc(p.branch || 'main')}</strong></div>
     <div class="info-cell"><span>start cmd</span><span>${esc(p.start_command || '—')}</span></div>
+    <div class="info-cell full svc-danger-row">
+      <button type="button" class="btn-pill btn-danger btn-sm" onclick="serviceAction('${p.id}','delete')">
+        <i data-lucide="trash-2"></i><span>Remove project</span>
+      </button>
+    </div>
   `;
 
   document.getElementById('svc-workspace-body').innerHTML = `
@@ -568,29 +605,6 @@ function renderServiceDashboard(p, resetLogs) {
   `;
   loadWorkspaceFiles(p.id);
   renderPreviewSection(p);
-
-  const actions = document.getElementById('svc-deploy-actions');
-  actions.innerHTML = `
-    <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
-      <i data-lucide="rocket"></i><span>Deploy</span>
-    </button>
-    ${p.running
-      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop</span></button>`
-      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start</span></button>`
-    }
-    <button class="btn-pill btn-danger" onclick="serviceAction('${p.id}','delete')">
-      <i data-lucide="trash-2"></i><span>Remove</span>
-    </button>
-  `;
-
-  const deployMeta = document.getElementById('svc-deploy-meta');
-  if (deployMeta) {
-    deployMeta.innerHTML = p.status === 'deploying'
-      ? '<span class="badge badge-deploying">deployment in progress</span>'
-      : p.running
-        ? '<span class="badge badge-running">container running</span>'
-        : '<span class="badge badge-stopped">not running</span>';
-  }
 
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
@@ -609,18 +623,11 @@ function renderServiceDashboard(p, resetLogs) {
   } else {
     updateServiceStatusDot(p);
     renderServiceEmbed(p);
-    if (deployMeta) {
-      deployMeta.innerHTML = p.status === 'deploying'
-        ? '<span class="badge badge-deploying">deployment in progress</span>'
-        : p.running
-          ? '<span class="badge badge-running">container running</span>'
-          : '<span class="badge badge-stopped">not running</span>';
-    }
+    renderQuickActions(p);
   }
 
-  document.getElementById('svc-domain-btn').onclick = () => saveServiceDomain(p.id);
   document.getElementById('svc-env-save-btn').onclick = () => saveServiceEnv(p.id);
-  document.getElementById('svc-edit-name-btn').onclick = () => editServiceName(p.id);
+  document.getElementById('svc-edit-btn').onclick = () => openServiceEditModal(p);
   refreshIcons();
 }
 
@@ -820,20 +827,37 @@ async function serviceAction(id, action) {
   }
 }
 
-async function saveServiceDomain(id) {
-  let domain = document.getElementById('svc-domain-input')?.value.trim() || '';
+async function saveServiceEdit() {
+  const modal = document.getElementById('svc-edit-modal');
+  const id = modal?.dataset.projectId;
+  if (!id) return;
+
+  const name = document.getElementById('svc-edit-name-input')?.value.trim();
+  let domain = document.getElementById('svc-edit-domain-input')?.value.trim() || '';
   domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  if (!domain) return toast('Enter a domain');
+
+  if (!name) return toast('Name is required');
+
   try {
-    const email = (await api('/settings')).admin_email;
-    const res = await api(`/projects/${id}/domain`, {
-      method: 'POST',
-      body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
+    await api(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
     });
-    toast(res.message || 'Domain applied');
+    if (domain) {
+      const email = (await api('/settings')).admin_email;
+      await api(`/projects/${id}/domain`, {
+        method: 'POST',
+        body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
+      });
+    }
+    toast('Project updated');
+    closeServiceEditModal();
     await loadProjects();
     const p = projects.find(x => x.id === id);
-    if (p) renderServiceDashboard(p, false);
+    if (p) {
+      renderServiceDashboard(p, false);
+      setBreadcrumb(p.name);
+    }
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -851,28 +875,6 @@ async function saveServiceEnv(id) {
     await loadProjects();
     const p = projects.find(x => x.id === id);
     if (p) renderServiceDashboard(p, false);
-  } catch (e) {
-    toast('Error: ' + e.message);
-  }
-}
-
-async function editServiceName(id) {
-  const p = projects.find(x => x.id === id);
-  if (!p) return;
-  const name = prompt('Project name', p.name);
-  if (!name || name.trim() === p.name) return;
-  try {
-    await api(`/projects/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    toast('Project renamed');
-    await loadProjects();
-    const updated = projects.find(x => x.id === id);
-    if (updated) {
-      renderServiceDashboard(updated, false);
-      setBreadcrumb(updated.name);
-    }
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -1117,8 +1119,15 @@ document.getElementById('svc-logs-autoscroll')?.addEventListener('click', (e) =>
   btn.classList.toggle('active', logsAutoScroll);
 });
 
+document.getElementById('svc-edit-cancel-btn')?.addEventListener('click', closeServiceEditModal);
+document.getElementById('svc-edit-backdrop')?.addEventListener('click', closeServiceEditModal);
+document.getElementById('svc-edit-save-btn')?.addEventListener('click', saveServiceEdit);
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeDrawer();
+  if (e.key === 'Escape') {
+    closeDrawer();
+    closeServiceEditModal();
+  }
 });
 
 window.addEventListener('resize', () => {
