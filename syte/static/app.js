@@ -12,6 +12,16 @@ let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
 let statsPollTimer = null;
+let activeSvcTab = 'general';
+let logsAutoScroll = true;
+
+const STACK_META = {
+  nextjs: { label: 'next.js', icon: 'N', cls: '' },
+  python: { label: 'python', icon: 'Py', cls: 'stack-python' },
+  javascript: { label: 'javascript', icon: 'JS', cls: 'stack-javascript' },
+  shell: { label: 'shell', icon: '$', cls: 'stack-shell' },
+  docker: { label: 'docker', icon: 'D', cls: '' },
+};
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -31,6 +41,7 @@ function stopLogStream() {
     clearInterval(deployPollTimer);
     deployPollTimer = null;
   }
+  setLogsLiveIndicator(false);
 }
 
 function stopPreviewStream() {
@@ -39,6 +50,7 @@ function stopPreviewStream() {
     previewStream = null;
   }
   stopPreviewPoll();
+  setPreviewLogsLiveIndicator(false);
 }
 
 function logLineClass(text) {
@@ -58,7 +70,7 @@ function appendLogLine(container, text, type) {
   if (type === 'container') line.classList.add('log-container');
   line.textContent = text;
   container.appendChild(line);
-  container.scrollTop = container.scrollHeight;
+  if (logsAutoScroll) container.scrollTop = container.scrollHeight;
 }
 
 function clearLogPanel(container) {
@@ -73,6 +85,16 @@ function renderLogText(container, text) {
     return;
   }
   text.split('\n').forEach(line => appendLogLine(container, line));
+}
+
+function setLogsLiveIndicator(live) {
+  const dot = document.getElementById('svc-logs-live');
+  if (dot) dot.classList.toggle('live', !!live);
+}
+
+function setPreviewLogsLiveIndicator(live) {
+  const dot = document.getElementById('svc-preview-logs-live');
+  if (dot) dot.classList.toggle('live', !!live);
 }
 
 async function loadLogSnapshot(projectId, targetEl) {
@@ -101,6 +123,7 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
   const qs = params.toString();
   const url = `${API}/projects/${projectId}/logs/stream${qs ? '?' + qs : ''}`;
   logStream = new EventSource(url);
+  setLogsLiveIndicator(true);
   logStream.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -109,6 +132,7 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
   };
   logStream.onerror = () => {
     appendLogLine(targetEl, '[stream disconnected — showing saved logs]', 'log-warn');
+    setLogsLiveIndicator(false);
     stopLogStream();
     loadLogSnapshot(projectId, targetEl);
   };
@@ -117,17 +141,22 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
     await loadProjects();
     const p = projects.find(x => x.id === projectId);
     if (!p || activeServiceId !== projectId) return;
-    updateServiceBadge(p);
+    updateServiceStatusDot(p);
     if (p.status === 'deploying') {
       wasDeploying = true;
-      if (hint) hint.textContent = 'deployment in progress…';
+      if (hint) hint.textContent = 'Live deployment stream';
       return;
     }
     if (wasDeploying) {
       wasDeploying = false;
-      if (hint) hint.textContent = 'deploy finished — full log below';
+      if (hint) hint.textContent = 'Deployment finished';
       await loadLogSnapshot(projectId, targetEl);
       stopLogStream();
+      await loadProjects();
+      const refreshed = projects.find(x => x.id === projectId);
+      if (refreshed && activeServiceId === projectId) {
+        renderServiceDashboard(refreshed, false);
+      }
     }
   }, 2000);
 }
@@ -418,35 +447,118 @@ function statusLabel(p) {
   return p.running ? 'running' : 'stopped';
 }
 
-function updateServiceBadge(p) {
-  const badge = document.getElementById('svc-status-badge');
-  if (!badge) return;
-  badge.className = `badge ${statusClass(p)}`;
-  badge.textContent = statusLabel(p);
+function formatEnv(env) {
+  if (!env || typeof env !== 'object') return '';
+  return Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
+}
+
+function detectStack(p) {
+  const env = p.env_vars || {};
+  if (env.SYTE_STACK) return env.SYTE_STACK;
+  if (p.deploy_type === 'docker') return 'nextjs';
+  return 'shell';
+}
+
+function connLabel(p) {
+  if (p.domain) return p.domain;
+  try {
+    const u = new URL(p.url);
+    return u.host;
+  } catch {
+    return p.url || '—';
+  }
+}
+
+function switchSvcTab(tab) {
+  activeSvcTab = tab;
+  document.querySelectorAll('.svc-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.svcTab === tab);
+  });
+  document.querySelectorAll('.svc-tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.svcPanel === tab);
+  });
+  refreshIcons();
+}
+
+function updateServiceStatusDot(p) {
+  const dot = document.getElementById('svc-status-dot');
+  if (!dot) return;
+  dot.classList.remove('running', 'stopped', 'deploying');
+  if (p.status === 'deploying') dot.classList.add('deploying');
+  else if (p.running) dot.classList.add('running');
+  else dot.classList.add('stopped');
+  dot.title = statusLabel(p);
+}
+
+function renderStackBadge(p) {
+  const stack = detectStack(p);
+  const meta = STACK_META[stack] || STACK_META.docker;
+  const iconEl = document.getElementById('svc-stack-icon');
+  const labelEl = document.getElementById('svc-stack-label');
+  if (iconEl) {
+    iconEl.textContent = meta.icon;
+    iconEl.className = `svc-stack-icon ${meta.cls}`.trim();
+  }
+  if (labelEl) labelEl.textContent = meta.label;
+}
+
+function renderServiceEmbed(p) {
+  const frame = document.getElementById('svc-embed-frame');
+  const placeholder = document.getElementById('svc-preview-placeholder');
+  const conn = document.getElementById('svc-conn');
+  if (conn) {
+    conn.textContent = connLabel(p);
+    conn.href = p.url || '#';
+  }
+  if (!frame || !placeholder) return;
+  if (p.running && p.url) {
+    frame.src = p.url;
+    frame.classList.remove('hidden');
+    placeholder.classList.add('hidden');
+  } else {
+    frame.src = 'about:blank';
+    frame.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+  }
 }
 
 function openService(id) {
   const p = projects.find(x => x.id === id);
   if (!p) return;
   activeServiceId = id;
+  activeSvcTab = 'general';
+  switchSvcTab('general');
   renderServiceDashboard(p, true);
   showView('service');
 }
 
 function renderServiceDashboard(p, resetLogs) {
   document.getElementById('svc-title').textContent = p.name;
-  updateServiceBadge(p);
+  updateServiceStatusDot(p);
+  renderStackBadge(p);
+  renderServiceEmbed(p);
+
+  const branchLabel = document.getElementById('svc-branch-label');
+  if (branchLabel) branchLabel.textContent = p.branch || 'main';
+
+  const uuidPill = document.getElementById('svc-uuid-pill');
+  if (uuidPill) uuidPill.textContent = `UUID: ${p.id}`;
 
   const domainInput = document.getElementById('svc-domain-input');
   if (domainInput) domainInput.value = p.domain || '';
 
+  const envInput = document.getElementById('svc-env-input');
+  if (envInput) envInput.value = formatEnv(p.env_vars);
+
   document.getElementById('svc-info-body').innerHTML = `
-    <div class="info-cell"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
-    <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
+    <div class="info-cell"><span>status</span><strong>${esc(statusLabel(p))}</strong></div>
     <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
-    <div class="info-cell"><span>branch</span><strong>${esc(p.branch || 'main')}</strong></div>
+    <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
+    <div class="info-cell"><span>stack</span><strong>${esc(detectStack(p))}</strong></div>
+    <div class="info-cell full"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
     <div class="info-cell full"><span>git</span><span>${esc(p.git_url || '—')}</span></div>
-    <div class="info-cell full"><span>uuid</span><code>${esc(p.id)}</code></div>
+    <div class="info-cell"><span>branch</span><strong>${esc(p.branch || 'main')}</strong></div>
+    <div class="info-cell"><span>start cmd</span><span>${esc(p.start_command || '—')}</span></div>
   `;
 
   document.getElementById('svc-workspace-body').innerHTML = `
@@ -460,33 +572,55 @@ function renderServiceDashboard(p, resetLogs) {
   const actions = document.getElementById('svc-deploy-actions');
   actions.innerHTML = `
     <button class="btn-pill btn-primary" onclick="serviceDeploy('${p.id}')">
-      <i data-lucide="rocket"></i><span>deploy</span>
+      <i data-lucide="rocket"></i><span>Deploy</span>
     </button>
     ${p.running
-      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>stop</span></button>`
-      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>start</span></button>`
+      ? `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop</span></button>`
+      : `<button class="btn-pill btn-ghost" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start</span></button>`
     }
     <button class="btn-pill btn-danger" onclick="serviceAction('${p.id}','delete')">
-      <i data-lucide="trash-2"></i><span>remove</span>
+      <i data-lucide="trash-2"></i><span>Remove</span>
     </button>
   `;
+
+  const deployMeta = document.getElementById('svc-deploy-meta');
+  if (deployMeta) {
+    deployMeta.innerHTML = p.status === 'deploying'
+      ? '<span class="badge badge-deploying">deployment in progress</span>'
+      : p.running
+        ? '<span class="badge badge-running">container running</span>'
+        : '<span class="badge badge-stopped">not running</span>';
+  }
 
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
   if (resetLogs) {
     if (p.status === 'deploying') {
-      hint.textContent = 'deployment in progress…';
+      if (hint) hint.textContent = 'Live deployment stream';
+      switchSvcTab('logs');
       loadLogSnapshot(p.id, logsEl).then(() => {
         startLogStream(p.id, logsEl, { liveOnly: true, clearFirst: false });
       });
     } else {
-      hint.textContent = 'full deploy history — failures and build output';
+      if (hint) hint.textContent = 'Deployment log';
       stopLogStream();
       loadLogSnapshot(p.id, logsEl);
+    }
+  } else {
+    updateServiceStatusDot(p);
+    renderServiceEmbed(p);
+    if (deployMeta) {
+      deployMeta.innerHTML = p.status === 'deploying'
+        ? '<span class="badge badge-deploying">deployment in progress</span>'
+        : p.running
+          ? '<span class="badge badge-running">container running</span>'
+          : '<span class="badge badge-stopped">not running</span>';
     }
   }
 
   document.getElementById('svc-domain-btn').onclick = () => saveServiceDomain(p.id);
+  document.getElementById('svc-env-save-btn').onclick = () => saveServiceEnv(p.id);
+  document.getElementById('svc-edit-name-btn').onclick = () => editServiceName(p.id);
   refreshIcons();
 }
 
@@ -496,37 +630,38 @@ function renderPreviewSection(p) {
   const frame = document.getElementById('svc-preview-frame');
   const hint = document.getElementById('svc-preview-hint');
   const logsEl = document.getElementById('svc-preview-logs');
+  const logsWrap = document.getElementById('svc-preview-logs-wrap');
   if (!actions) return;
 
   const live = p.preview_running && p.preview_ready;
   actions.innerHTML = `
     <button class="btn-pill btn-primary" onclick="servicePreviewStart('${p.id}')">
-      <i data-lucide="play"></i><span>start preview</span>
+      <i data-lucide="play"></i><span>Start preview</span>
     </button>
     <button class="btn-pill btn-ghost" onclick="servicePreviewStop('${p.id}')">
-      <i data-lucide="square"></i><span>stop</span>
+      <i data-lucide="square"></i><span>Stop</span>
     </button>
-    ${p.preview_url ? `<a class="btn-pill btn-ghost" href="${esc(p.preview_url)}" target="_blank"><i data-lucide="external-link"></i><span>open</span></a>` : ''}
+    ${p.preview_url ? `<a class="btn-pill btn-ghost" href="${esc(p.preview_url)}" target="_blank"><i data-lucide="external-link"></i><span>Open</span></a>` : ''}
     ${live ? '<span class="badge-live">live</span>' : ''}
   `;
 
-    if (p.preview_running && p.preview_url) {
+  if (p.preview_running && p.preview_url) {
     wrap?.classList.remove('hidden');
     if (frame && live) frame.src = p.preview_domain_url || p.preview_url;
     const urlLabel = p.preview_domain
       ? `${p.preview_domain_url || p.preview_url}`
       : p.preview_url;
     hint.textContent = live
-      ? `live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}`
-      : `starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}`;
-    logsEl?.classList.remove('hidden');
+      ? `Live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}`
+      : `Starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}`;
+    logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);
   } else {
     wrap?.classList.add('hidden');
     if (frame) frame.src = 'about:blank';
-    hint.textContent = 'fast dev server with hot reload — no docker build';
-    logsEl?.classList.add('hidden');
+    hint.textContent = 'Fast dev server with hot reload — no docker build';
+    logsWrap?.classList.add('hidden');
     stopPreviewStream();
   }
   refreshIcons();
@@ -539,12 +674,14 @@ function startPreviewLogStream(projectId, targetEl) {
   const params = new URLSearchParams({ live: '1' });
   if (key) params.set('api_key', key);
   previewStream = new EventSource(`${API}/projects/${projectId}/preview/logs/stream?${params}`);
+  setPreviewLogsLiveIndicator(true);
   previewStream.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
       if (msg.text) appendLogLine(targetEl, msg.text, msg.type);
     } catch { /* ping */ }
   };
+  previewStream.onerror = () => setPreviewLogsLiveIndicator(false);
 }
 
 function startPreviewPoll(projectId) {
@@ -572,7 +709,8 @@ function stopPreviewPoll() {
 async function servicePreviewStart(id) {
   const logsEl = document.getElementById('svc-preview-logs');
   const hint = document.getElementById('svc-preview-hint');
-  hint.textContent = 'starting preview…';
+  switchSvcTab('preview');
+  hint.textContent = 'Starting preview…';
   if (logsEl) clearLogPanel(logsEl);
   try {
     const res = await api(`/projects/${id}/preview/start`, { method: 'POST' });
@@ -633,7 +771,8 @@ function formatBytes(n) {
 async function serviceDeploy(id) {
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
-  hint.textContent = 'deployment in progress…';
+  switchSvcTab('logs');
+  if (hint) hint.textContent = 'Live deployment stream';
   clearLogPanel(logsEl);
   appendLogLine(logsEl, 'Issuing deploy…', 'log-info');
   startLogStream(id, logsEl, { liveOnly: true, clearFirst: false });
@@ -660,7 +799,9 @@ async function serviceAction(id, action) {
       showView('dashboard');
     } else if (action === 'start') {
       const logsEl = document.getElementById('svc-live-logs');
-      document.getElementById('svc-log-hint').textContent = 'starting service…';
+      const hint = document.getElementById('svc-log-hint');
+      switchSvcTab('logs');
+      if (hint) hint.textContent = 'Starting service…';
       clearLogPanel(logsEl);
       appendLogLine(logsEl, 'Starting service…', 'log-info');
       startLogStream(id, logsEl, { liveOnly: true, clearFirst: false });
@@ -682,15 +823,56 @@ async function serviceAction(id, action) {
 async function saveServiceDomain(id) {
   let domain = document.getElementById('svc-domain-input')?.value.trim() || '';
   domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  if (!domain) return toast('enter a domain');
+  if (!domain) return toast('Enter a domain');
   try {
     const email = (await api('/settings')).admin_email;
     const res = await api(`/projects/${id}/domain`, {
       method: 'POST',
       body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
     });
-    toast(res.message || 'domain applied');
+    toast(res.message || 'Domain applied');
     await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderServiceDashboard(p, false);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function saveServiceEnv(id) {
+  const text = document.getElementById('svc-env-input')?.value || '';
+  const env_vars = parseEnv(text);
+  try {
+    const res = await api(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ env_vars }),
+    });
+    toast(res.message || 'Environment saved');
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderServiceDashboard(p, false);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function editServiceName(id) {
+  const p = projects.find(x => x.id === id);
+  if (!p) return;
+  const name = prompt('Project name', p.name);
+  if (!name || name.trim() === p.name) return;
+  try {
+    await api(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    toast('Project renamed');
+    await loadProjects();
+    const updated = projects.find(x => x.id === id);
+    if (updated) {
+      renderServiceDashboard(updated, false);
+      setBreadcrumb(updated.name);
+    }
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -916,6 +1098,24 @@ document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
 });
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
+
+document.getElementById('svc-tabs')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.svc-tab');
+  if (!btn?.dataset.svcTab) return;
+  switchSvcTab(btn.dataset.svcTab);
+});
+
+document.getElementById('svc-logs-refresh')?.addEventListener('click', () => {
+  if (!activeServiceId) return;
+  const logsEl = document.getElementById('svc-live-logs');
+  loadLogSnapshot(activeServiceId, logsEl);
+});
+
+document.getElementById('svc-logs-autoscroll')?.addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  logsAutoScroll = !logsAutoScroll;
+  btn.classList.toggle('active', logsAutoScroll);
+});
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeDrawer();
