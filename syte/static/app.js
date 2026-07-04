@@ -20,9 +20,12 @@ const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
   python: { label: 'python', icon: 'Py', cls: 'stack-python' },
   javascript: { label: 'javascript', icon: 'JS', cls: 'stack-javascript' },
+  html5: { label: 'html5', icon: '5', cls: 'stack-html5' },
   shell: { label: 'shell', icon: '$', cls: 'stack-shell' },
   docker: { label: 'docker', icon: 'D', cls: '' },
 };
+
+let selectedCreateStack = 'nextjs';
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -265,6 +268,7 @@ function showView(name) {
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'sycord') refreshIcons();
+  if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
     setBreadcrumb(p ? displayTitle(p) : 'Project');
@@ -466,6 +470,51 @@ function detectStack(p) {
   if (env.SYTE_STACK) return env.SYTE_STACK;
   if (p.deploy_type === 'docker') return 'nextjs';
   return 'shell';
+}
+
+function resetCreateForm() {
+  selectedCreateStack = 'nextjs';
+  document.querySelectorAll('.stack-card').forEach(card => {
+    const on = card.dataset.stack === 'nextjs';
+    card.classList.toggle('active', on);
+    card.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const nameInput = document.getElementById('create-name');
+  if (nameInput) nameInput.value = '';
+  const startCmd = document.getElementById('create-start-cmd');
+  if (startCmd) startCmd.value = '';
+  const buildCmd = document.getElementById('create-build-cmd');
+  if (buildCmd) buildCmd.value = '';
+  document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
+    head.setAttribute('aria-expanded', 'false');
+    const panel = document.getElementById(head.dataset.accordion);
+    panel?.classList.add('hidden');
+  });
+  const placeholder = document.getElementById('create-log-placeholder');
+  const logPanel = document.getElementById('deploy-log-panel');
+  placeholder?.classList.remove('hidden');
+  logPanel?.classList.add('hidden');
+  if (logPanel) clearLogPanel(logPanel);
+  refreshIcons();
+}
+
+function selectCreateStack(stack) {
+  selectedCreateStack = stack;
+  document.querySelectorAll('.stack-card').forEach(card => {
+    const on = card.dataset.stack === stack;
+    card.classList.toggle('active', on);
+    card.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+
+function toggleCreateAccordion(head) {
+  const panelId = head.dataset.accordion;
+  if (!panelId) return;
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const open = panel.classList.toggle('hidden');
+  head.setAttribute('aria-expanded', open ? 'false' : 'true');
+  refreshIcons();
 }
 
 function displayTitle(p) {
@@ -902,38 +951,63 @@ async function saveServiceEnv(id) {
 document.getElementById('create-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('deploy-btn');
-  btn.disabled = true;
-  btn.textContent = 'deploying…';
+  const name = document.getElementById('create-name')?.value.trim();
+  if (!name) return toast('Enter a project name');
 
-  const body = {
-    name: document.getElementById('svc-name').value,
-    git_url: document.getElementById('svc-git').value || null,
-    branch: document.getElementById('svc-branch').value || 'main',
-    start_command: document.getElementById('svc-cmd').value || null,
-    domain: document.getElementById('svc-domain').value || null,
-    env_vars: parseEnv(document.getElementById('svc-env').value),
-  };
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Creating…';
+
+  const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
+  const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
+  const env_vars = {};
+  if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
 
   const logPanel = document.getElementById('deploy-log-panel');
+  const logPlaceholder = document.getElementById('create-log-placeholder');
+  logPlaceholder?.classList.add('hidden');
   logPanel?.classList.remove('hidden');
   clearLogPanel(logPanel);
 
   try {
-    const res = await api('/projects', { method: 'POST', body: JSON.stringify(body) });
-    toast(`deploying: ${res.project.name}`);
+    const res = await api('/projects', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        stack: selectedCreateStack,
+        start_command: startCmd,
+        env_vars,
+      }),
+    });
+    appendLogLine(logPanel, res.message || 'Project created', 'log-info');
+    toast(`Deploying: ${res.project.name}`);
     await loadProjects();
     openService(res.project.id);
+    switchSvcTab('logs');
     const logsEl = document.getElementById('svc-live-logs');
     loadLogSnapshot(res.project.id, logsEl).then(() => {
       startLogStream(res.project.id, logsEl, { liveOnly: true, clearFirst: false });
     });
   } catch (err) {
-    if (logPanel) appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
-    toast('deploy failed: ' + err.message);
+    appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
+    toast('Deploy failed: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'deploy';
+    btn.querySelector('span').textContent = 'Create & Deploy';
   }
+});
+
+document.getElementById('stack-picker')?.addEventListener('click', (e) => {
+  const card = e.target.closest('.stack-card');
+  if (!card?.dataset.stack) return;
+  selectCreateStack(card.dataset.stack);
+});
+
+document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
+  head.addEventListener('click', () => toggleCreateAccordion(head));
+});
+
+document.getElementById('create-name-focus')?.addEventListener('click', () => {
+  document.getElementById('create-name')?.focus();
 });
 
 document.getElementById('save-server-btn')?.addEventListener('click', async () => {

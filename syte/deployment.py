@@ -182,6 +182,7 @@ async def create_project_record(
     git_provider: str | None = None,
     project_uuid: str | None = None,
     deploy_now: bool = False,
+    stack: str | None = None,
 ) -> tuple[dict | None, str]:
     """Create an empty project workspace. Git and files are optional — add anytime, deploy anytime."""
     from syte.database import list_projects
@@ -200,6 +201,10 @@ async def create_project_record(
     if git_provider and git_url and not git_url.startswith("http"):
         resolved_git = f"https://{git_provider}/{git_url.lstrip('/')}"
 
+    merged_env = dict(env_vars or {})
+    if stack:
+        merged_env["SYTE_STACK"] = stack.strip().lower()
+
     project = await create_project({
         "id": project_id,
         "name": name,
@@ -208,23 +213,33 @@ async def create_project_record(
         "port": port,
         "domain": domain,
         "start_command": start_command or "",
-        "env_vars": env_vars or {},
+        "env_vars": merged_env,
         "deploy_type": "docker",
     })
 
     ensure_workspace(project_id)
-    if env_vars:
-        write_env_file(project_id, env_vars)
+    if merged_env:
+        write_env_file(project_id, merged_env)
+
+    scaffold_msg = ""
+    if stack and not resolved_git:
+        from syte.sycord.scaffold import STACKS, scaffold_project
+
+        chosen = stack.strip().lower()
+        if chosen in STACKS:
+            written = scaffold_project(project_id, chosen)
+            if written:
+                scaffold_msg = f" Scaffolded {chosen}: {', '.join(written[:3])}{'…' if len(written) > 3 else ''}."
 
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
     if deploy_now:
         asyncio.create_task(run_deploy_job(project_id, start_command))
-        return project, f"Project {project_id} created. Deploy started in background."
+        return project, f"Project {project_id} created.{scaffold_msg} Deploy started in background."
 
     return project, (
-        f"Empty project {project_id} created. "
+        f"Empty project {project_id} created.{scaffold_msg} "
         f"No git or files required — add anytime via write_file/execute_command, "
         f"then POST /api/issue_deploy when ready."
     )
@@ -239,6 +254,7 @@ async def begin_deploy_service(
     domain: str | None = None,
     git_provider: str | None = None,
     project_uuid: str | None = None,
+    stack: str | None = None,
 ) -> tuple[dict | None, str]:
     """Create project and immediately start deploy (GUI flow)."""
     return await create_project_record(
@@ -251,6 +267,7 @@ async def begin_deploy_service(
         git_provider=git_provider,
         project_uuid=project_uuid,
         deploy_now=True,
+        stack=stack,
     )
 
 

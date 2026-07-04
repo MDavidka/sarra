@@ -98,6 +98,7 @@ class CreateServiceRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
     domain: str | None = None
+    stack: str | None = "nextjs"
 
 
 class DomainRequest(BaseModel):
@@ -344,6 +345,7 @@ async def api_create_project(body: CreateServiceRequest):
         start_command=body.start_command,
         env_vars=body.env_vars,
         domain=body.domain,
+        stack=body.stack,
     )
     if not project:
         raise HTTPException(500, message)

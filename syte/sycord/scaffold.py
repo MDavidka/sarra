@@ -4,7 +4,7 @@ from pathlib import Path
 
 from syte.workspace import ensure_workspace
 
-STACKS = ("nextjs", "python", "javascript")
+STACKS = ("nextjs", "python", "javascript", "html5")
 
 
 def scaffold_project(project_id: str, stack: str) -> list[str]:
@@ -17,6 +17,7 @@ def scaffold_project(project_id: str, stack: str) -> list[str]:
         "nextjs": _scaffold_nextjs,
         "python": _scaffold_python,
         "javascript": _scaffold_javascript,
+        "html5": _scaffold_html5,
     }
     return writers[stack](app)
 
@@ -164,6 +165,34 @@ COPY . .
 ENV PORT=3000
 EXPOSE 3000
 CMD ["npm", "start"]
+""",
+    }
+    return _write_files(app, files)
+
+
+def _scaffold_html5(app: Path) -> list[str]:
+    files = {
+        "index.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syte HTML App</title>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; margin: 0; padding: 2rem; }
+    h1 { margin: 0 0 0.5rem; }
+    p { color: #71717a; }
+  </style>
+</head>
+<body>
+  <h1>Syte HTML5</h1>
+  <p>Static site on Syte — edit index.html and deploy.</p>
+</body>
+</html>
+""",
+        "Dockerfile": """FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/index.html
+EXPOSE 80
 """,
     }
     return _write_files(app, files)

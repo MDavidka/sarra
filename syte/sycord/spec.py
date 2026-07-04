@@ -36,7 +36,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "path": f"{prefix}/project_connect",
                 "body": {
                     "name": "str (required)",
-                    "stack": "nextjs | python | javascript (default nextjs)",
+                    "stack": "nextjs | python | javascript | html5 (default nextjs)",
                     "uuid": "optional custom id",
                     "env_vars": {},
                 },

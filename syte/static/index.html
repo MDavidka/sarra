@@ -122,50 +122,86 @@
         </section>
 
         <section id="view-new-service" class="view">
-          <div class="projects-card panel-form">
-            <div class="panel-head">
-              <button class="back-btn" onclick="showView('dashboard')" aria-label="Back">
-                <i data-lucide="arrow-left"></i>
-              </button>
-              <h1>Create Project</h1>
+          <div class="create-project">
+            <div class="create-brand">
+              <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
+              <span class="create-brand-name">syte</span>
             </div>
-            <form id="create-form" class="form-inner">
-              <div class="form-group">
-                <label for="svc-name">Project name</label>
-                <input type="text" id="svc-name" required placeholder="my-app">
-              </div>
-              <div class="form-group">
-                <label for="svc-git">Git repository</label>
-                <input type="url" id="svc-git" placeholder="https://github.com/user/repo.git">
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="svc-branch">Branch</label>
-                  <input type="text" id="svc-branch" value="main">
+
+            <form id="create-form" class="create-form">
+              <div class="create-name-field">
+                <div class="create-name-label-row">
+                  <label for="create-name">project name</label>
+                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name">
+                    <i data-lucide="square-pen"></i>
+                  </button>
                 </div>
-                <div class="form-group">
-                  <label for="svc-domain">Domain (optional)</label>
-                  <input type="text" id="svc-domain" placeholder="app.example.com">
+                <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
+              </div>
+
+              <div class="create-section">
+                <p class="create-section-label">deployment type</p>
+                <div class="stack-picker" id="stack-picker" role="listbox" aria-label="Deployment type">
+                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true">
+                    <span class="stack-card-icon stack-icon-nextjs">N</span>
+                    <span class="stack-card-label">next.js</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-python">Py</span>
+                    <span class="stack-card-label">python</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-javascript">JS</span>
+                    <span class="stack-card-label">javascript</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-html5">5</span>
+                    <span class="stack-card-label">html5</span>
+                  </button>
                 </div>
               </div>
-              <div class="form-group">
-                <label for="svc-cmd">Start command (optional)</label>
-                <input type="text" id="svc-cmd" placeholder="only needed without a Dockerfile">
-                <span class="hint">Docker is the default — add a Dockerfile, or provide a start command for shell deploy</span>
-              </div>
-              <div class="form-group">
-                <label for="svc-env">Environment variables</label>
-                <textarea id="svc-env" rows="3" placeholder="NODE_ENV=production"></textarea>
-              </div>
-              <div class="form-actions">
-                <button type="button" class="btn-pill btn-ghost" onclick="showView('dashboard')">Cancel</button>
-                <button type="submit" class="btn-pill btn-primary" id="deploy-btn">
-                  <i data-lucide="rocket"></i>
-                  <span>Deploy</span>
+
+              <div class="create-accordion">
+                <button type="button" class="create-accordion-head" data-accordion="create-starter-panel" aria-expanded="false">
+                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
+                  <span>starter command</span>
                 </button>
+                <div class="create-accordion-body hidden" id="create-starter-panel">
+                  <input type="text" id="create-start-cmd" class="create-inline-input" placeholder="optional — runtime start command">
+                </div>
               </div>
+
+              <div class="create-accordion">
+                <button type="button" class="create-accordion-head" data-accordion="create-build-panel" aria-expanded="false">
+                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
+                  <span>build command</span>
+                </button>
+                <div class="create-accordion-body hidden" id="create-build-panel">
+                  <input type="text" id="create-build-cmd" class="create-inline-input" placeholder="optional — docker build arg or custom build step">
+                </div>
+              </div>
+
+              <div class="create-section create-server-section">
+                <button type="button" class="create-accordion-head create-accordion-static" tabindex="-1">
+                  <i data-lucide="chevron-right" class="accordion-chevron muted"></i>
+                  <span>server</span>
+                </button>
+                <div class="server-picker">
+                  <button type="button" class="server-pill active" disabled>This server (vps)</button>
+                  <button type="button" class="server-pill server-pill-add" disabled title="Coming soon">+ add server</button>
+                </div>
+              </div>
+
+              <div class="create-log-box logs-panel" id="create-log-wrap">
+                <div class="create-log-placeholder" id="create-log-placeholder">Deploy logs appear here…</div>
+                <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
+              </div>
+
+              <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
+                <i data-lucide="rocket"></i>
+                <span>Create &amp; Deploy</span>
+              </button>
             </form>
-            <div id="deploy-log-panel" class="logs-terminal hidden"></div>
           </div>
         </section>
 

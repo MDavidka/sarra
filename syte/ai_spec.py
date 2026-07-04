@@ -157,7 +157,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             "base_url": f"{base}/sycord/api" if base else "/sycord/api",
             "documentation": f"{base}/sycord/api/" if base else "/sycord/api/",
             "spec": f"{base}/sycord/api/spec.json" if base else "/sycord/api/spec.json",
-            "stacks": ["nextjs", "python", "javascript"],
+            "stacks": ["nextjs", "python", "javascript", "html5"],
             "workflow": [
                 "1. POST /sycord/api/project_connect {name, stack} → uuid + https://{slug}.sycord.site",
                 "2. POST /sycord/api/upload — multipart file upload",
