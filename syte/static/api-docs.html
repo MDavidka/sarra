@@ -341,10 +341,118 @@
     .info-val { color: var(--text-muted); }
     .info-val code { font-family: var(--mono); font-size: 11px; color: var(--accent-blue); }
 
+    .nav-cat .lbl-short { display: none; }
+
     @media (max-width: 768px) {
-      .sidebar { display: none; }
-      .main { margin-left: 0; }
-      .main-inner { padding: 1.25rem 1rem 3rem; }
+      body { font-size: 13px; }
+
+      .layout {
+        flex-direction: column;
+        min-height: 100dvh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: auto;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border-subtle);
+        z-index: 200;
+        padding-top: env(safe-area-inset-top, 0);
+      }
+
+      .sidebar-top {
+        padding: 0.65rem 0.85rem 0.5rem;
+        border-bottom: none;
+      }
+
+      .sidebar-back {
+        margin-bottom: 0.5rem;
+        font-size: 13px;
+        min-height: 44px;
+        align-items: center;
+      }
+
+      .sidebar-brand {
+        padding: 0.65rem 0.75rem;
+      }
+
+      .brand-sub { display: none; }
+
+      .sidebar-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 0.65rem calc(0.65rem + env(safe-area-inset-bottom, 0));
+        gap: 0.35rem;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        overscroll-behavior-x: contain;
+      }
+      .sidebar-nav::-webkit-scrollbar { display: none; }
+
+      .nav-cat {
+        width: auto;
+        white-space: nowrap;
+        flex-shrink: 0;
+        padding: 0.5rem 0.85rem;
+        font-size: 13px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .nav-cat .lbl-full { display: none; }
+      .nav-cat .lbl-short { display: inline; }
+
+      .main {
+        margin-left: 0;
+        width: 100%;
+      }
+
+      .main-inner {
+        padding: 1rem 0.85rem calc(2rem + env(safe-area-inset-bottom, 0));
+        max-width: 100%;
+      }
+
+      .page-header { margin-bottom: 1.25rem; }
+      .page-header h1 { font-size: 1.35rem; }
+      .page-header p { font-size: 12px; word-break: break-word; }
+
+      .section { margin-bottom: 2rem; scroll-margin-top: 7.5rem; }
+      .section-title { font-size: 1.1rem; }
+
+      .endpoint { border-radius: 8px; margin-bottom: 1rem; }
+      .endpoint-header { padding: 0.85rem; }
+      .endpoint-body { padding: 0 0.85rem 0.85rem; }
+      .endpoint-path { font-size: 12px; }
+      .endpoint-row { gap: 0.45rem; }
+
+      .panel-title {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+      }
+
+      pre {
+        font-size: 10.5px;
+        padding: 0.7rem 0.75rem;
+        max-width: 100%;
+      }
+
+      .info-row {
+        grid-template-columns: 1fr;
+        gap: 0.15rem;
+        padding: 0.55rem 0;
+      }
+
+      .info-key { font-size: 11px; }
+      .note { font-size: 11px; padding: 0.55rem 0.7rem; }
+      .field-desc { font-size: 11px; }
+      .badge { font-size: 9px; }
     }
   </style>
 </head>
@@ -362,7 +470,7 @@
         </div>
       </div>
       <nav class="sidebar-nav" id="sidebar-nav">
-        <button type="button" class="nav-cat active" data-cat="auth">Authentication</button>
+        <button type="button" class="nav-cat active" data-cat="auth"><span class="lbl-full">Authentication</span><span class="lbl-short">Auth</span></button>
         <button type="button" class="nav-cat" data-cat="project">Project</button>
         <button type="button" class="nav-cat" data-cat="workspace">Workspace</button>
         <button type="button" class="nav-cat" data-cat="start">Start</button>
@@ -1087,6 +1195,12 @@
         cats.forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
         panels.forEach(p => p.classList.toggle('active', p.dataset.cat === cat));
         history.replaceState(null, '', '#' + cat);
+        const activeBtn = document.querySelector('.nav-cat.active');
+        if (activeBtn) {
+          activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+        const main = document.querySelector('.main');
+        if (main) main.scrollTo(0, 0);
         window.scrollTo(0, 0);
       }
 
