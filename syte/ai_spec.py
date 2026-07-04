@@ -149,4 +149,29 @@ def build_ai_spec(base_url: str = "") -> dict:
             "next build",
             "Use POST /api/issue_deploy {uuid} for all builds",
         ],
+        "sycord_api": {
+            "description": (
+                "Separate integration API for Sycord websites and external projects. "
+                "Auto-creates workspace + {slug}.sycord.site subdomain on project_connect."
+            ),
+            "base_url": f"{base}/sycord/api" if base else "/sycord/api",
+            "documentation": f"{base}/sycord/api/" if base else "/sycord/api/",
+            "spec": f"{base}/sycord/api/spec.json" if base else "/sycord/api/spec.json",
+            "stacks": ["nextjs", "python", "javascript"],
+            "workflow": [
+                "1. POST /sycord/api/project_connect {name, stack} → uuid + https://{slug}.sycord.site",
+                "2. POST /sycord/api/upload — multipart file upload",
+                "3. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
+                "4. GET /sycord/api/container_get?uuid= — container status",
+                "5. POST /sycord/api/domain {uuid, domain} — optional custom domain",
+            ],
+            "endpoints": [
+                {"method": "POST", "path": "/sycord/api/project_connect", "auth": True},
+                {"method": "GET", "path": "/sycord/api/container_get?uuid=", "auth": True},
+                {"method": "POST", "path": "/sycord/api/upload", "auth": True},
+                {"method": "POST", "path": "/sycord/api/domain", "auth": True},
+                {"method": "POST", "path": "/sycord/api/issue_deployment", "auth": True},
+                {"method": "GET", "path": "/sycord/api/spec.json", "auth": False},
+            ],
+        },
     }

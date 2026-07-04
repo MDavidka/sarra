@@ -93,7 +93,7 @@
     .brand-icon {
       width: 32px;
       height: 32px;
-      background: #222;
+      background: #f4f4f5;
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -352,7 +352,7 @@
       font-size: 11.5px;
       line-height: 1.6;
       overflow-x: auto;
-      color: #c9d1d9;
+      color: #334155;
       margin-top: 0.5rem;
     }
 
@@ -415,7 +415,7 @@
         display: block;
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.55);
+        background: rgba(0, 0, 0, 0.35);
         backdrop-filter: blur(3px);
         -webkit-backdrop-filter: blur(3px);
         z-index: 180;
@@ -444,7 +444,7 @@
         transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 200;
         border-right: 1px solid var(--border-subtle);
-        box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+        box-shadow: var(--shadow-drawer);
         padding-top: env(safe-area-inset-top, 0);
       }
       body.drawer-open .sidebar {
@@ -499,13 +499,13 @@
         display: flex;
         align-items: center;
         gap: 0.6rem;
-        color: #999;
+        color: var(--text-muted);
         border-radius: 8px;
       }
-      .nav-cat:hover { background: #1a1a1a; color: #ccc; }
+      .nav-cat:hover { background: var(--bg-card-hover); color: var(--text); }
       .nav-cat.active {
-        background: #222;
-        color: #fff;
+        background: var(--bg-card-hover);
+        color: var(--text);
         font-weight: 500;
       }
 
@@ -623,7 +623,7 @@
       <div class="main-inner">
         <header class="page-header">
           <h1>Syte API</h1>
-          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a></p>
+          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a> · Sycord integration: <a href="/sycord/api/">/sycord/api</a></p>
         </header>
 
         <!-- AUTH -->

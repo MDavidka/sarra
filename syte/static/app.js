@@ -234,6 +234,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
+  if (name === 'sycord') refreshIcons();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
     setBreadcrumb(p?.name || 'Project');

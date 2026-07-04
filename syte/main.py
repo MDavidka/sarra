@@ -82,6 +82,10 @@ app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/o
 
 app.include_router(api_router.router, prefix="/api")
 
+from syte.sycord.router import router as sycord_router
+
+app.include_router(sycord_router, prefix="/sycord/api")
+
 
 class CreateTokenRequest(BaseModel):
     name: str = "default"
@@ -134,6 +138,15 @@ async def api_ai_spec(request: Request):
 async def api_documentation():
     """API reference documentation page."""
     html = (STATIC_DIR / "api-docs.html").read_text()
+    html = html.replace("__VERSION__", __version__)
+    return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/sycord/api", include_in_schema=False)
+@app.get("/sycord/api/", include_in_schema=False)
+async def sycord_api_documentation():
+    """Sycord deployer API documentation."""
+    html = (STATIC_DIR / "sycord-api-docs.html").read_text()
     html = html.replace("__VERSION__", __version__)
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
 

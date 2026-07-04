@@ -225,11 +225,30 @@
 
         <section id="view-sycord" class="view">
           <div class="projects-card">
-            <div class="projects-empty">
-              <img src="/static/icon.png?v=__VERSION__" alt="Sycord" class="sycord-empty-logo">
-              <h2>Sycord</h2>
-              <p>Connected workspace — coming soon</p>
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon" style="width:22px;height:22px">
+                <div>
+                  <h1>Sycord</h1>
+                  <p class="projects-sub">External deployer API for Sycord websites and connected projects</p>
+                </div>
+              </div>
+              <a href="/sycord/api/" class="btn-create" style="text-decoration:none">
+                <i data-lucide="book-open"></i>
+                <span>API Docs</span>
+              </a>
             </div>
+            <div class="note" style="margin:0 0 1rem;padding:0.85rem;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;font-size:13px;color:#71717a">
+              Base URL: <code>/sycord/api</code> · Machine spec: <a href="/sycord/api/spec.json" class="link">spec.json</a>
+            </div>
+            <div class="swarm-grid">
+              <div class="swarm-stat full"><span class="swarm-label">project_connect</span><span class="swarm-value">POST — workspace + {name}.sycord.site</span></div>
+              <div class="swarm-stat"><span class="swarm-label">container_get</span><span class="swarm-value">GET — Docker status</span></div>
+              <div class="swarm-stat"><span class="swarm-label">upload</span><span class="swarm-value">POST — multipart files</span></div>
+              <div class="swarm-stat"><span class="swarm-label">domain</span><span class="swarm-value">POST — set hostname</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">issue_deployment</span><span class="swarm-value">POST — docker build + deploy</span></div>
+            </div>
+            <p class="hint" style="margin-top:1rem">Stacks: <strong>nextjs</strong> (default), <strong>python</strong>, <strong>javascript</strong></p>
           </div>
         </section>
 

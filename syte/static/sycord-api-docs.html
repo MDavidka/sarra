@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sycord API — Syte Deployer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff; --bg-surface: #fafafa; --border: #e4e4e7;
+      --text: #09090b; --text-muted: #71717a; --link: #2563eb;
+      --accent-line: #2563eb; --radius: 10px; --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace; --sidebar-w: 260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.55; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar { width: var(--sidebar-w); background: #fff; border-right: 1px solid var(--border); padding: 1rem 0.75rem; position: fixed; height: 100vh; overflow-y: auto; }
+    .sidebar a.back { color: var(--text-muted); text-decoration: none; font-size: 12px; display: block; margin-bottom: 1rem; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; padding: 0.5rem; }
+    .brand img { width: 28px; height: 28px; }
+    .brand strong { font-size: 15px; }
+    .nav-cat { display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left; padding: 0.55rem 0.75rem; border: none; background: none; border-radius: 8px; color: var(--text-muted); font-family: var(--font); font-size: 14px; cursor: pointer; }
+    .nav-cat:hover, .nav-cat.active { background: #f4f4f5; color: var(--text); }
+    .nav-cat svg { width: 18px; height: 18px; }
+    .main { margin-left: var(--sidebar-w); flex: 1; padding: 2rem 2.5rem 4rem; max-width: 800px; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.35rem; }
+    .sub { color: var(--text-muted); margin-bottom: 1.5rem; }
+    .sub a { color: var(--link); }
+    .panel { display: none; } .panel.active { display: block; }
+    .endpoint { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
+    .endpoint-head { padding: 1rem; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+    .method { color: var(--link); font-family: var(--mono); font-weight: 700; font-size: 12px; margin-right: 0.5rem; }
+    .path { font-family: var(--mono); font-size: 13px; }
+    .endpoint-body { padding: 1rem; }
+    pre { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; font-family: var(--mono); font-size: 11px; overflow-x: auto; margin-top: 0.5rem; }
+    .note { background: #eff6ff; border-left: 3px solid var(--accent-line); padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 13px; color: var(--text-muted); margin: 0.75rem 0; }
+    ul.steps { margin: 0.5rem 0 0 1.2rem; color: var(--text-muted); font-size: 13px; }
+    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; padding: 1rem; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="/" class="back">← syte gui</a>
+      <div class="brand">
+        <img src="/static/icon.png?v=__VERSION__" alt="">
+        <strong>Sycord API</strong>
+      </div>
+      <nav>
+        <button class="nav-cat active" data-panel="intro"><i data-lucide="info"></i> Overview</button>
+        <button class="nav-cat" data-panel="connect"><i data-lucide="plug"></i> project_connect</button>
+        <button class="nav-cat" data-panel="container"><i data-lucide="box"></i> container_get</button>
+        <button class="nav-cat" data-panel="upload"><i data-lucide="upload"></i> upload</button>
+        <button class="nav-cat" data-panel="domain"><i data-lucide="globe"></i> domain</button>
+        <button class="nav-cat" data-panel="deploy"><i data-lucide="rocket"></i> issue_deployment</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <h1>Sycord Deployer API</h1>
+      <p class="sub">v__VERSION__ · Base: <code>/sycord/api</code> · <a href="/sycord/api/spec.json">spec.json</a> · Auth: <code>X-API-Key</code></p>
+
+      <div class="panel active" id="panel-intro">
+        <div class="note">Connect Sycord websites and external projects to Syte. <code>project_connect</code> auto-creates a workspace and subdomain <code>{slug}.sycord.site</code>.</div>
+        <h2 style="font-size:1.1rem;margin:1rem 0 0.5rem">Stacks</h2>
+        <ul class="steps">
+          <li><strong>nextjs</strong> (default) — Next.js 14 + Dockerfile standalone</li>
+          <li><strong>python</strong> — FastAPI + uvicorn</li>
+          <li><strong>javascript</strong> — Express Node.js</li>
+        </ul>
+        <h2 style="font-size:1.1rem;margin:1rem 0 0.5rem">Workflow</h2>
+        <ol class="steps">
+          <li>POST <code>/sycord/api/project_connect</code></li>
+          <li>POST <code>/sycord/api/upload</code> — add files</li>
+          <li>POST <code>/sycord/api/issue_deployment</code></li>
+          <li>GET <code>/sycord/api/container_get?uuid=</code></li>
+        </ol>
+      </div>
+
+      <div class="panel" id="panel-connect">
+        <div class="endpoint">
+          <div class="endpoint-head"><span class="method">POST</span><span class="path">/sycord/api/project_connect</span></div>
+          <div class="endpoint-body">
+            <p>Creates workspace, scaffolds stack, assigns <code>https://{slug}.sycord.site</code>.</p>
+            <pre>{
+  "name": "testproject",
+  "stack": "nextjs",
+  "env_vars": {}
+}</pre>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "domain": "testproject.sycord.site",
+  "url": "https://testproject.sycord.site",
+  "stack": "nextjs"
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-container">
+        <div class="endpoint">
+          <div class="endpoint-head"><span class="method">GET</span><span class="path">/sycord/api/container_get?uuid=</span></div>
+          <div class="endpoint-body">
+            <p>Returns Docker container state, image, and URLs.</p>
+            <pre>{ "ok": true, "uuid": "...", "container_name": "syte-...", "running": true, "url": "https://..." }</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-upload">
+        <div class="endpoint">
+          <div class="endpoint-head"><span class="method">POST</span><span class="path">/sycord/api/upload</span></div>
+          <div class="endpoint-body">
+            <p>Multipart: <code>uuid</code>, <code>path</code> (e.g. <code>app/app/page.tsx</code>), <code>file</code></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-domain">
+        <div class="endpoint">
+          <div class="endpoint-head"><span class="method">POST</span><span class="path">/sycord/api/domain</span></div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3", "domain": "custom.sycord.site" }</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-deploy">
+        <div class="endpoint">
+          <div class="endpoint-head"><span class="method">POST</span><span class="path">/sycord/api/issue_deployment</span></div>
+          <div class="endpoint-body">
+            <p>Docker build + container start. Stream logs via <code>/api/projects/{uuid}/logs/stream?live=1</code></p>
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll('.nav-cat').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-cat').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.panel)?.classList.add('active');
+      });
+    });
+    if (window.lucide) lucide.createIcons();
+  </script>
+</body>
+</html>
