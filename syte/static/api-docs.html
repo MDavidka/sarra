@@ -106,34 +106,37 @@
     .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 0.15rem; line-height: 1.4; }
 
     .sidebar-nav {
-      padding: 0.75rem 0.65rem 2rem;
+      padding: 0.5rem 0.6rem 2rem;
       flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
-    .nav-group { margin-bottom: 0.25rem; }
-
-    .nav-group-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-dim);
-      padding: 0.5rem 0.65rem 0.35rem;
-    }
-
-    .nav-link {
+    .nav-cat {
       display: block;
-      padding: 0.45rem 0.75rem;
-      border-radius: var(--radius-sm);
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 13px;
+      font-size: 14px;
       transition: background 0.12s, color 0.12s;
+      cursor: pointer;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: var(--font);
     }
-    .nav-link:hover { background: var(--bg-card); color: var(--text); }
-    .nav-link.active { background: var(--bg-card); color: var(--text); font-weight: 500; }
+    .nav-cat:hover { background: var(--bg-card); color: var(--text); }
+    .nav-cat.active {
+      background: var(--bg-card);
+      color: var(--text);
+      font-weight: 500;
+    }
 
-  .nav-link.sub { padding-left: 1.25rem; font-size: 12px; }
+    .cat-panel { display: none; }
+    .cat-panel.active { display: block; }
 
     /* ── Main ── */
     .main {
@@ -358,48 +361,14 @@
           </div>
         </div>
       </div>
-      <nav class="sidebar-nav">
-        <div class="nav-group">
-          <div class="nav-group-label">General</div>
-          <a class="nav-link" href="#auth">Authentication</a>
-          <a class="nav-link" href="#errors">Errors</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Project</div>
-          <a class="nav-link sub" href="#project-create">Create</a>
-          <a class="nav-link sub" href="#project-delete">Delete</a>
-          <a class="nav-link sub" href="#project-get">Get</a>
-          <a class="nav-link sub" href="#project-list">List</a>
-          <a class="nav-link sub" href="#project-domain">Set domain</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Workspace</div>
-          <a class="nav-link sub" href="#workspace-files">Files</a>
-          <a class="nav-link sub" href="#workspace-command">Execute command</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Start</div>
-          <a class="nav-link sub" href="#start-deploy">Issue deploy</a>
-          <a class="nav-link sub" href="#start-service">Start service</a>
-          <a class="nav-link sub" href="#start-stop">Stop service</a>
-          <a class="nav-link sub" href="#start-logs">Logs</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Preview</div>
-          <a class="nav-link sub" href="#preview-start">Start preview</a>
-          <a class="nav-link sub" href="#preview-status">Preview status</a>
-          <a class="nav-link sub" href="#preview-stop">Stop preview</a>
-          <a class="nav-link sub" href="#preview-logs">Preview logs</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Env</div>
-          <a class="nav-link sub" href="#env-set">Set env</a>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-label">Other</div>
-          <a class="nav-link sub" href="#design">Validate design</a>
-          <a class="nav-link sub" href="#server-info">Server info</a>
-        </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <button type="button" class="nav-cat active" data-cat="auth">Authentication</button>
+        <button type="button" class="nav-cat" data-cat="project">Project</button>
+        <button type="button" class="nav-cat" data-cat="workspace">Workspace</button>
+        <button type="button" class="nav-cat" data-cat="start">Start</button>
+        <button type="button" class="nav-cat" data-cat="preview">Preview</button>
+        <button type="button" class="nav-cat" data-cat="env">Env</button>
+        <button type="button" class="nav-cat" data-cat="design">Design</button>
       </nav>
     </aside>
 
@@ -411,6 +380,7 @@
         </header>
 
         <!-- AUTH -->
+        <div class="cat-panel active" id="panel-auth" data-cat="auth">
         <section class="section" id="auth">
           <h2 class="section-title">Authentication</h2>
           <p class="section-desc">All endpoints require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
@@ -473,7 +443,21 @@
           </div>
         </section>
 
+        <section class="section" id="errors">
+          <h2 class="section-title">Errors</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">401 missing_api_key</span><span class="info-val">No X-API-Key or Bearer header</span></div>
+            <div class="info-row"><span class="info-key">401 invalid_api_key</span><span class="info-val">Token wrong or revoked</span></div>
+            <div class="info-row"><span class="info-key">400 invalid_path</span><span class="info-val">Path escapes workspace</span></div>
+            <div class="info-row"><span class="info-key">400 create_failed</span><span class="info-val">Duplicate uuid or validation error</span></div>
+            <div class="info-row"><span class="info-key">400 preview_failed</span><span class="info-val">Dev server failed to start</span></div>
+            <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">Project UUID does not exist</span></div>
+          </div>
+        </section>
+        </div>
+
         <!-- PROJECT -->
+        <div class="cat-panel" id="panel-project" data-cat="project">
         <section class="section" id="project">
           <h2 class="section-title">Project</h2>
           <p class="section-desc">Create, read, update, and delete deployment projects.</p>
@@ -660,8 +644,10 @@
             </div>
           </div>
         </section>
+        </div>
 
         <!-- WORKSPACE -->
+        <div class="cat-panel" id="panel-workspace" data-cat="workspace">
         <section class="section" id="workspace">
           <h2 class="section-title">Workspace</h2>
           <p class="section-desc">Read, write, and manage files in the project workspace.</p>
@@ -808,8 +794,10 @@
             </div>
           </div>
         </section>
+        </div>
 
         <!-- START -->
+        <div class="cat-panel" id="panel-start" data-cat="start">
         <section class="section" id="start">
           <h2 class="section-title">Start</h2>
           <p class="section-desc">Deploy and manage production services. Build only via <code>issue_deploy</code>.</p>
@@ -901,8 +889,10 @@
             </div>
           </div>
         </section>
+        </div>
 
         <!-- PREVIEW -->
+        <div class="cat-panel" id="panel-preview" data-cat="preview">
         <section class="section" id="preview">
           <h2 class="section-title">Preview</h2>
           <p class="section-desc">Fast dev server with HMR. Returns <strong>HTTPS domain URL</strong> — not raw IP.</p>
@@ -1002,8 +992,10 @@
             </div>
           </div>
         </section>
+        </div>
 
         <!-- ENV -->
+        <div class="cat-panel" id="panel-env" data-cat="env">
         <section class="section" id="env">
           <h2 class="section-title">Env</h2>
           <p class="section-desc">Manage project environment variables.</p>
@@ -1045,8 +1037,10 @@
             </div>
           </div>
         </section>
+        </div>
 
-        <!-- OTHER -->
+        <!-- DESIGN -->
+        <div class="cat-panel" id="panel-design" data-cat="design">
         <section class="section" id="design">
           <h2 class="section-title">Validate design</h2>
           <div class="endpoint">
@@ -1077,41 +1071,33 @@
             </div>
           </div>
         </section>
-
-        <!-- ERRORS -->
-        <section class="section" id="errors">
-          <h2 class="section-title">Errors</h2>
-          <div class="info-grid">
-            <div class="info-row"><span class="info-key">401 missing_api_key</span><span class="info-val">No X-API-Key or Bearer header</span></div>
-            <div class="info-row"><span class="info-key">401 invalid_api_key</span><span class="info-val">Token wrong or revoked</span></div>
-            <div class="info-row"><span class="info-key">400 invalid_path</span><span class="info-val">Path escapes workspace</span></div>
-            <div class="info-row"><span class="info-key">400 create_failed</span><span class="info-val">Duplicate uuid or validation error</span></div>
-            <div class="info-row"><span class="info-key">400 preview_failed</span><span class="info-val">Dev server failed to start</span></div>
-            <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">Project UUID does not exist</span></div>
-          </div>
-        </section>
+        </div>
       </div>
     </main>
   </div>
 
   <script>
     (function () {
-      const links = document.querySelectorAll('.nav-link[href^="#"]');
-      const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+      const cats = document.querySelectorAll('.nav-cat');
+      const panels = document.querySelectorAll('.cat-panel');
+      const valid = new Set([...cats].map(b => b.dataset.cat));
 
-      function setActive() {
-        let current = sections[0];
-        for (const sec of sections) {
-          const rect = sec.getBoundingClientRect();
-          if (rect.top <= 120) current = sec;
-        }
-        links.forEach(a => {
-          a.classList.toggle('active', a.getAttribute('href') === '#' + current.id);
-        });
+      function showCat(id) {
+        const cat = valid.has(id) ? id : 'auth';
+        cats.forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+        panels.forEach(p => p.classList.toggle('active', p.dataset.cat === cat));
+        history.replaceState(null, '', '#' + cat);
+        window.scrollTo(0, 0);
       }
 
-      window.addEventListener('scroll', setActive, { passive: true });
-      setActive();
+      cats.forEach(b => b.addEventListener('click', () => showCat(b.dataset.cat)));
+
+      const hash = location.hash.replace('#', '');
+      showCat(hash || 'auth');
+
+      window.addEventListener('hashchange', () => {
+        showCat(location.hash.replace('#', '') || 'auth');
+      });
     })();
   </script>
 </body>
