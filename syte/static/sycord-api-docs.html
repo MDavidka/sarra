@@ -53,6 +53,9 @@
     td code { font-family: var(--mono); font-size: 11px; }
     .tag { display: inline-block; font-size: 10px; padding: 0.15rem 0.45rem; border-radius: 999px; background: #f4f4f5; color: var(--text-muted); margin-left: 0.35rem; }
     .tag.required { background: #fee2e2; color: #dc2626; }
+    .step-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; background: #fff; }
+    .step-num { font-size: 11px; font-weight: 700; color: var(--link); text-transform: uppercase; letter-spacing: 0.05em; }
+    .flow-table th { width: 22%; }
     @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; padding: 1rem; } }
   </style>
 </head>
@@ -65,7 +68,9 @@
         <strong>Sycord API</strong>
       </div>
       <nav>
-        <button class="nav-cat active" data-panel="intro"><i data-lucide="info"></i> Overview</button>
+        <button class="nav-cat active" data-panel="backend"><i data-lucide="server"></i> Backend guide</button>
+        <button class="nav-cat" data-panel="reference"><i data-lucide="table"></i> Quick reference</button>
+        <button class="nav-cat" data-panel="intro"><i data-lucide="info"></i> Overview</button>
         <button class="nav-cat" data-panel="auth"><i data-lucide="key"></i> Authentication</button>
         <button class="nav-cat" data-panel="uuid"><i data-lucide="fingerprint"></i> Save UUID</button>
         <button class="nav-cat" data-panel="connect"><i data-lucide="plug"></i> project_connect</button>
@@ -78,9 +83,141 @@
     </aside>
     <main class="main">
       <h1>Sycord Deployer API</h1>
-      <p class="sub">v__VERSION__ · Base <code>/sycord/api</code> · <a href="/sycord/api/spec.json">spec.json</a> · Integrate Sycord sites with Syte</p>
+      <p class="sub">v__VERSION__ · <a href="/sycord/api/integration.json">integration.json</a> · <a href="/sycord/api/spec.json">spec.json</a> · All responses are JSON</p>
 
-      <div class="panel active" id="panel-intro">
+      <div class="panel active" id="panel-backend">
+        <div class="note">Your Sycord <strong>backend server</strong> calls Syte over HTTPS. Store <code>SYTE_API_KEY</code> in env — never in the browser.</div>
+
+        <h2>Your database columns</h2>
+        <table>
+          <tr><th>syte_uuid</th><td><span class="tag required">required</span> From <code>project_connect</code> → <code>response.uuid</code></td></tr>
+          <tr><th>syte_domain</th><td>From <code>response.project.domain</code> e.g. <code>myapp.sycord.site</code></td></tr>
+          <tr><th>syte_url</th><td>From <code>response.project.url</code> — show this link to users when live</td></tr>
+          <tr><th>deploy_status</th><td>Mirror <code>created</code> → <code>deploying</code> → <code>running</code></td></tr>
+        </table>
+
+        <div class="step-card">
+          <div class="step-num">Step 1 — User creates project</div>
+          <p><strong>POST</strong> <code>/sycord/api/project_connect</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "name": "myapp", "stack": "nextjs" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre class="highlight">{ "ok": true, "uuid": "myapp-a1b2c3", "project": { "domain": "myapp.sycord.site", "url": "https://myapp.sycord.site", "status": "created" } }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li><code>INSERT</code> row with <code>syte_uuid = response.uuid</code></li>
+            <li>Save <code>syte_domain</code>, <code>syte_url</code> from <code>response.project</code></li>
+            <li>Return your internal project id + <code>syte_url</code> to your frontend</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 2 — Upload files (optional)</div>
+          <p><strong>POST</strong> <code>/sycord/api/upload</code> · Content-Type: <code>multipart/form-data</code></p>
+          <h3>You send</h3>
+          <pre>uuid=myapp-a1b2c3
+path=app/app/page.tsx
+file=&lt;binary&gt;</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "uuid": "myapp-a1b2c3", "bytes": 2048, "message": "Uploaded…" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Load <code>syte_uuid</code> from your DB for this project</li>
+            <li>Forward file from your user or generate code server-side</li>
+            <li>Skip this step if the scaffold from step 1 is enough</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 3 — User clicks Deploy</div>
+          <p><strong>POST</strong> <code>/sycord/api/issue_deployment</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "status": "deploying", "stream_url": "/api/projects/myapp-a1b2c3/logs/stream?live=1" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Set <code>deploy_status = 'deploying'</code></li>
+            <li>Start polling step 4 every 3–5 seconds</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 4 — Poll until live</div>
+          <p><strong>GET</strong> <code>/sycord/api/container_get?uuid=myapp-a1b2c3</code></p>
+          <h3>You send</h3>
+          <p>Query param <code>uuid</code> only (no body).</p>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "running": true, "url": "https://myapp.sycord.site", "status": "running" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>While <code>running === false</code> and <code>status === 'deploying'</code> → keep polling</li>
+            <li>When <code>running === true</code> → update <code>syte_url = response.url</code>, <code>deploy_status = 'running'</code></li>
+            <li>Show <code>response.url</code> to user as the live site link</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 5 — Custom domain (optional)</div>
+          <p><strong>POST</strong> <code>/sycord/api/domain</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3", "domain": "shop.example.com" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "project": { "domain": "shop.example.com", "url": "https://shop.example.com" } }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Update <code>syte_domain</code> and <code>syte_url</code> from <code>response.project</code></li>
+          </ul>
+        </div>
+
+        <h2>Full backend example (Node.js)</h2>
+        <pre>const SYTE = process.env.SYTE_URL; // https://sycord.site
+const KEY = process.env.SYTE_API_KEY;
+
+async function createSycordProject(name, stack) {
+  const res = await fetch(`${SYTE}/sycord/api/project_connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+    body: JSON.stringify({ name, stack }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail?.message || 'connect failed');
+
+  await db.query(
+    `INSERT INTO projects (name, stack, syte_uuid, syte_domain, syte_url, deploy_status)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [name, stack, data.uuid, data.project.domain, data.project.url, data.project.status]
+  );
+  return data;
+}
+
+async function deployProject(syteUuid) {
+  await postJson('/sycord/api/issue_deployment', { uuid: syteUuid });
+  for (let i = 0; i < 60; i++) {
+    await sleep(5000);
+    const st = await getJson(`/sycord/api/container_get?uuid=${syteUuid}`);
+    if (st.running) return st.url;
+  }
+  throw new Error('deploy timeout');
+}</pre>
+      </div>
+
+      <div class="panel" id="panel-reference">
+        <h2>At a glance</h2>
+        <table class="flow-table">
+          <tr><th>When</th><th>HTTP</th><th>You send</th><th>You save / use</th></tr>
+          <tr><td>Create project</td><td>POST project_connect</td><td><code>{"name","stack"}</code></td><td><code>uuid</code> → syte_uuid</td></tr>
+          <tr><td>Upload file</td><td>POST upload</td><td>multipart uuid+path+file</td><td>—</td></tr>
+          <tr><td>Deploy</td><td>POST issue_deployment</td><td><code>{"uuid"}</code></td><td>status=deploying</td></tr>
+          <tr><td>Poll status</td><td>GET container_get</td><td><code>?uuid=</code></td><td>url when running=true</td></tr>
+          <tr><td>Custom domain</td><td>POST domain</td><td><code>{"uuid","domain"}</code></td><td>project.url</td></tr>
+          <tr><td>Read full guide</td><td>GET integration.json</td><td>—</td><td>Machine-readable steps</td></tr>
+          <tr><td>Read API spec</td><td>GET spec.json</td><td>—</td><td>All schemas</td></tr>
+        </table>
+        <div class="warn"><strong>Rule:</strong> Every call after step 1 uses the <code>uuid</code> you saved from <code>project_connect</code>.</div>
+      </div>
+
+      <div class="panel" id="panel-intro">
         <div class="note">External API for Sycord websites and connected projects. <code>project_connect</code> creates a Syte deployment and returns a <strong>uuid</strong> your app must store.</div>
         <h2>Workflow</h2>
         <ol>

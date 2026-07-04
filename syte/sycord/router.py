@@ -1,6 +1,6 @@
 """Sycord API routes — /sycord/api/* for external Sycord website integration."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from syte.auth import verify_api_token
@@ -8,6 +8,7 @@ from syte.database import get_project
 from syte.domain_utils import build_https_url, normalize_domain
 from syte.sycord import service
 from syte.sycord.scaffold import STACKS
+from syte.sycord.integration_guide import build_backend_integration
 from syte.sycord.spec import build_sycord_spec
 from syte.workspace import workspace_path
 
@@ -75,6 +76,13 @@ def _project_urls(project: dict) -> dict:
 @router.get("/spec.json", include_in_schema=False)
 async def sycord_spec():
     return build_sycord_spec()
+
+
+@router.get("/integration.json", include_in_schema=False)
+async def sycord_integration(request: Request):
+    """Step-by-step backend integration: what to call, what JSON you get, what to save."""
+    base = str(request.base_url).rstrip("/")
+    return build_backend_integration(base)
 
 
 @router.post("/project_connect")

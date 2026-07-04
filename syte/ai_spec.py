@@ -156,6 +156,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             ),
             "base_url": f"{base}/sycord/api" if base else "/sycord/api",
             "documentation": f"{base}/sycord/api/" if base else "/sycord/api/",
+            "integration_guide": f"{base}/sycord/api/integration.json" if base else "/sycord/api/integration.json",
             "spec": f"{base}/sycord/api/spec.json" if base else "/sycord/api/spec.json",
             "uuid_persistence": {
                 "required": True,

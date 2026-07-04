@@ -1,6 +1,7 @@
 """Machine-readable Sycord API specification."""
 
 from syte import __version__
+from syte.sycord.integration_guide import build_backend_integration
 from syte.sycord.scaffold import STACKS
 
 
@@ -52,6 +53,7 @@ def project_connect_example() -> dict:
 def build_sycord_spec(base_url: str = "") -> dict:
     prefix = _prefix(base_url)
     stacks = list(STACKS)
+    host = base_url.rstrip("/") if base_url else "https://your-syte-host.com"
     return {
         "name": "Sycord Deployer API",
         "version": __version__,
@@ -61,6 +63,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
         ),
         "base_url": prefix,
         "documentation": f"{prefix}/" if base_url else "/sycord/api/",
+        "integration_guide": f"{prefix}/integration.json",
         "authentication": {
             "type": "api_key",
             "header": "X-API-Key",
@@ -107,6 +110,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "400_upload_failed": "Bad path or project not found",
             "404_not_found": "uuid does not exist",
         },
+        "backend_integration": build_backend_integration(host),
         "endpoints": [
             {
                 "method": "POST",
