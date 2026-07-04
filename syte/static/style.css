@@ -4,8 +4,9 @@
   --bg-card: #ffffff;
   --bg-card-hover: #f4f4f5;
   --bg-input: #ffffff;
-  --bg-sidebar: #fafafa;
-  --bg-terminal: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --sidebar-w: 280px;
+  --accent-line: #2563eb;
   --text: #09090b;
   --text-muted: #71717a;
   --text-dim: #a1a1aa;
@@ -25,7 +26,7 @@
   --radius-sm: 8px;
   --radius-pill: 999px;
   --font: 'Inter', system-ui, -apple-system, sans-serif;
-  --sidebar-w: 240px;
+  --bg-terminal: #f8fafc;
   --shadow-drawer: 8px 0 32px rgba(0, 0, 0, 0.12);
 }
 
@@ -76,25 +77,158 @@ body.drawer-open .sidebar-backdrop {
   z-index: 200;
   display: flex;
   flex-direction: column;
-  padding: 1rem 0.65rem;
+  padding: 1.1rem 0.85rem 1.25rem;
+}
+
+.sidebar-head {
+  flex-shrink: 0;
+  margin-bottom: 0.35rem;
 }
 
 .sidebar-brand-row {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.35rem 0.65rem 1rem;
+  gap: 0.6rem;
+  padding: 0.15rem 0.35rem 0.85rem;
 }
 
 .sidebar-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 0;
+  object-fit: contain;
 }
 
 .sidebar-brand-name {
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+/* Context switcher */
+.context-switcher-wrap {
+  position: relative;
+  padding: 0 0.35rem 0.75rem;
+}
+
+.context-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-switcher:hover { border-color: var(--border-hover); color: var(--text); }
+
+.context-switcher-leading,
+.context-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.context-switcher-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-chevron { margin-left: auto; opacity: 0.55; }
+
+.context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0.35rem;
+  right: 0.35rem;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  z-index: 300;
+  overflow: hidden;
+}
+
+.context-menu.hidden { display: none; }
+
+.context-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  background: none;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-option:hover { background: var(--bg-card-hover); color: var(--text); }
+.context-option.active { background: #eff6ff; color: var(--text); }
+.context-option svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.context-xwf-icon,
+.sidebar-xwf-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.sidebar-divider {
+  height: 2px;
+  background: var(--accent-line);
+  border-radius: 1px;
+  margin: 0 0.35rem 0.75rem;
+}
+
+.sidebar-load-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.35rem 0.85rem;
+}
+
+.load-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.load-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e4e4e7;
+  flex-shrink: 0;
+}
+
+.load-dot.on {
+  background: var(--accent-line);
+}
+
+.load-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: right;
 }
 
 .sidebar-menu {
@@ -102,6 +236,8 @@ body.drawer-open .sidebar-backdrop {
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  overflow-y: auto;
+  padding-top: 0.15rem;
 }
 
 .sidebar-link {
@@ -109,7 +245,7 @@ body.drawer-open .sidebar-backdrop {
   align-items: center;
   gap: 0.65rem;
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: 0.65rem 0.75rem;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
@@ -120,7 +256,10 @@ body.drawer-open .sidebar-backdrop {
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   text-align: left;
+  min-height: 44px;
 }
+
+.sidebar-link.hidden { display: none; }
 
 .sidebar-link svg {
   width: 18px;
@@ -135,9 +274,24 @@ body.drawer-open .sidebar-backdrop {
 }
 
 .sidebar-link.active {
-  background: var(--bg-card-hover);
+  background: #f4f4f5;
   color: var(--text);
   font-weight: 500;
+}
+
+.sycord-empty-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  opacity: 0.85;
+  margin-bottom: 0.5rem;
+}
+
+.projects-empty h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
 }
 
 .app-main {

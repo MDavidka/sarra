@@ -187,10 +187,13 @@ def _detect_ip() -> str:
 
 @app.get("/api/system")
 async def system_info():
+    from syte.system_stats import format_ram_label, get_system_stats
+
     projects = await list_projects()
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     direct = build_direct_url(ip, settings.port)
+    stats = get_system_stats()
     return {
         "version": __version__,
         "public_ip": ip,
@@ -201,6 +204,14 @@ async def system_info():
         "gui_domain": gui_domain,
         "workspaces_dir": str(settings.resolved_workspaces_dir),
         "service_count": len(projects),
+        "cpu_percent": stats["cpu_percent"],
+        "ram_used_mb": stats["ram_used_mb"],
+        "ram_total_mb": stats["ram_total_mb"],
+        "ram_percent": stats["ram_percent"],
+        "ram_label": format_ram_label(stats["ram_used_mb"], stats["ram_total_mb"]),
+        "load_dots": stats["load_dots"],
+        "load_dots_max": stats["load_dots_max"],
+        "overload_percent": stats["overload_percent"],
     }
 
 

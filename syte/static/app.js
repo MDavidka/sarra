@@ -1,5 +1,6 @@
 const API = '/api';
 const API_KEY_STORAGE = 'syte_api_key';
+const CONTEXT_STORAGE = 'syte_context';
 
 let projects = [];
 let logStream = null;
@@ -9,6 +10,8 @@ let deployPollTimer = null;
 let previewPollTimer = null;
 let projectFilterText = '';
 let projectSortMode = 'newest';
+let appContext = 'non-conected';
+let statsPollTimer = null;
 
 function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
@@ -133,11 +136,64 @@ const BREADCRUMBS = {
   dashboard: 'Projects',
   'new-service': 'Create Project',
   service: 'Project',
+  sycord: 'Sycord',
   'server-swarm': 'Server Swarm',
   users: 'Users',
   logs: 'Logs',
   settings: 'Settings',
 };
+
+const CONTEXT_LABELS = {
+  'non-conected': 'non-conected',
+  xwf: 'xwf',
+};
+
+function getContext() {
+  return localStorage.getItem(CONTEXT_STORAGE) || 'non-conected';
+}
+
+function setContext(ctx) {
+  appContext = ctx === 'xwf' ? 'xwf' : 'non-conected';
+  localStorage.setItem(CONTEXT_STORAGE, appContext);
+  applyContext();
+}
+
+function applyContext() {
+  const label = document.getElementById('context-label');
+  const sycordNav = document.getElementById('nav-sycord');
+  if (label) label.textContent = CONTEXT_LABELS[appContext] || 'non-conected';
+  if (sycordNav) sycordNav.classList.toggle('hidden', appContext !== 'xwf');
+  document.querySelectorAll('.context-option').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.context === appContext);
+  });
+  refreshIcons();
+}
+
+function renderLoadDots(filled, max = 5) {
+  const el = document.getElementById('load-dots');
+  if (!el) return;
+  el.innerHTML = Array.from({ length: max }, (_, i) =>
+    `<span class="load-dot${i < filled ? ' on' : ''}"></span>`
+  ).join('');
+}
+
+function renderLoadStats(sys) {
+  const statsEl = document.getElementById('load-stats');
+  if (!statsEl || !sys) return;
+  const cpu = typeof sys.cpu_percent === 'number' ? `${Math.round(sys.cpu_percent)}% cpu` : '— cpu';
+  const ram = sys.ram_label || (sys.ram_used_mb ? `${sys.ram_used_mb}MB Ram` : '— Ram');
+  statsEl.textContent = `${cpu} ${ram}`;
+  renderLoadDots(sys.load_dots ?? 0, sys.load_dots_max ?? 5);
+}
+
+function toggleContextMenu(open) {
+  const menu = document.getElementById('context-menu');
+  const btn = document.getElementById('context-switcher-btn');
+  if (!menu || !btn) return;
+  const show = open ?? menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !show);
+  btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+}
 
 function setBreadcrumb(text) {
   const el = document.getElementById('breadcrumb');
@@ -165,7 +221,7 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
 
-  const sidebarActive = name === 'new-service' || name === 'service' ? 'dashboard' : name;
+  const sidebarActive = (name === 'new-service' || name === 'service') ? 'dashboard' : name;
   document.querySelectorAll('.sidebar-link').forEach(el => {
     if (el.tagName === 'A') {
       el.classList.remove('active');
@@ -260,7 +316,13 @@ async function loadSystem() {
     const ver = document.getElementById('syte-version');
     if (ver) ver.textContent = 'v' + sys.version;
     renderServerSwarm(sys);
+    renderLoadStats(sys);
   } catch { /* offline */ }
+}
+
+function startStatsPoll() {
+  if (statsPollTimer) clearInterval(statsPollTimer);
+  statsPollTimer = setInterval(loadSystem, 10000);
 }
 
 function renderServerSwarm(sys) {
@@ -806,7 +868,26 @@ loadSystem();
 loadProjects();
 loadSettings();
 loadTokens();
+appContext = getContext();
+applyContext();
+startStatsPoll();
 refreshIcons();
+
+document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('context-menu');
+  toggleContextMenu(menu?.classList.contains('hidden'));
+});
+
+document.querySelectorAll('.context-option').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setContext(btn.dataset.context);
+    toggleContextMenu(false);
+  });
+});
+
+document.addEventListener('click', () => toggleContextMenu(false));
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;
@@ -832,7 +913,6 @@ document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
   if (el.tagName === 'A') return;
   el.addEventListener('click', () => showView(el.dataset.view));
 });
-
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 
