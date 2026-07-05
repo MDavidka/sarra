@@ -49,7 +49,8 @@ async def async_generate_caddyfile() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
-    frame_csp = preview_frame_ancestors_csp(gui_domain)
+    embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
+    frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode != "restricted")
 
     lines = [
         "# Syte-managed Caddy configuration",
@@ -108,15 +109,21 @@ async def async_generate_caddyfile() -> str:
             and preview_status in ("running", "starting")
         ):
             lines.extend([
-                f"# Preview — {name}",
+                f"# Preview — {name} (iframe embed: {embed_mode})",
                 f"{preview_domain} {{",
                 "    header {",
                 "        -X-Frame-Options",
+                "        -Cross-Origin-Embedder-Policy",
+                "        -Cross-Origin-Opener-Policy",
+                "        -Cross-Origin-Resource-Policy",
                 f'        Content-Security-Policy "{frame_csp}"',
                 "    }",
                 f"    reverse_proxy 127.0.0.1:{int(preview_port)} {{",
                 "        header_down -X-Frame-Options",
                 "        header_down Content-Security-Policy",
+                "        header_down Cross-Origin-Embedder-Policy",
+                "        header_down Cross-Origin-Opener-Policy",
+                "        header_down Cross-Origin-Resource-Policy",
                 "    }",
                 "}",
                 "",

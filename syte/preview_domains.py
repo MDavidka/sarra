@@ -76,8 +76,10 @@ def preview_dns_hint(preview_domain: str, base_zone: str = "") -> str:
     )
 
 
-def preview_frame_ancestors_csp(gui_domain: str = "") -> str:
-    """CSP value so preview can load inside sycord.com / Syte GUI iframes."""
+def preview_frame_ancestors_csp(gui_domain: str = "", *, allow_any: bool = True) -> str:
+    """CSP so preview loads in iframes on sycord.com, Syte GUI, or any parent site."""
+    if allow_any:
+        return "frame-ancestors *"
     gui_domain = normalize_domain(gui_domain)
     ancestors = [
         "'self'",

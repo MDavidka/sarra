@@ -256,9 +256,13 @@ def _step_preview_start(api: str) -> dict:
                 "preview_stream_url": "Optional — append to SYTE_URL for live preview logs (SSE)",
             },
             "iframe_embedding": {
-                "note": "Embed preview_url in an iframe on sycord.com — Syte sets frame-ancestors CSP on preview domains",
+                "note": (
+                    "Embed preview_url in an iframe on any site (sycord.com, your app, etc.). "
+                    "Syte sets frame-ancestors * on preview domains by default."
+                ),
                 "example_html": '<iframe src="{preview_url}" style="width:100%;height:100%;border:0" referrerpolicy="no-referrer-when-downgrade"></iframe>',
                 "avoid": "Do not use sandbox without allow-scripts — page will stay blank",
+                "setting": "preview_embed_mode=restricted in Syte settings limits embed to sycord.com + GUI domain only",
             },
         },
         "backend_pseudocode": (
