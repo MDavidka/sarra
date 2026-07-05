@@ -60,6 +60,11 @@ async def lifespan(app: FastAPI):
         cleaned = normalize_domain(gui_domain)
         if cleaned != gui_domain:
             await set_setting("gui_domain", cleaned)
+    preview_zone = await get_setting("preview_base_domain", "")
+    if preview_zone:
+        cleaned = normalize_domain(preview_zone)
+        if cleaned != preview_zone:
+            await set_setting("preview_base_domain", cleaned)
     stored_ip = await get_setting("public_ip", "")
     if stored_ip and not is_valid_ip(stored_ip):
         await set_setting("public_ip", "")
@@ -110,6 +115,7 @@ class SettingsRequest(BaseModel):
     public_ip: str | None = None
     admin_email: str | None = None
     gui_domain: str | None = None
+    preview_base_domain: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -238,12 +244,19 @@ async def _gui_url() -> str:
 
 @app.get("/api/settings")
 async def get_settings():
+    from syte.preview_domains import resolve_preview_zone
+
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
+    preview_zone = await resolve_preview_zone()
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
         "gui_domain": gui_domain,
+        "preview_base_domain": preview_base_domain,
+        "preview_zone": preview_zone,
+        "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "direct_url": build_direct_url(ip, settings.port),
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
         "version": __version__,
@@ -297,6 +310,23 @@ async def save_settings(body: SettingsRequest):
             "direct_url": build_direct_url(_resolved_ip(), settings.port),
             "domain_url": build_https_url(domain) if domain else "",
         }
+
+    if body.preview_base_domain is not None:
+        zone = normalize_domain(body.preview_base_domain)
+        await set_setting("preview_base_domain", zone)
+        ok, msg = await apply_proxy_config()
+        if zone:
+            messages.append(
+                f"Preview base domain set to {zone}. "
+                f"Previews use preview{{letter}}-appname.{zone} — "
+                f"ensure wildcard *.{zone} DNS points to this server."
+            )
+        else:
+            messages.append(
+                "Preview base domain cleared — previews use the same zone as the GUI domain."
+            )
+        messages.append(msg)
+        return {"ok": ok, "messages": messages}
 
     ok, msg = await apply_proxy_config()
     messages.append(msg)

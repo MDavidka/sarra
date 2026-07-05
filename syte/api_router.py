@@ -100,6 +100,8 @@ async def api_server_info(_token: dict = Depends(verify_api_token)):
     from syte import __version__
     ip = settings.resolved_public_ip
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    from syte.preview_domains import resolve_preview_zone
+    preview_zone = await resolve_preview_zone()
     return {
         "ok": True,
         "version": __version__,
@@ -107,6 +109,8 @@ async def api_server_info(_token: dict = Depends(verify_api_token)):
         "gui_port": settings.port,
         "direct_url": build_direct_url(ip, settings.port),
         "gui_domain": gui_domain,
+        "preview_zone": preview_zone,
+        "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "api_base": "/api",
         "docs_url": "/api/",
         "ai_spec_url": "/api/ai.json",

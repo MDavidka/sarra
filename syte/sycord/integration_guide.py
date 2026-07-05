@@ -12,6 +12,7 @@ def build_backend_integration(base_url: str = "") -> dict:
             "syte_api_key": "Create in Syte GUI → Users → Create token, or POST /api/tokens",
             "env_var": "SYTE_API_KEY=syte_xxxxxxxx (server-side only, never expose to browser)",
             "dns": "Wildcard *.sycord.site → Syte server IP (for auto subdomains)",
+            "preview_dns": "Optional: set preview_base_domain in Syte Settings for a separate preview zone (wildcard *.{zone})",
         },
         "your_database": {
             "description": "Minimum columns to add to your projects table",

@@ -71,6 +71,8 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "vite_allowed_hosts": "Auto: patches vite.config.* with server.allowedHosts: true on start_preview",
                 "nextjs_origins": "Auto: allowedDevOrigins patched in next.config on start_preview",
                 "iframe_embed": "frame-ancestors * — preview embeddable in iframes on sycord.com or any website",
+                "preview_base_domain": "Settings preview_base_domain — separate wildcard zone for preview URLs (default: GUI zone)",
+                "preview_host_pattern": "preview{a-z}-{appname}.{preview_zone}",
                 "not_used": "No preview.app.example.com third-level subdomains",
                 "no_gui_domain": "preview_url = preview_direct_url (http://IP:4000+)",
             },

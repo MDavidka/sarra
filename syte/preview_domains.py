@@ -17,19 +17,31 @@ def _preview_base_domain(gui_domain: str) -> str:
     return gui_domain
 
 
-async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> str:
+async def resolve_preview_zone() -> str:
     """
-    Build preview hostname on GUI zone for automatic wildcard SSL:
-    preview{random_letter}-{appname}.sycord.site
-
-    Example: previewk-mysite.sycord.site
-    Not a third-level subdomain (no preview.app.example.com).
+    Wildcard DNS zone for preview hostnames.
+    Uses preview_base_domain setting when set, else derives from GUI domain.
     """
+    custom = normalize_domain(await get_setting("preview_base_domain", ""))
+    if custom:
+        return custom
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     if not gui_domain:
         return ""
+    return _preview_base_domain(gui_domain)
 
-    base_zone = _preview_base_domain(gui_domain)
+
+async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> str:
+    """
+    Build preview hostname on the preview zone:
+    preview{random_letter}-{appname}.{preview_zone}
+
+    Example: previewk-mysite.sycord.site
+    """
+    base_zone = await resolve_preview_zone()
+    if not base_zone:
+        return ""
+
     app_slug = slugify(project.get("name") or project.get("id", "app"))[:32]
 
     existing = normalize_domain(project.get("preview_domain") or "")
@@ -66,8 +78,8 @@ def build_preview_urls(project: dict) -> dict:
 def preview_dns_hint(preview_domain: str, base_zone: str = "") -> str:
     if not preview_domain:
         return (
-            "Set GUI domain in Settings (e.g. sycord.site) for automatic HTTPS preview URLs. "
-            "Requires wildcard DNS *.sycord.site → server IP."
+            "Set preview base domain in Settings (or GUI domain) for HTTPS preview URLs. "
+            "Requires wildcard DNS *.{zone} → server IP."
         )
     zone = base_zone or preview_domain.split(".", 1)[-1] if "." in preview_domain else preview_domain
     return (

@@ -1060,6 +1060,28 @@ document.getElementById('save-domain-btn')?.addEventListener('click', async () =
   }
 });
 
+document.getElementById('save-preview-domain-btn')?.addEventListener('click', async () => {
+  let zone = document.getElementById('set-preview-domain').value.trim();
+  zone = zone.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  document.getElementById('set-preview-domain').value = zone;
+  const btn = document.getElementById('save-preview-domain-btn');
+  btn.disabled = true;
+  btn.textContent = 'saving…';
+  try {
+    const res = await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ preview_base_domain: zone || '' }),
+    });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'preview domain saved');
+    await loadSettings();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save preview domain';
+  }
+});
+
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
   btn.disabled = true;
@@ -1083,9 +1105,20 @@ async function loadSettings() {
     const ip = document.getElementById('set-ip');
     const email = document.getElementById('set-email');
     const domain = document.getElementById('set-domain');
+    const previewDomain = document.getElementById('set-preview-domain');
+    const previewExample = document.getElementById('preview-host-example');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
+    if (previewDomain) {
+      previewDomain.value = (s.preview_base_domain || '').replace(/^https?:\/\//i, '');
+      previewDomain.placeholder = s.preview_zone
+        ? `default: ${s.preview_zone}`
+        : 'e.g. sycord.site';
+    }
+    if (previewExample && s.preview_zone) {
+      previewExample.textContent = `previewa-myapp.${s.preview_zone}`;
+    }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');
     const ver = document.getElementById('syte-version');
