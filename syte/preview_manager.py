@@ -6,6 +6,7 @@ import signal
 import socket
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from syte.config import settings
@@ -17,6 +18,7 @@ from syte.workspace import command_exists, ensure_workspace, read_env_vars, work
 
 PREVIEW_PORT_START = 4000
 PREVIEW_PORT_END = 4999
+PREVIEW_START_GRACE_SEC = 45
 PID_DIR = settings.data_dir / "pids"
 
 
@@ -294,18 +296,42 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     return True, msg, meta
 
 
+def _preview_start_grace_elapsed(project: dict) -> bool:
+    """True when enough time passed since last update to treat a dead pid as stopped."""
+    raw = project.get("updated_at") or ""
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds() > PREVIEW_START_GRACE_SEC
+    except (ValueError, TypeError):
+        return True
+
+
 async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found"
     running = is_preview_running(project_id)
-    if not running and project.get("preview_status") != "stopped":
-        await update_project(project_id, {"preview_status": "stopped"})
-        project = await get_project(project_id) or project
-    elif running and project.get("preview_port"):
-        port = int(project["preview_port"])
-        status = "running" if _port_listening(port) else "starting"
-        if project.get("preview_status") != status:
-            await update_project(project_id, {"preview_status": status})
+    status = project.get("preview_status", "stopped")
+    preview_port = project.get("preview_port")
+
+    if running and preview_port:
+        port = int(preview_port)
+        new_status = "running" if _port_listening(port) else "starting"
+        if status != new_status:
+            await update_project(project_id, {"preview_status": new_status})
+            project = await get_project(project_id) or project
+    elif not running and status != "stopped":
+        port_up = preview_port and _port_listening(int(preview_port))
+        if port_up:
+            preview_pid_file(project_id).unlink(missing_ok=True)
+            if status != "running":
+                await update_project(project_id, {"preview_status": "running"})
+                project = await get_project(project_id) or project
+        elif status == "starting" and not _preview_start_grace_elapsed(project):
+            pass
+        else:
+            await update_project(project_id, {"preview_status": "stopped"})
             project = await get_project(project_id) or project
     return preview_meta(project), "ok"

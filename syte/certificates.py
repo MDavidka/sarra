@@ -102,12 +102,7 @@ async def async_generate_caddyfile() -> str:
 
         preview_domain = normalize_domain(project.get("preview_domain") or "")
         preview_port = project.get("preview_port")
-        preview_status = project.get("preview_status", "stopped")
-        if (
-            preview_domain
-            and preview_port
-            and preview_status in ("running", "starting")
-        ):
+        if preview_domain and preview_port:
             lines.extend([
                 f"# Preview — {name} (iframe embed: {embed_mode})",
                 f"{preview_domain} {{",

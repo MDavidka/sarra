@@ -179,6 +179,43 @@ def _inject_vite_allowed_hosts(text: str) -> str:
     return text
 
 
+def _next_iframe_headers_block() -> str:
+    csp = preview_frame_ancestors_csp()
+    return (
+        "  async headers() {\n"
+        "    return [{\n"
+        '      source: "/:path*",\n'
+        "      headers: [\n"
+        f'        {{ key: "Content-Security-Policy", value: "{csp}" }},\n'
+        "      ],\n"
+        "    }];\n"
+        "  },\n"
+    )
+
+
+def _inject_next_iframe_headers(text: str) -> str:
+    if "frame-ancestors" in text:
+        return text
+    block = _next_iframe_headers_block()
+    if re.search(r"async\s+headers\s*\(", text):
+        return text
+    if "module.exports" in text and "module.exports =" in text:
+        return re.sub(
+            r"module\.exports\s*=\s*\{",
+            f"module.exports = {{\n{block}",
+            text,
+            count=1,
+        )
+    if "export default" in text:
+        return re.sub(
+            r"export default\s*\{",
+            f"export default {{\n{block}",
+            text,
+            count=1,
+        )
+    return text
+
+
 def _ensure_nextjs_preview(repo: Path, preview_domain: str) -> list[str]:
     actions: list[str] = []
     for name in ("next.config.mjs", "next.config.js", "next.config.ts"):
@@ -186,12 +223,19 @@ def _ensure_nextjs_preview(repo: Path, preview_domain: str) -> list[str]:
         if not path.exists():
             continue
         text = path.read_text()
-        if preview_domain in text and "allowedDevOrigins" in text:
-            return actions
-        new_text = _inject_next_allowed_origins(text, preview_domain)
+        new_text = text
+        if preview_domain not in text or "allowedDevOrigins" not in text:
+            new_text = _inject_next_allowed_origins(new_text, preview_domain)
+        if "frame-ancestors" not in new_text:
+            new_text = _inject_next_iframe_headers(new_text)
         if new_text != text:
             path.write_text(new_text)
-            actions.append(f"Patched {name}: allowedDevOrigins for {preview_domain}")
+            patches = []
+            if "allowedDevOrigins" in new_text and "allowedDevOrigins" not in text:
+                patches.append(f"allowedDevOrigins for {preview_domain}")
+            if "frame-ancestors" in new_text and "frame-ancestors" not in text:
+                patches.append("Content-Security-Policy frame-ancestors *")
+            actions.append(f"Patched {name}: {', '.join(patches) or 'preview config'}")
         return actions
     return actions
 
