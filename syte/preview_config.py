@@ -32,6 +32,9 @@ def prepare_preview_hosts(repo: Path, preview_domain: str) -> list[str]:
 
 def build_preview_command(repo: Path, cmd_template: str) -> str:
     """Return dev command; use static vite overlay only when in-place patch is impossible."""
+    overlay = repo / "vite.config.syte.mjs"
+    if overlay.exists():
+        return "npx vite --config vite.config.syte.mjs --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
     if not is_vite_repo(repo):
         return cmd_template
     if _vite_hosts_configured(repo) or _patch_vite_config_files(repo):

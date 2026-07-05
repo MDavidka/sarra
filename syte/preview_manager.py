@@ -44,6 +44,55 @@ def _port_listening(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _node_modules_ready(repo: Path) -> bool:
+    """True when npm dependencies are installed enough to run dev scripts."""
+    if not (repo / "package.json").exists():
+        return True
+    node_modules = repo / "node_modules"
+    if not node_modules.is_dir():
+        return False
+    bin_dir = node_modules / ".bin"
+    if bin_dir.is_dir():
+        for name in ("vite", "next", "react-scripts", "webpack", "nuxt"):
+            if (bin_dir / name).exists():
+                return True
+    try:
+        return any(node_modules.iterdir())
+    except OSError:
+        return False
+
+
+def ensure_preview_deps(repo: Path, log_path: Path) -> tuple[bool, str]:
+    """Run npm install when package.json exists but node_modules is missing."""
+    if not (repo / "package.json").exists():
+        return True, "no package.json"
+    if _node_modules_ready(repo):
+        return True, "dependencies already installed"
+
+    with log_path.open("a") as log_file:
+        log_file.write("Running npm install (preview requires node_modules)…\n")
+
+    from syte.workspace import run_cmd
+
+    code, output = run_cmd(
+        ["npm", "install", "--no-fund", "--no-audit"],
+        cwd=repo,
+    )
+    with log_path.open("a") as log_file:
+        if output:
+            log_file.write(output + "\n")
+        log_file.write(f"npm install exited {code}\n")
+
+    if code != 0:
+        tail = (output or "")[-2000:]
+        return False, f"npm install failed (exit {code}).\n{tail}"
+
+    if not _node_modules_ready(repo):
+        return False, "npm install finished but node_modules is still missing."
+
+    return True, "npm install completed"
+
+
 def detect_dev_command(repo: Path) -> str | None:
     pkg = repo / "package.json"
     if not pkg.exists():
@@ -57,7 +106,10 @@ def detect_dev_command(repo: Path) -> str | None:
     if "dev" in scripts:
         script = scripts["dev"].lower()
         if "vite" in script:
-            return "npm run dev -- --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+            overlay = repo / "vite.config.syte.mjs"
+            if overlay.exists():
+                return "npx vite --config vite.config.syte.mjs --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+            return "npx vite --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
         if "next" in script:
             return "npm run dev -- --hostname 0.0.0.0 --port $SYTE_PREVIEW_PORT"
         return "npm run dev -- --port $SYTE_PREVIEW_PORT"
@@ -163,6 +215,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
 
     preview_domain = await resolve_preview_domain(project)
     prep_actions = prepare_preview_hosts(repo, preview_domain)
+    cmd_template = detect_dev_command(repo) or cmd_template
     command = build_preview_command(repo, cmd_template).replace(
         "$SYTE_PREVIEW_PORT", str(preview_port)
     )
@@ -173,6 +226,15 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
         log_file.write(f"Domain: {preview_domain}\n")
         if prep_actions:
             log_file.write("Config:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n")
+
+    ok, dep_msg = ensure_preview_deps(repo, log_path)
+    if not ok:
+        await update_project(project_id, {"preview_status": "stopped"})
+        return False, dep_msg, {}
+
+    with log_path.open("a") as log_file:
+        if dep_msg != "dependencies already installed":
+            log_file.write(f"Dependencies: {dep_msg}\n")
         log_file.write(f"$ {command}\n")
 
     env = {**os.environ, **read_env_vars(project.get("env_vars", "{}"))}
@@ -196,7 +258,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     )
 
     ready = False
-    for _ in range(40):
+    for _ in range(80):
         time.sleep(0.25)
         if proc.poll() is not None:
             log_file.close()
