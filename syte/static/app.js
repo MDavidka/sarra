@@ -1064,21 +1064,25 @@ document.getElementById('save-preview-domain-btn')?.addEventListener('click', as
   let zone = document.getElementById('set-preview-domain').value.trim();
   zone = zone.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
   document.getElementById('set-preview-domain').value = zone;
+  const cfToken = document.getElementById('set-cf-token')?.value?.trim() || '';
   const btn = document.getElementById('save-preview-domain-btn');
   btn.disabled = true;
   btn.textContent = 'saving…';
   try {
+    const body = { preview_base_domain: zone || '' };
+    if (cfToken) body.cloudflare_api_token = cfToken;
     const res = await api('/settings', {
       method: 'PUT',
-      body: JSON.stringify({ preview_base_domain: zone || '' }),
+      body: JSON.stringify(body),
     });
-    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'preview domain saved');
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'preview settings saved');
+    if (cfToken) document.getElementById('set-cf-token').value = '';
     await loadSettings();
   } catch (e) {
     toast('Error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Save preview domain';
+    btn.textContent = 'Save preview settings';
   }
 });
 
@@ -1107,6 +1111,8 @@ async function loadSettings() {
     const domain = document.getElementById('set-domain');
     const previewDomain = document.getElementById('set-preview-domain');
     const previewExample = document.getElementById('preview-host-example');
+    const previewDnsHint = document.getElementById('preview-dns-hint');
+    const cfToken = document.getElementById('set-cf-token');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -1118,6 +1124,14 @@ async function loadSettings() {
     }
     if (previewExample && s.preview_zone) {
       previewExample.textContent = `previewa-myapp.${s.preview_zone}`;
+    }
+    if (previewDnsHint && s.preview_dns_hint) {
+      previewDnsHint.textContent = s.preview_dns_hint;
+    }
+    if (cfToken) {
+      cfToken.placeholder = s.cloudflare_api_token_set
+        ? 'token saved — enter new value to replace'
+        : 'optional — DNS challenge for *.zone';
     }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');

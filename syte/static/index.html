@@ -477,13 +477,18 @@
                 <div><h1>Preview domain</h1></div>
               </div>
               <div class="form-inner">
-                <p class="hint block">Separate wildcard zone for dev preview URLs (optional). Leave empty to use the GUI domain zone.</p>
+                <p class="hint block">Separate wildcard zone for dev preview URLs. When GUI is <code>sycord.com</code>, previews default to <code>sycord.site</code> unless you set another zone here.</p>
                 <div class="form-group">
                   <label for="set-preview-domain">Preview base domain</label>
                   <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
-                  <span class="hint">Wildcard DNS <code>*.{zone}</code> → server. Hosts look like <code id="preview-host-example">previewa-myapp.sycord.site</code></span>
+                  <span class="hint" id="preview-dns-hint">Wildcard DNS <code>*.{zone}</code> → server (grey cloud). Hosts: <code id="preview-host-example">previewa-myapp.sycord.site</code></span>
                 </div>
-                <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview domain</button>
+                <div class="form-group">
+                  <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
+                  <input type="password" id="set-cf-token" placeholder="optional — DNS challenge for *.zone" autocomplete="off">
+                  <span class="hint">Zone DNS Edit permission. Enables <code>*.sycord.site</code> TLS via Caddy DNS plugin.</span>
+                </div>
+                <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview settings</button>
               </div>
             </div>
 

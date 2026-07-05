@@ -21,6 +21,7 @@ async def resolve_preview_zone() -> str:
     """
     Wildcard DNS zone for preview hostnames.
     Uses preview_base_domain setting when set, else derives from GUI domain.
+    When GUI is on sycord.com, defaults to sycord.site (Cloudflare-friendly wildcard zone).
     """
     custom = normalize_domain(await get_setting("preview_base_domain", ""))
     if custom:
@@ -28,6 +29,8 @@ async def resolve_preview_zone() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     if not gui_domain:
         return ""
+    if gui_domain == "sycord.com" or gui_domain.endswith(".sycord.com"):
+        return "sycord.site"
     return _preview_base_domain(gui_domain)
 
 

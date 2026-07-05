@@ -40,19 +40,41 @@ def prepare_preview_hosts(repo: Path, preview_domain: str) -> list[str]:
     return actions
 
 
+def _ensure_vite_preview(repo: Path) -> list[str]:
+    """Always end with a working config — overlay if in-place patch cannot be verified."""
+    overlay = repo / "vite.config.syte.mjs"
+    if overlay.exists() and "frame-ancestors *" not in overlay.read_text():
+        overlay.unlink()
+
+    actions = _patch_vite_config_files(repo)
+    if _vite_hosts_configured(repo):
+        if overlay.exists():
+            _remove_stale_vite_overlay(repo)
+        return actions or ["Vite config already allows preview hosts + iframe CSP"]
+
+    user_config = _find_vite_config_name(repo)
+    if user_config:
+        path = _write_vite_static_overlay(repo, user_config)
+        return [
+            f"Wrote {path.name} wrapping {user_config} "
+            "(guaranteed allowedHosts: true + frame-ancestors *)"
+        ]
+    return actions or ["No vite.config found; dev command will use --host flags only"]
+
+
 def build_preview_command(repo: Path, cmd_template: str) -> str:
-    """Return dev command; use static vite overlay only when in-place patch is impossible."""
+    """Prefer vite.config.syte.mjs overlay — guaranteed allowedHosts + CSP."""
     overlay = repo / "vite.config.syte.mjs"
     if overlay.exists():
         return "npx vite --config vite.config.syte.mjs --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
     if not is_vite_repo(repo):
         return cmd_template
-    if _vite_hosts_configured(repo) or _patch_vite_config_files(repo):
-        return cmd_template
     user_config = _find_vite_config_name(repo)
     if user_config:
         _write_vite_static_overlay(repo, user_config)
         return "npx vite --config vite.config.syte.mjs --host 0.0.0.0 --port $SYTE_PREVIEW_PORT"
+    if _vite_hosts_configured(repo):
+        return cmd_template
     return cmd_template
 
 
@@ -98,22 +120,6 @@ def _write_vite_static_overlay(repo: Path, user_config: str) -> Path:
         "});\n"
     )
     return overlay
-
-
-def _ensure_vite_preview(repo: Path) -> list[str]:
-    overlay = repo / "vite.config.syte.mjs"
-    if overlay.exists() and "frame-ancestors *" not in overlay.read_text():
-        overlay.unlink()
-
-    actions = _patch_vite_config_files(repo)
-    if actions:
-        _remove_stale_vite_overlay(repo)
-        return actions
-    user_config = _find_vite_config_name(repo)
-    if user_config:
-        path = _write_vite_static_overlay(repo, user_config)
-        return [f"Wrote {path.name} wrapping {user_config} (server.allowedHosts: true)"]
-    return ["No vite.config found; dev command will use --host flags only"]
 
 
 def _remove_stale_vite_overlay(repo: Path) -> None:

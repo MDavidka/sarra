@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 
+from syte.caddy_preview import render_preview_sections
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import normalize_domain
@@ -45,12 +46,26 @@ def ensure_caddy() -> tuple[bool, str]:
     return False, "; ".join(messages) or "Could not start Caddy."
 
 
+async def _write_caddy_env() -> str | None:
+    """Write Cloudflare token for Caddy DNS TLS (preview wildcards)."""
+    token = (await get_setting("cloudflare_api_token", "")).strip()
+    if not token:
+        return None
+    env_path = settings.data_dir / "caddy.env"
+    env_path.write_text(f"CLOUDFLARE_API_TOKEN={token}\n")
+    env_path.chmod(0o600)
+    return str(env_path)
+
+
 async def async_generate_caddyfile() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
     embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
     frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode != "restricted")
+    cf_token = (await get_setting("cloudflare_api_token", "")).strip()
+    wildcard_tls = (await get_setting("preview_wildcard_tls", "auto")).strip().lower()
+    use_wildcard_tls = wildcard_tls in ("1", "true", "yes", "on", "auto") and bool(cf_token)
 
     lines = [
         "# Syte-managed Caddy configuration",
@@ -59,6 +74,13 @@ async def async_generate_caddyfile() -> str:
         "# Caddy only terminates TLS for named domains on :443.",
         "",
     ]
+
+    if use_wildcard_tls:
+        lines.extend([
+            "# Preview wildcard TLS: caddy add-package github.com/caddy-dns/cloudflare",
+            "# Caddy service needs: EnvironmentFile=/var/lib/syte/caddy.env",
+            "",
+        ])
 
     if email and "@" in email and not email.endswith("@localhost"):
         lines.extend([
@@ -100,29 +122,14 @@ async def async_generate_caddyfile() -> str:
                 "",
             ])
 
-        preview_domain = normalize_domain(project.get("preview_domain") or "")
-        preview_port = project.get("preview_port")
-        if preview_domain and preview_port:
-            lines.extend([
-                f"# Preview — {name} (iframe embed: {embed_mode})",
-                f"{preview_domain} {{",
-                "    header {",
-                "        -X-Frame-Options",
-                "        -Cross-Origin-Embedder-Policy",
-                "        -Cross-Origin-Opener-Policy",
-                "        -Cross-Origin-Resource-Policy",
-                f'        Content-Security-Policy "{frame_csp}"',
-                "    }",
-                f"    reverse_proxy 127.0.0.1:{int(preview_port)} {{",
-                "        header_down -X-Frame-Options",
-                "        header_down Content-Security-Policy",
-                "        header_down Cross-Origin-Embedder-Policy",
-                "        header_down Cross-Origin-Opener-Policy",
-                "        header_down Cross-Origin-Resource-Policy",
-                "    }",
-                "}",
-                "",
-            ])
+    lines.extend(
+        render_preview_sections(
+            projects,
+            frame_csp=frame_csp,
+            embed_mode=embed_mode,
+            use_wildcard_tls=use_wildcard_tls,
+        )
+    )
 
     lines.append(f"# Public IP: {public_ip}")
     return "\n".join(lines)
@@ -132,6 +139,7 @@ async def apply_proxy_config() -> tuple[bool, str]:
     config = await async_generate_caddyfile()
     config_path = settings.caddy_config_path
     fallback = settings.data_dir / "Caddyfile"
+    env_path = await _write_caddy_env()
 
     for target in (config_path, fallback):
         try:
@@ -144,10 +152,17 @@ async def apply_proxy_config() -> tuple[bool, str]:
     else:
         return False, "Could not write Caddy configuration (permission denied)."
 
+    extra = ""
+    if env_path:
+        extra = (
+            f" Cloudflare DNS TLS env: {env_path} — "
+            "ensure Caddy systemd unit has EnvironmentFile= that path."
+        )
+
     if not shutil.which("caddy"):
         return True, (
             f"Caddy config saved to {written}. "
-            "Install Caddy and run: sudo caddy reload --config " + str(written)
+            "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
         )
 
     code, out = _run(["caddy", "validate", "--config", str(written)])
@@ -162,12 +177,12 @@ async def apply_proxy_config() -> tuple[bool, str]:
         code, out = _run(cmd)
         if code == 0:
             ensure_caddy()
-            return True, "Proxy configuration applied."
+            return True, "Proxy configuration applied." + extra
 
     ensure_caddy()
     return True, (
         f"Caddy config saved to {written}. "
-        "Run: sudo systemctl restart caddy"
+        "Run: sudo systemctl restart caddy" + extra
     )
 
 
