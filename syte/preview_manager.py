@@ -72,7 +72,7 @@ def ensure_preview_deps(repo: Path, log_path: Path) -> tuple[bool, str]:
         return True, "dependencies already installed"
 
     with log_path.open("a") as log_file:
-        log_file.write("Running npm install (preview requires node_modules)…\n")
+        log_file.write("Running npm install (preview requires node_modules)\u2026\n")
 
     from syte.workspace import run_cmd
 
@@ -215,7 +215,10 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     if not preview_port:
         preview_port = await next_preview_port()
 
-    preview_domain = await resolve_preview_domain(project)
+    # Reuse existing preview domain on restart so DNS, Caddy config, and
+    # sycord.com frontend stay in sync. Only generate a new subdomain when
+    # no valid domain exists yet for this project.
+    preview_domain = await resolve_preview_domain(project, new_session=False)
     prep_actions = prepare_preview_hosts(repo, preview_domain)
     cmd_template = detect_dev_command(repo) or cmd_template
     command = build_preview_command(repo, cmd_template).replace(
@@ -290,9 +293,9 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     if meta.get("preview_domain"):
         msg += f" (domain: {meta['preview_domain']})"
     if ready:
-        msg += " — ready (HMR live)"
+        msg += " \u2014 ready (HMR live)"
     else:
-        msg += " — starting (poll preview_status)"
+        msg += " \u2014 starting (poll preview_status)"
     return True, msg, meta
 
 
