@@ -4,6 +4,7 @@ import subprocess
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import normalize_domain
+from syte.preview_domains import preview_frame_ancestors_csp
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
@@ -48,6 +49,7 @@ async def async_generate_caddyfile() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
+    frame_csp = preview_frame_ancestors_csp(gui_domain)
 
     lines = [
         "# Syte-managed Caddy configuration",
@@ -108,7 +110,14 @@ async def async_generate_caddyfile() -> str:
             lines.extend([
                 f"# Preview — {name}",
                 f"{preview_domain} {{",
-                f"    reverse_proxy 127.0.0.1:{int(preview_port)}",
+                "    header {",
+                "        -X-Frame-Options",
+                f'        Content-Security-Policy "{frame_csp}"',
+                "    }",
+                f"    reverse_proxy 127.0.0.1:{int(preview_port)} {{",
+                "        header_down -X-Frame-Options",
+                "        header_down Content-Security-Policy",
+                "    }",
                 "}",
                 "",
             ])

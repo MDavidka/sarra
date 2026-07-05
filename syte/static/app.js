@@ -607,12 +607,19 @@ function renderServiceEmbed(p) {
   const placeholder = document.getElementById('svc-preview-placeholder');
   const conn = document.getElementById('svc-conn');
   if (conn) {
+    const link = (p.preview_running && p.preview_ready && p.preview_url)
+      ? (p.preview_domain_url || p.preview_url)
+      : p.url;
     conn.textContent = connLabel(p);
-    conn.href = p.url || '#';
+    conn.href = link || '#';
   }
   if (!frame || !placeholder) return;
-  if (p.running && p.url) {
-    frame.src = p.url;
+  const previewLive = p.preview_running && p.preview_ready && p.preview_url;
+  const embedUrl = previewLive
+    ? (p.preview_domain_url || p.preview_url)
+    : (p.running && p.url ? p.url : null);
+  if (embedUrl) {
+    if (frame.src !== embedUrl) frame.src = embedUrl;
     frame.classList.remove('hidden');
     placeholder.classList.add('hidden');
   } else {

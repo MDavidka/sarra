@@ -5,6 +5,16 @@ import re
 from pathlib import Path
 
 from syte.nextjs_layout import is_nextjs_repo
+from syte.preview_domains import preview_frame_ancestors_csp
+
+
+def _vite_frame_headers_block() -> str:
+    csp = preview_frame_ancestors_csp()
+    return (
+        "    headers: {\n"
+        f'      "Content-Security-Policy": "{csp}",\n'
+        "    },\n"
+    )
 
 
 def is_vite_repo(repo: Path) -> bool:
@@ -49,8 +59,14 @@ def build_preview_command(repo: Path, cmd_template: str) -> str:
 def _vite_hosts_configured(repo: Path) -> bool:
     for name in ("vite.config.js", "vite.config.mjs", "vite.config.ts"):
         path = repo / name
-        if path.exists() and re.search(r"allowedHosts\s*:\s*true", path.read_text()):
+        if not path.exists():
+            continue
+        text = path.read_text()
+        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors" in text:
             return True
+    overlay = repo / "vite.config.syte.mjs"
+    if overlay.exists() and "frame-ancestors" in overlay.read_text():
+        return True
     return False
 
 
@@ -77,6 +93,7 @@ def _write_vite_static_overlay(repo: Path, user_config: str) -> Path:
         "  server: {\n"
         "    host: true,\n"
         "    allowedHosts: true,\n"
+        f"{_vite_frame_headers_block()}"
         "  },\n"
         "});\n"
     )
@@ -84,6 +101,10 @@ def _write_vite_static_overlay(repo: Path, user_config: str) -> Path:
 
 
 def _ensure_vite_preview(repo: Path) -> list[str]:
+    overlay = repo / "vite.config.syte.mjs"
+    if overlay.exists() and "frame-ancestors" not in overlay.read_text():
+        overlay.unlink()
+
     actions = _patch_vite_config_files(repo)
     if actions:
         _remove_stale_vite_overlay(repo)
@@ -109,7 +130,7 @@ def _patch_vite_config_files(repo: Path) -> list[str]:
         if not path.exists():
             continue
         text = path.read_text()
-        if re.search(r"allowedHosts\s*:\s*true", text):
+        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors" in text:
             continue
         new_text = _inject_vite_allowed_hosts(text)
         if new_text != text:
@@ -119,31 +140,39 @@ def _patch_vite_config_files(repo: Path) -> list[str]:
 
 
 def _inject_vite_allowed_hosts(text: str) -> str:
+    headers = _vite_frame_headers_block()
     if re.search(r"allowedHosts\s*:", text):
-        return re.sub(
+        text = re.sub(
             r"allowedHosts\s*:\s*(?:\[[^\]]*\]|'[^']*'|\"[^\"]*\"|\S+)",
             "allowedHosts: true",
             text,
             count=1,
         )
-    if re.search(r"server\s*:\s*\{", text):
-        return re.sub(
+    elif re.search(r"server\s*:\s*\{", text):
+        text = re.sub(
             r"(server\s*:\s*\{)",
-            r"\1\n    host: true,\n    allowedHosts: true,",
+            rf"\1\n    host: true,\n    allowedHosts: true,\n{headers}",
             text,
             count=1,
         )
-    if re.search(r"defineConfig\s*\(\s*\{", text):
-        return re.sub(
+    elif re.search(r"defineConfig\s*\(\s*\{", text):
+        text = re.sub(
             r"defineConfig\s*\(\s*\{",
-            "defineConfig({\n  server: { host: true, allowedHosts: true },",
+            f"defineConfig({{\n  server: {{ host: true, allowedHosts: true,\n{headers}  }},",
             text,
             count=1,
         )
-    if "export default {" in text:
-        return re.sub(
+    elif "export default {" in text:
+        text = re.sub(
             r"export default \{",
-            "export default {\n  server: { host: true, allowedHosts: true },",
+            f"export default {{\n  server: {{ host: true, allowedHosts: true,\n{headers}  }},",
+            text,
+            count=1,
+        )
+    if "frame-ancestors" not in text and re.search(r"server\s*:\s*\{", text):
+        text = re.sub(
+            r"(server\s*:\s*\{)",
+            rf"\1\n{headers}",
             text,
             count=1,
         )

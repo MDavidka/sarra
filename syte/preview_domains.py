@@ -74,3 +74,24 @@ def preview_dns_hint(preview_domain: str, base_zone: str = "") -> str:
         f"Automatic SSL via wildcard *.{zone} — no per-preview DNS record needed. "
         f"Ensure *.{zone} (or {zone}) points to this server."
     )
+
+
+def preview_frame_ancestors_csp(gui_domain: str = "") -> str:
+    """CSP value so preview can load inside sycord.com / Syte GUI iframes."""
+    gui_domain = normalize_domain(gui_domain)
+    ancestors = [
+        "'self'",
+        "https://sycord.com",
+        "https://www.sycord.com",
+        "https://*.sycord.com",
+        "http://localhost:*",
+        "https://localhost:*",
+    ]
+    if gui_domain:
+        ancestors.append(f"https://{gui_domain}")
+        ancestors.append(f"https://*.{gui_domain}")
+        base = _preview_base_domain(gui_domain)
+        if base != gui_domain:
+            ancestors.append(f"https://{base}")
+            ancestors.append(f"https://*.{base}")
+    return "frame-ancestors " + " ".join(ancestors)

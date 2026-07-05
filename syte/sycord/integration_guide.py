@@ -255,6 +255,11 @@ def _step_preview_start(api: str) -> dict:
                 "preview_running": "true while preview process is alive",
                 "preview_stream_url": "Optional — append to SYTE_URL for live preview logs (SSE)",
             },
+            "iframe_embedding": {
+                "note": "Embed preview_url in an iframe on sycord.com — Syte sets frame-ancestors CSP on preview domains",
+                "example_html": '<iframe src="{preview_url}" style="width:100%;height:100%;border:0" referrerpolicy="no-referrer-when-downgrade"></iframe>',
+                "avoid": "Do not use sandbox without allow-scripts — page will stay blank",
+            },
         },
         "backend_pseudocode": (
             "const res = await postJson('/sycord/api/preview_start', { uuid: project.syte_uuid });\n"
