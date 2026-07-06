@@ -10,6 +10,7 @@ from pathlib import Path
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.project_enrich import enrich_ssl
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path, write_env_file
 
 # Block only catastrophic host-wide commands; arbitrary project commands are allowed.
@@ -104,6 +105,7 @@ async def workspace_get(project_id: str) -> dict | None:
         "data_path": str(ws / "data"),
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
         **preview_meta(project),
+        "ssl": enrich_ssl(project),
     }
 
 

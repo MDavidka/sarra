@@ -7,6 +7,7 @@ from syte.certificates import apply_proxy_config
 from syte.database import create_project, delete_project, get_project, update_project
 from syte.docker_deploy import find_dockerfile
 from syte.runtime import ensure_runtime_for_command
+from syte.preview_domains import resolve_production_domain
 from syte.workspace import (
     append_deploy_log,
     begin_deploy_log_session,
@@ -16,6 +17,16 @@ from syte.workspace import (
     slugify,
     write_env_file,
 )
+
+
+async def _ensure_production_domain(project_id: str) -> None:
+    """Assign auto production subdomain when zone is configured and domain is empty."""
+    project = await get_project(project_id)
+    if not project or project.get("domain"):
+        return
+    domain = await resolve_production_domain(project)
+    if domain:
+        await update_project(project_id, {"domain": domain})
 
 
 def _next_port(existing: list[dict]) -> int:
@@ -168,6 +179,8 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
     status = "running" if ok else "stopped"
     log(f"Deploy finished — status: {status}")
     await update_project(project_id, {"status": status})
+    if status == "running":
+        await _ensure_production_domain(project_id)
     await apply_proxy_config()
     return "\n".join(messages)
 
@@ -361,6 +374,7 @@ async def deploy_service(
 
     if ok:
         await update_project(project_id, {"status": "running"})
+        await _ensure_production_domain(project_id)
         project = await get_project(project_id)
     else:
         await update_project(project_id, {"status": "stopped"})
@@ -450,6 +464,8 @@ async def start_service(project_id: str) -> tuple[dict | None, str]:
     )
     status = "running" if ok else "stopped"
     await update_project(project_id, {"status": status})
+    if ok:
+        await _ensure_production_domain(project_id)
     await apply_proxy_config()
     return await get_project(project_id), msg
 

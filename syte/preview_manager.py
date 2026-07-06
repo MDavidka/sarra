@@ -215,7 +215,10 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     if not preview_port:
         preview_port = await next_preview_port()
 
-    preview_domain = await resolve_preview_domain(project)
+    # Reuse existing preview domain on restart so DNS, Caddy config, and
+    # sycord.com frontend stay in sync. Only generate a new subdomain when
+    # no valid domain exists yet for this project.
+    preview_domain = await resolve_preview_domain(project, new_session=False)
     prep_actions = prepare_preview_hosts(repo, preview_domain)
     cmd_template = detect_dev_command(repo) or cmd_template
     command = build_preview_command(repo, cmd_template).replace(
@@ -285,7 +288,10 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     await apply_proxy_config()
 
     project = await get_project(project_id) or project
+    from syte.project_enrich import enrich_ssl
+
     meta = preview_meta(project)
+    meta["ssl"] = enrich_ssl(project)
     msg = f"Preview on {meta['preview_url']}"
     if meta.get("preview_domain"):
         msg += f" (domain: {meta['preview_domain']})"
@@ -334,4 +340,8 @@ async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
         else:
             await update_project(project_id, {"preview_status": "stopped"})
             project = await get_project(project_id) or project
-    return preview_meta(project), "ok"
+    from syte.project_enrich import enrich_ssl
+
+    meta = preview_meta(project)
+    meta["ssl"] = enrich_ssl(project)
+    return meta, "ok"

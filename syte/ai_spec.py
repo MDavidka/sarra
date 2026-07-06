@@ -38,9 +38,9 @@ def build_ai_spec(base_url: str = "") -> dict:
             "2. POST /api/create_project {name, git_url, branch} → uuid (do NOT set deploy:true)",
             "3. POST /api/issue_deploy {uuid} → git pull + docker build + start",
             "4. GET /api/projects/{uuid}/logs/stream?live=1 (SSE) → watch deploy",
-            "5. GET /api/workspace_get?uuid= → confirm url and running=true",
+            "5. GET /api/workspace_get?uuid= → confirm url, ssl.active, and running=true",
             "6. POST /api/validate_design?uuid= → design contract linter",
-            "7. POST /api/set_domain {uuid, domain} → optional HTTPS domain",
+            "7. POST /api/set_domain {uuid, domain} → optional custom HTTPS domain (auto-assigned on deploy if omitted)",
         ],
         "workflow_create_website_from_scratch": [
             "1. Read system_prompt + design_contract — follow Sycord Design Contract",
@@ -54,9 +54,9 @@ def build_ai_spec(base_url: str = "") -> dict:
             "9. POST /api/stop_preview {uuid} → stop dev server when done",
         ],
         "workflow_live_preview": [
-            "1. Ensure GUI domain sycord.site is set (Settings) with wildcard DNS *.sycord.site",
+            "1. Set preview_base_domain (e.g. sycord.site) + Cloudflare token in Settings; wildcard DNS *.sycord.site → server",
             "2. POST /api/start_preview {uuid} → preview_url e.g. https://previewk-mysite.sycord.site",
-            "3. GET /api/preview_status?uuid= → poll until preview_ready=true",
+            "3. GET /api/preview_status?uuid= → poll until preview_ready=true; check ssl.preview.active",
             "4. Open preview_url — HMR live; POST /api/write_file edits hot-reload",
             "5. GET /api/projects/{uuid}/preview/logs/stream?live=1 → dev server logs",
             "6. POST /api/stop_preview {uuid} when finished",
@@ -86,6 +86,20 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "preview_url", "preview_domain", "preview_domain_url",
                 "preview_direct_url", "preview_ready", "preview_running",
                 "preview_port", "preview_stream_url", "preview_dns_hint",
+                "ssl.preview", "ssl.badge", "ssl.badge_label",
+            ],
+        },
+        "production_ssl": {
+            "description": "Production HTTPS via wildcard zone or per-host Caddy auto-HTTPS",
+            "domain_format": "{app-slug}.{zone} (e.g. mysite.sycord.site) — auto-assigned on issue_deploy when no domain set",
+            "domain_rules": {
+                "auto_assign": "On successful deploy, Syte assigns {slug}.{preview_zone} when projects.domain is empty",
+                "custom": "POST /api/set_domain overrides auto-assigned hostname",
+                "ssl": "Automatic via wildcard *.{zone} when Cloudflare token configured",
+                "no_zone": "url = http://{public_ip}:{port} until preview zone is configured",
+            },
+            "response_fields": [
+                "url", "domain", "domain_url", "ssl.production", "ssl.badge", "ssl.badge_label",
             ],
         },
         "endpoints": [

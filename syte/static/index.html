@@ -477,7 +477,7 @@
                 <div><h1>Preview domain</h1></div>
               </div>
               <div class="form-inner">
-                <p class="hint block">Wildcard zone for preview URLs on <code>*.sycord.com</code> (or your zone). Same zone as GUI unless overridden. Embeds in <code>sycord.com</code> iframes.</p>
+                <p class="hint block">Wildcard zone for production and preview HTTPS on <code>*.{zone}</code>. Production: <code>{app}.sycord.site</code>, preview: <code>previewa-{app}.sycord.site</code>. Embeds in <code>sycord.com</code> iframes.</p>
                 <div class="form-group">
                   <label for="set-preview-domain">Preview base domain</label>
                   <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
@@ -486,7 +486,7 @@
                 <div class="form-group">
                   <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
                   <input type="password" id="set-cf-token" placeholder="optional — DNS challenge for *.zone" autocomplete="off">
-                  <span class="hint">Zone DNS Edit permission. Enables <code>*.sycord.site</code> TLS via Caddy DNS plugin.</span>
+                  <span class="hint">Zone DNS Edit permission. Enables wildcard TLS for production + preview via Caddy DNS plugin.</span>
                 </div>
                 <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview settings</button>
               </div>

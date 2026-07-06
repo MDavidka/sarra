@@ -20,7 +20,8 @@ def _preview_base_domain(gui_domain: str) -> str:
 async def resolve_preview_zone() -> str:
     """
     Wildcard DNS zone for preview hostnames.
-    Uses preview_base_domain when set, else the GUI domain zone (e.g. sycord.com).
+    Uses preview_base_domain when set, else derives from GUI domain.
+    When GUI is on sycord.com, defaults to sycord.site (Cloudflare-friendly wildcard zone).
     """
     custom = normalize_domain(await get_setting("preview_base_domain", ""))
     if custom:
@@ -28,10 +29,9 @@ async def resolve_preview_zone() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     if not gui_domain:
         return ""
-    parts = gui_domain.split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return gui_domain
+    if gui_domain == "sycord.com" or gui_domain.endswith(".sycord.com"):
+        return "sycord.site"
+    return _preview_base_domain(gui_domain)
 
 
 async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> str:
@@ -58,6 +58,25 @@ async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> 
 
     letter = random.choice(string.ascii_lowercase)
     return f"preview{letter}-{app_slug}.{base_zone}"
+
+
+async def resolve_production_domain(project: dict) -> str:
+    """
+    Build production hostname on the preview zone when none is set:
+    {app-slug}.{zone}
+
+    Example: mysite.sycord.site
+    """
+    base_zone = await resolve_preview_zone()
+    if not base_zone:
+        return ""
+
+    existing = normalize_domain(project.get("domain") or "")
+    if existing:
+        return existing
+
+    app_slug = slugify(project.get("name") or project.get("id", "app"))[:32]
+    return f"{app_slug}.{base_zone}"
 
 
 def build_preview_urls(project: dict) -> dict:

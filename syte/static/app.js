@@ -401,7 +401,10 @@ function renderLogsList() {
         <strong>${esc(p.name)}</strong>
         <div class="hint">${esc(p.id)}</div>
       </div>
-      <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
+      <div class="service-meta">
+        <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
+        ${sslBadgeHtml(p)}
+      </div>
     </div>
   `).join('');
   refreshIcons();

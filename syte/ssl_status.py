@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from syte.caddy_routes import host_zone
 from syte.domain_utils import build_https_url, normalize_domain
 
 
@@ -18,15 +19,29 @@ def _cert_dir() -> Path | None:
     return None
 
 
+def _has_wildcard_cert(zone: str, cert_root: Path) -> bool:
+    """Caddy stores wildcard certs as wildcard_.{zone} in the cert path."""
+    marker = f"wildcard_.{zone}"
+    for path in cert_root.rglob("*.crt"):
+        if marker in path.parent.name or marker in path.name:
+            return True
+    return False
+
+
 def _caddy_has_cert(hostname: str) -> bool:
     """Best-effort: check if Caddy stored a cert for this hostname."""
     cert_root = _cert_dir()
     if not cert_root:
         return False
     host = normalize_domain(hostname)
+    if not host:
+        return False
     for path in cert_root.rglob("*.crt"):
         if host in path.parent.name or host in path.name:
             return True
+    zone = host_zone(host)
+    if host != zone and host.endswith(f".{zone}"):
+        return _has_wildcard_cert(zone, cert_root)
     return False
 
 
