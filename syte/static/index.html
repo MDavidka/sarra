@@ -485,10 +485,14 @@
                 </div>
                 <div class="form-group">
                   <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
-                  <input type="password" id="set-cf-token" placeholder="optional — DNS challenge for *.zone" autocomplete="off">
-                  <span class="hint">Zone DNS Edit permission. Enables wildcard TLS for production + preview via Caddy DNS plugin.</span>
+                  <input type="password" id="set-cf-token" placeholder="Zone DNS Edit token for *.sycord.site" autocomplete="off">
+                  <span class="hint">Create in Cloudflare → My Profile → API Tokens → Zone DNS Edit for your preview zone.</span>
+                  <div id="cf-token-status" class="hint cf-token-status hidden"></div>
                 </div>
-                <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview settings</button>
+                <div class="form-actions">
+                  <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
+                  <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
+                </div>
               </div>
             </div>
 

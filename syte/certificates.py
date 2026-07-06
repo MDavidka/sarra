@@ -1,11 +1,15 @@
 import shutil
 import subprocess
+from pathlib import Path
 
 from syte.caddy_routes import host_zone, render_all_service_routes
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import normalize_domain
 from syte.preview_domains import preview_frame_ancestors_csp
+
+CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
+CADDY_DROPIN_FILE = CADDY_DROPIN_DIR / "syte-cloudflare.conf"
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
@@ -46,15 +50,98 @@ def ensure_caddy() -> tuple[bool, str]:
     return False, "; ".join(messages) or "Could not start Caddy."
 
 
+def caddy_has_cloudflare_plugin() -> bool:
+    code, out = _run(["caddy", "list-modules"])
+    if code != 0:
+        return False
+    return "dns.providers.cloudflare" in out
+
+
+def ensure_caddy_cloudflare_plugin() -> tuple[bool, str]:
+    if not shutil.which("caddy"):
+        return False, "Caddy not installed."
+    if caddy_has_cloudflare_plugin():
+        return True, "Caddy Cloudflare DNS plugin is installed."
+    code, out = _run(["caddy", "add-package", "github.com/caddy-dns/cloudflare"])
+    if code == 0 and caddy_has_cloudflare_plugin():
+        return True, "Installed Caddy Cloudflare DNS plugin."
+    return (
+        False,
+        "Install Caddy Cloudflare plugin: caddy add-package github.com/caddy-dns/cloudflare",
+    )
+
+
+def ensure_caddy_systemd_env(env_path: str) -> tuple[bool, str]:
+    if not shutil.which("systemctl"):
+        return False, "systemctl not available."
+    dropin = (
+        "[Service]\n"
+        f"EnvironmentFile={env_path}\n"
+    )
+    try:
+        CADDY_DROPIN_DIR.mkdir(parents=True, exist_ok=True)
+        if CADDY_DROPIN_FILE.exists() and CADDY_DROPIN_FILE.read_text() == dropin:
+            return True, "Caddy systemd EnvironmentFile already configured."
+        CADDY_DROPIN_FILE.write_text(dropin)
+        _run(["systemctl", "daemon-reload"])
+        return True, f"Caddy systemd EnvironmentFile set to {env_path}"
+    except (OSError, PermissionError) as exc:
+        return (
+            False,
+            f"Add to Caddy systemd manually: EnvironmentFile={env_path} ({exc})",
+        )
+
+
 async def _write_caddy_env() -> str | None:
     """Write Cloudflare token for Caddy DNS TLS (wildcard production + preview)."""
     token = (await get_setting("cloudflare_api_token", "")).strip()
     if not token:
         return None
     env_path = settings.data_dir / "caddy.env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text(f"CLOUDFLARE_API_TOKEN={token}\n")
     env_path.chmod(0o600)
     return str(env_path)
+
+
+async def apply_cloudflare_integration() -> list[str]:
+    """Install Caddy DNS plugin and systemd env when a Cloudflare token is saved."""
+    token = (await get_setting("cloudflare_api_token", "")).strip()
+    if not token:
+        return []
+    messages: list[str] = []
+    ok, msg = ensure_caddy_cloudflare_plugin()
+    messages.append(msg if ok else f"Cloudflare plugin: {msg}")
+    env_path = await _write_caddy_env()
+    if env_path:
+        ok, msg = ensure_caddy_systemd_env(env_path)
+        messages.append(msg if ok else f"Systemd env: {msg}")
+    return messages
+
+
+async def cloudflare_tls_status() -> dict:
+    token_set = bool((await get_setting("cloudflare_api_token", "")).strip())
+    env_path = settings.data_dir / "caddy.env"
+    env_written = env_path.is_file() and token_set
+    wildcard_enabled = await _use_wildcard_tls()
+    plugin = caddy_has_cloudflare_plugin()
+    dropin = CADDY_DROPIN_FILE.is_file()
+    hints: list[str] = []
+    if token_set and not plugin:
+        hints.append("Run: caddy add-package github.com/caddy-dns/cloudflare")
+    if token_set and env_written and not dropin:
+        hints.append(f"Point Caddy systemd at EnvironmentFile={env_path}")
+    ready = token_set and env_written and wildcard_enabled and plugin
+    return {
+        "token_configured": token_set,
+        "env_file_written": env_written,
+        "env_file_path": str(env_path) if env_written else None,
+        "wildcard_tls_enabled": wildcard_enabled,
+        "caddy_plugin_installed": plugin,
+        "systemd_env_configured": dropin,
+        "ready": ready,
+        "hints": hints,
+    }
 
 
 async def _use_wildcard_tls() -> bool:
@@ -129,6 +216,7 @@ async def async_generate_caddyfile() -> str:
 
 
 async def apply_proxy_config() -> tuple[bool, str]:
+    cf_messages = await apply_cloudflare_integration()
     config = await async_generate_caddyfile()
     config_path = settings.caddy_config_path
     fallback = settings.data_dir / "Caddyfile"
@@ -147,10 +235,9 @@ async def apply_proxy_config() -> tuple[bool, str]:
 
     extra = ""
     if env_path:
-        extra = (
-            f" Wildcard SSL env: {env_path} — "
-            "ensure Caddy has EnvironmentFile pointing to it."
-        )
+        extra = f" Wildcard SSL env: {env_path}."
+    if cf_messages:
+        extra += " " + " ".join(cf_messages)
 
     if not shutil.which("caddy"):
         return True, (

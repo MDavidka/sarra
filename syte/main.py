@@ -246,13 +246,14 @@ async def _gui_url() -> str:
 
 @app.get("/api/settings")
 async def get_settings():
+    from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
-    cf_configured = bool((await get_setting("cloudflare_api_token", "")).strip())
+    cf_status = await cloudflare_tls_status()
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
@@ -261,7 +262,8 @@ async def get_settings():
         "preview_zone": preview_zone,
         "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
-        "cloudflare_api_token_set": cf_configured,
+        "cloudflare_api_token_set": cf_status["token_configured"],
+        "cloudflare_tls": cf_status,
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
             if preview_zone
@@ -275,7 +277,11 @@ async def get_settings():
 
 @app.put("/api/settings")
 async def save_settings(body: SettingsRequest):
+    from syte.certificates import cloudflare_tls_status
+
     messages = []
+    proxy_updated = False
+
     if body.public_ip is not None:
         ip = body.public_ip.strip()
         if ip and not is_valid_ip(ip):
@@ -283,6 +289,7 @@ async def save_settings(body: SettingsRequest):
         await set_setting("public_ip", ip)
         settings.public_ip = ip
         messages.append(f"Public IP set to {ip}" if ip else "Public IP cleared (auto-detect)")
+        proxy_updated = True
 
     if body.admin_email is not None:
         await set_setting("admin_email", body.admin_email)
@@ -319,12 +326,13 @@ async def save_settings(body: SettingsRequest):
             "gui_url": await _gui_url(),
             "direct_url": build_direct_url(_resolved_ip(), settings.port),
             "domain_url": build_https_url(domain) if domain else "",
+            "cloudflare_tls": await cloudflare_tls_status(),
         }
 
     if body.preview_base_domain is not None:
         zone = normalize_domain(body.preview_base_domain)
         await set_setting("preview_base_domain", zone)
-        ok, msg = await apply_proxy_config()
+        proxy_updated = True
         if zone:
             messages.append(
                 f"Preview base domain set to {zone}. "
@@ -335,34 +343,35 @@ async def save_settings(body: SettingsRequest):
             messages.append(
                 "Preview base domain cleared — previews use the same zone as the GUI domain."
             )
-        messages.append(msg)
-        return {"ok": ok, "messages": messages}
 
     if body.cloudflare_api_token is not None:
         token = body.cloudflare_api_token.strip()
         await set_setting("cloudflare_api_token", token)
-        ok, msg = await apply_proxy_config()
+        proxy_updated = True
         if token:
             messages.append(
-                "Cloudflare API token saved — preview wildcard TLS via DNS challenge enabled. "
-                "Install: caddy add-package github.com/caddy-dns/cloudflare"
+                "Cloudflare API token saved — wildcard TLS via DNS challenge enabled for *.{zone}."
             )
         else:
-            messages.append("Cloudflare API token cleared — preview uses per-host HTTP TLS.")
-        messages.append(msg)
-        return {"ok": ok, "messages": messages}
+            messages.append("Cloudflare API token cleared — wildcard TLS disabled.")
 
     if body.preview_wildcard_tls is not None:
         mode = body.preview_wildcard_tls.strip().lower() or "auto"
         await set_setting("preview_wildcard_tls", mode)
-        ok, msg = await apply_proxy_config()
+        proxy_updated = True
         messages.append(f"Preview wildcard TLS mode: {mode}")
-        messages.append(msg)
-        return {"ok": ok, "messages": messages}
 
-    ok, msg = await apply_proxy_config()
-    messages.append(msg)
-    return {"ok": ok, "messages": messages}
+    if proxy_updated or not messages:
+        ok, msg = await apply_proxy_config()
+        messages.append(msg)
+    else:
+        ok = True
+
+    cf_status = await cloudflare_tls_status()
+    if cf_status["token_configured"] and cf_status["hints"]:
+        messages.extend(cf_status["hints"])
+
+    return {"ok": ok, "messages": messages, "cloudflare_tls": cf_status}
 
 
 @app.post("/api/system/update")

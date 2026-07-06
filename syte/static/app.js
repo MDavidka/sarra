@@ -1118,7 +1118,29 @@ document.getElementById('save-preview-domain-btn')?.addEventListener('click', as
     toast('Error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Save preview settings';
+    btn.textContent = 'Save preview zone';
+  }
+});
+
+document.getElementById('save-cf-token-btn')?.addEventListener('click', async () => {
+  const cfToken = document.getElementById('set-cf-token')?.value?.trim() || '';
+  if (!cfToken) return toast('paste your Cloudflare API token first');
+  const btn = document.getElementById('save-cf-token-btn');
+  btn.disabled = true;
+  btn.textContent = 'saving…';
+  try {
+    const res = await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ cloudflare_api_token: cfToken }),
+    });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Cloudflare token saved');
+    document.getElementById('set-cf-token').value = '';
+    await loadSettings();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Cloudflare token';
   }
 });
 
@@ -1173,11 +1195,12 @@ async function loadSettings() {
     const previewExample = document.getElementById('preview-host-example');
     const previewDnsHint = document.getElementById('preview-dns-hint');
     const cfToken = document.getElementById('set-cf-token');
+    const cfStatus = document.getElementById('cf-token-status');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
     if (previewDomain) {
-      previewDomain.value = (s.preview_base_domain || '').replace(/^https?:\/\//i, '');
+      previewDomain.value = (s.preview_base_domain || s.preview_zone || '').replace(/^https?:\/\//i, '');
       previewDomain.placeholder = s.preview_zone
         ? `default: ${s.preview_zone}`
         : 'e.g. sycord.site';
@@ -1191,7 +1214,22 @@ async function loadSettings() {
     if (cfToken) {
       cfToken.placeholder = s.cloudflare_api_token_set
         ? 'token saved — enter new value to replace'
-        : 'optional — DNS challenge for *.zone';
+        : 'Zone DNS Edit token for *.sycord.site';
+    }
+    if (cfStatus && s.cloudflare_tls) {
+      const cf = s.cloudflare_tls;
+      const parts = [];
+      if (cf.token_configured) parts.push('token saved');
+      if (cf.wildcard_tls_enabled) parts.push('wildcard TLS on');
+      if (cf.caddy_plugin_installed) parts.push('Caddy plugin OK');
+      else if (cf.token_configured) parts.push('Caddy plugin needed');
+      if (cf.systemd_env_configured) parts.push('systemd env OK');
+      if (cf.ready) parts.push('ready');
+      cfStatus.textContent = parts.length ? parts.join(' · ') : 'No Cloudflare token configured';
+      cfStatus.classList.remove('hidden');
+      if (cf.hints?.length) {
+        cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
+      }
     }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');
