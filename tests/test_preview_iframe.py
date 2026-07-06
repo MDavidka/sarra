@@ -11,6 +11,8 @@ def test_preview_iframe_header_lines_strip_blocking_headers() -> None:
     assert "-Strict-Transport-Security" in lines
     assert "-Permissions-Policy" in lines
     assert "-Cross-Origin-Opener-Policy" in lines
+    assert "Cross-Origin-Resource-Policy cross-origin" in lines
+    assert "Access-Control-Allow-Origin *" in lines
     assert csp in lines
 
 

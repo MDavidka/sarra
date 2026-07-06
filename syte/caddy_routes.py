@@ -66,6 +66,8 @@ def preview_iframe_header_lines(frame_csp: str, indent: str = "        ") -> lis
             continue
         lines.append(f"{indent}    -{name}")
     lines.extend([
+        f"{indent}    Cross-Origin-Resource-Policy cross-origin",
+        f"{indent}    Access-Control-Allow-Origin *",
         f'{indent}    Content-Security-Policy "{frame_csp}"',
         f"{indent}}}",
     ])
