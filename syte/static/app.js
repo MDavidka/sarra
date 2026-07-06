@@ -754,13 +754,24 @@ function renderPreviewSection(p) {
 
   if (p.preview_running && p.preview_url) {
     wrap?.classList.remove('hidden');
-    if (frame && live) frame.src = p.preview_domain_url || p.preview_url;
+    if (frame && live) {
+      const frameSrc = (p.preview_tls_ok !== false && p.preview_domain_url)
+        ? p.preview_domain_url
+        : (p.preview_fetch_url || p.preview_url);
+      frame.src = frameSrc;
+    }
     const urlLabel = p.preview_domain
       ? `${p.preview_domain_url || p.preview_url}`
       : p.preview_url;
     hint.textContent = live
-      ? `Live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}${iframeHintLine(p.iframe)}`
+      ? `Live — ${urlLabel}${p.preview_domain && p.preview_tls_ok !== false ? ' (HTTPS)' : ''}${iframeHintLine(p.iframe)}`
       : `Starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}${iframeHintLine(p.iframe)}`;
+    if (p.preview_tls_hint) {
+      hint.textContent += ` — ${p.preview_tls_hint}`;
+    }
+    if (p.preview_domain_needs_restart) {
+      hint.textContent += ' — Stop then Start preview to move to the correct preview zone.';
+    }
     logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);

@@ -1,5 +1,7 @@
 """Tests for preview iframe checklist and Caddy header generation."""
 
+import pytest
+
 from syte.caddy_routes import preview_iframe_header_lines, reverse_proxy_lines
 from syte.preview_iframe import PREVIEW_STRIP_HEADERS, build_iframe_checklist
 
@@ -32,6 +34,32 @@ def test_iframe_checklist_all_ok_when_configured() -> None:
     result = build_iframe_checklist(project, frame_csp=csp, live_headers=None)
     assert result["preview_url"] == "https://previewwg-tsst76.sycord.com"
     assert result["all_ok"] is True
+
+
+def test_probe_https_available_rejects_bad_tls(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_open(*_args, **_kwargs):
+        raise OSError("TLS handshake failed")
+
+    monkeypatch.setattr("urllib.request.urlopen", fail_open)
+    from syte.preview_iframe import probe_https_available
+
+    assert probe_https_available("https://preview.example.com") is False
+
+
+def test_probe_https_available_accepts_ok_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_a, **_k: FakeResponse())
+    from syte.preview_iframe import probe_https_available
+
+    assert probe_https_available("https://preview.example.com") is True
 
 
 def test_iframe_checklist_detects_blocking_headers() -> None:

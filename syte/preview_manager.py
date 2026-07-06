@@ -179,6 +179,9 @@ def preview_meta(project: dict) -> dict:
     urls = build_preview_urls(project)
     domain = urls["preview_domain"]
     base_zone = domain.split(".", 1)[-1] if domain and "." in domain else ""
+    from syte.preview_domains import _preview_domain_stale
+
+    domain_needs_restart = _preview_domain_stale(domain)
     return {
         "preview_running": running,
         "preview_ready": ready,
@@ -186,6 +189,7 @@ def preview_meta(project: dict) -> dict:
         "preview_status": project.get("preview_status", "stopped"),
         "preview_stream_url": f"/api/projects/{project['id']}/preview/logs/stream?live=1",
         "preview_dns_hint": preview_dns_hint(urls["preview_domain"], base_zone) if urls["preview_domain"] else "",
+        "preview_domain_needs_restart": domain_needs_restart,
         **urls,
     }
 
@@ -206,13 +210,26 @@ async def preview_iframe_status(project: dict) -> dict:
 
     live_headers = None
     urls = build_preview_urls(project)
-    if project.get("preview_status") == "running" and urls.get("preview_domain_url"):
-        live_headers = probe_preview_headers(urls["preview_domain_url"])
+    probe_url = urls.get("preview_fetch_url") or urls.get("preview_domain_url")
+    if project.get("preview_status") == "running" and probe_url:
+        live_headers = probe_preview_headers(probe_url)
 
-    return build_iframe_checklist(project, frame_csp=frame_csp, live_headers=live_headers)
+    checklist = build_iframe_checklist(project, frame_csp=frame_csp, live_headers=live_headers)
+    if urls.get("preview_domain_url") and not urls.get("preview_tls_ok"):
+        checklist["items"].append({
+            "id": "preview_tls",
+            "label": "Preview HTTPS TLS reachable",
+            "ok": False,
+            "configured_by_syte": True,
+            "note": urls.get("preview_tls_hint") or "HTTPS handshake failed for preview domain",
+        })
+        checklist["all_ok"] = all(item["ok"] for item in checklist["items"])
+    return checklist
 
 
 async def start_preview(project_id: str) -> tuple[bool, str, dict]:
+    from syte.domain_utils import normalize_domain
+
     project = await get_project(project_id)
     if not project:
         return False, "Project not found", {}
@@ -248,8 +265,11 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     )
 
     log_path = preview_log_path(project_id)
+    stale = normalize_domain(project.get("preview_domain") or "")
     with log_path.open("a") as log_file:
         log_file.write(f"\n=== Preview session (port {preview_port}) ===\n")
+        if stale and stale != preview_domain:
+            log_file.write(f"Replacing stale preview domain {stale} → {preview_domain}\n")
         log_file.write(f"Domain: {preview_domain}\n")
         if prep_actions:
             log_file.write("Config:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n")
