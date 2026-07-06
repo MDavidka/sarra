@@ -591,6 +591,7 @@ def _project_url(project: dict) -> str:
 
 def _enrich(project: dict) -> dict:
     from syte.preview_manager import preview_meta
+    from syte.ssl_status import project_ssl_summary
     from syte.workspace import ensure_workspace, workspace_path
 
     p = dict(project)
@@ -603,6 +604,7 @@ def _enrich(project: dict) -> dict:
     p["app_path"] = str(ws / "app")
     p["data_path"] = str(ws / "data")
     p.update(preview_meta(p))
+    p["ssl"] = project_ssl_summary(p)
     return p
 
 

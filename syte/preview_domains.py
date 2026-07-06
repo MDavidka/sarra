@@ -20,8 +20,7 @@ def _preview_base_domain(gui_domain: str) -> str:
 async def resolve_preview_zone() -> str:
     """
     Wildcard DNS zone for preview hostnames.
-    Uses preview_base_domain setting when set, else derives from GUI domain.
-    When GUI is on sycord.com, defaults to sycord.site (Cloudflare-friendly wildcard zone).
+    Uses preview_base_domain when set, else the GUI domain zone (e.g. sycord.com).
     """
     custom = normalize_domain(await get_setting("preview_base_domain", ""))
     if custom:
@@ -29,9 +28,10 @@ async def resolve_preview_zone() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     if not gui_domain:
         return ""
-    if gui_domain == "sycord.com" or gui_domain.endswith(".sycord.com"):
-        return "sycord.site"
-    return _preview_base_domain(gui_domain)
+    parts = gui_domain.split(".")
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return gui_domain
 
 
 async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> str:
@@ -92,18 +92,16 @@ def preview_dns_hint(preview_domain: str, base_zone: str = "") -> str:
 
 
 def preview_frame_ancestors_csp(gui_domain: str = "", *, allow_any: bool = True) -> str:
-    """CSP so preview loads in iframes on sycord.com, Syte GUI, or any parent site."""
-    if allow_any:
-        return "frame-ancestors *"
-    gui_domain = normalize_domain(gui_domain)
+    """CSP so *.sycord.com previews embed in sycord.com (and any parent when allow_any)."""
     ancestors = [
         "'self'",
         "https://sycord.com",
         "https://www.sycord.com",
         "https://*.sycord.com",
-        "http://localhost:*",
-        "https://localhost:*",
     ]
+    if allow_any:
+        ancestors.append("*")
+    gui_domain = normalize_domain(gui_domain)
     if gui_domain:
         ancestors.append(f"https://{gui_domain}")
         ancestors.append(f"https://*.{gui_domain}")
@@ -111,4 +109,5 @@ def preview_frame_ancestors_csp(gui_domain: str = "", *, allow_any: bool = True)
         if base != gui_domain:
             ancestors.append(f"https://{base}")
             ancestors.append(f"https://*.{base}")
+    ancestors.extend(["http://localhost:*", "https://localhost:*"])
     return "frame-ancestors " + " ".join(ancestors)

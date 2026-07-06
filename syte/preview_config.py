@@ -43,7 +43,7 @@ def prepare_preview_hosts(repo: Path, preview_domain: str) -> list[str]:
 def _ensure_vite_preview(repo: Path) -> list[str]:
     """Always end with a working config — overlay if in-place patch cannot be verified."""
     overlay = repo / "vite.config.syte.mjs"
-    if overlay.exists() and "frame-ancestors *" not in overlay.read_text():
+    if overlay.exists() and "frame-ancestors" not in overlay.read_text():
         overlay.unlink()
 
     actions = _patch_vite_config_files(repo)
@@ -84,10 +84,10 @@ def _vite_hosts_configured(repo: Path) -> bool:
         if not path.exists():
             continue
         text = path.read_text()
-        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors *" in text:
+        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors" in text:
             return True
     overlay = repo / "vite.config.syte.mjs"
-    if overlay.exists() and "frame-ancestors *" in overlay.read_text():
+    if overlay.exists() and "frame-ancestors" in overlay.read_text():
         return True
     return False
 
@@ -136,7 +136,7 @@ def _patch_vite_config_files(repo: Path) -> list[str]:
         if not path.exists():
             continue
         text = path.read_text()
-        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors *" in text:
+        if re.search(r"allowedHosts\s*:\s*true", text) and "frame-ancestors" in text:
             continue
         new_text = _inject_vite_allowed_hosts(text)
         if new_text != text:

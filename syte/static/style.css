@@ -770,6 +770,13 @@ body.drawer-open .sidebar-backdrop {
 .badge-running { background: var(--success-bg); color: var(--success); }
 .badge-stopped { background: #f4f4f5; color: var(--text-muted); }
 
+.badge-ssl { font-weight: 600; }
+.badge-ssl-https { background: #ecfdf5; color: #047857; }
+.badge-ssl-pending { background: #fffbeb; color: #b45309; }
+.badge-ssl-preview-https { background: #eff6ff; color: #1d4ed8; }
+.badge-ssl-preview-pending { background: #f5f3ff; color: #6d28d9; }
+.badge-ssl-http { background: #f4f4f5; color: var(--text-muted); }
+
 .service-url {
   font-size: 0.78rem;
   color: var(--text-muted);

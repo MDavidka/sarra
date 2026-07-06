@@ -1,7 +1,7 @@
 import shutil
 import subprocess
 
-from syte.caddy_preview import render_preview_sections
+from syte.caddy_routes import host_zone, render_all_service_routes
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import normalize_domain
@@ -47,7 +47,7 @@ def ensure_caddy() -> tuple[bool, str]:
 
 
 async def _write_caddy_env() -> str | None:
-    """Write Cloudflare token for Caddy DNS TLS (preview wildcards)."""
+    """Write Cloudflare token for Caddy DNS TLS (wildcard production + preview)."""
     token = (await get_setting("cloudflare_api_token", "")).strip()
     if not token:
         return None
@@ -57,28 +57,31 @@ async def _write_caddy_env() -> str | None:
     return str(env_path)
 
 
+async def _use_wildcard_tls() -> bool:
+    cf_token = (await get_setting("cloudflare_api_token", "")).strip()
+    mode = (await get_setting("preview_wildcard_tls", "auto")).strip().lower()
+    return bool(cf_token) and mode in ("1", "true", "yes", "on", "auto")
+
+
 async def async_generate_caddyfile() -> str:
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
     embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
     frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode != "restricted")
-    cf_token = (await get_setting("cloudflare_api_token", "")).strip()
-    wildcard_tls = (await get_setting("preview_wildcard_tls", "auto")).strip().lower()
-    use_wildcard_tls = wildcard_tls in ("1", "true", "yes", "on", "auto") and bool(cf_token)
+    use_wildcard_tls = await _use_wildcard_tls()
 
     lines = [
         "# Syte-managed Caddy configuration",
         "# Auto-generated — do not edit manually",
-        "# Direct IP access (http://IP:port) is served by Syte/apps — not Caddy.",
-        "# Caddy only terminates TLS for named domains on :443.",
+        "# Production + preview HTTPS via Caddy (wildcard DNS TLS when Cloudflare token set).",
         "",
     ]
 
     if use_wildcard_tls:
         lines.extend([
-            "# Preview wildcard TLS: caddy add-package github.com/caddy-dns/cloudflare",
-            "# Caddy service needs: EnvironmentFile=/var/lib/syte/caddy.env",
+            "# Wildcard SSL: caddy add-package github.com/caddy-dns/cloudflare",
+            "# Caddy systemd: EnvironmentFile=/var/lib/syte/caddy.env",
             "",
         ])
 
@@ -91,12 +94,21 @@ async def async_generate_caddyfile() -> str:
         ])
 
     if gui_domain:
-        lines.extend([
-            f"{gui_domain} {{",
-            f"    reverse_proxy 127.0.0.1:{settings.port}",
-            "}",
-            "",
-        ])
+        if gui_domain == host_zone(gui_domain) or not use_wildcard_tls:
+            lines.extend([
+                f"{gui_domain} {{",
+                f"    reverse_proxy 127.0.0.1:{settings.port}",
+                "}",
+                "",
+            ])
+        else:
+            lines.extend([
+                f"# GUI — {gui_domain}",
+                f"{gui_domain} {{",
+                f"    reverse_proxy 127.0.0.1:{settings.port}",
+                "}",
+                "",
+            ])
     else:
         lines.extend([
             f"# GUI direct access: http://{public_ip}:{settings.port}",
@@ -104,29 +116,10 @@ async def async_generate_caddyfile() -> str:
         ])
 
     projects = await list_projects()
-    for project in projects:
-        port = project["port"]
-        domain = normalize_domain(project.get("domain") or "")
-        name = project["name"]
-
-        if domain:
-            lines.extend([
-                f"{domain} {{",
-                f"    reverse_proxy 127.0.0.1:{port}",
-                "}",
-                "",
-            ])
-        else:
-            lines.extend([
-                f"# {name} — direct: http://{public_ip}:{port}",
-                "",
-            ])
-
     lines.extend(
-        render_preview_sections(
+        render_all_service_routes(
             projects,
             frame_csp=frame_csp,
-            embed_mode=embed_mode,
             use_wildcard_tls=use_wildcard_tls,
         )
     )
@@ -155,8 +148,8 @@ async def apply_proxy_config() -> tuple[bool, str]:
     extra = ""
     if env_path:
         extra = (
-            f" Cloudflare DNS TLS env: {env_path} — "
-            "ensure Caddy systemd unit has EnvironmentFile= that path."
+            f" Wildcard SSL env: {env_path} — "
+            "ensure Caddy has EnvironmentFile pointing to it."
         )
 
     if not shutil.which("caddy"):
@@ -177,7 +170,7 @@ async def apply_proxy_config() -> tuple[bool, str]:
         code, out = _run(cmd)
         if code == 0:
             ensure_caddy()
-            return True, "Proxy configuration applied." + extra
+            return True, "Proxy configuration applied (production + preview SSL)." + extra
 
     ensure_caddy()
     return True, (

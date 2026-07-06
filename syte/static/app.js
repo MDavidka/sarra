@@ -421,6 +421,17 @@ async function loadProjects() {
   }
 }
 
+function sslBadgeHtml(p) {
+  const ssl = p.ssl || {};
+  const badge = ssl.badge || 'http';
+  const label = ssl.badge_label || 'HTTP';
+  const title = [
+    ssl.production?.label,
+    ssl.preview?.configured ? ssl.preview.label : null,
+  ].filter(Boolean).join(' · ');
+  return `<span class="badge badge-ssl badge-ssl-${badge}" title="${esc(title)}">${esc(label)}</span>`;
+}
+
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
@@ -439,6 +450,7 @@ function renderServices() {
       <h3>${esc(p.name)}</h3>
       <div class="service-meta">
         <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
+        ${sslBadgeHtml(p)}
         <span class="badge badge-dim">:${p.port}</span>
         <span class="badge badge-dim">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
       </div>
@@ -661,6 +673,8 @@ function renderServiceDashboard(p, resetLogs) {
     <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
     <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
     <div class="info-cell"><span>stack</span><strong>${esc(detectStack(p))}</strong></div>
+    <div class="info-cell"><span>production ssl</span><strong>${esc(p.ssl?.production?.label || '—')}</strong></div>
+    <div class="info-cell"><span>preview ssl</span><strong>${esc(p.ssl?.preview?.label || '—')}</strong></div>
     <div class="info-cell full"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
     <div class="info-cell full"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
     <div class="info-cell full"><span>git</span><span>${esc(p.git_url || '—')}</span></div>
