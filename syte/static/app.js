@@ -769,9 +769,6 @@ function renderPreviewSection(p) {
     if (p.preview_tls_hint) {
       hint.textContent += ` — ${p.preview_tls_hint}`;
     }
-    if (p.preview_domain_needs_restart) {
-      hint.textContent += ' — Stop then Start preview to move to the correct preview zone.';
-    }
     logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);

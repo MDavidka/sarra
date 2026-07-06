@@ -11,6 +11,12 @@ def build_create_project_response(project: dict, workspace: dict | None, message
         "uuid": uid,
         "name": project["name"],
         "port": project["port"],
+        "preview_domain": project.get("preview_domain"),
+        "preview_url": (
+            f"https://{project['preview_domain']}"
+            if project.get("preview_domain")
+            else None
+        ),
         "status": project.get("status", "created"),
         "message": message,
         "workspace": workspace,

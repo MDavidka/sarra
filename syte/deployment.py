@@ -247,6 +247,12 @@ async def create_project_record(
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
+    from syte.preview_manager import ensure_preview_address
+    from syte.certificates import apply_proxy_config
+
+    project = await ensure_preview_address(project or {"id": project_id, "name": name})
+    await apply_proxy_config()
+
     if deploy_now:
         asyncio.create_task(run_deploy_job(project_id, start_command))
         return project, f"Project {project_id} created.{scaffold_msg} Deploy started in background."

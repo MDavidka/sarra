@@ -25,11 +25,9 @@ def _normalize_preview_zone(zone: str) -> str:
     return zone
 
 
-def _preview_domain_valid(domain: str, base_zone: str) -> bool:
+def is_preview_hostname(domain: str) -> bool:
     domain = normalize_domain(domain)
-    if not domain or not base_zone:
-        return False
-    return domain.startswith("preview") and domain.endswith(f".{base_zone}")
+    return bool(domain and domain.startswith("preview") and "." in domain)
 
 
 async def resolve_preview_zone() -> str:
@@ -49,23 +47,22 @@ async def resolve_preview_zone() -> str:
     return _preview_base_domain(gui_domain)
 
 
-async def resolve_preview_domain(project: dict, *, new_session: bool = True) -> str:
+async def resolve_preview_domain(project: dict) -> str:
     """
-    Build preview hostname on the preview zone:
-    preview{random_letter}-{appname}.{preview_zone}
+    Stable preview hostname — assigned once per project, never rotated on restart.
 
+    preview{random_letter}-{appname}.{preview_zone}
     Example: previewk-mysite.sycord.site
     """
+    existing = normalize_domain(project.get("preview_domain") or "")
+    if is_preview_hostname(existing):
+        return existing
+
     base_zone = await resolve_preview_zone()
     if not base_zone:
         return ""
 
     app_slug = slugify(project.get("name") or project.get("id", "app"))[:32]
-
-    existing = normalize_domain(project.get("preview_domain") or "")
-    if not new_session and _preview_domain_valid(existing, base_zone):
-        return existing
-
     letter = random.choice(string.ascii_lowercase)
     return f"preview{letter}-{app_slug}.{base_zone}"
 
@@ -96,15 +93,6 @@ def preview_zone_for_domain(domain: str) -> str:
     return domain.split(".", 1)[-1]
 
 
-def _preview_domain_stale(domain: str) -> bool:
-    """True when preview hostname is on a zone Syte cannot terminate TLS for."""
-    domain = normalize_domain(domain)
-    if not domain:
-        return False
-    zone = preview_zone_for_domain(domain)
-    return zone in ("sycord.com", "www.sycord.com")
-
-
 def build_preview_urls(project: dict) -> dict:
     """Primary preview_url uses HTTPS domain when configured and TLS is up."""
     from syte.preview_iframe import probe_https_available
@@ -123,8 +111,8 @@ def build_preview_urls(project: dict) -> dict:
         zone = preview_zone_for_domain(domain)
         tls_hint = (
             f"HTTPS failed for {domain} — Caddy needs wildcard *.{zone} TLS. "
-            "Set Cloudflare API token in Syte Settings, ensure *.{zone} DNS → server IP, "
-            "then Stop → Start preview. Using direct HTTP URL until TLS is fixed."
+            "Set Cloudflare API token in Syte Settings and ensure *.{zone} DNS → server IP. "
+            "Preview domain is kept stable — fix TLS without changing the hostname."
         )
 
     return {

@@ -11,8 +11,14 @@ from pathlib import Path
 
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
+from syte.domain_utils import normalize_domain
 from syte.preview_config import build_preview_command, prepare_preview_hosts
-from syte.preview_domains import build_preview_urls, preview_dns_hint, resolve_preview_domain
+from syte.preview_domains import (
+    build_preview_urls,
+    is_preview_hostname,
+    preview_dns_hint,
+    resolve_preview_domain,
+)
 from syte.nextjs_layout import is_nextjs_repo
 from syte.workspace import command_exists, ensure_workspace, read_env_vars, workspace_path
 
@@ -152,13 +158,27 @@ def stop_preview(project_id: str) -> tuple[bool, str]:
     return True, "Preview stopped."
 
 
+async def ensure_preview_address(project: dict) -> dict:
+    """Assign and persist a stable preview domain + port (once per project)."""
+    project_id = project["id"]
+    updates: dict = {}
+    domain = normalize_domain(project.get("preview_domain") or "")
+    if not is_preview_hostname(domain):
+        domain = await resolve_preview_domain(project)
+        if domain:
+            updates["preview_domain"] = domain
+    if not project.get("preview_port"):
+        updates["preview_port"] = await next_preview_port()
+    if updates:
+        await update_project(project_id, updates)
+        project = await get_project(project_id) or {**project, **updates}
+    return project
+
+
 async def stop_preview_async(project_id: str) -> tuple[bool, str]:
-    """Stop preview and remove Caddy HTTPS route."""
+    """Stop preview process but keep stable preview_domain for iframe embeds."""
     stop_preview(project_id)
-    await update_project(project_id, {
-        "preview_status": "stopped",
-        "preview_domain": None,
-    })
+    await update_project(project_id, {"preview_status": "stopped"})
     from syte.certificates import apply_proxy_config
     await apply_proxy_config()
     return True, "Preview stopped."
@@ -179,9 +199,6 @@ def preview_meta(project: dict) -> dict:
     urls = build_preview_urls(project)
     domain = urls["preview_domain"]
     base_zone = domain.split(".", 1)[-1] if domain and "." in domain else ""
-    from syte.preview_domains import _preview_domain_stale
-
-    domain_needs_restart = _preview_domain_stale(domain)
     return {
         "preview_running": running,
         "preview_ready": ready,
@@ -189,7 +206,6 @@ def preview_meta(project: dict) -> dict:
         "preview_status": project.get("preview_status", "stopped"),
         "preview_stream_url": f"/api/projects/{project['id']}/preview/logs/stream?live=1",
         "preview_dns_hint": preview_dns_hint(urls["preview_domain"], base_zone) if urls["preview_domain"] else "",
-        "preview_domain_needs_restart": domain_needs_restart,
         **urls,
     }
 
@@ -228,11 +244,27 @@ async def preview_iframe_status(project: dict) -> dict:
 
 
 async def start_preview(project_id: str) -> tuple[bool, str, dict]:
-    from syte.domain_utils import normalize_domain
-
     project = await get_project(project_id)
     if not project:
         return False, "Project not found", {}
+
+    project = await ensure_preview_address(project)
+
+    preview_port = project.get("preview_port")
+    if (
+        is_preview_running(project_id)
+        and preview_port
+        and _port_listening(int(preview_port))
+    ):
+        if project.get("preview_status") != "running":
+            await update_project(project_id, {"preview_status": "running"})
+            project = await get_project(project_id) or project
+        from syte.project_enrich import enrich_ssl
+
+        meta = preview_meta(project)
+        meta["ssl"] = enrich_ssl(project)
+        meta["iframe"] = await preview_iframe_status(project)
+        return True, f"Preview already running on {meta['preview_url']}", meta
 
     stop_preview(project_id)
 
@@ -254,10 +286,9 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     if not preview_port:
         preview_port = await next_preview_port()
 
-    # Reuse existing preview domain on restart so DNS, Caddy config, and
-    # sycord.com frontend stay in sync. Only generate a new subdomain when
-    # no valid domain exists yet for this project.
-    preview_domain = await resolve_preview_domain(project, new_session=False)
+    preview_domain = normalize_domain(project.get("preview_domain") or "")
+    if not is_preview_hostname(preview_domain):
+        preview_domain = await resolve_preview_domain(project)
     prep_actions = prepare_preview_hosts(repo, preview_domain)
     cmd_template = detect_dev_command(repo) or cmd_template
     command = build_preview_command(repo, cmd_template).replace(
@@ -265,11 +296,8 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     )
 
     log_path = preview_log_path(project_id)
-    stale = normalize_domain(project.get("preview_domain") or "")
     with log_path.open("a") as log_file:
         log_file.write(f"\n=== Preview session (port {preview_port}) ===\n")
-        if stale and stale != preview_domain:
-            log_file.write(f"Replacing stale preview domain {stale} → {preview_domain}\n")
         log_file.write(f"Domain: {preview_domain}\n")
         if prep_actions:
             log_file.write("Config:\n" + "\n".join(f"  - {a}" for a in prep_actions) + "\n")
@@ -361,6 +389,7 @@ async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found"
+    project = await ensure_preview_address(project)
     running = is_preview_running(project_id)
     status = project.get("preview_status", "stopped")
     preview_port = project.get("preview_port")

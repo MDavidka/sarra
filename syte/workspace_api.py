@@ -75,11 +75,12 @@ def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int)
 
 async def workspace_get(project_id: str) -> dict | None:
     from syte import process_manager
-    from syte.preview_manager import preview_meta
+    from syte.preview_manager import ensure_preview_address, preview_meta
 
     project = await get_project(project_id)
     if not project:
         return None
+    project = await ensure_preview_address(project)
     ws = workspace_path(project_id)
     ip = settings.resolved_public_ip
     domain = project.get("domain") or ""
