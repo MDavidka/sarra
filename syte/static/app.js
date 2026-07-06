@@ -1105,20 +1105,44 @@ document.getElementById('save-preview-domain-btn')?.addEventListener('click', as
 
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
+  const box = document.getElementById('update-result');
   btn.disabled = true;
   btn.textContent = 'updating…';
   try {
     const res = await api('/system/update', { method: 'POST' });
-    const box = document.getElementById('update-result');
-    box.textContent = res.message;
-    box.classList.remove('hidden');
-    toast('syte is updating…');
+    if (box) {
+      box.textContent = `${res.message}\n\nRestarting Syte…`;
+      box.classList.remove('hidden');
+    }
+    toast('Update complete — restarting…');
+    btn.textContent = 'restarting…';
+    await waitForServerRestart();
+    toast('Syte is back online');
+    location.reload();
   } catch (e) {
-    toast('update failed: ' + e.message);
+    toast('Update failed: ' + e.message);
+    if (box) {
+      box.textContent = e.message;
+      box.classList.remove('hidden');
+    }
     btn.disabled = false;
-    btn.textContent = 'update syte';
+    btn.textContent = 'Update Syte';
   }
 });
+
+async function waitForServerRestart(maxAttempts = 30, intervalMs = 2000) {
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch('/api/system', { cache: 'no-store' });
+      if (res.ok) return;
+    } catch {
+      /* server still restarting */
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('Syte did not come back online after restart. Check server logs.');
+}
 
 async function loadSettings() {
   try {
