@@ -190,6 +190,28 @@ def preview_meta(project: dict) -> dict:
     }
 
 
+async def preview_iframe_status(project: dict) -> dict:
+    """Iframe embed checklist — configured headers + optional live probe."""
+    from syte.database import get_setting
+    from syte.domain_utils import normalize_domain
+    from syte.preview_iframe import (
+        build_iframe_checklist,
+        expected_frame_csp,
+        probe_preview_headers,
+    )
+
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
+    frame_csp = expected_frame_csp(gui_domain, allow_any=embed_mode != "restricted")
+
+    live_headers = None
+    urls = build_preview_urls(project)
+    if project.get("preview_status") == "running" and urls.get("preview_domain_url"):
+        live_headers = probe_preview_headers(urls["preview_domain_url"])
+
+    return build_iframe_checklist(project, frame_csp=frame_csp, live_headers=live_headers)
+
+
 async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     project = await get_project(project_id)
     if not project:
@@ -292,6 +314,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
 
     meta = preview_meta(project)
     meta["ssl"] = enrich_ssl(project)
+    meta["iframe"] = await preview_iframe_status(project)
     msg = f"Preview on {meta['preview_url']}"
     if meta.get("preview_domain"):
         msg += f" (domain: {meta['preview_domain']})"
@@ -344,4 +367,5 @@ async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
 
     meta = preview_meta(project)
     meta["ssl"] = enrich_ssl(project)
+    meta["iframe"] = await preview_iframe_status(project)
     return meta, "ok"

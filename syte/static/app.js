@@ -723,6 +723,14 @@ function renderServiceDashboard(p, resetLogs) {
   refreshIcons();
 }
 
+function iframeHintLine(iframe) {
+  if (!iframe) return '';
+  if (iframe.all_ok) return ' · iframe embed OK';
+  const failed = (iframe.items || []).filter((i) => !i.ok);
+  if (!failed.length) return '';
+  return ` · iframe issue: ${failed[0].label}`;
+}
+
 function renderPreviewSection(p) {
   const actions = document.getElementById('svc-preview-actions');
   const wrap = document.getElementById('svc-preview-wrap');
@@ -751,8 +759,8 @@ function renderPreviewSection(p) {
       ? `${p.preview_domain_url || p.preview_url}`
       : p.preview_url;
     hint.textContent = live
-      ? `Live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}`
-      : `Starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}`;
+      ? `Live — ${urlLabel}${p.preview_domain ? ' (HTTPS)' : ''}${iframeHintLine(p.iframe)}`
+      : `Starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}${iframeHintLine(p.iframe)}`;
     logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);
@@ -791,7 +799,7 @@ function startPreviewPoll(projectId) {
       await loadProjects();
       const p = projects.find(x => x.id === projectId);
       if (p && activeServiceId === projectId) {
-        renderPreviewSection(p);
+        renderPreviewSection({ ...p, iframe: st.iframe });
         if (st.preview_ready) stopPreviewPoll();
       }
     } catch { /* */ }
@@ -816,7 +824,7 @@ async function servicePreviewStart(id) {
     toast(res.message || 'preview started');
     await loadProjects();
     const p = projects.find(x => x.id === id);
-    if (p) renderPreviewSection(p);
+    if (p) renderPreviewSection({ ...p, iframe: res.iframe });
     if (logsEl) startPreviewLogStream(id, logsEl);
     startPreviewPoll(id);
   } catch (e) {

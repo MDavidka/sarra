@@ -56,16 +56,20 @@ def routes_by_zone(routes: list[CaddyRoute]) -> dict[str, list[CaddyRoute]]:
     return grouped
 
 
+from syte.preview_iframe import PREVIEW_STRIP_HEADERS
+
+
 def preview_iframe_header_lines(frame_csp: str, indent: str = "        ") -> list[str]:
-    return [
-        f"{indent}header {{",
-        f"{indent}    -X-Frame-Options",
-        f"{indent}    -Cross-Origin-Embedder-Policy",
-        f"{indent}    -Cross-Origin-Opener-Policy",
-        f"{indent}    -Cross-Origin-Resource-Policy",
+    lines = [f"{indent}header {{"]
+    for name in PREVIEW_STRIP_HEADERS:
+        if name == "Content-Security-Policy":
+            continue
+        lines.append(f"{indent}    -{name}")
+    lines.extend([
         f'{indent}    Content-Security-Policy "{frame_csp}"',
         f"{indent}}}",
-    ]
+    ])
+    return lines
 
 
 def reverse_proxy_lines(
@@ -76,13 +80,8 @@ def reverse_proxy_lines(
 ) -> list[str]:
     lines = [f"{indent}reverse_proxy 127.0.0.1:{port} {{"]
     if strip_frame_headers:
-        lines.extend([
-            f"{indent}    header_down -X-Frame-Options",
-            f"{indent}    header_down Content-Security-Policy",
-            f"{indent}    header_down Cross-Origin-Embedder-Policy",
-            f"{indent}    header_down Cross-Origin-Opener-Policy",
-            f"{indent}    header_down Cross-Origin-Resource-Policy",
-        ])
+        for name in PREVIEW_STRIP_HEADERS:
+            lines.append(f"{indent}    header_down -{name}")
     lines.append(f"{indent}}}")
     return lines
 

@@ -502,6 +502,17 @@ async def api_preview_status(project_id: str):
     return {"ok": True, **meta}
 
 
+@app.get("/api/projects/{project_id}/preview/iframe-check")
+async def api_preview_iframe_check(project_id: str):
+    """Iframe embed debug checklist for preview hosters."""
+    from syte.preview_manager import preview_iframe_status
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, **await preview_iframe_status(project)}
+
+
 @app.get("/api/projects/{project_id}/preview/logs/stream")
 async def api_preview_logs_stream(project_id: str, request: Request, live: bool = False):
     project = await get_project(project_id)

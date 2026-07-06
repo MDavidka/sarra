@@ -87,7 +87,9 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "preview_direct_url", "preview_ready", "preview_running",
                 "preview_port", "preview_stream_url", "preview_dns_hint",
                 "ssl.preview", "ssl.badge", "ssl.badge_label",
+                "iframe.all_ok", "iframe.items", "iframe.frame_csp",
             ],
+            "iframe_debug": "GET /api/projects/{uuid}/preview/iframe-check",
         },
         "production_ssl": {
             "description": "Production HTTPS via wildcard zone or per-host Caddy auto-HTTPS",

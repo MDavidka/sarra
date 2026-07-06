@@ -258,12 +258,27 @@ def _step_preview_start(api: str) -> dict:
             },
             "iframe_embedding": {
                 "note": (
-                    "Embed preview_url in an iframe on any site (sycord.com, your app, etc.). "
-                    "Syte sets frame-ancestors * on preview domains by default."
+                    "Embed preview_url in an iframe on sycord.com (or any site when preview_embed_mode=any). "
+                    "Caddy strips X-Frame-Options, COOP, COEP, HSTS and sets frame-ancestors CSP."
                 ),
-                "example_html": '<iframe src="{preview_url}" style="width:100%;height:100%;border:0" referrerpolicy="no-referrer-when-downgrade"></iframe>',
+                "example_html": (
+                    '<iframe src="{preview_url}" '
+                    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" '
+                    'style="width:100%;height:100%;border:0" '
+                    'referrerpolicy="no-referrer-when-downgrade"></iframe>'
+                ),
                 "avoid": "Do not use sandbox without allow-scripts — page will stay blank",
-                "setting": "preview_embed_mode=restricted in Syte settings limits embed to sycord.com + GUI domain only",
+                "setting": "preview_embed_mode=restricted limits frame-ancestors to sycord.com + GUI domain only",
+                "debug_endpoint": "GET /api/projects/{uuid}/preview/iframe-check — hoster checklist with live header probe",
+                "hoster_checklist": [
+                    "No X-Frame-Options on preview responses",
+                    "CSP frame-ancestors includes https://sycord.com and https://*.sycord.com",
+                    "No COOP same-origin / COEP require-corp from dev server (stripped by Caddy)",
+                    "No HSTS on preview subdomain",
+                    "HTTPS on :443 via Caddy (not raw :4000 in iframe src)",
+                    "Wildcard DNS *.zone → server; valid TLS cert for preview subdomain",
+                    "Preview dev server running and returning HTML (not empty)",
+                ],
             },
         },
         "backend_pseudocode": (
