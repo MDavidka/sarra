@@ -7,11 +7,13 @@ from syte import deployment, process_manager
 from syte.api_responses import build_create_project_response
 from syte.auth import verify_api_token
 from syte.continue_agent import (
+    communicate_with_agent,
     get_agent_logs,
     get_agent_status,
     restart_agent,
     start_agent,
     stop_agent,
+    test_agent,
     update_agent_settings,
 )
 from syte.certificates import apply_proxy_config
@@ -101,6 +103,19 @@ class CreateProjectRequest(BaseModel):
 class AgentSettingsRequest(BaseModel):
     uuid: str
     model_profile: str | None = None
+
+
+class AgentCommunicateRequest(BaseModel):
+    uuid: str
+    message: str
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+
+
+class AgentChangeRequest(BaseModel):
+    uuid: str
+    message: str = Field(..., description="Change request from sycord.com user")
+    model_profile: str | None = Field(None, description="Model profile alias (syra-nano/base/havy)")
+    model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
 
 
 def _http_error(status: int, error: str, message: str):
@@ -346,6 +361,51 @@ async def api_agent_logs(
         "uuid": uuid,
         "logs": get_agent_logs(uuid, lines),
         "stream_url": f"/api/projects/{uuid}/agent/logs/stream?live=1",
+    }
+
+
+@router.get("/agent_dashboard")
+async def api_agent_dashboard(_token: dict = Depends(verify_api_token)):
+    from syte.agent_metrics import get_dashboard_metrics
+
+    return {"ok": True, **(await get_dashboard_metrics())}
+
+
+@router.post("/agent_test")
+async def api_agent_test(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    result = await test_agent(body.uuid, source="api")
+    if not result.get("ok"):
+        _http_error(400, result.get("error") or "agent_test_failed", result.get("message") or "Agent test failed")
+    return result
+
+
+@router.post("/agent_communicate")
+async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = Depends(verify_api_token)):
+    result = await communicate_with_agent(
+        body.uuid,
+        body.message,
+        model_profile=body.model_profile,
+        source="api",
+    )
+    if not result.get("ok"):
+        _http_error(400, result.get("error") or "agent_communicate_failed", result.get("message") or "Communication failed")
+    return result
+
+
+@router.post("/agent_change")
+async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(verify_api_token)):
+    profile = body.model_profile or body.model_name
+    result = await communicate_with_agent(
+        body.uuid,
+        body.message,
+        model_profile=profile,
+        source="sycord",
+    )
+    if not result.get("ok"):
+        _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
+    return {
+        **result,
+        "change_applied": bool(result.get("reply")),
     }
 
 

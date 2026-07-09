@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import signal
@@ -78,10 +79,12 @@ async def bridge_settings() -> dict[str, str]:
     bridge_url = (await get_setting("continue_bridge_api_base", "")).strip()
     api_key = (await get_setting("continue_bridge_api_key", "")).strip()
     default_profile = (await get_setting("continue_default_model_profile", "syra-base")).strip() or "syra-base"
+    provider = (await get_setting("continue_provider", "openai")).strip() or "openai"
     return {
         "api_base": bridge_url.rstrip("/"),
         "api_key": api_key,
         "default_profile": default_profile,
+        "provider": provider,
         "syra_nano_model": (await get_setting("continue_syra_nano_model", "gemini-2.5-flash")).strip() or "gemini-2.5-flash",
         "syra_base_model": (await get_setting("continue_syra_base_model", "deepseek-chat")).strip() or "deepseek-chat",
         "syra_havy_model": (await get_setting("continue_syra_havy_model", "gemini-2.5-pro")).strip() or "gemini-2.5-pro",
@@ -136,7 +139,7 @@ async def selected_model_metadata(project: dict) -> dict[str, str]:
     }
     return {
         "profile": profile,
-        "provider": "openai",
+        "provider": bridge["provider"],
         "model": model_map.get(profile, bridge["syra_base_model"]),
         "api_base": bridge["api_base"],
     }
@@ -164,7 +167,7 @@ async def write_agent_config(project: dict) -> Path:
     for alias, model_name in ordered:
         lines.extend([
             f"  - name: {_yaml_quote(alias)}",
-            "    provider: openai",
+            f"    provider: {_yaml_quote(bridge['provider'])}",
             f"    model: {_yaml_quote(model_name)}",
             f"    apiBase: {_yaml_quote(api_base)}",
             '    apiKey: "${{ secrets.SYRA_BRIDGE_API_KEY }}"',
@@ -385,4 +388,166 @@ async def update_agent_settings(
     if updates:
         await update_project(project_id, updates)
     return await get_agent_status(project_id)
+
+
+def _extract_assistant_reply(state: dict) -> str:
+    history = (state.get("session") or {}).get("history") or []
+    assistant_items = [item for item in history if (item.get("message") or {}).get("role") == "assistant"]
+    if not assistant_items:
+        return ""
+    last = assistant_items[-1].get("message") or {}
+    content = last.get("content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return str(content)
+
+
+async def _poll_agent_state(port: int, *, timeout_s: float = 90.0) -> dict:
+    base = agent_local_url(port).rstrip("/")
+    deadline = time.time() + timeout_s
+    last_state: dict = {}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        while time.time() < deadline:
+            try:
+                response = await client.get(f"{base}/state")
+                if response.status_code >= 400:
+                    await asyncio.sleep(0.5)
+                    continue
+                last_state = response.json()
+                busy = last_state.get("isProcessing") or last_state.get("is_processing")
+                if not busy:
+                    return last_state
+            except Exception:
+                pass
+            await asyncio.sleep(0.4)
+    return last_state
+
+
+async def communicate_with_agent(
+    project_id: str,
+    message: str,
+    *,
+    model_profile: str | None = None,
+    source: str = "api",
+    auto_start: bool = True,
+) -> dict:
+    from syte.agent_metrics import log_agent_request
+
+    project = await get_project(project_id)
+    if not project:
+        return {"ok": False, "error": "not_found", "message": "Project not found"}
+
+    if model_profile:
+        await update_agent_settings(project_id, model_profile=model_profile)
+
+    status = await get_agent_status(project_id)
+    if not status.get("agent_running"):
+        if not auto_start:
+            err = "Continue agent is not running"
+            await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
+            return {"ok": False, "error": "agent_not_running", "message": err}
+        ok, start_msg, status = await start_agent(project_id)
+        if not ok:
+            await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=start_msg)
+            return {"ok": False, "error": "agent_start_failed", "message": start_msg}
+
+    port = status.get("agent_port")
+    if not port:
+        err = "Agent has no allocated port"
+        await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
+        return {"ok": False, "error": "agent_no_port", "message": err}
+
+    base = agent_local_url(int(port)).rstrip("/")
+    model = status.get("agent_model") or {}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{base}/message",
+                json={"message": message},
+                headers={"Content-Type": "application/json"},
+            )
+            if response.status_code >= 400:
+                err = f"Agent returned HTTP {response.status_code}"
+                await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
+                return {"ok": False, "error": "agent_http_error", "message": err, "status_code": response.status_code}
+
+        state = await _poll_agent_state(int(port))
+        reply = _extract_assistant_reply(state)
+        await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="ok")
+        return {
+            "ok": True,
+            "uuid": project_id,
+            "model_profile": model.get("profile"),
+            "model": model.get("model"),
+            "provider": model.get("provider"),
+            "message": message,
+            "reply": reply,
+            "state": state,
+        }
+    except Exception as exc:
+        err = str(exc)
+        await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
+        return {"ok": False, "error": "agent_communicate_failed", "message": err}
+
+
+async def test_agent(project_id: str, *, source: str = "api") -> dict:
+    from syte.agent_metrics import log_agent_request
+
+    project = await get_project(project_id)
+    if not project:
+        return {"ok": False, "error": "not_found", "message": "Project not found"}
+
+    status = await get_agent_status(project_id)
+    backend = status.get("agent_backend") or {}
+    install_ok = status.get("agent_install_ok", continue_installed())
+
+    if not install_ok:
+        return {
+            "ok": False,
+            "error": "cli_not_installed",
+            "message": "Continue CLI not installed. Install: npm install -g @continuedev/cli",
+            "checks": {"cli": False, "backend": backend.get("ok", False), "agent": False},
+        }
+
+    if not backend.get("ok"):
+        await log_agent_request(project_id, source=source, status="error", error=backend.get("error") or "backend_unreachable")
+        return {
+            "ok": False,
+            "error": "backend_unreachable",
+            "message": backend.get("error") or "Bridge API unreachable",
+            "checks": {"cli": True, "backend": False, "agent": status.get("agent_running", False)},
+            "backend": backend,
+        }
+
+    if not status.get("agent_running"):
+        ok, start_msg, status = await start_agent(project_id)
+        if not ok:
+            await log_agent_request(project_id, source=source, status="error", error=start_msg)
+            return {
+                "ok": False,
+                "error": "agent_start_failed",
+                "message": start_msg,
+                "checks": {"cli": True, "backend": True, "agent": False},
+            }
+
+    result = await communicate_with_agent(
+        project_id,
+        "Reply with exactly the word 'ok' and nothing else.",
+        source=source,
+        auto_start=False,
+    )
+    passed = result.get("ok") and "ok" in (result.get("reply") or "").lower()
+    return {
+        "ok": passed,
+        "error": None if passed else (result.get("error") or "test_reply_invalid"),
+        "message": "Agent test passed" if passed else (result.get("message") or "Agent did not return expected reply"),
+        "checks": {"cli": True, "backend": True, "agent": True, "communicate": result.get("ok", False)},
+        "reply": result.get("reply", ""),
+        "model": result.get("model"),
+        "provider": result.get("provider"),
+    }
 

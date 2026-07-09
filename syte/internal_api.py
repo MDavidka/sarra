@@ -5,21 +5,36 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 
 import httpx
 
 from syte.auth import verify_internal_service_request
 from syte.continue_agent import (
     agent_local_url,
+    communicate_with_agent,
     get_agent_logs,
     get_agent_status,
     restart_agent,
     start_agent,
     stop_agent,
+    test_agent,
 )
 from syte.database import get_project
 
 router = APIRouter(tags=["Syte Internal API"])
+
+
+class InternalAgentChangeRequest(BaseModel):
+    message: str = Field(..., description="User change request from sycord.com")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_name: str | None = Field(None, description="Alias used by sycord.com")
+
+
+class InternalAgentCommunicateRequest(BaseModel):
+    message: str
+    model_profile: str | None = None
+    model_name: str | None = None
 
 
 async def _require_project(project_id: str) -> dict:
@@ -103,6 +118,68 @@ async def internal_agent_logs(
         "ok": True,
         "project_id": project_id,
         "logs": get_agent_logs(project_id, max(1, min(lines, 2000))),
+    }
+
+
+@router.get("/agent/dashboard")
+async def internal_agent_dashboard(_auth: dict = Depends(verify_internal_service_request)):
+    from syte.agent_metrics import get_dashboard_metrics
+
+    return {"ok": True, **(await get_dashboard_metrics())}
+
+
+@router.post("/projects/{project_id}/agent/test")
+async def internal_agent_test(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    await _require_project(project_id)
+    result = await test_agent(project_id, source="internal")
+    if not result.get("ok"):
+        raise HTTPException(400, detail={"error": result.get("error"), "message": result.get("message"), **result})
+    return result
+
+
+@router.post("/projects/{project_id}/agent/communicate")
+async def internal_agent_communicate(
+    project_id: str,
+    body: InternalAgentCommunicateRequest,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    await _require_project(project_id)
+    profile = body.model_profile or body.model_name
+    result = await communicate_with_agent(
+        project_id,
+        body.message,
+        model_profile=profile,
+        source="internal",
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, detail=result)
+    return result
+
+
+@router.post("/projects/{project_id}/agent/change")
+async def internal_agent_change(
+    project_id: str,
+    body: InternalAgentChangeRequest,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """sycord.com → Syte: user requests a code change; VM routes to Continue CLI by UUID workspace."""
+    await _require_project(project_id)
+    profile = body.model_profile or body.model_name
+    result = await communicate_with_agent(
+        project_id,
+        body.message,
+        model_profile=profile,
+        source="sycord",
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, detail=result)
+    return {
+        **result,
+        "project_id": project_id,
+        "change_applied": bool(result.get("reply")),
     }
 
 
