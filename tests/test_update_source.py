@@ -20,7 +20,7 @@ def test_parse_github_repo_ssh() -> None:
     assert parse_github_repo("git@github.com:MDavidka/sarra.git") == "MDavidka/sarra"
 
 
-def test_fetch_latest_open_pr_picks_newest_non_draft(
+def test_fetch_latest_open_pr_picks_highest_pr_number(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeResponse:
@@ -29,6 +29,13 @@ def test_fetch_latest_open_pr_picks_newest_non_draft(
         def json(self):
             return [
                 {
+                    "number": 4,
+                    "title": "Old PR recently touched",
+                    "draft": False,
+                    "head": {"ref": "cursor/old-pr"},
+                    "html_url": "https://github.com/o/r/pull/4",
+                },
+                {
                     "number": 9,
                     "title": "Draft work",
                     "draft": True,
@@ -36,11 +43,11 @@ def test_fetch_latest_open_pr_picks_newest_non_draft(
                     "html_url": "https://github.com/o/r/pull/9",
                 },
                 {
-                    "number": 10,
-                    "title": "AI tab fixes",
+                    "number": 14,
+                    "title": "Latest work",
                     "draft": False,
-                    "head": {"ref": "cursor/ai-dashboard-redesign-6cbf"},
-                    "html_url": "https://github.com/o/r/pull/10",
+                    "head": {"ref": "cursor/projects-home-redesign-6cbf"},
+                    "html_url": "https://github.com/o/r/pull/14",
                 },
             ]
 
@@ -60,9 +67,9 @@ def test_fetch_latest_open_pr_picks_newest_non_draft(
     monkeypatch.setattr("syte.update_source.httpx.Client", FakeClient)
     target = fetch_latest_open_pr("MDavidka/sarra")
     assert target is not None
-    assert target.pr_number == 10
-    assert target.branch == "cursor/ai-dashboard-redesign-6cbf"
-    assert "PR #10" in target.label
+    assert target.pr_number == 14
+    assert target.branch == "cursor/projects-home-redesign-6cbf"
+    assert "PR #14" in target.label
 
 
 def test_resolve_update_target_uses_latest_pr(
@@ -96,7 +103,7 @@ def test_resolve_update_target_uses_latest_pr(
     assert target.pr_number == 11
 
 
-def test_resolve_update_target_falls_back_to_main(
+def test_resolve_update_target_falls_back_to_update_branch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -109,7 +116,7 @@ def test_resolve_update_target_falls_back_to_main(
     monkeypatch.setattr("syte.update_source.fetch_latest_open_pr", lambda _repo: None)
 
     target = resolve_update_target(install_dir)
-    assert target.branch == "main"
+    assert target.branch == "cursor/update-from-latest-pr-6cbf"
     assert "no open PRs" in target.label
 
 

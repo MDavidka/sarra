@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # One-shot upgrade when Settings → Update Syte cannot self-bootstrap.
 # Usage: ./scripts/upgrade-from-pr.sh [PR_NUMBER]
+# Use the highest open PR number (Settings → Update shows which PR).
 set -euo pipefail
 
-PR_NUMBER="${1:-13}"
+PR_NUMBER="${1:-14}"
 SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SYTE_DIR"
 
