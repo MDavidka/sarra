@@ -65,6 +65,15 @@ def continue_installed() -> bool:
     return shutil.which("cn") is not None
 
 
+def build_serve_command(config_path: Path | str, port: int, *, timeout_s: int = 3600) -> str:
+    """Build a Continue CLI serve command compatible with current cn flags."""
+    config = str(config_path)
+    return (
+        f'{continue_command()} serve --config "{config}" '
+        f"--port {int(port)} --timeout {int(timeout_s)}"
+    )
+
+
 async def next_agent_port() -> int:
     projects = await list_projects()
     used = {p.get("agent_port") for p in projects if p.get("agent_port")}
@@ -328,7 +337,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         spec = bridge["profiles"][name]
         if spec["api_key"]:
             env[spec["secret_env"]] = spec["api_key"]
-    command = f'{continue_command()} serve --config "{config_path}" --host 127.0.0.1 --port {port}'
+    command = build_serve_command(config_path, port)
 
     log_file = open(log_path, "a")
     proc = subprocess.Popen(

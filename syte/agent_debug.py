@@ -14,6 +14,7 @@ from syte.continue_agent import (
     agent_home,
     agent_log_path,
     bridge_settings,
+    build_serve_command,
     continue_command,
     continue_installed,
     get_agent_logs,
@@ -21,6 +22,7 @@ from syte.continue_agent import (
     is_agent_running,
     write_agent_config,
 )
+from syte.continue_agent import agent_config_path as resolve_agent_config_path
 from syte.database import get_project, update_project
 from syte.workspace import run_cmd
 
@@ -262,6 +264,11 @@ def build_debug_hints(report: dict[str, Any]) -> list[str]:
             hints.append(f"Add API key for {profile['profile']} ({profile['label']}) in AI settings.")
 
     agent = report.get("agent") or {}
+    logs = report.get("logs_tail") or ""
+    if "unknown option '--host'" in logs:
+        hints.append(
+            "Continue CLI rejected --host (fixed in newer Syte). Update Syte and run Test again."
+        )
     if agent.get("agent_last_error"):
         hints.append("Agent last error logged — see agent logs below.")
     if agent.get("agent_status") == "error":
@@ -392,6 +399,11 @@ async def build_ai_debug_report(
             "agent_backend": agent_status.get("agent_backend"),
             "agent_install_ok": agent_status.get("agent_install_ok"),
             "is_agent_running_pid": is_agent_running(project_id),
+            "serve_command": build_serve_command(
+                resolve_agent_config_path(project_id),
+                int(agent_status.get("agent_port") or 5200),
+            ),
+            "continue_command": continue_command(),
         },
         "steps": steps,
         "logs_tail": get_agent_logs(project_id, log_lines) if include_logs else "",
