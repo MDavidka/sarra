@@ -2152,6 +2152,28 @@ code {
 .ai-test-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 .ai-test-status { flex: 1 1 100%; font-size: 0.78rem; min-height: 1em; }
 
+.ai-debug-panel { background: #fff; border: 1px solid #e4e4e7; border-radius: 16px; padding: 0.75rem 0.85rem; }
+.ai-debug-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; cursor: pointer; font-weight: 600; font-size: 0.86rem; color: #18181b; list-style: none; }
+.ai-debug-summary::-webkit-details-marker { display: none; }
+.ai-debug-refresh { margin-left: auto; }
+.ai-debug-content { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.ai-debug-block { margin-top: 0.5rem; }
+.ai-debug-steps { display: flex; flex-direction: column; gap: 0.35rem; }
+.ai-debug-step { display: grid; grid-template-columns: 20px 1fr; gap: 0.5rem; align-items: start; font-size: 0.8rem; }
+.ai-debug-step.ok .ai-debug-step-icon { color: #16a34a; }
+.ai-debug-step.fail .ai-debug-step-icon { color: #dc2626; }
+.ai-debug-step-detail { color: #71717a; word-break: break-word; }
+.ai-debug-hints { display: flex; flex-direction: column; gap: 0.35rem; }
+.ai-debug-hint { padding: 0.55rem 0.65rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; font-size: 0.78rem; color: #9a3412; }
+.ai-debug-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.ai-debug-table th, .ai-debug-table td { border-bottom: 1px solid #f4f4f5; padding: 0.4rem 0.35rem; text-align: left; vertical-align: top; }
+.ai-debug-table th { color: #71717a; font-weight: 500; }
+.ai-debug-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+.ai-debug-badge.ok { background: #dcfce7; color: #166534; }
+.ai-debug-badge.fail { background: #fee2e2; color: #991b1b; }
+.ai-debug-logs { background: #18181b; color: #e4e4e7; border-radius: 12px; padding: 0.75rem; font-family: ui-monospace, monospace; font-size: 0.72rem; line-height: 1.45; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.ai-debug-config { background: #f4f4f5; border-radius: 10px; padding: 0.65rem; font-family: ui-monospace, monospace; font-size: 0.72rem; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; }
+
 .ai-key-card { border: 1px solid #e4e4e7; border-radius: 12px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa; }
 .ai-key-head { display: flex; flex-wrap: wrap; gap: 0.35rem 0.65rem; align-items: baseline; margin-bottom: 0.35rem; }
 .ai-key-provider { font-size: 0.78rem; color: #71717a; }

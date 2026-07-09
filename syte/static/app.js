@@ -268,7 +268,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); }
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
   if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
@@ -1433,6 +1433,92 @@ async function loadAiDashboard() {
   refreshIcons();
 }
 
+function renderAiDebug(report) {
+  const el = document.getElementById('ai-debug-content');
+  if (!el) return;
+  if (!report) {
+    el.innerHTML = '<p class="hint">No debug data.</p>';
+    return;
+  }
+
+  const steps = (report.steps || []).map(step => `
+    <div class="ai-debug-step ${step.ok ? 'ok' : 'fail'}">
+      <span class="ai-debug-step-icon">${step.ok ? '✓' : '✗'}</span>
+      <div>
+        <strong>${esc(step.label)}</strong>
+        <div class="ai-debug-step-detail">${esc(step.detail || '')}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const profiles = (report.profiles || []).map(p => {
+    const probes = (p.probes || []).map(pr => `
+      <tr>
+        <td>${esc(pr.step)}</td>
+        <td>${esc(pr.method || '')}</td>
+        <td><span class="ai-debug-badge ${pr.ok ? 'ok' : 'fail'}">${pr.ok ? 'ok' : 'fail'}</span></td>
+        <td>${pr.status_code ?? '—'}</td>
+        <td>${pr.latency_ms ?? '—'}ms</td>
+        <td>${esc(pr.error || (pr.body_preview || '').slice(0, 120))}</td>
+      </tr>
+    `).join('');
+    return `
+      <div class="ai-debug-block">
+        <strong>${esc(p.profile)}</strong> · ${esc(p.label)} · key: ${p.api_key_set ? esc(p.api_key_hint) : 'missing'}
+        <div class="hint">${esc(p.api_base)} · ${esc(p.model)}</div>
+        <table class="ai-debug-table">
+          <thead><tr><th>Probe</th><th>Method</th><th>Result</th><th>HTTP</th><th>Time</th><th>Detail</th></tr></thead>
+          <tbody>${probes || '<tr><td colspan="6">No probes — key not saved</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+
+  const hints = (report.hints || []).map(h => `<div class="ai-debug-hint">${esc(h)}</div>`).join('');
+  const agent = report.agent || {};
+  const config = report.config || {};
+
+  el.innerHTML = `
+    <div class="hint">Generated ${esc(report.generated_at || '')} · active profile <strong>${esc(report.active_profile || '')}</strong></div>
+    <div class="ai-debug-steps">${steps || '<p class="hint">No steps recorded.</p>'}</div>
+    ${hints ? `<div class="ai-debug-hints">${hints}</div>` : ''}
+    <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
+    <div>
+      <strong>Agent runtime</strong>
+      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${report.continue_cli?.installed ? esc(report.continue_cli.version || 'installed') : 'missing'}</div>
+      ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
+    </div>
+    ${config.snippet ? `<div><strong>config.yaml</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
+    ${report.logs_tail ? `<div><strong>Agent logs (tail)</strong><pre class="ai-debug-logs">${esc(report.logs_tail)}</pre></div>` : ''}
+  `;
+}
+
+async function loadAiDebug(report) {
+  const panel = document.getElementById('ai-debug-panel');
+  const content = document.getElementById('ai-debug-content');
+  if (!content) return;
+  if (report) {
+    renderAiDebug(report);
+    if (panel) panel.open = true;
+    return;
+  }
+  const uuid = document.getElementById('ai-test-project')?.value;
+  const profile = document.getElementById('ai-test-profile')?.value;
+  if (!uuid) {
+    content.innerHTML = '<p class="hint">Select a project to run diagnostics.</p>';
+    return;
+  }
+  content.innerHTML = '<p class="hint">Running diagnostics…</p>';
+  try {
+    const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
+    const res = await api(`/projects/${uuid}/agent/debug${q}`);
+    renderAiDebug(res);
+    if (panel) panel.open = true;
+  } catch (e) {
+    content.innerHTML = `<p class="hint">Debug failed: ${esc(e.message)}</p>`;
+  }
+}
+
 function esc(s) {
   if (!s) return '';
   const d = document.createElement('div');
@@ -1549,7 +1635,16 @@ document.getElementById('ai-header-settings-btn')?.addEventListener('click', ope
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 
-document.getElementById('ai-test-profile')?.addEventListener('change', updateAiApiWarning);
+document.getElementById('ai-test-profile')?.addEventListener('change', () => {
+  updateAiApiWarning();
+  loadAiDebug();
+});
+document.getElementById('ai-test-project')?.addEventListener('change', () => loadAiDebug());
+document.getElementById('ai-debug-refresh')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  loadAiDebug();
+});
 
 document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
   const uuid = document.getElementById('ai-test-project')?.value;
@@ -1575,6 +1670,8 @@ document.getElementById('ai-test-agent-btn')?.addEventListener('click', async ()
     } else {
       if (statusEl) statusEl.textContent = res.message || 'Test failed';
       toast(res.message || 'Test failed');
+      if (res.debug) await loadAiDebug(res.debug);
+      else await loadAiDebug();
     }
     await loadAiDashboard();
   } catch (e) {
