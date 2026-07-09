@@ -1451,6 +1451,79 @@
               <div class="field-desc">Snapshot of Continue serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
             </div>
           </div>
+
+          <div class="endpoint" id="agent-activity">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_activity?uuid=&amp;since_id=0</span>
+              </div>
+              <div class="endpoint-name">Agent activity feed (snapshot)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>Cursor-like chat feed for sycord.com.</strong> Structured events: user messages, assistant replies, thinking, file create/edit/delete, commands run, request lifecycle.</div>
+              <div class="field-desc">Poll with <code>since_id</code> (last event id) for incremental updates. For real-time UI use SSE below.</div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "since_id": 0,
+  "stream_url": "/api/projects/my-site-a1b2c3/agent/activity/stream?live=1",
+  "events": [
+    {
+      "id": 12,
+      "event_type": "user_message",
+      "role": "user",
+      "title": "User",
+      "detail": "Add dark mode toggle",
+      "source": "sycord",
+      "created_at": "2026-07-09T17:00:00+00:00"
+    },
+    {
+      "id": 13,
+      "event_type": "thinking",
+      "role": "assistant",
+      "title": "Thinking",
+      "detail": "Planning component changes…",
+      "source": "agent"
+    },
+    {
+      "id": 14,
+      "event_type": "file_modified",
+      "role": "assistant",
+      "title": "Modified file",
+      "detail": "src/components/ThemeToggle.tsx",
+      "payload": {"path": "src/components/ThemeToggle.tsx"}
+    },
+    {
+      "id": 15,
+      "event_type": "request_completed",
+      "role": "assistant",
+      "title": "Completed",
+      "detail": "Added ThemeToggle component"
+    }
+  ]
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-activity-stream">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=0</span>
+              </div>
+              <div class="endpoint-name">Agent activity (SSE stream)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Server-Sent Events — replays history then streams new activity in real time. Optional <code>api_key</code> query param.</div>
+              <pre>data: {"type":"activity","event":{"id":16,"event_type":"command_run","title":"Ran command","detail":"npm run lint"}}
+
+data: {"type":"processing","event":{"event_type":"processing","title":"Working","detail":"Agent is processing…"}}
+
+data: {"type":"ping","since_id":16}</pre>
+              <div class="field-desc"><strong>event_type values:</strong> <code>user_message</code>, <code>assistant_message</code>, <code>thinking</code>, <code>tool_call</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>agent_started</code>, <code>agent_stopped</code></div>
+            </div>
+          </div>
           <div class="endpoint" id="agent-test">
             <div class="endpoint-header">
               <div class="endpoint-row">
@@ -1541,6 +1614,8 @@
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — raw message to CLI</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/test</code> — health + probe chat</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/logs?lines=200</code></span></div>
+            <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity?since_id=0</code> — Cursor-like activity snapshot</span></div>
+            <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity/stream?live=1</code> — SSE real-time activity</span></div>
             <div class="info-row"><span class="info-key">ANY</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — forward to <code>cn serve</code> HTTP API</span></div>
           </div>
           <div class="note" style="margin-top:1rem"><strong>Continue CLI HTTP</strong> (via proxy or localhost): <code>POST /message</code>, <code>GET /state</code>, <code>POST /pause</code>, <code>GET /diff</code>, <code>POST /exit</code></div>

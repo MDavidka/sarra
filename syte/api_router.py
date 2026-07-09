@@ -364,6 +364,28 @@ async def api_agent_logs(
     }
 
 
+@router.get("/agent_activity")
+async def api_agent_activity(
+    uuid: str = Query(...),
+    since_id: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=2000),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_activity import list_agent_events
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    events = await list_agent_events(uuid, since_id=since_id, limit=limit)
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "events": events,
+        "since_id": since_id,
+        "stream_url": f"/api/projects/{uuid}/agent/activity/stream?live=1",
+    }
+
+
 @router.get("/agent_dashboard")
 async def api_agent_dashboard(_token: dict = Depends(verify_api_token)):
     from syte.agent_metrics import get_dashboard_metrics

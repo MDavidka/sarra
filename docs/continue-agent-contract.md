@@ -72,6 +72,39 @@ Returns:
 
 `GET /api/internal/projects/{project_id}/agent/logs?lines=200`
 
+### Activity feed (real-time, for sycord.com UI)
+
+Cursor-like structured events — thinking, file edits, commands, chat messages.
+
+**Snapshot (poll):**
+
+`GET /api/internal/projects/{project_id}/agent/activity?since_id=0&limit=200`
+
+**Live stream (SSE):**
+
+`GET /api/internal/projects/{project_id}/agent/activity/stream?live=1&since_id=0`
+
+Auth: `X-Syra-Internal-Secret`
+
+SSE payload:
+
+```json
+{"type": "activity", "event": {"id": 1, "event_type": "user_message", "role": "user", "title": "User", "detail": "...", "source": "sycord", "created_at": "..."}}
+```
+
+**event_type values:** `user_message`, `assistant_message`, `thinking`, `tool_call`, `command_run`, `file_created`, `file_modified`, `file_deleted`, `file_read`, `request_started`, `request_completed`, `request_failed`, `agent_started`, `agent_stopped`, `processing`
+
+**sycord.com integration:**
+
+1. Open `EventSource` on `/api/internal/projects/{uuid}/agent/activity/stream?live=1` when user opens chat
+2. `POST /api/internal/projects/{uuid}/agent/change` with user message
+3. Render each `activity` event in the chat UI (group by request)
+4. On reconnect, pass `since_id` from last received event id
+
+Public API equivalents (X-API-Key): `GET /api/agent_activity?uuid=`, `GET /api/projects/{uuid}/agent/activity/stream?live=1`
+
+Full docs: `GET /api/#agent-activity`
+
 ### Stable proxy to Continue HTTP service
 
 - `GET /api/internal/projects/{project_id}/agent/proxy`
