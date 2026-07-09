@@ -61,6 +61,9 @@
         <button type="button" class="sidebar-link" data-view="logs">
           <i data-lucide="scroll-text"></i><span>Logs</span>
         </button>
+        <button type="button" class="sidebar-link" data-view="ai">
+          <i data-lucide="bot"></i><span>AI</span>
+        </button>
         <a class="sidebar-link" href="/api/" data-view="api">
           <i data-lucide="book-open"></i><span>API</span>
         </a>
@@ -426,6 +429,69 @@
           </div>
         </section>
 
+        <section id="view-ai" class="view">
+          <div class="settings-stack">
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="bot" class="projects-icon"></i>
+                <div>
+                  <h1>AI / Continue runtime</h1>
+                  <p class="projects-sub">Syte-side runtime for long-lived Continue <code>cn serve</code> agents</p>
+                </div>
+              </div>
+              <div class="note" style="margin:0 0 1rem;padding:0.85rem;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;font-size:13px;color:#71717a">
+                AI session API: <a href="/api/#agent" class="link">/api/#agent</a> · Machine-readable spec: <a href="/api/ai.json" class="link">/api/ai.json</a>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Used by sycord.com server-to-server for coding-agent sessions. Configure the OpenAI-compatible bridge and model profiles below.</p>
+                <div class="form-group">
+                  <label for="continue-bridge-base">OpenAI-compatible bridge API base</label>
+                  <input type="text" id="continue-bridge-base" placeholder="https://bridge.sycord.internal/v1">
+                  <span class="hint">Used by Continue on the VM. No Continue Hub required by default.</span>
+                </div>
+                <div class="form-group">
+                  <label for="continue-bridge-key">Bridge API key</label>
+                  <input type="password" id="continue-bridge-key" placeholder="optional bridge API key" autocomplete="off">
+                  <span class="hint">Stored on Syte and injected as <code>SYRA_BRIDGE_API_KEY</code> for Continue.</span>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="continue-default-profile">Default profile</label>
+                    <select id="continue-default-profile">
+                      <option value="syra-nano">syra-nano</option>
+                      <option value="syra-base">syra-base</option>
+                      <option value="syra-havy">syra-havy</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="syra-internal-secret">Syra internal secret</label>
+                    <input type="password" id="syra-internal-secret" placeholder="shared secret for sycord.com -> Syte" autocomplete="off">
+                    <span class="hint">Sent as <code>X-Syra-Internal-Secret</code> to Syte internal agent routes.</span>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="continue-model-nano">syra-nano model</label>
+                    <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
+                  </div>
+                  <div class="form-group">
+                    <label for="continue-model-base">syra-base model</label>
+                    <input type="text" id="continue-model-base" placeholder="deepseek-chat">
+                  </div>
+                  <div class="form-group">
+                    <label for="continue-model-havy">syra-havy model</label>
+                    <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
+                  </div>
+                </div>
+                <div id="continue-runtime-status" class="hint"></div>
+                <div class="form-actions">
+                  <button class="btn-pill btn-primary" id="save-continue-settings-btn">Save AI runtime settings</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view">
           <div class="settings-stack">
             <div class="projects-card panel-form">
@@ -492,59 +558,6 @@
                 <div class="form-actions">
                   <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
                   <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form">
-              <div class="projects-title-block mb">
-                <i data-lucide="bot" class="projects-icon"></i>
-                <div><h1>AI / Continue runtime</h1></div>
-              </div>
-              <div class="form-inner">
-                <p class="hint block">Syte-side runtime for long-lived Continue <code>cn serve</code> agents used by sycord.com server-to-server.</p>
-                <div class="form-group">
-                  <label for="continue-bridge-base">OpenAI-compatible bridge API base</label>
-                  <input type="text" id="continue-bridge-base" placeholder="https://bridge.sycord.internal/v1">
-                  <span class="hint">Used by Continue on the VM. No Continue Hub required by default.</span>
-                </div>
-                <div class="form-group">
-                  <label for="continue-bridge-key">Bridge API key</label>
-                  <input type="password" id="continue-bridge-key" placeholder="optional bridge API key" autocomplete="off">
-                  <span class="hint">Stored on Syte and injected as <code>SYRA_BRIDGE_API_KEY</code> for Continue.</span>
-                </div>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="continue-default-profile">Default profile</label>
-                    <select id="continue-default-profile">
-                      <option value="syra-nano">syra-nano</option>
-                      <option value="syra-base">syra-base</option>
-                      <option value="syra-havy">syra-havy</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="syra-internal-secret">Syra internal secret</label>
-                    <input type="password" id="syra-internal-secret" placeholder="shared secret for sycord.com -> Syte" autocomplete="off">
-                    <span class="hint">Sent as <code>X-Syra-Internal-Secret</code> to Syte internal agent routes.</span>
-                  </div>
-                </div>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="continue-model-nano">syra-nano model</label>
-                    <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
-                  </div>
-                  <div class="form-group">
-                    <label for="continue-model-base">syra-base model</label>
-                    <input type="text" id="continue-model-base" placeholder="deepseek-chat">
-                  </div>
-                  <div class="form-group">
-                    <label for="continue-model-havy">syra-havy model</label>
-                    <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
-                  </div>
-                </div>
-                <div id="continue-runtime-status" class="hint"></div>
-                <div class="form-actions">
-                  <button class="btn-pill btn-primary" id="save-continue-settings-btn">Save AI runtime settings</button>
                 </div>
               </div>
             </div>

@@ -173,6 +173,7 @@ const BREADCRUMBS = {
   'server-swarm': 'Server Swarm',
   users: 'Users',
   logs: 'Logs',
+  ai: 'AI',
   settings: 'Settings',
 };
 
@@ -267,6 +268,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
+  if (name === 'ai') loadSettings();
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
