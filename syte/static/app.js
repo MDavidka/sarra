@@ -494,20 +494,22 @@ function renderServices() {
   }
 
   empty?.classList.add('hidden');
-  list.innerHTML = visible.map(p => `
-    <div class="service-card" onclick="openService('${p.id}')">
-      <h3>${esc(p.name)}</h3>
-      <div class="service-meta">
-        <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
-        ${sslBadgeHtml(p)}
-        <span class="badge badge-dim">:${p.port}</span>
-        <span class="badge badge-dim">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
+  list.innerHTML = visible.map(p => {
+    const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
+    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
+    return `
+    <div class="project-card" onclick="openService('${p.id}')">
+      <div class="project-card-head">
+        <h3>${esc(p.name)}</h3>
+        <span class="project-card-status ${status}" title="${status}"></span>
       </div>
-      <div class="service-url">
-        <a href="${esc(p.url)}" target="_blank" onclick="event.stopPropagation()">${esc(p.url)}</a>
+      <div class="project-card-meta">
+        <span class="project-card-tag">${status}</span>
+        <span class="project-card-tag">${deployLabel}</span>
+        ${p.port ? `<span class="project-card-tag">:${p.port}</span>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   refreshIcons();
 }
 
@@ -1377,7 +1379,12 @@ async function loadUpdateInfo() {
     const prLink = info.pr_url
       ? ` — <a href="${esc(info.pr_url)}" target="_blank" rel="noopener">view PR</a>`
       : '';
-    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${prLink}`;
+    const workBranch = info.work_branch ? ` → <code>${esc(info.work_branch)}</code>` : '';
+    let bootstrap = '';
+    if (Array.isArray(info.bootstrap_commands) && info.bootstrap_commands.length) {
+      bootstrap = `<details class="update-bootstrap"><summary>Manual upgrade (SSH)</summary><pre>${esc(info.bootstrap_commands.join('\n'))}</pre></details>`;
+    }
+    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${workBranch}${prLink}${bootstrap}`;
   } catch {
     el.textContent = 'Will pull latest open GitHub PR (fallback: main)';
   }
@@ -1486,6 +1493,7 @@ function renderAiDebug(report) {
     <div>
       <strong>Agent runtime</strong>
       <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${report.continue_cli?.installed ? esc(report.continue_cli.version || 'installed') : 'missing'}</div>
+      ${agent.serve_command ? `<div class="hint">serve cmd: <code>${esc(agent.serve_command)}</code></div>` : ''}
       ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
     </div>
     ${config.snippet ? `<div><strong>config.yaml</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
@@ -1600,21 +1608,6 @@ document.addEventListener('click', () => toggleContextMenu(false));
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;
-  renderServices();
-});
-
-document.getElementById('project-sort')?.addEventListener('change', (e) => {
-  projectSortMode = e.target.value;
-  renderServices();
-});
-
-document.getElementById('sort-toggle')?.addEventListener('click', () => {
-  const sel = document.getElementById('project-sort');
-  if (!sel) return;
-  const opts = ['newest', 'oldest', 'name'];
-  const idx = opts.indexOf(sel.value);
-  sel.value = opts[(idx + 1) % opts.length];
-  projectSortMode = sel.value;
   renderServices();
 });
 

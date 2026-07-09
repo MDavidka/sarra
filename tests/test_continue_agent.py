@@ -186,6 +186,16 @@ async def test_write_agent_config_requires_active_profile_key(
 
 
 @pytest.mark.asyncio
+async def test_build_serve_command_omits_unsupported_host_flag() -> None:
+    from syte.continue_agent import build_serve_command
+
+    cmd = build_serve_command("/tmp/config.yaml", 5200)
+    assert "--port 5200" in cmd
+    assert "--timeout" in cmd
+    assert "--host" not in cmd
+
+
+@pytest.mark.asyncio
 async def test_verify_internal_service_request_accepts_shared_secret(
     tmp_data_dir: Path,
 ) -> None:

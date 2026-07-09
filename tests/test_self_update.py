@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import syte.self_update as self_update
+from syte.update_source import UpdateTarget
 
 
 def test_port_listener_pid_parses_ss_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,52 +55,152 @@ def test_schedule_restart_uses_python_worker(monkeypatch: pytest.MonkeyPatch) ->
     assert captured["args"][-2:] == ["syte.self_update", "--apply-and-restart"]
 
 
-def test_git_pull_latest_checks_out_main(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_sync_update_target_fetches_before_checkout_for_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[list[str]] = []
 
     def fake_run_cmd(cmd, cwd=None):
         calls.append(cmd)
         if cmd[:3] == ["git", "status", "--porcelain"]:
             return 0, ""
-        if cmd[:3] == ["git", "checkout", "main"]:
-            return 0, "Switched to branch 'main'"
-        if cmd[:3] == ["git", "fetch", "origin"]:
+        if cmd[:3] == ["git", "fetch", "origin"] and len(cmd) == 3:
             return 0, ""
-        if cmd[:3] == ["git", "pull", "--ff-only"]:
-            return 0, "Already up to date."
+        if cmd[:3] == ["git", "fetch", "origin"] and cmd[3].startswith("+refs/heads/main"):
+            return 0, "fetched main"
+        if cmd[:3] == ["git", "checkout", "-B"]:
+            return 0, "checked out"
+        if cmd[:3] == ["git", "reset", "--hard"]:
+            return 0, "reset"
         return 0, ""
 
     monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
-    monkeypatch.setattr(self_update, "_current_branch", lambda: "cursor/old-branch")
-
-    ok, msg = self_update._git_pull_latest("main")
+    target = UpdateTarget(source_type="branch", branch="main", label="main", repo="o/r")
+    ok, msg = self_update._git_sync_update_target(target)
     assert ok is True
-    assert "main" in msg
-    assert ["git", "checkout", "main"] in calls
-    assert ["git", "pull", "--ff-only", "origin", "main"] in calls
+    fetch_idx = next(i for i, c in enumerate(calls) if c[:3] == ["git", "fetch", "origin"])
+    checkout_idx = next(i for i, c in enumerate(calls) if c[:3] == ["git", "checkout", "-B"])
+    assert fetch_idx < checkout_idx
 
 
-def test_git_pull_latest_resets_when_ff_only_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_sync_update_target_uses_pr_head_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[list[str]] = []
 
     def fake_run_cmd(cmd, cwd=None):
         calls.append(cmd)
         if cmd[:3] == ["git", "status", "--porcelain"]:
             return 0, ""
-        if cmd[:3] == ["git", "checkout", "main"]:
-            return 0, ""
-        if cmd[:3] == ["git", "fetch", "origin"]:
-            return 0, ""
-        if cmd[:3] == ["git", "pull", "--ff-only"]:
-            return 1, "fatal: Not possible to fast-forward"
-        if cmd[:2] == ["git", "reset"]:
-            return 0, "HEAD is now at abc123"
+        if len(cmd) >= 4 and cmd[3].startswith("pull/12/head"):
+            return 0, "fetched pr"
+        if cmd[:3] == ["git", "checkout", "-B"]:
+            return 0, "checked out"
         return 0, ""
 
     monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
-    monkeypatch.setattr(self_update, "_current_branch", lambda: "main")
-
-    ok, msg = self_update._git_pull_latest("main")
+    target = UpdateTarget(
+        source_type="pr",
+        branch="cursor/update-from-latest-pr-6cbf",
+        label="PR #12",
+        pr_number=12,
+        repo="o/r",
+    )
+    ok, msg = self_update._git_sync_update_target(target)
     assert ok is True
-    assert ["git", "reset", "--hard", "origin/main"] in calls
-    assert "abc123" in msg
+    assert any("pull/12/head" in (c[3] if len(c) > 3 else "") for c in calls)
+    assert ["git", "checkout", "-B", "syte-update", "syte-pr-12"] in calls
+
+
+def test_git_sync_update_target_branch_fallback_after_pr_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_cmd(cmd, cwd=None):
+        calls.append(cmd)
+        if cmd[:3] == ["git", "status", "--porcelain"]:
+            return 0, ""
+        if len(cmd) >= 4 and "pull/12/head" in cmd[3]:
+            return 1, "pr fetch failed"
+        if cmd[:3] == ["git", "fetch", "origin"] and len(cmd) == 3:
+            return 0, ""
+        if cmd[:3] == ["git", "fetch", "origin"] and "cursor/" in cmd[3]:
+            return 0, "fetched branch"
+        if cmd[:3] == ["git", "checkout", "-B"]:
+            return 0, "checked out"
+        if cmd[:3] == ["git", "reset", "--hard"]:
+            return 0, "reset"
+        return 0, ""
+
+    monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
+    target = UpdateTarget(
+        source_type="pr",
+        branch="cursor/update-from-latest-pr-6cbf",
+        label="PR #12",
+        pr_number=12,
+        repo="o/r",
+    )
+    ok, msg = self_update._git_sync_update_target(target)
+    assert ok is True
+    assert any("cursor/update-from-latest-pr-6cbf" in str(c) for c in calls)
+
+
+def test_git_fetch_pr_uses_fetch_head_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    pinned = {"done": False}
+
+    def fake_run_cmd(cmd, cwd=None):
+        calls.append(cmd)
+        if cmd[:3] == ["git", "fetch", "origin"] and len(cmd) > 3 and cmd[3] == "pull/9/head:syte-pr-9":
+            return 1, "refspec rejected"
+        if cmd[:3] == ["git", "fetch", "origin"] and len(cmd) > 3 and cmd[3] == "pull/9/head":
+            return 0, "fetched head"
+        if cmd[:4] == ["git", "branch", "-f", "syte-pr-9"]:
+            pinned["done"] = True
+            return 0, "pinned"
+        return 0, ""
+
+    def fake_ref_exists(ref: str) -> bool:
+        if ref == "FETCH_HEAD":
+            return True
+        if ref == "syte-pr-9":
+            return pinned["done"]
+        return False
+
+    monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(self_update, "_git_ref_exists", fake_ref_exists)
+
+    ok, msg, ref = self_update._git_fetch_pr(9)
+    assert ok is True
+    assert ref == "syte-pr-9"
+    assert any(len(cmd) > 3 and cmd[3] == "pull/9/head" for cmd in calls)
+
+
+def test_bootstrap_update_commands_for_pr() -> None:
+    target = UpdateTarget(
+        source_type="pr",
+        branch="cursor/update-from-latest-pr-6cbf",
+        label="PR #13",
+        pr_number=13,
+        repo="o/r",
+    )
+    cmds = self_update.bootstrap_update_commands(target)
+    assert cmds[1] == "git fetch origin pull/13/head:syte-pr-13"
+    assert cmds[2] == "git checkout -B syte-update syte-pr-13"
+
+
+def test_get_update_info_includes_bootstrap_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = UpdateTarget(
+        source_type="pr",
+        branch="cursor/update-from-latest-pr-6cbf",
+        label="PR #13",
+        pr_number=13,
+        repo="o/r",
+    )
+    monkeypatch.setattr(self_update, "_update_target", lambda: target)
+    monkeypatch.setattr(self_update, "_read_installed_version", lambda: "0.9.1")
+    info = self_update.get_update_info()
+    assert info["work_branch"] == "syte-update"
+    assert "bootstrap_commands" in info
+    assert any("pull/13/head" in cmd for cmd in info["bootstrap_commands"])

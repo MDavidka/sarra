@@ -5,42 +5,21 @@ set -euo pipefail
 SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SYTE_DIR"
 
-if [[ -n "${SYTE_UPDATE_BRANCH:-}" ]]; then
-  UPDATE_BRANCH="${SYTE_UPDATE_BRANCH}"
-  UPDATE_LABEL="branch ${UPDATE_BRANCH}"
-else
-  read -r UPDATE_BRANCH UPDATE_LABEL < <(
-    python3 - <<'PY'
+echo "==> Resolving update source"
+python3 - <<'PY'
 from pathlib import Path
+import sys
+
+from syte.self_update import _git_sync_update_target
 from syte.update_source import resolve_update_target
 
 target = resolve_update_target(Path.cwd())
-print(target.branch)
-print(target.label)
+print(f"==> Update source: {target.label}")
+print(f"==> Branch/ref: {target.branch}")
+ok, message = _git_sync_update_target(target)
+print(message)
+sys.exit(0 if ok else 1)
 PY
-  )
-fi
-
-echo "==> Updating Syte from: ${UPDATE_LABEL}"
-echo "==> Checkout branch: ${UPDATE_BRANCH}"
-
-git fetch origin "${UPDATE_BRANCH}"
-
-if git status --porcelain | grep -q .; then
-  echo "==> Stashing local changes"
-  git stash push -u -m "syte-update-autostash" || true
-fi
-
-CURRENT="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
-if [[ "${CURRENT}" != "${UPDATE_BRANCH}" ]]; then
-  echo "==> Checking out ${UPDATE_BRANCH}"
-  git checkout "${UPDATE_BRANCH}" 2>/dev/null || git checkout -B "${UPDATE_BRANCH}" "origin/${UPDATE_BRANCH}"
-fi
-
-if ! git pull --ff-only origin "${UPDATE_BRANCH}"; then
-  echo "==> Fast-forward failed — resetting to origin/${UPDATE_BRANCH}"
-  git reset --hard "origin/${UPDATE_BRANCH}"
-fi
 
 if [[ $EUID -eq 0 ]]; then
   "$SYTE_DIR/scripts/install.sh"

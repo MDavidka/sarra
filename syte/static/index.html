@@ -88,8 +88,8 @@
 
       <main class="content">
         <section id="view-dashboard" class="view active">
-          <div class="projects-card">
-            <div class="projects-header">
+          <div class="projects-page">
+            <div class="projects-hero-card">
               <div class="projects-title-block">
                 <i data-lucide="folder-input" class="projects-icon"></i>
                 <div>
@@ -97,28 +97,16 @@
                   <p class="projects-sub">Create and manage your projects</p>
                 </div>
               </div>
+
               <button type="button" class="btn-create" onclick="showView('new-service')">
                 <i data-lucide="plus"></i>
                 <span>Create Project</span>
               </button>
-            </div>
 
-            <div class="projects-toolbar">
               <div class="search-field">
                 <input type="search" id="project-filter" placeholder="Filter projects..." autocomplete="off">
                 <i data-lucide="search" class="search-icon"></i>
               </div>
-              <button type="button" class="toolbar-btn" disabled title="Coming soon">
-                <i data-lucide="tag"></i><span>Tags</span>
-              </button>
-              <button type="button" class="toolbar-btn icon-only" id="sort-toggle" title="Toggle sort">
-                <i data-lucide="arrow-up-down"></i>
-              </button>
-              <select class="toolbar-select" id="project-sort">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="name">Name A–Z</option>
-              </select>
             </div>
 
             <div id="services-list" class="projects-grid"></div>
