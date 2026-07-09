@@ -1,11 +1,19 @@
 """Syte external API (token-authenticated) — for AI agents and automation."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from syte import deployment, process_manager
 from syte.api_responses import build_create_project_response
 from syte.auth import verify_api_token
+from syte.continue_agent import (
+    get_agent_logs,
+    get_agent_status,
+    restart_agent,
+    start_agent,
+    stop_agent,
+    update_agent_settings,
+)
 from syte.certificates import apply_proxy_config
 from syte.config import settings
 from syte.database import get_project, get_setting
@@ -88,6 +96,11 @@ class CreateProjectRequest(BaseModel):
         False,
         description="If true, start deploy immediately after create. Default: false (empty workspace only).",
     )
+
+
+class AgentSettingsRequest(BaseModel):
+    uuid: str
+    model_profile: str | None = None
 
 
 def _http_error(status: int, error: str, message: str):
@@ -266,6 +279,73 @@ async def api_get_logs(
         "uuid": uuid,
         "logs": logs,
         "stream_url": f"/api/projects/{uuid}/logs/stream?live=1",
+    }
+
+
+@router.get("/agent_status")
+async def api_agent_status(
+    uuid: str = Query(..., description="Project UUID"),
+    request: Request = None,
+    _token: dict = Depends(verify_api_token),
+):
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    base = str(request.base_url).rstrip("/") if request else ""
+    return {"ok": True, "uuid": uuid, **(await get_agent_status(uuid, request_base=base))}
+
+
+@router.post("/agent_start")
+async def api_agent_start(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    ok, message, meta = await start_agent(body.uuid)
+    if not ok:
+        _http_error(400, "agent_start_failed", message)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_stop")
+async def api_agent_stop(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok, message = await stop_agent(body.uuid)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": ok, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_restart")
+async def api_agent_restart(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    ok, message, meta = await restart_agent(body.uuid)
+    if not ok:
+        _http_error(400, "agent_restart_failed", message)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_settings")
+async def api_agent_settings(body: AgentSettingsRequest, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    meta = await update_agent_settings(body.uuid, model_profile=body.model_profile)
+    return {"ok": True, "uuid": body.uuid, **meta}
+
+
+@router.get("/agent_logs")
+async def api_agent_logs(
+    uuid: str = Query(...),
+    lines: int = Query(200, ge=1, le=2000),
+    _token: dict = Depends(verify_api_token),
+):
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "logs": get_agent_logs(uuid, lines),
+        "stream_url": f"/api/projects/{uuid}/agent/logs/stream?live=1",
     }
 
 

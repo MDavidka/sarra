@@ -247,10 +247,12 @@ async def create_project_record(
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
-    from syte.preview_manager import ensure_preview_address
+    from syte.continue_agent import ensure_agent_runtime
     from syte.certificates import apply_proxy_config
+    from syte.preview_manager import ensure_preview_address
 
     project = await ensure_preview_address(project or {"id": project_id, "name": name})
+    project = await ensure_agent_runtime(project or {"id": project_id, "name": name})
     await apply_proxy_config()
 
     if deploy_now:

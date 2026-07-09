@@ -59,6 +59,20 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_status TEXT DEFAULT 'stopped'")
     if "preview_domain" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_domain TEXT")
+    if "agent_port" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_port INTEGER")
+    if "agent_status" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_status TEXT DEFAULT 'stopped'")
+    if "agent_runtime" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_runtime TEXT DEFAULT 'project'")
+    if "agent_model_profile" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_model_profile TEXT")
+    if "agent_last_started_at" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_last_started_at TEXT")
+    if "agent_last_error" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_last_error TEXT")
+    if "agent_config_path" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN agent_config_path TEXT")
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -140,6 +154,8 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "name", "git_url", "branch", "port", "domain",
         "start_command", "env_vars", "status", "deploy_type", "dockerfile_path",
         "preview_port", "preview_status", "preview_domain",
+        "agent_port", "agent_status", "agent_runtime", "agent_model_profile",
+        "agent_last_started_at", "agent_last_error", "agent_config_path",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):

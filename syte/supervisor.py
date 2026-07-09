@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from syte.certificates import apply_proxy_config, ensure_caddy
+from syte.continue_agent import is_agent_running, start_agent
 from syte.database import list_projects, update_project
 from syte import process_manager
 from syte.workspace import command_exists
@@ -13,7 +14,7 @@ _fail_counts: dict[str, int] = {}
 
 
 async def maintain() -> None:
-    """Keep Caddy and deployed services running."""
+    """Keep Caddy, deployed services, and Continue agents running."""
     ensure_caddy()
     projects = await list_projects()
     for project in projects:
@@ -62,6 +63,19 @@ async def maintain() -> None:
             if fails >= 2:
                 await update_project(pid, {"status": "stopped"})
                 _fail_counts.pop(pid, None)
+
+    for project in projects:
+        if project.get("agent_status") != "running":
+            continue
+        pid = project["id"]
+        if is_agent_running(pid):
+            continue
+        logger.warning("Restarting Continue agent for %s", pid)
+        ok, msg, _meta = await start_agent(pid)
+        if ok:
+            logger.info("Restarted Continue agent for %s: %s", pid, msg)
+        else:
+            logger.error("Failed to restart Continue agent for %s: %s", pid, msg)
 
 
 async def supervisor_loop(interval: int = 30) -> None:

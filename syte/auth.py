@@ -14,6 +14,7 @@ from syte.database import (
     get_api_token_by_hash,
     list_api_tokens,
     touch_api_token,
+    get_setting,
 )
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -104,3 +105,39 @@ async def verify_api_token_from_request(request: Request) -> dict[str, Any]:
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "Invalid API key"})
     await touch_api_token(row["id"])
     return row
+
+
+async def verify_internal_service_request(request: Request) -> dict[str, Any]:
+    """Shared-secret auth for sycord.com -> Syte internal runtime calls."""
+    expected = (await get_setting("syra_internal_secret", "")).strip()
+    if not expected:
+        raise HTTPException(
+            503,
+            detail={
+                "error": "internal_secret_not_configured",
+                "message": "Set syra_internal_secret in Syte settings before using internal agent routes.",
+            },
+        )
+
+    token = _extract_token(
+        request.headers.get("x-syra-internal-secret"),
+        request.headers.get("authorization"),
+        request.query_params.get("internal_secret"),
+    )
+    if not token:
+        raise HTTPException(
+            401,
+            detail={
+                "error": "missing_internal_secret",
+                "message": "Provide X-Syra-Internal-Secret or Authorization: Bearer <secret>",
+            },
+        )
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(
+            401,
+            detail={
+                "error": "invalid_internal_secret",
+                "message": "Internal secret is invalid.",
+            },
+        )
+    return {"ok": True, "auth": "internal-secret"}

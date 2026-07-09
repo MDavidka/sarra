@@ -1141,6 +1141,44 @@ document.getElementById('save-cf-token-btn')?.addEventListener('click', async ()
   }
 });
 
+document.getElementById('save-continue-settings-btn')?.addEventListener('click', async () => {
+  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim() || '';
+  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
+  const defaultProfile = document.getElementById('continue-default-profile')?.value || 'syra-base';
+  const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
+  const modelNano = document.getElementById('continue-model-nano')?.value?.trim() || '';
+  const modelBase = document.getElementById('continue-model-base')?.value?.trim() || '';
+  const modelHavy = document.getElementById('continue-model-havy')?.value?.trim() || '';
+  const btn = document.getElementById('save-continue-settings-btn');
+  btn.disabled = true;
+  btn.textContent = 'saving…';
+  try {
+    const res = await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        continue_bridge_api_base: bridgeBase,
+        continue_bridge_api_key: bridgeKey,
+        continue_default_model_profile: defaultProfile,
+        continue_syra_nano_model: modelNano,
+        continue_syra_base_model: modelBase,
+        continue_syra_havy_model: modelHavy,
+        syra_internal_secret: internalSecret,
+      }),
+    });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'AI runtime settings saved');
+    const bridgeKeyInput = document.getElementById('continue-bridge-key');
+    const secretInput = document.getElementById('syra-internal-secret');
+    if (bridgeKeyInput) bridgeKeyInput.value = '';
+    if (secretInput) secretInput.value = '';
+    await loadSettings();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save AI runtime settings';
+  }
+});
+
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
   const box = document.getElementById('update-result');
@@ -1193,6 +1231,14 @@ async function loadSettings() {
     const previewDnsHint = document.getElementById('preview-dns-hint');
     const cfToken = document.getElementById('set-cf-token');
     const cfStatus = document.getElementById('cf-token-status');
+    const continueBridgeBase = document.getElementById('continue-bridge-base');
+    const continueBridgeKey = document.getElementById('continue-bridge-key');
+    const continueDefaultProfile = document.getElementById('continue-default-profile');
+    const continueModelNano = document.getElementById('continue-model-nano');
+    const continueModelBase = document.getElementById('continue-model-base');
+    const continueModelHavy = document.getElementById('continue-model-havy');
+    const continueRuntimeStatus = document.getElementById('continue-runtime-status');
+    const syraInternalSecret = document.getElementById('syra-internal-secret');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -1227,6 +1273,29 @@ async function loadSettings() {
       if (cf.hints?.length) {
         cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
       }
+    }
+    if (continueBridgeBase) continueBridgeBase.value = s.continue_bridge_api_base || '';
+    if (continueDefaultProfile && s.continue_default_model_profile) continueDefaultProfile.value = s.continue_default_model_profile;
+    if (continueModelNano) continueModelNano.value = s.continue_syra_nano_model || '';
+    if (continueModelBase) continueModelBase.value = s.continue_syra_base_model || '';
+    if (continueModelHavy) continueModelHavy.value = s.continue_syra_havy_model || '';
+    if (continueBridgeKey) {
+      continueBridgeKey.placeholder = s.continue_bridge_api_key_set
+        ? 'bridge API key saved — enter new value to replace'
+        : 'optional bridge API key';
+    }
+    if (syraInternalSecret) {
+      syraInternalSecret.placeholder = s.syra_internal_secret_set
+        ? 'internal secret saved — enter new value to replace'
+        : 'shared secret for sycord.com -> Syte';
+    }
+    if (continueRuntimeStatus) {
+      const parts = [];
+      if (s.continue_bridge_api_base) parts.push(`bridge: ${s.continue_bridge_api_base}`);
+      parts.push(`default: ${s.continue_default_model_profile || 'syra-base'}`);
+      parts.push(s.continue_bridge_api_key_set ? 'bridge key saved' : 'no bridge key');
+      parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
+      continueRuntimeStatus.textContent = parts.join(' · ');
     }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');

@@ -75,12 +75,14 @@ def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int)
 
 async def workspace_get(project_id: str) -> dict | None:
     from syte import process_manager
+    from syte.continue_agent import ensure_agent_runtime, get_agent_status
     from syte.preview_manager import ensure_preview_address, preview_meta
 
     project = await get_project(project_id)
     if not project:
         return None
     project = await ensure_preview_address(project)
+    project = await ensure_agent_runtime(project)
     ws = workspace_path(project_id)
     ip = settings.resolved_public_ip
     domain = project.get("domain") or ""
@@ -106,6 +108,7 @@ async def workspace_get(project_id: str) -> dict | None:
         "data_path": str(ws / "data"),
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
         **preview_meta(project),
+        "agent": await get_agent_status(project_id),
         "ssl": enrich_ssl(project),
     }
 

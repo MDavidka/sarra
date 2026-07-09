@@ -17,6 +17,8 @@ def build_create_project_response(project: dict, workspace: dict | None, message
             if project.get("preview_domain")
             else None
         ),
+        "agent_port": project.get("agent_port"),
+        "agent_status": project.get("agent_status", "stopped"),
         "status": project.get("status", "created"),
         "message": message,
         "workspace": workspace,

@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     caddy_config_path: Path = Path("/etc/caddy/Caddyfile")
     host: str = "0.0.0.0"
     port: int = 8787
+    continue_port_start: int = 5200
+    continue_port_end: int = 5999
     public_ip: str = ""
     admin_email: str = "admin@localhost"
 

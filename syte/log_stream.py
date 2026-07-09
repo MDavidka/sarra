@@ -106,3 +106,38 @@ async def stream_preview_logs(project_id: str, *, live_only: bool = False):
         if _ % 20 == 0:
             yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         await asyncio.sleep(0.25)
+
+
+async def stream_agent_logs(project_id: str, *, live_only: bool = False):
+    """SSE generator — tails Continue agent logs."""
+    from syte.continue_agent import agent_log_path, get_agent_logs
+
+    log_path = agent_log_path(project_id)
+
+    if not live_only:
+        snapshot = get_agent_logs(project_id, 300)
+        if snapshot and snapshot != "No Continue agent logs yet.":
+            for line in snapshot.splitlines():
+                yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
+
+    offset = log_path.stat().st_size if log_path.exists() else 0
+    if live_only:
+        yield f"data: {json.dumps({'type': 'session', 'text': 'Live Continue agent session'})}\n\n"
+
+    for tick in range(7200):
+        if not log_path.exists():
+            await asyncio.sleep(0.25)
+            continue
+        size = log_path.stat().st_size
+        if size > offset:
+            with log_path.open("r", errors="replace") as f:
+                f.seek(offset)
+                chunk = f.read()
+                offset = f.tell()
+            for line in chunk.splitlines():
+                yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
+        elif size < offset:
+            offset = 0
+        if tick % 20 == 0:
+            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        await asyncio.sleep(0.25)

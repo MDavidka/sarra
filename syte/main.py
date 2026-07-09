@@ -26,8 +26,9 @@ from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, no
 from syte.self_update import update_syte
 from syte import auth
 from syte import api_router
+from syte import internal_api
 from syte import workspace_api
-from syte.log_stream import stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
 import logging
 
 from syte import supervisor
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/openapi", redoc_url=None)
 
 app.include_router(api_router.router, prefix="/api")
+app.include_router(internal_api.router, prefix="/api/internal")
 
 from syte.sycord.router import router as sycord_router
 
@@ -118,6 +120,13 @@ class SettingsRequest(BaseModel):
     preview_base_domain: str | None = None
     cloudflare_api_token: str | None = None
     preview_wildcard_tls: str | None = None
+    continue_bridge_api_base: str | None = None
+    continue_bridge_api_key: str | None = None
+    continue_default_model_profile: str | None = None
+    continue_syra_nano_model: str | None = None
+    continue_syra_base_model: str | None = None
+    continue_syra_havy_model: str | None = None
+    syra_internal_secret: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -246,6 +255,7 @@ async def _gui_url() -> str:
 
 @app.get("/api/settings")
 async def get_settings():
+    from syte.continue_agent import bridge_settings
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -254,6 +264,8 @@ async def get_settings():
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
     cf_status = await cloudflare_tls_status()
+    bridge = await bridge_settings()
+    syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
@@ -264,6 +276,13 @@ async def get_settings():
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
+        "continue_bridge_api_base": bridge["api_base"],
+        "continue_bridge_api_key_set": bool(bridge["api_key"]),
+        "continue_default_model_profile": bridge["default_profile"],
+        "continue_syra_nano_model": bridge["syra_nano_model"],
+        "continue_syra_base_model": bridge["syra_base_model"],
+        "continue_syra_havy_model": bridge["syra_havy_model"],
+        "syra_internal_secret_set": syra_secret_set,
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
             if preview_zone
@@ -360,6 +379,37 @@ async def save_settings(body: SettingsRequest):
         await set_setting("preview_wildcard_tls", mode)
         proxy_updated = True
         messages.append(f"Preview wildcard TLS mode: {mode}")
+
+    if body.continue_bridge_api_base is not None:
+        await set_setting("continue_bridge_api_base", body.continue_bridge_api_base.strip().rstrip("/"))
+        messages.append("Continue bridge API base updated.")
+    if body.continue_bridge_api_key is not None:
+        await set_setting("continue_bridge_api_key", body.continue_bridge_api_key.strip())
+        messages.append(
+            "Continue bridge API key saved."
+            if body.continue_bridge_api_key.strip()
+            else "Continue bridge API key cleared."
+        )
+    if body.continue_default_model_profile is not None:
+        profile = body.continue_default_model_profile.strip() or "syra-base"
+        await set_setting("continue_default_model_profile", profile)
+        messages.append(f"Default Continue model profile: {profile}")
+    if body.continue_syra_nano_model is not None:
+        await set_setting("continue_syra_nano_model", body.continue_syra_nano_model.strip())
+        messages.append("Updated syra-nano bridge model.")
+    if body.continue_syra_base_model is not None:
+        await set_setting("continue_syra_base_model", body.continue_syra_base_model.strip())
+        messages.append("Updated syra-base bridge model.")
+    if body.continue_syra_havy_model is not None:
+        await set_setting("continue_syra_havy_model", body.continue_syra_havy_model.strip())
+        messages.append("Updated syra-havy bridge model.")
+    if body.syra_internal_secret is not None:
+        await set_setting("syra_internal_secret", body.syra_internal_secret.strip())
+        messages.append(
+            "Syra internal secret saved."
+            if body.syra_internal_secret.strip()
+            else "Syra internal secret cleared."
+        )
 
     if proxy_updated or not messages:
         ok, msg = await apply_proxy_config()
@@ -500,6 +550,72 @@ async def api_preview_stop(project_id: str):
     await stop_preview_async(project_id)
     meta, _ = await get_preview_status(project_id)
     return {"ok": True, "message": "Preview stopped", **(meta or {})}
+
+
+@app.get("/api/projects/{project_id}/agent")
+async def api_agent_status_public(project_id: str, request: Request):
+    from syte.continue_agent import get_agent_status
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+
+
+@app.post("/api/projects/{project_id}/agent/start")
+async def api_agent_start_public(project_id: str, request: Request):
+    from syte.continue_agent import get_agent_status, start_agent
+
+    ok, message, _meta = await start_agent(project_id)
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+
+
+@app.post("/api/projects/{project_id}/agent/stop")
+async def api_agent_stop_public(project_id: str, request: Request):
+    from syte.continue_agent import get_agent_status, stop_agent
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    ok, message = await stop_agent(project_id)
+    return {"ok": ok, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+
+
+@app.post("/api/projects/{project_id}/agent/restart")
+async def api_agent_restart_public(project_id: str, request: Request):
+    from syte.continue_agent import get_agent_status, restart_agent
+
+    ok, message, _meta = await restart_agent(project_id)
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+
+
+@app.get("/api/projects/{project_id}/agent/logs")
+async def api_agent_logs_public(project_id: str, lines: int = 200):
+    from syte.continue_agent import get_agent_logs
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "logs": get_agent_logs(project_id, max(1, min(lines, 2000)))}
+
+
+@app.get("/api/projects/{project_id}/agent/logs/stream")
+async def api_agent_logs_stream(project_id: str, request: Request, live: bool = False):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    if key:
+        await auth.verify_api_token_from_request(request)
+    return StreamingResponse(
+        stream_agent_logs(project_id, live_only=live),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/projects/{project_id}/preview/status")
