@@ -270,6 +270,8 @@ function showView(name) {
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); }
   if (name === 'settings') loadSettings();
+  const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
+  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
@@ -280,6 +282,33 @@ function showView(name) {
   }
   closeDrawer();
   refreshIcons();
+}
+
+let aiApiConfigured = false;
+
+function openAiSettings() {
+  const sheet = document.getElementById('ai-settings-sheet');
+  if (!sheet) return;
+  sheet.classList.remove('hidden');
+  document.body.classList.add('ai-settings-open');
+  loadSettings();
+  refreshIcons();
+}
+
+function closeAiSettings() {
+  const sheet = document.getElementById('ai-settings-sheet');
+  if (!sheet) return;
+  sheet.classList.add('hidden');
+  document.body.classList.remove('ai-settings-open');
+}
+
+function updateAiApiWarning() {
+  const warn = document.getElementById('ai-api-warning');
+  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim();
+  const keySet = aiApiConfigured || document.getElementById('continue-bridge-key')?.placeholder?.includes('saved');
+  const ok = Boolean(bridgeBase) && keySet;
+  if (warn) warn.classList.toggle('hidden', ok);
+  return ok;
 }
 
 async function api(path, opts = {}) {
@@ -1071,11 +1100,14 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 
 document.getElementById('save-ai-settings-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('save-ai-settings-btn');
+  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim() || '';
   const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
+  if (!bridgeBase) return toast('Bridge API URL is required');
+  if (!bridgeKey && !aiApiConfigured) return toast('Provider API key is required');
   const body = {
-    continue_bridge_api_base: document.getElementById('continue-bridge-base')?.value?.trim() || '',
+    continue_bridge_api_base: bridgeBase,
     continue_provider: document.getElementById('continue-provider')?.value || 'openai',
     continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
     continue_syra_nano_model: document.getElementById('continue-model-nano')?.value?.trim() || '',
@@ -1089,16 +1121,17 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   btn.textContent = 'saving…';
   try {
     const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
-    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Agent settings saved');
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Provider settings saved');
     if (bridgeKey) document.getElementById('continue-bridge-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     await loadSettings();
     await loadAiDashboard();
+    closeAiSettings();
   } catch (e) {
     toast('Error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Save agent settings';
+    btn.textContent = 'Save provider settings';
   }
 });
 
@@ -1284,8 +1317,15 @@ async function loadSettings() {
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     if (continueBridgeKey) {
       continueBridgeKey.placeholder = s.continue_bridge_api_key_set
-        ? 'bridge API key saved — enter new value to replace'
-        : 'optional bridge API key';
+        ? 'key saved — enter new value to replace'
+        : 'sk-… required';
+    }
+    aiApiConfigured = Boolean(s.continue_bridge_api_base) && Boolean(s.continue_bridge_api_key_set);
+    const keyHint = document.getElementById('continue-bridge-key-hint');
+    if (keyHint) {
+      keyHint.textContent = s.continue_bridge_api_key_set
+        ? 'API key saved on server'
+        : 'Required — agents cannot call models without this';
     }
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
@@ -1306,6 +1346,7 @@ async function loadSettings() {
     if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
+    updateAiApiWarning();
   } catch { /* */ }
 }
 
@@ -1340,15 +1381,16 @@ async function loadAiDashboard() {
       set('ai-dpfa-pct', `${d.dpfa.percent}%`);
       const fill = document.getElementById('ai-dpfa-fill');
       if (fill) fill.style.width = `${d.dpfa.percent}%`;
-      set('ai-dpfa-detail', d.dpfa.detail || '');
     }
     if (d.mnoa) {
       set('ai-mnoa-pct', `${d.mnoa.percent}%`);
       const fill = document.getElementById('ai-mnoa-fill');
       if (fill) fill.style.width = `${d.mnoa.percent}%`;
-      set('ai-mnoa-detail', d.mnoa.detail || '');
     }
     const onboard = d.onboarding || {};
+    const doneCount = ['internal_api', 'ai_models', 'provider', 'cli_server'].filter(k => onboard[k]).length;
+    const badge = document.getElementById('ai-onboard-badge');
+    if (badge) badge.textContent = `${doneCount}/4`;
     document.querySelectorAll('#ai-checklist li').forEach(li => {
       const step = li.dataset.step;
       li.classList.toggle('done', !!onboard[step]);
@@ -1356,9 +1398,10 @@ async function loadAiDashboard() {
     const hint = document.getElementById('ai-onboard-hint');
     if (hint) {
       hint.textContent = onboard.complete
-        ? 'Onboarding complete — agents ready for sycord.com requests.'
-        : 'Complete agent setup in the configuration section below';
+        ? 'Ready for sycord.com agent requests'
+        : 'Tap settings (top right) to set provider API';
     }
+    updateAiApiWarning();
   } catch { /* */ }
   refreshIcons();
 }
@@ -1370,6 +1413,11 @@ async function sendAiChat() {
   const statusEl = document.getElementById('ai-chat-status');
   if (!uuid) return toast('select a project first');
   if (!message) return;
+  if (!updateAiApiWarning()) {
+    toast('Configure provider API first');
+    openAiSettings();
+    return;
+  }
   appendAiChatMsg('user', message);
   document.getElementById('ai-chat-input').value = '';
   if (statusEl) statusEl.textContent = 'Agent thinking…';
@@ -1508,6 +1556,10 @@ document.getElementById('svc-tabs')?.addEventListener('click', (e) => {
   switchSvcTab(btn.dataset.svcTab);
 });
 
+document.getElementById('ai-header-settings-btn')?.addEventListener('click', openAiSettings);
+document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
+document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
+
 document.getElementById('ai-chat-send-btn')?.addEventListener('click', sendAiChat);
 document.getElementById('ai-chat-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -1519,6 +1571,11 @@ document.getElementById('ai-chat-input')?.addEventListener('keydown', (e) => {
 document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
   const uuid = document.getElementById('ai-chat-project')?.value;
   if (!uuid) return toast('select a project first');
+  if (!updateAiApiWarning()) {
+    toast('Configure provider API first');
+    openAiSettings();
+    return;
+  }
   appendAiChatMsg('system', 'Running agent test…');
   try {
     const res = await api(`/projects/${uuid}/agent/test`, { method: 'POST', body: '{}' });
@@ -1569,6 +1626,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeDrawer();
     closeServiceEditModal();
+    closeAiSettings();
   }
 });
 

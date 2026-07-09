@@ -79,6 +79,11 @@
           <i data-lucide="panel-left"></i>
         </button>
         <span class="breadcrumb" id="breadcrumb">Projects</span>
+        <div class="topbar-actions">
+          <button type="button" class="icon-btn hidden" id="ai-header-settings-btn" aria-label="AI provider settings">
+            <i data-lucide="settings"></i>
+          </button>
+        </div>
       </header>
 
       <main class="content">
@@ -430,201 +435,183 @@
         </section>
 
         <section id="view-ai" class="view">
-          <div class="ai-dashboard">
-            <div class="ai-dash-header">
-              <div>
-                <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span> this project</h1>
-                <p class="projects-sub">Continue CLI agents per workspace — sycord.com sends change requests by UUID</p>
+          <div class="ai-channel">
+            <div class="ai-channel-top">
+              <div class="ai-dash-header">
+                <div>
+                  <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span></h1>
+                  <p class="projects-sub ai-dash-sub">Continue CLI agents — sycord.com routes by UUID</p>
+                </div>
               </div>
-              <a href="/api/#agent" class="btn-create" style="text-decoration:none">
-                <i data-lucide="book-open"></i><span>API Docs</span>
-              </a>
-            </div>
 
-            <div class="note ai-doc-bar">
-              AI session API: <a href="/api/#agent" class="link">/api/#agent</a> · Spec: <a href="/api/ai.json" class="link">/api/ai.json</a> · CLI: <a href="https://github.com/continuedev/continue" class="link" target="_blank" rel="noopener">continuedev/continue</a>
-            </div>
-
-            <div class="ai-stat-row" id="ai-stat-row">
-              <div class="ai-stat-card">
-                <i data-lucide="activity" class="ai-stat-icon"></i>
-                <span class="ai-stat-value" id="ai-stat-online">0</span>
-                <span class="ai-stat-label">agents online</span>
+              <div class="ai-stat-row ai-stat-row-compact" id="ai-stat-row">
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-online">0</span>
+                  <span class="ai-stat-label">online</span>
+                </div>
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-incoming">0</span>
+                  <span class="ai-stat-label">requests 30d</span>
+                </div>
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-failed">0</span>
+                  <span class="ai-stat-label">failed</span>
+                </div>
               </div>
-              <div class="ai-stat-card">
-                <i data-lucide="inbox" class="ai-stat-icon"></i>
-                <span class="ai-stat-value" id="ai-stat-incoming">0</span>
-                <span class="ai-stat-label">incoming requests (30d)</span>
+
+              <div class="ai-meter-block ai-meter-compact">
+                <div class="ai-meter">
+                  <div class="ai-meter-head">
+                    <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA</span>
+                    <span class="ai-meter-pct" id="ai-dpfa-pct">0%</span>
+                  </div>
+                  <div class="ai-meter-track"><div class="ai-meter-fill" id="ai-dpfa-fill" style="width:0%"></div></div>
+                </div>
+                <div class="ai-meter">
+                  <div class="ai-meter-head">
+                    <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA</span>
+                    <span class="ai-meter-pct" id="ai-mnoa-pct">0%</span>
+                  </div>
+                  <div class="ai-meter-track"><div class="ai-meter-fill ai-meter-fill-alt" id="ai-mnoa-fill" style="width:0%"></div></div>
+                </div>
               </div>
-              <div class="ai-stat-card">
-                <i data-lucide="alert-circle" class="ai-stat-icon"></i>
-                <span class="ai-stat-value" id="ai-stat-failed">0</span>
-                <span class="ai-stat-label">failed server relationships</span>
-              </div>
-            </div>
 
-            <div class="ai-meter-block">
-              <div class="ai-meter">
-                <div class="ai-meter-head">
-                  <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA</span>
-                  <span class="ai-meter-pct" id="ai-dpfa-pct">0%</span>
-                </div>
-                <div class="ai-meter-track"><div class="ai-meter-fill" id="ai-dpfa-fill" style="width:0%"></div></div>
-                <span class="hint" id="ai-dpfa-detail">—</span>
-              </div>
-              <div class="ai-meter">
-                <div class="ai-meter-head">
-                  <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA</span>
-                  <span class="ai-meter-pct" id="ai-mnoa-pct">0%</span>
-                </div>
-                <div class="ai-meter-track"><div class="ai-meter-fill ai-meter-fill-alt" id="ai-mnoa-fill" style="width:0%"></div></div>
-                <span class="hint" id="ai-mnoa-detail">—</span>
-              </div>
-            </div>
+              <details class="ai-onboard-details">
+                <summary class="ai-onboard-summary">Onboarding <span class="ai-onboard-badge" id="ai-onboard-badge">—</span></summary>
+                <ul class="ai-checklist" id="ai-checklist">
+                  <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
+                  <li data-step="ai_models"><span class="ai-check-box"></span><span>Bridge + 3 models</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Provider selected</span></li>
+                  <li data-step="cli_server"><span class="ai-check-box"></span><span>Continue CLI installed</span></li>
+                </ul>
+                <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
+              </details>
 
-            <div class="projects-card ai-onboard-card">
-              <h2 class="ai-section-title">Onboarding</h2>
-              <ul class="ai-checklist" id="ai-checklist">
-                <li data-step="internal_api"><span class="ai-check-box"></span><span>1. Internal API — <code>X-Syra-Internal-Secret</code> for sycord.com</span></li>
-                <li data-step="ai_models"><span class="ai-check-box"></span><span>2. AI API — bridge + 3 model profiles (nano / base / havy)</span></li>
-                <li data-step="provider"><span class="ai-check-box"></span><span>3. Select provider — OpenAI-compatible bridge</span></li>
-                <li data-step="cli_server"><span class="ai-check-box"></span><span>4. Continue CLI installed on VM (<code>cn serve</code> per project)</span></li>
-              </ul>
-              <p class="hint" id="ai-onboard-hint">Complete agent setup in the configuration section below</p>
-            </div>
-
-            <div class="projects-card panel-form ai-config-card">
-              <h2 class="ai-section-title">Agent configuration</h2>
-              <p class="hint block">Everything needed for Continue CLI agents — provider, models, keys, and sycord.com internal auth. Provider name is only shown in agent/server responses, not to end users on sycord.com.</p>
-
-              <div class="form-inner">
-                <div class="form-group">
-                  <label for="syra-internal-secret">1. Internal API secret</label>
-                  <input type="password" id="syra-internal-secret" placeholder="shared secret for sycord.com → Syte" autocomplete="off">
-                  <span class="hint">sycord.com sends this as header <code>X-Syra-Internal-Secret</code> on <code>/api/internal/*</code> routes.</span>
-                </div>
-
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="continue-provider">2. Provider</label>
-                    <select id="continue-provider">
-                      <option value="openai">OpenAI-compatible</option>
-                      <option value="anthropic">Anthropic-compatible</option>
-                      <option value="google">Google / Gemini</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="continue-bridge-base">Bridge API base</label>
-                    <input type="text" id="continue-bridge-base" placeholder="https://bridge.sycord.internal/v1">
-                    <span class="hint">OpenAI-compatible endpoint Continue calls for chat completions.</span>
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="continue-bridge-key">Provider API key</label>
-                  <input type="password" id="continue-bridge-key" placeholder="bridge / provider API key" autocomplete="off">
-                  <span class="hint">Stored on Syte and injected into each agent process as <code>SYRA_BRIDGE_API_KEY</code>.</span>
-                </div>
-
-                <p class="hint block" style="margin-top:0.5rem">3. Model profiles — map each tier to a provider model name:</p>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="continue-model-nano">syra-nano</label>
-                    <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
-                  </div>
-                  <div class="form-group">
-                    <label for="continue-model-base">syra-base</label>
-                    <input type="text" id="continue-model-base" placeholder="deepseek-chat">
-                  </div>
-                  <div class="form-group">
-                    <label for="continue-model-havy">syra-havy</label>
-                    <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
-                  </div>
-                </div>
-
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="continue-default-profile">Default profile</label>
-                    <select id="continue-default-profile">
-                      <option value="syra-nano">syra-nano</option>
-                      <option value="syra-base">syra-base</option>
-                      <option value="syra-havy">syra-havy</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="agent-max-count">MNOA — max agents</label>
-                    <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
-                    <span class="hint">Max concurrent <code>cn serve</code> instances (ports 5200–5999).</span>
-                  </div>
-                </div>
-
-                <div id="continue-runtime-status" class="hint"></div>
-                <div class="form-actions">
-                  <button class="btn-pill btn-primary" id="save-ai-settings-btn">Save agent settings</button>
-                </div>
+              <div class="ai-api-warning hidden" id="ai-api-warning">
+                <i data-lucide="alert-triangle"></i>
+                <span>Provider API not configured — open settings to set bridge URL and API key.</span>
               </div>
             </div>
 
-            <div class="projects-card ai-env-card">
-              <h2 class="ai-section-title">Environment variables</h2>
-              <p class="hint block">Syte injects these when starting <code>cn serve</code> for each project. You do not set them manually — configure keys and provider above.</p>
-              <div class="ai-env-grid">
-                <div class="ai-env-row">
-                  <code>SYRA_BRIDGE_API_KEY</code>
-                  <span>Provider/bridge API key from the field above. Continue uses it to authenticate chat requests to your bridge. <strong>Why:</strong> keeps the key out of project repos and config files on disk.</span>
-                </div>
-                <div class="ai-env-row">
-                  <code>HOME</code>
-                  <span>Per-project Continue home under <code>workspaces/{uuid}/data/continue/home</code>. <strong>Why:</strong> isolates agent state per workspace UUID.</span>
-                </div>
-                <div class="ai-env-row">
-                  <code>CONTINUE_GLOBAL_DIR</code>
-                  <span>Points to <code>…/home/.continue</code> for that project. <strong>Why:</strong> separate Continue config/cache per agent.</span>
-                </div>
-                <div class="ai-env-row">
-                  <code>CONTINUE_DISABLE_HUB</code>
-                  <span>Set to <code>1</code> — disables Continue Hub login. <strong>Why:</strong> Syte uses your bridge directly; no Continue account required.</span>
-                </div>
-                <div class="ai-env-row">
-                  <code>Project env_vars</code>
-                  <span>Your project's environment variables (from project → Environment tab) are merged in. <strong>Why:</strong> agents can run build tools with the same env as deploy/preview.</span>
-                </div>
-              </div>
-              <p class="hint" style="margin-top:0.75rem"><strong>Header (not env):</strong> <code>X-Syra-Internal-Secret</code> — sycord.com sends this on internal API calls so only your main site can start agents or request code changes.</p>
-            </div>
-
-            <div class="projects-card ai-chat-card">
-              <h2 class="ai-section-title">Test agent chat</h2>
-              <p class="hint block">Pick a project workspace and send a message through the Continue CLI agent.</p>
+            <div class="ai-chat-shell">
               <div class="ai-chat-toolbar">
-                <select id="ai-chat-project" class="toolbar-select ai-chat-select">
-                  <option value="">Select project…</option>
+                <select id="ai-chat-project" class="toolbar-select ai-chat-select" aria-label="Project">
+                  <option value="">Project…</option>
                 </select>
-                <select id="ai-chat-profile" class="toolbar-select">
-                  <option value="syra-nano">syra-nano</option>
-                  <option value="syra-base" selected>syra-base</option>
-                  <option value="syra-havy">syra-havy</option>
+                <select id="ai-chat-profile" class="toolbar-select ai-chat-profile" aria-label="Model profile">
+                  <option value="syra-nano">nano</option>
+                  <option value="syra-base" selected>base</option>
+                  <option value="syra-havy">havy</option>
                 </select>
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="ai-test-agent-btn">
-                  <i data-lucide="zap"></i><span>Test</span>
-                </button>
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="ai-start-agent-btn">
-                  <i data-lucide="play"></i><span>Start</span>
-                </button>
+                <div class="ai-chat-actions">
+                  <button type="button" class="btn-pill btn-ghost btn-sm ai-icon-btn" id="ai-test-agent-btn" title="Test agent">
+                    <i data-lucide="zap"></i>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost btn-sm ai-icon-btn" id="ai-start-agent-btn" title="Start agent">
+                    <i data-lucide="play"></i>
+                  </button>
+                </div>
               </div>
               <div class="ai-chat-log" id="ai-chat-log"></div>
               <div class="ai-chat-compose">
-                <textarea id="ai-chat-input" rows="2" placeholder="Ask the agent to change something in the workspace…"></textarea>
-                <button type="button" class="btn-pill btn-primary" id="ai-chat-send-btn">
-                  <i data-lucide="send"></i><span>Send</span>
+                <textarea id="ai-chat-input" rows="1" placeholder="Ask the agent to change something…"></textarea>
+                <button type="button" class="btn-pill btn-primary ai-send-btn" id="ai-chat-send-btn" aria-label="Send">
+                  <i data-lucide="send"></i>
                 </button>
               </div>
-              <div id="ai-chat-status" class="hint"></div>
+              <div id="ai-chat-status" class="hint ai-chat-status"></div>
             </div>
+
+            <footer class="ai-footer">
+              <a href="/api/#agent" class="ai-footer-link"><i data-lucide="book-open"></i> API documentation</a>
+            </footer>
           </div>
         </section>
+
+        <div id="ai-settings-sheet" class="ai-settings-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
+          <div class="ai-settings-backdrop" id="ai-settings-backdrop"></div>
+          <div class="ai-settings-panel">
+            <div class="ai-settings-head">
+              <h2 id="ai-settings-title">AI provider settings</h2>
+              <button type="button" class="icon-btn" id="ai-settings-close" aria-label="Close">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div class="ai-settings-body">
+              <p class="hint block">Required before agents can run. Provider API key is injected as <code>SYRA_BRIDGE_API_KEY</code> on the VM.</p>
+
+              <div class="form-group">
+                <label for="continue-bridge-base">Bridge API URL <span class="req-mark">*</span></label>
+                <input type="url" id="continue-bridge-base" placeholder="https://api.openai.com/v1" required>
+              </div>
+              <div class="form-group">
+                <label for="continue-bridge-key">Provider API key <span class="req-mark">*</span></label>
+                <input type="password" id="continue-bridge-key" placeholder="sk-… or provider key" autocomplete="off" required>
+                <span class="hint" id="continue-bridge-key-hint">Required — agents cannot call models without this.</span>
+              </div>
+              <div class="form-group">
+                <label for="continue-provider">Provider</label>
+                <select id="continue-provider">
+                  <option value="openai">OpenAI-compatible</option>
+                  <option value="anthropic">Anthropic-compatible</option>
+                  <option value="google">Google / Gemini</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="continue-model-nano">syra-nano</label>
+                  <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
+                </div>
+                <div class="form-group">
+                  <label for="continue-model-base">syra-base</label>
+                  <input type="text" id="continue-model-base" placeholder="deepseek-chat">
+                </div>
+                <div class="form-group">
+                  <label for="continue-model-havy">syra-havy</label>
+                  <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="continue-default-profile">Default profile</label>
+                  <select id="continue-default-profile">
+                    <option value="syra-nano">syra-nano</option>
+                    <option value="syra-base">syra-base</option>
+                    <option value="syra-havy">syra-havy</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="agent-max-count">MNOA max agents</label>
+                  <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="syra-internal-secret">Internal API secret</label>
+                <input type="password" id="syra-internal-secret" placeholder="sycord.com → Syte" autocomplete="off">
+                <span class="hint">Header <code>X-Syra-Internal-Secret</code> for sycord.com server-to-server.</span>
+              </div>
+
+              <details class="ai-env-details">
+                <summary>Environment variables (auto-injected)</summary>
+                <div class="ai-env-grid">
+                  <div class="ai-env-row"><code>SYRA_BRIDGE_API_KEY</code><span>Provider key — not stored in repos</span></div>
+                  <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
+                  <div class="ai-env-row"><code>CONTINUE_DISABLE_HUB</code><span>No Continue Hub login required</span></div>
+                </div>
+              </details>
+
+              <div id="continue-runtime-status" class="hint"></div>
+            </div>
+            <div class="ai-settings-foot">
+              <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>
+            </div>
+          </div>
+        </div>
 
         <section id="view-settings" class="view">
           <div class="settings-stack">
