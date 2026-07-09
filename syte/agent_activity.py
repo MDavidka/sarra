@@ -11,6 +11,7 @@ from typing import Any
 
 import aiosqlite
 
+from syte.agent_activity_catalog import activity_event_types
 from syte.config import settings
 
 EVENTS_SCHEMA = """
@@ -28,29 +29,12 @@ CREATE TABLE IF NOT EXISTS agent_events (
 CREATE INDEX IF NOT EXISTS idx_agent_events_project_id ON agent_events(project_id, id);
 """
 
-# Cursor-like event kinds exposed to clients.
-ACTIVITY_EVENT_TYPES = frozenset({
-    "user_message",
-    "assistant_message",
-    "thinking",
-    "tool_call",
-    "command_run",
-    "file_created",
-    "file_modified",
-    "file_deleted",
-    "file_read",
-    "request_started",
-    "request_completed",
-    "request_failed",
-    "agent_started",
-    "agent_stopped",
-    "agent_restarted",
-    "processing",
-    "status",
-})
+# Cursor-like event kinds exposed to clients (see agent_activity_catalog.py).
+ACTIVITY_EVENT_TYPES = frozenset(activity_event_types())
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
 _history_trackers: dict[str, int] = {}
+_processing_state: dict[str, bool] = {}
 
 
 def _now() -> str:
@@ -219,6 +203,14 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
         return "file_read", "Read file", path or command[:200], args
     if any(k in name for k in ("terminal", "bash", "shell", "run", "command", "exec")):
         return "command_run", "Ran command", command[:500] or name, args
+    if "mcp" in name:
+        return "mcp_tool_call", "MCP tool", tool_name or name, args
+    if "skill" in name:
+        return "skill_invoked", "Skill", path or _text_from_content(arguments)[:200], args
+    if any(k in name for k in ("plan", "todo", "outline")):
+        return "plan", "Planning", _text_from_content(arguments)[:500], args
+    if any(k in name for k in ("ask", "question", "clarif")):
+        return "asking_user", "Asking", _text_from_content(arguments)[:500], args
     if "think" in name:
         return "thinking", "Thinking", _text_from_content(args.get("thought") or args.get("content"))[:500], args
     return "tool_call", tool_name or "tool", _text_from_content(arguments)[:500], args
@@ -245,12 +237,13 @@ def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict
 
     if role == "tool":
         text = _text_from_content(content)
+        tool_name = str(message.get("name") or message.get("tool") or "tool")
         events.append({
-            "event_type": "tool_call",
+            "event_type": "tool_result",
             "role": "tool",
-            "title": "Tool result",
+            "title": f"Tool result: {tool_name}",
             "detail": text[:4000],
-            "payload": {"content": text},
+            "payload": {"tool": tool_name, "content": text},
             "source": source,
         })
         return events
@@ -305,12 +298,34 @@ def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict
     text = _text_from_content(content)
     if text:
         lowered = text.lower()
-        if re.search(r"", text, re.I) or lowered.startswith("thinking:"):
+        if (
+            re.search(r"<think(?:ing)?>", text, re.I)
+            or "redacted_thinking" in lowered
+            or lowered.startswith("thinking:")
+        ):
             events.append({
                 "event_type": "thinking",
                 "role": "assistant",
                 "title": "Thinking",
                 "detail": re.sub(r"</?think>", "", text, flags=re.I)[:4000],
+                "payload": {"content": text},
+                "source": source,
+            })
+        elif lowered.startswith("plan:") or lowered.startswith("**plan"):
+            events.append({
+                "event_type": "plan",
+                "role": "assistant",
+                "title": "Plan",
+                "detail": text[:4000],
+                "payload": {"content": text},
+                "source": source,
+            })
+        elif "?" in text[:120] and len(text) < 400:
+            events.append({
+                "event_type": "asking_user",
+                "role": "assistant",
+                "title": "Question",
+                "detail": text[:4000],
                 "payload": {"content": text},
                 "source": source,
             })
@@ -342,6 +357,50 @@ def extract_events_from_state(
     return events, len(history)
 
 
+async def ingest_processing_state(
+    project_id: str,
+    state: dict[str, Any],
+    *,
+    source: str = "agent",
+) -> list[dict[str, Any]]:
+    """Emit session_started/session_finished/processing on isProcessing transitions."""
+    busy = bool(state.get("isProcessing") or state.get("is_processing"))
+    key = f"{project_id}:{source}"
+    was_busy = _processing_state.get(key, False)
+    _processing_state[key] = busy
+    recorded: list[dict[str, Any]] = []
+    if busy and not was_busy:
+        recorded.append(
+            await record_agent_event(
+                project_id,
+                "session_started",
+                title="Session active",
+                detail="Agent started working on a request",
+                source=source,
+            )
+        )
+        recorded.append(
+            await record_agent_event(
+                project_id,
+                "processing",
+                title="Working",
+                detail="Agent is processing…",
+                source=source,
+            )
+        )
+    elif not busy and was_busy:
+        recorded.append(
+            await record_agent_event(
+                project_id,
+                "session_finished",
+                title="Session idle",
+                detail="Agent finished processing",
+                source=source,
+            )
+        )
+    return recorded
+
+
 async def ingest_agent_state(
     project_id: str,
     state: dict[str, Any],
@@ -349,12 +408,12 @@ async def ingest_agent_state(
     source: str = "agent",
 ) -> list[dict[str, Any]]:
     """Diff Continue state history and persist new activity events."""
+    recorded = await ingest_processing_state(project_id, state, source=source)
     key = f"{project_id}:{source}"
     since = _history_trackers.get(key, 0)
     raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
     _history_trackers[key] = new_index
 
-    recorded: list[dict[str, Any]] = []
     for raw in raw_events:
         recorded.append(
             await record_agent_event(
@@ -403,3 +462,4 @@ async def record_workspace_activity(
 
 def reset_history_tracker(project_id: str, *, source: str = "agent") -> None:
     _history_trackers.pop(f"{project_id}:{source}", None)
+    _processing_state.pop(f"{project_id}:{source}", None)

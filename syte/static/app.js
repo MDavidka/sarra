@@ -268,7 +268,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
   if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
@@ -1135,6 +1135,10 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   if (havyKey) body.continue_syra_havy_api_key = havyKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
+  const mcpRaw = document.getElementById('continue-mcp-servers')?.value?.trim();
+  const rulesRaw = document.getElementById('continue-rules')?.value?.trim();
+  if (mcpRaw !== undefined) body.continue_mcp_servers = mcpRaw;
+  if (rulesRaw !== undefined) body.continue_rules = rulesRaw;
   btn.disabled = true;
   btn.textContent = 'saving…';
   try {
@@ -1287,6 +1291,8 @@ async function loadSettings() {
     const continueBaseKey = document.getElementById('continue-base-key');
     const continueHavyKey = document.getElementById('continue-havy-key');
     const agentMaxCount = document.getElementById('agent-max-count');
+    const continueMcp = document.getElementById('continue-mcp-servers');
+    const continueRules = document.getElementById('continue-rules');
     const continueRuntimeStatus = document.getElementById('continue-runtime-status');
     const syraInternalSecret = document.getElementById('syra-internal-secret');
     if (ip && s.public_ip) ip.value = s.public_ip;
@@ -1326,7 +1332,9 @@ async function loadSettings() {
     }
     if (continueDefaultProfile && s.continue_default_model_profile) continueDefaultProfile.value = s.continue_default_model_profile;
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
-    if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
+    if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = String(s.agent_max_count_default || 50);
+    if (continueMcp && s.continue_mcp_servers) continueMcp.value = s.continue_mcp_servers;
+    if (continueRules && s.continue_rules) continueRules.value = s.continue_rules;
     const keyFields = [
       ['continue-nano-key', 'continue-nano-key-hint', s.continue_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
       ['continue-base-key', 'continue-base-key-hint', s.continue_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
@@ -1399,6 +1407,129 @@ function renderAiTestProjects() {
   if (current) sel.value = current;
 }
 
+let aiSessionStream = null;
+let aiSessionSinceId = 0;
+
+const AI_SESSION_ICONS = {
+  user_message: 'user',
+  assistant_message: 'bot',
+  thinking: 'brain',
+  plan: 'list',
+  asking_user: 'help-circle',
+  tool_call: 'wrench',
+  tool_result: 'check',
+  mcp_tool_call: 'plug',
+  skill_invoked: 'sparkles',
+  command_run: 'terminal',
+  file_created: 'file-plus',
+  file_modified: 'file-pen',
+  file_deleted: 'trash-2',
+  file_read: 'file-search',
+  request_started: 'play',
+  request_completed: 'check-circle',
+  request_failed: 'x-circle',
+  session_started: 'radio',
+  session_finished: 'circle-stop',
+  agent_started: 'power',
+  agent_stopped: 'power-off',
+  agent_restarted: 'refresh-cw',
+  processing: 'loader',
+};
+
+function stopAiSessionStream() {
+  if (aiSessionStream) {
+    aiSessionStream.close();
+    aiSessionStream = null;
+  }
+  document.getElementById('ai-session-live')?.classList.add('hidden');
+}
+
+function formatSessionTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString();
+  } catch {
+    return '';
+  }
+}
+
+function appendSessionEvent(event) {
+  const box = document.getElementById('ai-session-events');
+  if (!box || !event) return;
+  if (!box.querySelector('.ai-session-event')) box.innerHTML = '';
+  const id = event.id || 0;
+  if (id && id <= aiSessionSinceId && box.querySelector(`[data-event-id="${id}"]`)) return;
+  if (id) aiSessionSinceId = Math.max(aiSessionSinceId, id);
+
+  const type = event.event_type || 'status';
+  const row = document.createElement('div');
+  row.className = 'ai-session-event';
+  row.dataset.eventId = String(id || '');
+  row.innerHTML = `
+    <div class="ai-session-event-type">${esc(type.replace(/_/g, ' '))}</div>
+    <div class="ai-session-event-title">${esc(event.title || type)}</div>
+    ${event.detail ? `<div class="ai-session-event-detail">${esc(event.detail)}</div>` : ''}
+    <div class="ai-session-event-time">${esc(formatSessionTime(event.created_at))}${event.source ? ` · ${esc(event.source)}` : ''}</div>
+  `;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+  refreshIcons();
+}
+
+async function loadAiSessionSnapshot(projectId) {
+  if (!projectId) return;
+  try {
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=120`);
+    const events = res.events || [];
+    const box = document.getElementById('ai-session-events');
+    if (box) box.innerHTML = '';
+    aiSessionSinceId = 0;
+    events.forEach(appendSessionEvent);
+  } catch {
+    /* offline */
+  }
+}
+
+async function refreshAiSessionStatus(projectId) {
+  const el = document.getElementById('ai-session-status');
+  if (!el) return;
+  if (!projectId) {
+    el.textContent = 'Select a project to watch live agent activity';
+    return;
+  }
+  try {
+    const st = await api(`/projects/${projectId}/agent`);
+    el.textContent = `${st.agent_status || '—'} · port ${st.agent_port ?? '—'} · ${st.agent_model_profile || 'syra-base'}`;
+  } catch {
+    el.textContent = 'Could not load agent status';
+  }
+}
+
+function startAiSessionStream(projectId) {
+  stopAiSessionStream();
+  if (!projectId) {
+    refreshAiSessionStatus('');
+    return;
+  }
+  refreshAiSessionStatus(projectId);
+  loadAiSessionSnapshot(projectId).then(() => {
+    const url = `/api/projects/${projectId}/agent/activity/stream?live=1&since_id=${aiSessionSinceId}`;
+    aiSessionStream = new EventSource(url);
+    document.getElementById('ai-session-live')?.classList.remove('hidden');
+    aiSessionStream.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'activity' && msg.event) appendSessionEvent(msg.event);
+        if (msg.type === 'processing' && msg.event) appendSessionEvent({ ...msg.event, event_type: 'processing' });
+        if (msg.since_id) aiSessionSinceId = Math.max(aiSessionSinceId, msg.since_id);
+      } catch { /* */ }
+    };
+    aiSessionStream.onerror = () => {
+      document.getElementById('ai-session-live')?.classList.add('hidden');
+    };
+  });
+}
+
 async function loadAiDashboard() {
   renderAiTestProjects();
   try {
@@ -1437,94 +1568,9 @@ async function loadAiDashboard() {
     updateAiApiWarning();
     if (!updateAiApiWarning()) openAiSettings();
   } catch { /* */ }
+  const projectId = document.getElementById('ai-test-project')?.value;
+  startAiSessionStream(projectId || '');
   refreshIcons();
-}
-
-function renderAiDebug(report) {
-  const el = document.getElementById('ai-debug-content');
-  if (!el) return;
-  if (!report) {
-    el.innerHTML = '<p class="hint">No debug data.</p>';
-    return;
-  }
-
-  const steps = (report.steps || []).map(step => `
-    <div class="ai-debug-step ${step.ok ? 'ok' : 'fail'}">
-      <span class="ai-debug-step-icon">${step.ok ? '✓' : '✗'}</span>
-      <div>
-        <strong>${esc(step.label)}</strong>
-        <div class="ai-debug-step-detail">${esc(step.detail || '')}</div>
-      </div>
-    </div>
-  `).join('');
-
-  const profiles = (report.profiles || []).map(p => {
-    const probes = (p.probes || []).map(pr => `
-      <tr>
-        <td>${esc(pr.step)}</td>
-        <td>${esc(pr.method || '')}</td>
-        <td><span class="ai-debug-badge ${pr.ok ? 'ok' : 'fail'}">${pr.ok ? 'ok' : 'fail'}</span></td>
-        <td>${pr.status_code ?? '—'}</td>
-        <td>${pr.latency_ms ?? '—'}ms</td>
-        <td>${esc(pr.error || (pr.body_preview || '').slice(0, 120))}</td>
-      </tr>
-    `).join('');
-    return `
-      <div class="ai-debug-block">
-        <strong>${esc(p.profile)}</strong> · ${esc(p.label)} · key: ${p.api_key_set ? esc(p.api_key_hint) : 'missing'}
-        <div class="hint">${esc(p.api_base)} · ${esc(p.model)}</div>
-        <table class="ai-debug-table">
-          <thead><tr><th>Probe</th><th>Method</th><th>Result</th><th>HTTP</th><th>Time</th><th>Detail</th></tr></thead>
-          <tbody>${probes || '<tr><td colspan="6">No probes — key not saved</td></tr>'}</tbody>
-        </table>
-      </div>
-    `;
-  }).join('');
-
-  const hints = (report.hints || []).map(h => `<div class="ai-debug-hint">${esc(h)}</div>`).join('');
-  const agent = report.agent || {};
-  const config = report.config || {};
-
-  el.innerHTML = `
-    <div class="hint">Generated ${esc(report.generated_at || '')} · active profile <strong>${esc(report.active_profile || '')}</strong></div>
-    <div class="ai-debug-steps">${steps || '<p class="hint">No steps recorded.</p>'}</div>
-    ${hints ? `<div class="ai-debug-hints">${hints}</div>` : ''}
-    <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
-    <div>
-      <strong>Agent runtime</strong>
-      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${report.continue_cli?.installed ? esc(report.continue_cli.version || 'installed') : 'missing'}</div>
-      ${agent.serve_command ? `<div class="hint">serve cmd: <code>${esc(agent.serve_command)}</code></div>` : ''}
-      ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
-    </div>
-    ${config.snippet ? `<div><strong>config.yaml</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
-    ${report.logs_tail ? `<div><strong>Agent logs (tail)</strong><pre class="ai-debug-logs">${esc(report.logs_tail)}</pre></div>` : ''}
-  `;
-}
-
-async function loadAiDebug(report) {
-  const panel = document.getElementById('ai-debug-panel');
-  const content = document.getElementById('ai-debug-content');
-  if (!content) return;
-  if (report) {
-    renderAiDebug(report);
-    if (panel) panel.open = true;
-    return;
-  }
-  const uuid = document.getElementById('ai-test-project')?.value;
-  const profile = document.getElementById('ai-test-profile')?.value;
-  if (!uuid) {
-    content.innerHTML = '<p class="hint">Select a project to run diagnostics.</p>';
-    return;
-  }
-  content.innerHTML = '<p class="hint">Running diagnostics…</p>';
-  try {
-    const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
-    const res = await api(`/projects/${uuid}/agent/debug${q}`);
-    renderAiDebug(res);
-    if (panel) panel.open = true;
-  } catch (e) {
-    content.innerHTML = `<p class="hint">Debug failed: ${esc(e.message)}</p>`;
-  }
 }
 
 function esc(s) {
@@ -1630,13 +1676,10 @@ document.getElementById('ai-settings-backdrop')?.addEventListener('click', close
 
 document.getElementById('ai-test-profile')?.addEventListener('change', () => {
   updateAiApiWarning();
-  loadAiDebug();
 });
-document.getElementById('ai-test-project')?.addEventListener('change', () => loadAiDebug());
-document.getElementById('ai-debug-refresh')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  loadAiDebug();
+document.getElementById('ai-test-project')?.addEventListener('change', () => {
+  const uuid = document.getElementById('ai-test-project')?.value;
+  startAiSessionStream(uuid || '');
 });
 
 document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
@@ -1663,10 +1706,10 @@ document.getElementById('ai-test-agent-btn')?.addEventListener('click', async ()
     } else {
       if (statusEl) statusEl.textContent = res.message || 'Test failed';
       toast(res.message || 'Test failed');
-      if (res.debug) await loadAiDebug(res.debug);
-      else await loadAiDebug();
     }
     await loadAiDashboard();
+    const uuid = document.getElementById('ai-test-project')?.value;
+    if (uuid) startAiSessionStream(uuid);
   } catch (e) {
     if (statusEl) statusEl.textContent = e.message;
     toast('Error: ' + e.message);

@@ -1521,7 +1521,40 @@
 data: {"type":"processing","event":{"event_type":"processing","title":"Working","detail":"Agent is processing…"}}
 
 data: {"type":"ping","since_id":16}</pre>
-              <div class="field-desc"><strong>event_type values:</strong> <code>user_message</code>, <code>assistant_message</code>, <code>thinking</code>, <code>tool_call</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>agent_started</code>, <code>agent_stopped</code></div>
+              <div class="field-desc"><strong>Full catalog:</strong> <code>GET /api/agent_activity_catalog</code> — every event type with Continue.dev mapping.</div>
+              <div class="field-desc"><strong>event_type values:</strong> <code>session_started</code>, <code>session_finished</code>, <code>processing</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>user_message</code>, <code>assistant_message</code>, <code>thinking</code>, <code>plan</code>, <code>asking_user</code>, <code>tool_call</code>, <code>tool_result</code>, <code>mcp_tool_call</code>, <code>skill_invoked</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>file_read</code>, <code>agent_started</code>, <code>agent_stopped</code>, <code>agent_restarted</code></div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-activity-catalog">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_activity_catalog</span>
+              </div>
+              <div class="endpoint-name">Activity event catalog</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Machine-readable list of all activity events, SSE envelope types, and Continue.dev alignment. Use when building sycord.com chat UIs.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-mcp-skills">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method put">PUT</span>
+                <span class="endpoint-path">/settings</span>
+              </div>
+              <div class="endpoint-name">MCP servers &amp; skills (Continue CLI)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>Continue.dev</strong> — <code>cn serve</code> loads <code>mcpServers</code> from config.yaml and <code>SKILL.md</code> files from <code>.continue/skills/</code>. Syte merges global MCP JSON from settings into each project config.</div>
+              <div class="field-desc"><code>continue_mcp_servers</code> — JSON array, e.g. <code>[{"name":"sqlite","command":"npx","args":["-y","mcp-sqlite"]}]</code></div>
+              <div class="field-desc"><code>continue_rules</code> — one rule path or inline string per line (passed to config.yaml <code>rules:</code>)</div>
+              <div class="field-desc"><code>agent_max_count</code> — max concurrent AI agents (MNOA), default 50</div>
+              <div class="field-desc">Per-project skills: <code>workspaces/{uuid}/app/.continue/skills/SKILL.md</code></div>
+              <div class="field-desc">Per-project MCP YAML: <code>workspaces/{uuid}/app/.continue/mcpServers/*.yaml</code></div>
+              <div class="field-desc">Docs: <a href="https://docs.continue.dev/reference#mcpservers" target="_blank" rel="noopener">MCP reference</a> · <a href="https://docs.continue.dev/guides/cli" target="_blank" rel="noopener">CLI guide</a></div>
             </div>
           </div>
           <div class="endpoint" id="agent-test">

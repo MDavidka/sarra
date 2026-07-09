@@ -1,6 +1,7 @@
 """Machine-readable API specification for AI agents."""
 
 from syte import __version__
+from syte.agent_activity_catalog import build_activity_api_spec
 from syte.design_contract import build_design_contract_spec, build_system_prompt
 
 
@@ -141,6 +142,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
             {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_name": "optional"}, "description": "sycord.com code change request"},
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (Cursor-like chat events)"},
+            {"method": "GET", "path": "/api/agent_activity_catalog", "auth": False, "description": "Full activity event catalog (Continue.dev aligned)"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1", "auth": "optional", "description": "SSE real-time agent activity for sycord.com UI"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Continue agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
@@ -167,29 +169,19 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "6. Syte POST http://127.0.0.1:{port}/message {message}",
                 "7. Poll GET /state until idle, emit request_completed, return reply to sycord.com",
             ],
-            "activity_api": {
-                "description": "Real-time Cursor-like chat feed for sycord.com — structured events, not raw logs",
-                "snapshot": "GET /api/agent_activity?uuid=&since_id=0",
-                "stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
-                "internal_snapshot": "GET /api/internal/projects/{uuid}/agent/activity?since_id=0",
-                "internal_stream": "GET /api/internal/projects/{uuid}/agent/activity/stream?live=1",
-                "event_types": [
-                    "user_message",
-                    "assistant_message",
-                    "thinking",
-                    "tool_call",
-                    "command_run",
-                    "file_created",
-                    "file_modified",
-                    "file_deleted",
-                    "request_started",
-                    "request_completed",
-                    "request_failed",
-                    "agent_started",
-                    "agent_stopped",
+            "activity_api": build_activity_api_spec(),
+            "mcp_and_skills": {
+                "mcp_servers_setting": "continue_mcp_servers — JSON array merged into config.yaml mcpServers",
+                "rules_setting": "continue_rules — one rule path or inline string per line",
+                "workspace_mcp": "Optional YAML files in app/.continue/mcpServers/*.yaml",
+                "skills_paths": [
+                    "workspaces/{uuid}/app/.continue/skills/SKILL.md",
+                    "workspaces/{uuid}/data/continue/home/.continue/skills/SKILL.md",
                 ],
-                "sse_format": 'data: {"type":"activity","event":{...}}',
-                "polling": "Pass since_id=last_event_id on snapshot or stream reconnect",
+                "continue_docs": {
+                    "mcp": "https://docs.continue.dev/reference#mcpservers",
+                    "cli": "https://docs.continue.dev/guides/cli",
+                },
             },
             "workflow": [
                 "1. GET /api/agent_status?uuid= — check agent_status and agent_proxy_url",

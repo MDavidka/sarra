@@ -450,14 +450,14 @@
               <div class="ai-meter-block ai-meter-compact">
                 <div class="ai-meter">
                   <div class="ai-meter-head">
-                    <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA</span>
+                    <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA (AI)</span>
                     <span class="ai-meter-pct" id="ai-dpfa-pct">0%</span>
                   </div>
                   <div class="ai-meter-track"><div class="ai-meter-fill" id="ai-dpfa-fill" style="width:0%"></div></div>
                 </div>
                 <div class="ai-meter">
                   <div class="ai-meter-head">
-                    <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA</span>
+                    <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA (AI)</span>
                     <span class="ai-meter-pct" id="ai-mnoa-pct">0%</span>
                   </div>
                   <div class="ai-meter-track"><div class="ai-meter-fill ai-meter-fill-alt" id="ai-mnoa-fill" style="width:0%"></div></div>
@@ -497,15 +497,18 @@
               <div id="ai-test-status" class="hint ai-test-status"></div>
             </div>
 
-            <details class="ai-debug-panel" id="ai-debug-panel" open>
-              <summary class="ai-debug-summary">
-                Connection debug
-                <button type="button" class="btn-pill btn-ghost btn-sm ai-debug-refresh" id="ai-debug-refresh">Refresh</button>
-              </summary>
-              <div id="ai-debug-content" class="ai-debug-content">
-                <p class="hint">Select a project and click Refresh to run diagnostics.</p>
+            <div class="ai-session-panel" id="ai-session-panel">
+              <div class="ai-session-head">
+                <div>
+                  <strong>Current session</strong>
+                  <div class="hint" id="ai-session-status">Select a project to watch live agent activity</div>
+                </div>
+                <span class="ai-session-live hidden" id="ai-session-live">live</span>
               </div>
-            </details>
+              <div id="ai-session-events" class="ai-session-events">
+                <p class="hint">Events appear here in real time — thinking, tool calls, file edits, commands.</p>
+              </div>
+            </div>
 
             <footer class="ai-footer">
               <a href="/api/#agent" class="ai-footer-link"><i data-lucide="book-open"></i> API documentation</a>
@@ -574,10 +577,24 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label for="agent-max-count">MNOA max agents</label>
+                  <label for="agent-max-count">Max agents (AI) · MNOA</label>
                   <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
+                  <span class="hint">Maximum concurrent Continue agents. Default 50 if empty.</span>
                 </div>
               </div>
+
+              <details class="ai-mcp-details">
+                <summary>MCP servers &amp; skills (Continue CLI)</summary>
+                <p class="hint block">MCP tools are merged into each project's <code>config.yaml</code>. Skills: add <code>SKILL.md</code> under <code>app/.continue/skills/</code> in the workspace. <a href="https://docs.continue.dev/reference#mcpservers" target="_blank" rel="noopener">MCP docs</a> · <a href="https://docs.continue.dev/guides/cli" target="_blank" rel="noopener">CLI skills</a></p>
+                <div class="form-group">
+                  <label for="continue-mcp-servers">MCP servers (JSON)</label>
+                  <textarea id="continue-mcp-servers" class="ai-settings-textarea" rows="6" placeholder='[{"name":"sqlite","command":"npx","args":["-y","mcp-sqlite","./test.db"]}]'></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="continue-rules">Rules (one per line)</label>
+                  <textarea id="continue-rules" class="ai-settings-textarea" rows="4" placeholder="Always use TypeScript strict mode&#10;./rules/style.md"></textarea>
+                </div>
+              </details>
 
               <div class="form-group">
                 <label for="syra-internal-secret">Internal API secret</label>
