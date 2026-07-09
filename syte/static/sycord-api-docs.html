@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sycord API — Syte Deployer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #fff; --bg-surface: #fafafa; --border: #e4e4e7;
+      --text: #09090b; --text-muted: #71717a; --link: #2563eb;
+      --accent: #2563eb; --warn-bg: #fffbeb; --warn-border: #f59e0b;
+      --radius: 10px; --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace; --sidebar-w: 260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.55; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar { width: var(--sidebar-w); background: #fff; border-right: 1px solid var(--border); padding: 1rem 0.75rem; position: fixed; height: 100vh; overflow-y: auto; z-index: 10; }
+    .sidebar a.back { color: var(--text-muted); text-decoration: none; font-size: 12px; display: block; margin-bottom: 1rem; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; padding: 0.5rem; }
+    .brand img { width: 28px; height: 28px; }
+    .brand strong { font-size: 15px; }
+    .nav-cat { display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left; padding: 0.55rem 0.75rem; border: none; background: none; border-radius: 8px; color: var(--text-muted); font-family: var(--font); font-size: 13px; cursor: pointer; }
+    .nav-cat:hover, .nav-cat.active { background: #f4f4f5; color: var(--text); }
+    .nav-cat svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .main { margin-left: var(--sidebar-w); flex: 1; padding: 2rem 2.5rem 4rem; max-width: 860px; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.35rem; letter-spacing: -0.03em; }
+    h2 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; font-weight: 600; }
+    h3 { font-size: 0.9rem; margin: 0.85rem 0 0.35rem; color: var(--text-muted); font-weight: 600; text-transform: lowercase; }
+    .sub { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 13px; }
+    .sub a, .sub code { color: var(--link); }
+    .panel { display: none; } .panel.active { display: block; }
+    .endpoint { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
+    .endpoint-head { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+    .method { color: var(--link); font-family: var(--mono); font-weight: 700; font-size: 11px; margin-right: 0.5rem; }
+    .method.get { color: #16a34a; }
+    .path { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+    .endpoint-name { font-weight: 600; font-size: 13px; margin-top: 0.25rem; }
+    .endpoint-body { padding: 1rem; font-size: 13px; color: var(--text-muted); }
+    .endpoint-body p { margin-bottom: 0.5rem; }
+    pre { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; font-family: var(--mono); font-size: 10.5px; overflow-x: auto; margin: 0.5rem 0; color: #334155; line-height: 1.5; }
+    pre.highlight { border-color: #93c5fd; background: #eff6ff; }
+    .note { background: #eff6ff; border-left: 3px solid var(--accent); padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 13px; color: var(--text-muted); margin: 0.75rem 0; }
+    .warn { background: var(--warn-bg); border-left: 3px solid var(--warn-border); padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 13px; margin: 0.75rem 0; }
+    .warn strong { color: #92400e; }
+    ul, ol { margin: 0.4rem 0 0.5rem 1.2rem; font-size: 13px; color: var(--text-muted); }
+    li { margin-bottom: 0.25rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 0.5rem 0; }
+    th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--text-muted); font-weight: 500; width: 28%; }
+    td code { font-family: var(--mono); font-size: 11px; }
+    .tag { display: inline-block; font-size: 10px; padding: 0.15rem 0.45rem; border-radius: 999px; background: #f4f4f5; color: var(--text-muted); margin-left: 0.35rem; }
+    .tag.required { background: #fee2e2; color: #dc2626; }
+    .step-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; background: #fff; }
+    .step-num { font-size: 11px; font-weight: 700; color: var(--link); text-transform: uppercase; letter-spacing: 0.05em; }
+    .flow-table th { width: 22%; }
+    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; padding: 1rem; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="/" class="back">← syte gui</a>
+      <div class="brand">
+        <img src="/static/icon.png?v=__VERSION__" alt="">
+        <strong>Sycord API</strong>
+      </div>
+      <nav>
+        <button class="nav-cat active" data-panel="backend"><i data-lucide="server"></i> Backend guide</button>
+        <button class="nav-cat" data-panel="reference"><i data-lucide="table"></i> Quick reference</button>
+        <button class="nav-cat" data-panel="intro"><i data-lucide="info"></i> Overview</button>
+        <button class="nav-cat" data-panel="auth"><i data-lucide="key"></i> Authentication</button>
+        <button class="nav-cat" data-panel="uuid"><i data-lucide="fingerprint"></i> Save UUID</button>
+        <button class="nav-cat" data-panel="connect"><i data-lucide="plug"></i> project_connect</button>
+        <button class="nav-cat" data-panel="container"><i data-lucide="box"></i> container_get</button>
+        <button class="nav-cat" data-panel="upload"><i data-lucide="upload"></i> upload</button>
+        <button class="nav-cat" data-panel="preview"><i data-lucide="monitor-play"></i> preview</button>
+        <button class="nav-cat" data-panel="domain"><i data-lucide="globe"></i> domain</button>
+        <button class="nav-cat" data-panel="deploy"><i data-lucide="rocket"></i> issue_deployment</button>
+        <button class="nav-cat" data-panel="errors"><i data-lucide="alert-circle"></i> Errors</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <h1>Sycord Deployer API</h1>
+      <p class="sub">v__VERSION__ · <a href="/sycord/api/integration.json">integration.json</a> · <a href="/sycord/api/spec.json">spec.json</a> · All responses are JSON</p>
+
+      <div class="panel active" id="panel-backend">
+        <div class="note">Your Sycord <strong>backend server</strong> calls Syte over HTTPS. Store <code>SYTE_API_KEY</code> in env — never in the browser.</div>
+
+        <h2>Your database columns</h2>
+        <table>
+          <tr><th>syte_uuid</th><td><span class="tag required">required</span> From <code>project_connect</code> → <code>response.uuid</code></td></tr>
+          <tr><th>syte_domain</th><td>From <code>response.project.domain</code> e.g. <code>myapp.sycord.site</code></td></tr>
+          <tr><th>syte_url</th><td>From <code>response.project.url</code> — show this link to users when live</td></tr>
+          <tr><th>deploy_status</th><td>Mirror <code>created</code> → <code>deploying</code> → <code>running</code></td></tr>
+          <tr><th>preview_url</th><td>Optional cache from <code>preview_start</code> / <code>preview_status</code></td></tr>
+        </table>
+
+        <div class="step-card">
+          <div class="step-num">Step 1 — User creates project</div>
+          <p><strong>POST</strong> <code>/sycord/api/project_connect</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "name": "myapp", "stack": "nextjs" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre class="highlight">{ "ok": true, "uuid": "myapp-a1b2c3", "project": { "domain": "myapp.sycord.site", "url": "https://myapp.sycord.site", "status": "created" } }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li><code>INSERT</code> row with <code>syte_uuid = response.uuid</code></li>
+            <li>Save <code>syte_domain</code>, <code>syte_url</code> from <code>response.project</code></li>
+            <li>Return your internal project id + <code>syte_url</code> to your frontend</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 2 — Upload files (optional)</div>
+          <p><strong>POST</strong> <code>/sycord/api/upload</code> · Content-Type: <code>multipart/form-data</code></p>
+          <h3>You send</h3>
+          <pre>uuid=myapp-a1b2c3
+path=app/app/page.tsx
+file=&lt;binary&gt;</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "uuid": "myapp-a1b2c3", "bytes": 2048, "message": "Uploaded…" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Load <code>syte_uuid</code> from your DB for this project</li>
+            <li>Forward file from your user or generate code server-side</li>
+            <li>Skip this step if the scaffold from step 1 is enough</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 3 — Start dev preview (optional, fast)</div>
+          <p><strong>POST</strong> <code>/sycord/api/preview_start</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "preview_url": "https://previewk-myapp.sycord.site", "preview_ready": true, "preview_running": true }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Show <code>preview_url</code> to user in an iframe on <strong>sycord.com</strong> or any site — embed allowed by default</li>
+            <li>If <code>preview_ready === false</code>, poll step 4 every 1–2s</li>
+            <li>Stop with <code>POST /sycord/api/preview_stop</code> when done</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 4 — Poll preview (if not ready)</div>
+          <p><strong>GET</strong> <code>/sycord/api/preview_status?uuid=myapp-a1b2c3</code></p>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "preview_ready": true, "preview_url": "https://previewk-myapp.sycord.site", "preview_status": "running" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>While <code>preview_ready === false</code> and <code>preview_running === true</code> → keep polling</li>
+            <li>When <code>preview_ready === true</code> → show <code>preview_url</code></li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 5 — User clicks Deploy</div>
+          <p><strong>POST</strong> <code>/sycord/api/issue_deployment</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "status": "deploying", "stream_url": "/api/projects/myapp-a1b2c3/logs/stream?live=1" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Set <code>deploy_status = 'deploying'</code></li>
+            <li>Start polling step 4 every 3–5 seconds</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 6 — Poll until live</div>
+          <p><strong>GET</strong> <code>/sycord/api/container_get?uuid=myapp-a1b2c3</code></p>
+          <h3>You send</h3>
+          <p>Query param <code>uuid</code> only (no body).</p>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "running": true, "url": "https://myapp.sycord.site", "status": "running" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>While <code>running === false</code> and <code>status === 'deploying'</code> → keep polling</li>
+            <li>When <code>running === true</code> → update <code>syte_url = response.url</code>, <code>deploy_status = 'running'</code></li>
+            <li>Show <code>response.url</code> to user as the live site link</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 7 — Custom domain (optional)</div>
+          <p><strong>POST</strong> <code>/sycord/api/domain</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3", "domain": "shop.example.com" }</pre>
+          <h3>Syte returns JSON</h3>
+          <pre>{ "ok": true, "project": { "domain": "shop.example.com", "url": "https://shop.example.com" } }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Update <code>syte_domain</code> and <code>syte_url</code> from <code>response.project</code></li>
+          </ul>
+        </div>
+
+        <h2>Full backend example (Node.js)</h2>
+        <pre>const SYTE = process.env.SYTE_URL; // https://sycord.site
+const KEY = process.env.SYTE_API_KEY;
+
+async function createSycordProject(name, stack) {
+  const res = await fetch(`${SYTE}/sycord/api/project_connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': KEY },
+    body: JSON.stringify({ name, stack }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail?.message || 'connect failed');
+
+  await db.query(
+    `INSERT INTO projects (name, stack, syte_uuid, syte_domain, syte_url, deploy_status)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [name, stack, data.uuid, data.project.domain, data.project.url, data.project.status]
+  );
+  return data;
+}
+
+async function deployProject(syteUuid) {
+  await postJson('/sycord/api/issue_deployment', { uuid: syteUuid });
+  for (let i = 0; i < 60; i++) {
+    await sleep(5000);
+    const st = await getJson(`/sycord/api/container_get?uuid=${syteUuid}`);
+    if (st.running) return st.url;
+  }
+  throw new Error('deploy timeout');
+}</pre>
+      </div>
+
+      <div class="panel" id="panel-reference">
+        <h2>At a glance</h2>
+        <table class="flow-table">
+          <tr><th>When</th><th>HTTP</th><th>You send</th><th>You save / use</th></tr>
+          <tr><td>Create project</td><td>POST project_connect</td><td><code>{"name","stack"}</code></td><td><code>uuid</code> → syte_uuid</td></tr>
+          <tr><td>Upload file</td><td>POST upload</td><td>multipart uuid+path+file</td><td>—</td></tr>
+          <tr><td>Dev preview</td><td>POST preview_start</td><td><code>{"uuid"}</code></td><td>preview_url</td></tr>
+          <tr><td>Poll preview</td><td>GET preview_status</td><td><code>?uuid=</code></td><td>preview_url when ready</td></tr>
+          <tr><td>Deploy</td><td>POST issue_deployment</td><td><code>{"uuid"}</code></td><td>status=deploying</td></tr>
+          <tr><td>Poll status</td><td>GET container_get</td><td><code>?uuid=</code></td><td>url when running=true</td></tr>
+          <tr><td>Custom domain</td><td>POST domain</td><td><code>{"uuid","domain"}</code></td><td>project.url</td></tr>
+          <tr><td>Read full guide</td><td>GET integration.json</td><td>—</td><td>Machine-readable steps</td></tr>
+          <tr><td>Read API spec</td><td>GET spec.json</td><td>—</td><td>All schemas</td></tr>
+        </table>
+        <div class="warn"><strong>Rule:</strong> Every call after step 1 uses the <code>uuid</code> you saved from <code>project_connect</code>.</div>
+      </div>
+
+      <div class="panel" id="panel-intro">
+        <div class="note">External API for Sycord websites and connected projects. <code>project_connect</code> creates a Syte deployment and returns a <strong>uuid</strong> your app must store.</div>
+        <h2>Workflow</h2>
+        <ol>
+          <li><code>POST /sycord/api/project_connect</code> → <strong>save <code>uuid</code></strong></li>
+          <li><code>POST /sycord/api/upload</code> — push files (optional if using scaffold)</li>
+          <li><code>POST /sycord/api/preview_start</code> — fast dev preview (next dev / vite, HMR)</li>
+          <li><code>GET /sycord/api/preview_status?uuid=</code> — poll until preview ready</li>
+          <li><code>POST /sycord/api/issue_deployment</code> — docker build + deploy</li>
+          <li><code>GET /sycord/api/container_get?uuid=</code> — verify running</li>
+          <li><code>POST /sycord/api/domain</code> — optional custom hostname</li>
+        </ol>
+        <h2>Stacks</h2>
+        <table>
+          <tr><th>stack</th><td>Scaffolded template</td></tr>
+          <tr><th><code>nextjs</code></th><td>Next.js 14 + Dockerfile standalone (default)</td></tr>
+          <tr><th><code>python</code></th><td>FastAPI + uvicorn</td></tr>
+          <tr><th><code>javascript</code></th><td>Express Node.js</td></tr>
+          <tr><th><code>html5</code></th><td>Static HTML + nginx</td></tr>
+        </table>
+        <h2>Auto subdomain</h2>
+        <p>On <code>project_connect</code>, Syte assigns <code>https://{slug}.sycord.site</code> (or your GUI zone). DNS wildcard must point to the server.</p>
+      </div>
+
+      <div class="panel" id="panel-auth">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">HEADER</span><span class="path">X-API-Key: syte_…</span></div>
+            <div class="endpoint-name">API key authentication</div>
+          </div>
+          <div class="endpoint-body">
+            <p>All endpoints except <code>GET /sycord/api/spec.json</code> require an API key.</p>
+            <table>
+              <tr><th>Header</th><td><code>X-API-Key: syte_xxxxxxxx</code></td></tr>
+              <tr><th>Alternative</th><td><code>Authorization: Bearer syte_xxxxxxxx</code></td></tr>
+              <tr><th>Create token</th><td>Syte GUI → <strong>Users</strong> → Create token, or <code>POST /api/tokens</code></td></tr>
+            </table>
+            <h3>curl example</h3>
+            <pre>curl -X POST https://sycord.site/sycord/api/project_connect \
+  -H "X-API-Key: syte_YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "myapp", "stack": "nextjs"}'</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-uuid">
+        <div class="warn">
+          <strong>Required:</strong> Save <code>uuid</code> from <code>project_connect</code> in your database before any other call.
+        </div>
+        <h2>What to save</h2>
+        <table>
+          <tr><th><code>uuid</code> <span class="tag required">required</span></th><td>Top-level response field — Syte project id (e.g. <code>myapp-a1b2c3</code>)</td></tr>
+          <tr><th><code>persist.uuid</code></th><td>Same value, with save instructions</td></tr>
+          <tr><th><code>project.uuid</code></th><td>Same value inside the project object</td></tr>
+          <tr><th><code>project.domain</code></th><td>Assigned hostname — optional to cache</td></tr>
+          <tr><th><code>project.url</code></th><td>HTTPS URL when live</td></tr>
+        </table>
+        <h2>Your database example</h2>
+        <pre>// After project_connect — store before upload/deploy
+const res = await sycordApi.projectConnect({ name: "myapp", stack: "nextjs" });
+
+await db.projects.update({
+  syte_uuid: res.uuid,           // REQUIRED — use for all Syte calls
+  syte_domain: res.project.domain,
+  syte_url: res.project.url,
+});</pre>
+        <h2>Custom UUID (optional)</h2>
+        <p>Pass <code>uuid</code> in the request body if your system already has a stable id:</p>
+        <pre>{ "name": "myapp", "stack": "nextjs", "uuid": "my-custom-id-001" }</pre>
+        <h2>Endpoints that need uuid</h2>
+        <ul>
+          <li><code>POST /sycord/api/upload</code> — form field <code>uuid</code></li>
+          <li><code>POST /sycord/api/preview_start</code> — JSON <code>{"uuid":"…"}</code></li>
+          <li><code>GET /sycord/api/preview_status?uuid=</code></li>
+          <li><code>POST /sycord/api/preview_stop</code> — JSON <code>{"uuid":"…"}</code></li>
+          <li><code>POST /sycord/api/issue_deployment</code> — JSON <code>{"uuid":"…"}</code></li>
+          <li><code>GET /sycord/api/container_get?uuid=</code></li>
+          <li><code>POST /sycord/api/domain</code> — JSON <code>{"uuid":"…","domain":"…"}</code></li>
+        </ul>
+      </div>
+
+      <div class="panel" id="panel-connect">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/project_connect</span></div>
+            <div class="endpoint-name">Create project — returns uuid to save</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Creates workspace, scaffolds stack, assigns <code>https://{slug}.sycord.site</code>.</p>
+            <h3>Request body</h3>
+            <table>
+              <tr><th>name <span class="tag required">required</span></th><td>Project name — subdomain slug derived from this</td></tr>
+              <tr><th>stack</th><td><code>nextjs</code> · <code>python</code> · <code>javascript</code> · <code>html5</code> (default <code>nextjs</code>)</td></tr>
+              <tr><th>uuid</th><td>Optional custom Syte project id</td></tr>
+              <tr><th>env_vars</th><td>Optional <code>{"KEY":"value"}</code> object</td></tr>
+            </table>
+            <pre>{
+  "name": "testproject",
+  "stack": "nextjs",
+  "env_vars": {}
+}</pre>
+            <h3>Response — save uuid</h3>
+            <pre class="highlight">{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "message": "Empty project created. Scaffolded: app/package.json…",
+  "persist": {
+    "save_uuid": true,
+    "uuid": "testproject-a1b2c3",
+    "instruction": "Save uuid in your application database…",
+    "endpoints_using_uuid": ["POST /sycord/api/upload", "…"]
+  },
+  "project": {
+    "uuid": "testproject-a1b2c3",
+    "name": "testproject",
+    "domain": "testproject.sycord.site",
+    "url": "https://testproject.sycord.site",
+    "stack": "nextjs",
+    "status": "created",
+    "port": 3010,
+    "workspace_path": "/var/syte/workspaces/testproject-a1b2c3",
+    "app_path": "/var/syte/workspaces/testproject-a1b2c3/app",
+    "created_at": "2026-07-04T18:00:00Z"
+  },
+  "subdomain_pattern": "{slug}.sycord.site",
+  "next_steps": {
+    "save_uuid": "testproject-a1b2c3",
+    "upload": "POST /sycord/api/upload",
+    "preview": "POST /sycord/api/preview_start",
+    "deploy": "POST /sycord/api/issue_deployment",
+    "container": "GET /sycord/api/container_get?uuid=testproject-a1b2c3"
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-container">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/container_get?uuid=</span></div>
+            <div class="endpoint-name">Container status</div>
+          </div>
+          <div class="endpoint-body">
+            <table>
+              <tr><th>uuid <span class="tag required">required</span></th><td>Query param — from <code>project_connect</code></td></tr>
+            </table>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "container_name": "syte-testproject-a1b2c3",
+  "exists": true,
+  "running": true,
+  "state": "running",
+  "image": "syte-testproject-a1b2c3",
+  "url": "https://testproject.sycord.site",
+  "domain": "testproject.sycord.site",
+  "host_port": 3010,
+  "status": "running"
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-upload">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/upload</span></div>
+            <div class="endpoint-name">Upload file to workspace</div>
+          </div>
+          <div class="endpoint-body">
+            <p><code>multipart/form-data</code></p>
+            <table>
+              <tr><th>uuid <span class="tag required">required</span></th><td>Syte project uuid</td></tr>
+              <tr><th>path <span class="tag required">required</span></th><td>Relative path e.g. <code>app/app/page.tsx</code></td></tr>
+              <tr><th>file <span class="tag required">required</span></th><td>File binary</td></tr>
+            </table>
+            <pre>curl -X POST https://sycord.site/sycord/api/upload \
+  -H "X-API-Key: syte_…" \
+  -F "uuid=testproject-a1b2c3" \
+  -F "path=app/app/page.tsx" \
+  -F "file=@page.tsx"</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-preview">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/preview_start</span></div>
+            <div class="endpoint-name">Start dev preview (fast HMR)</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Starts <code>next dev</code> or <code>vite</code> in seconds — no Docker build. Requires a <code>dev</code> script in <code>package.json</code>.</p>
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "message": "Preview on https://previewk-testproject.sycord.site — ready (HMR live)",
+  "preview_url": "https://previewk-testproject.sycord.site",
+  "preview_domain": "previewk-testproject.sycord.site",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_port": 4001,
+  "preview_status": "running",
+  "preview_stream_url": "/api/projects/testproject-a1b2c3/preview/logs/stream?live=1"
+}</pre>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/preview_status?uuid=</span></div>
+            <div class="endpoint-name">Preview status</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Poll every 1–2s after <code>preview_start</code> until <code>preview_ready=true</code>.</p>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "preview_url": "https://previewk-testproject.sycord.site",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_status": "running"
+}</pre>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/preview_stop</span></div>
+            <div class="endpoint-name">Stop preview</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+            <pre>{ "ok": true, "uuid": "testproject-a1b2c3", "message": "Preview stopped", "preview_running": false, "preview_status": "stopped" }</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-domain">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/domain</span></div>
+            <div class="endpoint-name">Set production domain</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3", "domain": "custom.sycord.site" }</pre>
+            <p>Caddy issues TLS once DNS points to the server.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-deploy">
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/issue_deployment</span></div>
+            <div class="endpoint-name">Build &amp; deploy</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3" }</pre>
+            <p>Runs in background. Stream logs: <code>GET /api/projects/{uuid}/logs/stream?live=1</code></p>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "message": "Deploy issued…",
+  "stream_url": "/api/projects/testproject-a1b2c3/logs/stream?live=1",
+  "status": "deploying"
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-errors">
+        <h2>Error format</h2>
+        <pre>{ "detail": { "error": "not_found", "message": "Project not found" } }</pre>
+        <table>
+          <tr><th>401 missing_api_key</th><td>No <code>X-API-Key</code> header</td></tr>
+          <tr><th>401 invalid_api_key</th><td>Token revoked or wrong</td></tr>
+          <tr><th>400 invalid_stack</th><td>Unknown stack value</td></tr>
+          <tr><th>400 connect_failed</th><td>Subdomain taken or validation failed</td></tr>
+          <tr><th>400 upload_failed</th><td>Bad path or missing project</td></tr>
+          <tr><th>400 preview_failed</th><td>No dev script or preview process exited</td></tr>
+          <tr><th>404 not_found</th><td>uuid does not exist</td></tr>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll('.nav-cat').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-cat').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.panel)?.classList.add('active');
+      });
+    });
+    if (window.lucide) lucide.createIcons();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syte API Reference</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-sidebar: #fafafa;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f4f4f5;
+      --bg-input: #f8fafc;
+      --border: #e4e4e7;
+      --border-subtle: #f4f4f5;
+      --text: #09090b;
+      --text-muted: #71717a;
+      --text-dim: #a1a1aa;
+      --accent-blue: #2563eb;
+      --accent-green: #16a34a;
+      --accent-orange: #ca8a04;
+      --accent-red: #dc2626;
+      --shadow-drawer: 8px 0 32px rgba(0, 0, 0, 0.12);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --sidebar-w: 260px;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-subtle);
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-top {
+      padding: 1rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .sidebar-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12px;
+      margin-bottom: 0.75rem;
+    }
+    .sidebar-back:hover { color: var(--text); }
+
+    .sidebar-brand {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: #f4f4f5;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent-blue);
+      flex-shrink: 0;
+    }
+
+    .brand-title { font-weight: 600; font-size: 14px; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 0.15rem; line-height: 1.4; }
+
+    .sidebar-nav {
+      padding: 0.5rem 0.6rem 2rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-cat {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      transition: background 0.12s, color 0.12s;
+      cursor: pointer;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: var(--font);
+    }
+    .nav-cat svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2;
+      flex-shrink: 0;
+      opacity: 0.85;
+    }
+    .nav-cat:hover { background: var(--bg-card); color: var(--text); }
+    .nav-cat.active {
+      background: var(--bg-card);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .brand-chevron {
+      margin-left: auto;
+      color: var(--text-dim);
+      font-size: 12px;
+      flex-shrink: 0;
+      align-self: center;
+      opacity: 0.6;
+      display: none;
+    }
+
+    .sidebar-brand { position: relative; }
+
+    .mobile-toolbar,
+    .sidebar-backdrop,
+    .sidebar-utils { display: none; }
+
+    .util-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .util-btn:hover { background: var(--bg-card); color: var(--text); }
+    .util-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    .cat-panel { display: none; }
+    .cat-panel.active { display: block; }
+
+    /* ── Main ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .main-inner {
+      max-width: 780px;
+      padding: 2rem 2.5rem 4rem;
+    }
+
+    .page-header { margin-bottom: 2rem; }
+    .page-header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .page-header p { color: var(--text-muted); font-size: 14px; }
+    .page-header a { color: var(--accent-blue); text-decoration: none; }
+    .page-header a:hover { text-decoration: underline; }
+
+    .section { margin-bottom: 3rem; scroll-margin-top: 1.5rem; }
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .section-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 1.25rem; }
+
+    /* ── Endpoint card ── */
+    .endpoint {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 1.25rem;
+      overflow: hidden;
+    }
+
+    .endpoint-header {
+      padding: 1rem 1.15rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .endpoint-base {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      margin-bottom: 0.5rem;
+    }
+
+    .endpoint-row {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .method {
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--mono);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .method.post { color: var(--accent-blue); }
+    .method.get { color: var(--accent-green); }
+
+    .endpoint-path {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 500;
+      flex: 1;
+      word-break: break-all;
+    }
+
+    .endpoint-name {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
+
+    .endpoint-body { padding: 0 1.15rem 1.15rem; }
+
+    .panel {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 0.85rem;
+      margin-top: 0.85rem;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .panel-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 400;
+      font-family: var(--mono);
+    }
+
+    .field {
+      margin-bottom: 0.85rem;
+    }
+
+    .field-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .field-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .field-name .req { color: var(--accent-red); margin-left: 1px; }
+    .field-name .opt { color: var(--text-dim); font-weight: 400; }
+
+    .field-type {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text-muted);
+      margin-right: 0.25rem;
+      margin-top: 0.2rem;
+    }
+
+    .field-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .field-desc code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--bg-input);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      color: var(--accent-blue);
+    }
+
+    pre {
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1rem;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.6;
+      overflow-x: auto;
+      color: #334155;
+      margin-top: 0.5rem;
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 0.65rem 0.85rem;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--accent-orange);
+      margin: 0.65rem 0;
+      line-height: 1.5;
+    }
+    .note strong { color: var(--text); font-weight: 500; }
+
+    .info-grid {
+      display: grid;
+      gap: 0.5rem;
+      margin: 0.75rem 0;
+    }
+    .info-row {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 0.5rem;
+      font-size: 12px;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-key { color: var(--text-dim); font-family: var(--mono); }
+    .info-val { color: var(--text-muted); }
+    .info-val code { font-family: var(--mono); font-size: 11px; color: var(--accent-blue); }
+
+    .nav-cat .lbl-short { display: none; }
+
+    @media (max-width: 768px) {
+      body { font-size: 13px; }
+      body.drawer-open { overflow: hidden; }
+
+      .mobile-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 120;
+        padding: 0.5rem 0.75rem;
+        padding-top: calc(0.5rem + env(safe-area-inset-top, 0));
+        background: var(--bg);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+
+      .mobile-toolbar-title {
+        font-weight: 600;
+        font-size: 15px;
+        flex: 1;
+      }
+
+      .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+        z-index: 180;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+      }
+      body.drawer-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .layout {
+        flex-direction: column;
+        min-height: 100dvh;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: min(300px, 88vw);
+        height: 100dvh;
+        max-height: 100dvh;
+        transform: translateX(-105%);
+        transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 200;
+        border-right: 1px solid var(--border-subtle);
+        box-shadow: var(--shadow-drawer);
+        padding-top: env(safe-area-inset-top, 0);
+      }
+      body.drawer-open .sidebar {
+        transform: translateX(0);
+      }
+
+      .sidebar-utils {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.65rem 0.85rem 0.25rem;
+      }
+
+      .utils-right { display: flex; gap: 0.25rem; }
+
+      .sidebar-top {
+        padding: 0.35rem 0.85rem 0.75rem;
+        border-bottom: none;
+      }
+
+      .sidebar-back { display: none; }
+
+      .sidebar-brand {
+        padding: 0.85rem 0.9rem;
+        background: var(--bg-card);
+      }
+
+      .brand-sub {
+        display: block;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .brand-chevron { display: block; }
+
+      .sidebar-nav {
+        flex-direction: column;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 0.35rem 0.65rem calc(1.5rem + env(safe-area-inset-bottom, 0));
+        gap: 2px;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .nav-cat {
+        width: 100%;
+        white-space: normal;
+        flex-shrink: 0;
+        padding: 0.7rem 0.9rem;
+        font-size: 15px;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        color: var(--text-muted);
+        border-radius: 8px;
+      }
+      .nav-cat:hover { background: var(--bg-card-hover); color: var(--text); }
+      .nav-cat.active {
+        background: var(--bg-card-hover);
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .nav-cat .lbl-full { display: inline; }
+      .nav-cat .lbl-short { display: none; }
+
+      .main {
+        margin-left: 0;
+        width: 100%;
+      }
+
+      .main-inner {
+        padding: 1rem 0.85rem calc(2rem + env(safe-area-inset-bottom, 0));
+        max-width: 100%;
+      }
+
+      .page-header { margin-bottom: 1.25rem; }
+      .page-header h1 { font-size: 1.35rem; }
+      .page-header p { font-size: 12px; word-break: break-word; }
+
+      .section { margin-bottom: 2rem; scroll-margin-top: 1rem; }
+      .section-title { font-size: 1.1rem; }
+
+      .endpoint { border-radius: 8px; margin-bottom: 1rem; }
+      .endpoint-header { padding: 0.85rem; }
+      .endpoint-body { padding: 0 0.85rem 0.85rem; }
+      .endpoint-path { font-size: 12px; }
+      .endpoint-row { gap: 0.45rem; }
+
+      .panel-title {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+      }
+
+      pre {
+        font-size: 10.5px;
+        padding: 0.7rem 0.75rem;
+        max-width: 100%;
+      }
+
+      .info-row {
+        grid-template-columns: 1fr;
+        gap: 0.15rem;
+        padding: 0.55rem 0;
+      }
+
+      .info-key { font-size: 11px; }
+      .note { font-size: 11px; padding: 0.55rem 0.7rem; }
+      .field-desc { font-size: 11px; }
+      .badge { font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+  <div class="layout">
+    <header class="mobile-toolbar">
+      <button type="button" class="util-btn" id="drawer-open" aria-label="Open menu">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+      </button>
+      <span class="mobile-toolbar-title">API</span>
+      <a href="/" class="util-btn" aria-label="Syte GUI">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      </a>
+    </header>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-utils">
+        <a href="/" class="util-btn" aria-label="Syte GUI">
+          <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </a>
+        <div class="utils-right">
+          <button type="button" class="util-btn" id="drawer-close" aria-label="Close menu">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-top">
+        <a href="/" class="sidebar-back">← syte gui</a>
+        <div class="sidebar-brand">
+          <div class="brand-icon">&lt;/&gt;</div>
+          <div>
+            <div class="brand-title">API</div>
+            <div class="brand-sub">RESTful API reference for programmatic access to Syte</div>
+          </div>
+          <span class="brand-chevron" aria-hidden="true">⇅</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <button type="button" class="nav-cat active" data-cat="auth">
+          <i data-lucide="shield"></i><span class="lbl-full">Authentication</span><span class="lbl-short">Auth</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="project">
+          <i data-lucide="folder"></i><span>Project</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="workspace">
+          <i data-lucide="files"></i><span>Workspace</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="start">
+          <i data-lucide="rocket"></i><span>Start</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="preview">
+          <i data-lucide="eye"></i><span>Preview</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="env">
+          <i data-lucide="braces"></i><span>Env</span>
+        </button>
+        <button type="button" class="nav-cat" data-cat="design">
+          <i data-lucide="palette"></i><span>Design</span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <header class="page-header">
+          <h1>Syte API</h1>
+          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a> · Sycord integration: <a href="/sycord/api/">/sycord/api</a></p>
+        </header>
+
+        <!-- AUTH -->
+        <div class="cat-panel active" id="panel-auth" data-cat="auth">
+        <section class="section" id="auth">
+          <h2 class="section-title">Authentication</h2>
+          <p class="section-desc">All endpoints require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
+
+          <div class="endpoint" id="auth-token">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/tokens</span>
+              </div>
+              <div class="endpoint-name">Create API token</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Label for this token (shown in GUI).</div>
+                </div>
+              </div>
+              <pre>{
+  "ok": true,
+  "token": "syte_abc123...",
+  "prefix": "syte_abc..."
+}</pre>
+              <div class="note"><strong>Token shown once.</strong> Save it immediately. Create via GUI: <strong>key</strong> in navbar.</div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">—</span>
+                <span class="endpoint-path">All authenticated endpoints</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Authorization <span class="panel-meta">x-api-key</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">X-API-Key</span>
+                    <span class="badge">In: header</span>
+                  </div>
+                  <div class="field-desc">API key authentication. Use your generated token.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">Authorization</span>
+                    <span class="badge">In: header</span>
+                  </div>
+                  <div class="field-desc">Alternative: <code>Bearer syte_your_token_here</code></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="errors">
+          <h2 class="section-title">Errors</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">401 missing_api_key</span><span class="info-val">No X-API-Key or Bearer header</span></div>
+            <div class="info-row"><span class="info-key">401 invalid_api_key</span><span class="info-val">Token wrong or revoked</span></div>
+            <div class="info-row"><span class="info-key">400 invalid_path</span><span class="info-val">Path escapes workspace</span></div>
+            <div class="info-row"><span class="info-key">400 create_failed</span><span class="info-val">Duplicate uuid or validation error</span></div>
+            <div class="info-row"><span class="info-key">400 preview_failed</span><span class="info-val">Dev server failed to start</span></div>
+            <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">Project UUID does not exist</span></div>
+          </div>
+        </section>
+        </div>
+
+        <!-- PROJECT -->
+        <div class="cat-panel" id="panel-project" data-cat="project">
+        <section class="section" id="project">
+          <h2 class="section-title">Project</h2>
+          <p class="section-desc">Create, read, update, and delete deployment projects.</p>
+
+          <div class="endpoint" id="project-create">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/create_project</span>
+              </div>
+              <div class="endpoint-name">Create project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <span class="badge">Length 1 ≤ length</span>
+                  <div class="field-desc">Display name for the project.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Custom project ID. Auto-generated if omitted.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_url<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Git repo URL. Cloned on <code>issue_deploy</code>, not required at create.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_provider<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Shorthand: <code>github.com/user/repo.git</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">branch<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Default: <code>main</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">start_command<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Shell fallback when no Dockerfile.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Custom HTTPS production domain.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="opt">?</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  <div class="field-desc">Initial environment variables.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">deploy<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  <div class="field-desc">Default <code>false</code>. Set <code>true</code> to deploy immediately (prefer <code>issue_deploy</code>).</div>
+                </div>
+              </div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "status": "created",
+  "execute_command": {
+    "body": {"uuid": "my-site-a1b2c3", "command": "npm run lint", "cwd": "app"}
+  },
+  "issue_deploy": {
+    "method": "POST",
+    "path": "/api/issue_deploy",
+    "body": {"uuid": "my-site-a1b2c3"}
+  }
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-delete">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_project</span>
+              </div>
+              <div class="endpoint-name">Delete project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Project UUID to delete. Stops container and removes workspace.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-get">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_get?uuid=</span>
+              </div>
+              <div class="endpoint-name">Get project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query Parameters</div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Project UUID. Returns URLs, env, git info, preview status, stream URLs.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_list</span>
+              </div>
+              <div class="endpoint-name">List projects</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Returns all projects with uuid, url, port, status, and running state.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-domain">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_domain</span>
+              </div>
+              <div class="endpoint-name">Set domain</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Production HTTPS domain. Auto TLS via Caddy.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <!-- WORKSPACE -->
+        <div class="cat-panel" id="panel-workspace" data-cat="workspace">
+        <section class="section" id="workspace">
+          <h2 class="section-title">Workspace</h2>
+          <p class="section-desc">Read, write, and manage files in the project workspace.</p>
+
+          <div class="endpoint" id="workspace-files">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/list_files?uuid=&amp;path=</span>
+              </div>
+              <div class="endpoint-name">List files</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc"><code>path</code> is relative to workspace root (default: root).</div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/read_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">e.g. <code>app/package.json</code>. Returns UTF-8 content or base64 for binary.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/write_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">content<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/upload_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Multipart: <code>uuid</code>, <code>path</code>, <code>file</code></div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_file</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">path<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-command">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_command</span>
+              </div>
+              <div class="endpoint-name">Execute command</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>npm run build is blocked.</strong> Use <code>issue_deploy</code> for production builds.</div>
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">command<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Allowed: <code>npm install</code>, <code>npm run lint</code>, <code>ls -la</code>, scaffolding.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">cwd<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Default: <code>app</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">timeout<span class="opt">?</span></span><span class="field-type">integer</span></div>
+                  <span class="badge">Default 300</span><span class="badge">Max 1800</span>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">env<span class="opt">?</span></span><span class="field-type">object</span></div>
+                  <div class="field-desc">Extra env vars for this run only.</div>
+                </div>
+              </div>
+              <pre>{"ok":true,"exit_code":0,"output":"...","command":"npm run lint"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_commands</span>
+              </div>
+              <div class="endpoint-name">Execute commands (batch)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Run multiple commands in sequence. Stops on first failure by default.</div>
+              <pre>{"uuid":"...","commands":[
+  {"command":"npm install","cwd":"app"},
+  {"command":"npm run lint","cwd":"app","timeout":300}
+]}</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <!-- START -->
+        <div class="cat-panel" id="panel-start" data-cat="start">
+        <section class="section" id="start">
+          <h2 class="section-title">Start</h2>
+          <p class="section-desc">Deploy and manage production services. Build only via <code>issue_deploy</code>.</p>
+
+          <div class="endpoint" id="start-deploy">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/issue_deploy</span>
+              </div>
+              <div class="endpoint-name">Issue deploy</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>The only way to build and deploy.</strong> Git pull (if configured) + Docker build + container restart.</div>
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-service">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_service</span>
+              </div>
+              <div class="endpoint-name">Start service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Start existing container without rebuilding.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_service</span>
+              </div>
+              <div class="endpoint-name">Stop service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="start-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/get_logs?uuid=&amp;lines=200</span>
+              </div>
+              <div class="endpoint-name">Get logs (snapshot)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Snapshot of build + runtime logs.</div>
+            </div>
+          </div>
+
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/logs/stream?live=1</span>
+              </div>
+              <div class="endpoint-name">Deploy logs (SSE stream)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Server-Sent Events — live deploy log stream. Optional <code>api_key</code> query param.</div>
+              <pre>{"type":"build","text":"Step 1/21 ..."}</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <!-- PREVIEW -->
+        <div class="cat-panel" id="panel-preview" data-cat="preview">
+        <section class="section" id="preview">
+          <h2 class="section-title">Preview</h2>
+          <p class="section-desc">Fast dev server with HMR. Returns <strong>HTTPS domain URL</strong> — not raw IP.</p>
+
+          <div class="note">
+            <strong>preview_url uses the domain, not the IP.</strong>
+            When GUI domain is set (e.g. <code>sycord.site</code>), <code>preview_url</code> = <code>preview_domain_url</code>
+            (e.g. <code>https://previewk-mysite.sycord.site</code>).
+            <code>preview_direct_url</code> is included as fallback only — do not use it when domain is configured.
+          </div>
+
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">preview_url</span><span class="info-val">Primary — HTTPS domain via Caddy</span></div>
+            <div class="info-row"><span class="info-key">preview_domain</span><span class="info-val">Hostname e.g. <code>previewk-mysite.sycord.site</code></span></div>
+            <div class="info-row"><span class="info-key">preview_domain_url</span><span class="info-val">Same as <code>preview_url</code> when domain is set</span></div>
+            <div class="info-row"><span class="info-key">preview_direct_url</span><span class="info-val">Fallback <code>http://IP:port</code> — only when GUI domain unset</span></div>
+            <div class="info-row"><span class="info-key">preview_ready</span><span class="info-val"><code>true</code> when dev server accepts connections</span></div>
+          </div>
+
+          <div class="endpoint" id="preview-start">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_preview</span>
+              </div>
+              <div class="endpoint-name">Start preview</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Requires <code>package.json</code> with a <code>dev</code> script (<code>next dev</code> or <code>vite</code>).</div>
+                </div>
+              </div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-abc123",
+  "preview_url": "https://previewk-mysite.sycord.site",
+  "preview_domain": "previewk-mysite.sycord.site",
+  "preview_domain_url": "https://previewk-mysite.sycord.site",
+  "preview_direct_url": "http://152.89.245.113:4000",
+  "preview_ready": true,
+  "preview_running": true,
+  "preview_port": 4000,
+  "preview_stream_url": "/api/projects/my-site-abc123/preview/logs/stream?live=1"
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-status">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/preview_status?uuid=</span>
+              </div>
+              <div class="endpoint-name">Preview status</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Poll until <code>preview_ready: true</code>. Returns same URL fields as start — use <code>preview_url</code> (domain).</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_preview</span>
+              </div>
+              <div class="endpoint-name">Stop preview</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Stops dev server and removes Caddy preview route.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/preview/logs/stream?live=1</span>
+              </div>
+              <div class="endpoint-name">Preview logs (SSE)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Live dev server output. Requires <code>dev</code> script and <code>npm install</code> first.</div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <!-- ENV -->
+        <div class="cat-panel" id="panel-env" data-cat="env">
+        <section class="section" id="env">
+          <h2 class="section-title">Env</h2>
+          <p class="section-desc">Manage project environment variables.</p>
+
+          <div class="endpoint" id="env-set">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_env</span>
+              </div>
+              <div class="endpoint-name">Set env</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="req">*</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  <div class="field-desc">Key-value pairs e.g. <code>{"NODE_ENV":"production"}</code></div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">merge<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  <div class="field-desc">Default <code>true</code> — merge with existing vars. <code>false</code> replaces all.</div>
+                </div>
+              </div>
+              <pre>{"uuid":"...","env_vars":{"NODE_ENV":"production"},"merge":true}</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <!-- DESIGN -->
+        <div class="cat-panel" id="panel-design" data-cat="design">
+        <section class="section" id="design">
+          <h2 class="section-title">Validate design</h2>
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/validate_design?uuid=</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Runs Sycord Design Contract linter — shadcn/ui, Inter font, Lucide, dark mode, hero gradient, etc.</div>
+              <pre>{"ok":true,"passed":7,"total":8,"checks":[...]}</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="server-info">
+          <h2 class="section-title">Server info</h2>
+          <div class="endpoint">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/server_info</span>
+              </div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Server public IP, version, base URLs.</div>
+            </div>
+          </div>
+        </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const cats = document.querySelectorAll('.nav-cat');
+      const panels = document.querySelectorAll('.cat-panel');
+      const valid = new Set([...cats].map(b => b.dataset.cat));
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const drawerOpen = document.getElementById('drawer-open');
+      const drawerClose = document.getElementById('drawer-close');
+
+      function isMobile() {
+        return window.matchMedia('(max-width: 768px)').matches;
+      }
+
+      function openDrawer() {
+        if (!isMobile()) return;
+        document.body.classList.add('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'false');
+      }
+
+      function closeDrawer() {
+        document.body.classList.remove('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'true');
+      }
+
+      function showCat(id) {
+        const cat = valid.has(id) ? id : 'auth';
+        cats.forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+        panels.forEach(p => p.classList.toggle('active', p.dataset.cat === cat));
+        history.replaceState(null, '', '#' + cat);
+        window.scrollTo(0, 0);
+        closeDrawer();
+        if (window.lucide) lucide.createIcons();
+      }
+
+      cats.forEach(b => b.addEventListener('click', () => showCat(b.dataset.cat)));
+
+      drawerOpen?.addEventListener('click', openDrawer);
+      drawerClose?.addEventListener('click', closeDrawer);
+      backdrop?.addEventListener('click', closeDrawer);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDrawer();
+      });
+
+      window.addEventListener('resize', () => {
+        if (!isMobile()) closeDrawer();
+      });
+
+      const hash = location.hash.replace('#', '');
+      showCat(hash || 'auth');
+
+      window.addEventListener('hashchange', () => {
+        showCat(location.hash.replace('#', '') || 'auth');
+      });
+
+      if (window.lucide) lucide.createIcons();
+    })();
+  </script>
+</body>
+</html>
