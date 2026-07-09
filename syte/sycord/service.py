@@ -175,6 +175,32 @@ async def preview_status(project_id: str) -> tuple[dict | None, str]:
     return await get_preview_status(project_id)
 
 
+async def agent_start(project_id: str, *, model: str | None = None) -> tuple[bool, str, dict]:
+    from syte.agent_manager import start_agent
+
+    return await start_agent(project_id, model=model)
+
+
+async def agent_stop(project_id: str) -> tuple[bool, str, dict]:
+    from syte.agent_manager import get_agent_status, stop_agent_async
+
+    await stop_agent_async(project_id)
+    meta, _ = await get_agent_status(project_id)
+    return True, "Agent stopped", meta or {}
+
+
+async def agent_restart(project_id: str, *, model: str | None = None) -> tuple[bool, str, dict]:
+    from syte.agent_manager import restart_agent
+
+    return await restart_agent(project_id, model=model)
+
+
+async def agent_status(project_id: str) -> tuple[dict | None, str]:
+    from syte.agent_manager import get_agent_status
+
+    return await get_agent_status(project_id)
+
+
 def project_stack(project: dict) -> str:
     raw = project.get("env_vars") or "{}"
     try:

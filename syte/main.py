@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -118,6 +118,8 @@ class SettingsRequest(BaseModel):
     preview_base_domain: str | None = None
     cloudflare_api_token: str | None = None
     preview_wildcard_tls: str | None = None
+    sycord_ai_bridge_url: str | None = None
+    sycord_bridge_secret: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -132,6 +134,14 @@ class UpdateProjectRequest(BaseModel):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/api/agent_integration.json", include_in_schema=False)
+async def api_agent_integration_doc(request: Request):
+    from syte.agent_integration import build_agent_integration
+
+    base = str(request.base_url).rstrip("/")
+    return build_agent_integration(base)
 
 
 @app.get("/api/ai.json", include_in_schema=False)
@@ -253,6 +263,8 @@ async def get_settings():
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
     cf_configured = bool((await get_setting("cloudflare_api_token", "")).strip())
+    bridge_url = (await get_setting("sycord_ai_bridge_url", "")).strip()
+    bridge_secret_set = bool((await get_setting("sycord_bridge_secret", "")).strip())
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
@@ -262,6 +274,9 @@ async def get_settings():
         "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "cloudflare_api_token_set": cf_configured,
+        "sycord_ai_bridge_url": bridge_url or "https://sycord.com/api/ai/bridge/v1",
+        "sycord_bridge_secret_set": bridge_secret_set,
+        "agent_integration_url": "/api/agent_integration.json",
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
             if preview_zone
@@ -359,6 +374,24 @@ async def save_settings(body: SettingsRequest):
         messages.append(f"Preview wildcard TLS mode: {mode}")
         messages.append(msg)
         return {"ok": ok, "messages": messages}
+
+    if body.sycord_ai_bridge_url is not None:
+        url = body.sycord_ai_bridge_url.strip().rstrip("/")
+        await set_setting("sycord_ai_bridge_url", url)
+        messages.append(
+            f"Sycord AI bridge URL set to {url or '(default https://sycord.com/api/ai/bridge/v1)'}"
+        )
+        return {"ok": True, "messages": messages}
+
+    if body.sycord_bridge_secret is not None:
+        secret = body.sycord_bridge_secret.strip()
+        await set_setting("sycord_bridge_secret", secret)
+        messages.append(
+            "Sycord bridge secret saved — use X-Sycord-Bridge-Secret or Bearer for agent proxy."
+            if secret
+            else "Sycord bridge secret cleared."
+        )
+        return {"ok": True, "messages": messages}
 
     ok, msg = await apply_proxy_config()
     messages.append(msg)
@@ -517,6 +550,135 @@ async def api_preview_logs_stream(project_id: str, request: Request, live: bool 
     )
 
 
+class StartAgentBody(BaseModel):
+    model: str | None = None
+
+
+@app.post("/api/projects/{project_id}/agent/start")
+async def api_agent_start(project_id: str, body: StartAgentBody = StartAgentBody()):
+    from syte.agent_manager import start_agent
+
+    model = body.model
+    ok, message, meta = await start_agent(project_id, model=model)
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, **meta}
+
+
+@app.post("/api/projects/{project_id}/agent/stop")
+async def api_agent_stop(project_id: str):
+    from syte.agent_manager import get_agent_status, stop_agent_async
+
+    await stop_agent_async(project_id)
+    meta, _ = await get_agent_status(project_id)
+    return {"ok": True, "message": "Agent stopped", **(meta or {})}
+
+
+@app.post("/api/projects/{project_id}/agent/restart")
+async def api_agent_restart(project_id: str, body: StartAgentBody = StartAgentBody()):
+    from syte.agent_manager import restart_agent
+
+    model = body.model
+    ok, message, meta = await restart_agent(project_id, model=model)
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, **meta}
+
+
+@app.get("/api/projects/{project_id}/agent/status")
+async def api_agent_status_gui(project_id: str):
+    from syte.agent_manager import get_agent_status
+
+    meta, message = await get_agent_status(project_id)
+    if not meta:
+        raise HTTPException(404, message)
+    return {"ok": True, **meta}
+
+
+@app.get("/api/projects/{project_id}/agent/logs")
+async def api_agent_logs_gui(project_id: str, lines: int = 500):
+    from syte.agent_manager import get_agent_logs
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"logs": get_agent_logs(project_id, lines)}
+
+
+@app.get("/api/projects/{project_id}/agent/logs/stream")
+async def api_agent_logs_stream(project_id: str, request: Request, live: bool = False):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    bridge = request.headers.get("x-sycord-bridge-secret")
+    if key or bridge:
+        await auth.verify_bridge_or_api_token_from_request(request)
+    from syte.log_stream import stream_agent_logs
+
+    return StreamingResponse(
+        stream_agent_logs(project_id, live_only=live),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.api_route(
+    "/api/projects/{project_id}/agent/proxy/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def api_agent_proxy(project_id: str, path: str, request: Request):
+    """Forward sycord.com traffic to local cn serve (bridge secret or API token)."""
+    import httpx
+
+    await auth.verify_bridge_or_api_token_from_request(request)
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    agent_port = project.get("agent_port")
+    if not agent_port:
+        raise HTTPException(409, "Agent not running — start agent first")
+
+    from syte.agent_manager import is_agent_running
+
+    if not is_agent_running(project_id):
+        raise HTTPException(409, "Agent process not running")
+
+    target = f"http://127.0.0.1:{agent_port}/{path.lstrip('/')}"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+
+    body = await request.body()
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length", "connection")
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            upstream = await client.request(
+                request.method,
+                target,
+                headers=headers,
+                content=body if body else None,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Agent proxy error: {exc}") from exc
+
+    skip_headers = {"transfer-encoding", "connection", "content-encoding"}
+    resp_headers = {
+        k: v for k, v in upstream.headers.items() if k.lower() not in skip_headers
+    }
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=resp_headers,
+        media_type=upstream.headers.get("content-type"),
+    )
+
+
 @app.get("/api/projects/{project_id}/logs")
 async def api_logs(project_id: str, lines: int = 500):
     project = await get_project(project_id)
@@ -590,6 +752,7 @@ def _project_url(project: dict) -> str:
 
 
 def _enrich(project: dict) -> dict:
+    from syte.agent_manager import agent_meta
     from syte.preview_manager import preview_meta
     from syte.ssl_status import project_ssl_summary
     from syte.workspace import ensure_workspace, workspace_path
@@ -604,6 +767,7 @@ def _enrich(project: dict) -> dict:
     p["app_path"] = str(ws / "app")
     p["data_path"] = str(ws / "data")
     p.update(preview_meta(p))
+    p.update(agent_meta(p))
     p["ssl"] = project_ssl_summary(p)
     return p
 

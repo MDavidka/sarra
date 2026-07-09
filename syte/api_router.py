@@ -1,6 +1,6 @@
 """Syte external API (token-authenticated) — for AI agents and automation."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from syte import deployment, process_manager
@@ -61,6 +61,14 @@ class UuidRequest(BaseModel):
     uuid: str
 
 
+class StartAgentRequest(BaseModel):
+    uuid: str
+    model: str | None = Field(
+        None,
+        description="syra-nano | syra-base | syra-havy (default syra-base)",
+    )
+
+
 class SetDomainRequest(BaseModel):
     uuid: str
     domain: str
@@ -114,6 +122,7 @@ async def api_server_info(_token: dict = Depends(verify_api_token)):
         "api_base": "/api",
         "docs_url": "/api/",
         "ai_spec_url": "/api/ai.json",
+        "agent_integration_url": "/api/agent_integration.json",
         "workspaces_dir": str(settings.resolved_workspaces_dir),
     }
 
@@ -358,3 +367,74 @@ async def api_preview_status(
     if not meta:
         _http_error(404, "not_found", message)
     return {"ok": True, **meta}
+
+
+@router.get("/agent_integration.json", include_in_schema=False)
+async def api_agent_integration(request: Request):
+    """Integration contract for sycord.com Continue cloud agent."""
+    from syte.agent_integration import build_agent_integration
+
+    base = str(request.base_url).rstrip("/")
+    return build_agent_integration(base)
+
+
+@router.post("/start_agent")
+async def api_start_agent(body: StartAgentRequest, _token: dict = Depends(verify_api_token)):
+    """Start long-lived Continue agent (cn serve) for project workspace."""
+    from syte.agent_manager import start_agent
+
+    ok, message, meta = await start_agent(body.uuid, model=body.model)
+    if not ok:
+        _http_error(400, "agent_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/stop_agent")
+async def api_stop_agent(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    from syte.agent_manager import get_agent_status, stop_agent_async
+
+    await stop_agent_async(body.uuid)
+    meta, _ = await get_agent_status(body.uuid)
+    return {"ok": True, "uuid": body.uuid, "message": "Agent stopped", **(meta or {})}
+
+
+@router.post("/restart_agent")
+async def api_restart_agent(body: StartAgentRequest, _token: dict = Depends(verify_api_token)):
+    from syte.agent_manager import restart_agent
+
+    ok, message, meta = await restart_agent(body.uuid, model=body.model)
+    if not ok:
+        _http_error(400, "agent_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.get("/agent_status")
+async def api_agent_status(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_manager import get_agent_status
+
+    meta, message = await get_agent_status(uuid)
+    if not meta:
+        _http_error(404, "not_found", message)
+    return {"ok": True, **meta}
+
+
+@router.get("/agent_logs")
+async def api_agent_logs(
+    uuid: str = Query(...),
+    lines: int = Query(200, ge=1, le=2000),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_manager import get_agent_logs
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "logs": get_agent_logs(uuid, lines),
+        "stream_url": f"/api/projects/{uuid}/agent/logs/stream?live=1",
+    }

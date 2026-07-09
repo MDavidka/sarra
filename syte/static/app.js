@@ -5,9 +5,11 @@ const CONTEXT_STORAGE = 'syte_context';
 let projects = [];
 let logStream = null;
 let previewStream = null;
+let agentStream = null;
 let activeServiceId = null;
 let deployPollTimer = null;
 let previewPollTimer = null;
+let agentPollTimer = null;
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -55,6 +57,20 @@ function stopPreviewStream() {
   }
   stopPreviewPoll();
   setPreviewLogsLiveIndicator(false);
+}
+
+function stopAgentStream() {
+  if (agentStream) {
+    agentStream.close();
+    agentStream = null;
+  }
+  stopAgentPoll();
+  setAgentLogsLiveIndicator(false);
+}
+
+function setAgentLogsLiveIndicator(on) {
+  const dot = document.getElementById('svc-agent-logs-live');
+  if (dot) dot.classList.toggle('active', !!on);
 }
 
 function logLineClass(text) {
@@ -550,7 +566,7 @@ function connLabel(p) {
 }
 
 function switchSvcTab(tab) {
-  const allowed = ['general', 'env', 'logs', 'preview'];
+  const allowed = ['general', 'env', 'logs', 'preview', 'ai'];
   if (!allowed.includes(tab)) tab = 'general';
   activeSvcTab = tab;
   document.querySelectorAll('.svc-tab').forEach(btn => {
@@ -694,6 +710,7 @@ function renderServiceDashboard(p, resetLogs) {
   `;
   loadWorkspaceFiles(p.id);
   renderPreviewSection(p);
+  renderAgentSection(p);
 
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
@@ -831,6 +848,161 @@ async function servicePreviewStop(id) {
     await loadProjects();
     const p = projects.find(x => x.id === id);
     if (p) renderPreviewSection(p);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+function renderAgentSection(p) {
+  const actions = document.getElementById('svc-agent-actions');
+  const hint = document.getElementById('svc-agent-hint');
+  const meta = document.getElementById('svc-agent-meta');
+  const logsEl = document.getElementById('svc-agent-logs');
+  const modelSelect = document.getElementById('svc-agent-model');
+  if (!actions) return;
+
+  if (modelSelect && p.agent_model) modelSelect.value = p.agent_model;
+
+  const live = p.agent_running && p.agent_ready;
+  actions.innerHTML = `
+    <button class="btn-pill btn-primary" onclick="serviceAgentStart('${p.id}')">
+      <i data-lucide="play"></i><span>Start agent</span>
+    </button>
+    <button class="btn-pill btn-ghost" onclick="serviceAgentStop('${p.id}')">
+      <i data-lucide="square"></i><span>Stop</span>
+    </button>
+    <button class="btn-pill btn-ghost" onclick="serviceAgentRestart('${p.id}')">
+      <i data-lucide="refresh-cw"></i><span>Restart</span>
+    </button>
+    ${live ? '<span class="badge-live">running</span>' : ''}
+  `;
+
+  const bridgeLabel = p.bridge_reachable === true
+    ? 'reachable'
+    : p.bridge_reachable === false
+      ? 'unreachable'
+      : '—';
+
+  if (meta) {
+    meta.innerHTML = `
+      <div class="info-cell"><span>status</span><strong>${esc(p.agent_status || 'stopped')}</strong></div>
+      <div class="info-cell"><span>port</span><strong>${esc(String(p.agent_port || '—'))}</strong></div>
+      <div class="info-cell"><span>model</span><strong>${esc(p.agent_model || 'syra-base')}</strong></div>
+      <div class="info-cell"><span>bridge</span><strong>${esc(bridgeLabel)}</strong></div>
+      <div class="info-cell full"><span>proxy</span><code>${esc(p.agent_proxy_url || '—')}</code></div>
+      <div class="info-cell full"><span>started</span><span>${esc(p.agent_started_at || '—')}</span></div>
+      ${p.agent_error ? `<div class="info-cell full"><span>error</span><span class="log-err">${esc(p.agent_error)}</span></div>` : ''}
+    `;
+  }
+
+  if (p.agent_running) {
+    hint.textContent = live
+      ? `Agent ready on port ${p.agent_port} — proxy via ${p.agent_proxy_url}`
+      : `Starting on port ${p.agent_port || '…'}`;
+    if (p.agent_running && !agentStream) startAgentLogStream(p.id, logsEl);
+    if (p.agent_running && !p.agent_ready) startAgentPoll(p.id);
+  } else {
+    hint.textContent = 'Continue cloud agent (cn serve) — uses Sycord bridge, no Continue Hub';
+    stopAgentStream();
+  }
+  refreshIcons();
+}
+
+function startAgentLogStream(projectId, targetEl) {
+  stopAgentStream();
+  if (!targetEl) return;
+  const key = getApiKey();
+  const params = new URLSearchParams({ live: '1' });
+  if (key) params.set('api_key', key);
+  agentStream = new EventSource(`${API}/projects/${projectId}/agent/logs/stream?${params}`);
+  setAgentLogsLiveIndicator(true);
+  agentStream.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.text) appendLogLine(targetEl, msg.text, msg.type);
+    } catch { /* ping */ }
+  };
+  agentStream.onerror = () => setAgentLogsLiveIndicator(false);
+}
+
+function startAgentPoll(projectId) {
+  if (agentPollTimer) return;
+  agentPollTimer = setInterval(async () => {
+    try {
+      const st = await api(`/projects/${projectId}/agent/status`);
+      await loadProjects();
+      const p = projects.find(x => x.id === projectId);
+      if (p && activeServiceId === projectId) {
+        renderAgentSection(p);
+        if (st.agent_ready) stopAgentPoll();
+      }
+    } catch { /* */ }
+  }, 1500);
+}
+
+function stopAgentPoll() {
+  if (agentPollTimer) {
+    clearInterval(agentPollTimer);
+    agentPollTimer = null;
+  }
+}
+
+async function serviceAgentStart(id) {
+  const logsEl = document.getElementById('svc-agent-logs');
+  const hint = document.getElementById('svc-agent-hint');
+  const model = document.getElementById('svc-agent-model')?.value || 'syra-base';
+  switchSvcTab('ai');
+  hint.textContent = 'Starting agent…';
+  if (logsEl) clearLogPanel(logsEl);
+  try {
+    const res = await api(`/projects/${id}/agent/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    toast(res.message || 'agent started');
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderAgentSection(p);
+    if (logsEl) startAgentLogStream(id, logsEl);
+    startAgentPoll(id);
+  } catch (e) {
+    hint.textContent = 'agent failed';
+    if (logsEl) appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
+    toast('Error: ' + e.message);
+  }
+}
+
+async function serviceAgentStop(id) {
+  try {
+    const res = await api(`/projects/${id}/agent/stop`, { method: 'POST' });
+    toast(res.message || 'agent stopped');
+    stopAgentStream();
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) renderAgentSection(p);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function serviceAgentRestart(id) {
+  const model = document.getElementById('svc-agent-model')?.value || 'syra-base';
+  try {
+    const res = await api(`/projects/${id}/agent/restart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    toast(res.message || 'agent restarted');
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p) {
+      renderAgentSection(p);
+      const logsEl = document.getElementById('svc-agent-logs');
+      if (logsEl) startAgentLogStream(id, logsEl);
+      startAgentPoll(id);
+    }
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -1100,6 +1272,28 @@ document.getElementById('save-preview-domain-btn')?.addEventListener('click', as
   }
 });
 
+document.getElementById('save-bridge-btn')?.addEventListener('click', async () => {
+  const bridgeUrl = document.getElementById('set-bridge-url')?.value?.trim() || '';
+  const bridgeSecret = document.getElementById('set-bridge-secret')?.value?.trim() || '';
+  const btn = document.getElementById('save-bridge-btn');
+  btn.disabled = true;
+  btn.textContent = 'saving…';
+  try {
+    const body = {};
+    if (bridgeUrl) body.sycord_ai_bridge_url = bridgeUrl;
+    if (bridgeSecret) body.sycord_bridge_secret = bridgeSecret;
+    const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'bridge settings saved');
+    if (bridgeSecret) document.getElementById('set-bridge-secret').value = '';
+    await loadSettings();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save AI bridge settings';
+  }
+});
+
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
   btn.disabled = true;
@@ -1146,6 +1340,16 @@ async function loadSettings() {
       cfToken.placeholder = s.cloudflare_api_token_set
         ? 'token saved — enter new value to replace'
         : 'optional — DNS challenge for *.zone';
+    }
+    const bridgeUrl = document.getElementById('set-bridge-url');
+    const bridgeSecret = document.getElementById('set-bridge-secret');
+    if (bridgeUrl && s.sycord_ai_bridge_url) {
+      bridgeUrl.value = s.sycord_ai_bridge_url;
+    }
+    if (bridgeSecret) {
+      bridgeSecret.placeholder = s.sycord_bridge_secret_set
+        ? 'secret saved — enter new value to replace'
+        : 'shared secret for sycord.com ↔ Syte';
     }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');

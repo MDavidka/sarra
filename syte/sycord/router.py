@@ -30,6 +30,14 @@ class UuidBody(BaseModel):
     uuid: str = Field(..., description="Syte project UUID from project_connect")
 
 
+class AgentStartBody(BaseModel):
+    uuid: str = Field(..., description="Syte project UUID")
+    model: str | None = Field(
+        None,
+        description="syra-nano | syra-base | syra-havy",
+    )
+
+
 class DomainBody(BaseModel):
     uuid: str = Field(..., description="Syte project UUID from project_connect")
     domain: str = Field(..., description="Production hostname e.g. myapp.sycord.site")
@@ -68,6 +76,9 @@ def _persist_block(project_id: str) -> dict:
             "POST /sycord/api/preview_start — JSON body.uuid",
             "GET /sycord/api/preview_status?uuid=",
             "POST /sycord/api/preview_stop — JSON body.uuid",
+            "POST /sycord/api/agent_start — JSON body.uuid",
+            "GET /sycord/api/agent_status?uuid=",
+            "POST /sycord/api/agent_stop — JSON body.uuid",
         ],
     }
 
@@ -202,6 +213,50 @@ async def api_preview_status(
     if not meta:
         _err(404, "not_found", message)
     return {"ok": True, "uuid": uuid, **meta}
+
+
+@router.get("/agent_integration.json", include_in_schema=False)
+async def sycord_agent_integration(request: Request):
+    from syte.agent_integration import build_agent_integration
+
+    base = str(request.base_url).rstrip("/")
+    return build_agent_integration(base)
+
+
+@router.post("/agent_start")
+async def api_agent_start(body: AgentStartBody, _token: dict = Depends(verify_api_token)):
+    """Start long-lived Continue agent (cn serve) for workspace."""
+    ok, message, meta = await service.agent_start(body.uuid, model=body.model)
+    if not ok:
+        _err(400, "agent_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.get("/agent_status")
+async def api_agent_status(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    meta, message = await service.agent_status(uuid)
+    if not meta:
+        _err(404, "not_found", message)
+    return {"ok": True, "uuid": uuid, **meta}
+
+
+@router.post("/agent_stop")
+async def api_agent_stop(body: UuidBody, _token: dict = Depends(verify_api_token)):
+    ok, message, meta = await service.agent_stop(body.uuid)
+    if not ok:
+        _err(400, "agent_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_restart")
+async def api_agent_restart(body: AgentStartBody, _token: dict = Depends(verify_api_token)):
+    ok, message, meta = await service.agent_restart(body.uuid, model=body.model)
+    if not ok:
+        _err(400, "agent_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
 
 
 @router.post("/preview_stop")

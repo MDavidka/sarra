@@ -247,6 +247,7 @@
               <button type="button" class="svc-tab" data-svc-tab="env">Environment</button>
               <button type="button" class="svc-tab" data-svc-tab="logs">Logs</button>
               <button type="button" class="svc-tab" data-svc-tab="preview">Preview</button>
+              <button type="button" class="svc-tab" data-svc-tab="ai">AI Agent</button>
             </nav>
 
             <div class="svc-tab-panels">
@@ -303,6 +304,29 @@
                     </div>
                   </div>
                   <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-ai" data-svc-panel="ai">
+                <p class="hint" id="svc-agent-hint">Continue cloud agent (<code>cn serve</code>) — Syra workspace runtime</p>
+                <div class="form-group">
+                  <label for="svc-agent-model">Model</label>
+                  <select id="svc-agent-model" class="svc-select">
+                    <option value="syra-base">syra-base — DeepSeek Flash</option>
+                    <option value="syra-nano">syra-nano — Gemini Flash</option>
+                    <option value="syra-havy">syra-havy — Gemini Pro</option>
+                  </select>
+                </div>
+                <div class="svc-actions" id="svc-agent-actions"></div>
+                <div class="svc-info-grid" id="svc-agent-meta"></div>
+                <div class="logs-panel preview-logs-panel" id="svc-agent-logs-wrap">
+                  <div class="logs-toolbar logs-toolbar-compact">
+                    <div class="logs-toolbar-left">
+                      <span class="logs-live-dot" id="svc-agent-logs-live"></span>
+                      <span class="logs-toolbar-label">Agent log (cn serve)</span>
+                    </div>
+                  </div>
+                  <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-agent-logs"></div>
                 </div>
               </div>
             </div>
@@ -489,6 +513,27 @@
                   <span class="hint">Zone DNS Edit permission. Enables <code>*.sycord.site</code> TLS via Caddy DNS plugin.</span>
                 </div>
                 <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview settings</button>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="bot" class="projects-icon"></i>
+                <div><h1>Syra AI bridge</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Continue agents call Sycord's OpenAI-compatible bridge — no Continue Hub required.</p>
+                <div class="form-group">
+                  <label for="set-bridge-url">Bridge URL</label>
+                  <input type="text" id="set-bridge-url" placeholder="https://sycord.com/api/ai/bridge/v1">
+                </div>
+                <div class="form-group">
+                  <label for="set-bridge-secret">Bridge secret</label>
+                  <input type="password" id="set-bridge-secret" placeholder="shared secret for sycord.com ↔ Syte" autocomplete="off">
+                  <span class="hint">Used in Continue config and <code>X-Sycord-Bridge-Secret</code> for agent proxy.</span>
+                </div>
+                <a class="hint block" href="/api/agent_integration.json" target="_blank" rel="noopener">Integration contract (JSON)</a>
+                <button class="btn-pill btn-primary" id="save-bridge-btn">Save AI bridge settings</button>
               </div>
             </div>
 

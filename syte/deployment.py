@@ -459,7 +459,10 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
     if not project:
         return False, "Project not found."
     from syte.preview_manager import stop_preview_async
+    from syte.agent_manager import stop_agent_async
+
     await stop_preview_async(project_id)
+    await stop_agent_async(project_id)
     process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()

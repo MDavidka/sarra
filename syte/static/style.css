@@ -1355,7 +1355,16 @@ code {
   box-shadow: none;
 }
 
-.svc-tab-panels { min-height: 120px; }
+.svc-select {
+  width: 100%;
+  max-width: 360px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #fff);
+  font: inherit;
+}
+
 
 .svc-tab-panel { display: none; }
 .svc-tab-panel.active { display: block; }

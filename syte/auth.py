@@ -12,6 +12,7 @@ from syte.database import (
     create_api_token,
     delete_api_token,
     get_api_token_by_hash,
+    get_setting,
     list_api_tokens,
     touch_api_token,
 )
@@ -86,6 +87,38 @@ async def verify_api_token(
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key is invalid"})
     await touch_api_token(row["id"])
     return row
+
+
+async def _verify_bridge_secret(request: Request) -> bool:
+    """True when X-Sycord-Bridge-Secret matches configured shared secret."""
+    secret = (await get_setting("sycord_bridge_secret", "")).strip()
+    if not secret:
+        return False
+    header = request.headers.get("x-sycord-bridge-secret", "").strip()
+    if header and hmac.compare_digest(header, secret):
+        return True
+    auth = request.headers.get("authorization", "")
+    if auth.startswith(BEARER_PREFIX):
+        token = auth[len(BEARER_PREFIX) :].strip()
+        if token and hmac.compare_digest(token, secret):
+            return True
+    return False
+
+
+async def verify_bridge_or_api_token(
+    request: Request,
+    x_api_key: str | None = Security(API_KEY_HEADER),
+) -> dict[str, Any]:
+    """Accept Syte API token OR matching Sycord bridge secret (for sycord.com → Syte)."""
+    if await _verify_bridge_secret(request):
+        return {"id": "bridge", "name": "sycord-bridge", "prefix": "bridge"}
+    return await verify_api_token(request, x_api_key)
+
+
+async def verify_bridge_or_api_token_from_request(request: Request) -> dict[str, Any]:
+    if await _verify_bridge_secret(request):
+        return {"id": "bridge", "name": "sycord-bridge", "prefix": "bridge"}
+    return await verify_api_token_from_request(request)
 
 
 async def verify_api_token_from_request(request: Request) -> dict[str, Any]:
