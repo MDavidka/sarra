@@ -494,20 +494,22 @@ function renderServices() {
   }
 
   empty?.classList.add('hidden');
-  list.innerHTML = visible.map(p => `
-    <div class="service-card" onclick="openService('${p.id}')">
-      <h3>${esc(p.name)}</h3>
-      <div class="service-meta">
-        <span class="badge ${statusClass(p)}">${statusLabel(p)}</span>
-        ${sslBadgeHtml(p)}
-        <span class="badge badge-dim">:${p.port}</span>
-        <span class="badge badge-dim">${p.deploy_type === 'docker' ? 'docker' : 'shell'}</span>
+  list.innerHTML = visible.map(p => {
+    const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
+    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
+    return `
+    <div class="project-card" onclick="openService('${p.id}')">
+      <div class="project-card-head">
+        <h3>${esc(p.name)}</h3>
+        <span class="project-card-status ${status}" title="${status}"></span>
       </div>
-      <div class="service-url">
-        <a href="${esc(p.url)}" target="_blank" onclick="event.stopPropagation()">${esc(p.url)}</a>
+      <div class="project-card-meta">
+        <span class="project-card-tag">${status}</span>
+        <span class="project-card-tag">${deployLabel}</span>
+        ${p.port ? `<span class="project-card-tag">:${p.port}</span>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   refreshIcons();
 }
 
@@ -1606,21 +1608,6 @@ document.addEventListener('click', () => toggleContextMenu(false));
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;
-  renderServices();
-});
-
-document.getElementById('project-sort')?.addEventListener('change', (e) => {
-  projectSortMode = e.target.value;
-  renderServices();
-});
-
-document.getElementById('sort-toggle')?.addEventListener('click', () => {
-  const sel = document.getElementById('project-sort');
-  if (!sel) return;
-  const opts = ['newest', 'oldest', 'name'];
-  const idx = opts.indexOf(sel.value);
-  sel.value = opts[(idx + 1) % opts.length];
-  projectSortMode = sel.value;
   renderServices();
 });
 
