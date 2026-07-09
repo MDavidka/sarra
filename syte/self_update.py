@@ -41,6 +41,8 @@ def get_update_info() -> dict:
     return {
         "installed_version": installed,
         "running_version": __version__,
+        "work_branch": UPDATE_WORK_BRANCH,
+        "bootstrap_commands": bootstrap_update_commands(target),
         **target.as_dict(),
     }
 
@@ -102,15 +104,55 @@ def _git_fetch_branch(branch: str) -> tuple[bool, str]:
     return code == 0, "\n".join(messages)
 
 
+def _git_ref_exists(ref: str) -> bool:
+    code, _ = run_cmd(["git", "rev-parse", "--verify", ref], cwd=INSTALL_DIR)
+    return code == 0
+
+
 def _git_fetch_pr(pr_number: int) -> tuple[bool, str, str]:
     local_ref = f"syte-pr-{pr_number}"
+    messages: list[str] = []
+
     code, out = run_cmd(
         ["git", "fetch", "origin", f"pull/{pr_number}/head:{local_ref}"],
         cwd=INSTALL_DIR,
     )
-    if code == 0:
-        return True, out or f"Fetched PR #{pr_number} head into {local_ref}.", local_ref
-    return False, out or f"Could not fetch PR #{pr_number} head.", local_ref
+    messages.append(out or f"git fetch origin pull/{pr_number}/head:{local_ref}")
+    if code == 0 and _git_ref_exists(local_ref):
+        return True, "\n".join(messages), local_ref
+
+    code, out = run_cmd(["git", "fetch", "origin", f"pull/{pr_number}/head"], cwd=INSTALL_DIR)
+    messages.append(out or f"git fetch origin pull/{pr_number}/head")
+    if code == 0 and _git_ref_exists("FETCH_HEAD"):
+        pin_code, pin_out = run_cmd(
+            ["git", "branch", "-f", local_ref, "FETCH_HEAD"],
+            cwd=INSTALL_DIR,
+        )
+        messages.append(pin_out or f"Pinned FETCH_HEAD to {local_ref}.")
+        if pin_code == 0 and _git_ref_exists(local_ref):
+            return True, "\n".join(messages), local_ref
+
+    return False, "\n".join(messages), local_ref
+
+
+def bootstrap_update_commands(target: UpdateTarget) -> list[str]:
+    install = str(INSTALL_DIR)
+    if target.pr_number:
+        ref = f"syte-pr-{target.pr_number}"
+        return [
+            f"cd {install}",
+            f"git fetch origin pull/{target.pr_number}/head:{ref}",
+            f"git checkout -B {UPDATE_WORK_BRANCH} {ref}",
+            f"{install}/.venv/bin/pip install -r {install}/requirements.txt -q",
+            "sudo systemctl restart syte",
+        ]
+    return [
+        f"cd {install}",
+        f"git fetch origin +refs/heads/{target.branch}:refs/remotes/origin/{target.branch}",
+        f"git checkout -B {UPDATE_WORK_BRANCH} origin/{target.branch}",
+        f"{install}/.venv/bin/pip install -r {install}/requirements.txt -q",
+        "sudo systemctl restart syte",
+    ]
 
 
 def _git_sync_update_target(target: UpdateTarget) -> tuple[bool, str]:
@@ -321,6 +363,8 @@ def update_syte() -> tuple[bool, str]:
     messages.append(pull_msg)
     if not ok:
         _append_update_log(pull_msg)
+        messages.append("Automatic update failed. Run these commands on the server (SSH):")
+        messages.extend(bootstrap_update_commands(target))
         return False, "\n".join(messages)
 
     after_version = _read_installed_version()

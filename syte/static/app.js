@@ -1377,7 +1377,12 @@ async function loadUpdateInfo() {
     const prLink = info.pr_url
       ? ` — <a href="${esc(info.pr_url)}" target="_blank" rel="noopener">view PR</a>`
       : '';
-    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${prLink}`;
+    const workBranch = info.work_branch ? ` → <code>${esc(info.work_branch)}</code>` : '';
+    let bootstrap = '';
+    if (Array.isArray(info.bootstrap_commands) && info.bootstrap_commands.length) {
+      bootstrap = `<details class="update-bootstrap"><summary>Manual upgrade (SSH)</summary><pre>${esc(info.bootstrap_commands.join('\n'))}</pre></details>`;
+    }
+    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${workBranch}${prLink}${bootstrap}`;
   } catch {
     el.textContent = 'Will pull latest open GitHub PR (fallback: main)';
   }
