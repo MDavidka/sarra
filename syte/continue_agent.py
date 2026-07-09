@@ -212,6 +212,19 @@ async def write_agent_config(project: dict) -> Path:
             "      - edit",
             "      - apply",
         ])
+
+    from syte.continue_extras import (
+        ensure_skills_directories,
+        load_continue_rules,
+        load_mcp_servers,
+        render_mcp_servers_yaml,
+        render_rules_yaml,
+    )
+
+    ensure_skills_directories(project["id"])
+    lines.extend(render_rules_yaml(await load_continue_rules()))
+    lines.extend(render_mcp_servers_yaml(await load_mcp_servers()))
+
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
 
@@ -297,6 +310,8 @@ async def stop_agent(project_id: str) -> tuple[bool, str]:
 
 
 async def start_agent(project_id: str) -> tuple[bool, str, dict]:
+    from syte.agent_metrics import agents_online_count, max_agents_allowed
+
     project = await get_project(project_id)
     if not project:
         return False, "Project not found", {}
@@ -306,6 +321,17 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
     if is_agent_running(project_id) and _port_listening(port):
         status = await get_agent_status(project_id)
         return True, "Continue agent already running.", status
+
+    if not is_agent_running(project_id):
+        online = await agents_online_count()
+        max_allowed = await max_agents_allowed()
+        if online >= max_allowed:
+            return (
+                False,
+                f"AI agent limit reached ({online}/{max_allowed}). "
+                "Increase max agents (AI) in AI settings.",
+                {},
+            )
 
     if not continue_installed():
         message = 'Continue CLI not installed. Install with: npm install -g @continuedev/cli'

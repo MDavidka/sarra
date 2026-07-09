@@ -126,6 +126,8 @@ class SettingsRequest(BaseModel):
     continue_syra_havy_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
+    continue_mcp_servers: str | None = None
+    continue_rules: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -285,6 +287,11 @@ async def get_settings():
         "continue_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
+        "agent_max_count_default": 50,
+        "continue_mcp_servers": await get_setting("continue_mcp_servers", ""),
+        "continue_rules": await get_setting("continue_rules", ""),
+        "continue_mcp_docs": "https://docs.continue.dev/reference#mcpservers",
+        "continue_skills_docs": "https://docs.continue.dev/guides/cli",
         "syra_internal_secret_set": syra_secret_set,
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
@@ -411,7 +418,19 @@ async def save_settings(body: SettingsRequest):
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))
         await set_setting("agent_max_count", str(count))
-        messages.append(f"Maximum agents (MNOA): {count}")
+        messages.append(f"Maximum AI agents (MNOA): {count}")
+    if body.continue_mcp_servers is not None:
+        raw = body.continue_mcp_servers.strip()
+        if raw:
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(400, f"continue_mcp_servers must be JSON array: {exc}") from exc
+        await set_setting("continue_mcp_servers", raw)
+        messages.append("MCP servers updated" if raw else "MCP servers cleared")
+    if body.continue_rules is not None:
+        await set_setting("continue_rules", body.continue_rules.strip())
+        messages.append("Continue rules updated" if body.continue_rules.strip() else "Continue rules cleared")
     if body.syra_internal_secret is not None:
         await set_setting("syra_internal_secret", body.syra_internal_secret.strip())
         messages.append(
@@ -693,6 +712,13 @@ async def api_agent_dashboard_gui():
     from syte.agent_metrics import get_dashboard_metrics
 
     return {"ok": True, **(await get_dashboard_metrics())}
+
+
+@app.get("/api/agent_activity_catalog")
+async def api_agent_activity_catalog():
+    from syte.agent_activity_catalog import build_activity_api_spec
+
+    return {"ok": True, **build_activity_api_spec()}
 
 
 @app.get("/api/projects/{project_id}/agent/debug")

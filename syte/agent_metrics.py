@@ -72,7 +72,7 @@ async def max_agents_allowed() -> int:
     raw = (await get_setting("agent_max_count", "")).strip()
     if raw.isdigit():
         return max(1, int(raw))
-    return settings.continue_port_end - settings.continue_port_start + 1
+    return 50
 
 
 async def agents_online_count() -> int:

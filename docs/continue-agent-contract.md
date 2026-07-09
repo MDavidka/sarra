@@ -26,6 +26,9 @@ Configured in Syte GUI → AI tab (settings sheet):
 - `continue_syra_base_api_key`
 - `continue_syra_havy_api_key`
 - `continue_default_model_profile`
+- `continue_mcp_servers` — JSON array → merged into `config.yaml` `mcpServers`
+- `continue_rules` — one per line → `config.yaml` `rules`
+- `agent_max_count` — max concurrent AI agents (MNOA), default **50**
 - `syra_internal_secret`
 
 Each key is injected as `SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, or `SYRA_HAVY_API_KEY` on the VM.
