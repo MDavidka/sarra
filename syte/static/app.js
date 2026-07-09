@@ -268,7 +268,8 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') loadSettings();
+  if (name === 'ai') loadAiDashboard();
+  if (name === 'settings') loadSettings();
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
@@ -1058,7 +1059,6 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
       method: 'PUT',
       body: JSON.stringify({
         public_ip: document.getElementById('set-ip').value || null,
-        admin_email: document.getElementById('set-email').value || null,
       }),
     });
     toast(res.messages?.join(' ') || 'saved');
@@ -1066,6 +1066,79 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
   } catch (e) {
     toast('Error: ' + e.message);
   }
+});
+
+document.getElementById('save-general-btn')?.addEventListener('click', async () => {
+  try {
+    const res = await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        admin_email: document.getElementById('set-email').value || null,
+      }),
+    });
+    toast(res.messages?.join(' ') || 'saved');
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+});
+
+async function saveSettingsPayload(body, label, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'saving…';
+  }
+  try {
+    const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : label);
+    await loadSettings();
+    if (document.getElementById('view-ai')?.classList.contains('active')) await loadAiDashboard();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.label || label;
+    }
+  }
+}
+
+document.getElementById('save-agents-settings-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('save-agents-settings-btn');
+  btn.dataset.label = 'Save agent settings';
+  const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
+  const body = {
+    continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
+  };
+  if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
+  await saveSettingsPayload(body, 'Agent settings saved', btn);
+});
+
+document.getElementById('save-provider-settings-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('save-provider-settings-btn');
+  btn.dataset.label = 'Save provider settings';
+  await saveSettingsPayload({
+    continue_provider: document.getElementById('continue-provider')?.value || 'openai',
+    continue_bridge_api_base: document.getElementById('continue-bridge-base')?.value?.trim() || '',
+    continue_syra_nano_model: document.getElementById('continue-model-nano')?.value?.trim() || '',
+    continue_syra_base_model: document.getElementById('continue-model-base')?.value?.trim() || '',
+    continue_syra_havy_model: document.getElementById('continue-model-havy')?.value?.trim() || '',
+  }, 'Provider settings saved', btn);
+});
+
+document.getElementById('save-keys-settings-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('save-keys-settings-btn');
+  btn.dataset.label = 'Save keys';
+  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
+  const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
+  const cfToken = document.getElementById('set-cf-token')?.value?.trim() || '';
+  const body = {};
+  if (bridgeKey) body.continue_bridge_api_key = bridgeKey;
+  if (internalSecret) body.syra_internal_secret = internalSecret;
+  if (cfToken) body.cloudflare_api_token = cfToken;
+  await saveSettingsPayload(body, 'Keys saved', btn);
+  if (bridgeKey) document.getElementById('continue-bridge-key').value = '';
+  if (internalSecret) document.getElementById('syra-internal-secret').value = '';
+  if (cfToken) document.getElementById('set-cf-token').value = '';
 });
 
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
@@ -1143,44 +1216,6 @@ document.getElementById('save-cf-token-btn')?.addEventListener('click', async ()
   }
 });
 
-document.getElementById('save-continue-settings-btn')?.addEventListener('click', async () => {
-  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim() || '';
-  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
-  const defaultProfile = document.getElementById('continue-default-profile')?.value || 'syra-base';
-  const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
-  const modelNano = document.getElementById('continue-model-nano')?.value?.trim() || '';
-  const modelBase = document.getElementById('continue-model-base')?.value?.trim() || '';
-  const modelHavy = document.getElementById('continue-model-havy')?.value?.trim() || '';
-  const btn = document.getElementById('save-continue-settings-btn');
-  btn.disabled = true;
-  btn.textContent = 'saving…';
-  try {
-    const res = await api('/settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        continue_bridge_api_base: bridgeBase,
-        continue_bridge_api_key: bridgeKey,
-        continue_default_model_profile: defaultProfile,
-        continue_syra_nano_model: modelNano,
-        continue_syra_base_model: modelBase,
-        continue_syra_havy_model: modelHavy,
-        syra_internal_secret: internalSecret,
-      }),
-    });
-    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'AI runtime settings saved');
-    const bridgeKeyInput = document.getElementById('continue-bridge-key');
-    const secretInput = document.getElementById('syra-internal-secret');
-    if (bridgeKeyInput) bridgeKeyInput.value = '';
-    if (secretInput) secretInput.value = '';
-    await loadSettings();
-  } catch (e) {
-    toast('Error: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Save AI runtime settings';
-  }
-});
-
 document.getElementById('update-syte-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('update-syte-btn');
   const box = document.getElementById('update-result');
@@ -1239,6 +1274,8 @@ async function loadSettings() {
     const continueModelNano = document.getElementById('continue-model-nano');
     const continueModelBase = document.getElementById('continue-model-base');
     const continueModelHavy = document.getElementById('continue-model-havy');
+    const continueProvider = document.getElementById('continue-provider');
+    const agentMaxCount = document.getElementById('agent-max-count');
     const continueRuntimeStatus = document.getElementById('continue-runtime-status');
     const syraInternalSecret = document.getElementById('syra-internal-secret');
     if (ip && s.public_ip) ip.value = s.public_ip;
@@ -1281,6 +1318,9 @@ async function loadSettings() {
     if (continueModelNano) continueModelNano.value = s.continue_syra_nano_model || '';
     if (continueModelBase) continueModelBase.value = s.continue_syra_base_model || '';
     if (continueModelHavy) continueModelHavy.value = s.continue_syra_havy_model || '';
+    if (continueProvider && s.continue_provider) continueProvider.value = s.continue_provider;
+    if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
+    if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     if (continueBridgeKey) {
       continueBridgeKey.placeholder = s.continue_bridge_api_key_set
         ? 'bridge API key saved — enter new value to replace'
@@ -1302,10 +1342,109 @@ async function loadSettings() {
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');
     const ver = document.getElementById('syte-version');
+    const verGeneral = document.getElementById('syte-version-general');
     if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
+    if (verGeneral && s.version) verGeneral.textContent = 'v' + s.version;
   } catch { /* */ }
+}
+
+function switchSettingsTab(name) {
+  document.querySelectorAll('.settings-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.settingsTab === name);
+  });
+  document.querySelectorAll('.settings-tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.settingsPanel === name);
+  });
+  refreshIcons();
+}
+
+function appendAiChatMsg(role, text) {
+  const log = document.getElementById('ai-chat-log');
+  if (!log) return;
+  const div = document.createElement('div');
+  div.className = `ai-chat-msg ${role}`;
+  div.textContent = (role === 'user' ? 'You: ' : role === 'agent' ? 'Agent: ' : '') + text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderAiChatProjects() {
+  const sel = document.getElementById('ai-chat-project');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Select project…</option>' +
+    projects.map(p => `<option value="${esc(p.id)}">${esc(displayTitle(p))}</option>`).join('');
+  if (current) sel.value = current;
+}
+
+async function loadAiDashboard() {
+  renderAiChatProjects();
+  try {
+    const d = await api('/agent_dashboard');
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('ai-stat-online', d.agents_online ?? 0);
+    set('ai-stat-incoming', d.incoming_requests_30d ?? 0);
+    set('ai-stat-failed', d.failed_relationships_30d ?? 0);
+    if (d.dpfa) {
+      set('ai-dpfa-pct', `${d.dpfa.percent}%`);
+      const fill = document.getElementById('ai-dpfa-fill');
+      if (fill) fill.style.width = `${d.dpfa.percent}%`;
+      set('ai-dpfa-detail', d.dpfa.detail || '');
+    }
+    if (d.mnoa) {
+      set('ai-mnoa-pct', `${d.mnoa.percent}%`);
+      const fill = document.getElementById('ai-mnoa-fill');
+      if (fill) fill.style.width = `${d.mnoa.percent}%`;
+      set('ai-mnoa-detail', d.mnoa.detail || '');
+    }
+    const onboard = d.onboarding || {};
+    document.querySelectorAll('#ai-checklist li').forEach(li => {
+      const step = li.dataset.step;
+      li.classList.toggle('done', !!onboard[step]);
+    });
+    const hint = document.getElementById('ai-onboard-hint');
+    if (hint) {
+      hint.textContent = onboard.complete
+        ? 'Onboarding complete — agents ready for sycord.com requests.'
+        : 'Complete setup in Settings → Provider / Keys / Agents';
+    }
+  } catch { /* */ }
+  refreshIcons();
+}
+
+async function sendAiChat() {
+  const uuid = document.getElementById('ai-chat-project')?.value;
+  const message = document.getElementById('ai-chat-input')?.value?.trim();
+  const profile = document.getElementById('ai-chat-profile')?.value;
+  const statusEl = document.getElementById('ai-chat-status');
+  if (!uuid) return toast('select a project first');
+  if (!message) return;
+  appendAiChatMsg('user', message);
+  document.getElementById('ai-chat-input').value = '';
+  if (statusEl) statusEl.textContent = 'Agent thinking…';
+  const btn = document.getElementById('ai-chat-send-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api(`/projects/${uuid}/agent/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message, model_profile: profile }),
+    });
+    if (res.ok && res.reply) {
+      appendAiChatMsg('agent', res.reply);
+      if (statusEl) statusEl.textContent = `Model: ${res.model || '—'} · Provider shown in agent response only`;
+    } else {
+      appendAiChatMsg('system', res.message || 'No reply from agent');
+      if (statusEl) statusEl.textContent = res.message || 'Communication failed';
+    }
+    await loadAiDashboard();
+  } catch (e) {
+    appendAiChatMsg('system', e.message);
+    if (statusEl) statusEl.textContent = e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function esc(s) {
@@ -1418,6 +1557,53 @@ document.getElementById('svc-tabs')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.svc-tab');
   if (!btn?.dataset.svcTab) return;
   switchSvcTab(btn.dataset.svcTab);
+});
+
+document.getElementById('settings-tabs')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.settings-tab');
+  if (!btn?.dataset.settingsTab) return;
+  switchSettingsTab(btn.dataset.settingsTab);
+});
+
+document.getElementById('ai-chat-send-btn')?.addEventListener('click', sendAiChat);
+document.getElementById('ai-chat-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAiChat();
+  }
+});
+
+document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
+  const uuid = document.getElementById('ai-chat-project')?.value;
+  if (!uuid) return toast('select a project first');
+  appendAiChatMsg('system', 'Running agent test…');
+  try {
+    const res = await api(`/projects/${uuid}/agent/test`, { method: 'POST', body: '{}' });
+    if (res.ok) {
+      appendAiChatMsg('system', `Test passed — reply: ${res.reply || 'ok'}`);
+      toast('Agent test passed');
+    } else {
+      appendAiChatMsg('system', res.message || 'Test failed');
+      toast(res.message || 'Test failed');
+    }
+    await loadAiDashboard();
+  } catch (e) {
+    appendAiChatMsg('system', e.message);
+    toast('Error: ' + e.message);
+  }
+});
+
+document.getElementById('ai-start-agent-btn')?.addEventListener('click', async () => {
+  const uuid = document.getElementById('ai-chat-project')?.value;
+  if (!uuid) return toast('select a project first');
+  try {
+    const res = await api(`/projects/${uuid}/agent/start`, { method: 'POST', body: '{}' });
+    appendAiChatMsg('system', res.message || 'Agent started');
+    toast(res.message || 'Agent started');
+    await loadAiDashboard();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
 });
 
 document.getElementById('svc-logs-refresh')?.addEventListener('click', () => {

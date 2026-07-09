@@ -126,6 +126,8 @@ class SettingsRequest(BaseModel):
     continue_syra_nano_model: str | None = None
     continue_syra_base_model: str | None = None
     continue_syra_havy_model: str | None = None
+    continue_provider: str | None = None
+    agent_max_count: int | None = None
     syra_internal_secret: str | None = None
 
 
@@ -282,6 +284,8 @@ async def get_settings():
         "continue_syra_nano_model": bridge["syra_nano_model"],
         "continue_syra_base_model": bridge["syra_base_model"],
         "continue_syra_havy_model": bridge["syra_havy_model"],
+        "continue_provider": bridge["provider"],
+        "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
@@ -403,6 +407,14 @@ async def save_settings(body: SettingsRequest):
     if body.continue_syra_havy_model is not None:
         await set_setting("continue_syra_havy_model", body.continue_syra_havy_model.strip())
         messages.append("Updated syra-havy bridge model.")
+    if body.continue_provider is not None:
+        provider = body.continue_provider.strip().lower() or "openai"
+        await set_setting("continue_provider", provider)
+        messages.append(f"Continue provider: {provider}")
+    if body.agent_max_count is not None:
+        count = max(1, int(body.agent_max_count))
+        await set_setting("agent_max_count", str(count))
+        messages.append(f"Maximum agents (MNOA): {count}")
     if body.syra_internal_secret is not None:
         await set_setting("syra_internal_secret", body.syra_internal_secret.strip())
         messages.append(
@@ -615,6 +627,43 @@ async def api_agent_logs_stream(project_id: str, request: Request, live: bool = 
         stream_agent_logs(project_id, live_only=live),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    model_profile: str | None = None
+
+
+@app.get("/api/agent_dashboard")
+async def api_agent_dashboard_gui():
+    from syte.agent_metrics import get_dashboard_metrics
+
+    return {"ok": True, **(await get_dashboard_metrics())}
+
+
+@app.post("/api/projects/{project_id}/agent/test")
+async def api_agent_test_gui(project_id: str):
+    from syte.continue_agent import test_agent
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return await test_agent(project_id, source="gui")
+
+
+@app.post("/api/projects/{project_id}/agent/chat")
+async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
+    from syte.continue_agent import communicate_with_agent
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return await communicate_with_agent(
+        project_id,
+        body.message,
+        model_profile=body.model_profile,
+        source="gui",
     )
 
 

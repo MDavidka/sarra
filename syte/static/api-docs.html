@@ -1451,19 +1451,124 @@
               <div class="field-desc">Snapshot of Continue serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
             </div>
           </div>
+          <div class="endpoint" id="agent-test">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_test</span>
+              </div>
+              <div class="endpoint-name">Test agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Starts agent if needed, verifies bridge + CLI, sends probe message expecting <code>ok</code> in reply.</div>
+              <pre>{"uuid":"my-site-a1b2c3"}</pre>
+              <pre>{"ok":true,"checks":{"cli":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-communicate">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_communicate</span>
+              </div>
+              <div class="endpoint-name">Communicate with agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">message<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Sent to Continue CLI <code>POST /message</code> on the project workspace.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+              <pre>{"uuid":"my-site-a1b2c3","message":"Add a dark mode toggle","model_profile":"syra-base"}</pre>
+              <pre>{"ok":true,"reply":"...","model":"deepseek-chat","provider":"openai","model_profile":"syra-base"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-change">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_change</span>
+              </div>
+              <div class="endpoint-name">Request code change (sycord.com)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>sycord.com flow.</strong> User asks for a change on sycord.com → sycord sends UUID + model + message → Syte VM routes to matching workspace Continue CLI.</div>
+              <pre>{"uuid":"my-site-a1b2c3","model_name":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
+              <pre>{"ok":true,"change_applied":true,"reply":"..."}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-dashboard">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_dashboard</span>
+              </div>
+              <div class="endpoint-name">Agent dashboard metrics</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Returns agents online, 30-day request counts, DPFA (CPU load), MNOA (agent capacity), onboarding checklist state.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="agent-auth">
+          <h2 class="section-title">Authentication types</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">API token</span><span class="info-val"><code>X-API-Key: syte_…</code> or <code>Authorization: Bearer syte_…</code> — external routes <code>/api/agent_*</code></span></div>
+            <div class="info-row"><span class="info-key">Internal secret</span><span class="info-val"><code>X-Syra-Internal-Secret</code> — sycord.com → <code>/api/internal/projects/{uuid}/agent/*</code></span></div>
+            <div class="info-row"><span class="info-key">GUI (local)</span><span class="info-val"><code>/api/projects/{uuid}/agent/*</code> and <code>/api/agent_dashboard</code> — no auth on trusted local GUI</span></div>
+          </div>
+        </section>
+
+        <section class="section" id="agent-internal">
+          <h2 class="section-title">Internal API (sycord.com ↔ Syte)</h2>
+          <p class="section-desc">Base: <code>/api/internal</code> · Auth: <code>X-Syra-Internal-Secret</code> header (configure in Settings → Keys)</p>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent</code> — status</span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/start|stop|restart</code></span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/change</code> — <code>{message, model_name}</code></span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — raw message to CLI</span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/test</code> — health + probe chat</span></div>
+            <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/logs?lines=200</code></span></div>
+            <div class="info-row"><span class="info-key">ANY</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — forward to <code>cn serve</code> HTTP API</span></div>
+          </div>
+          <div class="note" style="margin-top:1rem"><strong>Continue CLI HTTP</strong> (via proxy or localhost): <code>POST /message</code>, <code>GET /state</code>, <code>POST /pause</code>, <code>GET /diff</code>, <code>POST /exit</code></div>
+        </section>
+
+        <section class="section" id="agent-errors">
+          <h2 class="section-title">Agent errors</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">401</span><span class="info-val">Missing or invalid API key / internal secret</span></div>
+            <div class="info-row"><span class="info-key">503 internal_secret_not_configured</span><span class="info-val">Set <code>syra_internal_secret</code> in Syte Settings → Keys</span></div>
+            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">Continue CLI missing — <code>npm install -g @continuedev/cli</code></span></div>
+            <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Bridge API base unreachable — check Settings → Provider</span></div>
+            <div class="info-row"><span class="info-key">503 agent not running</span><span class="info-val">Proxy called while agent stopped — <code>POST /agent/start</code> first</span></div>
+            <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">UUID does not match any workspace</span></div>
+          </div>
         </section>
 
         <section class="section" id="agent-workflow">
-          <h2 class="section-title">Typical session workflow</h2>
+          <h2 class="section-title">sycord.com change request flow</h2>
           <div class="info-grid">
-            <div class="info-row"><span class="info-key">1</span><span class="info-val"><code>GET /agent_status?uuid=</code> — check if agent is running</span></div>
-            <div class="info-row"><span class="info-key">2</span><span class="info-val"><code>POST /agent_start</code> — start if stopped</span></div>
-            <div class="info-row"><span class="info-key">3</span><span class="info-val">Use <code>agent_proxy_url</code> for Continue HTTP API calls</span></div>
-            <div class="info-row"><span class="info-key">4</span><span class="info-val"><code>POST /agent_settings</code> — switch model profile mid-session</span></div>
-            <div class="info-row"><span class="info-key">5</span><span class="info-val"><code>GET /agent_logs</code> or SSE stream — debug agent output</span></div>
-            <div class="info-row"><span class="info-key">6</span><span class="info-val"><code>POST /agent_stop</code> — tear down when session ends</span></div>
+            <div class="info-row"><span class="info-key">1</span><span class="info-val">User edits project on sycord.com and sends a change message</span></div>
+            <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com → <code>POST /api/internal/projects/{uuid}/agent/change</code> with <code>model_name</code> + <code>message</code></span></div>
+            <div class="info-row"><span class="info-key">3</span><span class="info-val">Syte starts <code>cn serve</code> for UUID workspace if needed</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte forwards message to Continue CLI — agent edits files in workspace</span></div>
+            <div class="info-row"><span class="info-key">5</span><span class="info-val">Response <code>reply</code> returned to sycord.com (provider name included in agent metadata, not echoed to end user by default)</span></div>
+            <div class="info-row"><span class="info-key">6</span><span class="info-val"><code>POST /agent_stop</code> when session ends</span></div>
           </div>
-          <div class="note" style="margin-top:1rem"><strong>GUI admin routes</strong> (same auth): <code>GET/POST /api/projects/{uuid}/agent/*</code></div>
+          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent <code>cn serve</code> instances).</div>
         </section>
         </div>
       </div>
