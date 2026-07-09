@@ -163,13 +163,27 @@ async def selected_model_metadata(project: dict) -> dict[str, str]:
     }
 
 
+def _secret_ref(env_name: str) -> str:
+    return "${{ secrets." + env_name + " }}"
+
+
 async def write_agent_config(project: dict) -> Path:
     project = await ensure_agent_runtime(project)
     bridge = await bridge_settings()
     config_path = agent_config_path(project["id"])
     model_data = await selected_model_metadata(project)
+    active_profile = model_data["profile"]
 
-    ordered = sorted(PROFILE_ORDER, key=lambda name: name != model_data["profile"])
+    configured = [name for name in PROFILE_ORDER if bridge["profiles"][name]["api_key"]]
+    if active_profile not in configured:
+        raise RuntimeError(
+            f"No API key configured for active profile {active_profile}. "
+            f"Open AI settings and add the {bridge['profiles'][active_profile]['label']} key."
+        )
+    if not configured:
+        raise RuntimeError("No model API keys configured. Open AI settings and add provider keys.")
+
+    ordered = sorted(configured, key=lambda name: name != active_profile)
     lines = [
         "name: Syte Continue",
         "version: 1.0.0",
@@ -183,7 +197,7 @@ async def write_agent_config(project: dict) -> Path:
             f"    provider: {_yaml_quote(spec['provider'])}",
             f"    model: {_yaml_quote(spec['model'])}",
             f"    apiBase: {_yaml_quote(spec['api_base'])}",
-            f'    apiKey: "${{ secrets.{spec["secret_env"]} }}"',
+            f"    apiKey: {_yaml_quote(_secret_ref(spec['secret_env']))}",
             "    roles:",
             "      - chat",
             "      - edit",
@@ -191,6 +205,19 @@ async def write_agent_config(project: dict) -> Path:
         ])
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
+
+
+def write_agent_secrets(project_id: str, bridge: dict[str, Any]) -> Path:
+    env_dir = agent_home(project_id) / ".continue"
+    env_dir.mkdir(parents=True, exist_ok=True)
+    env_path = env_dir / ".env"
+    lines = []
+    for name in PROFILE_ORDER:
+        spec = bridge["profiles"][name]
+        if spec["api_key"]:
+            lines.append(f"{spec['secret_env']}={spec['api_key']}")
+    env_path.write_text("\n".join(lines) + ("\n" if lines else ""))
+    return env_path
 
 
 async def backend_health(project: dict) -> dict[str, Any]:
@@ -207,12 +234,23 @@ async def backend_health(project: dict) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}"}
     url = api_base.rstrip("/") + "/models"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             response = await client.get(url, headers=headers)
+        if response.status_code in (401, 403):
+            return {
+                "ok": False,
+                "status_code": response.status_code,
+                "url": url,
+                "profile": model["profile"],
+                "provider": model.get("provider_label"),
+                "error": f"{model.get('provider_label', 'Provider')} API key rejected (HTTP {response.status_code})",
+            }
         return {
             "ok": response.status_code < 500,
             "status_code": response.status_code,
             "url": url,
+            "profile": model["profile"],
+            "provider": model.get("provider_label"),
             "error": "" if response.status_code < 500 else f"Upstream returned {response.status_code}",
         }
     except Exception as exc:
@@ -278,8 +316,15 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         return False, message, {}
 
     await stop_agent(project_id)
-    config_path = await write_agent_config(project)
+    bridge = await bridge_settings()
+    try:
+        config_path = await write_agent_config(project)
+    except RuntimeError as exc:
+        message = str(exc)
+        await update_project(project_id, {"agent_status": "error", "agent_last_error": message})
+        return False, message, {}
     home = agent_home(project_id)
+    write_agent_secrets(project_id, bridge)
     log_path = agent_log_path(project_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a") as log:
@@ -287,7 +332,6 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         log.write(f"Config: {config_path}\n")
         log.write(f"Port: {port}\n")
 
-    bridge = await bridge_settings()
     env = {
         **os.environ,
         **read_env_vars(project.get("env_vars", "{}")),
@@ -297,7 +341,8 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
     }
     for name in PROFILE_ORDER:
         spec = bridge["profiles"][name]
-        env[spec["secret_env"]] = spec["api_key"]
+        if spec["api_key"]:
+            env[spec["secret_env"]] = spec["api_key"]
     command = f'{continue_command()} serve --config "{config_path}" --host 127.0.0.1 --port {port}'
 
     log_file = open(log_path, "a")
@@ -518,6 +563,17 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
     if model_profile:
         await update_agent_settings(project_id, model_profile=model_profile)
 
+    project = await get_project(project_id) or project
+    try:
+        await write_agent_config(project)
+    except RuntimeError as exc:
+        return {
+            "ok": False,
+            "error": "api_key_missing",
+            "message": str(exc),
+            "checks": {"cli": continue_installed(), "backend": False, "agent": False},
+        }
+
     status = await get_agent_status(project_id)
     backend = status.get("agent_backend") or {}
     install_ok = status.get("agent_install_ok", continue_installed())
@@ -535,12 +591,15 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         return {
             "ok": False,
             "error": "backend_unreachable",
-            "message": backend.get("error") or "Bridge API unreachable",
+            "message": backend.get("error") or "Provider API unreachable",
             "checks": {"cli": True, "backend": False, "agent": status.get("agent_running", False)},
             "backend": backend,
         }
 
-    if not status.get("agent_running"):
+    if status.get("agent_running"):
+        await restart_agent(project_id)
+        status = await get_agent_status(project_id)
+    else:
         ok, start_msg, status = await start_agent(project_id)
         if not ok:
             await log_agent_request(project_id, source=source, status="error", error=start_msg)
