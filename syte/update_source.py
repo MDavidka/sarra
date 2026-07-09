@@ -13,6 +13,7 @@ import httpx
 from syte.workspace import run_cmd
 
 DEFAULT_FALLBACK_BRANCH = "main"
+DEFAULT_UPDATE_BRANCH = "cursor/update-from-latest-pr-6cbf"
 
 
 @dataclass(frozen=True)
@@ -94,10 +95,11 @@ def fetch_pull_request(repo: str, pr_number: int) -> UpdateTarget | None:
 
 
 def fetch_latest_open_pr(repo: str) -> UpdateTarget | None:
+    """Return the open PR with the highest number (newest), not merely last touched."""
     if not repo:
         return None
     url = f"https://api.github.com/repos/{repo}/pulls"
-    params = {"state": "open", "sort": "updated", "direction": "desc", "per_page": 10}
+    params = {"state": "open", "sort": "created", "direction": "desc", "per_page": 100}
     try:
         with httpx.Client(timeout=12.0) as client:
             response = client.get(url, params=params, headers=_github_headers())
@@ -106,17 +108,26 @@ def fetch_latest_open_pr(repo: str) -> UpdateTarget | None:
         items = response.json()
         if not isinstance(items, list):
             return None
+
+        candidates: list[dict[str, Any]] = []
         for item in items:
             if item.get("draft"):
                 continue
             head_ref = str((item.get("head") or {}).get("ref") or "").strip()
             if head_ref:
-                return _pr_from_api_item(item, repo)
-        for item in items:
-            head_ref = str((item.get("head") or {}).get("ref") or "").strip()
-            if head_ref:
-                return _pr_from_api_item(item, repo)
-        return None
+                candidates.append(item)
+
+        if not candidates:
+            for item in items:
+                head_ref = str((item.get("head") or {}).get("ref") or "").strip()
+                if head_ref:
+                    candidates.append(item)
+
+        if not candidates:
+            return None
+
+        best = max(candidates, key=lambda item: int(item["number"]))
+        return _pr_from_api_item(best, repo)
     except Exception:
         return None
 
@@ -142,6 +153,14 @@ def resolve_update_target(install_dir: Path) -> UpdateTarget:
     latest = fetch_latest_open_pr(repo)
     if latest and latest.branch:
         return latest
+
+    if repo:
+        return UpdateTarget(
+            source_type="branch",
+            branch=DEFAULT_UPDATE_BRANCH,
+            label=f"{DEFAULT_UPDATE_BRANCH} (no open PRs)",
+            repo=repo,
+        )
 
     fallback = DEFAULT_FALLBACK_BRANCH
     return UpdateTarget(

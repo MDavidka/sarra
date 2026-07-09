@@ -21,6 +21,26 @@ UPDATE_LOG = settings.data_dir / "update.log"
 UPDATE_WORK_BRANCH = "syte-update"
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for piece in re.split(r"[.\-]", version.strip().lstrip("v")):
+        if piece.isdigit():
+            parts.append(int(piece))
+    return tuple(parts) if parts else (0,)
+
+
+def _version_lt(left: str, right: str) -> bool:
+    return _version_tuple(left) < _version_tuple(right)
+
+
+def _allow_downgrade() -> bool:
+    return (os.environ.get("SYTE_UPDATE_ALLOW_DOWNGRADE") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def _venv_python() -> str:
     venv_python = INSTALL_DIR / ".venv" / "bin" / "python"
     return str(venv_python) if venv_python.exists() else sys.executable
@@ -58,6 +78,14 @@ def _current_branch() -> str:
 def _working_tree_dirty() -> bool:
     code, out = run_cmd(["git", "status", "--porcelain"], cwd=INSTALL_DIR)
     return code == 0 and bool(out.strip())
+
+
+def _read_version_at_ref(ref: str) -> str:
+    code, out = run_cmd(["git", "show", f"{ref}:syte/__init__.py"], cwd=INSTALL_DIR)
+    if code != 0:
+        return ""
+    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', out)
+    return match.group(1) if match else ""
 
 
 def _read_installed_version() -> str:
@@ -155,7 +183,7 @@ def bootstrap_update_commands(target: UpdateTarget) -> list[str]:
     ]
 
 
-def _git_sync_update_target(target: UpdateTarget) -> tuple[bool, str]:
+def _git_sync_update_target(target: UpdateTarget) -> tuple[bool, str, str]:
     messages: list[str] = []
 
     if _working_tree_dirty():
@@ -179,36 +207,53 @@ def _git_sync_update_target(target: UpdateTarget) -> tuple[bool, str]:
             ok, fetch_msg = _git_fetch_branch(target.branch)
             messages.append(fetch_msg)
             if not ok:
-                return False, "\n".join(messages)
+                return False, "\n".join(messages), ""
             checkout_point = f"origin/{target.branch}"
         else:
-            return False, "\n".join(messages)
+            return False, "\n".join(messages), ""
     else:
         ok, fetch_msg = _git_fetch_branch(target.branch)
         messages.append(fetch_msg)
         if not ok:
-            return False, "\n".join(messages)
+            return False, "\n".join(messages), ""
         checkout_point = f"origin/{target.branch}"
+
+    target_version = _read_version_at_ref(checkout_point)
+    if target_version and not _allow_downgrade():
+        installed = _read_installed_version()
+        if installed != "unknown" and _version_lt(target_version, installed):
+            return (
+                False,
+                "\n".join(
+                    messages
+                    + [
+                        f"Refusing downgrade: installed {installed}, target {target_version} ({target.label}).",
+                        "Close older open PRs or set SYTE_UPDATE_PR to the correct PR number.",
+                    ]
+                ),
+                checkout_point,
+            )
 
     ok, checkout_msg = _git_checkout_ref(UPDATE_WORK_BRANCH, checkout_point)
     messages.append(checkout_msg)
     if not ok:
-        return False, "\n".join(messages)
+        return False, "\n".join(messages), checkout_point
 
     if checkout_point.startswith("origin/"):
         code, out = run_cmd(["git", "reset", "--hard", checkout_point], cwd=INSTALL_DIR)
         if code != 0:
             messages.append(out or "git reset --hard failed.")
-            return False, "\n".join(messages)
+            return False, "\n".join(messages), checkout_point
         messages.append(out or f"Reset to {checkout_point}.")
 
-    return True, "\n".join(messages)
+    return True, "\n".join(messages), checkout_point
 
 
 def _git_pull_latest(branch: str) -> tuple[bool, str]:
     """Backward-compatible wrapper for branch-only updates."""
     target = UpdateTarget(source_type="branch", branch=branch, label=f"branch {branch}")
-    return _git_sync_update_target(target)
+    ok, msg, _ref = _git_sync_update_target(target)
+    return ok, msg
 
 
 def _apply_proxy_sync() -> tuple[bool, str]:
@@ -359,7 +404,7 @@ def update_syte() -> tuple[bool, str]:
     if current and current != UPDATE_WORK_BRANCH:
         messages.append(f"Note: was on {current}, switching to {UPDATE_WORK_BRANCH} for update.")
 
-    ok, pull_msg = _git_sync_update_target(target)
+    ok, pull_msg, _checkout_ref = _git_sync_update_target(target)
     messages.append(pull_msg)
     if not ok:
         _append_update_log(pull_msg)

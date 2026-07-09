@@ -28,7 +28,7 @@ from syte import auth
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
-from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_agent_activity, stream_agent_logs, stream_preview_logs, stream_project_logs
 import logging
 
 from syte import supervisor
@@ -629,6 +629,51 @@ async def api_agent_logs_stream(project_id: str, request: Request, live: bool = 
         await auth.verify_api_token_from_request(request)
     return StreamingResponse(
         stream_agent_logs(project_id, live_only=live),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/projects/{project_id}/agent/activity")
+async def api_agent_activity_public(
+    project_id: str,
+    request: Request,
+    since_id: int = 0,
+    limit: int = 200,
+):
+    from syte.agent_activity import list_agent_events
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    if key:
+        await auth.verify_api_token_from_request(request)
+    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "events": events,
+        "since_id": since_id,
+        "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+    }
+
+
+@app.get("/api/projects/{project_id}/agent/activity/stream")
+async def api_agent_activity_stream(
+    project_id: str,
+    request: Request,
+    live: bool = False,
+    since_id: int = 0,
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
+    if key:
+        await auth.verify_api_token_from_request(request)
+    return StreamingResponse(
+        stream_agent_activity(project_id, live_only=live, since_id=since_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

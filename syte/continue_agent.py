@@ -279,6 +279,8 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
 
 
 async def stop_agent(project_id: str) -> tuple[bool, str]:
+    from syte.agent_activity import record_agent_event
+
     pf = agent_pid_file(project_id)
     if not pf.exists():
         await update_project(project_id, {"agent_status": "stopped"})
@@ -290,6 +292,7 @@ async def stop_agent(project_id: str) -> tuple[bool, str]:
         pass
     pf.unlink(missing_ok=True)
     await update_project(project_id, {"agent_status": "stopped"})
+    await record_agent_event(project_id, "agent_stopped", title="Agent stopped", detail="Continue agent stopped")
     return True, "Continue agent stopped."
 
 
@@ -374,12 +377,27 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         },
     )
     status = await get_agent_status(project_id)
+    from syte.agent_activity import record_agent_event, reset_history_tracker
+
+    reset_history_tracker(project_id)
+    await record_agent_event(
+        project_id,
+        "agent_started",
+        title="Agent started",
+        detail=f"Continue agent started on port {port}",
+        payload={"port": port},
+    )
     return True, f"Continue agent started on port {port}.", status
 
 
 async def restart_agent(project_id: str) -> tuple[bool, str, dict]:
+    from syte.agent_activity import record_agent_event
+
     await stop_agent(project_id)
-    return await start_agent(project_id)
+    ok, message, status = await start_agent(project_id)
+    if ok:
+        await record_agent_event(project_id, "agent_restarted", title="Agent restarted", detail=message)
+    return ok, message, status
 
 
 async def get_agent_status(project_id: str, *, request_base: str = "") -> dict:
@@ -459,7 +477,15 @@ def _extract_assistant_reply(state: dict) -> str:
     return str(content)
 
 
-async def _poll_agent_state(port: int, *, timeout_s: float = 90.0) -> dict:
+async def _poll_agent_state(
+    port: int,
+    *,
+    timeout_s: float = 90.0,
+    project_id: str | None = None,
+    source: str = "agent",
+) -> dict:
+    from syte.agent_activity import ingest_agent_state
+
     base = agent_local_url(port).rstrip("/")
     deadline = time.time() + timeout_s
     last_state: dict = {}
@@ -471,6 +497,8 @@ async def _poll_agent_state(port: int, *, timeout_s: float = 90.0) -> dict:
                     await asyncio.sleep(0.5)
                     continue
                 last_state = response.json()
+                if project_id:
+                    await ingest_agent_state(project_id, last_state, source=source)
                 busy = last_state.get("isProcessing") or last_state.get("is_processing")
                 if not busy:
                     return last_state
@@ -489,6 +517,7 @@ async def communicate_with_agent(
     auto_start: bool = True,
 ) -> dict:
     from syte.agent_metrics import log_agent_request
+    from syte.agent_activity import record_agent_event, reset_history_tracker
 
     project = await get_project(project_id)
     if not project:
@@ -516,6 +545,16 @@ async def communicate_with_agent(
 
     base = agent_local_url(int(port)).rstrip("/")
     model = status.get("agent_model") or {}
+    reset_history_tracker(project_id, source=source)
+    await record_agent_event(
+        project_id,
+        "request_started",
+        role="user",
+        title="Request",
+        detail=message[:4000],
+        payload={"message": message, "model_profile": model.get("profile")},
+        source=source,
+    )
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
@@ -528,9 +567,18 @@ async def communicate_with_agent(
                 await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
                 return {"ok": False, "error": "agent_http_error", "message": err, "status_code": response.status_code}
 
-        state = await _poll_agent_state(int(port))
+        state = await _poll_agent_state(int(port), project_id=project_id, source=source)
         reply = _extract_assistant_reply(state)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="ok")
+        await record_agent_event(
+            project_id,
+            "request_completed",
+            role="assistant",
+            title="Completed",
+            detail=(reply or "Request finished")[:4000],
+            payload={"reply": reply, "model_profile": model.get("profile")},
+            source=source,
+        )
         return {
             "ok": True,
             "uuid": project_id,
@@ -544,6 +592,14 @@ async def communicate_with_agent(
     except Exception as exc:
         err = str(exc)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
+        await record_agent_event(
+            project_id,
+            "request_failed",
+            title="Failed",
+            detail=err[:4000],
+            payload={"error": err},
+            source=source,
+        )
         return {"ok": False, "error": "agent_communicate_failed", "message": err}
 
 

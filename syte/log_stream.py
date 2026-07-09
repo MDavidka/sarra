@@ -141,3 +141,61 @@ async def stream_agent_logs(project_id: str, *, live_only: bool = False):
         if tick % 20 == 0:
             yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         await asyncio.sleep(0.25)
+
+
+async def stream_agent_activity(
+    project_id: str,
+    *,
+    live_only: bool = False,
+    since_id: int = 0,
+    poll_state: bool = True,
+):
+    """SSE generator — replay + live agent activity (Cursor-like chat feed)."""
+    from syte.agent_activity import ingest_agent_state, list_agent_events, subscribe_agent_activity, unsubscribe_agent_activity
+    from syte.continue_agent import agent_local_url, get_agent_status
+
+    if not live_only:
+        for event in await list_agent_events(project_id, since_id=since_id, limit=500):
+            yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+            since_id = max(since_id, int(event.get("id") or 0))
+
+    if live_only:
+        yield f"data: {json.dumps({'type': 'session', 'text': 'Live agent activity stream'})}\n\n"
+
+    queue = subscribe_agent_activity(project_id)
+    try:
+        tick = 0
+        for _ in range(14400):
+            while not queue.empty():
+                event = queue.get_nowait()
+                since_id = max(since_id, int(event.get("id") or 0))
+                yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+
+            if poll_state and tick % 2 == 0:
+                status = await get_agent_status(project_id)
+                port = status.get("agent_port")
+                if status.get("agent_running") and port:
+                    try:
+                        import httpx
+
+                        async with httpx.AsyncClient(timeout=5.0) as client:
+                            response = await client.get(f"{agent_local_url(int(port)).rstrip('/')}/state")
+                        if response.status_code < 400:
+                            state = response.json()
+                            busy = state.get("isProcessing") or state.get("is_processing")
+                            if busy:
+                                yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
+                            await ingest_agent_state(project_id, state, source="agent")
+                            while not queue.empty():
+                                event = queue.get_nowait()
+                                since_id = max(since_id, int(event.get("id") or 0))
+                                yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+                    except Exception:
+                        pass
+
+            if tick % 40 == 0:
+                yield f"data: {json.dumps({'type': 'ping', 'since_id': since_id})}\n\n"
+            tick += 1
+            await asyncio.sleep(0.25)
+    finally:
+        unsubscribe_agent_activity(project_id, queue)

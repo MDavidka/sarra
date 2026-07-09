@@ -177,7 +177,16 @@ async def write_file(project_id: str, file_path: str, content: str) -> tuple[boo
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_dir():
         return False, "Target path is a directory"
+    from syte.agent_activity import record_workspace_activity
+
+    existed = target.exists()
     target.write_text(content)
+    await record_workspace_activity(
+        project_id,
+        "create_file" if not existed else "write_file",
+        path=file_path,
+        source="api",
+    )
     return True, f"Wrote {len(content)} chars to {file_path}"
 
 
@@ -194,6 +203,9 @@ async def delete_file(project_id: str, file_path: str) -> tuple[bool, str]:
     if target == ws or target == ws / "app":
         return False, "Cannot delete workspace root"
     target.unlink()
+    from syte.agent_activity import record_workspace_activity
+
+    await record_workspace_activity(project_id, "delete_file", path=file_path, source="api")
     return True, f"Deleted {file_path}"
 
 
@@ -206,6 +218,9 @@ async def upload_file(project_id: str, file_path: str, content: bytes) -> tuple[
     if target.is_dir():
         return False, "Target path is a directory"
     target.write_bytes(content)
+    from syte.agent_activity import record_workspace_activity
+
+    await record_workspace_activity(project_id, "upload_file", path=file_path, source="api")
     return True, f"Uploaded {len(content)} bytes to {file_path}"
 
 
@@ -272,6 +287,15 @@ async def execute_command(
     try:
         code, output = await asyncio.to_thread(_run)
         _append_command_log(project_id, cmd, cwd, code)
+        from syte.agent_activity import record_workspace_activity
+
+        await record_workspace_activity(
+            project_id,
+            "execute_command",
+            command=cmd,
+            source="api",
+            detail=output[:500] if output else "",
+        )
         return code, output
     except subprocess.TimeoutExpired:
         _append_command_log(project_id, cmd, cwd, 124)

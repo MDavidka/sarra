@@ -5,6 +5,7 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import httpx
@@ -119,6 +120,44 @@ async def internal_agent_logs(
         "project_id": project_id,
         "logs": get_agent_logs(project_id, max(1, min(lines, 2000))),
     }
+
+
+@router.get("/projects/{project_id}/agent/activity")
+async def internal_agent_activity(
+    project_id: str,
+    since_id: int = 0,
+    limit: int = 200,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_activity import list_agent_events
+
+    await _require_project(project_id)
+    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "events": events,
+        "since_id": since_id,
+        "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
+    }
+
+
+@router.get("/projects/{project_id}/agent/activity/stream")
+async def internal_agent_activity_stream(
+    project_id: str,
+    request: Request,
+    live: bool = False,
+    since_id: int = 0,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.log_stream import stream_agent_activity
+
+    await _require_project(project_id)
+    return StreamingResponse(
+        stream_agent_activity(project_id, live_only=live, since_id=since_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/agent/dashboard")
