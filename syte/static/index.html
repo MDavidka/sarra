@@ -490,7 +490,109 @@
                 <li data-step="provider"><span class="ai-check-box"></span><span>3. Select provider — OpenAI-compatible bridge</span></li>
                 <li data-step="cli_server"><span class="ai-check-box"></span><span>4. Continue CLI installed on VM (<code>cn serve</code> per project)</span></li>
               </ul>
-              <p class="hint" id="ai-onboard-hint">Complete setup in Settings → Provider / Keys / Agents</p>
+              <p class="hint" id="ai-onboard-hint">Complete agent setup in the configuration section below</p>
+            </div>
+
+            <div class="projects-card panel-form ai-config-card">
+              <h2 class="ai-section-title">Agent configuration</h2>
+              <p class="hint block">Everything needed for Continue CLI agents — provider, models, keys, and sycord.com internal auth. Provider name is only shown in agent/server responses, not to end users on sycord.com.</p>
+
+              <div class="form-inner">
+                <div class="form-group">
+                  <label for="syra-internal-secret">1. Internal API secret</label>
+                  <input type="password" id="syra-internal-secret" placeholder="shared secret for sycord.com → Syte" autocomplete="off">
+                  <span class="hint">sycord.com sends this as header <code>X-Syra-Internal-Secret</code> on <code>/api/internal/*</code> routes.</span>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="continue-provider">2. Provider</label>
+                    <select id="continue-provider">
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="anthropic">Anthropic-compatible</option>
+                      <option value="google">Google / Gemini</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="continue-bridge-base">Bridge API base</label>
+                    <input type="text" id="continue-bridge-base" placeholder="https://bridge.sycord.internal/v1">
+                    <span class="hint">OpenAI-compatible endpoint Continue calls for chat completions.</span>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="continue-bridge-key">Provider API key</label>
+                  <input type="password" id="continue-bridge-key" placeholder="bridge / provider API key" autocomplete="off">
+                  <span class="hint">Stored on Syte and injected into each agent process as <code>SYRA_BRIDGE_API_KEY</code>.</span>
+                </div>
+
+                <p class="hint block" style="margin-top:0.5rem">3. Model profiles — map each tier to a provider model name:</p>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="continue-model-nano">syra-nano</label>
+                    <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
+                  </div>
+                  <div class="form-group">
+                    <label for="continue-model-base">syra-base</label>
+                    <input type="text" id="continue-model-base" placeholder="deepseek-chat">
+                  </div>
+                  <div class="form-group">
+                    <label for="continue-model-havy">syra-havy</label>
+                    <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="continue-default-profile">Default profile</label>
+                    <select id="continue-default-profile">
+                      <option value="syra-nano">syra-nano</option>
+                      <option value="syra-base">syra-base</option>
+                      <option value="syra-havy">syra-havy</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="agent-max-count">MNOA — max agents</label>
+                    <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
+                    <span class="hint">Max concurrent <code>cn serve</code> instances (ports 5200–5999).</span>
+                  </div>
+                </div>
+
+                <div id="continue-runtime-status" class="hint"></div>
+                <div class="form-actions">
+                  <button class="btn-pill btn-primary" id="save-ai-settings-btn">Save agent settings</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="projects-card ai-env-card">
+              <h2 class="ai-section-title">Environment variables</h2>
+              <p class="hint block">Syte injects these when starting <code>cn serve</code> for each project. You do not set them manually — configure keys and provider above.</p>
+              <div class="ai-env-grid">
+                <div class="ai-env-row">
+                  <code>SYRA_BRIDGE_API_KEY</code>
+                  <span>Provider/bridge API key from the field above. Continue uses it to authenticate chat requests to your bridge. <strong>Why:</strong> keeps the key out of project repos and config files on disk.</span>
+                </div>
+                <div class="ai-env-row">
+                  <code>HOME</code>
+                  <span>Per-project Continue home under <code>workspaces/{uuid}/data/continue/home</code>. <strong>Why:</strong> isolates agent state per workspace UUID.</span>
+                </div>
+                <div class="ai-env-row">
+                  <code>CONTINUE_GLOBAL_DIR</code>
+                  <span>Points to <code>…/home/.continue</code> for that project. <strong>Why:</strong> separate Continue config/cache per agent.</span>
+                </div>
+                <div class="ai-env-row">
+                  <code>CONTINUE_DISABLE_HUB</code>
+                  <span>Set to <code>1</code> — disables Continue Hub login. <strong>Why:</strong> Syte uses your bridge directly; no Continue account required.</span>
+                </div>
+                <div class="ai-env-row">
+                  <code>Project env_vars</code>
+                  <span>Your project's environment variables (from project → Environment tab) are merged in. <strong>Why:</strong> agents can run build tools with the same env as deploy/preview.</span>
+                </div>
+              </div>
+              <p class="hint" style="margin-top:0.75rem"><strong>Header (not env):</strong> <code>X-Syra-Internal-Secret</code> — sycord.com sends this on internal API calls so only your main site can start agents or request code changes.</p>
             </div>
 
             <div class="projects-card ai-chat-card">
@@ -525,158 +627,93 @@
         </section>
 
         <section id="view-settings" class="view">
-          <div class="projects-card panel-form">
-            <div class="projects-title-block mb">
-              <i data-lucide="settings" class="projects-icon"></i>
-              <div><h1>Settings</h1></div>
+          <div class="settings-stack">
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="server" class="projects-icon"></i>
+                <div><h1>Server</h1></div>
+              </div>
+              <div class="form-inner">
+                <div class="form-group">
+                  <label for="set-ip">Public IP</label>
+                  <input type="text" id="set-ip" placeholder="152.89.245.113">
+                  <span class="hint">IPv4 only — not a domain name</span>
+                </div>
+                <div class="form-group">
+                  <label for="set-email">Admin email</label>
+                  <input type="email" id="set-email" placeholder="admin@example.com">
+                </div>
+                <button class="btn-pill btn-primary" id="save-server-btn">Save</button>
+              </div>
             </div>
 
-            <nav class="settings-tabs" id="settings-tabs" aria-label="Settings sections">
-              <button type="button" class="settings-tab active" data-settings-tab="general">General</button>
-              <button type="button" class="settings-tab" data-settings-tab="agents">Agents</button>
-              <button type="button" class="settings-tab" data-settings-tab="provider">Provider</button>
-              <button type="button" class="settings-tab" data-settings-tab="keys">Keys</button>
-              <button type="button" class="settings-tab" data-settings-tab="server">Server</button>
-            </nav>
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="globe" class="projects-icon"></i>
+                <div><h1>Web GUI domain</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Custom domain for this interface — TLS via Caddy</p>
+                <div class="form-group">
+                  <label for="set-domain">Domain</label>
+                  <input type="text" id="set-domain" placeholder="sycord.site">
+                  <span class="hint">Enter domain only — no https:// prefix</span>
+                </div>
+                <div class="form-group">
+                  <label>Direct access (IP)</label>
+                  <div class="gui-url" id="direct-url">—</div>
+                </div>
+                <div class="form-group">
+                  <label>Custom domain</label>
+                  <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
+                </div>
+                <button class="btn-pill btn-primary" id="save-domain-btn">Apply domain</button>
+              </div>
+            </div>
 
-            <div class="settings-tab-panels">
-              <div class="settings-tab-panel active" data-settings-panel="general">
-                <div class="form-inner">
-                  <div class="form-group">
-                    <label for="set-email">Admin email</label>
-                    <input type="email" id="set-email" placeholder="admin@example.com">
-                  </div>
-                  <div class="form-group">
-                    <label>Installed version</label>
-                    <div class="gui-url" id="syte-version-general">—</div>
-                  </div>
-                  <button class="btn-pill btn-primary" id="save-general-btn">Save</button>
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="monitor-play" class="projects-icon"></i>
+                <div><h1>Preview domain</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Wildcard zone for production and preview HTTPS on <code>*.{zone}</code>.</p>
+                <div class="form-group">
+                  <label for="set-preview-domain">Preview base domain</label>
+                  <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
+                  <span class="hint" id="preview-dns-hint">Wildcard DNS <code>*.{zone}</code> → server. Hosts: <code id="preview-host-example">previewa-myapp.sycord.site</code></span>
+                </div>
+                <div class="form-group">
+                  <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
+                  <input type="password" id="set-cf-token" placeholder="Zone DNS Edit token for *.sycord.site" autocomplete="off">
+                  <span class="hint">Create in Cloudflare → My Profile → API Tokens → Zone DNS Edit for your preview zone.</span>
+                  <div id="cf-token-status" class="hint cf-token-status hidden"></div>
+                </div>
+                <div class="form-actions">
+                  <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
+                  <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
                 </div>
               </div>
+            </div>
 
-              <div class="settings-tab-panel" data-settings-panel="agents">
-                <div class="form-inner">
-                  <p class="hint block">Per-project Continue <code>cn serve</code> agents. sycord.com routes change requests by project UUID.</p>
-                  <div class="form-group">
-                    <label for="continue-default-profile">Default model profile</label>
-                    <select id="continue-default-profile">
-                      <option value="syra-nano">syra-nano</option>
-                      <option value="syra-base">syra-base</option>
-                      <option value="syra-havy">syra-havy</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="agent-max-count">MNOA — maximum agents</label>
-                    <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
-                    <span class="hint">Maximum concurrent Continue agents on this VM (ports 5200–5999).</span>
-                  </div>
-                  <div id="continue-runtime-status" class="hint"></div>
-                  <button class="btn-pill btn-primary" id="save-agents-settings-btn">Save agent settings</button>
-                </div>
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="refresh-cw" class="projects-icon"></i>
+                <div><h1>Update Syte</h1></div>
               </div>
-
-              <div class="settings-tab-panel" data-settings-panel="provider">
-                <div class="form-inner">
-                  <div class="form-group">
-                    <label for="continue-provider">Provider</label>
-                    <select id="continue-provider">
-                      <option value="openai">OpenAI-compatible</option>
-                      <option value="anthropic">Anthropic-compatible</option>
-                      <option value="google">Google / Gemini</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    <span class="hint">Provider name written to Continue config — bridge must match.</span>
+              <div class="form-inner">
+                <p class="hint block">Pull newest version, refresh dependencies, and restart automatically — data preserved</p>
+                <div class="version-row">
+                  <div>
+                    <span class="version-label">Installed</span>
+                    <span class="version-value" id="syte-version">—</span>
                   </div>
-                  <div class="form-group">
-                    <label for="continue-bridge-base">Bridge API base</label>
-                    <input type="text" id="continue-bridge-base" placeholder="https://bridge.sycord.internal/v1">
-                  </div>
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label for="continue-model-nano">syra-nano model</label>
-                      <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
-                    </div>
-                    <div class="form-group">
-                      <label for="continue-model-base">syra-base model</label>
-                      <input type="text" id="continue-model-base" placeholder="deepseek-chat">
-                    </div>
-                    <div class="form-group">
-                      <label for="continue-model-havy">syra-havy model</label>
-                      <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
-                    </div>
-                  </div>
-                  <button class="btn-pill btn-primary" id="save-provider-settings-btn">Save provider settings</button>
+                  <button class="btn-pill btn-primary" id="update-syte-btn">
+                    <i data-lucide="download"></i>
+                    <span>Update Syte</span>
+                  </button>
                 </div>
-              </div>
-
-              <div class="settings-tab-panel" data-settings-panel="keys">
-                <div class="form-inner">
-                  <div class="form-group">
-                    <label for="continue-bridge-key">Bridge API key</label>
-                    <input type="password" id="continue-bridge-key" placeholder="optional bridge API key" autocomplete="off">
-                    <span class="hint">Injected as <code>SYRA_BRIDGE_API_KEY</code> for Continue on the VM.</span>
-                  </div>
-                  <div class="form-group">
-                    <label for="syra-internal-secret">Syra internal secret</label>
-                    <input type="password" id="syra-internal-secret" placeholder="shared secret for sycord.com → Syte" autocomplete="off">
-                    <span class="hint">Header <code>X-Syra-Internal-Secret</code> on <code>/api/internal/*</code> routes.</span>
-                  </div>
-                  <div class="form-group">
-                    <label for="set-cf-token">Cloudflare API token</label>
-                    <input type="password" id="set-cf-token" placeholder="Zone DNS Edit token" autocomplete="off">
-                    <div id="cf-token-status" class="hint cf-token-status hidden"></div>
-                  </div>
-                  <button class="btn-pill btn-primary" id="save-keys-settings-btn">Save keys</button>
-                </div>
-              </div>
-
-              <div class="settings-tab-panel" data-settings-panel="server">
-                <div class="form-inner">
-                  <div class="form-group">
-                    <label for="set-ip">Public IP</label>
-                    <input type="text" id="set-ip" placeholder="152.89.245.113">
-                    <span class="hint">IPv4 only — not a domain name</span>
-                  </div>
-                  <div class="form-group">
-                    <label for="set-domain">Web GUI domain</label>
-                    <input type="text" id="set-domain" placeholder="sycord.site">
-                  </div>
-                  <div class="form-group">
-                    <label>Direct access</label>
-                    <div class="gui-url" id="direct-url">—</div>
-                  </div>
-                  <div class="form-group">
-                    <label>Custom domain</label>
-                    <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
-                  </div>
-                  <button class="btn-pill btn-primary" id="save-server-btn">Save server</button>
-                  <button class="btn-pill btn-ghost" id="save-domain-btn">Apply domain</button>
-
-                  <hr class="settings-divider">
-                  <p class="hint block">Preview wildcard zone for <code>preview*-{app}.{zone}</code></p>
-                  <div class="form-group">
-                    <label for="set-preview-domain">Preview base domain</label>
-                    <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
-                    <span class="hint" id="preview-dns-hint">Wildcard DNS <code>*.{zone}</code> → server</span>
-                  </div>
-                  <div class="form-actions">
-                    <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
-                    <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
-                  </div>
-
-                  <hr class="settings-divider">
-                  <div class="version-row">
-                    <div>
-                      <span class="version-label">Syte version</span>
-                      <span class="version-value" id="syte-version">—</span>
-                    </div>
-                    <button class="btn-pill btn-primary" id="update-syte-btn">
-                      <i data-lucide="download"></i><span>Update Syte</span>
-                    </button>
-                  </div>
-                  <div id="update-result" class="result-box hidden"></div>
-                </div>
+                <div id="update-result" class="result-box hidden"></div>
               </div>
             </div>
           </div>

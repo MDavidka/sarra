@@ -268,7 +268,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') loadAiDashboard();
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); }
   if (name === 'settings') loadSettings();
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
@@ -1059,6 +1059,7 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
       method: 'PUT',
       body: JSON.stringify({
         public_ip: document.getElementById('set-ip').value || null,
+        admin_email: document.getElementById('set-email').value || null,
       }),
     });
     toast(res.messages?.join(' ') || 'saved');
@@ -1068,77 +1069,37 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
   }
 });
 
-document.getElementById('save-general-btn')?.addEventListener('click', async () => {
-  try {
-    const res = await api('/settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        admin_email: document.getElementById('set-email').value || null,
-      }),
-    });
-    toast(res.messages?.join(' ') || 'saved');
-  } catch (e) {
-    toast('Error: ' + e.message);
-  }
-});
-
-async function saveSettingsPayload(body, label, btn) {
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'saving…';
-  }
-  try {
-    const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
-    toast(Array.isArray(res.messages) ? res.messages.join(' ') : label);
-    await loadSettings();
-    if (document.getElementById('view-ai')?.classList.contains('active')) await loadAiDashboard();
-  } catch (e) {
-    toast('Error: ' + e.message);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = btn.dataset.label || label;
-    }
-  }
-}
-
-document.getElementById('save-agents-settings-btn')?.addEventListener('click', async () => {
-  const btn = document.getElementById('save-agents-settings-btn');
-  btn.dataset.label = 'Save agent settings';
+document.getElementById('save-ai-settings-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('save-ai-settings-btn');
+  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
+  const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const body = {
-    continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
-  };
-  if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
-  await saveSettingsPayload(body, 'Agent settings saved', btn);
-});
-
-document.getElementById('save-provider-settings-btn')?.addEventListener('click', async () => {
-  const btn = document.getElementById('save-provider-settings-btn');
-  btn.dataset.label = 'Save provider settings';
-  await saveSettingsPayload({
-    continue_provider: document.getElementById('continue-provider')?.value || 'openai',
     continue_bridge_api_base: document.getElementById('continue-bridge-base')?.value?.trim() || '',
+    continue_provider: document.getElementById('continue-provider')?.value || 'openai',
+    continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
     continue_syra_nano_model: document.getElementById('continue-model-nano')?.value?.trim() || '',
     continue_syra_base_model: document.getElementById('continue-model-base')?.value?.trim() || '',
     continue_syra_havy_model: document.getElementById('continue-model-havy')?.value?.trim() || '',
-  }, 'Provider settings saved', btn);
-});
-
-document.getElementById('save-keys-settings-btn')?.addEventListener('click', async () => {
-  const btn = document.getElementById('save-keys-settings-btn');
-  btn.dataset.label = 'Save keys';
-  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
-  const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
-  const cfToken = document.getElementById('set-cf-token')?.value?.trim() || '';
-  const body = {};
+  };
   if (bridgeKey) body.continue_bridge_api_key = bridgeKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
-  if (cfToken) body.cloudflare_api_token = cfToken;
-  await saveSettingsPayload(body, 'Keys saved', btn);
-  if (bridgeKey) document.getElementById('continue-bridge-key').value = '';
-  if (internalSecret) document.getElementById('syra-internal-secret').value = '';
-  if (cfToken) document.getElementById('set-cf-token').value = '';
+  if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
+  btn.disabled = true;
+  btn.textContent = 'saving…';
+  try {
+    const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
+    toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Agent settings saved');
+    if (bridgeKey) document.getElementById('continue-bridge-key').value = '';
+    if (internalSecret) document.getElementById('syra-internal-secret').value = '';
+    await loadSettings();
+    await loadAiDashboard();
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save agent settings';
+  }
 });
 
 document.getElementById('save-domain-btn')?.addEventListener('click', async () => {
@@ -1342,22 +1303,10 @@ async function loadSettings() {
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');
     const ver = document.getElementById('syte-version');
-    const verGeneral = document.getElementById('syte-version-general');
     if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
-    if (verGeneral && s.version) verGeneral.textContent = 'v' + s.version;
   } catch { /* */ }
-}
-
-function switchSettingsTab(name) {
-  document.querySelectorAll('.settings-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.settingsTab === name);
-  });
-  document.querySelectorAll('.settings-tab-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.dataset.settingsPanel === name);
-  });
-  refreshIcons();
 }
 
 function appendAiChatMsg(role, text) {
@@ -1408,7 +1357,7 @@ async function loadAiDashboard() {
     if (hint) {
       hint.textContent = onboard.complete
         ? 'Onboarding complete — agents ready for sycord.com requests.'
-        : 'Complete setup in Settings → Provider / Keys / Agents';
+        : 'Complete agent setup in the configuration section below';
     }
   } catch { /* */ }
   refreshIcons();
@@ -1557,12 +1506,6 @@ document.getElementById('svc-tabs')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.svc-tab');
   if (!btn?.dataset.svcTab) return;
   switchSvcTab(btn.dataset.svcTab);
-});
-
-document.getElementById('settings-tabs')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.settings-tab');
-  if (!btn?.dataset.settingsTab) return;
-  switchSettingsTab(btn.dataset.settingsTab);
 });
 
 document.getElementById('ai-chat-send-btn')?.addEventListener('click', sendAiChat);
