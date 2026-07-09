@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
 from syte.config import settings
 from syte.database import get_project, get_setting, list_projects, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
@@ -75,19 +76,38 @@ async def next_agent_port() -> int:
     )
 
 
-async def bridge_settings() -> dict[str, str]:
-    bridge_url = (await get_setting("continue_bridge_api_base", "")).strip()
-    api_key = (await get_setting("continue_bridge_api_key", "")).strip()
+async def profile_api_key(profile: str) -> str:
+    spec = profile_provider(profile)
+    return (await get_setting(spec["setting_key"], "")).strip()
+
+
+async def bridge_settings() -> dict[str, Any]:
     default_profile = (await get_setting("continue_default_model_profile", "syra-base")).strip() or "syra-base"
-    provider = (await get_setting("continue_provider", "openai")).strip() or "openai"
+    profiles: dict[str, dict[str, str]] = {}
+    for name in PROFILE_ORDER:
+        spec = PROFILE_PROVIDERS[name]
+        profiles[name] = {
+            "label": spec["label"],
+            "provider": spec["provider"],
+            "api_base": spec["api_base"],
+            "model": spec["model"],
+            "api_key": await profile_api_key(name),
+            "secret_env": spec["secret_env"],
+            "setting_key": spec["setting_key"],
+        }
+    active = profiles.get(default_profile, profiles["syra-base"])
     return {
-        "api_base": bridge_url.rstrip("/"),
-        "api_key": api_key,
         "default_profile": default_profile,
-        "provider": provider,
-        "syra_nano_model": (await get_setting("continue_syra_nano_model", "gemini-2.5-flash")).strip() or "gemini-2.5-flash",
-        "syra_base_model": (await get_setting("continue_syra_base_model", "deepseek-chat")).strip() or "deepseek-chat",
-        "syra_havy_model": (await get_setting("continue_syra_havy_model", "gemini-2.5-pro")).strip() or "gemini-2.5-pro",
+        "profiles": profiles,
+        "api_base": active["api_base"],
+        "api_key": active["api_key"],
+        "provider": active["provider"],
+        "syra_nano_model": profiles["syra-nano"]["model"],
+        "syra_base_model": profiles["syra-base"]["model"],
+        "syra_havy_model": profiles["syra-havy"]["model"],
+        "syra_nano_api_key": profiles["syra-nano"]["api_key"],
+        "syra_base_api_key": profiles["syra-base"]["api_key"],
+        "syra_havy_api_key": profiles["syra-havy"]["api_key"],
     }
 
 
@@ -132,16 +152,14 @@ async def ensure_agent_runtime(project: dict) -> dict:
 async def selected_model_metadata(project: dict) -> dict[str, str]:
     bridge = await bridge_settings()
     profile = (project.get("agent_model_profile") or bridge["default_profile"] or "syra-base").strip()
-    model_map = {
-        "syra-nano": bridge["syra_nano_model"],
-        "syra-base": bridge["syra_base_model"],
-        "syra-havy": bridge["syra_havy_model"],
-    }
+    spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
     return {
         "profile": profile,
-        "provider": bridge["provider"],
-        "model": model_map.get(profile, bridge["syra_base_model"]),
-        "api_base": bridge["api_base"],
+        "provider": spec["provider"],
+        "provider_label": spec["label"],
+        "model": spec["model"],
+        "api_base": spec["api_base"],
+        "api_key": spec["api_key"],
     }
 
 
@@ -150,27 +168,22 @@ async def write_agent_config(project: dict) -> Path:
     bridge = await bridge_settings()
     config_path = agent_config_path(project["id"])
     model_data = await selected_model_metadata(project)
-    api_base = bridge["api_base"]
 
-    models = [
-        ("syra-nano", bridge["syra_nano_model"]),
-        ("syra-base", bridge["syra_base_model"]),
-        ("syra-havy", bridge["syra_havy_model"]),
-    ]
-    ordered = sorted(models, key=lambda item: item[0] != model_data["profile"])
+    ordered = sorted(PROFILE_ORDER, key=lambda name: name != model_data["profile"])
     lines = [
         "name: Syte Continue",
         "version: 1.0.0",
         "schema: v1",
         "models:",
     ]
-    for alias, model_name in ordered:
+    for alias in ordered:
+        spec = bridge["profiles"][alias]
         lines.extend([
             f"  - name: {_yaml_quote(alias)}",
-            f"    provider: {_yaml_quote(bridge['provider'])}",
-            f"    model: {_yaml_quote(model_name)}",
-            f"    apiBase: {_yaml_quote(api_base)}",
-            '    apiKey: "${{ secrets.SYRA_BRIDGE_API_KEY }}"',
+            f"    provider: {_yaml_quote(spec['provider'])}",
+            f"    model: {_yaml_quote(spec['model'])}",
+            f"    apiBase: {_yaml_quote(spec['api_base'])}",
+            f'    apiKey: "${{ secrets.{spec["secret_env"]} }}"',
             "    roles:",
             "      - chat",
             "      - edit",
@@ -183,16 +196,15 @@ async def write_agent_config(project: dict) -> Path:
 async def backend_health(project: dict) -> dict[str, Any]:
     model = await selected_model_metadata(project)
     api_base = model["api_base"]
-    if not api_base:
+    api_key = model["api_key"]
+    if not api_key:
         return {
             "ok": False,
-            "error": "continue_bridge_api_base not configured",
+            "error": f"{model.get('provider_label', 'Provider')} API key not configured for {model['profile']}",
             "url": None,
+            "profile": model["profile"],
         }
-    headers = {}
-    bridge = await bridge_settings()
-    if bridge["api_key"]:
-        headers["Authorization"] = f"Bearer {bridge['api_key']}"
+    headers = {"Authorization": f"Bearer {api_key}"}
     url = api_base.rstrip("/") + "/models"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -280,10 +292,12 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         **os.environ,
         **read_env_vars(project.get("env_vars", "{}")),
         "HOME": str(home),
-        "SYRA_BRIDGE_API_KEY": bridge["api_key"],
         "CONTINUE_GLOBAL_DIR": str(home / ".continue"),
         "CONTINUE_DISABLE_HUB": "1",
     }
+    for name in PROFILE_ORDER:
+        spec = bridge["profiles"][name]
+        env[spec["secret_env"]] = spec["api_key"]
     command = f'{continue_command()} serve --config "{config_path}" --host 127.0.0.1 --port {port}'
 
     log_file = open(log_path, "a")
@@ -494,12 +508,15 @@ async def communicate_with_agent(
         return {"ok": False, "error": "agent_communicate_failed", "message": err}
 
 
-async def test_agent(project_id: str, *, source: str = "api") -> dict:
+async def test_agent(project_id: str, *, source: str = "api", model_profile: str | None = None) -> dict:
     from syte.agent_metrics import log_agent_request
 
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found"}
+
+    if model_profile:
+        await update_agent_settings(project_id, model_profile=model_profile)
 
     status = await get_agent_status(project_id)
     backend = status.get("agent_backend") or {}

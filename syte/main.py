@@ -120,13 +120,10 @@ class SettingsRequest(BaseModel):
     preview_base_domain: str | None = None
     cloudflare_api_token: str | None = None
     preview_wildcard_tls: str | None = None
-    continue_bridge_api_base: str | None = None
-    continue_bridge_api_key: str | None = None
     continue_default_model_profile: str | None = None
-    continue_syra_nano_model: str | None = None
-    continue_syra_base_model: str | None = None
-    continue_syra_havy_model: str | None = None
-    continue_provider: str | None = None
+    continue_syra_nano_api_key: str | None = None
+    continue_syra_base_api_key: str | None = None
+    continue_syra_havy_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
 
@@ -257,6 +254,7 @@ async def _gui_url() -> str:
 
 @app.get("/api/settings")
 async def get_settings():
+    from syte.ai_providers import provider_catalog
     from syte.continue_agent import bridge_settings
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
@@ -278,13 +276,14 @@ async def get_settings():
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
-        "continue_bridge_api_base": bridge["api_base"],
-        "continue_bridge_api_key_set": bool(bridge["api_key"]),
         "continue_default_model_profile": bridge["default_profile"],
         "continue_syra_nano_model": bridge["syra_nano_model"],
         "continue_syra_base_model": bridge["syra_base_model"],
         "continue_syra_havy_model": bridge["syra_havy_model"],
-        "continue_provider": bridge["provider"],
+        "continue_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
+        "continue_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
+        "continue_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
+        "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
         "preview_dns_hint": (
@@ -384,33 +383,31 @@ async def save_settings(body: SettingsRequest):
         proxy_updated = True
         messages.append(f"Preview wildcard TLS mode: {mode}")
 
-    if body.continue_bridge_api_base is not None:
-        await set_setting("continue_bridge_api_base", body.continue_bridge_api_base.strip().rstrip("/"))
-        messages.append("Continue bridge API base updated.")
-    if body.continue_bridge_api_key is not None:
-        await set_setting("continue_bridge_api_key", body.continue_bridge_api_key.strip())
-        messages.append(
-            "Continue bridge API key saved."
-            if body.continue_bridge_api_key.strip()
-            else "Continue bridge API key cleared."
-        )
     if body.continue_default_model_profile is not None:
         profile = body.continue_default_model_profile.strip() or "syra-base"
         await set_setting("continue_default_model_profile", profile)
         messages.append(f"Default Continue model profile: {profile}")
-    if body.continue_syra_nano_model is not None:
-        await set_setting("continue_syra_nano_model", body.continue_syra_nano_model.strip())
-        messages.append("Updated syra-nano bridge model.")
-    if body.continue_syra_base_model is not None:
-        await set_setting("continue_syra_base_model", body.continue_syra_base_model.strip())
-        messages.append("Updated syra-base bridge model.")
-    if body.continue_syra_havy_model is not None:
-        await set_setting("continue_syra_havy_model", body.continue_syra_havy_model.strip())
-        messages.append("Updated syra-havy bridge model.")
-    if body.continue_provider is not None:
-        provider = body.continue_provider.strip().lower() or "openai"
-        await set_setting("continue_provider", provider)
-        messages.append(f"Continue provider: {provider}")
+    if body.continue_syra_nano_api_key is not None:
+        await set_setting("continue_syra_nano_api_key", body.continue_syra_nano_api_key.strip())
+        messages.append(
+            "syra-nano (Verted) API key saved."
+            if body.continue_syra_nano_api_key.strip()
+            else "syra-nano API key cleared."
+        )
+    if body.continue_syra_base_api_key is not None:
+        await set_setting("continue_syra_base_api_key", body.continue_syra_base_api_key.strip())
+        messages.append(
+            "syra-base (DeepSeek) API key saved."
+            if body.continue_syra_base_api_key.strip()
+            else "syra-base API key cleared."
+        )
+    if body.continue_syra_havy_api_key is not None:
+        await set_setting("continue_syra_havy_api_key", body.continue_syra_havy_api_key.strip())
+        messages.append(
+            "syra-havy (Verted) API key saved."
+            if body.continue_syra_havy_api_key.strip()
+            else "syra-havy API key cleared."
+        )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))
         await set_setting("agent_max_count", str(count))
@@ -635,6 +632,10 @@ class AgentChatRequest(BaseModel):
     model_profile: str | None = None
 
 
+class AgentTestRequest(BaseModel):
+    model_profile: str | None = None
+
+
 @app.get("/api/agent_dashboard")
 async def api_agent_dashboard_gui():
     from syte.agent_metrics import get_dashboard_metrics
@@ -643,13 +644,14 @@ async def api_agent_dashboard_gui():
 
 
 @app.post("/api/projects/{project_id}/agent/test")
-async def api_agent_test_gui(project_id: str):
+async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
     from syte.continue_agent import test_agent
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return await test_agent(project_id, source="gui")
+    profile = body.model_profile if body else None
+    return await test_agent(project_id, source="gui", model_profile=profile)
 
 
 @app.post("/api/projects/{project_id}/agent/chat")

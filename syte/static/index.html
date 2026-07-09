@@ -480,8 +480,8 @@
                 <summary class="ai-onboard-summary">Onboarding <span class="ai-onboard-badge" id="ai-onboard-badge">—</span></summary>
                 <ul class="ai-checklist" id="ai-checklist">
                   <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
-                  <li data-step="ai_models"><span class="ai-check-box"></span><span>Bridge + 3 models</span></li>
-                  <li data-step="provider"><span class="ai-check-box"></span><span>Provider selected</span></li>
+                  <li data-step="ai_models"><span class="ai-check-box"></span><span>3 model API keys</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Verted + DeepSeek</span></li>
                   <li data-step="cli_server"><span class="ai-check-box"></span><span>Continue CLI installed</span></li>
                 </ul>
                 <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
@@ -489,37 +489,24 @@
 
               <div class="ai-api-warning hidden" id="ai-api-warning">
                 <i data-lucide="alert-triangle"></i>
-                <span>Provider API not configured — open settings to set bridge URL and API key.</span>
+                <span>Model API keys missing — open settings to add Verted and DeepSeek keys.</span>
               </div>
             </div>
 
-            <div class="ai-chat-shell">
-              <div class="ai-chat-toolbar">
-                <select id="ai-chat-project" class="toolbar-select ai-chat-select" aria-label="Project">
-                  <option value="">Project…</option>
-                </select>
-                <select id="ai-chat-profile" class="toolbar-select ai-chat-profile" aria-label="Model profile">
-                  <option value="syra-nano">nano</option>
-                  <option value="syra-base" selected>base</option>
-                  <option value="syra-havy">havy</option>
-                </select>
-                <div class="ai-chat-actions">
-                  <button type="button" class="btn-pill btn-ghost btn-sm ai-icon-btn" id="ai-test-agent-btn" title="Test agent">
-                    <i data-lucide="zap"></i>
-                  </button>
-                  <button type="button" class="btn-pill btn-ghost btn-sm ai-icon-btn" id="ai-start-agent-btn" title="Start agent">
-                    <i data-lucide="play"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="ai-chat-log" id="ai-chat-log"></div>
-              <div class="ai-chat-compose">
-                <textarea id="ai-chat-input" rows="1" placeholder="Ask the agent to change something…"></textarea>
-                <button type="button" class="btn-pill btn-primary ai-send-btn" id="ai-chat-send-btn" aria-label="Send">
-                  <i data-lucide="send"></i>
-                </button>
-              </div>
-              <div id="ai-chat-status" class="hint ai-chat-status"></div>
+            <div class="ai-test-bar">
+              <select id="ai-test-project" class="toolbar-select ai-test-select" aria-label="Project">
+                <option value="">Project…</option>
+              </select>
+              <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
+                <option value="syra-nano">nano</option>
+                <option value="syra-base" selected>base</option>
+                <option value="syra-havy">havy</option>
+              </select>
+              <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
+                <i data-lucide="zap"></i>
+                <span>Test</span>
+              </button>
+              <div id="ai-test-status" class="hint ai-test-status"></div>
             </div>
 
             <footer class="ai-footer">
@@ -538,40 +525,44 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">Required before agents can run. Provider API key is injected as <code>SYRA_BRIDGE_API_KEY</code> on the VM.</p>
+              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, and <code>SYRA_HAVY_API_KEY</code> on the VM.</p>
 
-              <div class="form-group">
-                <label for="continue-bridge-base">Bridge API URL <span class="req-mark">*</span></label>
-                <input type="url" id="continue-bridge-base" placeholder="https://api.openai.com/v1" required>
-              </div>
-              <div class="form-group">
-                <label for="continue-bridge-key">Provider API key <span class="req-mark">*</span></label>
-                <input type="password" id="continue-bridge-key" placeholder="sk-… or provider key" autocomplete="off" required>
-                <span class="hint" id="continue-bridge-key-hint">Required — agents cannot call models without this.</span>
-              </div>
-              <div class="form-group">
-                <label for="continue-provider">Provider</label>
-                <select id="continue-provider">
-                  <option value="openai">OpenAI-compatible</option>
-                  <option value="anthropic">Anthropic-compatible</option>
-                  <option value="google">Google / Gemini</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="custom">Custom</option>
-                </select>
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-nano</strong>
+                  <span class="ai-key-provider">Verted · gemini-2.5-flash</span>
+                </div>
+                <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
+                <div class="form-group">
+                  <label for="continue-nano-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="continue-nano-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="continue-nano-key-hint">Required for nano profile.</span>
+                </div>
               </div>
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="continue-model-nano">syra-nano</label>
-                  <input type="text" id="continue-model-nano" placeholder="gemini-2.5-flash">
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-base</strong>
+                  <span class="ai-key-provider">DeepSeek · deepseek-chat</span>
                 </div>
+                <code class="ai-key-url">https://api.deepseek.com/v1</code>
                 <div class="form-group">
-                  <label for="continue-model-base">syra-base</label>
-                  <input type="text" id="continue-model-base" placeholder="deepseek-chat">
+                  <label for="continue-base-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="continue-base-key" placeholder="DeepSeek API key" autocomplete="off">
+                  <span class="hint" id="continue-base-key-hint">Required for base profile.</span>
                 </div>
+              </div>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-havy</strong>
+                  <span class="ai-key-provider">Verted · gemini-2.5-pro</span>
+                </div>
+                <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
                 <div class="form-group">
-                  <label for="continue-model-havy">syra-havy</label>
-                  <input type="text" id="continue-model-havy" placeholder="gemini-2.5-pro">
+                  <label for="continue-havy-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="continue-havy-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="continue-havy-key-hint">Required for havy profile.</span>
                 </div>
               </div>
 
@@ -599,7 +590,9 @@
               <details class="ai-env-details">
                 <summary>Environment variables (auto-injected)</summary>
                 <div class="ai-env-grid">
-                  <div class="ai-env-row"><code>SYRA_BRIDGE_API_KEY</code><span>Provider key — not stored in repos</span></div>
+                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
+                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
+                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
                   <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
                   <div class="ai-env-row"><code>CONTINUE_DISABLE_HUB</code><span>No Continue Hub login required</span></div>
                 </div>

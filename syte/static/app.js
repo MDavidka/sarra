@@ -284,7 +284,21 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = false;
+let aiApiConfigured = { nano: false, base: false, havy: false };
+
+function aiKeySaved(id) {
+  return document.getElementById(id)?.placeholder?.includes('saved');
+}
+
+function updateAiApiWarning() {
+  const warn = document.getElementById('ai-api-warning');
+  const nanoOk = aiApiConfigured.nano || aiKeySaved('continue-nano-key');
+  const baseOk = aiApiConfigured.base || aiKeySaved('continue-base-key');
+  const havyOk = aiApiConfigured.havy || aiKeySaved('continue-havy-key');
+  const ok = nanoOk && baseOk && havyOk;
+  if (warn) warn.classList.toggle('hidden', ok);
+  return ok;
+}
 
 function openAiSettings() {
   const sheet = document.getElementById('ai-settings-sheet');
@@ -300,15 +314,6 @@ function closeAiSettings() {
   if (!sheet) return;
   sheet.classList.add('hidden');
   document.body.classList.remove('ai-settings-open');
-}
-
-function updateAiApiWarning() {
-  const warn = document.getElementById('ai-api-warning');
-  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim();
-  const keySet = aiApiConfigured || document.getElementById('continue-bridge-key')?.placeholder?.includes('saved');
-  const ok = Boolean(bridgeBase) && keySet;
-  if (warn) warn.classList.toggle('hidden', ok);
-  return ok;
 }
 
 async function api(path, opts = {}) {
@@ -1100,21 +1105,23 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 
 document.getElementById('save-ai-settings-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('save-ai-settings-btn');
-  const bridgeBase = document.getElementById('continue-bridge-base')?.value?.trim() || '';
-  const bridgeKey = document.getElementById('continue-bridge-key')?.value?.trim() || '';
+  const nanoKey = document.getElementById('continue-nano-key')?.value?.trim() || '';
+  const baseKey = document.getElementById('continue-base-key')?.value?.trim() || '';
+  const havyKey = document.getElementById('continue-havy-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
-  if (!bridgeBase) return toast('Bridge API URL is required');
-  if (!bridgeKey && !aiApiConfigured) return toast('Provider API key is required');
+  const needNano = !nanoKey && !aiApiConfigured.nano;
+  const needBase = !baseKey && !aiApiConfigured.base;
+  const needHavy = !havyKey && !aiApiConfigured.havy;
+  if (needNano || needBase || needHavy) {
+    return toast('All three model API keys are required');
+  }
   const body = {
-    continue_bridge_api_base: bridgeBase,
-    continue_provider: document.getElementById('continue-provider')?.value || 'openai',
     continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
-    continue_syra_nano_model: document.getElementById('continue-model-nano')?.value?.trim() || '',
-    continue_syra_base_model: document.getElementById('continue-model-base')?.value?.trim() || '',
-    continue_syra_havy_model: document.getElementById('continue-model-havy')?.value?.trim() || '',
   };
-  if (bridgeKey) body.continue_bridge_api_key = bridgeKey;
+  if (nanoKey) body.continue_syra_nano_api_key = nanoKey;
+  if (baseKey) body.continue_syra_base_api_key = baseKey;
+  if (havyKey) body.continue_syra_havy_api_key = havyKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   btn.disabled = true;
@@ -1122,7 +1129,9 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   try {
     const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
     toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Provider settings saved');
-    if (bridgeKey) document.getElementById('continue-bridge-key').value = '';
+    if (nanoKey) document.getElementById('continue-nano-key').value = '';
+    if (baseKey) document.getElementById('continue-base-key').value = '';
+    if (havyKey) document.getElementById('continue-havy-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     await loadSettings();
     await loadAiDashboard();
@@ -1262,13 +1271,10 @@ async function loadSettings() {
     const previewDnsHint = document.getElementById('preview-dns-hint');
     const cfToken = document.getElementById('set-cf-token');
     const cfStatus = document.getElementById('cf-token-status');
-    const continueBridgeBase = document.getElementById('continue-bridge-base');
-    const continueBridgeKey = document.getElementById('continue-bridge-key');
     const continueDefaultProfile = document.getElementById('continue-default-profile');
-    const continueModelNano = document.getElementById('continue-model-nano');
-    const continueModelBase = document.getElementById('continue-model-base');
-    const continueModelHavy = document.getElementById('continue-model-havy');
-    const continueProvider = document.getElementById('continue-provider');
+    const continueNanoKey = document.getElementById('continue-nano-key');
+    const continueBaseKey = document.getElementById('continue-base-key');
+    const continueHavyKey = document.getElementById('continue-havy-key');
     const agentMaxCount = document.getElementById('agent-max-count');
     const continueRuntimeStatus = document.getElementById('continue-runtime-status');
     const syraInternalSecret = document.getElementById('syra-internal-secret');
@@ -1307,26 +1313,27 @@ async function loadSettings() {
         cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
       }
     }
-    if (continueBridgeBase) continueBridgeBase.value = s.continue_bridge_api_base || '';
     if (continueDefaultProfile && s.continue_default_model_profile) continueDefaultProfile.value = s.continue_default_model_profile;
-    if (continueModelNano) continueModelNano.value = s.continue_syra_nano_model || '';
-    if (continueModelBase) continueModelBase.value = s.continue_syra_base_model || '';
-    if (continueModelHavy) continueModelHavy.value = s.continue_syra_havy_model || '';
-    if (continueProvider && s.continue_provider) continueProvider.value = s.continue_provider;
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
-    if (continueBridgeKey) {
-      continueBridgeKey.placeholder = s.continue_bridge_api_key_set
-        ? 'key saved — enter new value to replace'
-        : 'sk-… required';
-    }
-    aiApiConfigured = Boolean(s.continue_bridge_api_base) && Boolean(s.continue_bridge_api_key_set);
-    const keyHint = document.getElementById('continue-bridge-key-hint');
-    if (keyHint) {
-      keyHint.textContent = s.continue_bridge_api_key_set
-        ? 'API key saved on server'
-        : 'Required — agents cannot call models without this';
-    }
+    const keyFields = [
+      ['continue-nano-key', 'continue-nano-key-hint', s.continue_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
+      ['continue-base-key', 'continue-base-key-hint', s.continue_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
+      ['continue-havy-key', 'continue-havy-key-hint', s.continue_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
+    ];
+    keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
+      const input = document.getElementById(inputId);
+      const hint = document.getElementById(hintId);
+      if (input) {
+        input.placeholder = saved ? 'key saved — enter new value to replace' : 'required';
+      }
+      if (hint) hint.textContent = saved ? savedText : requiredText;
+    });
+    aiApiConfigured = {
+      nano: Boolean(s.continue_syra_nano_api_key_set),
+      base: Boolean(s.continue_syra_base_api_key_set),
+      havy: Boolean(s.continue_syra_havy_api_key_set),
+    };
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
         ? 'internal secret saved — enter new value to replace'
@@ -1334,9 +1341,10 @@ async function loadSettings() {
     }
     if (continueRuntimeStatus) {
       const parts = [];
-      if (s.continue_bridge_api_base) parts.push(`bridge: ${s.continue_bridge_api_base}`);
       parts.push(`default: ${s.continue_default_model_profile || 'syra-base'}`);
-      parts.push(s.continue_bridge_api_key_set ? 'bridge key saved' : 'no bridge key');
+      parts.push(s.continue_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
+      parts.push(s.continue_syra_base_api_key_set ? 'base key saved' : 'no base key');
+      parts.push(s.continue_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       continueRuntimeStatus.textContent = parts.join(' · ');
     }
@@ -1350,18 +1358,8 @@ async function loadSettings() {
   } catch { /* */ }
 }
 
-function appendAiChatMsg(role, text) {
-  const log = document.getElementById('ai-chat-log');
-  if (!log) return;
-  const div = document.createElement('div');
-  div.className = `ai-chat-msg ${role}`;
-  div.textContent = (role === 'user' ? 'You: ' : role === 'agent' ? 'Agent: ' : '') + text;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-}
-
-function renderAiChatProjects() {
-  const sel = document.getElementById('ai-chat-project');
+function renderAiTestProjects() {
+  const sel = document.getElementById('ai-test-project');
   if (!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">Select project…</option>' +
@@ -1370,7 +1368,7 @@ function renderAiChatProjects() {
 }
 
 async function loadAiDashboard() {
-  renderAiChatProjects();
+  renderAiTestProjects();
   try {
     const d = await api('/agent_dashboard');
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -1399,49 +1397,12 @@ async function loadAiDashboard() {
     if (hint) {
       hint.textContent = onboard.complete
         ? 'Ready for sycord.com agent requests'
-        : 'Tap settings (top right) to set provider API';
+        : 'Tap settings (top right) to add model API keys';
     }
     updateAiApiWarning();
+    if (!updateAiApiWarning()) openAiSettings();
   } catch { /* */ }
   refreshIcons();
-}
-
-async function sendAiChat() {
-  const uuid = document.getElementById('ai-chat-project')?.value;
-  const message = document.getElementById('ai-chat-input')?.value?.trim();
-  const profile = document.getElementById('ai-chat-profile')?.value;
-  const statusEl = document.getElementById('ai-chat-status');
-  if (!uuid) return toast('select a project first');
-  if (!message) return;
-  if (!updateAiApiWarning()) {
-    toast('Configure provider API first');
-    openAiSettings();
-    return;
-  }
-  appendAiChatMsg('user', message);
-  document.getElementById('ai-chat-input').value = '';
-  if (statusEl) statusEl.textContent = 'Agent thinking…';
-  const btn = document.getElementById('ai-chat-send-btn');
-  if (btn) btn.disabled = true;
-  try {
-    const res = await api(`/projects/${uuid}/agent/chat`, {
-      method: 'POST',
-      body: JSON.stringify({ message, model_profile: profile }),
-    });
-    if (res.ok && res.reply) {
-      appendAiChatMsg('agent', res.reply);
-      if (statusEl) statusEl.textContent = `Model: ${res.model || '—'} · Provider shown in agent response only`;
-    } else {
-      appendAiChatMsg('system', res.message || 'No reply from agent');
-      if (statusEl) statusEl.textContent = res.message || 'Communication failed';
-    }
-    await loadAiDashboard();
-  } catch (e) {
-    appendAiChatMsg('system', e.message);
-    if (statusEl) statusEl.textContent = e.message;
-  } finally {
-    if (btn) btn.disabled = false;
-  }
 }
 
 function esc(s) {
@@ -1560,49 +1521,37 @@ document.getElementById('ai-header-settings-btn')?.addEventListener('click', ope
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 
-document.getElementById('ai-chat-send-btn')?.addEventListener('click', sendAiChat);
-document.getElementById('ai-chat-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendAiChat();
-  }
-});
-
 document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
-  const uuid = document.getElementById('ai-chat-project')?.value;
+  const uuid = document.getElementById('ai-test-project')?.value;
+  const profile = document.getElementById('ai-test-profile')?.value;
+  const statusEl = document.getElementById('ai-test-status');
+  const btn = document.getElementById('ai-test-agent-btn');
   if (!uuid) return toast('select a project first');
   if (!updateAiApiWarning()) {
-    toast('Configure provider API first');
+    toast('Configure all model API keys first');
     openAiSettings();
     return;
   }
-  appendAiChatMsg('system', 'Running agent test…');
+  if (statusEl) statusEl.textContent = 'Running agent test…';
+  if (btn) btn.disabled = true;
   try {
-    const res = await api(`/projects/${uuid}/agent/test`, { method: 'POST', body: '{}' });
+    const res = await api(`/projects/${uuid}/agent/test`, {
+      method: 'POST',
+      body: JSON.stringify({ model_profile: profile }),
+    });
     if (res.ok) {
-      appendAiChatMsg('system', `Test passed — reply: ${res.reply || 'ok'}`);
+      if (statusEl) statusEl.textContent = `Test passed — ${res.model || profile}: ${res.reply || 'ok'}`;
       toast('Agent test passed');
     } else {
-      appendAiChatMsg('system', res.message || 'Test failed');
+      if (statusEl) statusEl.textContent = res.message || 'Test failed';
       toast(res.message || 'Test failed');
     }
     await loadAiDashboard();
   } catch (e) {
-    appendAiChatMsg('system', e.message);
+    if (statusEl) statusEl.textContent = e.message;
     toast('Error: ' + e.message);
-  }
-});
-
-document.getElementById('ai-start-agent-btn')?.addEventListener('click', async () => {
-  const uuid = document.getElementById('ai-chat-project')?.value;
-  if (!uuid) return toast('select a project first');
-  try {
-    const res = await api(`/projects/${uuid}/agent/start`, { method: 'POST', body: '{}' });
-    appendAiChatMsg('system', res.message || 'Agent started');
-    toast(res.message || 'Agent started');
-    await loadAiDashboard();
-  } catch (e) {
-    toast('Error: ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
 

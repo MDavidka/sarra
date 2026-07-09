@@ -151,7 +151,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
             },
-            "gui_configuration": "Syte GUI → AI tab — internal secret, provider, bridge, models, keys",
+            "gui_configuration": "Syte GUI → AI tab — internal secret + per-profile Verted/DeepSeek API keys",
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",
                 "mnoa": "Maximum Number Of Agents — running agents vs configured max",
