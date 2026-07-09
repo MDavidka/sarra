@@ -221,8 +221,9 @@ def write_agent_secrets(project_id: str, bridge: dict[str, Any]) -> Path:
 
 
 async def backend_health(project: dict) -> dict[str, Any]:
+    from syte.agent_debug import probe_profile_provider
+
     model = await selected_model_metadata(project)
-    api_base = model["api_base"]
     api_key = model["api_key"]
     if not api_key:
         return {
@@ -231,34 +232,18 @@ async def backend_health(project: dict) -> dict[str, Any]:
             "url": None,
             "profile": model["profile"],
         }
-    headers = {"Authorization": f"Bearer {api_key}"}
-    url = api_base.rstrip("/") + "/models"
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(url, headers=headers)
-        if response.status_code in (401, 403):
-            return {
-                "ok": False,
-                "status_code": response.status_code,
-                "url": url,
-                "profile": model["profile"],
-                "provider": model.get("provider_label"),
-                "error": f"{model.get('provider_label', 'Provider')} API key rejected (HTTP {response.status_code})",
-            }
-        return {
-            "ok": response.status_code < 500,
-            "status_code": response.status_code,
-            "url": url,
-            "profile": model["profile"],
-            "provider": model.get("provider_label"),
-            "error": "" if response.status_code < 500 else f"Upstream returned {response.status_code}",
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "url": url,
-            "error": str(exc),
-        }
+
+    probe = await probe_profile_provider(model["profile"], api_key)
+    chat_probe = next((p for p in probe.get("probes") or [] if p["step"] == "chat_completion"), None)
+    return {
+        "ok": probe.get("ok", False),
+        "status_code": (chat_probe or {}).get("status_code"),
+        "url": (chat_probe or {}).get("url") or model["api_base"],
+        "profile": model["profile"],
+        "provider": model.get("provider_label"),
+        "error": probe.get("error") or "",
+        "probes": probe.get("probes") or [],
+    }
 
 
 async def probe_agent_http(port: int | None) -> dict[str, Any]:
@@ -554,7 +539,13 @@ async def communicate_with_agent(
 
 
 async def test_agent(project_id: str, *, source: str = "api", model_profile: str | None = None) -> dict:
+    from syte.agent_debug import build_ai_debug_report
     from syte.agent_metrics import log_agent_request
+
+    async def fail(**payload: Any) -> dict:
+        if not payload.get("ok", False):
+            payload["debug"] = await build_ai_debug_report(project_id, model_profile=model_profile)
+        return payload
 
     project = await get_project(project_id)
     if not project:
@@ -567,34 +558,34 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
     try:
         await write_agent_config(project)
     except RuntimeError as exc:
-        return {
-            "ok": False,
-            "error": "api_key_missing",
-            "message": str(exc),
-            "checks": {"cli": continue_installed(), "backend": False, "agent": False},
-        }
+        return await fail(
+            ok=False,
+            error="api_key_missing",
+            message=str(exc),
+            checks={"cli": continue_installed(), "backend": False, "agent": False},
+        )
 
     status = await get_agent_status(project_id)
     backend = status.get("agent_backend") or {}
     install_ok = status.get("agent_install_ok", continue_installed())
 
     if not install_ok:
-        return {
-            "ok": False,
-            "error": "cli_not_installed",
-            "message": "Continue CLI not installed. Install: npm install -g @continuedev/cli",
-            "checks": {"cli": False, "backend": backend.get("ok", False), "agent": False},
-        }
+        return await fail(
+            ok=False,
+            error="cli_not_installed",
+            message="Continue CLI not installed. Install: npm install -g @continuedev/cli",
+            checks={"cli": False, "backend": backend.get("ok", False), "agent": False},
+        )
 
     if not backend.get("ok"):
         await log_agent_request(project_id, source=source, status="error", error=backend.get("error") or "backend_unreachable")
-        return {
-            "ok": False,
-            "error": "backend_unreachable",
-            "message": backend.get("error") or "Provider API unreachable",
-            "checks": {"cli": True, "backend": False, "agent": status.get("agent_running", False)},
-            "backend": backend,
-        }
+        return await fail(
+            ok=False,
+            error="backend_unreachable",
+            message=backend.get("error") or "Provider API unreachable",
+            checks={"cli": True, "backend": False, "agent": status.get("agent_running", False)},
+            backend=backend,
+        )
 
     if status.get("agent_running"):
         await restart_agent(project_id)
@@ -603,12 +594,12 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         ok, start_msg, status = await start_agent(project_id)
         if not ok:
             await log_agent_request(project_id, source=source, status="error", error=start_msg)
-            return {
-                "ok": False,
-                "error": "agent_start_failed",
-                "message": start_msg,
-                "checks": {"cli": True, "backend": True, "agent": False},
-            }
+            return await fail(
+                ok=False,
+                error="agent_start_failed",
+                message=start_msg,
+                checks={"cli": True, "backend": True, "agent": False},
+            )
 
     result = await communicate_with_agent(
         project_id,
@@ -617,13 +608,23 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         auto_start=False,
     )
     passed = result.get("ok") and "ok" in (result.get("reply") or "").lower()
-    return {
-        "ok": passed,
-        "error": None if passed else (result.get("error") or "test_reply_invalid"),
-        "message": "Agent test passed" if passed else (result.get("message") or "Agent did not return expected reply"),
-        "checks": {"cli": True, "backend": True, "agent": True, "communicate": result.get("ok", False)},
-        "reply": result.get("reply", ""),
-        "model": result.get("model"),
-        "provider": result.get("provider"),
-    }
+    if passed:
+        return {
+            "ok": True,
+            "error": None,
+            "message": "Agent test passed",
+            "checks": {"cli": True, "backend": True, "agent": True, "communicate": True},
+            "reply": result.get("reply", ""),
+            "model": result.get("model"),
+            "provider": result.get("provider"),
+        }
+    return await fail(
+        ok=False,
+        error=result.get("error") or "test_reply_invalid",
+        message=result.get("message") or "Agent did not return expected reply",
+        checks={"cli": True, "backend": True, "agent": True, "communicate": result.get("ok", False)},
+        reply=result.get("reply", ""),
+        model=result.get("model"),
+        provider=result.get("provider"),
+    )
 

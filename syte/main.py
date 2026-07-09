@@ -650,6 +650,16 @@ async def api_agent_dashboard_gui():
     return {"ok": True, **(await get_dashboard_metrics())}
 
 
+@app.get("/api/projects/{project_id}/agent/debug")
+async def api_agent_debug_gui(project_id: str, profile: str | None = None):
+    from syte.agent_debug import build_ai_debug_report
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, **(await build_ai_debug_report(project_id, model_profile=profile))}
+
+
 @app.post("/api/projects/{project_id}/agent/test")
 async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
     from syte.continue_agent import test_agent
