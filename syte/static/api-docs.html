@@ -616,6 +616,9 @@
         <button type="button" class="nav-cat" data-cat="design">
           <i data-lucide="palette"></i><span>Design</span>
         </button>
+        <button type="button" class="nav-cat" data-cat="agent">
+          <i data-lucide="bot"></i><span class="lbl-full">AI Session</span><span class="lbl-short">AI</span>
+        </button>
       </nav>
     </aside>
 
@@ -623,7 +626,7 @@
       <div class="main-inner">
         <header class="page-header">
           <h1>Syte API</h1>
-          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a> · Sycord integration: <a href="/sycord/api/">/sycord/api</a></p>
+          <p>v__VERSION__ · Machine-readable spec at <a href="/api/ai.json">/api/ai.json</a> · <a href="#agent">AI session API</a> · Sycord integration: <a href="/sycord/api/">/sycord/api</a></p>
         </header>
 
         <!-- AUTH -->
@@ -1317,6 +1320,150 @@
               <div class="field-desc">Server public IP, version, base URLs.</div>
             </div>
           </div>
+        </section>
+        </div>
+
+        <!-- AI SESSION -->
+        <div class="cat-panel" id="panel-agent" data-cat="agent">
+        <section class="section" id="agent">
+          <h2 class="section-title">AI Session</h2>
+          <p class="section-desc">Control per-project Continue <code>cn serve</code> agents for long-lived coding sessions. Independent from preview/deploy processes.</p>
+
+          <div class="note" style="margin:0 0 1.25rem">
+            <strong>AI session usage.</strong> One Continue agent per project workspace. Use <code>agent_proxy_url</code> from status — not the raw localhost port.
+            Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
+            Configure bridge + profiles in Syte GUI → <strong>AI</strong>.
+            Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
+          </div>
+
+          <div class="endpoint" id="agent-status">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_status?uuid=</span>
+              </div>
+              <div class="endpoint-name">Agent status</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Returns running/stopped/starting/error, allocated port, <code>agent_proxy_url</code>, model profile, bridge target, workspace paths, and last error.</div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "agent_status": "running",
+  "agent_running": true,
+  "agent_port": 5201,
+  "agent_proxy_url": "https://your-syte-host.com/api/internal/projects/my-site-a1b2c3/agent/proxy",
+  "agent_model_profile": "syra-base",
+  "agent_backend": { "bridge_api_base": "https://bridge.example/v1" }
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-start">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_start</span>
+              </div>
+              <div class="endpoint-name">Start agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Starts Continue <code>cn serve</code> in the project workspace if not already running.</div>
+                </div>
+              </div>
+              <pre>{"uuid":"my-site-a1b2c3"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_stop</span>
+              </div>
+              <div class="endpoint-name">Stop agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-restart">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_restart</span>
+              </div>
+              <div class="endpoint-name">Restart agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-settings">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_settings</span>
+              </div>
+              <div class="endpoint-name">Update agent settings</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc"><code>syra-nano</code>, <code>syra-base</code>, or <code>syra-havy</code></div>
+                </div>
+              </div>
+              <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy"}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_logs?uuid=&amp;lines=200</span>
+              </div>
+              <div class="endpoint-name">Agent logs (snapshot)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Snapshot of Continue serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="agent-workflow">
+          <h2 class="section-title">Typical session workflow</h2>
+          <div class="info-grid">
+            <div class="info-row"><span class="info-key">1</span><span class="info-val"><code>GET /agent_status?uuid=</code> — check if agent is running</span></div>
+            <div class="info-row"><span class="info-key">2</span><span class="info-val"><code>POST /agent_start</code> — start if stopped</span></div>
+            <div class="info-row"><span class="info-key">3</span><span class="info-val">Use <code>agent_proxy_url</code> for Continue HTTP API calls</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val"><code>POST /agent_settings</code> — switch model profile mid-session</span></div>
+            <div class="info-row"><span class="info-key">5</span><span class="info-val"><code>GET /agent_logs</code> or SSE stream — debug agent output</span></div>
+            <div class="info-row"><span class="info-key">6</span><span class="info-val"><code>POST /agent_stop</code> — tear down when session ends</span></div>
+          </div>
+          <div class="note" style="margin-top:1rem"><strong>GUI admin routes</strong> (same auth): <code>GET/POST /api/projects/{uuid}/agent/*</code></div>
         </section>
         </div>
       </div>
