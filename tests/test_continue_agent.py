@@ -43,17 +43,17 @@ async def test_ensure_agent_runtime_assigns_port_and_profile(
 
 
 @pytest.mark.asyncio
-async def test_write_agent_config_uses_bridge_settings(
+async def test_write_agent_config_uses_per_profile_providers(
     tmp_data_dir: Path,
 ) -> None:
+    from syte.ai_providers import DEEPSEEK_API_BASE, VERTED_API_BASE
     from syte.continue_agent import agent_config_path, write_agent_config
     from syte.database import create_project, get_project, init_db, set_setting, update_project
 
     await init_db()
-    await set_setting("continue_bridge_api_base", "https://bridge.example.com/v1")
-    await set_setting("continue_syra_nano_model", "gemini-flash")
-    await set_setting("continue_syra_base_model", "deepseek-fast")
-    await set_setting("continue_syra_havy_model", "gemini-pro")
+    await set_setting("continue_syra_nano_api_key", "nano-key")
+    await set_setting("continue_syra_base_api_key", "base-key")
+    await set_setting("continue_syra_havy_api_key", "havy-key")
     await create_project({
         "id": "proj-2",
         "name": "Bridge Test",
@@ -67,7 +67,11 @@ async def test_write_agent_config_uses_bridge_settings(
     text = path.read_text()
 
     assert path == agent_config_path("proj-2")
-    assert 'apiBase: "https://bridge.example.com/v1"' in text
+    assert f'apiBase: "{DEEPSEEK_API_BASE}"' in text
+    assert f'apiBase: "{VERTED_API_BASE}"' in text
+    assert '${ secrets.SYRA_BASE_API_KEY }' in text
+    assert '${ secrets.SYRA_NANO_API_KEY }' in text
+    assert '${ secrets.SYRA_HAVY_API_KEY }' in text
     assert 'name: "syra-base"' in text
     assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
 
@@ -107,7 +111,7 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
     from syte.database import create_project, init_db, set_setting, update_project
 
     await init_db()
-    await set_setting("continue_bridge_api_base", "https://bridge.example.com/v1")
+    await set_setting("continue_syra_base_api_key", "base-key")
     await create_project({
         "id": "proj-4",
         "name": "Status",
@@ -123,7 +127,7 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
     monkeypatch.setattr("syte.continue_agent.probe_agent_http", fake_probe)
 
     async def fake_backend(_project):
-        return {"ok": True, "status_code": 200, "url": "https://bridge.example.com/v1/models", "error": ""}
+        return {"ok": True, "status_code": 200, "url": "https://api.deepseek.com/v1/models", "error": ""}
 
     monkeypatch.setattr("syte.continue_agent.backend_health", fake_backend)
     status = await get_agent_status("proj-4", request_base="https://sycord.site")

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
+from syte.ai_providers import PROFILE_ORDER
 from syte.config import settings
 from syte.continue_agent import continue_installed, is_agent_running
 from syte.database import get_setting, list_projects
@@ -96,23 +97,16 @@ async def get_dashboard_metrics() -> dict:
     mnoa_percent = min(100, int(round(online / max(1, mnoa_max) * 100)))
 
     internal_ok = bool((await get_setting("syra_internal_secret", "")).strip())
-    models_ok = bool(
-        bridge["api_base"]
-        and bridge["syra_nano_model"]
-        and bridge["syra_base_model"]
-        and bridge["syra_havy_model"]
-    )
-    provider_ok = bool((await get_setting("continue_provider", "openai")).strip())
+    keys_ok = all(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
     cli_ok = continue_installed()
-    backend_ok = bool(bridge["api_base"])
 
     onboarding = {
         "internal_api": internal_ok,
-        "ai_models": models_ok,
-        "provider": provider_ok,
+        "ai_models": keys_ok,
+        "provider": True,
         "cli_server": cli_ok,
-        "api_ready": backend_ok and internal_ok,
-        "complete": internal_ok and models_ok and provider_ok and cli_ok,
+        "api_ready": keys_ok and internal_ok,
+        "complete": internal_ok and keys_ok and cli_ok,
     }
 
     return {
@@ -135,5 +129,14 @@ async def get_dashboard_metrics() -> dict:
         },
         "onboarding": onboarding,
         "continue_cli_installed": cli_ok,
-        "continue_provider": (await get_setting("continue_provider", "openai")).strip() or "openai",
+        "ai_providers": [
+            {
+                "profile": name,
+                "label": bridge["profiles"][name]["label"],
+                "model": bridge["profiles"][name]["model"],
+                "api_base": bridge["profiles"][name]["api_base"],
+                "api_key_set": bool(bridge["profiles"][name]["api_key"]),
+            }
+            for name in PROFILE_ORDER
+        ],
     }

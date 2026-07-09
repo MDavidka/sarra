@@ -1332,7 +1332,7 @@
           <div class="note" style="margin:0 0 1.25rem">
             <strong>AI session usage.</strong> One Continue agent per project workspace. Use <code>agent_proxy_url</code> from status — not the raw localhost port.
             Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
-            Configure bridge + profiles in Syte GUI → <strong>AI</strong>.
+            Configure Verted + DeepSeek API keys per profile in Syte GUI → <strong>AI</strong>.
             Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
           </div>
 
@@ -1355,7 +1355,7 @@
   "agent_port": 5201,
   "agent_proxy_url": "https://your-syte-host.com/api/internal/projects/my-site-a1b2c3/agent/proxy",
   "agent_model_profile": "syra-base",
-  "agent_backend": { "bridge_api_base": "https://bridge.example/v1" }
+  "agent_backend": { "ok": true, "profile": "syra-base", "url": "https://api.deepseek.com/v1/models" }
 }</pre>
             </div>
           </div>
@@ -1460,7 +1460,7 @@
               <div class="endpoint-name">Test agent</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Starts agent if needed, verifies bridge + CLI, sends probe message expecting <code>ok</code> in reply.</div>
+              <div class="field-desc">Starts agent if needed, verifies provider API + CLI, sends probe message expecting <code>ok</code> in reply.</div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
               <pre>{"ok":true,"checks":{"cli":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
             </div>
@@ -1552,7 +1552,7 @@
             <div class="info-row"><span class="info-key">401</span><span class="info-val">Missing or invalid API key / internal secret</span></div>
             <div class="info-row"><span class="info-key">503 internal_secret_not_configured</span><span class="info-val">Set internal secret in Syte AI tab → Agent configuration</span></div>
             <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">Continue CLI missing — <code>npm install -g @continuedev/cli</code></span></div>
-            <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Bridge API base unreachable — check AI tab → Provider / bridge base</span></div>
+            <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Provider API unreachable — check AI tab → model API keys</span></div>
             <div class="info-row"><span class="info-key">503 agent not running</span><span class="info-val">Proxy called while agent stopped — <code>POST /agent/start</code> first</span></div>
             <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">UUID does not match any workspace</span></div>
           </div>

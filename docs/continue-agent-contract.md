@@ -12,24 +12,23 @@ Syte hosts a **persistent Continue `cn serve` runtime per project/workspace** so
   - `workspaces/<uuid>/data/continue/serve.log`
 - Uses a Syte-managed localhost port from `5200-5999`
 
-## Model bridge
+## Model providers
 
-Syte writes a Continue `config.yaml` that points at an **OpenAI-compatible bridge**:
+Syte writes a Continue `config.yaml` with fixed OpenAI-compatible endpoints per profile:
 
-- `syra-nano` -> Gemini Flash
-- `syra-base` -> DeepSeek Flash / chat
-- `syra-havy` -> Gemini Pro
+- `syra-nano` -> **Verted** (Gemini Flash) — `https://generativelanguage.googleapis.com/v1beta/openai`
+- `syra-base` -> **DeepSeek** — `https://api.deepseek.com/v1`
+- `syra-havy` -> **Verted** (Gemini Pro) — `https://generativelanguage.googleapis.com/v1beta/openai`
 
-Configured in Syte settings:
+Configured in Syte GUI → AI tab (settings sheet):
 
-- `continue_bridge_api_base`
-- `continue_bridge_api_key`
+- `continue_syra_nano_api_key`
+- `continue_syra_base_api_key`
+- `continue_syra_havy_api_key`
 - `continue_default_model_profile`
-- `continue_syra_nano_model`
-- `continue_syra_base_model`
-- `continue_syra_havy_model`
+- `syra_internal_secret`
 
-No Continue Hub is required by default.
+Each key is injected as `SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, or `SYRA_HAVY_API_KEY` on the VM.
 
 ## Internal auth
 

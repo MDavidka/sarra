@@ -2146,23 +2146,16 @@ code {
 .ai-checklist li.done .ai-check-box::after { content: '✓'; color: #fff; font-size: 11px; display: block; text-align: center; line-height: 12px; }
 .ai-api-warning { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.65rem 0.75rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; font-size: 0.8rem; color: #991b1b; }
 .ai-api-warning svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
-.ai-chat-shell { flex: 1; display: flex; flex-direction: column; min-height: 280px; background: #fff; border: 1px solid #e4e4e7; border-radius: 16px; padding: 0.75rem; }
-.ai-chat-toolbar { display: grid; grid-template-columns: 1fr auto auto; gap: 0.4rem; margin-bottom: 0.65rem; align-items: center; }
-.ai-chat-select { min-width: 0; }
-.ai-chat-profile { width: 72px; min-width: 72px; padding-left: 0.4rem; padding-right: 0.4rem; font-size: 0.78rem; }
-.ai-chat-actions { display: flex; gap: 0.25rem; }
-.ai-icon-btn { min-width: 36px; padding: 0.35rem !important; }
-.ai-icon-btn span { display: none; }
-.ai-chat-log { flex: 1; background: #18181b; color: #e4e4e7; border-radius: 12px; padding: 0.75rem; min-height: 160px; max-height: 42vh; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.78rem; line-height: 1.45; margin-bottom: 0.65rem; -webkit-overflow-scrolling: touch; }
-.ai-chat-msg { margin-bottom: 0.55rem; word-break: break-word; }
-.ai-chat-msg.user { color: #93c5fd; }
-.ai-chat-msg.agent { color: #bbf7d0; }
-.ai-chat-msg.system { color: #a1a1aa; font-style: italic; }
-.ai-chat-compose { display: flex; gap: 0.45rem; align-items: flex-end; }
-.ai-chat-compose textarea { flex: 1; resize: none; min-height: 42px; max-height: 120px; border: 1px solid #e4e4e7; border-radius: 12px; padding: 0.6rem 0.75rem; font-family: var(--font); font-size: 16px; line-height: 1.35; }
-.ai-send-btn { min-width: 44px; min-height: 44px; padding: 0 0.85rem !important; border-radius: 12px !important; }
-.ai-send-btn span { display: none; }
-.ai-chat-status { font-size: 0.75rem; margin-top: 0.35rem; min-height: 1em; }
+.ai-test-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; background: #fff; border: 1px solid #e4e4e7; border-radius: 16px; padding: 0.85rem; }
+.ai-test-select { flex: 1; min-width: 140px; }
+.ai-test-profile { width: 88px; min-width: 88px; }
+.ai-test-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.ai-test-status { flex: 1 1 100%; font-size: 0.78rem; min-height: 1em; }
+
+.ai-key-card { border: 1px solid #e4e4e7; border-radius: 12px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa; }
+.ai-key-head { display: flex; flex-wrap: wrap; gap: 0.35rem 0.65rem; align-items: baseline; margin-bottom: 0.35rem; }
+.ai-key-provider { font-size: 0.78rem; color: #71717a; }
+.ai-key-url { display: block; font-size: 0.72rem; color: #52525b; margin-bottom: 0.55rem; word-break: break-all; }
 .ai-footer { padding: 0.5rem 0 0.25rem; text-align: center; border-top: 1px solid #f4f4f5; margin-top: 0.25rem; }
 .ai-footer-link { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: #71717a; text-decoration: none; padding: 0.35rem 0.5rem; }
 .ai-footer-link:hover { color: #2563eb; }
@@ -2195,11 +2188,8 @@ body.ai-settings-open { overflow: hidden; }
   .ai-stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .ai-meter-block { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   .ai-checklist { grid-template-columns: 1fr; }
-  .ai-chat-shell { flex: 1; min-height: 0; border-radius: 14px; padding: 0.65rem; margin-bottom: 0; }
-  .ai-chat-log { max-height: none; flex: 1; min-height: 120px; }
-  .ai-chat-toolbar { grid-template-columns: 1fr 64px auto; }
-  .ai-chat-compose { position: sticky; bottom: 0; background: #fff; padding-top: 0.25rem; }
-  .ai-chat-compose textarea { font-size: 16px; }
+  .ai-test-bar { flex: 1; min-height: 0; }
+  .ai-test-select { min-width: 0; }
   .ai-settings-panel { width: 100%; max-height: 100dvh; border-radius: 0; }
   .ai-env-row { grid-template-columns: 1fr; }
 }
