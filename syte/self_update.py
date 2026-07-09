@@ -16,6 +16,8 @@ from syte.config import settings
 from syte.workspace import run_cmd
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
+UPDATE_LOG = settings.data_dir / "update.log"
+DEFAULT_UPDATE_BRANCH = "main"
 
 
 def _venv_python() -> str:
@@ -28,9 +30,92 @@ def _venv_pip() -> str | None:
     return str(venv_pip) if venv_pip.exists() else None
 
 
+def _update_branch() -> str:
+    return (os.environ.get("SYTE_UPDATE_BRANCH") or DEFAULT_UPDATE_BRANCH).strip() or DEFAULT_UPDATE_BRANCH
+
+
 def _current_branch() -> str:
     code, out = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=INSTALL_DIR)
-    return out.strip() if code == 0 else "main"
+    branch = out.strip() if code == 0 else ""
+    if branch in ("", "HEAD"):
+        return ""
+    return branch
+
+
+def _working_tree_dirty() -> bool:
+    code, out = run_cmd(["git", "status", "--porcelain"], cwd=INSTALL_DIR)
+    return code == 0 and bool(out.strip())
+
+
+def _read_installed_version() -> str:
+    init_py = INSTALL_DIR / "syte" / "__init__.py"
+    if not init_py.exists():
+        return "unknown"
+    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_py.read_text())
+    return match.group(1) if match else "unknown"
+
+
+def _append_update_log(text: str) -> None:
+    try:
+        UPDATE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with UPDATE_LOG.open("a") as log_file:
+            log_file.write(text.rstrip() + "\n")
+    except OSError:
+        pass
+
+
+def _git_checkout_update_branch(branch: str) -> tuple[bool, str]:
+    current = _current_branch()
+    if current == branch:
+        return True, f"On branch {branch}."
+
+    code, out = run_cmd(["git", "checkout", branch], cwd=INSTALL_DIR)
+    if code == 0:
+        return True, out or f"Checked out {branch}."
+
+    code, out = run_cmd(["git", "checkout", "-B", branch, f"origin/{branch}"], cwd=INSTALL_DIR)
+    if code == 0:
+        return True, out or f"Checked out {branch} from origin/{branch}."
+
+    return False, out or f"Could not checkout {branch}."
+
+
+def _git_pull_latest(branch: str) -> tuple[bool, str]:
+    messages: list[str] = []
+
+    if _working_tree_dirty():
+        code, out = run_cmd(
+            ["git", "stash", "push", "-u", "-m", "syte-auto-stash-before-update"],
+            cwd=INSTALL_DIR,
+        )
+        if code == 0:
+            messages.append(out or "Stashed local changes before update.")
+        else:
+            messages.append(out or "Warning: could not stash local changes.")
+
+    ok, checkout_msg = _git_checkout_update_branch(branch)
+    messages.append(checkout_msg)
+    if not ok:
+        return False, "\n".join(messages)
+
+    code, out = run_cmd(["git", "fetch", "origin", branch], cwd=INSTALL_DIR)
+    messages.append(out or f"Fetched origin/{branch}.")
+    if code != 0:
+        return False, "\n".join(messages)
+
+    code, out = run_cmd(["git", "pull", "--ff-only", "origin", branch], cwd=INSTALL_DIR)
+    if code == 0:
+        messages.append(out or "Fast-forwarded to latest.")
+        return True, "\n".join(messages)
+
+    messages.append(out or f"Fast-forward pull failed — resetting to origin/{branch}.")
+    code, out = run_cmd(["git", "reset", "--hard", f"origin/{branch}"], cwd=INSTALL_DIR)
+    if code != 0:
+        messages.append(out or "git reset --hard failed.")
+        return False, "\n".join(messages)
+
+    messages.append(out or f"Reset to origin/{branch}.")
+    return True, "\n".join(messages)
 
 
 def _apply_proxy_sync() -> tuple[bool, str]:
@@ -132,8 +217,10 @@ def restart_syte() -> tuple[bool, str]:
 
 def apply_and_restart() -> None:
     """Worker entrypoint: wait for HTTP response, then apply config and restart."""
+    _append_update_log("==> apply_and_restart worker started")
     time.sleep(2)
-    restart_syte()
+    ok, msg = restart_syte()
+    _append_update_log(msg if ok else f"RESTART FAILED: {msg}")
 
 
 def _schedule_restart() -> None:
@@ -144,40 +231,51 @@ def _schedule_restart() -> None:
     env["SYTE_DB_PATH"] = str(settings.resolved_db_path)
     env["PYTHONPATH"] = str(INSTALL_DIR)
 
+    log_handle = open(UPDATE_LOG, "a")
+    log_handle.write("\n==> scheduling restart worker\n")
+    log_handle.flush()
+
     subprocess.Popen(
         [_venv_python(), "-m", "syte.self_update", "--apply-and-restart"],
         cwd=INSTALL_DIR,
         env=env,
         start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
     )
 
 
 def update_syte() -> tuple[bool, str]:
     """Pull newest Syte from git, refresh dependencies, and schedule restart."""
-    messages = [f"Current version: {__version__}"]
+    branch = _update_branch()
+    before_version = _read_installed_version()
+    messages = [
+        f"Current version: {__version__}",
+        f"Update branch: {branch}",
+    ]
+    _append_update_log(
+        f"\n=== Syte update requested (running {__version__}, branch target {branch}) ==="
+    )
 
     if not (INSTALL_DIR / ".git").exists():
         return False, "Syte install is not a git repository. Cannot pull updates."
 
-    branch = _current_branch()
-    messages.append(f"Branch: {branch}")
+    current = _current_branch()
+    if current and current != branch:
+        messages.append(f"Note: was on {current}, switching to {branch} for update.")
 
-    code, out = run_cmd(["git", "fetch", "origin"], cwd=INSTALL_DIR)
-    messages.append(out or "Fetched origin.")
-    if code != 0:
+    ok, pull_msg = _git_pull_latest(branch)
+    messages.append(pull_msg)
+    if not ok:
+        _append_update_log(pull_msg)
         return False, "\n".join(messages)
 
-    code, out = run_cmd(
-        ["git", "pull", "--ff-only", "origin", branch],
-        cwd=INSTALL_DIR,
-    )
-    if code != 0:
-        code, out = run_cmd(["git", "pull", "--ff-only"], cwd=INSTALL_DIR)
-    messages.append(out or "Repository updated.")
-    if code != 0:
-        return False, "\n".join(messages)
+    after_version = _read_installed_version()
+    messages.append(f"Code on disk: {after_version}")
+    if after_version == before_version:
+        messages.append("Already up to date (no new commits on origin/main).")
+    else:
+        messages.append(f"Updated {before_version} → {after_version}")
 
     req = INSTALL_DIR / "requirements.txt"
     if req.exists():
@@ -195,7 +293,10 @@ def update_syte() -> tuple[bool, str]:
 
     _schedule_restart()
     messages.append("Syte will restart automatically to apply changes.")
-    return True, "\n".join(messages)
+    messages.append(f"Update log: {UPDATE_LOG}")
+    result = "\n".join(messages)
+    _append_update_log(result)
+    return True, result
 
 
 if __name__ == "__main__":
