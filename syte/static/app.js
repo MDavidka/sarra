@@ -1364,7 +1364,23 @@ async function loadSettings() {
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
     updateAiApiWarning();
+    await loadUpdateInfo();
   } catch { /* */ }
+}
+
+async function loadUpdateInfo() {
+  const el = document.getElementById('syte-update-source');
+  if (!el) return;
+  try {
+    const info = await api('/system/update-info');
+    const label = info.label || info.branch || 'main';
+    const prLink = info.pr_url
+      ? ` — <a href="${esc(info.pr_url)}" target="_blank" rel="noopener">view PR</a>`
+      : '';
+    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${prLink}`;
+  } catch {
+    el.textContent = 'Will pull latest open GitHub PR (fallback: main)';
+  }
 }
 
 function renderAiTestProjects() {

@@ -5,8 +5,24 @@ set -euo pipefail
 SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SYTE_DIR"
 
-UPDATE_BRANCH="${SYTE_UPDATE_BRANCH:-main}"
-echo "==> Updating Syte on branch: ${UPDATE_BRANCH}"
+if [[ -n "${SYTE_UPDATE_BRANCH:-}" ]]; then
+  UPDATE_BRANCH="${SYTE_UPDATE_BRANCH}"
+  UPDATE_LABEL="branch ${UPDATE_BRANCH}"
+else
+  read -r UPDATE_BRANCH UPDATE_LABEL < <(
+    python3 - <<'PY'
+from pathlib import Path
+from syte.update_source import resolve_update_target
+
+target = resolve_update_target(Path.cwd())
+print(target.branch)
+print(target.label)
+PY
+  )
+fi
+
+echo "==> Updating Syte from: ${UPDATE_LABEL}"
+echo "==> Checkout branch: ${UPDATE_BRANCH}"
 
 git fetch origin "${UPDATE_BRANCH}"
 
