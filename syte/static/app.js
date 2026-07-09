@@ -292,10 +292,19 @@ function aiKeySaved(id) {
 
 function updateAiApiWarning() {
   const warn = document.getElementById('ai-api-warning');
-  const nanoOk = aiApiConfigured.nano || aiKeySaved('continue-nano-key');
-  const baseOk = aiApiConfigured.base || aiKeySaved('continue-base-key');
-  const havyOk = aiApiConfigured.havy || aiKeySaved('continue-havy-key');
-  const ok = nanoOk && baseOk && havyOk;
+  const profile = document.getElementById('ai-test-profile')?.value || 'syra-base';
+  const keyForProfile = {
+    'syra-nano': 'continue-nano-key',
+    'syra-base': 'continue-base-key',
+    'syra-havy': 'continue-havy-key',
+  };
+  const savedForProfile = {
+    'syra-nano': aiApiConfigured.nano,
+    'syra-base': aiApiConfigured.base,
+    'syra-havy': aiApiConfigured.havy,
+  };
+  const inputId = keyForProfile[profile] || 'continue-base-key';
+  const ok = savedForProfile[profile] || aiKeySaved(inputId);
   if (warn) warn.classList.toggle('hidden', ok);
   return ok;
 }
@@ -1113,8 +1122,8 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const needNano = !nanoKey && !aiApiConfigured.nano;
   const needBase = !baseKey && !aiApiConfigured.base;
   const needHavy = !havyKey && !aiApiConfigured.havy;
-  if (needNano || needBase || needHavy) {
-    return toast('All three model API keys are required');
+  if (!nanoKey && !baseKey && !havyKey && needNano && needBase && needHavy) {
+    return toast('Enter at least one model API key');
   }
   const body = {
     continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
@@ -1355,7 +1364,23 @@ async function loadSettings() {
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
     updateAiApiWarning();
+    await loadUpdateInfo();
   } catch { /* */ }
+}
+
+async function loadUpdateInfo() {
+  const el = document.getElementById('syte-update-source');
+  if (!el) return;
+  try {
+    const info = await api('/system/update-info');
+    const label = info.label || info.branch || 'main';
+    const prLink = info.pr_url
+      ? ` — <a href="${esc(info.pr_url)}" target="_blank" rel="noopener">view PR</a>`
+      : '';
+    el.innerHTML = `Will pull <strong>${esc(label)}</strong>${prLink}`;
+  } catch {
+    el.textContent = 'Will pull latest open GitHub PR (fallback: main)';
+  }
 }
 
 function renderAiTestProjects() {
@@ -1394,10 +1419,13 @@ async function loadAiDashboard() {
       li.classList.toggle('done', !!onboard[step]);
     });
     const hint = document.getElementById('ai-onboard-hint');
+    const keysConfigured = [onboard.ai_models, aiApiConfigured.nano, aiApiConfigured.base, aiApiConfigured.havy].some(Boolean);
     if (hint) {
       hint.textContent = onboard.complete
         ? 'Ready for sycord.com agent requests'
-        : 'Tap settings (top right) to add model API keys';
+        : keysConfigured
+          ? 'Add keys for other profiles in settings if needed'
+          : 'Tap settings (top right) to add model API keys';
     }
     updateAiApiWarning();
     if (!updateAiApiWarning()) openAiSettings();
@@ -1521,6 +1549,8 @@ document.getElementById('ai-header-settings-btn')?.addEventListener('click', ope
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 
+document.getElementById('ai-test-profile')?.addEventListener('change', updateAiApiWarning);
+
 document.getElementById('ai-test-agent-btn')?.addEventListener('click', async () => {
   const uuid = document.getElementById('ai-test-project')?.value;
   const profile = document.getElementById('ai-test-profile')?.value;
@@ -1528,7 +1558,7 @@ document.getElementById('ai-test-agent-btn')?.addEventListener('click', async ()
   const btn = document.getElementById('ai-test-agent-btn');
   if (!uuid) return toast('select a project first');
   if (!updateAiApiWarning()) {
-    toast('Configure all model API keys first');
+    toast('Add the API key for the selected profile first');
     openAiSettings();
     return;
   }

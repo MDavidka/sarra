@@ -97,7 +97,7 @@ async def get_dashboard_metrics() -> dict:
     mnoa_percent = min(100, int(round(online / max(1, mnoa_max) * 100)))
 
     internal_ok = bool((await get_setting("syra_internal_secret", "")).strip())
-    keys_ok = all(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
+    keys_ok = any(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
     cli_ok = continue_installed()
 
     onboarding = {

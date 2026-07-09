@@ -13,11 +13,11 @@ from pathlib import Path
 
 from syte import __version__
 from syte.config import settings
+from syte.update_source import UpdateTarget, resolve_update_target
 from syte.workspace import run_cmd
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 UPDATE_LOG = settings.data_dir / "update.log"
-DEFAULT_UPDATE_BRANCH = "main"
 
 
 def _venv_python() -> str:
@@ -30,8 +30,18 @@ def _venv_pip() -> str | None:
     return str(venv_pip) if venv_pip.exists() else None
 
 
-def _update_branch() -> str:
-    return (os.environ.get("SYTE_UPDATE_BRANCH") or DEFAULT_UPDATE_BRANCH).strip() or DEFAULT_UPDATE_BRANCH
+def _update_target() -> UpdateTarget:
+    return resolve_update_target(INSTALL_DIR)
+
+
+def get_update_info() -> dict:
+    target = _update_target()
+    installed = _read_installed_version()
+    return {
+        "installed_version": installed,
+        "running_version": __version__,
+        **target.as_dict(),
+    }
 
 
 def _current_branch() -> str:
@@ -246,15 +256,17 @@ def _schedule_restart() -> None:
 
 
 def update_syte() -> tuple[bool, str]:
-    """Pull newest Syte from git, refresh dependencies, and schedule restart."""
-    branch = _update_branch()
+    """Pull newest Syte from git (latest open PR by default), refresh deps, and schedule restart."""
+    target = _update_target()
+    branch = target.branch
     before_version = _read_installed_version()
     messages = [
         f"Current version: {__version__}",
+        f"Update source: {target.label}",
         f"Update branch: {branch}",
     ]
     _append_update_log(
-        f"\n=== Syte update requested (running {__version__}, branch target {branch}) ==="
+        f"\n=== Syte update requested (running {__version__}, source {target.label}, branch {branch}) ==="
     )
 
     if not (INSTALL_DIR / ".git").exists():
@@ -273,7 +285,7 @@ def update_syte() -> tuple[bool, str]:
     after_version = _read_installed_version()
     messages.append(f"Code on disk: {after_version}")
     if after_version == before_version:
-        messages.append("Already up to date (no new commits on origin/main).")
+        messages.append(f"Already up to date (no new commits on {target.label}).")
     else:
         messages.append(f"Updated {before_version} → {after_version}")
 

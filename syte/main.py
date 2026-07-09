@@ -433,6 +433,13 @@ async def save_settings(body: SettingsRequest):
     return {"ok": ok, "messages": messages, "cloudflare_tls": cf_status}
 
 
+@app.get("/api/system/update-info")
+async def api_update_info():
+    from syte.self_update import get_update_info
+
+    return {"ok": True, **get_update_info()}
+
+
 @app.post("/api/system/update")
 async def api_update_syte():
     """Pull newest Syte version and restart to apply changes."""

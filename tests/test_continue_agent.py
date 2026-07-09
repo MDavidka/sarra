@@ -69,9 +69,9 @@ async def test_write_agent_config_uses_per_profile_providers(
     assert path == agent_config_path("proj-2")
     assert f'apiBase: "{DEEPSEEK_API_BASE}"' in text
     assert f'apiBase: "{VERTED_API_BASE}"' in text
-    assert '${ secrets.SYRA_BASE_API_KEY }' in text
-    assert '${ secrets.SYRA_NANO_API_KEY }' in text
-    assert '${ secrets.SYRA_HAVY_API_KEY }' in text
+    assert '${{ secrets.SYRA_BASE_API_KEY }}' in text
+    assert '${{ secrets.SYRA_NANO_API_KEY }}' in text
+    assert '${{ secrets.SYRA_HAVY_API_KEY }}' in text
     assert 'name: "syra-base"' in text
     assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
 
@@ -135,6 +135,54 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
     assert status["agent_running"] is True
     assert status["agent_proxy_url"] == "https://sycord.site/api/internal/projects/proj-4/agent/proxy"
     assert status["agent_backend"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_write_agent_config_skips_profiles_without_keys(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.continue_agent import write_agent_config
+    from syte.database import create_project, get_project, init_db, set_setting, update_project
+
+    await init_db()
+    await set_setting("continue_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-5",
+        "name": "Partial Keys",
+        "port": 3004,
+        "start_command": "",
+    })
+    await update_project("proj-5", {"agent_model_profile": "syra-base"})
+
+    project = await get_project("proj-5")
+    path = await write_agent_config(project or {})
+    text = path.read_text()
+
+    assert 'name: "syra-base"' in text
+    assert 'name: "syra-nano"' not in text
+    assert 'name: "syra-havy"' not in text
+
+
+@pytest.mark.asyncio
+async def test_write_agent_config_requires_active_profile_key(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.continue_agent import write_agent_config
+    from syte.database import create_project, get_project, init_db, set_setting, update_project
+
+    await init_db()
+    await set_setting("continue_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-6",
+        "name": "Missing Active Key",
+        "port": 3005,
+        "start_command": "",
+    })
+    await update_project("proj-6", {"agent_model_profile": "syra-nano"})
+
+    project = await get_project("proj-6")
+    with pytest.raises(RuntimeError, match="syra-nano"):
+        await write_agent_config(project or {})
 
 
 @pytest.mark.asyncio
