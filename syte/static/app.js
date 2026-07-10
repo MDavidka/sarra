@@ -1492,11 +1492,11 @@ function renderAiDebug(report) {
     <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
     <div>
       <strong>Agent runtime</strong>
-      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${report.continue_cli?.installed ? esc(report.continue_cli.version || 'installed') : 'missing'}</div>
+      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${(report.opencode_cli || report.continue_cli)?.installed ? esc((report.opencode_cli || report.continue_cli).version || 'installed') : 'missing'}</div>
       ${agent.serve_command ? `<div class="hint">serve cmd: <code>${esc(agent.serve_command)}</code></div>` : ''}
       ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
     </div>
-    ${config.snippet ? `<div><strong>config.yaml</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
+    ${config.snippet ? `<div><strong>opencode.json</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
     ${report.logs_tail ? `<div><strong>Agent logs (tail)</strong><pre class="ai-debug-logs">${esc(report.logs_tail)}</pre></div>` : ''}
   `;
 }

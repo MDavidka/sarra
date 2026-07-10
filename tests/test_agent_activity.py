@@ -29,6 +29,32 @@ def test_map_tool_event_terminal() -> None:
     assert "npm run lint" in detail
 
 
+def test_extract_events_from_opencode_messages() -> None:
+    messages = [
+        {
+            "info": {"role": "user"},
+            "parts": [{"type": "text", "text": "Fix the navbar"}],
+        },
+        {
+            "info": {"role": "assistant"},
+            "parts": [
+                {"type": "reasoning", "text": "Checking layout…"},
+                {"type": "tool", "tool": "edit", "state": {"status": "running", "input": {"path": "src/Nav.tsx"}}},
+                {"type": "text", "text": "Updated the navbar."},
+            ],
+        },
+    ]
+    from syte.agent_activity import extract_events_from_messages
+
+    events, index = extract_events_from_messages(messages, source="agent")
+    assert index == 2
+    types = [e["event_type"] for e in events]
+    assert "user_message" in types
+    assert "thinking" in types
+    assert "file_modified" in types
+    assert "assistant_message" in types
+
+
 def test_extract_events_from_assistant_tool_use() -> None:
     state = {
         "session": {

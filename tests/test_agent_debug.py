@@ -17,43 +17,41 @@ def test_mask_api_key() -> None:
     assert mask_api_key("sk-abcdefghijklmnop") == "sk-a…mnop"
 
 
-def test_inspect_agent_config_detects_broken_secret_refs(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        'models:\n  - name: "syra-base"\n    apiKey: "${ secrets.SYRA_BASE_API_KEY }"\n'
-    )
+def test_inspect_agent_config_detects_missing_env_refs(tmp_path: Path) -> None:
+    config = tmp_path / "opencode.json"
+    config.write_text('{"provider": {"syra-base": {"options": {"apiKey": "plain-text"}}}}')
 
-    from syte import continue_agent
+    from syte import opencode_agent
 
-    original = continue_agent.agent_config_path
-    continue_agent.agent_config_path = lambda _id: config
+    original = opencode_agent.agent_config_path
+    opencode_agent.agent_config_path = lambda _id: config
     try:
         info = inspect_agent_config("proj-x")
     finally:
-        continue_agent.agent_config_path = original
+        opencode_agent.agent_config_path = original
 
     assert info["exists"] is True
     assert info["secret_syntax_ok"] is False
-    assert "SYRA_BASE_API_KEY" in info["broken_secret_refs"]
+    assert info["env_refs"] == []
 
 
-def test_inspect_agent_config_accepts_valid_secret_refs(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
+def test_inspect_agent_config_accepts_valid_env_refs(tmp_path: Path) -> None:
+    config = tmp_path / "opencode.json"
     config.write_text(
-        'models:\n  - name: "syra-base"\n    apiKey: "${{ secrets.SYRA_BASE_API_KEY }}"\n'
+        '{"provider": {"syra-base": {"options": {"apiKey": "{env:SYRA_BASE_API_KEY}"}}}}'
     )
 
-    from syte import continue_agent
+    from syte import opencode_agent
 
-    original = continue_agent.agent_config_path
-    continue_agent.agent_config_path = lambda _id: config
+    original = opencode_agent.agent_config_path
+    opencode_agent.agent_config_path = lambda _id: config
     try:
         info = inspect_agent_config("proj-x")
     finally:
-        continue_agent.agent_config_path = original
+        opencode_agent.agent_config_path = original
 
     assert info["secret_syntax_ok"] is True
-    assert info["valid_secret_refs"] == ["SYRA_BASE_API_KEY"]
+    assert info["env_refs"] == ["SYRA_BASE_API_KEY"]
 
 
 @pytest.mark.asyncio

@@ -10,24 +10,23 @@ from typing import Any
 import httpx
 
 from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
-from syte.continue_agent import (
+from syte.opencode_agent import (
     agent_home,
     agent_log_path,
     bridge_settings,
     build_serve_command,
-    continue_command,
-    continue_installed,
     get_agent_logs,
     get_agent_status,
     is_agent_running,
+    opencode_command,
+    opencode_installed,
     write_agent_config,
 )
-from syte.continue_agent import agent_config_path as resolve_agent_config_path
+from syte.opencode_agent import agent_config_path as resolve_agent_config_path
 from syte.database import get_project, update_project
 from syte.workspace import run_cmd
 
-SECRET_REF_RE = re.compile(r"\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}")
-BROKEN_SECRET_REF_RE = re.compile(r"\$\{\s*secrets\.([A-Z0-9_]+)\s*\}")
+ENV_REF_RE = re.compile(r"\{env:([A-Z0-9_]+)\}")
 
 
 def _now() -> str:
@@ -43,9 +42,9 @@ def mask_api_key(key: str) -> str:
     return f"{key[:4]}…{key[-4:]}"
 
 
-def continue_cli_info() -> dict[str, Any]:
-    path = continue_command()
-    installed = continue_installed()
+def opencode_cli_info() -> dict[str, Any]:
+    path = opencode_command()
+    installed = opencode_installed()
     version = ""
     if installed:
         code, out = run_cmd([path, "--version"])
@@ -188,7 +187,8 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
 
 
 def inspect_agent_config(project_id: str) -> dict[str, Any]:
-    from syte.continue_agent import agent_config_path
+    from syte.opencode_agent import agent_config_path
+    import json
 
     path = agent_config_path(project_id)
     if not path.exists():
@@ -196,36 +196,41 @@ def inspect_agent_config(project_id: str) -> dict[str, Any]:
             "path": str(path),
             "exists": False,
             "secret_syntax_ok": False,
-            "broken_secret_refs": [],
-            "valid_secret_refs": [],
+            "env_refs": [],
             "models_in_config": [],
             "snippet": "",
         }
 
     text = path.read_text(errors="replace")
-    broken = BROKEN_SECRET_REF_RE.findall(text)
-    valid = SECRET_REF_RE.findall(text)
-    models = re.findall(r'name:\s*"([^"]+)"', text)
-    snippet_lines = []
-    for line in text.splitlines()[:40]:
-        if "apiKey" in line:
-            snippet_lines.append(line.split("apiKey:")[0] + 'apiKey: "<redacted>"')
-        else:
-            snippet_lines.append(line)
+    env_refs = ENV_REF_RE.findall(text)
+    models: list[str] = []
+    try:
+        data = json.loads(text)
+        model = str(data.get("model") or "")
+        if model:
+            models.append(model)
+        for provider_id, provider in (data.get("provider") or {}).items():
+            for model_id in (provider.get("models") or {}):
+                models.append(f"{provider_id}/{model_id}")
+    except json.JSONDecodeError:
+        pass
+
+    snippet = text[:1200]
+    if len(text) > 1200:
+        snippet += "\n…"
 
     return {
         "path": str(path),
         "exists": True,
-        "secret_syntax_ok": bool(valid) and not broken,
-        "broken_secret_refs": broken,
-        "valid_secret_refs": valid,
+        "secret_syntax_ok": bool(env_refs),
+        "env_refs": env_refs,
         "models_in_config": models,
-        "snippet": "\n".join(snippet_lines),
+        "snippet": snippet,
     }
 
 
 def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
-    env_path = agent_home(project_id) / ".continue" / ".env"
+    env_path = agent_home(project_id) / ".config" / "opencode" / ".env"
     if not env_path.exists():
         return {
             "path": str(env_path),
@@ -247,14 +252,14 @@ def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
 
 def build_debug_hints(report: dict[str, Any]) -> list[str]:
     hints: list[str] = []
-    cli = report.get("continue_cli") or {}
+    cli = report.get("opencode_cli") or report.get("continue_cli") or {}
     if not cli.get("installed"):
-        hints.append("Install Continue CLI: npm install -g @continuedev/cli")
+        hints.append("Install OpenCode CLI: npm install -g opencode-ai")
 
     config = report.get("config") or {}
-    if config.get("broken_secret_refs"):
+    if config.get("exists") and not config.get("secret_syntax_ok"):
         hints.append(
-            "config.yaml has broken secret placeholders (single braces). "
+            "opencode.json is missing {env:VAR} API key placeholders. "
             "Update Syte and run Test again to regenerate config."
         )
 
@@ -266,13 +271,11 @@ def build_debug_hints(report: dict[str, Any]) -> list[str]:
     agent = report.get("agent") or {}
     logs = report.get("logs_tail") or ""
     if "unknown option '--host'" in logs:
-        hints.append(
-            "Continue CLI rejected --host (fixed in newer Syte). Update Syte and run Test again."
-        )
+        hints.append("Agent startup used an unsupported flag — update Syte and run Test again.")
     if agent.get("agent_last_error"):
         hints.append("Agent last error logged — see agent logs below.")
     if agent.get("agent_status") == "error":
-        hints.append("Continue agent is in error state — check serve.log tail.")
+        hints.append("OpenCode agent is in error state — check serve.log tail.")
 
     active = report.get("active_profile")
     active_row = next((p for p in report.get("profiles") or [] if p["profile"] == active), None)
@@ -316,13 +319,13 @@ async def build_ai_debug_report(
     agent_status = await get_agent_status(project_id)
     config_info = inspect_agent_config(project_id)
     secrets_info = inspect_agent_secrets(project_id)
-    cli_info = continue_cli_info()
+    cli_info = opencode_cli_info()
 
     active_probe = next((p for p in profiles if p["profile"] == active_profile), None)
     steps = [
         {
-            "id": "continue_cli",
-            "label": "Continue CLI installed",
+            "id": "opencode_cli",
+            "label": "OpenCode CLI installed",
             "ok": cli_info["installed"],
             "detail": cli_info["version"] or cli_info["path"],
         },
@@ -334,16 +337,13 @@ async def build_ai_debug_report(
         },
         {
             "id": "config_secrets",
-            "label": "config.yaml secret syntax",
+            "label": "opencode.json env refs",
             "ok": config_info.get("secret_syntax_ok", False),
-            "detail": (
-                f"valid: {', '.join(config_info.get('valid_secret_refs') or []) or 'none'}"
-                + (f"; broken: {', '.join(config_info['broken_secret_refs'])}" if config_info.get("broken_secret_refs") else "")
-            ),
+            "detail": f"env refs: {', '.join(config_info.get('env_refs') or []) or 'none'}",
         },
         {
             "id": "secrets_env",
-            "label": "Agent .continue/.env",
+            "label": "Agent .config/opencode/.env",
             "ok": secrets_info.get("exists", False),
             "detail": ", ".join(secrets_info.get("vars_set") or []) or "not written yet",
         },
@@ -355,7 +355,7 @@ async def build_ai_debug_report(
         },
         {
             "id": "agent_running",
-            "label": "Continue agent process",
+            "label": "OpenCode agent process",
             "ok": bool(agent_status.get("agent_running")),
             "detail": agent_status.get("agent_status") or "unknown",
         },
@@ -377,11 +377,12 @@ async def build_ai_debug_report(
 
     report = {
         "ok": all(step["ok"] for step in steps if step["id"] in {
-            "continue_cli", "active_profile_key", "config_secrets", "provider_reachable"
+            "opencode_cli", "active_profile_key", "config_secrets", "provider_reachable"
         }),
         "generated_at": _now(),
         "project_id": project_id,
         "active_profile": active_profile,
+        "opencode_cli": cli_info,
         "continue_cli": cli_info,
         "profiles": profiles,
         "config": config_info,
@@ -399,11 +400,9 @@ async def build_ai_debug_report(
             "agent_backend": agent_status.get("agent_backend"),
             "agent_install_ok": agent_status.get("agent_install_ok"),
             "is_agent_running_pid": is_agent_running(project_id),
-            "serve_command": build_serve_command(
-                resolve_agent_config_path(project_id),
-                int(agent_status.get("agent_port") or 5200),
-            ),
-            "continue_command": continue_command(),
+            "serve_command": build_serve_command(int(agent_status.get("agent_port") or 5200)),
+            "opencode_command": opencode_command(),
+            "continue_command": opencode_command(),
         },
         "steps": steps,
         "logs_tail": get_agent_logs(project_id, log_lines) if include_logs else "",

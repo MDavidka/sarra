@@ -109,20 +109,20 @@ async def stream_preview_logs(project_id: str, *, live_only: bool = False):
 
 
 async def stream_agent_logs(project_id: str, *, live_only: bool = False):
-    """SSE generator — tails Continue agent logs."""
-    from syte.continue_agent import agent_log_path, get_agent_logs
+    """SSE generator — tails OpenCode agent logs."""
+    from syte.opencode_agent import agent_log_path, get_agent_logs
 
     log_path = agent_log_path(project_id)
 
     if not live_only:
         snapshot = get_agent_logs(project_id, 300)
-        if snapshot and snapshot != "No Continue agent logs yet.":
+        if snapshot and snapshot != "No OpenCode agent logs yet.":
             for line in snapshot.splitlines():
                 yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
 
     offset = log_path.stat().st_size if log_path.exists() else 0
     if live_only:
-        yield f"data: {json.dumps({'type': 'session', 'text': 'Live Continue agent session'})}\n\n"
+        yield f"data: {json.dumps({'type': 'session', 'text': 'Live OpenCode agent session'})}\n\n"
 
     for tick in range(7200):
         if not log_path.exists():
@@ -151,8 +151,8 @@ async def stream_agent_activity(
     poll_state: bool = True,
 ):
     """SSE generator — replay + live agent activity (Cursor-like chat feed)."""
-    from syte.agent_activity import ingest_agent_state, list_agent_events, subscribe_agent_activity, unsubscribe_agent_activity
-    from syte.continue_agent import agent_local_url, get_agent_status
+    from syte.agent_activity import ingest_opencode_messages, list_agent_events, subscribe_agent_activity, unsubscribe_agent_activity
+    from syte.opencode_agent import agent_http_auth, agent_local_url, get_agent_status
 
     if not live_only:
         for event in await list_agent_events(project_id, since_id=since_id, limit=500):
@@ -174,18 +174,32 @@ async def stream_agent_activity(
             if poll_state and tick % 2 == 0:
                 status = await get_agent_status(project_id)
                 port = status.get("agent_port")
+                session_id = (status.get("agent_session_id") or "").strip()
                 if status.get("agent_running") and port:
                     try:
                         import httpx
 
+                        auth = agent_http_auth()
+                        base = agent_local_url(int(port)).rstrip("/")
                         async with httpx.AsyncClient(timeout=5.0) as client:
-                            response = await client.get(f"{agent_local_url(int(port)).rstrip('/')}/state")
-                        if response.status_code < 400:
-                            state = response.json()
-                            busy = state.get("isProcessing") or state.get("is_processing")
-                            if busy:
-                                yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
-                            await ingest_agent_state(project_id, state, source="agent")
+                            if session_id:
+                                status_response = await client.get(f"{base}/session/status", auth=auth)
+                                if status_response.status_code < 400:
+                                    session_status = (status_response.json() or {}).get(session_id) or {}
+                                    busy = str(session_status.get("type") or "").lower() in {
+                                        "busy",
+                                        "running",
+                                        "processing",
+                                    }
+                                    if busy:
+                                        yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
+                                messages_response = await client.get(
+                                    f"{base}/session/{session_id}/message",
+                                    auth=auth,
+                                )
+                                if messages_response.status_code < 400:
+                                    messages = messages_response.json() or []
+                                    await ingest_opencode_messages(project_id, messages, source="agent")
                             while not queue.empty():
                                 event = queue.get_nowait()
                                 since_id = max(since_id, int(event.get("id") or 0))

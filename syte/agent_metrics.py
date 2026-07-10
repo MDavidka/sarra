@@ -8,7 +8,7 @@ import aiosqlite
 
 from syte.ai_providers import PROFILE_ORDER
 from syte.config import settings
-from syte.continue_agent import continue_installed, is_agent_running
+from syte.opencode_agent import bridge_settings, is_agent_running, opencode_installed
 from syte.database import get_setting, list_projects
 
 REQUESTS_SCHEMA = """
@@ -81,7 +81,6 @@ async def agents_online_count() -> int:
 
 
 async def get_dashboard_metrics() -> dict:
-    from syte.continue_agent import bridge_settings
     from syte.system_stats import get_system_stats
 
     await ensure_agent_requests_table()
@@ -98,7 +97,7 @@ async def get_dashboard_metrics() -> dict:
 
     internal_ok = bool((await get_setting("syra_internal_secret", "")).strip())
     keys_ok = any(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
-    cli_ok = continue_installed()
+    cli_ok = opencode_installed()
 
     onboarding = {
         "internal_api": internal_ok,
@@ -128,6 +127,7 @@ async def get_dashboard_metrics() -> dict:
             "detail": f"{online} / {mnoa_max} agents running",
         },
         "onboarding": onboarding,
+        "opencode_cli_installed": cli_ok,
         "continue_cli_installed": cli_ok,
         "ai_providers": [
             {
