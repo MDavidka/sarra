@@ -597,6 +597,49 @@ async def communicate_with_agent(
     from syte.agent_metrics import log_agent_request
     from syte.agent_activity import record_agent_event
 
+    try:
+        return await _communicate_with_agent_impl(
+            project_id,
+            message,
+            model_profile=model_profile,
+            source=source,
+            auto_start=auto_start,
+        )
+    except Exception as exc:
+        err = str(exc) or "Agent request failed"
+        try:
+            await log_agent_request(
+                project_id,
+                source=source,
+                model_profile=model_profile,
+                message=message,
+                status="error",
+                error=err,
+            )
+            await record_agent_event(
+                project_id,
+                "request_failed",
+                title="Failed",
+                detail=err[:4000],
+                payload={"error": err},
+                source=source,
+            )
+        except Exception:
+            pass
+        return {"ok": False, "error": "agent_communicate_failed", "message": err}
+
+
+async def _communicate_with_agent_impl(
+    project_id: str,
+    message: str,
+    *,
+    model_profile: str | None = None,
+    source: str = "api",
+    auto_start: bool = True,
+) -> dict:
+    from syte.agent_metrics import log_agent_request
+    from syte.agent_activity import record_agent_event
+
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found"}
@@ -611,10 +654,10 @@ async def communicate_with_agent(
     project = await ensure_agent_runtime(project)
     try:
         await write_agent_config(project)
-    except RuntimeError as exc:
-        message = str(exc)
-        await update_project(project_id, {"agent_status": "error", "agent_last_error": message})
-        return {"ok": False, "error": "api_key_missing", "message": message}
+    except Exception as exc:
+        message_text = str(exc)
+        await update_project(project_id, {"agent_status": "error", "agent_last_error": message_text})
+        return {"ok": False, "error": "api_key_missing", "message": message_text}
 
     status = await get_agent_status(project_id)
     if not status.get("agent_running") or not status.get("agent_healthy"):

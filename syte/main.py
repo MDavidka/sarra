@@ -856,12 +856,20 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return await communicate_with_agent(
-        project_id,
-        body.message,
-        model_profile=body.model_profile,
-        source="gui",
-    )
+    if not (body.message or "").strip():
+        raise HTTPException(400, "Message cannot be empty")
+    try:
+        result = await communicate_with_agent(
+            project_id,
+            body.message.strip(),
+            model_profile=body.model_profile,
+            source="gui",
+        )
+    except Exception as exc:
+        return {"ok": False, "error": "agent_communicate_failed", "message": str(exc)}
+    if not result.get("ok"):
+        return result
+    return result
 
 
 @app.get("/api/projects/{project_id}/preview/status")

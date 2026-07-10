@@ -40,6 +40,40 @@ function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || '';
 }
 
+function shouldAttachApiKey(path) {
+  const key = getApiKey();
+  if (!key) return false;
+  // GUI routes are public on same-origin — a stale/revoked stored token breaks SSE and history.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const guiPrefixes = [
+      '/projects/',
+      '/agent_dashboard',
+      '/settings',
+      '/system',
+      '/tokens',
+    ];
+    if (guiPrefixes.some(prefix => path.startsWith(prefix))) return false;
+  }
+  return true;
+}
+
+function normalizeFetchError(message) {
+  const msg = (message || '').trim();
+  if (!msg || msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
+    return 'Network error — could not reach the Syte server. Refresh the page or check that Syte is running.';
+  }
+  return msg;
+}
+
+function parseApiErrorPayload(err, statusText) {
+  if (!err) return statusText || 'Request failed';
+  const detail = err.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map(d => d.msg || d).join(', ');
+  if (detail && typeof detail === 'object') return detail.message || detail.error || statusText || 'Request failed';
+  return err.message || statusText || 'Request failed';
+}
+
 function setApiKey(key) {
   if (key) localStorage.setItem(API_KEY_STORAGE, key);
   else localStorage.removeItem(API_KEY_STORAGE);
@@ -331,7 +365,7 @@ async function loadDebugChatHistory(projectId) {
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Could not load history',
-      detail: e.message,
+      detail: normalizeFetchError(e.message),
     });
   } finally {
     debugChatReplayingHistory = false;
@@ -358,10 +392,9 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     agentActivityStream = null;
   }
   const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId) });
-  const key = getApiKey();
-  if (key) params.set('api_key', key);
   agentActivityStream = new EventSource(`${API}/projects/${projectId}/agent/activity/stream?${params}`);
   setDebugChatLiveIndicator(true);
+  let streamErrorShown = false;
   agentActivityStream.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -376,6 +409,14 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     setDebugChatLiveIndicator(false);
     agentActivityStream?.close();
     agentActivityStream = null;
+    if (!streamErrorShown && reconnectAttempt === 0) {
+      streamErrorShown = true;
+      appendDebugChatBubble({
+        event_type: 'request_failed',
+        title: 'Live stream disconnected',
+        detail: 'Activity stream lost connection — retrying. Chat send still works.',
+      });
+    }
     scheduleAgentActivityReconnect(projectId, reconnectAttempt);
   };
 }
@@ -471,9 +512,9 @@ async function sendDebugChatMessage() {
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Request failed',
-      detail: e.message,
+      detail: normalizeFetchError(e.message),
     });
-    toast('Error: ' + e.message);
+    toast('Error: ' + normalizeFetchError(e.message));
   } finally {
     setDebugChatTyping(false);
     setDebugChatBusy(false);
@@ -544,10 +585,8 @@ function startLogStream(projectId, targetEl, { liveOnly = true, clearFirst = fal
   const hint = document.getElementById('svc-log-hint');
   let wasDeploying = true;
 
-  const key = getApiKey();
   const params = new URLSearchParams();
   if (liveOnly) params.set('live', '1');
-  if (key) params.set('api_key', key);
   const qs = params.toString();
   const url = `${API}/projects/${projectId}/logs/stream${qs ? '?' + qs : ''}`;
   logStream = new EventSource(url);
@@ -779,16 +818,17 @@ function closeAiSettings() {
 
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  const key = getApiKey();
-  if (key) headers['X-API-Key'] = key;
-  const res = await fetch(API + path, { headers, ...opts });
+  if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
+  let res = await fetch(API + path, { headers, ...opts });
+  if (res.status === 401 && getApiKey()) {
+    setApiKey('');
+    const retryHeaders = { ...headers };
+    delete retryHeaders['X-API-Key'];
+    res = await fetch(API + path, { headers: retryHeaders, ...opts });
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    const detail = err.detail;
-    const message = Array.isArray(detail)
-      ? detail.map(d => d.msg || d).join(', ')
-      : (typeof detail === 'object' && detail?.message ? detail.message : (detail || res.statusText));
-    throw new Error(message);
+    throw new Error(normalizeFetchError(parseApiErrorPayload(err, res.statusText)));
   }
   return res.json();
 }
@@ -1328,9 +1368,7 @@ function renderPreviewSection(p) {
 function startPreviewLogStream(projectId, targetEl) {
   stopPreviewStream();
   if (!targetEl) return;
-  const key = getApiKey();
   const params = new URLSearchParams({ live: '1' });
-  if (key) params.set('api_key', key);
   previewStream = new EventSource(`${API}/projects/${projectId}/preview/logs/stream?${params}`);
   setPreviewLogsLiveIndicator(true);
   previewStream.onmessage = (e) => {
@@ -2058,10 +2096,9 @@ document.getElementById('create-token-btn')?.addEventListener('click', async () 
   try {
     const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
     const box = document.getElementById('new-token-box');
-    box.textContent = `Token (copy now):\n${res.token}`;
+    box.textContent = `Token (copy for external API use — not needed for the web GUI):\n${res.token}`;
     box.classList.remove('hidden');
-    setApiKey(res.token);
-    toast('token created');
+    toast('token created — copy it now');
     await loadTokens();
   } catch (e) {
     toast('Error: ' + e.message);
