@@ -259,9 +259,6 @@ function shouldSkipDebugChatEvent(event) {
     if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
     return true;
   }
-    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
-    return true;
-  }
   if (event.event_type === 'user_message') {
     const messagesEl = getDebugChatMessagesEl();
     const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
