@@ -248,15 +248,18 @@ function refreshIcons() {
 }
 
 function updateSidebarNav(viewName) {
+  const isHome = viewName === 'dashboard';
   const isService = viewName === 'service';
-  const isDashboardFamily = viewName === 'dashboard' || viewName === 'new-service' || viewName === 'service';
-  const navView = viewName === 'new-service' ? 'dashboard' : viewName;
 
-  document.getElementById('nav-group-projects')?.classList.toggle('hidden', isService);
-  document.getElementById('nav-group-service')?.classList.toggle('hidden', !isService);
+  document.body.classList.toggle('nav-mode-service', isService);
+  document.body.classList.toggle('nav-mode-home', isHome);
+
+  document.getElementById('nav-block-platform')?.classList.toggle('hidden', !isHome);
+  document.getElementById('nav-block-service')?.classList.toggle('hidden', !isService);
+  document.getElementById('nav-block-system')?.classList.toggle('hidden', isService);
 
   document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
-    el.classList.toggle('active', !isService && el.dataset.view === navView);
+    el.classList.toggle('active', isHome && el.dataset.view === 'dashboard');
   });
 
   document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
@@ -264,7 +267,7 @@ function updateSidebarNav(viewName) {
       el.classList.remove('active');
       return;
     }
-    el.classList.toggle('active', el.dataset.view === viewName && !isDashboardFamily);
+    el.classList.toggle('active', !isHome && !isService && el.dataset.view === viewName);
   });
 }
 
@@ -643,6 +646,7 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
+  if (window.matchMedia('(max-width: 768px)').matches) closeDrawer();
   refreshIcons();
 }
 
@@ -1652,10 +1656,7 @@ document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
 });
 document.getElementById('nav-dashboard')?.addEventListener('click', () => showView('dashboard'));
 document.getElementById('nav-group-projects-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-projects'));
-document.getElementById('nav-service-head')?.addEventListener('click', () => {
-  if (activeServiceId) showView('dashboard');
-  else toggleNavGroup('nav-group-service');
-});
+document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
 document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;

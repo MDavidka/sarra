@@ -46,66 +46,73 @@
       </div>
 
       <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <p class="nav-section-label">Platform</p>
-
-        <div class="nav-group expanded" id="nav-group-projects">
-          <button type="button" class="nav-group-head" id="nav-group-projects-toggle" aria-expanded="true">
-            <span class="nav-group-icon" aria-hidden="true">P</span>
-            <span class="nav-group-title">Projects</span>
-            <i data-lucide="chevron-down" class="nav-group-chevron"></i>
-          </button>
-          <div class="nav-group-body" id="nav-group-projects-body">
-            <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
-              <i data-lucide="layout-grid"></i><span>Overview</span>
+        <div id="nav-block-platform" class="nav-block">
+          <p class="nav-section-label">Platform</p>
+          <div class="nav-group expanded" id="nav-group-projects">
+            <button type="button" class="nav-group-head" id="nav-group-projects-toggle" aria-expanded="true">
+              <span class="nav-group-icon" aria-hidden="true">P</span>
+              <span class="nav-group-title">Projects</span>
+              <i data-lucide="chevron-down" class="nav-group-chevron"></i>
             </button>
+            <div class="nav-group-body" id="nav-group-projects-body">
+              <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
+                <i data-lucide="layout-grid"></i><span>Home</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="nav-group expanded hidden" id="nav-group-service">
-          <button type="button" class="nav-group-head" id="nav-service-head" aria-expanded="true">
-            <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
-            <span class="nav-group-title" id="nav-service-title">Service</span>
-            <i data-lucide="chevron-down" class="nav-group-chevron"></i>
-          </button>
-          <div class="nav-group-body" id="sidebar-service-tabs">
-            <button type="button" class="nav-sublink active" data-svc-tab="general">
-              <i data-lucide="sliders-horizontal"></i><span>General</span>
+        <div id="nav-block-service" class="nav-block hidden">
+          <p class="nav-section-label">Project</p>
+          <div class="nav-group expanded" id="nav-group-service">
+            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
+              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
+              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
+              <span class="nav-group-title" id="nav-service-title">Service</span>
             </button>
-            <button type="button" class="nav-sublink" data-svc-tab="env">
-              <i data-lucide="variable"></i><span>Environment</span>
-            </button>
-            <button type="button" class="nav-sublink" data-svc-tab="logs">
-              <i data-lucide="terminal"></i><span>Logs</span>
-            </button>
-            <button type="button" class="nav-sublink" data-svc-tab="preview">
-              <i data-lucide="monitor-play"></i><span>Preview</span>
-            </button>
+            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
+              <button type="button" class="nav-sublink active" data-svc-tab="general">
+                <i data-lucide="sliders-horizontal"></i><span>General</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="env">
+                <i data-lucide="variable"></i><span>Environment</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="logs">
+                <i data-lucide="terminal"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="preview">
+                <i data-lucide="monitor-play"></i><span>Preview</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        <p class="nav-section-label">System</p>
-
-        <button type="button" class="sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
-          <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon"><span>Sycord</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="server-swarm">
-          <i data-lucide="boxes"></i><span>Server Swarm</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="users">
-          <i data-lucide="users"></i><span>Users</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="logs">
-          <i data-lucide="scroll-text"></i><span>Logs</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="ai">
-          <i data-lucide="bot"></i><span>AI</span>
-        </button>
-        <a class="sidebar-link" href="/api/" data-view="api">
-          <i data-lucide="book-open"></i><span>API</span>
-        </a>
-        <button type="button" class="sidebar-link" data-view="settings">
-          <i data-lucide="settings"></i><span>Settings</span>
-        </button>
+        <div id="nav-block-system" class="nav-block">
+          <p class="nav-section-label">System</p>
+          <div class="nav-block-links">
+            <button type="button" class="sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
+              <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon"><span>Sycord</span>
+            </button>
+            <button type="button" class="sidebar-link" data-view="server-swarm">
+              <i data-lucide="boxes"></i><span>Server Swarm</span>
+            </button>
+            <button type="button" class="sidebar-link" data-view="users">
+              <i data-lucide="users"></i><span>Users</span>
+            </button>
+            <button type="button" class="sidebar-link" data-view="logs">
+              <i data-lucide="scroll-text"></i><span>Logs</span>
+            </button>
+            <button type="button" class="sidebar-link" data-view="ai">
+              <i data-lucide="bot"></i><span>AI</span>
+            </button>
+            <a class="sidebar-link" href="/api/" data-view="api">
+              <i data-lucide="book-open"></i><span>API</span>
+            </a>
+            <button type="button" class="sidebar-link" data-view="settings">
+              <i data-lucide="settings"></i><span>Settings</span>
+            </button>
+          </div>
+        </div>
       </nav>
     </aside>
 

@@ -6,6 +6,7 @@
   --bg-input: #ffffff;
   --bg-sidebar: #ffffff;
   --sidebar-w: 260px;
+  --sidebar-w-compact: 228px;
   --accent-line: #2563eb;
   --text: #09090b;
   --text-muted: #71717a;
@@ -246,30 +247,49 @@ body.drawer-open .sidebar-backdrop {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
-  padding: 0.65rem 0.5rem 0.35rem;
+  padding: 0.5rem 0.45rem 0.25rem;
   margin: 0;
 }
 
+.nav-block.hidden { display: none; }
+
+.nav-block-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .nav-group {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
 }
 
 .nav-group-head {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
   width: 100%;
-  padding: 0.55rem 0.65rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fafafa;
   color: var(--text);
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   text-align: left;
   transition: background 0.12s, border-color 0.12s;
+}
+
+.nav-group-head-back .nav-group-back-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.nav-group-head-back:hover .nav-group-back-icon {
+  color: var(--text);
 }
 
 .nav-group-head:hover {
@@ -318,26 +338,32 @@ body.drawer-open .sidebar-backdrop {
 
 .nav-group-body {
   position: relative;
-  margin: 0.35rem 0 0 0.85rem;
-  padding-left: 0.85rem;
+  margin: 0.3rem 0 0 0.75rem;
+  padding-left: 0.75rem;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+}
+
+.nav-group-body-compact {
+  margin-top: 0.25rem;
+  margin-left: 0.55rem;
+  padding-left: 0.65rem;
 }
 
 .nav-sublink {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
   width: 100%;
-  padding: 0.5rem 0.55rem;
+  padding: 0.42rem 0.5rem;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 12px;
   text-decoration: none;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
@@ -367,7 +393,7 @@ body.drawer-open .sidebar-backdrop {
 .nav-sublink.active::before {
   content: '';
   position: absolute;
-  left: -0.85rem;
+  left: -0.75rem;
   top: 4px;
   bottom: 4px;
   width: 2px;
@@ -375,20 +401,45 @@ body.drawer-open .sidebar-backdrop {
   border-radius: 1px;
 }
 
+.nav-group-body-compact .nav-sublink.active::before {
+  left: -0.65rem;
+}
+
 .nav-group.hidden { display: none; }
+
+body.nav-mode-service {
+  --sidebar-w: var(--sidebar-w-compact);
+}
+
+body.nav-mode-service .app-sidebar {
+  padding: 0.85rem 0.65rem 1rem;
+}
+
+body.nav-mode-service .sidebar-head {
+  margin-bottom: 0.15rem;
+}
+
+body.nav-mode-service .context-switcher-wrap,
+body.nav-mode-service .sidebar-load-row {
+  display: none;
+}
+
+body.nav-mode-service .sidebar-menu {
+  gap: 0;
+}
 
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
   width: 100%;
-  padding: 0.65rem 0.75rem;
+  padding: 0.5rem 0.65rem;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 13px;
   text-decoration: none;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
