@@ -31,7 +31,7 @@ from syte.update_source import resolve_update_target
 target = resolve_update_target(Path.cwd())
 print(f"==> Update source: {target.label}")
 print(f"==> Branch/ref: {target.branch}")
-ok, message = _git_sync_update_target(target)
+ok, message, _checkout_ref = _git_sync_update_target(target)
 print(message)
 sys.exit(0 if ok else 1)
 PY
