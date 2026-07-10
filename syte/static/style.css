@@ -1674,6 +1674,220 @@ code {
 .svc-tab-panel { display: none; }
 .svc-tab-panel.active { display: block; }
 
+/* Debug chat (service editor) */
+.debug-chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 420px;
+}
+
+.debug-chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.debug-chat-toolbar-left,
+.debug-chat-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.debug-chat-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.debug-chat-profile {
+  min-width: 5.5rem;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.debug-chat-messages {
+  flex: 1;
+  min-height: 280px;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fafafa;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.debug-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 2rem 1rem;
+  margin: auto;
+  max-width: 320px;
+}
+
+.debug-chat-empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.45;
+}
+
+.debug-chat-bubble {
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  max-width: 92%;
+}
+
+.debug-chat-user {
+  align-self: flex-end;
+  background: var(--text);
+  color: #fff;
+}
+
+.debug-chat-user .debug-chat-bubble-head {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.debug-chat-assistant {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.debug-chat-error {
+  align-self: flex-start;
+  background: var(--danger-bg);
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.debug-chat-thinking {
+  align-self: flex-start;
+  background: #f4f4f5;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+}
+
+.debug-chat-thinking .debug-chat-bubble-body {
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
+.debug-chat-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+  color: var(--text-dim);
+}
+
+.debug-chat-bubble-head svg {
+  width: 12px;
+  height: 12px;
+}
+
+.debug-chat-bubble-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-chat-action,
+.debug-chat-system {
+  align-self: stretch;
+  max-width: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+}
+
+.debug-chat-action-row,
+.debug-chat-system-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.debug-chat-action-row svg,
+.debug-chat-system-row svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  opacity: 0.7;
+}
+
+.debug-chat-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.debug-chat-action-text strong {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.debug-chat-action-text span {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+
+.debug-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 0.55rem;
+}
+
+.debug-chat-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--font);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: transparent;
+  min-height: 2.5rem;
+  max-height: 120px;
+}
+
+.debug-chat-send {
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+.debug-chat-send:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .svc-block-title {
   font-size: 0.8rem;
   font-weight: 600;

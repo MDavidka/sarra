@@ -105,6 +105,9 @@
               <button type="button" class="nav-sublink" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
+                <i data-lucide="messages-square"></i><span>Debug Chat</span>
+              </button>
             </div>
           </div>
         </div>
@@ -330,6 +333,39 @@
                     </div>
                   </div>
                   <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
+                <div class="debug-chat-panel">
+                  <div class="debug-chat-toolbar">
+                    <div class="debug-chat-toolbar-left">
+                      <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>
+                      <span class="debug-chat-status" id="debug-chat-status">Checking agent…</span>
+                    </div>
+                    <div class="debug-chat-toolbar-right">
+                      <select id="debug-chat-profile" class="toolbar-select debug-chat-profile" aria-label="Model profile">
+                        <option value="syra-nano">nano</option>
+                        <option value="syra-base" selected>base</option>
+                        <option value="syra-havy">havy</option>
+                      </select>
+                      <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear chat">
+                        <i data-lucide="trash-2"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="debug-chat-messages" id="debug-chat-messages">
+                    <div class="debug-chat-empty" id="debug-chat-empty">
+                      <i data-lucide="sparkles"></i>
+                      <p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>
+                    </div>
+                  </div>
+                  <div class="debug-chat-composer">
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" placeholder="e.g. Change the hero headline to Welcome and use a blue gradient background"></textarea>
+                    <button type="button" class="btn-pill btn-primary debug-chat-send" id="debug-chat-send">
+                      <i data-lucide="send"></i><span>Send</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

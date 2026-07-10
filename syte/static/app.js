@@ -8,6 +8,11 @@ let previewStream = null;
 let activeServiceId = null;
 let deployPollTimer = null;
 let previewPollTimer = null;
+let agentActivityStream = null;
+let debugChatSinceId = 0;
+let debugChatRenderedIds = new Set();
+let debugChatAutoScroll = true;
+let debugChatBusy = false;
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -55,6 +60,299 @@ function stopPreviewStream() {
   }
   stopPreviewPoll();
   setPreviewLogsLiveIndicator(false);
+}
+
+function stopAgentActivityStream() {
+  if (agentActivityStream) {
+    agentActivityStream.close();
+    agentActivityStream = null;
+  }
+  setDebugChatLiveIndicator(false);
+}
+
+function setDebugChatLiveIndicator(live) {
+  const dot = document.getElementById('debug-chat-live');
+  if (dot) dot.classList.toggle('live', !!live);
+}
+
+function getDebugChatMessagesEl() {
+  return document.getElementById('debug-chat-messages');
+}
+
+function hideDebugChatEmpty() {
+  document.getElementById('debug-chat-empty')?.classList.add('hidden');
+}
+
+function showDebugChatEmpty() {
+  const empty = document.getElementById('debug-chat-empty');
+  if (empty) empty.classList.remove('hidden');
+}
+
+function scrollDebugChatToBottom() {
+  const el = getDebugChatMessagesEl();
+  if (el && debugChatAutoScroll) el.scrollTop = el.scrollHeight;
+}
+
+function clearDebugChatPanel() {
+  const el = getDebugChatMessagesEl();
+  if (!el) return;
+  el.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'debug-chat-empty';
+  empty.id = 'debug-chat-empty';
+  empty.innerHTML = '<i data-lucide="sparkles"></i><p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>';
+  el.appendChild(empty);
+  debugChatRenderedIds.clear();
+  debugChatSinceId = 0;
+  refreshIcons();
+}
+
+function debugChatIconForEvent(eventType) {
+  const map = {
+    user_message: 'user',
+    request_started: 'user',
+    assistant_message: 'bot',
+    request_completed: 'bot',
+    thinking: 'brain',
+    tool_call: 'wrench',
+    command_run: 'terminal',
+    file_created: 'file-plus-2',
+    file_modified: 'file-pen-line',
+    file_deleted: 'file-x-2',
+    file_read: 'file-search',
+    request_failed: 'circle-alert',
+    processing: 'loader',
+    agent_started: 'play',
+    agent_stopped: 'square',
+    status: 'info',
+  };
+  return map[eventType] || 'circle-dot';
+}
+
+function debugChatRoleForEvent(event) {
+  const type = event.event_type;
+  if (type === 'user_message' || type === 'request_started') return 'user';
+  if (type === 'assistant_message' || type === 'request_completed') return 'assistant';
+  if (type === 'request_failed') return 'error';
+  if (type === 'thinking' || type === 'processing') return 'thinking';
+  if (['file_created', 'file_modified', 'file_deleted', 'file_read', 'tool_call', 'command_run'].includes(type)) {
+    return 'action';
+  }
+  return 'system';
+}
+
+function appendDebugChatBubble(event) {
+  const messagesEl = getDebugChatMessagesEl();
+  if (!messagesEl || !event) return;
+  hideDebugChatEmpty();
+
+  const role = debugChatRoleForEvent(event);
+  const bubble = document.createElement('div');
+  bubble.className = `debug-chat-bubble debug-chat-${role}`;
+  bubble.dataset.eventId = String(event.id || '');
+
+  const iconName = debugChatIconForEvent(event.event_type);
+  const title = event.title || event.event_type || 'Event';
+  const detail = event.detail || event.payload?.content || event.payload?.reply || '';
+
+  if (role === 'user' || role === 'assistant' || role === 'error') {
+    bubble.innerHTML = `
+      <div class="debug-chat-bubble-head">
+        <i data-lucide="${iconName}"></i>
+        <span>${esc(title)}</span>
+      </div>
+      <div class="debug-chat-bubble-body">${esc(detail)}</div>
+    `;
+  } else if (role === 'thinking') {
+    bubble.innerHTML = `
+      <div class="debug-chat-bubble-head">
+        <i data-lucide="${iconName}"></i>
+        <span>${esc(title)}</span>
+      </div>
+      <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
+    `;
+  } else if (role === 'action') {
+    bubble.innerHTML = `
+      <div class="debug-chat-action-row">
+        <i data-lucide="${iconName}"></i>
+        <div class="debug-chat-action-text">
+          <strong>${esc(title)}</strong>
+          ${detail ? `<span>${esc(detail)}</span>` : ''}
+        </div>
+      </div>
+    `;
+  } else {
+    bubble.innerHTML = `
+      <div class="debug-chat-system-row">
+        <i data-lucide="${iconName}"></i>
+        <span>${esc(title)}${detail ? ` — ${esc(detail)}` : ''}</span>
+      </div>
+    `;
+  }
+
+  messagesEl.appendChild(bubble);
+  scrollDebugChatToBottom();
+  refreshIcons();
+}
+
+function shouldSkipDebugChatEvent(event) {
+  if (['request_started', 'request_completed', 'processing', 'status'].includes(event.event_type)) {
+    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    return true;
+  }
+  if (event.event_type === 'user_message') {
+    const messagesEl = getDebugChatMessagesEl();
+    const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble');
+    const last = bubbles?.[bubbles.length - 1];
+    if (last?.classList.contains('debug-chat-user')) {
+      const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
+      if (body === event.detail) {
+        if (event.id != null) {
+          debugChatRenderedIds.add(event.id);
+          debugChatSinceId = Math.max(debugChatSinceId, event.id);
+        }
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function handleDebugChatActivity(event) {
+  if (!event || shouldSkipDebugChatEvent(event)) return;
+  const eventId = event.id;
+  if (eventId != null && debugChatRenderedIds.has(eventId)) return;
+  if (eventId != null) debugChatRenderedIds.add(eventId);
+
+  appendDebugChatBubble(event);
+  if (eventId != null) debugChatSinceId = Math.max(debugChatSinceId, eventId);
+
+  if (['file_created', 'file_modified', 'file_deleted'].includes(event.event_type)) {
+    onDebugChatWorkspaceChange();
+  }
+}
+
+async function onDebugChatWorkspaceChange() {
+  if (!activeServiceId) return;
+  await loadProjects();
+  const p = projects.find(x => x.id === activeServiceId);
+  if (!p || activeSvcTab !== 'debug-chat') return;
+  loadWorkspaceFiles(p.id);
+  renderServiceEmbed(p);
+  renderPreviewSection(p);
+}
+
+async function loadDebugChatHistory(projectId) {
+  try {
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=200`);
+    clearDebugChatPanel();
+    for (const event of res.events || []) {
+      handleDebugChatActivity(event);
+    }
+  } catch (e) {
+    appendDebugChatBubble({
+      event_type: 'request_failed',
+      title: 'Could not load history',
+      detail: e.message,
+    });
+  }
+}
+
+function startAgentActivityStream(projectId) {
+  stopAgentActivityStream();
+  const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId) });
+  const key = getApiKey();
+  if (key) params.set('api_key', key);
+  agentActivityStream = new EventSource(`${API}/projects/${projectId}/agent/activity/stream?${params}`);
+  setDebugChatLiveIndicator(true);
+  agentActivityStream.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'activity' && msg.event) handleDebugChatActivity(msg.event);
+    } catch { /* ping */ }
+  };
+  agentActivityStream.onerror = () => setDebugChatLiveIndicator(false);
+}
+
+async function updateDebugChatAgentStatus() {
+  const statusEl = document.getElementById('debug-chat-status');
+  if (!statusEl || !activeServiceId) return;
+  try {
+    const res = await api(`/projects/${activeServiceId}/agent`);
+    if (res.agent_running) {
+      const model = res.agent_model?.profile || res.agent_model?.model || 'agent';
+      statusEl.textContent = `Agent online · ${model}`;
+    } else {
+      statusEl.textContent = 'Agent offline — starts on first message';
+    }
+  } catch {
+    statusEl.textContent = 'Agent status unavailable';
+  }
+}
+
+function setDebugChatBusy(busy) {
+  debugChatBusy = busy;
+  const btn = document.getElementById('debug-chat-send');
+  const input = document.getElementById('debug-chat-input');
+  if (btn) btn.disabled = busy;
+  if (input) input.disabled = busy;
+}
+
+async function openDebugChatTab() {
+  if (!activeServiceId) return;
+  await loadDebugChatHistory(activeServiceId);
+  startAgentActivityStream(activeServiceId);
+  await updateDebugChatAgentStatus();
+  refreshIcons();
+}
+
+async function sendDebugChatMessage() {
+  const input = document.getElementById('debug-chat-input');
+  const message = input?.value.trim();
+  if (!message || !activeServiceId || debugChatBusy) return;
+
+  setDebugChatBusy(true);
+  hideDebugChatEmpty();
+  appendDebugChatBubble({
+    event_type: 'user_message',
+    title: 'You',
+    detail: message,
+  });
+
+  const profile = document.getElementById('debug-chat-profile')?.value || 'syra-base';
+  try {
+    const res = await api(`/projects/${activeServiceId}/agent/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message, model_profile: profile }),
+    });
+    if (!res.ok) {
+      appendDebugChatBubble({
+        event_type: 'request_failed',
+        title: 'Request failed',
+        detail: res.message || res.error || 'Unknown error',
+      });
+      toast(res.message || 'Agent request failed');
+    } else if (res.reply) {
+      appendDebugChatBubble({
+        event_type: 'assistant_message',
+        title: 'Assistant',
+        detail: res.reply,
+      });
+      await onDebugChatWorkspaceChange();
+    }
+    await updateDebugChatAgentStatus();
+  } catch (e) {
+    appendDebugChatBubble({
+      event_type: 'request_failed',
+      title: 'Request failed',
+      detail: e.message,
+    });
+    toast('Error: ' + e.message);
+  } finally {
+    if (input) input.value = '';
+    setDebugChatBusy(false);
+    scrollDebugChatToBottom();
+  }
 }
 
 function logLineClass(text) {
@@ -284,6 +582,7 @@ function showView(name) {
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
     stopPreviewStream();
+    stopAgentActivityStream();
   }
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
@@ -628,8 +927,9 @@ function connLabel(p) {
 }
 
 function switchSvcTab(tab) {
-  const allowed = ['general', 'env', 'logs', 'preview'];
+  const allowed = ['general', 'env', 'logs', 'preview', 'debug-chat'];
   if (!allowed.includes(tab)) tab = 'general';
+  const prevTab = activeSvcTab;
   activeSvcTab = tab;
   document.querySelectorAll('.nav-sublink[data-svc-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
@@ -637,6 +937,11 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
+  if (tab === 'debug-chat') {
+    openDebugChatTab();
+  } else if (prevTab === 'debug-chat') {
+    stopAgentActivityStream();
+  }
   if (window.matchMedia('(max-width: 768px)').matches) closeDrawer();
   refreshIcons();
 }
@@ -1651,6 +1956,19 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
   const btn = e.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
   switchSvcTab(btn.dataset.svcTab);
+});
+document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
+document.getElementById('debug-chat-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendDebugChatMessage();
+  }
+});
+document.getElementById('debug-chat-clear')?.addEventListener('click', () => {
+  clearDebugChatPanel();
+  if (activeServiceId && activeSvcTab === 'debug-chat') {
+    startAgentActivityStream(activeServiceId);
+  }
 });
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
