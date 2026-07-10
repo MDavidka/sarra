@@ -5,8 +5,23 @@ set -euo pipefail
 SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SYTE_DIR"
 
+VENV_DIR="${SYTE_DIR}/.venv"
+PYTHON="${VENV_DIR}/bin/python"
+PIP="${VENV_DIR}/bin/pip"
+
+if [[ ! -x "$PYTHON" ]]; then
+  echo "==> Creating Python virtualenv"
+  python3 -m venv "$VENV_DIR"
+fi
+
+echo "==> Installing Python dependencies"
+"$PIP" install --upgrade pip -q
+"$PIP" install -r "${SYTE_DIR}/requirements.txt" -q
+
+export PYTHONPATH="${SYTE_DIR}"
+
 echo "==> Resolving update source"
-python3 - <<'PY'
+"$PYTHON" - <<'PY'
 from pathlib import Path
 import sys
 
