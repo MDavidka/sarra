@@ -223,6 +223,21 @@ async def write_agent_config(project: dict) -> Path:
         lines.append(f"  - name: {_yaml_quote(rule['name'])}")
         rule_text = rule["rule"].replace('"', '\\"')
         lines.append(f"    rule: {_yaml_quote(rule_text)}")
+
+    from syte.agent_skills import mcp_server_config
+
+    mcp = mcp_server_config(project["id"], root)
+    lines.append("mcpServers:")
+    lines.append(f"  - name: {_yaml_quote(mcp['name'])}")
+    lines.append(f"    command: {_yaml_quote(mcp['command'])}")
+    lines.append("    args:")
+    for arg in mcp["args"]:
+        lines.append(f"      - {_yaml_quote(str(arg))}")
+    if mcp.get("env"):
+        lines.append("    env:")
+        for key, value in mcp["env"].items():
+            lines.append(f"      {_yaml_quote(key)}: {_yaml_quote(str(value))}")
+
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
 

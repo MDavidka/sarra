@@ -9,6 +9,7 @@ let activeServiceId = null;
 let deployPollTimer = null;
 let previewPollTimer = null;
 let agentActivityStream = null;
+let agentActivityReconnectTimer = null;
 let debugChatSinceId = 0;
 let debugChatRenderedIds = new Set();
 let debugChatAutoScroll = true;
@@ -63,6 +64,10 @@ function stopPreviewStream() {
 }
 
 function stopAgentActivityStream() {
+  if (agentActivityReconnectTimer) {
+    clearTimeout(agentActivityReconnectTimer);
+    agentActivityReconnectTimer = null;
+  }
   if (agentActivityStream) {
     agentActivityStream.close();
     agentActivityStream = null;
@@ -114,7 +119,11 @@ const DEBUG_CHAT_ACTION_LABELS = {
   file_read: 'Read file',
   file_search: 'Search',
   command_run: 'Run command',
-  tool_call: 'Tool',
+  tool_call: 'Tool call',
+  service_action: 'Service',
+  request_started: 'Request started',
+  request_completed: 'Completed',
+  processing: 'Working',
 };
 
 function debugChatIconForEvent(eventType) {
@@ -124,11 +133,14 @@ function debugChatIconForEvent(eventType) {
     thinking: 'brain',
     tool_call: 'wrench',
     command_run: 'terminal',
+    service_action: 'settings-2',
     file_created: 'file-plus-2',
     file_modified: 'file-pen-line',
     file_deleted: 'file-x-2',
     file_read: 'file-text',
     file_search: 'search',
+    request_started: 'play-circle',
+    request_completed: 'check-circle-2',
     request_failed: 'circle-alert',
     processing: 'loader',
     agent_started: 'play',
@@ -141,29 +153,23 @@ function debugChatIconForEvent(eventType) {
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
   if (type === 'user_message') return 'user';
-  if (type === 'assistant_message') return 'assistant';
+  if (type === 'assistant_message' || type === 'request_completed') return 'assistant';
   if (type === 'request_failed') return 'error';
-  if (type === 'thinking' || type === 'processing') return 'thinking';
-  if (['file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search', 'tool_call', 'command_run'].includes(type)) {
+  if (type === 'thinking') return 'thinking';
+  if (type === 'processing') return 'processing';
+  if ([
+    'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
+    'tool_call', 'command_run', 'service_action', 'request_started',
+  ].includes(type)) {
     return 'action';
   }
   return 'system';
 }
 
 function debugChatActionTitle(event) {
+  if (event.event_type === 'request_completed') return 'Assistant';
+  if (event.event_type === 'request_started') return 'Request';
   return DEBUG_CHAT_ACTION_LABELS[event.event_type] || event.title || event.event_type || 'Action';
-}
-
-function isDuplicateDebugChatBubble(role, detail) {
-  const messagesEl = getDebugChatMessagesEl();
-  const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
-  const last = bubbles?.[bubbles.length - 1];
-  if (!last || !detail) return false;
-  if (!last.classList.contains(`debug-chat-${role}`)) return false;
-  const body = last.querySelector('.debug-chat-bubble-body')?.textContent
-    || last.querySelector('.debug-chat-action-text span')?.textContent
-    || last.querySelector('.debug-chat-action-text strong')?.textContent;
-  return body === detail || (role === 'action' && last.querySelector('.debug-chat-action-text strong')?.textContent === detail);
 }
 
 function setDebugChatTyping(show) {
@@ -198,10 +204,12 @@ function appendDebugChatBubble(event) {
   const detail = event.detail || event.payload?.content || event.payload?.reply || '';
   const actionTitle = debugChatActionTitle(event);
 
-  if ((role === 'user' || role === 'assistant') && isDuplicateDebugChatBubble(role, detail)) return;
-  if (role === 'action' && isDuplicateDebugChatBubble('action', actionTitle)) return;
-
   hideDebugChatEmpty();
+  if (event.event_type === 'processing') {
+    setDebugChatTyping(true);
+    return;
+  }
+  setDebugChatTyping(false);
 
   const bubble = document.createElement('div');
   bubble.className = `debug-chat-bubble debug-chat-${role}`;
@@ -251,37 +259,11 @@ function appendDebugChatBubble(event) {
 }
 
 function shouldSkipDebugChatEvent(event) {
-  if (['request_started', 'request_completed', 'processing', 'status'].includes(event.event_type)) {
-    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
-    return true;
-  }
-  if (event.event_type === 'tool_call' && !(event.title || '').includes('Preview access')) {
-    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
-    return true;
-  }
-    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
-    return true;
-  }
   if (event.event_type === 'user_message') {
     const messagesEl = getDebugChatMessagesEl();
     const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
     const last = bubbles?.[bubbles.length - 1];
     if (last?.classList.contains('debug-chat-user')) {
-      const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
-      if (body === event.detail) {
-        if (event.id != null) {
-          debugChatRenderedIds.add(event.id);
-          debugChatSinceId = Math.max(debugChatSinceId, event.id);
-        }
-        return true;
-      }
-    }
-  }
-  if (event.event_type === 'assistant_message') {
-    const messagesEl = getDebugChatMessagesEl();
-    const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
-    const last = bubbles?.[bubbles.length - 1];
-    if (last?.classList.contains('debug-chat-assistant')) {
       const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
       if (body === event.detail) {
         if (event.id != null) {
@@ -304,8 +286,16 @@ function handleDebugChatActivity(event) {
   appendDebugChatBubble(event);
   if (eventId != null) debugChatSinceId = Math.max(debugChatSinceId, eventId);
 
-  if (['file_created', 'file_modified', 'file_deleted', 'file_search'].includes(event.event_type)) {
+  const refreshTypes = [
+    'file_created', 'file_modified', 'file_deleted', 'file_search',
+    'service_action', 'command_run', 'request_completed',
+  ];
+  if (refreshTypes.includes(event.event_type)) {
     onDebugChatWorkspaceChange();
+  }
+  if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
+    setDebugChatTyping(false);
+    setDebugChatBusy(false);
   }
 }
 
@@ -321,7 +311,7 @@ async function onDebugChatWorkspaceChange() {
 
 async function loadDebugChatHistory(projectId) {
   try {
-    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=200`);
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500`);
     clearDebugChatPanel();
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
@@ -335,8 +325,23 @@ async function loadDebugChatHistory(projectId) {
   }
 }
 
-function startAgentActivityStream(projectId) {
-  stopAgentActivityStream();
+function scheduleAgentActivityReconnect(projectId, attempt = 0) {
+  if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) return;
+  const delay = Math.min(15000, 1000 * Math.pow(2, attempt));
+  agentActivityReconnectTimer = setTimeout(() => {
+    startAgentActivityStream(projectId, attempt + 1);
+  }, delay);
+}
+
+function startAgentActivityStream(projectId, reconnectAttempt = 0) {
+  if (agentActivityReconnectTimer) {
+    clearTimeout(agentActivityReconnectTimer);
+    agentActivityReconnectTimer = null;
+  }
+  if (agentActivityStream) {
+    agentActivityStream.close();
+    agentActivityStream = null;
+  }
   const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId) });
   const key = getApiKey();
   if (key) params.set('api_key', key);
@@ -345,10 +350,19 @@ function startAgentActivityStream(projectId) {
   agentActivityStream.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'activity' && msg.event) handleDebugChatActivity(msg.event);
-    } catch { /* ping */ }
+      if (msg.type === 'activity' && msg.event) {
+        handleDebugChatActivity(msg.event);
+      } else if (msg.type === 'ping' && msg.since_id != null) {
+        debugChatSinceId = Math.max(debugChatSinceId, msg.since_id);
+      }
+    } catch { /* ignore */ }
   };
-  agentActivityStream.onerror = () => setDebugChatLiveIndicator(false);
+  agentActivityStream.onerror = () => {
+    setDebugChatLiveIndicator(false);
+    agentActivityStream?.close();
+    agentActivityStream = null;
+    scheduleAgentActivityReconnect(projectId, reconnectAttempt);
+  };
 }
 
 async function updateDebugChatAgentStatus() {
