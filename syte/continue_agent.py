@@ -177,11 +177,14 @@ def _secret_ref(env_name: str) -> str:
 
 
 async def write_agent_config(project: dict) -> Path:
+    from syte.agent_skills import build_agent_rules, read_access_config, write_agent_skills
+
     project = await ensure_agent_runtime(project)
     bridge = await bridge_settings()
     config_path = agent_config_path(project["id"])
     model_data = await selected_model_metadata(project)
     active_profile = model_data["profile"]
+    root = agent_root(project["id"])
 
     configured = [name for name in PROFILE_ORDER if bridge["profiles"][name]["api_key"]]
     if active_profile not in configured:
@@ -191,6 +194,9 @@ async def write_agent_config(project: dict) -> Path:
         )
     if not configured:
         raise RuntimeError("No model API keys configured. Open AI settings and add provider keys.")
+
+    access_config = await read_access_config(project["id"], root)
+    write_agent_skills(project["id"], root)
 
     ordered = sorted(configured, key=lambda name: name != active_profile)
     lines = [
@@ -212,6 +218,11 @@ async def write_agent_config(project: dict) -> Path:
             "      - edit",
             "      - apply",
         ])
+    lines.append("rules:")
+    for rule in build_agent_rules(project["id"], access_config):
+        lines.append(f"  - name: {_yaml_quote(rule['name'])}")
+        rule_text = rule["rule"].replace('"', '\\"')
+        lines.append(f"    rule: {_yaml_quote(rule_text)}")
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
 
@@ -336,6 +347,9 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         "CONTINUE_GLOBAL_DIR": str(home / ".continue"),
         "CONTINUE_DISABLE_HUB": "1",
     }
+    from syte.agent_skills import agent_path_env
+
+    env.update(agent_path_env(project_id, agent_root(project_id)))
     for name in PROFILE_ORDER:
         spec = bridge["profiles"][name]
         if spec["api_key"]:

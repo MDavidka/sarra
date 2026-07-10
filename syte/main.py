@@ -688,6 +688,78 @@ class AgentTestRequest(BaseModel):
     model_profile: str | None = None
 
 
+class AgentAccessRequest(BaseModel):
+    action: str
+    url: str | None = None
+    lines: int | None = None
+
+
+class AgentAccessConfigRequest(BaseModel):
+    custom_urls: list[str] = []
+
+
+@app.get("/api/projects/{project_id}/agent/access")
+async def api_agent_access_capabilities(project_id: str):
+    from syte.preview_access import list_access_capabilities
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return await list_access_capabilities(project_id)
+
+
+@app.get("/api/projects/{project_id}/agent/access-config")
+async def api_agent_access_config_get(project_id: str):
+    from syte.agent_skills import read_access_config
+    from syte.continue_agent import agent_root
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, **(await read_access_config(project_id, agent_root(project_id)))}
+
+
+@app.put("/api/projects/{project_id}/agent/access-config")
+async def api_agent_access_config_put(project_id: str, body: AgentAccessConfigRequest):
+    from syte.agent_skills import read_access_config, write_access_config
+    from syte.continue_agent import agent_root, write_agent_config
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    root = agent_root(project_id)
+    path = await write_access_config(project_id, body.model_dump(), root)
+    await write_agent_config(project)
+    return {"ok": True, "path": str(path), **(await read_access_config(project_id, root))}
+
+
+@app.post("/api/projects/{project_id}/agent/access")
+async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
+    from syte.agent_activity import record_agent_event
+    from syte.preview_access import run_access_action
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await run_access_action(
+        project_id,
+        body.action,
+        url=body.url,
+        lines=body.lines or 200,
+    )
+    if result.get("ok"):
+        await record_agent_event(
+            project_id,
+            "tool_call",
+            role="assistant",
+            title=f"Preview access: {body.action}",
+            detail=(body.url or result.get("preview_url") or body.action)[:4000],
+            payload={"action": body.action, "access": True},
+            source="gui",
+        )
+    return result
+
+
 @app.get("/api/agent_dashboard")
 async def api_agent_dashboard_gui():
     from syte.agent_metrics import get_dashboard_metrics

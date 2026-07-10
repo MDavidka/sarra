@@ -39,6 +39,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "file_modified",
     "file_deleted",
     "file_read",
+    "file_search",
     "request_started",
     "request_completed",
     "request_failed",
@@ -208,13 +209,17 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
 
     path = str(args.get("path") or args.get("file_path") or args.get("filepath") or "")
     command = str(args.get("command") or args.get("cmd") or "")
+    query = str(args.get("query") or args.get("pattern") or args.get("search") or "")
 
+    if any(k in name for k in ("grep", "ripgrep", "rg", "search", "find", "glob", "list_dir", "ls")):
+        detail = path or query or command[:200] or name
+        return "file_search", "Search", detail, args
     if any(k in name for k in ("write", "create_file", "create")):
-        return "file_created", "Created file", path or command[:200], args
-    if any(k in name for k in ("edit", "patch", "replace", "modify")):
-        return "file_modified", "Modified file", path or command[:200], args
+        return "file_created", "Create file", path or command[:200], args
+    if any(k in name for k in ("edit", "patch", "replace", "modify", "rewrite")):
+        return "file_modified", "Rewrite file", path or command[:200], args
     if any(k in name for k in ("delete", "remove", "unlink")):
-        return "file_deleted", "Deleted file", path or command[:200], args
+        return "file_deleted", "Delete file", path or command[:200], args
     if any(k in name for k in ("read", "view", "cat")):
         return "file_read", "Read file", path or command[:200], args
     if any(k in name for k in ("terminal", "bash", "shell", "run", "command", "exec")):

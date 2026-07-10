@@ -46,30 +46,71 @@
       </div>
 
       <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <button type="button" class="sidebar-link active" data-view="dashboard">
-          <i data-lucide="home"></i><span>Home</span>
-        </button>
-        <button type="button" class="sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
-          <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon"><span>Sycord</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="server-swarm">
-          <i data-lucide="boxes"></i><span>Server Swarm</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="users">
-          <i data-lucide="users"></i><span>Users</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="logs">
-          <i data-lucide="scroll-text"></i><span>Logs</span>
-        </button>
-        <button type="button" class="sidebar-link" data-view="ai">
-          <i data-lucide="bot"></i><span>AI</span>
-        </button>
-        <a class="sidebar-link" href="/api/" data-view="api">
-          <i data-lucide="book-open"></i><span>API</span>
-        </a>
-        <button type="button" class="sidebar-link" data-view="settings">
-          <i data-lucide="settings"></i><span>Settings</span>
-        </button>
+        <div id="nav-block-home" class="nav-block">
+          <p class="nav-section-label">Platform</p>
+          <div class="nav-group expanded" id="nav-group-main">
+            <button type="button" class="nav-group-head" id="nav-group-main-toggle" aria-expanded="true">
+              <span class="nav-group-icon" aria-hidden="true">M</span>
+              <span class="nav-group-title">Main</span>
+              <i data-lucide="chevron-down" class="nav-group-chevron"></i>
+            </button>
+            <div class="nav-group-body" id="nav-group-main-body">
+              <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
+                <i data-lucide="layout-grid"></i><span>Home</span>
+              </button>
+              <p class="nav-sublabel">System</p>
+              <button type="button" class="nav-sublink sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
+                <img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="server-swarm">
+                <i data-lucide="boxes"></i><span>Server Swarm</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="users">
+                <i data-lucide="users"></i><span>Users</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="logs">
+                <i data-lucide="scroll-text"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="ai">
+                <i data-lucide="sparkles"></i><span>AI</span>
+              </button>
+              <a class="nav-sublink" href="/api/" data-view="api">
+                <i data-lucide="file-code-2"></i><span>API</span>
+              </a>
+              <button type="button" class="nav-sublink" data-view="settings">
+                <i data-lucide="settings-2"></i><span>Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="nav-block-service" class="nav-block hidden">
+          <p class="nav-section-label">Project</p>
+          <div class="nav-group expanded" id="nav-group-service">
+            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
+              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
+              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
+              <span class="nav-group-title" id="nav-service-title">Service</span>
+            </button>
+            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
+              <button type="button" class="nav-sublink active" data-svc-tab="general">
+                <i data-lucide="layout-dashboard"></i><span>General</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="env">
+                <i data-lucide="braces"></i><span>Environment</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="logs">
+                <i data-lucide="terminal-square"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="preview">
+                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
+                <i data-lucide="messages-square"></i><span>Debug Chat</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </nav>
     </aside>
 
@@ -238,13 +279,6 @@
               <div class="svc-quick-actions" id="svc-quick-actions"></div>
             </div>
 
-            <nav class="svc-tabs" id="svc-tabs" aria-label="Service sections">
-              <button type="button" class="svc-tab active" data-svc-tab="general">General</button>
-              <button type="button" class="svc-tab" data-svc-tab="env">Environment</button>
-              <button type="button" class="svc-tab" data-svc-tab="logs">Logs</button>
-              <button type="button" class="svc-tab" data-svc-tab="preview">Preview</button>
-            </nav>
-
             <div class="svc-tab-panels">
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
                 <div class="svc-info-grid" id="svc-info-body"></div>
@@ -299,6 +333,59 @@
                     </div>
                   </div>
                   <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
+                <div class="debug-chat-panel">
+                  <details class="debug-chat-access-details" id="debug-chat-access-details">
+                    <summary class="debug-chat-access-summary">
+                      <i data-lucide="plug"></i>
+                      <span>Preview &amp; access tools</span>
+                    </summary>
+                    <div class="debug-chat-access-body">
+                      <p class="hint">The agent uses <code>syte-access</code> for preview URL, fetch HTML, dev logs, and screenshots.</p>
+                      <ul class="debug-chat-access-list" id="debug-chat-access-defaults">
+                        <li><code>syte-access status</code> — preview state &amp; URL</li>
+                        <li><code>syte-access fetch</code> — read preview page HTML</li>
+                        <li><code>syte-access logs</code> — preview dev-server log</li>
+                        <li><code>syte-access screenshot</code> — capture preview</li>
+                      </ul>
+                      <label class="debug-chat-access-label" for="debug-chat-custom-urls">Custom URLs (one per line)</label>
+                      <textarea id="debug-chat-custom-urls" class="debug-chat-access-input" rows="3" placeholder="https://example.com/page"></textarea>
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="debug-chat-access-save">
+                        <i data-lucide="save"></i><span>Save access</span>
+                      </button>
+                    </div>
+                  </details>
+                  <div class="debug-chat-toolbar">
+                    <div class="debug-chat-toolbar-left">
+                      <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>
+                      <span class="debug-chat-status" id="debug-chat-status">Checking agent…</span>
+                    </div>
+                    <div class="debug-chat-toolbar-right">
+                      <select id="debug-chat-profile" class="toolbar-select debug-chat-profile" aria-label="Model profile">
+                        <option value="syra-nano">nano</option>
+                        <option value="syra-base" selected>base</option>
+                        <option value="syra-havy">havy</option>
+                      </select>
+                      <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear chat">
+                        <i data-lucide="trash-2"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="debug-chat-messages" id="debug-chat-messages">
+                    <div class="debug-chat-empty" id="debug-chat-empty">
+                      <i data-lucide="sparkles"></i>
+                      <p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>
+                    </div>
+                  </div>
+                  <div class="debug-chat-composer">
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" placeholder="e.g. Change the hero headline to Welcome and use a blue gradient background"></textarea>
+                    <button type="button" class="btn-pill btn-primary debug-chat-send" id="debug-chat-send">
+                      <i data-lucide="send"></i><span>Send</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
