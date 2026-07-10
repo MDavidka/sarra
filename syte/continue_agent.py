@@ -229,6 +229,7 @@ async def write_agent_config(project: dict) -> Path:
     mcp = mcp_server_config(project["id"], root)
     lines.append("mcpServers:")
     lines.append(f"  - name: {_yaml_quote(mcp['name'])}")
+    lines.append("    type: stdio")
     lines.append(f"    command: {_yaml_quote(mcp['command'])}")
     lines.append("    args:")
     for arg in mcp["args"]:
@@ -304,6 +305,22 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(content[-lines:])
 
 
+async def wait_for_agent_ready(port: int, *, timeout_s: float = 45.0) -> tuple[bool, str]:
+    """Wait until Continue agent HTTP responds or the port is listening."""
+    deadline = time.time() + timeout_s
+    last_error = ""
+    while time.time() < deadline:
+        if _port_listening(int(port)):
+            probe = await probe_agent_http(int(port))
+            if probe.get("ok"):
+                return True, ""
+            last_error = "Port is open but agent HTTP is not responding yet"
+        else:
+            last_error = f"Port {port} is not listening yet"
+        await asyncio.sleep(0.5)
+    return False, last_error or f"Continue agent did not become ready within {int(timeout_s)}s"
+
+
 async def stop_agent(project_id: str) -> tuple[bool, str]:
     from syte.agent_activity import record_agent_event
 
@@ -330,8 +347,10 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
     port = int(project["agent_port"])
 
     if is_agent_running(project_id) and _port_listening(port):
-        status = await get_agent_status(project_id)
-        return True, "Continue agent already running.", status
+        healthy = await probe_agent_http(port)
+        if healthy.get("ok"):
+            status = await get_agent_status(project_id)
+            return True, "Continue agent already running.", status
 
     if not continue_installed():
         message = 'Continue CLI not installed. Install with: npm install -g @continuedev/cli'
@@ -371,35 +390,54 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
             env[spec["secret_env"]] = spec["api_key"]
     command = build_serve_command(config_path, port)
 
+    repo = workspace_path(project_id) / "app"
+    repo.mkdir(parents=True, exist_ok=True)
+
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
         command,
-        cwd=workspace_path(project_id) / "app",
+        cwd=repo,
         shell=True,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
     )
-    time.sleep(1.5)
-    if proc.poll() is not None:
+
+    ready = False
+    for _ in range(180):
+        if proc.poll() is not None:
+            log_file.close()
+            error = get_agent_logs(project_id, 80)
+            tail = error[-2000:] if error else "No log output"
+            await update_project(
+                project_id,
+                {"agent_status": "error", "agent_last_error": tail},
+            )
+            return False, f"Continue agent exited during startup.\n{tail}", {}
+        if _port_listening(port):
+            ready = True
+            break
+        time.sleep(0.25)
+
+    if not ready:
         log_file.close()
-        error = get_agent_logs(project_id, 50)
-        await update_project(
-            project_id,
-            {
-                "agent_status": "error",
-                "agent_last_error": error[-2000:],
-            },
-        )
-        return False, "Continue agent exited during startup.", {}
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        agent_pid_file(project_id).unlink(missing_ok=True)
+        error = get_agent_logs(project_id, 80)
+        tail = error[-2000:] if error else "Port never opened"
+        await update_project(project_id, {"agent_status": "error", "agent_last_error": tail})
+        return False, f"Continue agent did not become ready on port {port}.\n{tail}", {}
 
     agent_pid_file(project_id).write_text(str(proc.pid))
     log_file.close()
     await update_project(
         project_id,
         {
-            "agent_status": "running" if _port_listening(port) else "starting",
+            "agent_status": "running",
             "agent_last_started_at": _now(),
             "agent_last_error": "",
             "agent_config_path": str(config_path),
@@ -417,6 +455,17 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         payload={"port": port},
     )
     return True, f"Continue agent started on port {port}.", status
+
+
+async def _post_agent_message(port: int, message: str) -> tuple[int, str]:
+    base = agent_local_url(int(port)).rstrip("/")
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            f"{base}/message",
+            json={"message": message},
+            headers={"Content-Type": "application/json"},
+        )
+        return response.status_code, response.text
 
 
 async def restart_agent(project_id: str) -> tuple[bool, str, dict]:
@@ -552,11 +601,23 @@ async def communicate_with_agent(
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found"}
 
+    if not continue_installed():
+        message = "Continue CLI not installed. Install with: npm install -g @continuedev/cli"
+        return {"ok": False, "error": "cli_not_installed", "message": message}
+
     if model_profile:
         await update_agent_settings(project_id, model_profile=model_profile)
 
+    project = await ensure_agent_runtime(project)
+    try:
+        await write_agent_config(project)
+    except RuntimeError as exc:
+        message = str(exc)
+        await update_project(project_id, {"agent_status": "error", "agent_last_error": message})
+        return {"ok": False, "error": "api_key_missing", "message": message}
+
     status = await get_agent_status(project_id)
-    if not status.get("agent_running"):
+    if not status.get("agent_running") or not status.get("agent_healthy"):
         if not auto_start:
             err = "Continue agent is not running"
             await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
@@ -572,7 +633,12 @@ async def communicate_with_agent(
         await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
         return {"ok": False, "error": "agent_no_port", "message": err}
 
-    base = agent_local_url(int(port)).rstrip("/")
+    ready, ready_msg = await wait_for_agent_ready(int(port))
+    if not ready:
+        err = ready_msg or "Continue agent is not ready"
+        await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
+        return {"ok": False, "error": "agent_not_ready", "message": err}
+
     model = status.get("agent_model") or {}
     await record_agent_event(
         project_id,
@@ -584,16 +650,21 @@ async def communicate_with_agent(
         source=source,
     )
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{base}/message",
-                json={"message": message},
-                headers={"Content-Type": "application/json"},
+        status_code, response_text = await _post_agent_message(int(port), message)
+        if status_code >= 400:
+            err = f"Agent returned HTTP {status_code}"
+            if response_text:
+                err += f": {response_text[:1000]}"
+            await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
+            await record_agent_event(
+                project_id,
+                "request_failed",
+                title="Failed",
+                detail=err[:4000],
+                payload={"error": err, "status_code": status_code},
+                source=source,
             )
-            if response.status_code >= 400:
-                err = f"Agent returned HTTP {response.status_code}"
-                await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
-                return {"ok": False, "error": "agent_http_error", "message": err, "status_code": response.status_code}
+            return {"ok": False, "error": "agent_http_error", "message": err, "status_code": status_code}
 
         state = await _poll_agent_state(int(port), project_id=project_id, source="agent")
         reply = _extract_assistant_reply(state)
@@ -617,6 +688,18 @@ async def communicate_with_agent(
             "reply": reply,
             "state": state,
         }
+    except httpx.HTTPError as exc:
+        err = f"Could not reach Continue agent: {exc}"
+        await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
+        await record_agent_event(
+            project_id,
+            "request_failed",
+            title="Failed",
+            detail=err[:4000],
+            payload={"error": err},
+            source=source,
+        )
+        return {"ok": False, "error": "agent_communicate_failed", "message": err}
     except Exception as exc:
         err = str(exc)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)

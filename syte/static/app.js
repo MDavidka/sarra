@@ -385,14 +385,26 @@ async function updateDebugChatAgentStatus() {
   if (!statusEl || !activeServiceId) return;
   try {
     const res = await api(`/projects/${activeServiceId}/agent`);
-    if (res.agent_running) {
+    if (res.agent_running && res.agent_healthy) {
       const model = res.agent_model?.profile || res.agent_model?.model || 'agent';
       statusEl.textContent = `Agent online · ${model}`;
+      statusEl.title = '';
+    } else if (res.agent_last_error) {
+      statusEl.textContent = `Agent error — see chat for details`;
+      statusEl.title = res.agent_last_error;
+    } else if (res.agent_install_ok === false) {
+      statusEl.textContent = 'Install Continue CLI: npm i -g @continuedev/cli';
+      statusEl.title = '';
+    } else if (res.agent_backend && !res.agent_backend.ok) {
+      statusEl.textContent = res.agent_backend.error || 'Configure AI provider keys in Settings → AI';
+      statusEl.title = res.agent_backend.error || '';
     } else {
       statusEl.textContent = 'Agent offline — starts on first message';
+      statusEl.title = '';
     }
   } catch {
     statusEl.textContent = 'Agent status unavailable';
+    statusEl.title = '';
   }
 }
 
@@ -412,10 +424,22 @@ async function openDebugChatTab() {
   refreshIcons();
 }
 
+function formatAgentChatError(res) {
+  if (!res) return 'Unknown error';
+  const parts = [res.message, res.error].filter(Boolean);
+  if (res.status_code) parts.push(`HTTP ${res.status_code}`);
+  return parts.join(' — ') || 'Unknown error';
+}
+
 async function sendDebugChatMessage() {
   const input = document.getElementById('debug-chat-input');
   const message = input?.value.trim();
-  if (!message || !activeServiceId || debugChatBusy) return;
+  if (!message) return;
+  if (!activeServiceId) {
+    toast('Open a project before using Debug Chat');
+    return;
+  }
+  if (debugChatBusy) return;
 
   setDebugChatBusy(true);
   hideDebugChatEmpty();
@@ -438,9 +462,9 @@ async function sendDebugChatMessage() {
       appendDebugChatBubble({
         event_type: 'request_failed',
         title: 'Request failed',
-        detail: res.message || res.error || 'Unknown error',
+        detail: formatAgentChatError(res),
       });
-      toast(res.message || 'Agent request failed');
+      toast(formatAgentChatError(res));
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
