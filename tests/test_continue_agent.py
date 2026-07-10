@@ -74,6 +74,8 @@ async def test_write_agent_config_uses_per_profile_providers(
     assert '${{ secrets.SYRA_HAVY_API_KEY }}' in text
     assert 'name: "syra-base"' in text
     assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
+    assert "rules:" in text
+    assert "Syte website agent" in text
 
 
 @pytest.mark.asyncio

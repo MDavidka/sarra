@@ -107,19 +107,28 @@ function clearDebugChatPanel() {
   refreshIcons();
 }
 
+const DEBUG_CHAT_ACTION_LABELS = {
+  file_created: 'Create file',
+  file_modified: 'Rewrite file',
+  file_deleted: 'Delete file',
+  file_read: 'Read file',
+  file_search: 'Search',
+  command_run: 'Run command',
+  tool_call: 'Tool',
+};
+
 function debugChatIconForEvent(eventType) {
   const map = {
     user_message: 'user',
-    request_started: 'user',
     assistant_message: 'bot',
-    request_completed: 'bot',
     thinking: 'brain',
     tool_call: 'wrench',
     command_run: 'terminal',
     file_created: 'file-plus-2',
     file_modified: 'file-pen-line',
     file_deleted: 'file-x-2',
-    file_read: 'file-search',
+    file_read: 'file-text',
+    file_search: 'search',
     request_failed: 'circle-alert',
     processing: 'loader',
     agent_started: 'play',
@@ -131,31 +140,77 @@ function debugChatIconForEvent(eventType) {
 
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
-  if (type === 'user_message' || type === 'request_started') return 'user';
-  if (type === 'assistant_message' || type === 'request_completed') return 'assistant';
+  if (type === 'user_message') return 'user';
+  if (type === 'assistant_message') return 'assistant';
   if (type === 'request_failed') return 'error';
   if (type === 'thinking' || type === 'processing') return 'thinking';
-  if (['file_created', 'file_modified', 'file_deleted', 'file_read', 'tool_call', 'command_run'].includes(type)) {
+  if (['file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search', 'tool_call', 'command_run'].includes(type)) {
     return 'action';
   }
   return 'system';
 }
 
+function debugChatActionTitle(event) {
+  return DEBUG_CHAT_ACTION_LABELS[event.event_type] || event.title || event.event_type || 'Action';
+}
+
+function isDuplicateDebugChatBubble(role, detail) {
+  const messagesEl = getDebugChatMessagesEl();
+  const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
+  const last = bubbles?.[bubbles.length - 1];
+  if (!last || !detail) return false;
+  if (!last.classList.contains(`debug-chat-${role}`)) return false;
+  const body = last.querySelector('.debug-chat-bubble-body')?.textContent
+    || last.querySelector('.debug-chat-action-text span')?.textContent
+    || last.querySelector('.debug-chat-action-text strong')?.textContent;
+  return body === detail || (role === 'action' && last.querySelector('.debug-chat-action-text strong')?.textContent === detail);
+}
+
+function setDebugChatTyping(show) {
+  const messagesEl = getDebugChatMessagesEl();
+  if (!messagesEl) return;
+  const existing = document.getElementById('debug-chat-typing');
+  if (!show) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  hideDebugChatEmpty();
+  const bubble = document.createElement('div');
+  bubble.className = 'debug-chat-bubble debug-chat-thinking debug-chat-typing';
+  bubble.id = 'debug-chat-typing';
+  bubble.innerHTML = `
+    <div class="debug-chat-bubble-head">
+      <i data-lucide="loader"></i>
+      <span>Agent working…</span>
+    </div>
+  `;
+  messagesEl.appendChild(bubble);
+  scrollDebugChatToBottom();
+  refreshIcons();
+}
+
 function appendDebugChatBubble(event) {
   const messagesEl = getDebugChatMessagesEl();
   if (!messagesEl || !event) return;
-  hideDebugChatEmpty();
 
   const role = debugChatRoleForEvent(event);
+  const detail = event.detail || event.payload?.content || event.payload?.reply || '';
+  const actionTitle = debugChatActionTitle(event);
+
+  if ((role === 'user' || role === 'assistant') && isDuplicateDebugChatBubble(role, detail)) return;
+  if (role === 'action' && isDuplicateDebugChatBubble('action', actionTitle)) return;
+
+  hideDebugChatEmpty();
+
   const bubble = document.createElement('div');
   bubble.className = `debug-chat-bubble debug-chat-${role}`;
-  bubble.dataset.eventId = String(event.id || '');
+  if (event.id != null) bubble.dataset.eventId = String(event.id);
 
   const iconName = debugChatIconForEvent(event.event_type);
-  const title = event.title || event.event_type || 'Event';
-  const detail = event.detail || event.payload?.content || event.payload?.reply || '';
 
   if (role === 'user' || role === 'assistant' || role === 'error') {
+    const title = role === 'user' ? 'You' : role === 'error' ? 'Error' : 'Assistant';
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
         <i data-lucide="${iconName}"></i>
@@ -167,7 +222,7 @@ function appendDebugChatBubble(event) {
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
         <i data-lucide="${iconName}"></i>
-        <span>${esc(title)}</span>
+        <span>${esc(event.title || 'Thinking')}</span>
       </div>
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
@@ -176,7 +231,7 @@ function appendDebugChatBubble(event) {
       <div class="debug-chat-action-row">
         <i data-lucide="${iconName}"></i>
         <div class="debug-chat-action-text">
-          <strong>${esc(title)}</strong>
+          <strong>${esc(actionTitle)}</strong>
           ${detail ? `<span>${esc(detail)}</span>` : ''}
         </div>
       </div>
@@ -185,7 +240,7 @@ function appendDebugChatBubble(event) {
     bubble.innerHTML = `
       <div class="debug-chat-system-row">
         <i data-lucide="${iconName}"></i>
-        <span>${esc(title)}${detail ? ` — ${esc(detail)}` : ''}</span>
+        <span>${esc(event.title || event.event_type)}${detail ? ` — ${esc(detail)}` : ''}</span>
       </div>
     `;
   }
@@ -200,11 +255,33 @@ function shouldSkipDebugChatEvent(event) {
     if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
     return true;
   }
+  if (event.event_type === 'tool_call' && !(event.title || '').includes('Preview access')) {
+    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    return true;
+  }
+    if (event.id != null) debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    return true;
+  }
   if (event.event_type === 'user_message') {
     const messagesEl = getDebugChatMessagesEl();
-    const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble');
+    const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
     const last = bubbles?.[bubbles.length - 1];
     if (last?.classList.contains('debug-chat-user')) {
+      const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
+      if (body === event.detail) {
+        if (event.id != null) {
+          debugChatRenderedIds.add(event.id);
+          debugChatSinceId = Math.max(debugChatSinceId, event.id);
+        }
+        return true;
+      }
+    }
+  }
+  if (event.event_type === 'assistant_message') {
+    const messagesEl = getDebugChatMessagesEl();
+    const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
+    const last = bubbles?.[bubbles.length - 1];
+    if (last?.classList.contains('debug-chat-assistant')) {
       const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
       if (body === event.detail) {
         if (event.id != null) {
@@ -227,7 +304,7 @@ function handleDebugChatActivity(event) {
   appendDebugChatBubble(event);
   if (eventId != null) debugChatSinceId = Math.max(debugChatSinceId, eventId);
 
-  if (['file_created', 'file_modified', 'file_deleted'].includes(event.event_type)) {
+  if (['file_created', 'file_modified', 'file_deleted', 'file_search'].includes(event.event_type)) {
     onDebugChatWorkspaceChange();
   }
 }
@@ -298,8 +375,36 @@ function setDebugChatBusy(busy) {
   if (input) input.disabled = busy;
 }
 
+async function loadDebugChatAccessConfig(projectId) {
+  const textarea = document.getElementById('debug-chat-custom-urls');
+  if (!textarea) return;
+  try {
+    const res = await api(`/projects/${projectId}/agent/access-config`);
+    const urls = res.custom_urls || [];
+    textarea.value = urls.join('\n');
+  } catch {
+    textarea.value = '';
+  }
+}
+
+async function saveDebugChatAccessConfig() {
+  if (!activeServiceId) return;
+  const textarea = document.getElementById('debug-chat-custom-urls');
+  const urls = (textarea?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+  try {
+    await api(`/projects/${activeServiceId}/agent/access-config`, {
+      method: 'PUT',
+      body: JSON.stringify({ custom_urls: urls }),
+    });
+    toast('Access settings saved');
+  } catch (e) {
+    toast('Could not save access: ' + e.message);
+  }
+}
+
 async function openDebugChatTab() {
   if (!activeServiceId) return;
+  await loadDebugChatAccessConfig(activeServiceId);
   await loadDebugChatHistory(activeServiceId);
   startAgentActivityStream(activeServiceId);
   await updateDebugChatAgentStatus();
@@ -318,6 +423,7 @@ async function sendDebugChatMessage() {
     title: 'You',
     detail: message,
   });
+  setDebugChatTyping(true);
 
   const profile = document.getElementById('debug-chat-profile')?.value || 'syra-base';
   try {
@@ -325,6 +431,7 @@ async function sendDebugChatMessage() {
       method: 'POST',
       body: JSON.stringify({ message, model_profile: profile }),
     });
+    setDebugChatTyping(false);
     if (!res.ok) {
       appendDebugChatBubble({
         event_type: 'request_failed',
@@ -332,16 +439,12 @@ async function sendDebugChatMessage() {
         detail: res.message || res.error || 'Unknown error',
       });
       toast(res.message || 'Agent request failed');
-    } else if (res.reply) {
-      appendDebugChatBubble({
-        event_type: 'assistant_message',
-        title: 'Assistant',
-        detail: res.reply,
-      });
+    } else {
       await onDebugChatWorkspaceChange();
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
+    setDebugChatTyping(false);
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Request failed',
@@ -1970,6 +2073,7 @@ document.getElementById('debug-chat-clear')?.addEventListener('click', () => {
     startAgentActivityStream(activeServiceId);
   }
 });
+document.getElementById('debug-chat-access-save')?.addEventListener('click', saveDebugChatAccessConfig);
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 

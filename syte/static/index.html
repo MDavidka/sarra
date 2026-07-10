@@ -338,6 +338,26 @@
 
               <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
                 <div class="debug-chat-panel">
+                  <details class="debug-chat-access-details" id="debug-chat-access-details">
+                    <summary class="debug-chat-access-summary">
+                      <i data-lucide="plug"></i>
+                      <span>Preview &amp; access tools</span>
+                    </summary>
+                    <div class="debug-chat-access-body">
+                      <p class="hint">The agent uses <code>syte-access</code> for preview URL, fetch HTML, dev logs, and screenshots.</p>
+                      <ul class="debug-chat-access-list" id="debug-chat-access-defaults">
+                        <li><code>syte-access status</code> — preview state &amp; URL</li>
+                        <li><code>syte-access fetch</code> — read preview page HTML</li>
+                        <li><code>syte-access logs</code> — preview dev-server log</li>
+                        <li><code>syte-access screenshot</code> — capture preview</li>
+                      </ul>
+                      <label class="debug-chat-access-label" for="debug-chat-custom-urls">Custom URLs (one per line)</label>
+                      <textarea id="debug-chat-custom-urls" class="debug-chat-access-input" rows="3" placeholder="https://example.com/page"></textarea>
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="debug-chat-access-save">
+                        <i data-lucide="save"></i><span>Save access</span>
+                      </button>
+                    </div>
+                  </details>
                   <div class="debug-chat-toolbar">
                     <div class="debug-chat-toolbar-left">
                       <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>
