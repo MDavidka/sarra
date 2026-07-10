@@ -16,6 +16,7 @@ let debugChatSinceId = 0;
 let debugChatRenderedIds = new Set();
 let debugChatAutoScroll = true;
 let debugChatBusy = false;
+let debugChatReplayingHistory = false;
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -298,12 +299,16 @@ function handleDebugChatActivity(event) {
     onDebugChatWorkspaceChange();
   }
   if (event.event_type === 'request_started') {
-    setDebugChatTyping(true);
-    setDebugChatBusy(true);
+    if (!debugChatReplayingHistory) {
+      setDebugChatTyping(true);
+      setDebugChatBusy(true);
+    }
   }
   if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
-    setDebugChatTyping(false);
-    setDebugChatBusy(false);
+    if (!debugChatReplayingHistory) {
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
+    }
   }
 }
 
@@ -313,18 +318,25 @@ async function onDebugChatWorkspaceChange() {
 }
 
 async function loadDebugChatHistory(projectId) {
+  debugChatReplayingHistory = true;
   try {
     const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500`);
     clearDebugChatPanel();
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
     }
+    const lastId = (res.events || []).reduce((max, e) => Math.max(max, e.id || 0), 0);
+    if (lastId) debugChatSinceId = Math.max(debugChatSinceId, lastId);
   } catch (e) {
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Could not load history',
       detail: e.message,
     });
+  } finally {
+    debugChatReplayingHistory = false;
+    setDebugChatTyping(false);
+    setDebugChatBusy(false);
   }
 }
 
@@ -415,33 +427,32 @@ async function sendDebugChatMessage() {
   setDebugChatTyping(true);
 
   const profile = document.getElementById('debug-chat-profile')?.value || 'syra-base';
+  const sentMessage = message;
+  if (input) input.value = '';
   try {
     const res = await api(`/projects/${activeServiceId}/agent/chat`, {
       method: 'POST',
-      body: JSON.stringify({ message, model_profile: profile }),
+      body: JSON.stringify({ message: sentMessage, model_profile: profile }),
     });
     if (!res.ok) {
-      setDebugChatTyping(false);
       appendDebugChatBubble({
         event_type: 'request_failed',
         title: 'Request failed',
         detail: res.message || res.error || 'Unknown error',
       });
       toast(res.message || 'Agent request failed');
-      setDebugChatBusy(false);
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
-    setDebugChatTyping(false);
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Request failed',
       detail: e.message,
     });
     toast('Error: ' + e.message);
-    setDebugChatBusy(false);
   } finally {
-    if (input) input.value = '';
+    setDebugChatTyping(false);
+    setDebugChatBusy(false);
     scrollDebugChatToBottom();
   }
 }
