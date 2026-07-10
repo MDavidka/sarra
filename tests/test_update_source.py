@@ -72,7 +72,25 @@ def test_fetch_latest_open_pr_picks_highest_pr_number(
     assert "PR #14" in target.label
 
 
-def test_resolve_update_target_uses_latest_pr(
+def test_resolve_update_target_defaults_to_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_dir = tmp_path / "syte"
+    install_dir.mkdir()
+
+    monkeypatch.delenv("SYTE_UPDATE_BRANCH", raising=False)
+    monkeypatch.delenv("SYTE_UPDATE_PR", raising=False)
+    monkeypatch.delenv("SYTE_UPDATE_FROM_PR", raising=False)
+    monkeypatch.setattr("syte.update_source.git_remote_repo", lambda _dir: "MDavidka/sarra")
+
+    target = resolve_update_target(install_dir)
+    assert target.branch == "main"
+    assert target.source_type == "branch"
+    assert target.label == "main"
+
+
+def test_resolve_update_target_uses_latest_pr_when_enabled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -82,6 +100,7 @@ def test_resolve_update_target_uses_latest_pr(
 
     monkeypatch.delenv("SYTE_UPDATE_BRANCH", raising=False)
     monkeypatch.delenv("SYTE_UPDATE_PR", raising=False)
+    monkeypatch.setenv("SYTE_UPDATE_FROM_PR", "1")
     monkeypatch.setattr(
         "syte.update_source.git_remote_repo",
         lambda _dir: "MDavidka/sarra",
@@ -103,7 +122,7 @@ def test_resolve_update_target_uses_latest_pr(
     assert target.pr_number == 11
 
 
-def test_resolve_update_target_falls_back_to_update_branch(
+def test_resolve_update_target_falls_back_to_main_without_open_prs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -112,12 +131,13 @@ def test_resolve_update_target_falls_back_to_update_branch(
 
     monkeypatch.delenv("SYTE_UPDATE_BRANCH", raising=False)
     monkeypatch.delenv("SYTE_UPDATE_PR", raising=False)
+    monkeypatch.setenv("SYTE_UPDATE_FROM_PR", "1")
     monkeypatch.setattr("syte.update_source.git_remote_repo", lambda _dir: "MDavidka/sarra")
     monkeypatch.setattr("syte.update_source.fetch_latest_open_pr", lambda _repo: None)
 
     target = resolve_update_target(install_dir)
-    assert target.branch == "cursor/update-from-latest-pr-6cbf"
-    assert "no open PRs" in target.label
+    assert target.branch == "main"
+    assert target.label == "main"
 
 
 def test_resolve_update_target_respects_branch_override(

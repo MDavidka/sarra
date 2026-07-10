@@ -13,7 +13,6 @@ import httpx
 from syte.workspace import run_cmd
 
 DEFAULT_FALLBACK_BRANCH = "main"
-DEFAULT_UPDATE_BRANCH = "cursor/update-from-latest-pr-6cbf"
 
 
 @dataclass(frozen=True)
@@ -150,22 +149,19 @@ def resolve_update_target(install_dir: Path) -> UpdateTarget:
         if target:
             return target
 
-    latest = fetch_latest_open_pr(repo)
-    if latest and latest.branch:
-        return latest
+    use_open_pr = (os.environ.get("SYTE_UPDATE_FROM_PR") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if use_open_pr:
+        latest = fetch_latest_open_pr(repo)
+        if latest and latest.branch:
+            return latest
 
-    if repo:
-        return UpdateTarget(
-            source_type="branch",
-            branch=DEFAULT_UPDATE_BRANCH,
-            label=f"{DEFAULT_UPDATE_BRANCH} (no open PRs)",
-            repo=repo,
-        )
-
-    fallback = DEFAULT_FALLBACK_BRANCH
     return UpdateTarget(
         source_type="branch",
-        branch=fallback,
-        label=f"{fallback} (no open PRs)",
+        branch=DEFAULT_FALLBACK_BRANCH,
+        label=DEFAULT_FALLBACK_BRANCH,
         repo=repo,
     )
