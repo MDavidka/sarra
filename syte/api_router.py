@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from syte import deployment, process_manager
 from syte.api_responses import build_create_project_response
 from syte.auth import verify_api_token
-from syte.continue_agent import (
+from syte.opencode_agent import (
     communicate_with_agent,
     get_agent_logs,
     get_agent_status,

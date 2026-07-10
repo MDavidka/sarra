@@ -224,6 +224,88 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
     return "tool_call", tool_name or "tool", _text_from_content(arguments)[:500], args
 
 
+def _events_from_opencode_part(part: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
+    part_type = str(part.get("type") or "").lower()
+    events: list[dict[str, Any]] = []
+
+    if part_type == "text":
+        text = _text_from_content(part.get("text"))
+        if text:
+            events.append({
+                "event_type": "assistant_message",
+                "role": "assistant",
+                "title": "Assistant",
+                "detail": text[:4000],
+                "payload": {"content": text},
+                "source": source,
+            })
+    elif part_type == "reasoning":
+        text = _text_from_content(part.get("text"))
+        if text:
+            events.append({
+                "event_type": "thinking",
+                "role": "assistant",
+                "title": "Thinking",
+                "detail": text[:4000],
+                "payload": {"content": text},
+                "source": source,
+            })
+    elif part_type in {"tool", "tool-invocation"}:
+        tool_name = str(part.get("tool") or part.get("name") or "tool")
+        state = part.get("state") or part.get("toolInvocation") or {}
+        if isinstance(state, dict):
+            tool_name = str(state.get("toolName") or state.get("name") or tool_name)
+            arguments = state.get("input") or state.get("args") or state.get("arguments")
+            title = str(state.get("title") or tool_name)
+            if str(state.get("status") or state.get("state") or "").lower() == "completed":
+                output = state.get("output") or state.get("result") or ""
+                events.append({
+                    "event_type": "tool_result",
+                    "role": "tool",
+                    "title": f"Tool result: {tool_name}",
+                    "detail": _text_from_content(output)[:4000],
+                    "payload": {"tool": tool_name, "output": output},
+                    "source": source,
+                })
+            else:
+                event_type, mapped_title, detail, payload = _map_tool_event(tool_name, arguments)
+                events.append({
+                    "event_type": event_type,
+                    "role": "assistant",
+                    "title": mapped_title or title,
+                    "detail": detail[:4000],
+                    "payload": {**payload, "tool": tool_name},
+                    "source": source,
+                })
+    return events
+
+
+def _events_from_opencode_message(item: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
+    info = item.get("info") or {}
+    role = str(info.get("role") or "assistant")
+    parts = item.get("parts") or []
+    events: list[dict[str, Any]] = []
+
+    if role == "user":
+        texts = [_text_from_content(part.get("text")) for part in parts if part.get("type") == "text"]
+        text = "\n".join(t for t in texts if t).strip()
+        if text:
+            events.append({
+                "event_type": "user_message",
+                "role": "user",
+                "title": "User",
+                "detail": text[:4000],
+                "payload": {"content": text},
+                "source": source,
+            })
+        return events
+
+    for part in parts:
+        if isinstance(part, dict):
+            events.extend(_events_from_opencode_part(part, source=source))
+    return events
+
+
 def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
     message = item.get("message") or item
     role = str(message.get("role") or "assistant")
@@ -305,7 +387,7 @@ def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict
     text = _text_from_content(content)
     if text:
         lowered = text.lower()
-        if re.search(r"", text, re.I) or lowered.startswith("thinking:"):
+        if re.search(r"<think(?:ing)?>", text, re.I) or lowered.startswith("thinking:"):
             events.append({
                 "event_type": "thinking",
                 "role": "assistant",
@@ -326,13 +408,28 @@ def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict
     return events
 
 
+def extract_events_from_messages(
+    messages: list[dict[str, Any]],
+    *,
+    source: str = "agent",
+    since_index: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """Parse OpenCode session messages into structured activity events."""
+    events: list[dict[str, Any]] = []
+    start = max(0, since_index)
+    for item in messages[start:]:
+        if isinstance(item, dict):
+            events.extend(_events_from_opencode_message(item, source=source))
+    return events, len(messages)
+
+
 def extract_events_from_state(
     state: dict[str, Any],
     *,
     source: str = "agent",
     since_index: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Parse Continue /state history into structured activity events."""
+    """Legacy Continue /state parser — kept for compatibility."""
     history = (state.get("session") or {}).get("history") or []
     events: list[dict[str, Any]] = []
     start = max(0, since_index)
@@ -342,18 +439,12 @@ def extract_events_from_state(
     return events, len(history)
 
 
-async def ingest_agent_state(
+async def _persist_raw_events(
     project_id: str,
-    state: dict[str, Any],
+    raw_events: list[dict[str, Any]],
     *,
     source: str = "agent",
 ) -> list[dict[str, Any]]:
-    """Diff Continue state history and persist new activity events."""
-    key = f"{project_id}:{source}"
-    since = _history_trackers.get(key, 0)
-    raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
-    _history_trackers[key] = new_index
-
     recorded: list[dict[str, Any]] = []
     for raw in raw_events:
         recorded.append(
@@ -368,6 +459,34 @@ async def ingest_agent_state(
             )
         )
     return recorded
+
+
+async def ingest_opencode_messages(
+    project_id: str,
+    messages: list[dict[str, Any]],
+    *,
+    source: str = "agent",
+) -> list[dict[str, Any]]:
+    """Diff OpenCode session messages and persist new activity events."""
+    key = f"{project_id}:{source}"
+    since = _history_trackers.get(key, 0)
+    raw_events, new_index = extract_events_from_messages(messages, source=source, since_index=since)
+    _history_trackers[key] = new_index
+    return await _persist_raw_events(project_id, raw_events, source=source)
+
+
+async def ingest_agent_state(
+    project_id: str,
+    state: dict[str, Any],
+    *,
+    source: str = "agent",
+) -> list[dict[str, Any]]:
+    """Diff legacy Continue state history and persist new activity events."""
+    key = f"{project_id}:{source}"
+    since = _history_trackers.get(key, 0)
+    raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
+    _history_trackers[key] = new_index
+    return await _persist_raw_events(project_id, raw_events, source=source)
 
 
 async def record_workspace_activity(

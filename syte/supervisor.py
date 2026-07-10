@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from syte.certificates import apply_proxy_config, ensure_caddy
-from syte.continue_agent import is_agent_running, start_agent
+from syte.opencode_agent import is_agent_running, start_agent
 from syte.database import list_projects, update_project
 from syte import process_manager
 from syte.workspace import command_exists
@@ -14,7 +14,7 @@ _fail_counts: dict[str, int] = {}
 
 
 async def maintain() -> None:
-    """Keep Caddy, deployed services, and Continue agents running."""
+    """Keep Caddy, deployed services, and OpenCode agents running."""
     ensure_caddy()
     projects = await list_projects()
     for project in projects:
@@ -70,12 +70,12 @@ async def maintain() -> None:
         pid = project["id"]
         if is_agent_running(pid):
             continue
-        logger.warning("Restarting Continue agent for %s", pid)
+        logger.warning("Restarting OpenCode agent for %s", pid)
         ok, msg, _meta = await start_agent(pid)
         if ok:
-            logger.info("Restarted Continue agent for %s: %s", pid, msg)
+            logger.info("Restarted OpenCode agent for %s: %s", pid, msg)
         else:
-            logger.error("Failed to restart Continue agent for %s: %s", pid, msg)
+            logger.error("Failed to restart OpenCode agent for %s: %s", pid, msg)
 
 
 async def supervisor_loop(interval: int = 30) -> None:

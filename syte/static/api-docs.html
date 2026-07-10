@@ -1327,10 +1327,10 @@
         <div class="cat-panel" id="panel-agent" data-cat="agent">
         <section class="section" id="agent">
           <h2 class="section-title">AI Session</h2>
-          <p class="section-desc">Control per-project Continue <code>cn serve</code> agents for long-lived coding sessions. Independent from preview/deploy processes.</p>
+          <p class="section-desc">Control per-project OpenCode <code>opencode serve</code> agents for long-lived coding sessions. Independent from preview/deploy processes.</p>
 
           <div class="note" style="margin:0 0 1.25rem">
-            <strong>AI session usage.</strong> One Continue agent per project workspace. Use <code>agent_proxy_url</code> from status — not the raw localhost port.
+            <strong>AI session usage.</strong> One OpenCode agent per project workspace. Use <code>agent_proxy_url</code> from status — not the raw localhost port.
             Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
             Configure Verted + DeepSeek API keys per profile in Syte GUI → <strong>AI</strong>.
             Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
@@ -1373,7 +1373,7 @@
                 <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Starts Continue <code>cn serve</code> in the project workspace if not already running.</div>
+                  <div class="field-desc">Starts OpenCode <code>opencode serve</code> in the project workspace if not already running.</div>
                 </div>
               </div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
@@ -1448,7 +1448,7 @@
               <div class="endpoint-name">Agent logs (snapshot)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Snapshot of Continue serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
+              <div class="field-desc">Snapshot of OpenCode serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
             </div>
           </div>
 
@@ -1555,7 +1555,7 @@ data: {"type":"ping","since_id":16}</pre>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">message<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Sent to Continue CLI <code>POST /message</code> on the project workspace.</div>
+                  <div class="field-desc">Sent to OpenCode CLI <code>POST /session/:id/message</code> on the project workspace.</div>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
@@ -1575,7 +1575,7 @@ data: {"type":"ping","since_id":16}</pre>
               <div class="endpoint-name">Request code change (sycord.com)</div>
             </div>
             <div class="endpoint-body">
-              <div class="note"><strong>sycord.com flow.</strong> User asks for a change on sycord.com → sycord sends UUID + model + message → Syte VM routes to matching workspace Continue CLI.</div>
+              <div class="note"><strong>sycord.com flow.</strong> User asks for a change on sycord.com → sycord sends UUID + model + message → Syte VM routes to matching workspace OpenCode CLI.</div>
               <pre>{"uuid":"my-site-a1b2c3","model_name":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
               <pre>{"ok":true,"change_applied":true,"reply":"..."}</pre>
             </div>
@@ -1616,9 +1616,9 @@ data: {"type":"ping","since_id":16}</pre>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/logs?lines=200</code></span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity?since_id=0</code> — Cursor-like activity snapshot</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity/stream?live=1</code> — SSE real-time activity</span></div>
-            <div class="info-row"><span class="info-key">ANY</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — forward to <code>cn serve</code> HTTP API</span></div>
+            <div class="info-row"><span class="info-key">ANY</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — forward to <code>opencode serve</code> HTTP API</span></div>
           </div>
-          <div class="note" style="margin-top:1rem"><strong>Continue CLI HTTP</strong> (via proxy or localhost): <code>POST /message</code>, <code>GET /state</code>, <code>POST /pause</code>, <code>GET /diff</code>, <code>POST /exit</code></div>
+          <div class="note" style="margin-top:1rem"><strong>OpenCode HTTP</strong> (via proxy or localhost): <code>POST /session/:id/message</code>, <code>GET /session/status</code>, <code>GET /session/:id/message</code>, <code>GET /global/health</code>, <code>GET /doc</code></div>
         </section>
 
         <section class="section" id="agent-errors">
@@ -1626,7 +1626,7 @@ data: {"type":"ping","since_id":16}</pre>
           <div class="info-grid">
             <div class="info-row"><span class="info-key">401</span><span class="info-val">Missing or invalid API key / internal secret</span></div>
             <div class="info-row"><span class="info-key">503 internal_secret_not_configured</span><span class="info-val">Set internal secret in Syte AI tab → Agent configuration</span></div>
-            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">Continue CLI missing — <code>npm install -g @continuedev/cli</code></span></div>
+            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">OpenCode CLI missing — <code>npm install -g opencode-ai</code></span></div>
             <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Provider API unreachable — check AI tab → model API keys</span></div>
             <div class="info-row"><span class="info-key">503 agent not running</span><span class="info-val">Proxy called while agent stopped — <code>POST /agent/start</code> first</span></div>
             <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">UUID does not match any workspace</span></div>
@@ -1638,12 +1638,12 @@ data: {"type":"ping","since_id":16}</pre>
           <div class="info-grid">
             <div class="info-row"><span class="info-key">1</span><span class="info-val">User edits project on sycord.com and sends a change message</span></div>
             <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com → <code>POST /api/internal/projects/{uuid}/agent/change</code> with <code>model_name</code> + <code>message</code></span></div>
-            <div class="info-row"><span class="info-key">3</span><span class="info-val">Syte starts <code>cn serve</code> for UUID workspace if needed</span></div>
-            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte forwards message to Continue CLI — agent edits files in workspace</span></div>
+            <div class="info-row"><span class="info-key">3</span><span class="info-val">Syte starts <code>opencode serve</code> for UUID workspace if needed</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte forwards message to OpenCode CLI — agent edits files in workspace</span></div>
             <div class="info-row"><span class="info-key">5</span><span class="info-val">Response <code>reply</code> returned to sycord.com (provider name included in agent metadata, not echoed to end user by default)</span></div>
             <div class="info-row"><span class="info-key">6</span><span class="info-val"><code>POST /agent_stop</code> when session ends</span></div>
           </div>
-          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent <code>cn serve</code> instances).</div>
+          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent <code>opencode serve</code> instances).</div>
         </section>
         </div>
       </div>

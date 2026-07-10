@@ -1,8 +1,9 @@
-"""Continue agent runtime management for Syte workspaces."""
+"""OpenCode agent runtime management for Syte workspaces."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import signal
@@ -21,6 +22,7 @@ from syte.database import get_project, get_setting, list_projects, update_projec
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -28,23 +30,23 @@ def _now() -> str:
 def agent_pid_file(project_id: str) -> Path:
     path = settings.data_dir / "pids"
     path.mkdir(parents=True, exist_ok=True)
-    return path / f"{project_id}.continue.pid"
+    return path / f"{project_id}.opencode.pid"
 
 
 def agent_root(project_id: str) -> Path:
-    root = ensure_workspace(project_id) / "data" / "continue"
+    root = ensure_workspace(project_id) / "data" / "opencode"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def agent_home(project_id: str) -> Path:
     home = agent_root(project_id) / "home"
-    (home / ".continue").mkdir(parents=True, exist_ok=True)
+    (home / ".config" / "opencode").mkdir(parents=True, exist_ok=True)
     return home
 
 
 def agent_config_path(project_id: str) -> Path:
-    return agent_root(project_id) / "config.yaml"
+    return agent_root(project_id) / "opencode.json"
 
 
 def agent_log_path(project_id: str) -> Path:
@@ -57,21 +59,17 @@ def _port_listening(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def continue_command() -> str:
-    return shutil.which("cn") or "cn"
+def opencode_command() -> str:
+    return shutil.which("opencode") or "opencode"
 
 
-def continue_installed() -> bool:
-    return shutil.which("cn") is not None
+def opencode_installed() -> bool:
+    return shutil.which("opencode") is not None
 
 
-def build_serve_command(config_path: Path | str, port: int, *, timeout_s: int = 3600) -> str:
-    """Build a Continue CLI serve command compatible with current cn flags."""
-    config = str(config_path)
-    return (
-        f'{continue_command()} serve --config "{config}" '
-        f"--port {int(port)} --timeout {int(timeout_s)}"
-    )
+def build_serve_command(port: int, *, hostname: str = "127.0.0.1") -> str:
+    """Build an OpenCode headless serve command."""
+    return f"{opencode_command()} serve --port {int(port)} --hostname {hostname}"
 
 
 async def next_agent_port() -> int:
@@ -81,7 +79,7 @@ async def next_agent_port() -> int:
         if port not in used:
             return port
     raise RuntimeError(
-        f"No Continue agent ports available ({settings.continue_port_start}-{settings.continue_port_end} exhausted)"
+        f"No OpenCode agent ports available ({settings.continue_port_start}-{settings.continue_port_end} exhausted)"
     )
 
 
@@ -120,10 +118,6 @@ async def bridge_settings() -> dict[str, Any]:
     }
 
 
-def _yaml_quote(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 def is_agent_running(project_id: str) -> bool:
     pf = agent_pid_file(project_id)
     if not pf.exists():
@@ -139,6 +133,14 @@ def is_agent_running(project_id: str) -> bool:
 
 def agent_local_url(port: int | None) -> str:
     return f"http://127.0.0.1:{int(port)}" if port else ""
+
+
+def agent_http_auth() -> httpx.BasicAuth | None:
+    password = (os.environ.get("OPENCODE_SERVER_PASSWORD") or "").strip()
+    if not password:
+        return None
+    username = (os.environ.get("OPENCODE_SERVER_USERNAME") or "opencode").strip() or "opencode"
+    return httpx.BasicAuth(username, password)
 
 
 async def ensure_agent_runtime(project: dict) -> dict:
@@ -169,14 +171,19 @@ async def selected_model_metadata(project: dict) -> dict[str, str]:
         "model": spec["model"],
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
+        "opencode_provider_id": profile,
+        "opencode_model_id": spec["model"],
     }
 
 
-def _secret_ref(env_name: str) -> str:
-    return "${{ secrets." + env_name + " }}"
-
-
 async def write_agent_config(project: dict) -> Path:
+    from syte.opencode_extras import (
+        ensure_skills_directories,
+        load_agent_rules,
+        load_mcp_servers,
+        render_mcp_servers_dict,
+    )
+
     project = await ensure_agent_runtime(project)
     bridge = await bridge_settings()
     config_path = agent_config_path(project["id"])
@@ -192,32 +199,47 @@ async def write_agent_config(project: dict) -> Path:
     if not configured:
         raise RuntimeError("No model API keys configured. Open AI settings and add provider keys.")
 
-    ordered = sorted(configured, key=lambda name: name != active_profile)
-    lines = [
-        "name: Syte Continue",
-        "version: 1.0.0",
-        "schema: v1",
-        "models:",
-    ]
-    for alias in ordered:
+    active_spec = bridge["profiles"][active_profile]
+    config: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
+        "model": f"{active_profile}/{active_spec['model']}",
+        "autoupdate": False,
+        "share": "disabled",
+        "disabled_providers": ["opencode"],
+        "provider": {},
+    }
+
+    for alias in configured:
         spec = bridge["profiles"][alias]
-        lines.extend([
-            f"  - name: {_yaml_quote(alias)}",
-            f"    provider: {_yaml_quote(spec['provider'])}",
-            f"    model: {_yaml_quote(spec['model'])}",
-            f"    apiBase: {_yaml_quote(spec['api_base'])}",
-            f"    apiKey: {_yaml_quote(_secret_ref(spec['secret_env']))}",
-            "    roles:",
-            "      - chat",
-            "      - edit",
-            "      - apply",
-        ])
-    config_path.write_text("\n".join(lines) + "\n")
+        config["provider"][alias] = {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": spec["label"],
+            "options": {
+                "baseURL": spec["api_base"],
+                "apiKey": f"{{env:{spec['secret_env']}}}",
+            },
+            "models": {
+                spec["model"]: {"name": spec["model"]},
+            },
+        }
+
+    ensure_skills_directories(project["id"])
+    mcp_servers = await load_mcp_servers()
+    mcp_block = render_mcp_servers_dict(mcp_servers)
+    if mcp_block:
+        config["mcp"] = mcp_block
+
+    rules = await load_agent_rules()
+    if rules:
+        config["instructions"] = rules
+
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
     return config_path
 
 
 def write_agent_secrets(project_id: str, bridge: dict[str, Any]) -> Path:
-    env_dir = agent_home(project_id) / ".continue"
+    """Write provider API keys into the agent home .env for OpenCode {env:VAR} substitution."""
+    env_dir = agent_home(project_id) / ".config" / "opencode"
     env_dir.mkdir(parents=True, exist_ok=True)
     env_path = env_dir / ".env"
     lines = []
@@ -259,10 +281,11 @@ async def probe_agent_http(port: int | None) -> dict[str, Any]:
     if not port:
         return {"ok": False, "url": None, "status_code": None}
     base = agent_local_url(port)
+    auth = agent_http_auth()
     async with httpx.AsyncClient(timeout=3.0) as client:
-        for path in ("/health", "/", "/docs"):
+        for path in ("/global/health", "/doc", "/"):
             try:
-                response = await client.get(base + path)
+                response = await client.get(base + path, auth=auth)
                 if response.status_code < 500:
                     return {"ok": True, "url": base + path, "status_code": response.status_code}
             except Exception:
@@ -273,7 +296,7 @@ async def probe_agent_http(port: int | None) -> dict[str, Any]:
 def get_agent_logs(project_id: str, lines: int = 200) -> str:
     log_path = agent_log_path(project_id)
     if not log_path.exists():
-        return "No Continue agent logs yet."
+        return "No OpenCode agent logs yet."
     content = log_path.read_text(errors="replace").splitlines()
     return "\n".join(content[-lines:])
 
@@ -283,20 +306,22 @@ async def stop_agent(project_id: str) -> tuple[bool, str]:
 
     pf = agent_pid_file(project_id)
     if not pf.exists():
-        await update_project(project_id, {"agent_status": "stopped"})
-        return True, "Continue agent already stopped."
+        await update_project(project_id, {"agent_status": "stopped", "agent_session_id": ""})
+        return True, "OpenCode agent already stopped."
     try:
         pid = int(pf.read_text().strip())
         os.killpg(os.getpgid(pid), signal.SIGTERM)
     except (OSError, ValueError):
         pass
     pf.unlink(missing_ok=True)
-    await update_project(project_id, {"agent_status": "stopped"})
-    await record_agent_event(project_id, "agent_stopped", title="Agent stopped", detail="Continue agent stopped")
-    return True, "Continue agent stopped."
+    await update_project(project_id, {"agent_status": "stopped", "agent_session_id": ""})
+    await record_agent_event(project_id, "agent_stopped", title="Agent stopped", detail="OpenCode agent stopped")
+    return True, "OpenCode agent stopped."
 
 
 async def start_agent(project_id: str) -> tuple[bool, str, dict]:
+    from syte.agent_metrics import agents_online_count, max_agents_allowed
+
     project = await get_project(project_id)
     if not project:
         return False, "Project not found", {}
@@ -305,10 +330,21 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
 
     if is_agent_running(project_id) and _port_listening(port):
         status = await get_agent_status(project_id)
-        return True, "Continue agent already running.", status
+        return True, "OpenCode agent already running.", status
 
-    if not continue_installed():
-        message = 'Continue CLI not installed. Install with: npm install -g @continuedev/cli'
+    if not is_agent_running(project_id):
+        online = await agents_online_count()
+        max_allowed = await max_agents_allowed()
+        if online >= max_allowed:
+            return (
+                False,
+                f"AI agent limit reached ({online}/{max_allowed}). "
+                "Increase max agents (AI) in AI settings.",
+                {},
+            )
+
+    if not opencode_installed():
+        message = "OpenCode CLI not installed. Install with: npm install -g opencode-ai"
         await update_project(project_id, {"agent_status": "error", "agent_last_error": message})
         return False, message, {}
 
@@ -325,7 +361,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
     log_path = agent_log_path(project_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a") as log:
-        log.write(f"\n=== Continue serve session {_now()} ===\n")
+        log.write(f"\n=== OpenCode serve session {_now()} ===\n")
         log.write(f"Config: {config_path}\n")
         log.write(f"Port: {port}\n")
 
@@ -333,14 +369,14 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         **os.environ,
         **read_env_vars(project.get("env_vars", "{}")),
         "HOME": str(home),
-        "CONTINUE_GLOBAL_DIR": str(home / ".continue"),
-        "CONTINUE_DISABLE_HUB": "1",
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "OPENCODE_CONFIG": str(config_path),
     }
     for name in PROFILE_ORDER:
         spec = bridge["profiles"][name]
         if spec["api_key"]:
             env[spec["secret_env"]] = spec["api_key"]
-    command = build_serve_command(config_path, port)
+    command = build_serve_command(port)
 
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
@@ -352,7 +388,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
     )
-    time.sleep(1.5)
+    time.sleep(2.0)
     if proc.poll() is not None:
         log_file.close()
         error = get_agent_logs(project_id, 50)
@@ -363,7 +399,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
                 "agent_last_error": error[-2000:],
             },
         )
-        return False, "Continue agent exited during startup.", {}
+        return False, "OpenCode agent exited during startup.", {}
 
     agent_pid_file(project_id).write_text(str(proc.pid))
     log_file.close()
@@ -374,6 +410,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
             "agent_last_started_at": _now(),
             "agent_last_error": "",
             "agent_config_path": str(config_path),
+            "agent_session_id": "",
         },
     )
     status = await get_agent_status(project_id)
@@ -384,10 +421,10 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         project_id,
         "agent_started",
         title="Agent started",
-        detail=f"Continue agent started on port {port}",
+        detail=f"OpenCode agent started on port {port}",
         payload={"port": port},
     )
-    return True, f"Continue agent started on port {port}.", status
+    return True, f"OpenCode agent started on port {port}.", status
 
 
 async def restart_agent(project_id: str) -> tuple[bool, str, dict]:
@@ -425,6 +462,7 @@ async def get_agent_status(project_id: str, *, request_base: str = "") -> dict:
     proxy_path = f"/api/internal/projects/{project_id}/agent/proxy"
     return {
         "agent_runtime": project.get("agent_runtime") or "project",
+        "agent_engine": "opencode",
         "agent_status": status,
         "agent_running": running,
         "agent_healthy": healthy["ok"],
@@ -435,13 +473,15 @@ async def get_agent_status(project_id: str, *, request_base: str = "") -> dict:
         "agent_workspace_path": str(workspace_path(project_id)),
         "agent_log_path": str(agent_log_path(project_id)),
         "agent_config_path": project.get("agent_config_path") or str(agent_config_path(project_id)),
+        "agent_session_id": project.get("agent_session_id") or "",
         "agent_last_started_at": project.get("agent_last_started_at"),
         "agent_last_error": project.get("agent_last_error") or "",
         "agent_backend": backend,
         "agent_model": model,
-        "agent_command": continue_command(),
-        "agent_install_ok": continue_installed(),
+        "agent_command": opencode_command(),
+        "agent_install_ok": opencode_installed(),
         "agent_no_hub_required": True,
+        "agent_openapi_doc": (runtime_url + "/doc") if port else "",
     }
 
 
@@ -461,51 +501,73 @@ async def update_agent_settings(
     return await get_agent_status(project_id)
 
 
-def _extract_assistant_reply(state: dict) -> str:
-    history = (state.get("session") or {}).get("history") or []
-    assistant_items = [item for item in history if (item.get("message") or {}).get("role") == "assistant"]
-    if not assistant_items:
-        return ""
-    last = assistant_items[-1].get("message") or {}
-    content = last.get("content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+def _extract_assistant_reply(message_result: dict) -> str:
+    parts = message_result.get("parts") or []
+    texts = [str(part.get("text") or "") for part in parts if part.get("type") == "text"]
+    return "\n".join(text for text in texts if text).strip()
+
+
+async def _ensure_agent_session(project_id: str, port: int) -> str:
+    project = await get_project(project_id) or {}
+    session_id = (project.get("agent_session_id") or "").strip()
+    base = agent_local_url(port).rstrip("/")
+    auth = agent_http_auth()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if session_id:
+            try:
+                response = await client.get(f"{base}/session/{session_id}", auth=auth)
+                if response.status_code == 200:
+                    return session_id
+            except Exception:
+                pass
+        response = await client.post(
+            f"{base}/session",
+            json={"title": f"Syte {project_id[:8]}"},
+            auth=auth,
         )
-    return str(content)
+        response.raise_for_status()
+        session_id = str(response.json().get("id") or "")
+        if not session_id:
+            raise RuntimeError("OpenCode did not return a session id")
+        await update_project(project_id, {"agent_session_id": session_id})
+        return session_id
 
 
-async def _poll_agent_state(
+async def _poll_session_messages(
     port: int,
+    session_id: str,
     *,
     timeout_s: float = 90.0,
     project_id: str | None = None,
     source: str = "agent",
-) -> dict:
-    from syte.agent_activity import ingest_agent_state
+) -> list[dict[str, Any]]:
+    from syte.agent_activity import ingest_opencode_messages
 
     base = agent_local_url(port).rstrip("/")
+    auth = agent_http_auth()
     deadline = time.time() + timeout_s
-    last_state: dict = {}
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    last_messages: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=15.0) as client:
         while time.time() < deadline:
             try:
-                response = await client.get(f"{base}/state")
-                if response.status_code >= 400:
-                    await asyncio.sleep(0.5)
-                    continue
-                last_state = response.json()
-                if project_id:
-                    await ingest_agent_state(project_id, last_state, source=source)
-                busy = last_state.get("isProcessing") or last_state.get("is_processing")
+                status_response = await client.get(f"{base}/session/status", auth=auth)
+                busy = False
+                if status_response.status_code < 400:
+                    statuses = status_response.json() or {}
+                    session_status = statuses.get(session_id) or {}
+                    busy = str(session_status.get("type") or "").lower() in {"busy", "running", "processing"}
+
+                messages_response = await client.get(f"{base}/session/{session_id}/message", auth=auth)
+                if messages_response.status_code < 400:
+                    last_messages = messages_response.json() or []
+                    if project_id:
+                        await ingest_opencode_messages(project_id, last_messages, source=source)
                 if not busy:
-                    return last_state
+                    return last_messages
             except Exception:
                 pass
-            await asyncio.sleep(0.4)
-    return last_state
+            await asyncio.sleep(0.5)
+    return last_messages
 
 
 async def communicate_with_agent(
@@ -516,8 +578,8 @@ async def communicate_with_agent(
     source: str = "api",
     auto_start: bool = True,
 ) -> dict:
+    from syte.agent_activity import ingest_opencode_messages, record_agent_event, reset_history_tracker
     from syte.agent_metrics import log_agent_request
-    from syte.agent_activity import record_agent_event, reset_history_tracker
 
     project = await get_project(project_id)
     if not project:
@@ -529,7 +591,7 @@ async def communicate_with_agent(
     status = await get_agent_status(project_id)
     if not status.get("agent_running"):
         if not auto_start:
-            err = "Continue agent is not running"
+            err = "OpenCode agent is not running"
             await log_agent_request(project_id, source=source, model_profile=model_profile, message=message, status="error", error=err)
             return {"ok": False, "error": "agent_not_running", "message": err}
         ok, start_msg, status = await start_agent(project_id)
@@ -545,6 +607,7 @@ async def communicate_with_agent(
 
     base = agent_local_url(int(port)).rstrip("/")
     model = status.get("agent_model") or {}
+    auth = agent_http_auth()
     reset_history_tracker(project_id, source=source)
     await record_agent_event(
         project_id,
@@ -556,19 +619,42 @@ async def communicate_with_agent(
         source=source,
     )
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        session_id = await _ensure_agent_session(project_id, int(port))
+        body = {
+            "parts": [{"type": "text", "text": message}],
+            "model": {
+                "providerID": model.get("opencode_provider_id") or model.get("profile"),
+                "modelID": model.get("opencode_model_id") or model.get("model"),
+            },
+        }
+        async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
-                f"{base}/message",
-                json={"message": message},
-                headers={"Content-Type": "application/json"},
+                f"{base}/session/{session_id}/message",
+                json=body,
+                auth=auth,
             )
             if response.status_code >= 400:
                 err = f"Agent returned HTTP {response.status_code}"
                 await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
                 return {"ok": False, "error": "agent_http_error", "message": err, "status_code": response.status_code}
 
-        state = await _poll_agent_state(int(port), project_id=project_id, source=source)
-        reply = _extract_assistant_reply(state)
+            result = response.json()
+            reply = _extract_assistant_reply(result)
+            messages = await _poll_session_messages(
+                int(port),
+                session_id,
+                project_id=project_id,
+                source=source,
+                timeout_s=5.0,
+            )
+            if not reply and messages:
+                last_assistant = next(
+                    (item for item in reversed(messages) if (item.get("info") or {}).get("role") == "assistant"),
+                    None,
+                )
+                if last_assistant:
+                    reply = _extract_assistant_reply(last_assistant)
+            await ingest_opencode_messages(project_id, messages or [result], source=source)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="ok")
         await record_agent_event(
             project_id,
@@ -587,7 +673,8 @@ async def communicate_with_agent(
             "provider": model.get("provider"),
             "message": message,
             "reply": reply,
-            "state": state,
+            "session_id": session_id,
+            "result": result,
         }
     except Exception as exc:
         err = str(exc)
@@ -627,18 +714,18 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
             ok=False,
             error="api_key_missing",
             message=str(exc),
-            checks={"cli": continue_installed(), "backend": False, "agent": False},
+            checks={"cli": opencode_installed(), "backend": False, "agent": False},
         )
 
     status = await get_agent_status(project_id)
     backend = status.get("agent_backend") or {}
-    install_ok = status.get("agent_install_ok", continue_installed())
+    install_ok = status.get("agent_install_ok", opencode_installed())
 
     if not install_ok:
         return await fail(
             ok=False,
             error="cli_not_installed",
-            message="Continue CLI not installed. Install: npm install -g @continuedev/cli",
+            message="OpenCode CLI not installed. Install: npm install -g opencode-ai",
             checks={"cli": False, "backend": backend.get("ok", False), "agent": False},
         )
 
@@ -692,4 +779,3 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         model=result.get("model"),
         provider=result.get("provider"),
     )
-

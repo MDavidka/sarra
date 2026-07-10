@@ -255,7 +255,7 @@ async def _gui_url() -> str:
 @app.get("/api/settings")
 async def get_settings():
     from syte.ai_providers import provider_catalog
-    from syte.continue_agent import bridge_settings
+    from syte.opencode_agent import bridge_settings
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -386,7 +386,7 @@ async def save_settings(body: SettingsRequest):
     if body.continue_default_model_profile is not None:
         profile = body.continue_default_model_profile.strip() or "syra-base"
         await set_setting("continue_default_model_profile", profile)
-        messages.append(f"Default Continue model profile: {profile}")
+        messages.append(f"Default model profile: {profile}")
     if body.continue_syra_nano_api_key is not None:
         await set_setting("continue_syra_nano_api_key", body.continue_syra_nano_api_key.strip())
         messages.append(
@@ -570,7 +570,7 @@ async def api_preview_stop(project_id: str):
 
 @app.get("/api/projects/{project_id}/agent")
 async def api_agent_status_public(project_id: str, request: Request):
-    from syte.continue_agent import get_agent_status
+    from syte.opencode_agent import get_agent_status
 
     project = await get_project(project_id)
     if not project:
@@ -580,7 +580,7 @@ async def api_agent_status_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/start")
 async def api_agent_start_public(project_id: str, request: Request):
-    from syte.continue_agent import get_agent_status, start_agent
+    from syte.opencode_agent import get_agent_status, start_agent
 
     ok, message, _meta = await start_agent(project_id)
     if not ok:
@@ -590,7 +590,7 @@ async def api_agent_start_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/stop")
 async def api_agent_stop_public(project_id: str, request: Request):
-    from syte.continue_agent import get_agent_status, stop_agent
+    from syte.opencode_agent import get_agent_status, stop_agent
 
     project = await get_project(project_id)
     if not project:
@@ -601,7 +601,7 @@ async def api_agent_stop_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/restart")
 async def api_agent_restart_public(project_id: str, request: Request):
-    from syte.continue_agent import get_agent_status, restart_agent
+    from syte.opencode_agent import get_agent_status, restart_agent
 
     ok, message, _meta = await restart_agent(project_id)
     if not ok:
@@ -611,7 +611,7 @@ async def api_agent_restart_public(project_id: str, request: Request):
 
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
-    from syte.continue_agent import get_agent_logs
+    from syte.opencode_agent import get_agent_logs
 
     project = await get_project(project_id)
     if not project:
@@ -707,7 +707,7 @@ async def api_agent_debug_gui(project_id: str, profile: str | None = None):
 
 @app.post("/api/projects/{project_id}/agent/test")
 async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
-    from syte.continue_agent import test_agent
+    from syte.opencode_agent import test_agent
 
     project = await get_project(project_id)
     if not project:
@@ -718,7 +718,7 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
 
 @app.post("/api/projects/{project_id}/agent/chat")
 async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
-    from syte.continue_agent import communicate_with_agent
+    from syte.opencode_agent import communicate_with_agent
 
     project = await get_project(project_id)
     if not project:

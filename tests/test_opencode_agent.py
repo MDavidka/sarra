@@ -1,5 +1,6 @@
-"""Tests for Continue agent runtime management."""
+"""Tests for OpenCode agent runtime management."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -22,8 +23,8 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 async def test_ensure_agent_runtime_assigns_port_and_profile(
     tmp_data_dir: Path,
 ) -> None:
-    from syte.continue_agent import ensure_agent_runtime
     from syte.database import create_project, get_project, init_db, set_setting
+    from syte.opencode_agent import ensure_agent_runtime
 
     await init_db()
     await set_setting("continue_default_model_profile", "syra-havy")
@@ -47,8 +48,8 @@ async def test_write_agent_config_uses_per_profile_providers(
     tmp_data_dir: Path,
 ) -> None:
     from syte.ai_providers import DEEPSEEK_API_BASE, VERTED_API_BASE
-    from syte.continue_agent import agent_config_path, write_agent_config
     from syte.database import create_project, get_project, init_db, set_setting, update_project
+    from syte.opencode_agent import agent_config_path, write_agent_config
 
     await init_db()
     await set_setting("continue_syra_nano_api_key", "nano-key")
@@ -64,25 +65,24 @@ async def test_write_agent_config_uses_per_profile_providers(
 
     project = await get_project("proj-2")
     path = await write_agent_config(project or {})
-    text = path.read_text()
+    data = json.loads(path.read_text())
 
     assert path == agent_config_path("proj-2")
-    assert f'apiBase: "{DEEPSEEK_API_BASE}"' in text
-    assert f'apiBase: "{VERTED_API_BASE}"' in text
-    assert '${{ secrets.SYRA_BASE_API_KEY }}' in text
-    assert '${{ secrets.SYRA_NANO_API_KEY }}' in text
-    assert '${{ secrets.SYRA_HAVY_API_KEY }}' in text
-    assert 'name: "syra-base"' in text
-    assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
+    assert data["model"] == "syra-base/deepseek-chat"
+    assert data["provider"]["syra-base"]["options"]["baseURL"] == DEEPSEEK_API_BASE
+    assert data["provider"]["syra-nano"]["options"]["baseURL"] == VERTED_API_BASE
+    assert data["provider"]["syra-base"]["options"]["apiKey"] == "{env:SYRA_BASE_API_KEY}"
+    assert data["provider"]["syra-nano"]["options"]["apiKey"] == "{env:SYRA_NANO_API_KEY}"
+    assert data["provider"]["syra-havy"]["options"]["apiKey"] == "{env:SYRA_HAVY_API_KEY}"
 
 
 @pytest.mark.asyncio
-async def test_start_agent_reports_missing_continue_cli(
+async def test_start_agent_reports_missing_opencode_cli(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from syte.continue_agent import start_agent
     from syte.database import create_project, get_project, init_db
+    from syte.opencode_agent import start_agent
 
     await init_db()
     await create_project({
@@ -91,13 +91,13 @@ async def test_start_agent_reports_missing_continue_cli(
         "port": 3002,
         "start_command": "",
     })
-    monkeypatch.setattr("syte.continue_agent.continue_installed", lambda: False)
+    monkeypatch.setattr("syte.opencode_agent.opencode_installed", lambda: False)
 
     ok, message, meta = await start_agent("proj-3")
     project = await get_project("proj-3")
 
     assert ok is False
-    assert "Continue CLI not installed" in message
+    assert "OpenCode CLI not installed" in message
     assert meta == {}
     assert project["agent_status"] == "error"
 
@@ -107,8 +107,8 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from syte.continue_agent import get_agent_status
     from syte.database import create_project, init_db, set_setting, update_project
+    from syte.opencode_agent import get_agent_status
 
     await init_db()
     await set_setting("continue_syra_base_api_key", "base-key")
@@ -119,20 +119,21 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
         "start_command": "",
     })
     await update_project("proj-4", {"agent_port": 5333, "agent_status": "running"})
-    monkeypatch.setattr("syte.continue_agent.is_agent_running", lambda _id: True)
+    monkeypatch.setattr("syte.opencode_agent.is_agent_running", lambda _id: True)
 
     async def fake_probe(_port):
-        return {"ok": True, "url": "http://127.0.0.1:5333/health", "status_code": 200}
+        return {"ok": True, "url": "http://127.0.0.1:5333/global/health", "status_code": 200}
 
-    monkeypatch.setattr("syte.continue_agent.probe_agent_http", fake_probe)
+    monkeypatch.setattr("syte.opencode_agent.probe_agent_http", fake_probe)
 
     async def fake_backend(_project):
         return {"ok": True, "status_code": 200, "url": "https://api.deepseek.com/v1/models", "error": ""}
 
-    monkeypatch.setattr("syte.continue_agent.backend_health", fake_backend)
+    monkeypatch.setattr("syte.opencode_agent.backend_health", fake_backend)
     status = await get_agent_status("proj-4", request_base="https://sycord.site")
 
     assert status["agent_running"] is True
+    assert status["agent_engine"] == "opencode"
     assert status["agent_proxy_url"] == "https://sycord.site/api/internal/projects/proj-4/agent/proxy"
     assert status["agent_backend"]["ok"] is True
 
@@ -141,8 +142,8 @@ async def test_get_agent_status_exposes_proxy_and_backend_state(
 async def test_write_agent_config_skips_profiles_without_keys(
     tmp_data_dir: Path,
 ) -> None:
-    from syte.continue_agent import write_agent_config
     from syte.database import create_project, get_project, init_db, set_setting, update_project
+    from syte.opencode_agent import write_agent_config
 
     await init_db()
     await set_setting("continue_syra_base_api_key", "base-key")
@@ -156,19 +157,19 @@ async def test_write_agent_config_skips_profiles_without_keys(
 
     project = await get_project("proj-5")
     path = await write_agent_config(project or {})
-    text = path.read_text()
+    data = json.loads(path.read_text())
 
-    assert 'name: "syra-base"' in text
-    assert 'name: "syra-nano"' not in text
-    assert 'name: "syra-havy"' not in text
+    assert "syra-base" in data["provider"]
+    assert "syra-nano" not in data["provider"]
+    assert "syra-havy" not in data["provider"]
 
 
 @pytest.mark.asyncio
 async def test_write_agent_config_requires_active_profile_key(
     tmp_data_dir: Path,
 ) -> None:
-    from syte.continue_agent import write_agent_config
     from syte.database import create_project, get_project, init_db, set_setting, update_project
+    from syte.opencode_agent import write_agent_config
 
     await init_db()
     await set_setting("continue_syra_base_api_key", "base-key")
@@ -186,13 +187,13 @@ async def test_write_agent_config_requires_active_profile_key(
 
 
 @pytest.mark.asyncio
-async def test_build_serve_command_omits_unsupported_host_flag() -> None:
-    from syte.continue_agent import build_serve_command
+async def test_build_serve_command_uses_opencode_hostname() -> None:
+    from syte.opencode_agent import build_serve_command
 
-    cmd = build_serve_command("/tmp/config.yaml", 5200)
+    cmd = build_serve_command(5200)
+    assert "serve" in cmd
     assert "--port 5200" in cmd
-    assert "--timeout" in cmd
-    assert "--host" not in cmd
+    assert "--hostname 127.0.0.1" in cmd
 
 
 @pytest.mark.asyncio

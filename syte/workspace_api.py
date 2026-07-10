@@ -75,7 +75,7 @@ def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int)
 
 async def workspace_get(project_id: str) -> dict | None:
     from syte import process_manager
-    from syte.continue_agent import ensure_agent_runtime, get_agent_status
+    from syte.opencode_agent import ensure_agent_runtime, get_agent_status
     from syte.preview_manager import ensure_preview_address, preview_meta
 
     project = await get_project(project_id)

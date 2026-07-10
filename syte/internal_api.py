@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from syte.auth import verify_internal_service_request
-from syte.continue_agent import (
+from syte.opencode_agent import (
     agent_local_url,
     communicate_with_agent,
     get_agent_logs,
@@ -204,7 +204,7 @@ async def internal_agent_change(
     body: InternalAgentChangeRequest,
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    """sycord.com → Syte: user requests a code change; VM routes to Continue CLI by UUID workspace."""
+    """sycord.com → Syte: user requests a code change; VM routes to OpenCode by UUID workspace."""
     await _require_project(project_id)
     profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
@@ -240,9 +240,9 @@ async def internal_agent_proxy(
     if not status:
         raise HTTPException(404, "Project not found")
     if not status.get("agent_port"):
-        raise HTTPException(503, "Continue agent has no allocated port")
+        raise HTTPException(503, "OpenCode agent has no allocated port")
     if not status.get("agent_running"):
-        raise HTTPException(503, "Continue agent is not running")
+        raise HTTPException(503, "OpenCode agent is not running")
     upstream = agent_local_url(status["agent_port"]).rstrip("/")
     target = upstream + ("/" + path.lstrip("/") if path else "")
     query_items = [(k, v) for k, v in request.query_params.multi_items() if k != "internal_secret"]
