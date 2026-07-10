@@ -383,6 +383,22 @@ def _schedule_restart() -> None:
     )
 
 
+def _ensure_requirements_installed() -> tuple[bool, str]:
+    """Install requirements into .venv before importing heavy deps (manual update.sh safety)."""
+    req = INSTALL_DIR / "requirements.txt"
+    if not req.exists():
+        return True, ""
+    pip = _venv_pip()
+    if pip:
+        code, out = run_cmd([pip, "install", "-r", str(req), "-q"], cwd=INSTALL_DIR)
+        return code == 0, out or "Dependencies updated."
+    code, out = run_cmd(
+        [sys.executable, "-m", "pip", "install", "-r", str(req), "-q"],
+        cwd=INSTALL_DIR,
+    )
+    return code == 0, out or "Dependencies updated."
+
+
 def update_syte() -> tuple[bool, str]:
     """Pull newest Syte from git (latest open PR by default), refresh deps, and schedule restart."""
     target = _update_target()
@@ -421,16 +437,9 @@ def update_syte() -> tuple[bool, str]:
 
     req = INSTALL_DIR / "requirements.txt"
     if req.exists():
-        pip = _venv_pip()
-        if pip:
-            code, out = run_cmd([pip, "install", "-r", str(req), "-q"], cwd=INSTALL_DIR)
-        else:
-            code, out = run_cmd(
-                [sys.executable, "-m", "pip", "install", "-r", str(req), "-q"],
-                cwd=INSTALL_DIR,
-            )
-        messages.append(out or "Dependencies updated.")
-        if code != 0:
+        ok_deps, dep_msg = _ensure_requirements_installed()
+        messages.append(dep_msg)
+        if not ok_deps:
             return False, "\n".join(messages)
 
     _schedule_restart()
