@@ -247,6 +247,45 @@ function refreshIcons() {
   if (window.lucide) lucide.createIcons();
 }
 
+function updateSidebarNav(viewName) {
+  const isService = viewName === 'service';
+  const isDashboardFamily = viewName === 'dashboard' || viewName === 'new-service' || viewName === 'service';
+  const navView = viewName === 'new-service' ? 'dashboard' : viewName;
+
+  document.getElementById('nav-group-projects')?.classList.toggle('hidden', isService);
+  document.getElementById('nav-group-service')?.classList.toggle('hidden', !isService);
+
+  document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
+    el.classList.toggle('active', !isService && el.dataset.view === navView);
+  });
+
+  document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
+    if (el.tagName === 'A') {
+      el.classList.remove('active');
+      return;
+    }
+    el.classList.toggle('active', el.dataset.view === viewName && !isDashboardFamily);
+  });
+}
+
+function updateServiceSidebarNav(p) {
+  const title = document.getElementById('nav-service-title');
+  const icon = document.getElementById('nav-service-icon');
+  if (title) title.textContent = p ? displayTitle(p) : 'Service';
+  if (icon) {
+    const letter = ((p?.name || p?.domain || 'S').trim()[0] || 'S').toUpperCase();
+    icon.textContent = letter;
+  }
+}
+
+function toggleNavGroup(groupId) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  const expanded = group.classList.toggle('expanded');
+  const toggle = group.querySelector('.nav-group-head');
+  if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
 function showView(name) {
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
@@ -255,14 +294,7 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
 
-  const sidebarActive = (name === 'new-service' || name === 'service') ? 'dashboard' : name;
-  document.querySelectorAll('.sidebar-link').forEach(el => {
-    if (el.tagName === 'A') {
-      el.classList.remove('active');
-      return;
-    }
-    el.classList.toggle('active', el.dataset.view === sidebarActive);
-  });
+  updateSidebarNav(name);
 
   if (name === 'users') loadTokens();
   if (name === 'dashboard') activeServiceId = null;
@@ -276,6 +308,7 @@ function showView(name) {
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
+    updateServiceSidebarNav(p);
     setBreadcrumb(p ? displayTitle(p) : 'Project');
   } else {
     setBreadcrumb(BREADCRUMBS[name] || 'Syte');
@@ -604,7 +637,7 @@ function switchSvcTab(tab) {
   const allowed = ['general', 'env', 'logs', 'preview'];
   if (!allowed.includes(tab)) tab = 'general';
   activeSvcTab = tab;
-  document.querySelectorAll('.svc-tab').forEach(btn => {
+  document.querySelectorAll('.nav-sublink[data-svc-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
   });
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
@@ -698,12 +731,14 @@ function openService(id) {
   activeServiceId = id;
   activeSvcTab = 'general';
   switchSvcTab('general');
+  updateServiceSidebarNav(p);
   renderServiceDashboard(p, true);
   showView('service');
 }
 
 function renderServiceDashboard(p, resetLogs) {
   document.getElementById('svc-title').textContent = displayTitle(p);
+  updateServiceSidebarNav(p);
   updateServiceStatusDot(p);
   renderStackBadge(p);
   renderServiceEmbed(p);
@@ -1615,14 +1650,19 @@ document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
   if (el.tagName === 'A') return;
   el.addEventListener('click', () => showView(el.dataset.view));
 });
-document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
-document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
-
-document.getElementById('svc-tabs')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.svc-tab');
+document.getElementById('nav-dashboard')?.addEventListener('click', () => showView('dashboard'));
+document.getElementById('nav-group-projects-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-projects'));
+document.getElementById('nav-service-head')?.addEventListener('click', () => {
+  if (activeServiceId) showView('dashboard');
+  else toggleNavGroup('nav-group-service');
+});
+document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
   switchSvcTab(btn.dataset.svcTab);
 });
+document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
+document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 
 document.getElementById('ai-header-settings-btn')?.addEventListener('click', openAiSettings);
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);

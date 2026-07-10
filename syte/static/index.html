@@ -46,9 +46,45 @@
       </div>
 
       <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <button type="button" class="sidebar-link active" data-view="dashboard">
-          <i data-lucide="home"></i><span>Home</span>
-        </button>
+        <p class="nav-section-label">Platform</p>
+
+        <div class="nav-group expanded" id="nav-group-projects">
+          <button type="button" class="nav-group-head" id="nav-group-projects-toggle" aria-expanded="true">
+            <span class="nav-group-icon" aria-hidden="true">P</span>
+            <span class="nav-group-title">Projects</span>
+            <i data-lucide="chevron-down" class="nav-group-chevron"></i>
+          </button>
+          <div class="nav-group-body" id="nav-group-projects-body">
+            <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
+              <i data-lucide="layout-grid"></i><span>Overview</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-group expanded hidden" id="nav-group-service">
+          <button type="button" class="nav-group-head" id="nav-service-head" aria-expanded="true">
+            <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
+            <span class="nav-group-title" id="nav-service-title">Service</span>
+            <i data-lucide="chevron-down" class="nav-group-chevron"></i>
+          </button>
+          <div class="nav-group-body" id="sidebar-service-tabs">
+            <button type="button" class="nav-sublink active" data-svc-tab="general">
+              <i data-lucide="sliders-horizontal"></i><span>General</span>
+            </button>
+            <button type="button" class="nav-sublink" data-svc-tab="env">
+              <i data-lucide="variable"></i><span>Environment</span>
+            </button>
+            <button type="button" class="nav-sublink" data-svc-tab="logs">
+              <i data-lucide="terminal"></i><span>Logs</span>
+            </button>
+            <button type="button" class="nav-sublink" data-svc-tab="preview">
+              <i data-lucide="monitor-play"></i><span>Preview</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="nav-section-label">System</p>
+
         <button type="button" class="sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
           <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon"><span>Sycord</span>
         </button>
@@ -237,13 +273,6 @@
               <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
               <div class="svc-quick-actions" id="svc-quick-actions"></div>
             </div>
-
-            <nav class="svc-tabs" id="svc-tabs" aria-label="Service sections">
-              <button type="button" class="svc-tab active" data-svc-tab="general">General</button>
-              <button type="button" class="svc-tab" data-svc-tab="env">Environment</button>
-              <button type="button" class="svc-tab" data-svc-tab="logs">Logs</button>
-              <button type="button" class="svc-tab" data-svc-tab="preview">Preview</button>
-            </nav>
 
             <div class="svc-tab-panels">
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
