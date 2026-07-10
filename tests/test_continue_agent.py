@@ -77,6 +77,7 @@ async def test_write_agent_config_uses_per_profile_providers(
     assert "rules:" in text
     assert "Syte website agent" in text
     assert "mcpServers:" in text
+    assert "type: stdio" in text
     assert "syte-tools" in text
     assert "syte.mcp_stdio" in text
 
@@ -198,6 +199,31 @@ async def test_build_serve_command_omits_unsupported_host_flag() -> None:
     assert "--port 5200" in cmd
     assert "--timeout" in cmd
     assert "--host" not in cmd
+
+
+@pytest.mark.asyncio
+async def test_communicate_with_agent_requires_api_key(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.continue_agent import communicate_with_agent
+    from syte.database import create_project, init_db, update_project
+
+    await init_db()
+    await create_project({
+        "id": "proj-chat",
+        "name": "Chat",
+        "port": 3010,
+        "start_command": "",
+    })
+    await update_project("proj-chat", {"agent_model_profile": "syra-base"})
+    monkeypatch.setattr("syte.continue_agent.continue_installed", lambda: True)
+
+    result = await communicate_with_agent("proj-chat", "hello", source="gui")
+
+    assert result["ok"] is False
+    assert result["error"] == "api_key_missing"
+    assert "API key" in result["message"]
 
 
 @pytest.mark.asyncio
