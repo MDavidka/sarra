@@ -8,6 +8,8 @@ let previewStream = null;
 let activeServiceId = null;
 let deployPollTimer = null;
 let previewPollTimer = null;
+let lastPreviewFrameSrc = '';
+let previewTabActive = false;
 let agentActivityStream = null;
 let agentActivityReconnectTimer = null;
 let debugChatSinceId = 0;
@@ -235,6 +237,7 @@ function appendDebugChatBubble(event) {
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
   } else if (role === 'action') {
+    bubble.classList.add('debug-chat-action-new');
     bubble.innerHTML = `
       <div class="debug-chat-action-row">
         <i data-lucide="${iconName}"></i>
@@ -244,6 +247,7 @@ function appendDebugChatBubble(event) {
         </div>
       </div>
     `;
+    requestAnimationFrame(() => bubble.classList.remove('debug-chat-action-new'));
   } else {
     bubble.innerHTML = `
       <div class="debug-chat-system-row">
@@ -293,6 +297,10 @@ function handleDebugChatActivity(event) {
   if (refreshTypes.includes(event.event_type)) {
     onDebugChatWorkspaceChange();
   }
+  if (event.event_type === 'request_started') {
+    setDebugChatTyping(true);
+    setDebugChatBusy(true);
+  }
   if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
     setDebugChatTyping(false);
     setDebugChatBusy(false);
@@ -300,13 +308,8 @@ function handleDebugChatActivity(event) {
 }
 
 async function onDebugChatWorkspaceChange() {
-  if (!activeServiceId) return;
-  await loadProjects();
-  const p = projects.find(x => x.id === activeServiceId);
-  if (!p || activeSvcTab !== 'debug-chat') return;
-  loadWorkspaceFiles(p.id);
-  renderServiceEmbed(p);
-  renderPreviewSection(p);
+  if (!activeServiceId || activeSvcTab !== 'debug-chat') return;
+  await loadProjects({ silent: true });
 }
 
 async function loadDebugChatHistory(projectId) {
@@ -389,36 +392,8 @@ function setDebugChatBusy(busy) {
   if (input) input.disabled = busy;
 }
 
-async function loadDebugChatAccessConfig(projectId) {
-  const textarea = document.getElementById('debug-chat-custom-urls');
-  if (!textarea) return;
-  try {
-    const res = await api(`/projects/${projectId}/agent/access-config`);
-    const urls = res.custom_urls || [];
-    textarea.value = urls.join('\n');
-  } catch {
-    textarea.value = '';
-  }
-}
-
-async function saveDebugChatAccessConfig() {
-  if (!activeServiceId) return;
-  const textarea = document.getElementById('debug-chat-custom-urls');
-  const urls = (textarea?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
-  try {
-    await api(`/projects/${activeServiceId}/agent/access-config`, {
-      method: 'PUT',
-      body: JSON.stringify({ custom_urls: urls }),
-    });
-    toast('Access settings saved');
-  } catch (e) {
-    toast('Could not save access: ' + e.message);
-  }
-}
-
 async function openDebugChatTab() {
   if (!activeServiceId) return;
-  await loadDebugChatAccessConfig(activeServiceId);
   await loadDebugChatHistory(activeServiceId);
   startAgentActivityStream(activeServiceId);
   await updateDebugChatAgentStatus();
@@ -445,16 +420,15 @@ async function sendDebugChatMessage() {
       method: 'POST',
       body: JSON.stringify({ message, model_profile: profile }),
     });
-    setDebugChatTyping(false);
     if (!res.ok) {
+      setDebugChatTyping(false);
       appendDebugChatBubble({
         event_type: 'request_failed',
         title: 'Request failed',
         detail: res.message || res.error || 'Unknown error',
       });
       toast(res.message || 'Agent request failed');
-    } else {
-      await onDebugChatWorkspaceChange();
+      setDebugChatBusy(false);
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
@@ -465,9 +439,9 @@ async function sendDebugChatMessage() {
       detail: e.message,
     });
     toast('Error: ' + e.message);
+    setDebugChatBusy(false);
   } finally {
     if (input) input.value = '';
-    setDebugChatBusy(false);
     scrollDebugChatToBottom();
   }
 }
@@ -899,18 +873,43 @@ function renderLogsList() {
   refreshIcons();
 }
 
-async function loadProjects() {
+async function loadProjects(options = {}) {
+  const { silent = false } = options;
   try {
     projects = await api('/projects');
     renderServices();
     updateStats();
     if (activeServiceId) {
       const p = projects.find(x => x.id === activeServiceId);
-      if (p) renderServiceDashboard(p, false);
+      if (p) {
+        if (silent) {
+          updateActiveServiceMeta(p);
+        } else {
+          renderServiceDashboard(p, false);
+        }
+      }
     }
   } catch (e) {
     console.error(e);
   }
+}
+
+function updateActiveServiceMeta(p) {
+  updateServiceStatusDot(p);
+  if (activeSvcTab === 'general') {
+    renderQuickActions(p);
+    updateServiceConnLink(p);
+  } else if (activeSvcTab === 'preview') {
+    renderPreviewSection(p);
+  }
+}
+
+function updateServiceConnLink(p) {
+  const conn = document.getElementById('svc-conn');
+  if (!conn) return;
+  const link = p.url || '#';
+  conn.textContent = connLabel(p);
+  conn.href = link;
 }
 
 function sslBadgeHtml(p) {
@@ -1059,6 +1058,16 @@ function switchSvcTab(tab) {
   } else if (prevTab === 'debug-chat') {
     stopAgentActivityStream();
   }
+  if (tab === 'preview') {
+    previewTabActive = true;
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) renderPreviewSection(p);
+  } else if (prevTab === 'preview') {
+    previewTabActive = false;
+    stopPreviewPoll();
+    stopPreviewStream();
+    if (activeServiceId) servicePreviewStopQuiet(activeServiceId);
+  }
   if (window.matchMedia('(max-width: 768px)').matches) closeDrawer();
   refreshIcons();
 }
@@ -1115,31 +1124,15 @@ function renderStackBadge(p) {
   if (labelEl) labelEl.textContent = meta.label;
 }
 
+function setPreviewFrameSrc(frame, url) {
+  if (!frame || !url) return;
+  if (lastPreviewFrameSrc === url) return;
+  lastPreviewFrameSrc = url;
+  frame.src = url;
+}
+
 function renderServiceEmbed(p) {
-  const frame = document.getElementById('svc-embed-frame');
-  const placeholder = document.getElementById('svc-preview-placeholder');
-  const conn = document.getElementById('svc-conn');
-  if (conn) {
-    const link = (p.preview_running && p.preview_ready && p.preview_url)
-      ? (p.preview_domain_url || p.preview_url)
-      : p.url;
-    conn.textContent = connLabel(p);
-    conn.href = link || '#';
-  }
-  if (!frame || !placeholder) return;
-  const previewLive = p.preview_running && p.preview_ready && p.preview_url;
-  const embedUrl = previewLive
-    ? (p.preview_domain_url || p.preview_url)
-    : (p.running && p.url ? p.url : null);
-  if (embedUrl) {
-    if (frame.src !== embedUrl) frame.src = embedUrl;
-    frame.classList.remove('hidden');
-    placeholder.classList.add('hidden');
-  } else {
-    frame.src = 'about:blank';
-    frame.classList.add('hidden');
-    placeholder.classList.remove('hidden');
-  }
+  renderPreviewSection(p);
 }
 
 function openService(id) {
@@ -1157,8 +1150,7 @@ function renderServiceDashboard(p, resetLogs) {
   document.getElementById('svc-title').textContent = displayTitle(p);
   updateServiceSidebarNav(p);
   updateServiceStatusDot(p);
-  renderStackBadge(p);
-  renderServiceEmbed(p);
+  updateServiceConnLink(p);
 
   const branchLabel = document.getElementById('svc-branch-label');
   if (branchLabel) branchLabel.textContent = p.branch || 'main';
@@ -1169,9 +1161,10 @@ function renderServiceDashboard(p, resetLogs) {
   const envInput = document.getElementById('svc-env-input');
   if (envInput) envInput.value = formatEnv(p.env_vars);
 
-  renderQuickActions(p);
-
-  document.getElementById('svc-info-body').innerHTML = `
+  if (activeSvcTab === 'general') {
+    renderQuickActions(p);
+    renderStackBadge(p);
+    document.getElementById('svc-info-body').innerHTML = `
     <div class="info-cell"><span>status</span><strong>${esc(statusLabel(p))}</strong></div>
     <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
     <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
@@ -1189,14 +1182,12 @@ function renderServiceDashboard(p, resetLogs) {
       </button>
     </div>
   `;
+  }
 
-  document.getElementById('svc-workspace-body').innerHTML = `
-    <div class="info-cell full"><span>workspace</span><code>${esc(p.workspace_path || '—')}</code></div>
-    <div class="info-cell full"><span>app</span><code>${esc(p.app_path || '—')}</code></div>
-    <div class="info-cell full"><span>data</span><code>${esc(p.data_path || '—')}</code></div>
-  `;
-  loadWorkspaceFiles(p.id);
-  renderPreviewSection(p);
+  if (activeSvcTab === 'preview') {
+    renderStackBadge(p);
+    renderPreviewSection(p);
+  }
 
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
@@ -1212,9 +1203,8 @@ function renderServiceDashboard(p, resetLogs) {
       stopLogStream();
       loadLogSnapshot(p.id, logsEl);
     }
-  } else {
+  } else if (activeSvcTab === 'general') {
     updateServiceStatusDot(p);
-    renderServiceEmbed(p);
     renderQuickActions(p);
   }
 
@@ -1232,13 +1222,20 @@ function iframeHintLine(iframe) {
 }
 
 function renderPreviewSection(p) {
+  if (activeSvcTab !== 'preview') return;
+
   const actions = document.getElementById('svc-preview-actions');
-  const wrap = document.getElementById('svc-preview-wrap');
   const frame = document.getElementById('svc-preview-frame');
+  const placeholder = document.getElementById('svc-preview-placeholder');
   const hint = document.getElementById('svc-preview-hint');
+  const domainEl = document.getElementById('svc-preview-domain');
   const logsEl = document.getElementById('svc-preview-logs');
   const logsWrap = document.getElementById('svc-preview-logs-wrap');
   if (!actions) return;
+
+  if (domainEl) {
+    domainEl.textContent = p.preview_domain || 'Assigning…';
+  }
 
   const live = p.preview_running && p.preview_ready;
   actions.innerHTML = `
@@ -1253,12 +1250,18 @@ function renderPreviewSection(p) {
   `;
 
   if (p.preview_running && p.preview_url) {
-    wrap?.classList.remove('hidden');
-    if (frame && live) {
-      const frameSrc = (p.preview_tls_ok !== false && p.preview_domain_url)
-        ? p.preview_domain_url
-        : (p.preview_fetch_url || p.preview_url);
-      frame.src = frameSrc;
+    if (frame && placeholder) {
+      if (live) {
+        const frameSrc = (p.preview_tls_ok !== false && p.preview_domain_url)
+          ? p.preview_domain_url
+          : (p.preview_fetch_url || p.preview_url);
+        setPreviewFrameSrc(frame, frameSrc);
+        frame.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+      } else {
+        frame.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+      }
     }
     const urlLabel = p.preview_domain
       ? `${p.preview_domain_url || p.preview_url}`
@@ -1273,11 +1276,16 @@ function renderPreviewSection(p) {
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
     if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);
   } else {
-    wrap?.classList.add('hidden');
-    if (frame) frame.src = 'about:blank';
-    hint.textContent = 'Fast dev server with hot reload — no docker build';
+    lastPreviewFrameSrc = '';
+    if (frame) {
+      frame.classList.add('hidden');
+      frame.removeAttribute('src');
+    }
+    placeholder?.classList.remove('hidden');
+    hint.textContent = 'Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab';
     logsWrap?.classList.add('hidden');
     stopPreviewStream();
+    stopPreviewPoll();
   }
   refreshIcons();
 }
@@ -1300,18 +1308,21 @@ function startPreviewLogStream(projectId, targetEl) {
 }
 
 function startPreviewPoll(projectId) {
-  if (previewPollTimer) return;
+  if (previewPollTimer || activeSvcTab !== 'preview') return;
   previewPollTimer = setInterval(async () => {
+    if (activeSvcTab !== 'preview' || activeServiceId !== projectId) {
+      stopPreviewPoll();
+      return;
+    }
     try {
       const st = await api(`/projects/${projectId}/preview/status`);
-      await loadProjects();
       const p = projects.find(x => x.id === projectId);
       if (p && activeServiceId === projectId) {
-        renderPreviewSection({ ...p, iframe: st.iframe });
+        renderPreviewSection({ ...p, ...st, iframe: st.iframe });
         if (st.preview_ready) stopPreviewPoll();
       }
     } catch { /* */ }
-  }, 1500);
+  }, 2000);
 }
 
 function stopPreviewPoll() {
@@ -1330,7 +1341,10 @@ async function servicePreviewStart(id) {
   try {
     const res = await api(`/projects/${id}/preview/start`, { method: 'POST' });
     toast(res.message || 'preview started');
-    await loadProjects();
+    const idx = projects.findIndex(x => x.id === id);
+    if (idx >= 0) {
+      projects[idx] = { ...projects[idx], ...res };
+    }
     const p = projects.find(x => x.id === id);
     if (p) renderPreviewSection({ ...p, iframe: res.iframe });
     if (logsEl) startPreviewLogStream(id, logsEl);
@@ -1340,6 +1354,21 @@ async function servicePreviewStart(id) {
     if (logsEl) appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
     toast('Error: ' + e.message);
   }
+}
+
+async function servicePreviewStopQuiet(id) {
+  try {
+    await api(`/projects/${id}/preview/stop`, { method: 'POST' });
+    lastPreviewFrameSrc = '';
+    const idx = projects.findIndex(x => x.id === id);
+    if (idx >= 0) {
+      projects[idx] = { ...projects[idx], preview_running: false, preview_ready: false, preview_status: 'stopped' };
+    }
+    const p = projects.find(x => x.id === id);
+    if (p && activeServiceId === id && activeSvcTab === 'preview') {
+      renderPreviewSection(p);
+    }
+  } catch { /* ignore */ }
 }
 
 async function servicePreviewStop(id) {
@@ -1355,34 +1384,6 @@ async function servicePreviewStop(id) {
   }
 }
 
-async function loadWorkspaceFiles(projectId, subpath = '') {
-  const el = document.getElementById('svc-workspace-files');
-  if (!el) return;
-  el.innerHTML = '<span class="ws-empty">loading…</span>';
-  try {
-    const q = subpath ? `?path=${encodeURIComponent(subpath)}` : '';
-    const res = await api(`/projects/${projectId}/workspace/files${q}`);
-    if (!res.files?.length) {
-      el.innerHTML = '<span class="ws-empty">empty workspace — add files via API or deploy</span>';
-      return;
-    }
-    el.innerHTML = res.files.map(f => `
-      <div class="ws-file-row">
-        <span class="${f.type === 'directory' ? 'ws-dir' : ''}">${f.type === 'directory' ? '📁' : '📄'} ${esc(f.name)}</span>
-        <span>${f.type === 'file' && f.size != null ? formatBytes(f.size) : ''}</span>
-      </div>
-    `).join('');
-  } catch (e) {
-    el.innerHTML = `<span class="ws-empty">could not list files: ${esc(e.message)}</span>`;
-  }
-}
-
-function formatBytes(n) {
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
 async function serviceDeploy(id) {
   const logsEl = document.getElementById('svc-live-logs');
   const hint = document.getElementById('svc-log-hint');
@@ -1396,7 +1397,6 @@ async function serviceDeploy(id) {
     appendLogLine(logsEl, res.message || 'Deploy started in background', 'log-info');
     toast(res.message || 'deploy started');
     await loadProjects();
-    loadWorkspaceFiles(id);
   } catch (e) {
     appendLogLine(logsEl, 'Error: ' + e.message, 'log-err');
     toast('Error: ' + e.message);
@@ -2087,7 +2087,7 @@ document.getElementById('debug-chat-clear')?.addEventListener('click', () => {
     startAgentActivityStream(activeServiceId);
   }
 });
-document.getElementById('debug-chat-access-save')?.addEventListener('click', saveDebugChatAccessConfig);
+
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 

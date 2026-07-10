@@ -244,49 +244,30 @@
 
         <section id="view-service" class="view">
           <div class="svc-editor">
-            <div class="svc-preview-card" id="svc-preview-card">
-              <iframe id="svc-embed-frame" class="svc-embed-frame hidden" title="Service preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-              <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                <i data-lucide="layout-template"></i>
-                <span>Preview appears when service is running</span>
-              </div>
-              <div class="svc-stack-badge" id="svc-stack-badge">
-                <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                <span id="svc-stack-label">next.js</span>
-              </div>
-            </div>
-
-            <div class="svc-info-block">
-              <div class="svc-identity">
-                <div class="svc-identity-main">
-                  <div class="svc-name-row">
-                    <h1 class="svc-name" id="svc-title">service</h1>
-                    <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name & domain" aria-label="Edit">
-                      <i data-lucide="square-pen"></i>
-                    </button>
-                    <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
-                  </div>
-                </div>
-                <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch">
-                  <i data-lucide="git-branch"></i>
-                  <span id="svc-branch-label">main</span>
-                  <i data-lucide="chevron-down" class="svc-branch-chevron"></i>
-                </button>
-              </div>
-
-              <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
-              <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
-              <div class="svc-quick-actions" id="svc-quick-actions"></div>
-            </div>
-
             <div class="svc-tab-panels">
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
-                <div class="svc-info-grid" id="svc-info-body"></div>
-                <div class="svc-workspace-block">
-                  <h3 class="svc-block-title"><i data-lucide="folder"></i> Workspace</h3>
-                  <div id="svc-workspace-body" class="svc-info-grid"></div>
-                  <div id="svc-workspace-files" class="workspace-files"></div>
+                <div class="svc-info-block">
+                  <div class="svc-identity">
+                    <div class="svc-identity-main">
+                      <div class="svc-name-row">
+                        <h1 class="svc-name" id="svc-title">service</h1>
+                        <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name & domain" aria-label="Edit">
+                          <i data-lucide="square-pen"></i>
+                        </button>
+                        <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
+                      </div>
+                    </div>
+                    <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch">
+                      <i data-lucide="git-branch"></i>
+                      <span id="svc-branch-label">main</span>
+                      <i data-lucide="chevron-down" class="svc-branch-chevron"></i>
+                    </button>
+                  </div>
+                  <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
+                  <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
+                  <div class="svc-quick-actions" id="svc-quick-actions"></div>
                 </div>
+                <div class="svc-info-grid" id="svc-info-body"></div>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
@@ -320,10 +301,22 @@
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — no docker build</p>
+                <div class="svc-preview-domain-row" id="svc-preview-domain-row">
+                  <span class="hint">Preview domain</span>
+                  <code id="svc-preview-domain">—</code>
+                </div>
+                <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab</p>
                 <div class="svc-actions" id="svc-preview-actions"></div>
-                <div class="preview-frame-wrap hidden" id="svc-preview-wrap">
-                  <iframe id="svc-preview-frame" class="preview-frame" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                <div class="svc-preview-card" id="svc-preview-card">
+                  <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                  <div class="svc-preview-placeholder" id="svc-preview-placeholder">
+                    <i data-lucide="layout-template"></i>
+                    <span>Start preview to see your site here</span>
+                  </div>
+                  <div class="svc-stack-badge" id="svc-stack-badge">
+                    <span class="svc-stack-icon" id="svc-stack-icon">N</span>
+                    <span id="svc-stack-label">next.js</span>
+                  </div>
                 </div>
                 <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap">
                   <div class="logs-toolbar logs-toolbar-compact">
@@ -338,24 +331,6 @@
 
               <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
                 <div class="debug-chat-panel">
-                  <details class="debug-chat-access-details" id="debug-chat-access-details">
-                    <summary class="debug-chat-access-summary">
-                      <i data-lucide="plug"></i>
-                      <span>Preview &amp; access tools</span>
-                    </summary>
-                    <div class="debug-chat-access-body">
-                      <p class="hint">Agent uses MCP tools <code>syte_service</code> / <code>syte_access</code> and CLI helpers on PATH.</p>
-                      <ul class="debug-chat-access-list" id="debug-chat-access-defaults">
-                        <li><code>syte-service status|start|stop|deploy|preview_start|run</code></li>
-                        <li><code>syte-access status|fetch|logs|screenshot</code></li>
-                      </ul>
-                      <label class="debug-chat-access-label" for="debug-chat-custom-urls">Custom URLs (one per line)</label>
-                      <textarea id="debug-chat-custom-urls" class="debug-chat-access-input" rows="3" placeholder="https://example.com/page"></textarea>
-                      <button type="button" class="btn-pill btn-ghost btn-sm" id="debug-chat-access-save">
-                        <i data-lucide="save"></i><span>Save access</span>
-                      </button>
-                    </div>
-                  </details>
                   <div class="debug-chat-toolbar">
                     <div class="debug-chat-toolbar-left">
                       <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>

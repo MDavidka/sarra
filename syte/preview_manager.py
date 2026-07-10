@@ -25,6 +25,7 @@ from syte.workspace import command_exists, ensure_workspace, read_env_vars, work
 PREVIEW_PORT_START = 4000
 PREVIEW_PORT_END = 4999
 PREVIEW_START_GRACE_SEC = 45
+PREVIEW_MAX_RUNTIME_SEC = 300
 PID_DIR = settings.data_dir / "pids"
 
 
@@ -178,7 +179,7 @@ async def ensure_preview_address(project: dict) -> dict:
 async def stop_preview_async(project_id: str) -> tuple[bool, str]:
     """Stop preview process but keep stable preview_domain for iframe embeds."""
     stop_preview(project_id)
-    await update_project(project_id, {"preview_status": "stopped"})
+    await update_project(project_id, {"preview_status": "stopped", "preview_started_at": None})
     from syte.certificates import apply_proxy_config
     await apply_proxy_config()
     return True, "Preview stopped."
@@ -352,6 +353,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
         "preview_port": int(preview_port),
         "preview_status": status,
         "preview_domain": preview_domain or None,
+        "preview_started_at": datetime.now(timezone.utc).isoformat(),
     })
 
     from syte.certificates import apply_proxy_config
@@ -418,3 +420,38 @@ async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
     meta["ssl"] = enrich_ssl(project)
     meta["iframe"] = await preview_iframe_status(project)
     return meta, "ok"
+
+
+def _preview_runtime_elapsed(project: dict) -> float | None:
+    raw = project.get("preview_started_at") or ""
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds()
+    except (ValueError, TypeError):
+        return None
+
+
+async def expire_stale_previews() -> None:
+    """Stop previews that exceeded max runtime (5 min) or lost their process."""
+    projects = await list_projects()
+    for project in projects:
+        project_id = project["id"]
+        if project.get("preview_status") not in ("running", "starting"):
+            continue
+        elapsed = _preview_runtime_elapsed(project)
+        if elapsed is not None and elapsed > PREVIEW_MAX_RUNTIME_SEC:
+            logger = __import__("logging").getLogger("syte.preview")
+            logger.info("Stopping preview for %s — max runtime %ss reached", project_id, PREVIEW_MAX_RUNTIME_SEC)
+            await stop_preview_async(project_id)
+            continue
+        if not is_preview_running(project_id):
+            port = project.get("preview_port")
+            if port and _port_listening(int(port)):
+                continue
+            if project.get("preview_status") == "starting" and not _preview_start_grace_elapsed(project):
+                continue
+            await stop_preview_async(project_id)

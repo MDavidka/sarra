@@ -461,15 +461,24 @@ def _running(project: dict) -> bool:
 
 @app.get("/api/projects")
 async def api_list_projects():
+    from syte.preview_manager import ensure_preview_address
+
     projects = await list_projects()
-    return [_enrich(dict(p)) for p in projects]
+    enriched = []
+    for p in projects:
+        p = await ensure_preview_address(dict(p))
+        enriched.append(_enrich(p))
+    return enriched
 
 
 @app.get("/api/projects/{project_id}")
 async def api_get_project(project_id: str):
+    from syte.preview_manager import ensure_preview_address
+
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+    project = await ensure_preview_address(project)
     return _enrich(project)
 
 
