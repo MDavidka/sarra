@@ -46,17 +46,39 @@
       </div>
 
       <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <div id="nav-block-platform" class="nav-block">
+        <div id="nav-block-home" class="nav-block">
           <p class="nav-section-label">Platform</p>
-          <div class="nav-group expanded" id="nav-group-projects">
-            <button type="button" class="nav-group-head" id="nav-group-projects-toggle" aria-expanded="true">
-              <span class="nav-group-icon" aria-hidden="true">P</span>
-              <span class="nav-group-title">Projects</span>
+          <div class="nav-group expanded" id="nav-group-main">
+            <button type="button" class="nav-group-head" id="nav-group-main-toggle" aria-expanded="true">
+              <span class="nav-group-icon" aria-hidden="true">M</span>
+              <span class="nav-group-title">Main</span>
               <i data-lucide="chevron-down" class="nav-group-chevron"></i>
             </button>
-            <div class="nav-group-body" id="nav-group-projects-body">
+            <div class="nav-group-body" id="nav-group-main-body">
               <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
                 <i data-lucide="layout-grid"></i><span>Home</span>
+              </button>
+              <p class="nav-sublabel">System</p>
+              <button type="button" class="nav-sublink sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
+                <img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="server-swarm">
+                <i data-lucide="boxes"></i><span>Server Swarm</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="users">
+                <i data-lucide="users"></i><span>Users</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="logs">
+                <i data-lucide="scroll-text"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="ai">
+                <i data-lucide="sparkles"></i><span>AI</span>
+              </button>
+              <a class="nav-sublink" href="/api/" data-view="api">
+                <i data-lucide="file-code-2"></i><span>API</span>
+              </a>
+              <button type="button" class="nav-sublink" data-view="settings">
+                <i data-lucide="settings-2"></i><span>Settings</span>
               </button>
             </div>
           </div>
@@ -72,45 +94,18 @@
             </button>
             <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
               <button type="button" class="nav-sublink active" data-svc-tab="general">
-                <i data-lucide="sliders-horizontal"></i><span>General</span>
+                <i data-lucide="layout-dashboard"></i><span>General</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="env">
-                <i data-lucide="variable"></i><span>Environment</span>
+                <i data-lucide="braces"></i><span>Environment</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="logs">
-                <i data-lucide="terminal"></i><span>Logs</span>
+                <i data-lucide="terminal-square"></i><span>Logs</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="preview">
-                <i data-lucide="monitor-play"></i><span>Preview</span>
+                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
             </div>
-          </div>
-        </div>
-
-        <div id="nav-block-system" class="nav-block">
-          <p class="nav-section-label">System</p>
-          <div class="nav-block-links">
-            <button type="button" class="sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
-              <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon"><span>Sycord</span>
-            </button>
-            <button type="button" class="sidebar-link" data-view="server-swarm">
-              <i data-lucide="boxes"></i><span>Server Swarm</span>
-            </button>
-            <button type="button" class="sidebar-link" data-view="users">
-              <i data-lucide="users"></i><span>Users</span>
-            </button>
-            <button type="button" class="sidebar-link" data-view="logs">
-              <i data-lucide="scroll-text"></i><span>Logs</span>
-            </button>
-            <button type="button" class="sidebar-link" data-view="ai">
-              <i data-lucide="bot"></i><span>AI</span>
-            </button>
-            <a class="sidebar-link" href="/api/" data-view="api">
-              <i data-lucide="book-open"></i><span>API</span>
-            </a>
-            <button type="button" class="sidebar-link" data-view="settings">
-              <i data-lucide="settings"></i><span>Settings</span>
-            </button>
           </div>
         </div>
       </nav>

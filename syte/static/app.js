@@ -248,26 +248,17 @@ function refreshIcons() {
 }
 
 function updateSidebarNav(viewName) {
-  const isHome = viewName === 'dashboard';
   const isService = viewName === 'service';
+  const navView = viewName === 'new-service' ? 'dashboard' : viewName;
 
   document.body.classList.toggle('nav-mode-service', isService);
-  document.body.classList.toggle('nav-mode-home', isHome);
+  document.body.classList.toggle('nav-mode-home', !isService);
 
-  document.getElementById('nav-block-platform')?.classList.toggle('hidden', !isHome);
+  document.getElementById('nav-block-home')?.classList.toggle('hidden', isService);
   document.getElementById('nav-block-service')?.classList.toggle('hidden', !isService);
-  document.getElementById('nav-block-system')?.classList.toggle('hidden', isService);
 
   document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
-    el.classList.toggle('active', isHome && el.dataset.view === 'dashboard');
-  });
-
-  document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
-    if (el.tagName === 'A') {
-      el.classList.remove('active');
-      return;
-    }
-    el.classList.toggle('active', !isHome && !isService && el.dataset.view === viewName);
+    el.classList.toggle('active', !isService && el.dataset.view === navView);
   });
 }
 
@@ -1650,12 +1641,11 @@ document.getElementById('project-filter')?.addEventListener('input', (e) => {
   renderServices();
 });
 
-document.querySelectorAll('.sidebar-link[data-view]').forEach(el => {
+document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
   if (el.tagName === 'A') return;
   el.addEventListener('click', () => showView(el.dataset.view));
 });
-document.getElementById('nav-dashboard')?.addEventListener('click', () => showView('dashboard'));
-document.getElementById('nav-group-projects-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-projects'));
+document.getElementById('nav-group-main-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-main'));
 document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
 document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.nav-sublink[data-svc-tab]');

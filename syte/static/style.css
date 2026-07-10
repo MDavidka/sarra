@@ -338,12 +338,22 @@ body.drawer-open .sidebar-backdrop {
 
 .nav-group-body {
   position: relative;
-  margin: 0.3rem 0 0 0.75rem;
-  padding-left: 0.75rem;
+  margin: 0.35rem 0 0 0.75rem;
+  padding-left: 0.8rem;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+}
+
+.nav-sublabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0.55rem 0.5rem 0.15rem;
+  margin: 0;
 }
 
 .nav-group-body-compact {
@@ -355,9 +365,9 @@ body.drawer-open .sidebar-backdrop {
 .nav-sublink {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   width: 100%;
-  padding: 0.42rem 0.5rem;
+  padding: 0.48rem 0.5rem;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
@@ -371,12 +381,25 @@ body.drawer-open .sidebar-backdrop {
   position: relative;
 }
 
-.nav-sublink svg {
+.nav-sublink svg,
+.nav-sublink-img {
   width: 16px;
   height: 16px;
   stroke-width: 2;
   flex-shrink: 0;
+}
+
+.nav-sublink svg {
   opacity: 0.75;
+}
+
+.nav-sublink-img {
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.nav-sublink.active svg {
+  opacity: 1;
 }
 
 .nav-sublink:hover {
@@ -393,12 +416,12 @@ body.drawer-open .sidebar-backdrop {
 .nav-sublink.active::before {
   content: '';
   position: absolute;
-  left: -0.75rem;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
+  left: -0.8rem;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
   background: var(--text);
-  border-radius: 1px;
+  border-radius: 2px;
 }
 
 .nav-group-body-compact .nav-sublink.active::before {
