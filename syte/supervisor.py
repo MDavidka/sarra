@@ -77,6 +77,12 @@ async def maintain() -> None:
         else:
             logger.error("Failed to restart Continue agent for %s: %s", pid, msg)
 
+    try:
+        from syte.preview_manager import expire_stale_previews
+        await expire_stale_previews()
+    except Exception as exc:
+        logger.exception("Preview expiry check failed: %s", exc)
+
 
 async def supervisor_loop(interval: int = 30) -> None:
     global _running

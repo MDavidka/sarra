@@ -1897,6 +1897,59 @@ code {
   border-left: 3px solid var(--accent-line);
 }
 
+.debug-chat-action-new {
+  animation: debug-chat-action-flash 0.45s ease-out;
+}
+
+@keyframes debug-chat-action-flash {
+  from { background: #eef2ff; border-color: #6366f1; }
+  to { background: #fff; border-color: var(--border); }
+}
+
+.debug-chat-processing {
+  align-self: stretch;
+  max-width: 100%;
+  background: #fafafa;
+  border: 1px dashed var(--border);
+  padding: 0.45rem 0.6rem;
+  opacity: 0.9;
+}
+
+.svc-preview-domain-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.svc-preview-domain-row code {
+  font-size: 0.78rem;
+  background: #f4f4f5;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+}
+
+#svc-panel-debug-chat.active .debug-chat-panel {
+  min-height: min(70vh, 640px);
+}
+
+#svc-panel-preview .svc-preview-card {
+  margin-top: 0.75rem;
+  min-height: 240px;
+  aspect-ratio: 16 / 9;
+}
+
+@media (min-width: 769px) {
+  #svc-panel-preview .svc-preview-card {
+    aspect-ratio: auto;
+    min-height: 320px;
+    height: 320px;
+    max-height: 320px;
+  }
+}
+
 .debug-chat-action-row,
 .debug-chat-system-row {
   display: flex;

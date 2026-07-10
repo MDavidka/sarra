@@ -546,7 +546,7 @@ async def communicate_with_agent(
     auto_start: bool = True,
 ) -> dict:
     from syte.agent_metrics import log_agent_request
-    from syte.agent_activity import record_agent_event, reset_history_tracker
+    from syte.agent_activity import record_agent_event
 
     project = await get_project(project_id)
     if not project:
@@ -574,7 +574,6 @@ async def communicate_with_agent(
 
     base = agent_local_url(int(port)).rstrip("/")
     model = status.get("agent_model") or {}
-    reset_history_tracker(project_id, source=source)
     await record_agent_event(
         project_id,
         "request_started",
@@ -596,7 +595,7 @@ async def communicate_with_agent(
                 await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="error", error=err)
                 return {"ok": False, "error": "agent_http_error", "message": err, "status_code": response.status_code}
 
-        state = await _poll_agent_state(int(port), project_id=project_id, source=source)
+        state = await _poll_agent_state(int(port), project_id=project_id, source="agent")
         reply = _extract_assistant_reply(state)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="ok")
         await record_agent_event(
