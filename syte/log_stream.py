@@ -163,8 +163,10 @@ async def stream_agent_activity(
         yield f"data: {json.dumps({'type': 'session', 'text': 'Live agent activity stream'})}\n\n"
 
     queue = subscribe_agent_activity(project_id)
+    last_processing_emit = 0.0
     try:
         tick = 0
+        import time as _time
         for _ in range(14400):
             while not queue.empty():
                 event = queue.get_nowait()
@@ -184,7 +186,10 @@ async def stream_agent_activity(
                             state = response.json()
                             busy = state.get("isProcessing") or state.get("is_processing")
                             if busy:
-                                yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
+                                now = _time.monotonic()
+                                if now - last_processing_emit >= 2.0:
+                                    last_processing_emit = now
+                                    yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
                             await ingest_agent_state(project_id, state, source="agent")
                             while not queue.empty():
                                 event = queue.get_nowait()

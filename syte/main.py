@@ -698,6 +698,58 @@ class AgentAccessConfigRequest(BaseModel):
     custom_urls: list[str] = []
 
 
+class AgentServiceRequest(BaseModel):
+    action: str
+    command: str | None = None
+    cwd: str = "app"
+    lines: int | None = None
+    timeout: int | None = None
+
+
+@app.get("/api/projects/{project_id}/agent/service")
+async def api_agent_service_capabilities(project_id: str):
+    from syte.agent_service import list_service_capabilities
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return await list_service_capabilities(project_id)
+
+
+@app.post("/api/projects/{project_id}/agent/service")
+async def api_agent_service_action(project_id: str, body: AgentServiceRequest):
+    from syte.agent_activity import record_agent_event
+    from syte.agent_service import run_service_action
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await run_service_action(
+        project_id,
+        body.action,
+        command=body.command,
+        cwd=body.cwd,
+        lines=body.lines or 200,
+        timeout=body.timeout or 300,
+        source="agent",
+    )
+    detail = body.command or result.get("message") or body.action
+    if result.get("output"):
+        detail = str(result.get("output"))[:4000]
+    elif result.get("logs"):
+        detail = str(result.get("logs"))[:4000]
+    await record_agent_event(
+        project_id,
+        "service_action",
+        role="assistant",
+        title=f"Service: {body.action}",
+        detail=detail[:4000],
+        payload={"action": body.action, "result": {k: result.get(k) for k in ("ok", "action", "exit_code")}},
+        source="agent",
+    )
+    return result
+
+
 @app.get("/api/projects/{project_id}/agent/access")
 async def api_agent_access_capabilities(project_id: str):
     from syte.preview_access import list_access_capabilities
@@ -750,9 +802,9 @@ async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
     if result.get("ok"):
         await record_agent_event(
             project_id,
-            "tool_call",
+            "service_action",
             role="assistant",
-            title=f"Preview access: {body.action}",
+            title=f"Preview: {body.action}",
             detail=(body.url or result.get("preview_url") or body.action)[:4000],
             payload={"action": body.action, "access": True},
             source="gui",

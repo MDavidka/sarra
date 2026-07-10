@@ -48,6 +48,38 @@ Custom URLs saved in project access config can be fetched with `syte-access fetc
 
 Use preview access to verify visual changes, read rendered HTML, and inspect dev-server logs.
 """,
+    "service-management.md": """# Service management (Syte)
+
+Use **`syte-service`** for all project lifecycle actions (preferred over raw systemctl/docker):
+
+```bash
+syte-service status
+syte-service start              # start production service
+syte-service stop               # stop production service
+syte-service deploy             # git pull + build + deploy
+syte-service preview_start      # dev preview with HMR
+syte-service preview_stop
+syte-service update             # git pull + restart
+syte-service run "npm run lint" # run command in app/ workspace
+syte-service logs 200           # deployment logs
+syte-service preview_logs 200   # preview dev-server log
+```
+
+For `run`, pass the full shell command as one quoted argument. Default cwd is `app/`.
+""",
+    "mcp-tools.md": """# MCP tools (required)
+
+This project exposes **Syte MCP tools** — always prefer them over ad-hoc shell:
+
+| Tool | Use for |
+|------|---------|
+| `syte_service` | start/stop/deploy/preview/run/logs |
+| `syte_access` | preview URL fetch, screenshot, preview logs |
+
+CLI equivalents on PATH: `syte-service`, `syte-access`.
+
+Do not bypass MCP/CLI helpers with raw curl to localhost unless debugging.
+""",
 }
 
 ACCESS_SCRIPT = """#!/usr/bin/env bash
@@ -72,6 +104,33 @@ print(json.dumps(body))
 PY
 )
 curl -sS -X POST "$BASE/api/projects/$PROJECT_ID/agent/access" \\
+  -H "Content-Type: application/json" \\
+  -d "$PAYLOAD"
+echo
+"""
+
+SERVICE_SCRIPT = """#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ID="${SYTE_PROJECT_ID:?SYTE_PROJECT_ID not set}"
+BASE="${SYTE_API_BASE:-http://127.0.0.1:__PORT__}"
+ACTION="${1:-status}"
+ARG="${2:-}"
+PAYLOAD=$(ACTION="$ACTION" ARG="$ARG" python3 - <<'PY'
+import json, os
+action = os.environ.get("ACTION", "status")
+arg = os.environ.get("ARG", "")
+body = {"action": action}
+if action == "run":
+    body["command"] = arg
+elif action in ("logs", "preview_logs"):
+    try:
+        body["lines"] = int(arg or 200)
+    except ValueError:
+        body["lines"] = 200
+print(json.dumps(body))
+PY
+)
+curl -sS -X POST "$BASE/api/projects/$PROJECT_ID/agent/service" \\
   -H "Content-Type: application/json" \\
   -d "$PAYLOAD"
 echo
@@ -142,16 +201,33 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             "rule": (
                 "You edit websites inside the Syte workspace. Work in the app/ directory, "
                 "match existing conventions, and keep changes small and verifiable. "
-                "Search the codebase before rewriting files. "
-                "Never run production build commands — preview hot-reload handles dev feedback."
+                "Search the codebase before rewriting files."
+            ),
+        },
+        {
+            "name": "MCP and CLI tools (required)",
+            "rule": (
+                "Always use MCP tools `syte_service` and `syte_access`, or the CLI helpers "
+                "`syte-service` and `syte-access` on PATH. "
+                "Use syte_service for deploy/start/stop/preview/run/logs. "
+                "Use syte_access for preview URL fetch and screenshots. "
+                "Do not use raw systemctl, docker, or undocumented curl shortcuts."
+            ),
+        },
+        {
+            "name": "Service management",
+            "rule": (
+                "To start/stop/deploy/preview/run commands: `syte-service <action>`. "
+                "Examples: syte-service preview_start, syte-service deploy, "
+                "syte-service run \"npm run dev\". "
+                "Check syte-service status before assuming preview or production is running."
             ),
         },
         {
             "name": "Preview and access tools",
             "rule": (
-                "Use the `syte-access` CLI for preview: status, url, fetch/read page HTML, "
-                "logs (dev server output), and screenshot. "
-                "Check preview logs when the page fails to load or after server restarts."
+                "Use `syte-access` for preview: status, url, fetch/read page HTML, "
+                "logs (dev server output), and screenshot."
                 f"{custom_block}"
             ),
         },
@@ -159,7 +235,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             "name": "File operations",
             "rule": (
                 "When changing the site: read files first, then create/edit/delete as needed. "
-                "Prefer rewriting existing components over duplicating logic."
+                "Every file change should be intentional and verifiable via preview."
             ),
         },
     ]
@@ -181,7 +257,29 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
     script_path.write_text(ACCESS_SCRIPT.replace("__PORT__", str(settings.port)))
     script_path.chmod(script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     written.append(script_path)
+
+    service_path = bin_dir / "syte-service"
+    service_path.write_text(SERVICE_SCRIPT.replace("__PORT__", str(settings.port)))
+    service_path.chmod(service_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    written.append(service_path)
     return written
+
+
+def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
+    """Continue MCP server block for config.yaml."""
+    import sys
+
+    python = sys.executable
+    return {
+        "name": "syte-tools",
+        "command": python,
+        "args": ["-m", "syte.mcp_stdio"],
+        "env": {
+            "SYTE_PROJECT_ID": project_id,
+            "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
+            "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
+        },
+    }
 
 
 def agent_path_env(project_id: str, agent_root: Path) -> dict[str, str]:

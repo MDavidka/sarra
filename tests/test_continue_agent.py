@@ -76,6 +76,9 @@ async def test_write_agent_config_uses_per_profile_providers(
     assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
     assert "rules:" in text
     assert "Syte website agent" in text
+    assert "mcpServers:" in text
+    assert "syte-tools" in text
+    assert "syte.mcp_stdio" in text
 
 
 @pytest.mark.asyncio

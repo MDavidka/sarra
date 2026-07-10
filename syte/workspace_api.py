@@ -26,15 +26,8 @@ BLOCKED_PATTERNS = (
     "curl http | bash",
 )
 
-# Builds must go through issue_deploy (docker build), not execute_command.
-FORBIDDEN_BUILD_PATTERNS = (
-    r"\bnpm\s+run\s+build\b",
-    r"\byarn\s+build\b",
-    r"\bpnpm\s+build\b",
-    r"\bnext\s+build\b",
-    r"\bnpx\s+next\s+build\b",
-    r"\bnpm\s+run\s+production\b",
-)
+# Builds via execute_command are allowed for the agent; external API may still prefer issue_deploy.
+FORBIDDEN_BUILD_PATTERNS: tuple[str, ...] = ()
 
 
 def _resolve_workspace_path(project_id: str, rel_path: str = "") -> Path:
@@ -244,6 +237,8 @@ async def execute_command(
     cwd: str = "app",
     timeout: int = 300,
     env: dict[str, str] | None = None,
+    *,
+    source: str = "api",
 ) -> tuple[int, str]:
     """Run any custom shell command inside the workspace (sandboxed to workspace dir)."""
     project = await get_project(project_id)
@@ -256,7 +251,7 @@ async def execute_command(
     if blocked:
         return 1, f"Command blocked (host safety): {blocked}"
 
-    build_blocked = _is_forbidden_build(cmd)
+    build_blocked = _is_forbidden_build(cmd) if source not in ("agent", "gui", "mcp") else None
     if build_blocked:
         return 1, (
             "Build commands are not allowed via execute_command. "
@@ -293,7 +288,7 @@ async def execute_command(
             project_id,
             "execute_command",
             command=cmd,
-            source="api",
+            source=source,
             detail=output[:500] if output else "",
         )
         return code, output

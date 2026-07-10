@@ -40,11 +40,9 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
     assert path == agent_config_path("skills-proj")
     assert "rules:" in text
     assert "Syte website agent" in text
-    assert "Preview and access tools" in text
-    assert (root / "skills" / "website-editing.md").exists()
-    assert (root / "skills" / "preview-access.md").exists()
-    assert (root / "bin" / "syte-access").exists()
-    assert (root / "bin" / "syte-access").read_text().startswith("#!/usr/bin/env bash")
+    assert "MCP and CLI tools" in text
+    assert (root / "skills" / "mcp-tools.md").exists()
+    assert (root / "bin" / "syte-service").exists()
 
     config = await read_access_config("skills-proj", root)
     assert config["custom_urls"] == []

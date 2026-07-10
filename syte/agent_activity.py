@@ -48,6 +48,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "agent_restarted",
     "processing",
     "status",
+    "service_action",
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
@@ -139,7 +140,11 @@ async def record_agent_event(
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:
-            pass
+            try:
+                queue.get_nowait()
+                queue.put_nowait(event)
+            except asyncio.QueueEmpty:
+                pass
     return event
 
 
@@ -162,7 +167,7 @@ async def list_agent_events(
 
 
 def subscribe_agent_activity(project_id: str) -> asyncio.Queue[dict[str, Any]]:
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2000)
     _subscribers[project_id].append(queue)
     return queue
 
@@ -211,6 +216,14 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
     command = str(args.get("command") or args.get("cmd") or "")
     query = str(args.get("query") or args.get("pattern") or args.get("search") or "")
 
+    if any(k in name for k in ("syte_service", "syte-service", "service")):
+        action = str(args.get("action") or args.get("cmd") or "")
+        cmd = str(args.get("command") or "")
+        detail = cmd or action or name
+        return "service_action", f"Service: {action or name}", detail[:500], args
+    if any(k in name for k in ("syte_access", "syte-access")) and "preview" in name:
+        action = str(args.get("action") or "access")
+        return "service_action", f"Preview: {action}", _text_from_content(arguments)[:500], args
     if any(k in name for k in ("grep", "ripgrep", "rg", "search", "find", "glob", "list_dir", "ls")):
         detail = path or query or command[:200] or name
         return "file_search", "Search", detail, args
@@ -310,7 +323,7 @@ def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict
     text = _text_from_content(content)
     if text:
         lowered = text.lower()
-        if re.search(r"", text, re.I) or lowered.startswith("thinking:"):
+        if re.search(r"</?think>", text, re.I) or lowered.startswith("thinking:"):
             events.append({
                 "event_type": "thinking",
                 "role": "assistant",
