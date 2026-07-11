@@ -246,6 +246,13 @@
           <div class="svc-editor">
             <div class="svc-tab-panels">
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="layout-dashboard"></i></div>
+                  <div>
+                    <h2>Project overview</h2>
+                    <p>Check your project status, connection, and deployment actions at a glance.</p>
+                  </div>
+                </div>
                 <div class="svc-info-block">
                   <div class="svc-identity">
                     <div class="svc-identity-main">
@@ -271,8 +278,16 @@
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <p class="hint block">Environment variables — one per line, KEY=value</p>
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="braces"></i></div>
+                  <div>
+                    <h2>Environment variables</h2>
+                    <p>Values here are available to your project at runtime. Keep one <code>KEY=value</code> pair per line.</p>
+                  </div>
+                </div>
+                <label class="svc-field-label" for="svc-env-input">Project environment</label>
                 <textarea id="svc-env-input" class="svc-env-textarea" rows="10" placeholder="NODE_ENV=production"></textarea>
+                <p class="svc-field-help"><i data-lucide="info"></i> Changes apply after the next deploy or restart.</p>
                 <div class="svc-panel-actions">
                   <button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-save-btn">
                     <i data-lucide="save"></i><span>Save environment</span>
@@ -281,6 +296,13 @@
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
+                <div class="svc-panel-intro svc-panel-intro-compact">
+                  <div class="svc-panel-intro-icon"><i data-lucide="terminal-square"></i></div>
+                  <div>
+                    <h2>Deployment logs</h2>
+                    <p>Follow the latest build and runtime output in real time.</p>
+                  </div>
+                </div>
                 <div class="logs-panel">
                   <div class="logs-toolbar">
                     <div class="logs-toolbar-left">
@@ -301,6 +323,13 @@
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="monitor-smartphone"></i></div>
+                  <div>
+                    <h2>Live preview</h2>
+                    <p>Open a temporary dev server to check your website before sharing it.</p>
+                  </div>
+                </div>
                 <div class="svc-preview-domain-row" id="svc-preview-domain-row">
                   <span class="hint">Preview domain</span>
                   <code id="svc-preview-domain">—</code>
@@ -331,6 +360,13 @@
 
               <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
                 <div class="debug-chat-panel">
+                  <div class="svc-panel-intro">
+                    <div class="svc-panel-intro-icon"><i data-lucide="messages-square"></i></div>
+                    <div>
+                      <h2>Website assistant</h2>
+                      <p>Describe a change in plain language. The assistant edits your project files for you.</p>
+                    </div>
+                  </div>
                   <div class="debug-chat-toolbar">
                     <div class="debug-chat-toolbar-left">
                       <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>
