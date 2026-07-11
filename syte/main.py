@@ -674,16 +674,34 @@ async def api_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
+    format: str = "sse",
+    types: str = "",
 ):
+    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
+
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
     if key:
         await auth.verify_api_token_from_request(request)
+    fmt = (format or "sse").strip().lower()
+    type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
+    if fmt in ("text", "jsonl", "plain"):
+        generator = stream_agent_activity_formatted(
+            project_id,
+            live_only=live,
+            since_id=since_id,
+            output_format="jsonl" if fmt == "jsonl" else "text",
+            type_filter=type_filter,
+        )
+        media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
+    else:
+        generator = stream_agent_activity(project_id, live_only=live, since_id=since_id)
+        media = "text/event-stream"
     return StreamingResponse(
-        stream_agent_activity(project_id, live_only=live, since_id=since_id),
-        media_type="text/event-stream",
+        generator,
+        media_type=media,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -850,7 +868,7 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
 
 
 @app.post("/api/projects/{project_id}/agent/chat")
-async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
+async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool = False):
     from syte.continue_agent import communicate_with_agent
 
     project = await get_project(project_id)
@@ -864,6 +882,7 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
             body.message.strip(),
             model_profile=body.model_profile,
             source="gui",
+            background=not wait,
         )
     except Exception as exc:
         return {"ok": False, "error": "agent_communicate_failed", "message": str(exc)}

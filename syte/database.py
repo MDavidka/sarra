@@ -41,6 +41,9 @@ async def init_db() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.resolved_workspaces_dir.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
         await db.executescript(SCHEMA)
         await _migrate(db)
         await db.commit()

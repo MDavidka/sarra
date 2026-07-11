@@ -148,14 +148,30 @@ async def internal_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
+    format: str = "sse",
+    types: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    from syte.log_stream import stream_agent_activity
+    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
 
     await _require_project(project_id)
+    fmt = (format or "sse").strip().lower()
+    type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
+    if fmt in ("text", "jsonl", "plain"):
+        generator = stream_agent_activity_formatted(
+            project_id,
+            live_only=live,
+            since_id=since_id,
+            output_format="jsonl" if fmt == "jsonl" else "text",
+            type_filter=type_filter,
+        )
+        media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
+    else:
+        generator = stream_agent_activity(project_id, live_only=live, since_id=since_id)
+        media = "text/event-stream"
     return StreamingResponse(
-        stream_agent_activity(project_id, live_only=live, since_id=since_id),
-        media_type="text/event-stream",
+        generator,
+        media_type=media,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -205,32 +221,22 @@ async def internal_agent_change(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     """sycord.com → Syte: user requests a code change; VM routes to Continue CLI by UUID workspace."""
-    from syte.agent_activity import record_agent_event
-
     await _require_project(project_id)
     profile = body.model_profile or body.model_name
-    await record_agent_event(
-        project_id,
-        "request_started",
-        role="user",
-        title="User",
-        detail=body.message[:4000],
-        payload={"content": body.message, "model_profile": profile},
-        source="sycord",
-    )
     result = await communicate_with_agent(
         project_id,
         body.message,
         model_profile=profile,
         source="sycord",
-        emit_request_started=False,
+        background=True,
     )
     if not result.get("ok"):
         raise HTTPException(400, detail=result)
     return {
         **result,
         "project_id": project_id,
-        "change_applied": bool(result.get("reply")),
+        "change_applied": None,
+        "status": result.get("status", "accepted"),
     }
 
 

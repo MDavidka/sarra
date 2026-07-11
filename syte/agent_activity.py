@@ -43,6 +43,12 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "request_started",
     "request_completed",
     "request_failed",
+    "token_delta",
+    "message_snapshot",
+    "tool_call_started",
+    "tool_call_finished",
+    "file_changed",
+    "command_output",
     "agent_started",
     "agent_stopped",
     "agent_restarted",
@@ -75,6 +81,9 @@ async def ensure_agent_events_table() -> None:
     if db_path in _table_ensured_paths:
         return
     async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=db_path)
         await db.executescript(EVENTS_SCHEMA)
         await db.commit()
     _table_ensured_paths.add(db_path)
@@ -114,6 +123,9 @@ async def record_agent_event(
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
         cursor = await db.execute(
             "INSERT INTO agent_events "
             "(project_id, event_type, role, title, detail, payload, source, created_at) "
@@ -165,6 +177,9 @@ async def list_agent_events(
     await ensure_agent_events_table()
     limit = max(1, min(limit, 2000))
     async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
         async with db.execute(
             "SELECT id, project_id, event_type, role, title, detail, payload, source, created_at "
             "FROM agent_events WHERE project_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
