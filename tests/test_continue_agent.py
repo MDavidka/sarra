@@ -76,10 +76,7 @@ async def test_write_agent_config_uses_per_profile_providers(
     assert text.index('name: "syra-base"') < text.index('name: "syra-nano"')
     assert "rules:" in text
     assert "Syte website agent" in text
-    assert "mcpServers:" in text
-    assert "type: stdio" in text
-    assert "syte-tools" in text
-    assert "syte.mcp_stdio" in text
+    assert "mcpServers:" not in text
 
 
 @pytest.mark.asyncio
@@ -192,13 +189,64 @@ async def test_write_agent_config_requires_active_profile_key(
 
 
 @pytest.mark.asyncio
-async def test_build_serve_command_omits_unsupported_host_flag() -> None:
+async def test_write_agent_config_can_include_mcp_when_enabled(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.continue_agent import write_agent_config
+    from syte.database import create_project, get_project, init_db, set_setting, update_project
+
+    await init_db()
+    await set_setting("continue_syra_base_api_key", "base-key")
+    await set_setting("continue_enable_mcp", "1")
+    await create_project({
+        "id": "proj-mcp",
+        "name": "MCP Enabled",
+        "port": 3006,
+        "start_command": "",
+    })
+    await update_project("proj-mcp", {"agent_model_profile": "syra-base"})
+
+    project = await get_project("proj-mcp")
+    text = (await write_agent_config(project or {})).read_text()
+
+    assert "mcpServers:" in text
+    assert "type: stdio" in text
+    assert "syte-tools" in text
+    assert "syte-mcp" in text
+
+
+@pytest.mark.asyncio
+async def test_build_serve_command_includes_auto_flag() -> None:
     from syte.continue_agent import build_serve_command
 
     cmd = build_serve_command("/tmp/config.yaml", 5200)
     assert "--port 5200" in cmd
     assert "--timeout" in cmd
+    assert "--auto" in cmd
     assert "--host" not in cmd
+
+
+@pytest.mark.asyncio
+async def test_write_agent_permissions_creates_allow_all_policy(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.continue_agent import agent_home, write_agent_permissions
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "proj-perms",
+        "name": "Permissions",
+        "port": 3007,
+        "start_command": "",
+    })
+
+    path = write_agent_permissions("proj-perms")
+    text = path.read_text()
+
+    assert path == agent_home("proj-perms") / ".continue" / "permissions.yaml"
+    assert '  - "*"' in text
+    assert "allow:" in text
 
 
 @pytest.mark.asyncio
