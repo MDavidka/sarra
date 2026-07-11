@@ -383,6 +383,11 @@
                       </button>
                     </div>
                   </div>
+                  <div class="debug-chat-activity hidden" id="debug-chat-activity" role="status" aria-live="polite">
+                    <i data-lucide="loader" class="debug-chat-activity-icon"></i>
+                    <span class="debug-chat-activity-label">Preparing response</span>
+                    <span class="debug-chat-activity-detail"></span>
+                  </div>
                   <div class="debug-chat-messages" id="debug-chat-messages">
                     <div class="debug-chat-empty" id="debug-chat-empty">
                       <i data-lucide="sparkles"></i>
@@ -394,6 +399,12 @@
                     <button type="button" class="btn-pill btn-primary debug-chat-send" id="debug-chat-send">
                       <i data-lucide="send"></i><span>Send</span>
                     </button>
+                  </div>
+                  <div class="debug-chat-quick-actions" aria-label="Quick prompts">
+                    <span>Try:</span>
+                    <button type="button" data-debug-chat-prompt="Improve the website copy so it sounds clearer and more natural.">Improve copy</button>
+                    <button type="button" data-debug-chat-prompt="Check the current layout for usability issues and fix the most important one.">Fix layout</button>
+                    <button type="button" data-debug-chat-prompt="Run a quick check of the website and tell me what needs attention.">Run a check</button>
                   </div>
                 </div>
               </div>
