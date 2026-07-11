@@ -70,8 +70,26 @@ def build_serve_command(config_path: Path | str, port: int, *, timeout_s: int = 
     config = str(config_path)
     return (
         f'{continue_command()} serve --config "{config}" '
-        f"--port {int(port)} --timeout {int(timeout_s)}"
+        f"--port {int(port)} --timeout {int(timeout_s)} --auto"
     )
+
+
+def write_agent_permissions(project_id: str) -> Path:
+    """Write headless tool permissions so cn serve can run without prompts."""
+    env_dir = agent_home(project_id) / ".continue"
+    env_dir.mkdir(parents=True, exist_ok=True)
+    permissions_path = env_dir / "permissions.yaml"
+    permissions_path.write_text(
+        "\n".join([
+            "# Syte-managed permissions for headless cn serve",
+            "allow:",
+            '  - "*"',
+            "ask: []",
+            "exclude: []",
+            "",
+        ])
+    )
+    return permissions_path
 
 
 async def next_agent_port() -> int:
@@ -224,20 +242,21 @@ async def write_agent_config(project: dict) -> Path:
         rule_text = rule["rule"].replace('"', '\\"')
         lines.append(f"    rule: {_yaml_quote(rule_text)}")
 
-    from syte.agent_skills import mcp_server_config
+    enable_mcp = (await get_setting("continue_enable_mcp", "0")).strip().lower() in ("1", "true", "yes")
+    if enable_mcp:
+        from syte.agent_skills import mcp_server_config
 
-    mcp = mcp_server_config(project["id"], root)
-    lines.append("mcpServers:")
-    lines.append(f"  - name: {_yaml_quote(mcp['name'])}")
-    lines.append("    type: stdio")
-    lines.append(f"    command: {_yaml_quote(mcp['command'])}")
-    lines.append("    args:")
-    for arg in mcp["args"]:
-        lines.append(f"      - {_yaml_quote(str(arg))}")
-    if mcp.get("env"):
-        lines.append("    env:")
-        for key, value in mcp["env"].items():
-            lines.append(f"      {_yaml_quote(key)}: {_yaml_quote(str(value))}")
+        mcp = mcp_server_config(project["id"], root)
+        mcp_bin = root / "bin" / "syte-mcp"
+        lines.append("mcpServers:")
+        lines.append(f"  - name: {_yaml_quote(mcp['name'])}")
+        lines.append("    type: stdio")
+        lines.append(f"    command: {_yaml_quote(str(mcp_bin))}")
+        lines.append("    args: []")
+        if mcp.get("env"):
+            lines.append("    env:")
+            for key, value in mcp["env"].items():
+                lines.append(f"      {_yaml_quote(key)}: {_yaml_quote(str(value))}")
 
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
@@ -367,6 +386,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         return False, message, {}
     home = agent_home(project_id)
     write_agent_secrets(project_id, bridge)
+    write_agent_permissions(project_id)
     log_path = agent_log_path(project_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a") as log:

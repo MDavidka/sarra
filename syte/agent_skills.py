@@ -67,18 +67,24 @@ syte-service preview_logs 200   # preview dev-server log
 
 For `run`, pass the full shell command as one quoted argument. Default cwd is `app/`.
 """,
-    "mcp-tools.md": """# MCP tools (required)
+    "cli-tools.md": """# Syte CLI tools (required)
 
-This project exposes **Syte MCP tools** — always prefer them over ad-hoc shell:
+Use the **`syte-service`** and **`syte-access`** helpers on PATH for all Syte operations:
 
-| Tool | Use for |
-|------|---------|
-| `syte_service` | start/stop/deploy/preview/run/logs |
-| `syte_access` | preview URL fetch, screenshot, preview logs |
+| Helper | Use for |
+|--------|---------|
+| `syte-service` | start/stop/deploy/preview/run/logs |
+| `syte-access` | preview URL fetch, screenshot, preview logs |
 
-CLI equivalents on PATH: `syte-service`, `syte-access`.
+Examples:
 
-Do not bypass MCP/CLI helpers with raw curl to localhost unless debugging.
+```bash
+syte-service preview_start
+syte-access status
+syte-access fetch
+```
+
+Do not bypass these helpers with raw systemctl, docker, or undocumented curl shortcuts.
 """,
 }
 
@@ -134,6 +140,14 @@ curl -sS -X POST "$BASE/api/projects/$PROJECT_ID/agent/service" \\
   -H "Content-Type: application/json" \\
   -d "$PAYLOAD"
 echo
+"""
+
+MCP_SCRIPT = """#!/usr/bin/env bash
+set -euo pipefail
+: "${SYTE_PROJECT_ID:?SYTE_PROJECT_ID not set}"
+: "${SYTE_API_BASE:?SYTE_API_BASE not set}"
+: "${PYTHONPATH:?PYTHONPATH not set}"
+exec python3 -m syte.mcp_stdio
 """
 
 
@@ -205,12 +219,11 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             ),
         },
         {
-            "name": "MCP and CLI tools (required)",
+            "name": "CLI tools (required)",
             "rule": (
-                "Always use MCP tools `syte_service` and `syte_access`, or the CLI helpers "
-                "`syte-service` and `syte-access` on PATH. "
-                "Use syte_service for deploy/start/stop/preview/run/logs. "
-                "Use syte_access for preview URL fetch and screenshots. "
+                "Always use the CLI helpers `syte-service` and `syte-access` on PATH. "
+                "Use syte-service for deploy/start/stop/preview/run/logs. "
+                "Use syte-access for preview URL fetch and screenshots. "
                 "Do not use raw systemctl, docker, or undocumented curl shortcuts."
             ),
         },
@@ -262,18 +275,20 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
     service_path.write_text(SERVICE_SCRIPT.replace("__PORT__", str(settings.port)))
     service_path.chmod(service_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     written.append(service_path)
+
+    mcp_path = bin_dir / "syte-mcp"
+    mcp_path.write_text(MCP_SCRIPT)
+    mcp_path.chmod(mcp_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    written.append(mcp_path)
     return written
 
 
 def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
-    """Continue MCP server block for config.yaml."""
-    import sys
-
-    python = sys.executable
+    """Continue MCP server block for config.yaml (opt-in via continue_enable_mcp)."""
     return {
         "name": "syte-tools",
-        "command": python,
-        "args": ["-m", "syte.mcp_stdio"],
+        "command": str(agent_root / "bin" / "syte-mcp"),
+        "args": [],
         "env": {
             "SYTE_PROJECT_ID": project_id,
             "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
