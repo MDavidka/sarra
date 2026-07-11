@@ -205,13 +205,25 @@ async def internal_agent_change(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     """sycord.com → Syte: user requests a code change; VM routes to Continue CLI by UUID workspace."""
+    from syte.agent_activity import record_agent_event
+
     await _require_project(project_id)
     profile = body.model_profile or body.model_name
+    await record_agent_event(
+        project_id,
+        "request_started",
+        role="user",
+        title="User",
+        detail=body.message[:4000],
+        payload={"content": body.message, "model_profile": profile},
+        source="sycord",
+    )
     result = await communicate_with_agent(
         project_id,
         body.message,
         model_profile=profile,
         source="sycord",
+        emit_request_started=False,
     )
     if not result.get("ok"):
         raise HTTPException(400, detail=result)

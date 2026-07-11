@@ -67,10 +67,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_table_ensured_paths: set[str] = set()
+
+
 async def ensure_agent_events_table() -> None:
+    db_path = str(settings.resolved_db_path)
+    if db_path in _table_ensured_paths:
+        return
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.executescript(EVENTS_SCHEMA)
         await db.commit()
+    _table_ensured_paths.add(db_path)
 
 
 def _event_row_to_dict(row: tuple) -> dict[str, Any]:
@@ -105,6 +112,7 @@ async def record_agent_event(
     """Persist an activity event and push to live subscribers."""
     await ensure_agent_events_table()
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         cursor = await db.execute(
             "INSERT INTO agent_events "
@@ -118,21 +126,13 @@ async def record_agent_event(
                 detail[:4000],
                 payload_json,
                 source,
-                _now(),
+                now,
             ),
         )
         await db.commit()
         event_id = int(cursor.lastrowid)
 
-    async with aiosqlite.connect(settings.resolved_db_path) as db:
-        async with db.execute(
-            "SELECT id, project_id, event_type, role, title, detail, payload, source, created_at "
-            "FROM agent_events WHERE id = ?",
-            (event_id,),
-        ) as cur:
-            row = await cur.fetchone()
-
-    event = _event_row_to_dict(row) if row else {
+    event = {
         "id": event_id,
         "project_id": project_id,
         "event_type": event_type,
@@ -141,7 +141,7 @@ async def record_agent_event(
         "detail": detail,
         "payload": payload or {},
         "source": source,
-        "created_at": _now(),
+        "created_at": now,
     }
 
     for queue in list(_subscribers.get(project_id, [])):
