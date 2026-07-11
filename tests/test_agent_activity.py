@@ -87,6 +87,8 @@ async def test_record_and_list_events(tmp_path, monkeypatch: pytest.MonkeyPatch)
     )
     assert event["id"] > 0
     assert event["event_type"] == "user_message"
+    assert event["created_at"]
+    assert event["payload"] == {}
 
     listed = await agent_activity.list_agent_events("proj-1")
     assert len(listed) == 1

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from syte.docker_deploy import _build_log_path, container_name, docker_container_exists
@@ -162,33 +163,42 @@ async def stream_agent_activity(
         since_id = max(since_id, int(event.get("id") or 0))
 
     queue = subscribe_agent_activity(project_id)
+    last_state_poll = 0.0
+    last_ping = 0.0
     last_processing_emit = 0.0
+    state_poll_interval = 1.0
+    ping_interval = 10.0
+    max_ticks = 36000  # ~1 hour at 100ms per tick
+
     try:
-        tick = 0
-        import time as _time
-        for _ in range(14400):
+        for _ in range(max_ticks):
+            now = time.monotonic()
+
+            drained = False
             while not queue.empty():
                 event = queue.get_nowait()
                 since_id = max(since_id, int(event.get("id") or 0))
                 yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+                drained = True
 
-            if poll_state and tick % 2 == 0:
+            if poll_state and not drained and (now - last_state_poll) >= state_poll_interval:
+                last_state_poll = now
                 status = await get_agent_status(project_id)
                 port = status.get("agent_port")
                 if status.get("agent_running") and port:
                     try:
                         import httpx
 
-                        async with httpx.AsyncClient(timeout=5.0) as client:
-                            response = await client.get(f"{agent_local_url(int(port)).rstrip('/')}/state")
+                        async with httpx.AsyncClient(timeout=3.0) as client:
+                            response = await client.get(
+                                f"{agent_local_url(int(port)).rstrip('/')}/state"
+                            )
                         if response.status_code < 400:
                             state = response.json()
                             busy = state.get("isProcessing") or state.get("is_processing")
-                            if busy:
-                                now = _time.monotonic()
-                                if now - last_processing_emit >= 2.0:
-                                    last_processing_emit = now
-                                    yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
+                            if busy and (now - last_processing_emit) >= 2.0:
+                                last_processing_emit = now
+                                yield f"data: {json.dumps({'type': 'activity', 'event': {'event_type': 'processing', 'role': 'system', 'title': 'Working', 'detail': 'Agent is processing…'}})}\n\n"
                             await ingest_agent_state(project_id, state, source="agent")
                             while not queue.empty():
                                 event = queue.get_nowait()
@@ -197,9 +207,10 @@ async def stream_agent_activity(
                     except Exception:
                         pass
 
-            if tick % 40 == 0:
+            if (now - last_ping) >= ping_interval:
+                last_ping = now
                 yield f"data: {json.dumps({'type': 'ping', 'since_id': since_id})}\n\n"
-            tick += 1
-            await asyncio.sleep(0.25)
+
+            await asyncio.sleep(0.1)
     finally:
         unsubscribe_agent_activity(project_id, queue)

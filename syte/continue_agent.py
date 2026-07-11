@@ -619,6 +619,7 @@ async def communicate_with_agent(
     model_profile: str | None = None,
     source: str = "api",
     auto_start: bool = True,
+    emit_request_started: bool = True,
 ) -> dict:
     from syte.agent_metrics import log_agent_request
     from syte.agent_activity import record_agent_event
@@ -630,6 +631,7 @@ async def communicate_with_agent(
             model_profile=model_profile,
             source=source,
             auto_start=auto_start,
+            emit_request_started=emit_request_started,
         )
     except Exception as exc:
         err = str(exc) or "Agent request failed"
@@ -662,6 +664,7 @@ async def _communicate_with_agent_impl(
     model_profile: str | None = None,
     source: str = "api",
     auto_start: bool = True,
+    emit_request_started: bool = True,
 ) -> dict:
     from syte.agent_metrics import log_agent_request
     from syte.agent_activity import record_agent_event
@@ -669,6 +672,17 @@ async def _communicate_with_agent_impl(
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found"}
+
+    if emit_request_started:
+        await record_agent_event(
+            project_id,
+            "request_started",
+            role="user",
+            title="Request",
+            detail=message[:4000],
+            payload={"message": message, "model_profile": model_profile},
+            source=source,
+        )
 
     if not continue_installed():
         message = "Continue CLI not installed. Install with: npm install -g @continuedev/cli"
@@ -709,15 +723,6 @@ async def _communicate_with_agent_impl(
         return {"ok": False, "error": "agent_not_ready", "message": err}
 
     model = status.get("agent_model") or {}
-    await record_agent_event(
-        project_id,
-        "request_started",
-        role="user",
-        title="Request",
-        detail=message[:4000],
-        payload={"message": message, "model_profile": model.get("profile")},
-        source=source,
-    )
     try:
         status_code, response_text = await _post_agent_message(int(port), message)
         if status_code >= 400:

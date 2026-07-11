@@ -416,12 +416,24 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
 
 @router.post("/agent_change")
 async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(verify_api_token)):
+    from syte.agent_activity import record_agent_event
+
     profile = body.model_profile or body.model_name
+    await record_agent_event(
+        body.uuid,
+        "request_started",
+        role="user",
+        title="User",
+        detail=body.message[:4000],
+        payload={"content": body.message, "model_profile": profile},
+        source="sycord",
+    )
     result = await communicate_with_agent(
         body.uuid,
         body.message,
         model_profile=profile,
         source="sycord",
+        emit_request_started=False,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")

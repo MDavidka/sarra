@@ -423,7 +423,7 @@ async function loadDebugChatHistory(projectId) {
 
 function scheduleAgentActivityReconnect(projectId, attempt = 0) {
   if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) return;
-  const delay = Math.min(15000, 1000 * Math.pow(2, attempt));
+  const delay = attempt === 0 ? 1000 : Math.min(15000, 1000 * Math.pow(2, attempt));
   agentActivityReconnectTimer = setTimeout(() => {
     startAgentActivityStream(projectId, attempt + 1);
   }, delay);
@@ -446,6 +446,9 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === 'activity' && msg.event) {
+        if (msg.event.id != null) {
+          debugChatSinceId = Math.max(debugChatSinceId, msg.event.id);
+        }
         handleDebugChatActivity(msg.event);
       } else if (msg.type === 'session') {
         syncDebugChatHistory(projectId);
