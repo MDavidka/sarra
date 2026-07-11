@@ -17,6 +17,8 @@ let debugChatRenderedIds = new Set();
 let debugChatAutoScroll = true;
 let debugChatBusy = false;
 let debugChatReplayingHistory = false;
+let debugChatLoadedProjectId = null;
+let debugChatLastUserMessage = '';
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -248,6 +250,19 @@ function appendDebugChatBubble(event) {
   }
   setDebugChatTyping(false);
 
+  if (role === 'assistant' && detail) {
+    const assistants = messagesEl.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
+    const last = assistants[assistants.length - 1];
+    const bodyEl = last?.querySelector('.debug-chat-bubble-body');
+    const prev = bodyEl?.textContent || '';
+    if (last && bodyEl && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
+      bodyEl.textContent = detail.length >= prev.length ? detail : prev;
+      if (event.id != null) last.dataset.eventId = String(event.id);
+      scrollDebugChatToBottom();
+      return;
+    }
+  }
+
   const bubble = document.createElement('div');
   bubble.className = `debug-chat-bubble debug-chat-${role}`;
   if (event.id != null) bubble.dataset.eventId = String(event.id);
@@ -298,6 +313,21 @@ function appendDebugChatBubble(event) {
 }
 
 function shouldSkipDebugChatEvent(event) {
+  if (event.event_type === 'request_started') return true;
+  if (event.event_type === 'request_completed') {
+    const messagesEl = getDebugChatMessagesEl();
+    const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
+    const last = assistants?.[assistants.length - 1];
+    const body = last?.querySelector('.debug-chat-bubble-body')?.textContent || '';
+    const detail = event.detail || event.payload?.reply || '';
+    if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
+      if (event.id != null) {
+        debugChatRenderedIds.add(event.id);
+        debugChatSinceId = Math.max(debugChatSinceId, event.id);
+      }
+      return true;
+    }
+  }
   if (event.event_type === 'user_message') {
     const messagesEl = getDebugChatMessagesEl();
     const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
@@ -317,7 +347,22 @@ function shouldSkipDebugChatEvent(event) {
 }
 
 function handleDebugChatActivity(event) {
-  if (!event || shouldSkipDebugChatEvent(event)) return;
+  if (!event) return;
+
+  if (event.event_type === 'request_started') {
+    if (!debugChatReplayingHistory) {
+      setDebugChatTyping(true);
+      setDebugChatBusy(true);
+    }
+  }
+  if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
+    if (!debugChatReplayingHistory) {
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
+    }
+  }
+
+  if (shouldSkipDebugChatEvent(event)) return;
   const eventId = event.id;
   if (eventId != null && debugChatRenderedIds.has(eventId)) return;
   if (eventId != null) debugChatRenderedIds.add(eventId);
@@ -332,23 +377,25 @@ function handleDebugChatActivity(event) {
   if (refreshTypes.includes(event.event_type)) {
     onDebugChatWorkspaceChange();
   }
-  if (event.event_type === 'request_started') {
-    if (!debugChatReplayingHistory) {
-      setDebugChatTyping(true);
-      setDebugChatBusy(true);
-    }
-  }
-  if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
-    if (!debugChatReplayingHistory) {
-      setDebugChatTyping(false);
-      setDebugChatBusy(false);
-    }
-  }
 }
 
 async function onDebugChatWorkspaceChange() {
-  if (!activeServiceId || activeSvcTab !== 'debug-chat') return;
+  if (!activeServiceId) return;
   await loadProjects({ silent: true });
+  if (activeSvcTab === 'preview') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p?.preview_running) renderPreviewSection(p);
+  }
+}
+
+async function syncDebugChatHistory(projectId) {
+  if (debugChatSinceId <= 0) return;
+  try {
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=500`);
+    for (const event of res.events || []) {
+      handleDebugChatActivity(event);
+    }
+  } catch { /* best-effort catch-up */ }
 }
 
 async function loadDebugChatHistory(projectId) {
@@ -400,6 +447,8 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
       const msg = JSON.parse(e.data);
       if (msg.type === 'activity' && msg.event) {
         handleDebugChatActivity(msg.event);
+      } else if (msg.type === 'session') {
+        syncDebugChatHistory(projectId);
       } else if (msg.type === 'ping' && msg.since_id != null) {
         debugChatSinceId = Math.max(debugChatSinceId, msg.since_id);
       }
@@ -457,9 +506,25 @@ function setDebugChatBusy(busy) {
   if (input) input.disabled = busy;
 }
 
+async function ensureDebugChatAgentRunning(projectId) {
+  try {
+    const res = await api(`/projects/${projectId}/agent`);
+    if (res.agent_running && res.agent_healthy) return;
+    if (res.agent_install_ok === false) return;
+    await api(`/projects/${projectId}/agent/start`, { method: 'POST' });
+  } catch { /* supervisor will retry */ }
+}
+
 async function openDebugChatTab() {
   if (!activeServiceId) return;
-  await loadDebugChatHistory(activeServiceId);
+  const projectChanged = debugChatLoadedProjectId !== activeServiceId;
+  if (projectChanged) {
+    await loadDebugChatHistory(activeServiceId);
+    debugChatLoadedProjectId = activeServiceId;
+  } else {
+    await syncDebugChatHistory(activeServiceId);
+  }
+  await ensureDebugChatAgentRunning(activeServiceId);
   startAgentActivityStream(activeServiceId);
   await updateDebugChatAgentStatus();
   refreshIcons();
@@ -484,6 +549,7 @@ async function sendDebugChatMessage() {
 
   setDebugChatBusy(true);
   hideDebugChatEmpty();
+  debugChatLastUserMessage = message;
   appendDebugChatBubble({
     event_type: 'user_message',
     title: 'You',
@@ -494,11 +560,13 @@ async function sendDebugChatMessage() {
   const profile = document.getElementById('debug-chat-profile')?.value || 'syra-base';
   const sentMessage = message;
   if (input) input.value = '';
+  let chatOk = false;
   try {
     const res = await api(`/projects/${activeServiceId}/agent/chat`, {
       method: 'POST',
       body: JSON.stringify({ message: sentMessage, model_profile: profile }),
     });
+    chatOk = !!res.ok;
     if (!res.ok) {
       appendDebugChatBubble({
         event_type: 'request_failed',
@@ -506,6 +574,22 @@ async function sendDebugChatMessage() {
         detail: formatAgentChatError(res),
       });
       toast(formatAgentChatError(res));
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
+    } else if (res.reply) {
+      await syncDebugChatHistory(activeServiceId);
+      const messagesEl = getDebugChatMessagesEl();
+      const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
+      const lastBody = assistants?.[assistants.length - 1]?.querySelector('.debug-chat-bubble-body')?.textContent || '';
+      if (!lastBody || (!lastBody.includes(res.reply) && !res.reply.includes(lastBody))) {
+        appendDebugChatBubble({
+          event_type: 'assistant_message',
+          title: 'Assistant',
+          detail: res.reply,
+        });
+      }
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
@@ -515,9 +599,13 @@ async function sendDebugChatMessage() {
       detail: normalizeFetchError(e.message),
     });
     toast('Error: ' + normalizeFetchError(e.message));
-  } finally {
     setDebugChatTyping(false);
     setDebugChatBusy(false);
+  } finally {
+    if (!chatOk) {
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
+    }
     scrollDebugChatToBottom();
   }
 }
@@ -1141,7 +1229,6 @@ function switchSvcTab(tab) {
     previewTabActive = false;
     stopPreviewPoll();
     stopPreviewStream();
-    if (activeServiceId) servicePreviewStopQuiet(activeServiceId);
   }
   if (window.matchMedia('(max-width: 768px)').matches) closeDrawer();
   refreshIcons();
@@ -1313,6 +1400,7 @@ function renderPreviewSection(p) {
   }
 
   const live = p.preview_running && p.preview_ready;
+  const showFrame = p.preview_running && p.preview_url;
   actions.innerHTML = `
     <button class="btn-pill btn-primary" onclick="servicePreviewStart('${p.id}')">
       <i data-lucide="play"></i><span>Start preview</span>
@@ -1324,32 +1412,29 @@ function renderPreviewSection(p) {
     ${live ? '<span class="badge-live">live</span>' : ''}
   `;
 
-  if (p.preview_running && p.preview_url) {
+  if (showFrame) {
     if (frame && placeholder) {
-      if (live) {
-        const frameSrc = (p.preview_tls_ok !== false && p.preview_domain_url)
+      const frameSrc = live
+        ? ((p.preview_tls_ok !== false && p.preview_domain_url)
           ? p.preview_domain_url
-          : (p.preview_fetch_url || p.preview_url);
-        setPreviewFrameSrc(frame, frameSrc);
-        frame.classList.remove('hidden');
-        placeholder.classList.add('hidden');
-      } else {
-        frame.classList.add('hidden');
-        placeholder.classList.remove('hidden');
-      }
+          : (p.preview_fetch_url || p.preview_url))
+        : (p.preview_fetch_url || p.preview_url);
+      setPreviewFrameSrc(frame, frameSrc);
+      frame.classList.remove('hidden');
+      placeholder.classList.add('hidden');
     }
     const urlLabel = p.preview_domain
       ? `${p.preview_domain_url || p.preview_url}`
       : p.preview_url;
     hint.textContent = live
       ? `Live — ${urlLabel}${p.preview_domain && p.preview_tls_ok !== false ? ' (HTTPS)' : ''}${iframeHintLine(p.iframe)}`
-      : `Starting on ${p.preview_domain || `port ${p.preview_port || '…'}`}${iframeHintLine(p.iframe)}`;
+      : `Connecting — ${urlLabel || `port ${p.preview_port || '…'}`}${iframeHintLine(p.iframe)}`;
     if (p.preview_tls_hint) {
       hint.textContent += ` — ${p.preview_tls_hint}`;
     }
     logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
-    if (p.preview_running && !p.preview_ready) startPreviewPoll(p.id);
+    if (p.preview_running && !live) startPreviewPoll(p.id);
   } else {
     lastPreviewFrameSrc = '';
     if (frame) {
@@ -1357,7 +1442,7 @@ function renderPreviewSection(p) {
       frame.removeAttribute('src');
     }
     placeholder?.classList.remove('hidden');
-    hint.textContent = 'Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab';
+    hint.textContent = 'Fast dev server with hot reload — stays running while you use Debug Chat (auto-stops after 1 hour idle)';
     logsWrap?.classList.add('hidden');
     stopPreviewStream();
     stopPreviewPoll();
@@ -1388,7 +1473,7 @@ function startPreviewPoll(projectId) {
       return;
     }
     try {
-      const st = await api(`/projects/${projectId}/preview/status`);
+      const st = await api(`/projects/${projectId}/preview/status?quick=1`);
       const p = projects.find(x => x.id === projectId);
       if (p && activeServiceId === projectId) {
         renderPreviewSection({ ...p, ...st, iframe: st.iframe });

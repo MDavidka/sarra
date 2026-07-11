@@ -164,7 +164,7 @@ async def ensure_agent_runtime(project: dict) -> dict:
     if not project.get("agent_port"):
         updates["agent_port"] = await next_agent_port()
     if not project.get("agent_status"):
-        updates["agent_status"] = "stopped"
+        updates["agent_status"] = "running"
     if not project.get("agent_runtime"):
         updates["agent_runtime"] = "project"
     if not project.get("agent_model_profile"):
@@ -438,7 +438,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         if _port_listening(port):
             ready = True
             break
-        time.sleep(0.25)
+        await asyncio.sleep(0.25)
 
     if not ready:
         log_file.close()
@@ -464,9 +464,15 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict]:
         },
     )
     status = await get_agent_status(project_id)
-    from syte.agent_activity import record_agent_event, reset_history_tracker
+    from syte.agent_activity import record_agent_event, sync_history_tracker_from_state
 
-    reset_history_tracker(project_id)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{agent_local_url(int(port)).rstrip('/')}/state")
+        if response.status_code < 400:
+            sync_history_tracker_from_state(project_id, response.json(), source="agent")
+    except Exception:
+        pass
     await record_agent_event(
         project_id,
         "agent_started",

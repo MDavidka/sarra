@@ -6,7 +6,9 @@ import pytest
 
 from syte.agent_activity import (
     extract_events_from_state,
+    ingest_agent_state,
     record_agent_event,
+    sync_history_tracker_from_state,
     _map_tool_event,
 )
 
@@ -89,3 +91,28 @@ async def test_record_and_list_events(tmp_path, monkeypatch: pytest.MonkeyPatch)
     listed = await agent_activity.list_agent_events("proj-1")
     assert len(listed) == 1
     assert listed[0]["detail"] == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_sync_history_tracker_skips_reingest(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import agent_activity
+
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(
+        "syte.agent_activity.settings",
+        SimpleNamespace(resolved_db_path=db_path),
+    )
+
+    state = {
+        "session": {
+            "history": [
+                {"message": {"role": "user", "content": "Hi"}},
+                {"message": {"role": "assistant", "content": "Hello"}},
+            ]
+        }
+    }
+    sync_history_tracker_from_state("proj-2", state)
+    recorded = await ingest_agent_state("proj-2", state)
+    assert recorded == []
+    listed = await agent_activity.list_agent_events("proj-2")
+    assert listed == []
