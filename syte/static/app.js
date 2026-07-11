@@ -19,6 +19,9 @@ let debugChatBusy = false;
 let debugChatReplayingHistory = false;
 let debugChatLoadedProjectId = null;
 let debugChatLastUserMessage = '';
+let debugChatStreamBuffers = new Map();
+let debugChatStreamFlushTimer = null;
+const DEBUG_CHAT_STREAM_FLUSH_MS = 50;
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -192,7 +195,8 @@ function debugChatIconForEvent(eventType) {
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
   if (type === 'user_message') return 'user';
-  if (type === 'assistant_message' || type === 'request_completed') return 'assistant';
+  if (type === 'assistant_message' || type === 'request_completed' || type === 'message_snapshot') return 'assistant';
+  if (type === 'token_delta') return 'stream';
   if (type === 'request_failed') return 'error';
   if (type === 'thinking') return 'thinking';
   if (type === 'processing') return 'processing';
@@ -233,6 +237,64 @@ function setDebugChatTyping(show) {
   messagesEl.appendChild(bubble);
   scrollDebugChatToBottom();
   refreshIcons();
+}
+
+function ensureStreamingAssistantBubble(requestId) {
+  const rid = requestId || 'pending';
+  const messagesEl = getDebugChatMessagesEl();
+  if (!messagesEl) return null;
+  const existing = document.getElementById(`debug-chat-stream-${rid}`);
+  if (existing) return existing.querySelector('.debug-chat-bubble-body');
+
+  hideDebugChatEmpty();
+  setDebugChatTyping(false);
+  const bubble = document.createElement('div');
+  bubble.className = 'debug-chat-bubble debug-chat-assistant debug-chat-streaming';
+  bubble.id = `debug-chat-stream-${rid}`;
+  bubble.dataset.requestId = rid;
+  bubble.innerHTML = `
+    <div class="debug-chat-bubble-head">
+      <i data-lucide="bot"></i>
+      <span>Assistant</span>
+    </div>
+    <div class="debug-chat-bubble-body"></div>
+  `;
+  messagesEl.appendChild(bubble);
+  scrollDebugChatToBottom();
+  refreshIcons();
+  return bubble.querySelector('.debug-chat-bubble-body');
+}
+
+function flushDebugChatStreamBuffers() {
+  debugChatStreamFlushTimer = null;
+  for (const [rid, text] of debugChatStreamBuffers.entries()) {
+    const bodyEl = ensureStreamingAssistantBubble(rid);
+    if (bodyEl) bodyEl.textContent = text;
+  }
+  scrollDebugChatToBottom();
+}
+
+function queueDebugChatStreamDelta(requestId, delta, snapshot) {
+  const rid = requestId || 'pending';
+  const next = snapshot || ((debugChatStreamBuffers.get(rid) || '') + (delta || ''));
+  debugChatStreamBuffers.set(rid, next);
+  if (!debugChatStreamFlushTimer) {
+    debugChatStreamFlushTimer = setTimeout(flushDebugChatStreamBuffers, DEBUG_CHAT_STREAM_FLUSH_MS);
+  }
+}
+
+function finalizeDebugChatStream(requestId, finalText) {
+  const rid = requestId || 'pending';
+  if (debugChatStreamFlushTimer) {
+    clearTimeout(debugChatStreamFlushTimer);
+    debugChatStreamFlushTimer = null;
+  }
+  debugChatStreamBuffers.delete(rid);
+  const bodyEl = ensureStreamingAssistantBubble(rid);
+  if (bodyEl && finalText) bodyEl.textContent = finalText;
+  const bubble = document.getElementById(`debug-chat-stream-${rid}`);
+  if (bubble) bubble.classList.remove('debug-chat-streaming');
+  scrollDebugChatToBottom();
 }
 
 function appendDebugChatBubble(event) {
@@ -313,8 +375,23 @@ function appendDebugChatBubble(event) {
 }
 
 function shouldSkipDebugChatEvent(event) {
-  if (event.event_type === 'request_started') return true;
+  if (event.event_type === 'request_started') {
+    if (!debugChatReplayingHistory && event.payload?.request_id) {
+      ensureStreamingAssistantBubble(event.payload.request_id);
+    }
+    return true;
+  }
+  if (event.event_type === 'token_delta') return true;
+  if (event.event_type === 'message_snapshot') {
+    finalizeDebugChatStream(event.payload?.request_id, event.payload?.content || event.detail);
+    if (event.id != null) {
+      debugChatRenderedIds.add(event.id);
+      debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    }
+    return true;
+  }
   if (event.event_type === 'request_completed') {
+    finalizeDebugChatStream(event.payload?.request_id, event.payload?.reply || event.detail);
     const messagesEl = getDebugChatMessagesEl();
     const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
     const last = assistants?.[assistants.length - 1];
@@ -326,6 +403,21 @@ function shouldSkipDebugChatEvent(event) {
         debugChatSinceId = Math.max(debugChatSinceId, event.id);
       }
       return true;
+    }
+  }
+  if (event.event_type === 'assistant_message') {
+    const rid = event.payload?.request_id;
+    const streamBubble = rid ? document.getElementById(`debug-chat-stream-${rid}`) : null;
+    if (streamBubble) {
+      const body = streamBubble.querySelector('.debug-chat-bubble-body')?.textContent || '';
+      const detail = event.detail || event.payload?.content || '';
+      if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
+        if (event.id != null) {
+          debugChatRenderedIds.add(event.id);
+          debugChatSinceId = Math.max(debugChatSinceId, event.id);
+        }
+        return true;
+      }
     }
   }
   if (event.event_type === 'user_message') {
@@ -353,7 +445,22 @@ function handleDebugChatActivity(event) {
     if (!debugChatReplayingHistory) {
       setDebugChatTyping(true);
       setDebugChatBusy(true);
+      if (event.payload?.request_id) {
+        ensureStreamingAssistantBubble(event.payload.request_id);
+      }
     }
+  }
+  if (event.event_type === 'token_delta' && !debugChatReplayingHistory) {
+    queueDebugChatStreamDelta(
+      event.payload?.request_id,
+      event.payload?.delta || event.detail,
+      event.payload?.snapshot,
+    );
+    if (event.id != null) {
+      debugChatRenderedIds.add(event.id);
+      debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    }
+    return;
   }
   if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
     if (!debugChatReplayingHistory) {
@@ -564,6 +671,7 @@ async function sendDebugChatMessage() {
   const sentMessage = message;
   if (input) input.value = '';
   let chatOk = false;
+  let acceptedAsync = false;
   try {
     const res = await api(`/projects/${activeServiceId}/agent/chat`, {
       method: 'POST',
@@ -579,6 +687,9 @@ async function sendDebugChatMessage() {
       toast(formatAgentChatError(res));
       setDebugChatTyping(false);
       setDebugChatBusy(false);
+    } else if (res.request_id && (res.status === 'accepted' || !res.reply)) {
+      acceptedAsync = true;
+      ensureStreamingAssistantBubble(res.request_id);
     } else if (res.reply) {
       await syncDebugChatHistory(activeServiceId);
       const messagesEl = getDebugChatMessagesEl();
@@ -605,7 +716,7 @@ async function sendDebugChatMessage() {
     setDebugChatTyping(false);
     setDebugChatBusy(false);
   } finally {
-    if (!chatOk) {
+    if (!acceptedAsync && !chatOk) {
       setDebugChatTyping(false);
       setDebugChatBusy(false);
     }

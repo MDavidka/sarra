@@ -587,12 +587,14 @@ async def _poll_agent_state(
     timeout_s: float = 90.0,
     project_id: str | None = None,
     source: str = "agent",
+    request_id: str | None = None,
 ) -> dict:
-    from syte.agent_activity import ingest_agent_state
+    from syte.agent_activity import ingest_agent_state, record_agent_event
 
     base = agent_local_url(port).rstrip("/")
     deadline = time.time() + timeout_s
     last_state: dict = {}
+    last_reply = ""
     async with httpx.AsyncClient(timeout=10.0) as client:
         while time.time() < deadline:
             try:
@@ -603,12 +605,40 @@ async def _poll_agent_state(
                 last_state = response.json()
                 if project_id:
                     await ingest_agent_state(project_id, last_state, source=source)
+                    if request_id:
+                        reply = _extract_assistant_reply(last_state)
+                        if len(reply) > len(last_reply):
+                            delta = reply[len(last_reply):]
+                            last_reply = reply
+                            await record_agent_event(
+                                project_id,
+                                "token_delta",
+                                role="assistant",
+                                title="Assistant",
+                                detail=delta[:4000],
+                                payload={
+                                    "request_id": request_id,
+                                    "delta": delta,
+                                    "snapshot": reply,
+                                },
+                                source=source,
+                            )
                 busy = last_state.get("isProcessing") or last_state.get("is_processing")
                 if not busy:
+                    if project_id and request_id and last_reply:
+                        await record_agent_event(
+                            project_id,
+                            "message_snapshot",
+                            role="assistant",
+                            title="Assistant",
+                            detail=last_reply[:4000],
+                            payload={"request_id": request_id, "content": last_reply},
+                            source=source,
+                        )
                     return last_state
             except Exception:
                 pass
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(0.25)
     return last_state
 
 
@@ -620,7 +650,19 @@ async def communicate_with_agent(
     source: str = "api",
     auto_start: bool = True,
     emit_request_started: bool = True,
+    background: bool = False,
 ) -> dict:
+    if background:
+        from syte.agent_jobs import submit_agent_request
+
+        return await submit_agent_request(
+            project_id,
+            message,
+            model_profile=model_profile,
+            source=source,
+            auto_start=auto_start,
+        )
+
     from syte.agent_metrics import log_agent_request
     from syte.agent_activity import record_agent_event
 
@@ -665,6 +707,7 @@ async def _communicate_with_agent_impl(
     source: str = "api",
     auto_start: bool = True,
     emit_request_started: bool = True,
+    request_id: str | None = None,
 ) -> dict:
     from syte.agent_metrics import log_agent_request
     from syte.agent_activity import record_agent_event
@@ -674,13 +717,14 @@ async def _communicate_with_agent_impl(
         return {"ok": False, "error": "not_found", "message": "Project not found"}
 
     if emit_request_started:
+        rid = request_id or ""
         await record_agent_event(
             project_id,
             "request_started",
             role="user",
             title="Request",
             detail=message[:4000],
-            payload={"message": message, "model_profile": model_profile},
+            payload={"message": message, "model_profile": model_profile, "request_id": rid},
             source=source,
         )
 
@@ -740,7 +784,12 @@ async def _communicate_with_agent_impl(
             )
             return {"ok": False, "error": "agent_http_error", "message": err, "status_code": status_code}
 
-        state = await _poll_agent_state(int(port), project_id=project_id, source="agent")
+        state = await _poll_agent_state(
+            int(port),
+            project_id=project_id,
+            source=source,
+            request_id=request_id,
+        )
         reply = _extract_assistant_reply(state)
         await log_agent_request(project_id, source=source, model_profile=model.get("profile"), message=message, status="ok")
         await record_agent_event(
@@ -749,12 +798,13 @@ async def _communicate_with_agent_impl(
             role="assistant",
             title="Completed",
             detail=(reply or "Request finished")[:4000],
-            payload={"reply": reply, "model_profile": model.get("profile")},
+            payload={"reply": reply, "model_profile": model.get("profile"), "request_id": request_id or ""},
             source=source,
         )
         return {
             "ok": True,
             "uuid": project_id,
+            "request_id": request_id,
             "model_profile": model.get("profile"),
             "model": model.get("model"),
             "provider": model.get("provider"),

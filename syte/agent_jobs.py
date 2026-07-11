@@ -1,0 +1,99 @@
+"""Per-workspace agent job queue — async requests with immediate request_id."""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from collections import defaultdict
+from typing import Any
+
+from syte.agent_activity import record_agent_event
+
+_project_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+_running: dict[str, asyncio.Task[Any]] = {}
+
+
+def new_request_id() -> str:
+    return f"req_{uuid.uuid4().hex[:12]}"
+
+
+async def submit_agent_request(
+    project_id: str,
+    message: str,
+    *,
+    model_profile: str | None = None,
+    source: str = "api",
+    auto_start: bool = True,
+) -> dict[str, Any]:
+    """Queue an agent job and return immediately with request_id."""
+    request_id = new_request_id()
+    await record_agent_event(
+        project_id,
+        "request_started",
+        role="user",
+        title="Request",
+        detail=message[:4000],
+        payload={
+            "message": message,
+            "model_profile": model_profile,
+            "request_id": request_id,
+        },
+        source=source,
+    )
+
+    task = asyncio.create_task(
+        _run_job(
+            project_id,
+            request_id,
+            message,
+            model_profile=model_profile,
+            source=source,
+            auto_start=auto_start,
+        )
+    )
+    prev = _running.get(project_id)
+    if prev and not prev.done():
+        prev.cancel()
+    _running[project_id] = task
+
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "status": "accepted",
+        "project_id": project_id,
+        "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+    }
+
+
+async def _run_job(
+    project_id: str,
+    request_id: str,
+    message: str,
+    *,
+    model_profile: str | None,
+    source: str,
+    auto_start: bool,
+) -> dict[str, Any]:
+    from syte.continue_agent import _communicate_with_agent_impl
+
+    async with _project_locks[project_id]:
+        try:
+            return await _communicate_with_agent_impl(
+                project_id,
+                message,
+                model_profile=model_profile,
+                source=source,
+                auto_start=auto_start,
+                emit_request_started=False,
+                request_id=request_id,
+            )
+        except asyncio.CancelledError:
+            await record_agent_event(
+                project_id,
+                "request_failed",
+                title="Cancelled",
+                detail="Superseded by a newer request",
+                payload={"request_id": request_id, "error": "cancelled"},
+                source=source,
+            )
+            raise

@@ -214,3 +214,82 @@ async def stream_agent_activity(
             await asyncio.sleep(0.1)
     finally:
         unsubscribe_agent_activity(project_id, queue)
+
+
+def _format_activity_event(event: dict, output_format: str) -> str | None:
+    event_type = event.get("event_type") or ""
+    detail = event.get("detail") or ""
+    payload = event.get("payload") or {}
+    request_id = payload.get("request_id") or ""
+
+    if output_format == "jsonl":
+        return json.dumps({
+            "id": event.get("id"),
+            "request_id": request_id,
+            "type": event_type,
+            "role": event.get("role"),
+            "title": event.get("title"),
+            "detail": detail,
+            "payload": payload,
+            "source": event.get("source"),
+            "created_at": event.get("created_at"),
+        }) + "\n"
+
+    if event_type == "token_delta":
+        return payload.get("delta") or detail
+    if event_type == "user_message":
+        return f"[user] {detail}\n"
+    if event_type in ("assistant_message", "message_snapshot", "request_completed"):
+        return f"[assistant] {detail}\n"
+    if event_type == "request_started":
+        return f"[user] {detail}\n"
+    if event_type == "thinking":
+        return f"[thinking] {detail}\n"
+    if event_type in ("file_created", "file_modified", "file_deleted", "file_changed"):
+        return f"[file] {detail}\n"
+    if event_type in ("command_run", "command_output"):
+        return f"[cmd] {detail}\n"
+    if event_type in ("tool_call", "tool_call_started", "tool_call_finished", "service_action"):
+        return f"[tool] {event.get('title') or event_type}: {detail}\n"
+    if event_type == "request_failed":
+        return f"[error] {detail}\n"
+    if event_type == "processing":
+        return "[agent] Working…\n"
+    return f"[{event_type}] {detail}\n" if detail else None
+
+
+async def stream_agent_activity_formatted(
+    project_id: str,
+    *,
+    live_only: bool = False,
+    since_id: int = 0,
+    output_format: str = "text",
+    type_filter: list[str] | None = None,
+    poll_state: bool = True,
+):
+    """Plain text or JSONL stream derived from agent activity events."""
+    allowed = set(type_filter) if type_filter else None
+    async for chunk in stream_agent_activity(
+        project_id,
+        live_only=live_only,
+        since_id=since_id,
+        poll_state=poll_state,
+    ):
+        if not chunk.startswith("data: "):
+            continue
+        raw = chunk[6:].strip()
+        if not raw:
+            continue
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("type") != "activity" or not msg.get("event"):
+            continue
+        event = msg["event"]
+        event_type = event.get("event_type") or ""
+        if allowed and event_type not in allowed:
+            continue
+        line = _format_activity_event(event, output_format)
+        if line:
+            yield line
