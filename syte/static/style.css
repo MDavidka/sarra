@@ -1870,6 +1870,42 @@ code {
   padding: 0.35rem 0.5rem;
 }
 
+.debug-chat-activity {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 30px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #dbeafe;
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.76rem;
+}
+
+.debug-chat-activity-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.debug-chat-activity-spin {
+  animation: debug-chat-spin 1s linear infinite;
+}
+
+.debug-chat-activity-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.debug-chat-activity-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2563eb;
+}
+
 .debug-chat-messages {
   flex: 1;
   min-height: 280px;
@@ -1968,6 +2004,18 @@ code {
 .debug-chat-bubble-body {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.debug-chat-streaming .debug-chat-bubble-body::after {
+  content: '▋';
+  display: inline-block;
+  margin-left: 0.12rem;
+  color: var(--accent-line);
+  animation: debug-chat-cursor 0.9s steps(2, end) infinite;
+}
+
+@keyframes debug-chat-cursor {
+  50% { opacity: 0; }
 }
 
 .debug-chat-action,
@@ -2081,6 +2129,32 @@ code {
   border-radius: var(--radius-md);
   background: #fff;
   padding: 0.55rem;
+}
+
+.debug-chat-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.debug-chat-quick-actions button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  background: #fff;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.debug-chat-quick-actions button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .debug-chat-composer:focus-within {
@@ -2961,4 +3035,24 @@ body.ai-settings-open { overflow: hidden; }
   .ai-test-select { min-width: 0; }
   .ai-settings-panel { width: 100%; max-height: 100dvh; border-radius: 0; }
   .ai-env-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .debug-chat-activity {
+    align-items: flex-start;
+  }
+
+  .debug-chat-activity-detail {
+    white-space: normal;
+    line-height: 1.3;
+  }
+
+  .debug-chat-composer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .debug-chat-send {
+    width: 100%;
+  }
 }

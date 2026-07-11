@@ -140,6 +140,23 @@ function scrollDebugChatToBottom() {
   if (el && debugChatAutoScroll) el.scrollTop = el.scrollHeight;
 }
 
+function setDebugChatActivity(label, detail = '', icon = 'loader', active = true) {
+  const bar = document.getElementById('debug-chat-activity');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !active);
+  if (!active) return;
+  const iconEl = bar.querySelector('.debug-chat-activity-icon');
+  const labelEl = bar.querySelector('.debug-chat-activity-label');
+  const detailEl = bar.querySelector('.debug-chat-activity-detail');
+  if (iconEl) {
+    iconEl.setAttribute('data-lucide', icon);
+    iconEl.classList.toggle('debug-chat-activity-spin', icon === 'loader');
+  }
+  if (labelEl) labelEl.textContent = label;
+  if (detailEl) detailEl.textContent = detail;
+  refreshIcons();
+}
+
 function clearDebugChatPanel() {
   const el = getDebugChatMessagesEl();
   if (!el) return;
@@ -151,6 +168,7 @@ function clearDebugChatPanel() {
   el.appendChild(empty);
   debugChatRenderedIds.clear();
   debugChatSinceId = 0;
+  setDebugChatActivity('', '', 'loader', false);
   refreshIcons();
 }
 
@@ -445,12 +463,14 @@ function handleDebugChatActivity(event) {
     if (!debugChatReplayingHistory) {
       setDebugChatTyping(true);
       setDebugChatBusy(true);
+      setDebugChatActivity('Preparing response', 'The agent is planning the next step');
       if (event.payload?.request_id) {
         ensureStreamingAssistantBubble(event.payload.request_id);
       }
     }
   }
   if (event.event_type === 'token_delta' && !debugChatReplayingHistory) {
+    setDebugChatActivity('Writing response', 'Live text is arriving');
     queueDebugChatStreamDelta(
       event.payload?.request_id,
       event.payload?.delta || event.detail,
@@ -466,6 +486,11 @@ function handleDebugChatActivity(event) {
     if (!debugChatReplayingHistory) {
       setDebugChatTyping(false);
       setDebugChatBusy(false);
+      setDebugChatActivity(
+        event.event_type === 'request_completed' ? 'Response ready' : 'Response failed',
+        '',
+        event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
+      );
     }
   }
 
@@ -475,6 +500,16 @@ function handleDebugChatActivity(event) {
   if (eventId != null) debugChatRenderedIds.add(eventId);
 
   appendDebugChatBubble(event);
+  if (!debugChatReplayingHistory && [
+    'tool_call', 'command_run', 'file_created', 'file_modified', 'file_deleted',
+    'file_read', 'file_search', 'service_action',
+  ].includes(event.event_type)) {
+    setDebugChatActivity(
+      debugChatActionTitle(event),
+      event.detail || 'Working in the project',
+      debugChatIconForEvent(event.event_type),
+    );
+  }
   if (eventId != null) debugChatSinceId = Math.max(debugChatSinceId, eventId);
 
   const refreshTypes = [
@@ -658,6 +693,7 @@ async function sendDebugChatMessage() {
   if (debugChatBusy) return;
 
   setDebugChatBusy(true);
+  setDebugChatActivity('Sending request', 'Connecting to the website assistant');
   hideDebugChatEmpty();
   debugChatLastUserMessage = message;
   appendDebugChatBubble({
@@ -687,8 +723,10 @@ async function sendDebugChatMessage() {
       toast(formatAgentChatError(res));
       setDebugChatTyping(false);
       setDebugChatBusy(false);
+      setDebugChatActivity('Request failed', '', 'circle-alert');
     } else if (res.request_id && (res.status === 'accepted' || !res.reply)) {
       acceptedAsync = true;
+      setDebugChatActivity('Preparing response', 'The agent is planning the next step');
       ensureStreamingAssistantBubble(res.request_id);
     } else if (res.reply) {
       await syncDebugChatHistory(activeServiceId);
@@ -704,6 +742,7 @@ async function sendDebugChatMessage() {
       }
       setDebugChatTyping(false);
       setDebugChatBusy(false);
+      setDebugChatActivity('Response ready', '', 'check-circle-2');
     }
     await updateDebugChatAgentStatus();
   } catch (e) {
@@ -715,6 +754,7 @@ async function sendDebugChatMessage() {
     toast('Error: ' + normalizeFetchError(e.message));
     setDebugChatTyping(false);
     setDebugChatBusy(false);
+    setDebugChatActivity('Request failed', '', 'circle-alert');
   } finally {
     if (!acceptedAsync && !chatOk) {
       setDebugChatTyping(false);
@@ -2357,6 +2397,15 @@ document.getElementById('debug-chat-clear')?.addEventListener('click', () => {
   if (activeServiceId && activeSvcTab === 'debug-chat') {
     startAgentActivityStream(activeServiceId);
   }
+});
+document.querySelectorAll('[data-debug-chat-prompt]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const input = document.getElementById('debug-chat-input');
+    if (!input || debugChatBusy) return;
+    input.value = button.dataset.debugChatPrompt || '';
+    input.focus();
+    input.dispatchEvent(new Event('input'));
+  });
 });
 
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
