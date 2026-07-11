@@ -65,17 +65,22 @@ async def maintain() -> None:
                 _fail_counts.pop(pid, None)
 
     for project in projects:
-        if project.get("agent_status") != "running":
-            continue
         pid = project["id"]
+        status = project.get("agent_status") or "stopped"
+        if status == "stopped":
+            continue
         if is_agent_running(pid):
             continue
-        logger.warning("Restarting Continue agent for %s", pid)
+        logger.warning("Restarting Continue agent for %s (status=%s)", pid, status)
+        if status != "running":
+            await update_project(pid, {"agent_status": "running"})
         ok, msg, _meta = await start_agent(pid)
         if ok:
             logger.info("Restarted Continue agent for %s: %s", pid, msg)
         else:
             logger.error("Failed to restart Continue agent for %s: %s", pid, msg)
+            if status != "error":
+                await update_project(pid, {"agent_status": "error", "agent_last_error": msg[:4000]})
 
     try:
         from syte.preview_manager import expire_stale_previews
@@ -105,3 +110,35 @@ async def startup() -> None:
     await apply_proxy_config()
     ensure_caddy()
     await maintain()
+    await autostart_project_agents()
+
+
+async def autostart_project_agents() -> None:
+    """Start Continue agents for projects that should run 24/7 on the VM."""
+    from syte.continue_agent import bridge_settings, continue_installed, start_agent, is_agent_running
+
+    if not continue_installed():
+        return
+    try:
+        bridge = await bridge_settings()
+    except Exception:
+        return
+    has_key = any(bridge["profiles"][name]["api_key"] for name in bridge["profiles"])
+    if not has_key:
+        return
+
+    projects = await list_projects()
+    for project in projects:
+        pid = project["id"]
+        status = project.get("agent_status") or "running"
+        if status == "stopped":
+            continue
+        if is_agent_running(pid):
+            continue
+        if status != "running":
+            await update_project(pid, {"agent_status": "running"})
+        ok, msg, _ = await start_agent(pid)
+        if ok:
+            logger.info("Autostarted Continue agent for %s", pid)
+        else:
+            logger.warning("Autostart Continue agent failed for %s: %s", pid, msg[:200])

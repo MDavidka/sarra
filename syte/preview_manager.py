@@ -1,5 +1,6 @@
 """Fast dev preview servers (next dev / vite) with HMR — separate from production deploy."""
 
+import asyncio
 import json
 import os
 import signal
@@ -25,7 +26,7 @@ from syte.workspace import command_exists, ensure_workspace, read_env_vars, work
 PREVIEW_PORT_START = 4000
 PREVIEW_PORT_END = 4999
 PREVIEW_START_GRACE_SEC = 45
-PREVIEW_MAX_RUNTIME_SEC = 300
+PREVIEW_MAX_RUNTIME_SEC = 3600
 PID_DIR = settings.data_dir / "pids"
 
 
@@ -335,7 +336,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
 
     ready = False
     for _ in range(80):
-        time.sleep(0.25)
+        await asyncio.sleep(0.25)
         if proc.poll() is not None:
             log_file.close()
             tail = "\n".join(log_path.read_text(errors="replace").splitlines()[-15:])
@@ -387,7 +388,7 @@ def _preview_start_grace_elapsed(project: dict) -> bool:
         return True
 
 
-async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
+async def get_preview_status(project_id: str, *, quick: bool = False) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found"
@@ -418,7 +419,10 @@ async def get_preview_status(project_id: str) -> tuple[dict | None, str]:
 
     meta = preview_meta(project)
     meta["ssl"] = enrich_ssl(project)
-    meta["iframe"] = await preview_iframe_status(project)
+    if quick:
+        meta["iframe"] = project.get("iframe") or {"all_ok": None, "items": []}
+    else:
+        meta["iframe"] = await preview_iframe_status(project)
     return meta, "ok"
 
 

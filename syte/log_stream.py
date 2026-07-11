@@ -154,13 +154,12 @@ async def stream_agent_activity(
     from syte.agent_activity import ingest_agent_state, list_agent_events, subscribe_agent_activity, unsubscribe_agent_activity
     from syte.continue_agent import agent_local_url, get_agent_status
 
-    if not live_only:
-        for event in await list_agent_events(project_id, since_id=since_id, limit=500):
-            yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
-            since_id = max(since_id, int(event.get("id") or 0))
-
     if live_only:
         yield f"data: {json.dumps({'type': 'session', 'text': 'Live agent activity stream'})}\n\n"
+
+    for event in await list_agent_events(project_id, since_id=since_id, limit=500):
+        yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+        since_id = max(since_id, int(event.get("id") or 0))
 
     queue = subscribe_agent_activity(project_id)
     last_processing_emit = 0.0

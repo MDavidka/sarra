@@ -873,9 +873,9 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest):
 
 
 @app.get("/api/projects/{project_id}/preview/status")
-async def api_preview_status(project_id: str):
+async def api_preview_status(project_id: str, quick: bool = False):
     from syte.preview_manager import get_preview_status
-    meta, message = await get_preview_status(project_id)
+    meta, message = await get_preview_status(project_id, quick=quick)
     if not meta:
         raise HTTPException(404, message)
     return {"ok": True, **meta}

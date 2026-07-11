@@ -53,6 +53,14 @@ ACTIVITY_EVENT_TYPES = frozenset({
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
 _history_trackers: dict[str, int] = {}
+_ingest_locks: dict[str, asyncio.Lock] = {}
+
+
+def _ingest_lock(project_id: str, source: str) -> asyncio.Lock:
+    key = f"{project_id}:{source}"
+    if key not in _ingest_locks:
+        _ingest_locks[key] = asyncio.Lock()
+    return _ingest_locks[key]
 
 
 def _now() -> str:
@@ -367,25 +375,40 @@ async def ingest_agent_state(
     source: str = "agent",
 ) -> list[dict[str, Any]]:
     """Diff Continue state history and persist new activity events."""
-    key = f"{project_id}:{source}"
-    since = _history_trackers.get(key, 0)
-    raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
-    _history_trackers[key] = new_index
+    lock = _ingest_lock(project_id, source)
+    async with lock:
+        key = f"{project_id}:{source}"
+        since = _history_trackers.get(key, 0)
+        raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
+        _history_trackers[key] = new_index
 
-    recorded: list[dict[str, Any]] = []
-    for raw in raw_events:
-        recorded.append(
-            await record_agent_event(
-                project_id,
-                raw["event_type"],
-                role=raw.get("role", "assistant"),
-                title=raw.get("title", ""),
-                detail=raw.get("detail", ""),
-                payload=raw.get("payload"),
-                source=raw.get("source", source),
+        recorded: list[dict[str, Any]] = []
+        for raw in raw_events:
+            recorded.append(
+                await record_agent_event(
+                    project_id,
+                    raw["event_type"],
+                    role=raw.get("role", "assistant"),
+                    title=raw.get("title", ""),
+                    detail=raw.get("detail", ""),
+                    payload=raw.get("payload"),
+                    source=raw.get("source", source),
+                )
             )
-        )
-    return recorded
+        return recorded
+
+
+def sync_history_tracker_from_state(
+    project_id: str,
+    state: dict[str, Any],
+    *,
+    source: str = "agent",
+) -> int:
+    """Advance ingest cursor without recording events (e.g. after agent restart)."""
+    history = (state.get("session") or {}).get("history") or []
+    index = len(history)
+    _history_trackers[f"{project_id}:{source}"] = index
+    return index
 
 
 async def record_workspace_activity(
