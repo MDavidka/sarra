@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     caddy_config_path: Path = Path("/etc/caddy/Caddyfile")
     host: str = "0.0.0.0"
     port: int = 8787
-    continue_port_start: int = 5200
-    continue_port_end: int = 5999
+    agent_port_start: int = 5200
+    agent_port_end: int = 5999
     public_ip: str = ""
     admin_email: str = "admin@localhost"
 
@@ -39,6 +39,14 @@ class Settings(BaseSettings):
             return ip
         except OSError:
             return "127.0.0.1"
+
+    @property
+    def resolved_agent_port_start(self) -> int:
+        return self.agent_port_start
+
+    @property
+    def resolved_agent_port_end(self) -> int:
+        return self.agent_port_end
 
 
 settings = Settings()

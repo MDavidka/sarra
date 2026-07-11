@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -58,15 +57,6 @@ ACTIVITY_EVENT_TYPES = frozenset({
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
-_history_trackers: dict[str, int] = {}
-_ingest_locks: dict[str, asyncio.Lock] = {}
-
-
-def _ingest_lock(project_id: str, source: str) -> asyncio.Lock:
-    key = f"{project_id}:{source}"
-    if key not in _ingest_locks:
-        _ingest_locks[key] = asyncio.Lock()
-    return _ingest_locks[key]
 
 
 def _now() -> str:
@@ -238,6 +228,7 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
     path = str(args.get("path") or args.get("file_path") or args.get("filepath") or "")
     command = str(args.get("command") or args.get("cmd") or "")
     query = str(args.get("query") or args.get("pattern") or args.get("search") or "")
+    file_operation = str(args.get("operation") or args.get("action") or command).lower()
 
     if any(k in name for k in ("syte_service", "syte-service", "service")):
         action = str(args.get("action") or args.get("cmd") or "")
@@ -247,6 +238,16 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
     if any(k in name for k in ("syte_access", "syte-access")) and "preview" in name:
         action = str(args.get("action") or "access")
         return "service_action", f"Preview: {action}", _text_from_content(arguments)[:500], args
+    if name in {"file_editor", "fileeditor"}:
+        if any(token in file_operation for token in ("view", "read", "show")):
+            return "file_read", "Read file", path, args
+        if any(token in file_operation for token in ("create", "new")):
+            return "file_created", "Create file", path, args
+        if any(token in file_operation for token in ("delete", "remove", "unlink")):
+            return "file_deleted", "Delete file", path, args
+        if any(token in file_operation for token in ("search", "find", "grep")):
+            return "file_search", "Search", path or query, args
+        return "file_modified", "Rewrite file", path, args
     if any(k in name for k in ("grep", "ripgrep", "rg", "search", "find", "glob", "list_dir", "ls")):
         detail = path or query or command[:200] or name
         return "file_search", "Search", detail, args
@@ -265,165 +266,268 @@ def _map_tool_event(tool_name: str, arguments: Any) -> tuple[str, str, str, dict
     return "tool_call", tool_name or "tool", _text_from_content(arguments)[:500], args
 
 
-def _events_from_message_item(item: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
-    message = item.get("message") or item
-    role = str(message.get("role") or "assistant")
-    content = message.get("content")
-    events: list[dict[str, Any]] = []
+def _openhands_text(value: Any) -> str:
+    """Extract text from OpenHands' transport-safe event payloads."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(part for part in parts if part).strip()
+    if isinstance(value, dict):
+        return _openhands_text(
+            value.get("content") or value.get("text") or value.get("message")
+        )
+    return ""
 
-    if role == "user":
-        text = _text_from_content(content)
-        if text:
-            events.append({
-                "event_type": "user_message",
-                "role": "user",
-                "title": "User",
-                "detail": text[:4000],
-                "payload": {"content": text},
-                "source": source,
-            })
-        return events
 
-    if role == "tool":
-        text = _text_from_content(content)
-        events.append({
-            "event_type": "tool_call",
-            "role": "tool",
-            "title": "Tool result",
-            "detail": text[:4000],
-            "payload": {"content": text},
-            "source": source,
-        })
-        return events
+def _openhands_action_arguments(event: dict[str, Any]) -> dict[str, Any]:
+    action = event.get("action")
+    if isinstance(action, dict):
+        return {
+            key: value
+            for key, value in action.items()
+            if key not in {"kind", "summary"}
+        }
 
-    if isinstance(content, list):
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            part_type = str(part.get("type") or "").lower()
-            if part_type == "text":
-                text = _text_from_content(part.get("text"))
-                if text:
-                    events.append({
-                        "event_type": "assistant_message",
-                        "role": "assistant",
-                        "title": "Assistant",
-                        "detail": text[:4000],
-                        "payload": {"content": text},
-                        "source": source,
-                    })
-            elif part_type in {"tool_use", "tool_call", "function_call"}:
-                tool_name = str(
-                    part.get("name")
-                    or part.get("tool")
-                    or part.get("function", {}).get("name")
-                    or "tool"
-                )
-                arguments = part.get("input") or part.get("arguments") or part.get("function", {}).get("arguments")
-                event_type, title, detail, payload = _map_tool_event(tool_name, arguments)
-                payload = {**payload, "tool": tool_name}
-                events.append({
-                    "event_type": event_type,
-                    "role": "assistant",
-                    "title": title,
-                    "detail": detail[:4000],
-                    "payload": payload,
-                    "source": source,
-                })
-            elif part_type == "thinking" or part.get("thinking"):
-                text = _text_from_content(part.get("thinking") or part.get("text"))
-                if text:
-                    events.append({
-                        "event_type": "thinking",
-                        "role": "assistant",
-                        "title": "Thinking",
-                        "detail": text[:4000],
-                        "payload": {"content": text},
-                        "source": source,
-                    })
-        return events
+    tool_call = event.get("tool_call")
+    if not isinstance(tool_call, dict):
+        return {}
+    function = tool_call.get("function")
+    if isinstance(function, dict):
+        raw = function.get("arguments")
+    else:
+        raw = tool_call.get("arguments")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return {"raw": raw}
+    return {}
 
-    text = _text_from_content(content)
-    if text:
-        lowered = text.lower()
-        if re.search(r"</?think>", text, re.I) or lowered.startswith("thinking:"):
-            events.append({
+
+def extract_events_from_openhands_event(
+    event: dict[str, Any],
+    *,
+    source: str = "openhands",
+    request_id: str | None = None,
+    token_snapshot: str = "",
+) -> list[dict[str, Any]]:
+    """Map one native OpenHands WebSocket event to Syte's stable activity feed.
+
+    OpenHands uses a discriminated ``kind`` field on event payloads.  This
+    mapper intentionally accepts a few older spellings as well so a server
+    upgrade cannot make the UI silently lose activity events.
+    """
+    kind = str(event.get("kind") or event.get("type") or event.get("event_type") or "")
+    kind_lower = kind.lower()
+    common = {
+        "request_id": request_id or "",
+        "openhands_event_id": str(event.get("id") or ""),
+        "runtime": "openhands",
+    }
+
+    if kind_lower in {"streamingdeltaevent", "tokenevent"}:
+        delta = str(event.get("content") or event.get("delta") or "")
+        reasoning = str(event.get("reasoning_content") or "")
+        raw: list[dict[str, Any]] = []
+        if reasoning:
+            raw.append({
                 "event_type": "thinking",
                 "role": "assistant",
                 "title": "Thinking",
-                "detail": re.sub(r"</?think>", "", text, flags=re.I)[:4000],
-                "payload": {"content": text},
+                "detail": reasoning[:4000],
+                "payload": {**common, "content": reasoning},
                 "source": source,
             })
-        else:
-            events.append({
-                "event_type": "assistant_message",
+        if delta:
+            raw.append({
+                "event_type": "token_delta",
                 "role": "assistant",
                 "title": "Assistant",
-                "detail": text[:4000],
-                "payload": {"content": text},
+                "detail": delta[:4000],
+                "payload": {
+                    **common,
+                    "delta": delta,
+                    "snapshot": token_snapshot,
+                },
                 "source": source,
             })
-    return events
+        return raw
+
+    if kind_lower == "messageevent":
+        message = event.get("llm_message") or event.get("message") or {}
+        if not isinstance(message, dict):
+            message = {}
+        role = str(message.get("role") or event.get("source") or "assistant")
+        content = _openhands_text(message.get("content"))
+        reasoning = str(
+            message.get("reasoning_content") or event.get("reasoning_content") or ""
+        )
+        raw = []
+        if reasoning:
+            raw.append({
+                "event_type": "thinking",
+                "role": "assistant",
+                "title": "Thinking",
+                "detail": reasoning[:4000],
+                "payload": {**common, "content": reasoning},
+                "source": source,
+            })
+        if content:
+            is_user = role == "user" or event.get("source") == "user"
+            raw.append({
+                "event_type": "user_message" if is_user else "assistant_message",
+                "role": "user" if is_user else "assistant",
+                "title": "User" if is_user else "Assistant",
+                "detail": content[:4000],
+                "payload": {**common, "content": content},
+                "source": source,
+            })
+        return raw
+
+    if kind_lower == "actionevent":
+        tool_call = event.get("tool_call") or {}
+        tool_name = str(
+            event.get("tool_name")
+            or (tool_call.get("name") if isinstance(tool_call, dict) else "")
+            or "tool"
+        )
+        args = _openhands_action_arguments(event)
+        event_type, title, detail, payload = _map_tool_event(tool_name, args)
+        summary = str(event.get("summary") or "")
+        thought = _openhands_text(event.get("thought"))
+        reasoning = str(event.get("reasoning_content") or "")
+        raw = []
+        if reasoning or thought:
+            raw.append({
+                "event_type": "thinking",
+                "role": "assistant",
+                "title": "Thinking",
+                "detail": (reasoning or thought)[:4000],
+                "payload": {**common, "content": reasoning or thought},
+                "source": source,
+            })
+        raw.append({
+            "event_type": event_type,
+            "role": "assistant",
+            "title": title,
+            "detail": (summary or detail)[:4000],
+            "payload": {
+                **common,
+                **payload,
+                "tool": tool_name,
+                "tool_call_id": event.get("tool_call_id") or "",
+                "phase": "started",
+            },
+            "source": source,
+        })
+        return raw
+
+    if kind_lower in {"observationevent", "agenterrorevent", "userrejectobservation"}:
+        tool_name = str(event.get("tool_name") or "tool")
+        observation = event.get("observation")
+        content = _openhands_text(
+            observation.get("content") if isinstance(observation, dict) else observation
+        )
+        if not content:
+            content = str(event.get("error") or event.get("rejection_reason") or "")
+        is_terminal = any(
+            token in tool_name.lower() for token in ("terminal", "bash", "shell", "command")
+        )
+        return [{
+            "event_type": "command_output" if is_terminal else "tool_call_finished",
+            "role": "tool",
+            "title": "Command output" if is_terminal else f"{tool_name} finished",
+            "detail": content[:4000],
+            "payload": {
+                **common,
+                "tool": tool_name,
+                "tool_call_id": event.get("tool_call_id") or "",
+                "phase": "finished",
+                "is_error": bool(
+                    event.get("error")
+                    or event.get("rejection_reason")
+                    or (
+                        observation.get("is_error")
+                        if isinstance(observation, dict)
+                        else False
+                    )
+                ),
+            },
+            "source": source,
+        }]
+
+    if kind_lower == "conversationerrorevent":
+        detail = str(event.get("detail") or event.get("code") or "OpenHands conversation failed")
+        return [{
+            "event_type": "request_failed",
+            "role": "system",
+            "title": "OpenHands error",
+            "detail": detail[:4000],
+            "payload": {**common, "error": detail, "code": event.get("code") or ""},
+            "source": source,
+        }]
+
+    if kind_lower == "conversationstateupdateevent":
+        key = str(event.get("key") or "")
+        value = event.get("value")
+        status = ""
+        if key == "execution_status":
+            status = str(value or "")
+        elif key == "full_state" and isinstance(value, dict):
+            status = str(value.get("execution_status") or "")
+        if status == "running":
+            return [{
+                "event_type": "processing",
+                "role": "system",
+                "title": "OpenHands working",
+                "detail": "Agent is processing…",
+                "payload": {**common, "execution_status": status},
+                "source": source,
+            }]
+    return []
 
 
-def extract_events_from_state(
-    state: dict[str, Any],
-    *,
-    source: str = "agent",
-    since_index: int = 0,
-) -> tuple[list[dict[str, Any]], int]:
-    """Parse Continue /state history into structured activity events."""
-    history = (state.get("session") or {}).get("history") or []
-    events: list[dict[str, Any]] = []
-    start = max(0, since_index)
-    for item in history[start:]:
-        if isinstance(item, dict):
-            events.extend(_events_from_message_item(item, source=source))
-    return events, len(history)
-
-
-async def ingest_agent_state(
+async def ingest_openhands_event(
     project_id: str,
-    state: dict[str, Any],
+    event: dict[str, Any],
     *,
-    source: str = "agent",
+    source: str = "openhands",
+    request_id: str | None = None,
+    token_snapshot: str = "",
 ) -> list[dict[str, Any]]:
-    """Diff Continue state history and persist new activity events."""
-    lock = _ingest_lock(project_id, source)
-    async with lock:
-        key = f"{project_id}:{source}"
-        since = _history_trackers.get(key, 0)
-        raw_events, new_index = extract_events_from_state(state, source=source, since_index=since)
-        _history_trackers[key] = new_index
-
-        recorded: list[dict[str, Any]] = []
-        for raw in raw_events:
-            recorded.append(
-                await record_agent_event(
-                    project_id,
-                    raw["event_type"],
-                    role=raw.get("role", "assistant"),
-                    title=raw.get("title", ""),
-                    detail=raw.get("detail", ""),
-                    payload=raw.get("payload"),
-                    source=raw.get("source", source),
-                )
+    """Persist one native OpenHands event and fan it out to SSE consumers."""
+    raw_events = extract_events_from_openhands_event(
+        event,
+        source=source,
+        request_id=request_id,
+        token_snapshot=token_snapshot,
+    )
+    recorded: list[dict[str, Any]] = []
+    for raw in raw_events:
+        recorded.append(
+            await record_agent_event(
+                project_id,
+                raw["event_type"],
+                role=raw.get("role", "assistant"),
+                title=raw.get("title", ""),
+                detail=raw.get("detail", ""),
+                payload=raw.get("payload"),
+                source=raw.get("source", source),
             )
-        return recorded
-
-
-def sync_history_tracker_from_state(
-    project_id: str,
-    state: dict[str, Any],
-    *,
-    source: str = "agent",
-) -> int:
-    """Advance ingest cursor without recording events (e.g. after agent restart)."""
-    history = (state.get("session") or {}).get("history") or []
-    index = len(history)
-    _history_trackers[f"{project_id}:{source}"] = index
-    return index
+        )
+    return recorded
 
 
 async def record_workspace_activity(
@@ -455,7 +559,3 @@ async def record_workspace_activity(
         payload={"action": action, "path": path, "command": command},
         source=source,
     )
-
-
-def reset_history_tracker(project_id: str, *, source: str = "agent") -> None:
-    _history_trackers.pop(f"{project_id}:{source}", None)

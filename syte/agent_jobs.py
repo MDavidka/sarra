@@ -53,6 +53,17 @@ async def submit_agent_request(
     )
     prev = _running.get(project_id)
     if prev and not prev.done():
+        # Cancelling only the Syte task would leave the OpenHands run active.
+        # Interrupt the native conversation first so the next request gets a
+        # clean turn and the user sees a coherent activity stream.
+        try:
+            from syte.openhands_agent import interrupt_agent
+
+            await interrupt_agent(project_id)
+        except Exception:
+            # The previous task still gets cancelled below; a failed interrupt
+            # is surfaced by that task's normal runtime error handling.
+            pass
         prev.cancel()
     _running[project_id] = task
 
@@ -74,7 +85,7 @@ async def _run_job(
     source: str,
     auto_start: bool,
 ) -> dict[str, Any]:
-    from syte.continue_agent import _communicate_with_agent_impl
+    from syte.openhands_agent import _communicate_with_agent_impl
 
     async with _project_locks[project_id]:
         try:

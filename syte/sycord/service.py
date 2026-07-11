@@ -185,7 +185,7 @@ def project_stack(project: dict) -> str:
 
 
 async def agent_status(project_id: str, *, request_base: str = "") -> dict | None:
-    from syte.continue_agent import get_agent_status
+    from syte.openhands_agent import get_agent_status
 
     project = await get_project(project_id)
     if not project:
@@ -222,7 +222,7 @@ async def agent_change(
     model_profile: str | None = None,
     wait: bool = False,
 ) -> dict:
-    from syte.continue_agent import communicate_with_agent
+    from syte.openhands_agent import communicate_with_agent
 
     project = await get_project(project_id)
     if not project:

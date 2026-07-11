@@ -1327,10 +1327,10 @@
         <div class="cat-panel" id="panel-agent" data-cat="agent">
         <section class="section" id="agent">
           <h2 class="section-title">AI Session</h2>
-          <p class="section-desc">Control per-project Continue <code>cn serve</code> agents for long-lived coding sessions. Independent from preview/deploy processes.</p>
+          <p class="section-desc">Control per-project OpenHands Agent Server conversations for long-lived coding sessions. Independent from preview/deploy processes.</p>
 
           <div class="note" style="margin:0 0 1.25rem">
-            <strong>AI session usage.</strong> One Continue agent per project workspace. Use <code>agent_proxy_url</code> from status — not the raw localhost port.
+            <strong>AI session usage.</strong> One OpenHands Agent Server per project workspace. Use Syte chat and activity endpoints for normal work; <code>agent_proxy_url</code> is reserved for authenticated native conversation calls.
             Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
             Configure Verted + DeepSeek API keys per profile in Syte GUI → <strong>AI</strong>.
             Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
@@ -1373,7 +1373,7 @@
                 <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Starts Continue <code>cn serve</code> in the project workspace if not already running.</div>
+                  <div class="field-desc">Starts OpenHands Agent Server in the project workspace if not already running.</div>
                 </div>
               </div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
@@ -1448,7 +1448,7 @@
               <div class="endpoint-name">Agent logs (snapshot)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Snapshot of Continue serve output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
+              <div class="field-desc">Snapshot of OpenHands Agent Server output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
             </div>
           </div>
 
@@ -1537,9 +1537,9 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
               <div class="endpoint-name">Test agent</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Starts agent if needed, verifies provider API + CLI, sends probe message expecting <code>ok</code> in reply.</div>
+              <div class="field-desc">Starts the agent if needed, verifies the provider API and Agent Server, then sends a probe message expecting <code>ok</code> in reply.</div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
-              <pre>{"ok":true,"checks":{"cli":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
+              <pre>{"ok":true,"checks":{"agent_server":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
             </div>
           </div>
 
@@ -1559,7 +1559,7 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">message<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Sent to Continue CLI <code>POST /message</code> on the project workspace.</div>
+                  <div class="field-desc">Sent as an OpenHands conversation message in the project workspace.</div>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
@@ -1616,14 +1616,14 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent</code> — status</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/start|stop|restart</code></span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/change</code> — <code>{message, model_name}</code></span></div>
-            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — raw message to CLI</span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — blocking OpenHands message</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/test</code> — health + probe chat</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/logs?lines=200</code></span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity?since_id=0</code> — Cursor-like activity snapshot</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity/stream?live=1</code> — SSE real-time activity</span></div>
-            <div class="info-row"><span class="info-key">ANY</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — forward to <code>cn serve</code> HTTP API</span></div>
+            <div class="info-row"><span class="info-key">GET|POST</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — authenticated OpenHands health and conversation API proxy</span></div>
           </div>
-          <div class="note" style="margin-top:1rem"><strong>Continue CLI HTTP</strong> (via proxy or localhost): <code>POST /message</code>, <code>GET /state</code>, <code>POST /pause</code>, <code>GET /diff</code>, <code>POST /exit</code></div>
+          <div class="note" style="margin-top:1rem"><strong>OpenHands native HTTP</strong> (via authenticated proxy): <code>GET /ready</code>, <code>GET /health</code>, and <code>/api/conversations/*</code>. Use Syte activity SSE for browser streaming.</div>
         </section>
 
         <section class="section" id="agent-errors">
@@ -1631,7 +1631,7 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
           <div class="info-grid">
             <div class="info-row"><span class="info-key">401</span><span class="info-val">Missing or invalid API key / internal secret</span></div>
             <div class="info-row"><span class="info-key">503 internal_secret_not_configured</span><span class="info-val">Set internal secret in Syte AI tab → Agent configuration</span></div>
-            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">Continue CLI missing — <code>npm install -g @continuedev/cli</code></span></div>
+            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">OpenHands Agent Server missing or configuration invalid — install the project Python dependencies</span></div>
             <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Provider API unreachable — check AI tab → model API keys</span></div>
             <div class="info-row"><span class="info-key">503 agent not running</span><span class="info-val">Proxy called while agent stopped — <code>POST /agent/start</code> first</span></div>
             <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">UUID does not match any workspace</span></div>
@@ -1644,12 +1644,12 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
             <div class="info-row"><span class="info-key">1</span><span class="info-val">User edits project on sycord.com and sends a change message</span></div>
             <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com opens SSE <code>GET /api/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=N</code> (or internal route with secret)</span></div>
             <div class="info-row"><span class="info-key">3</span><span class="info-val">sycord.com → <code>POST /sycord/api/agent_change</code> or <code>POST /api/internal/projects/{uuid}/agent/change</code> — returns <code>request_id</code> immediately</span></div>
-            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte auto-starts <code>cn serve</code> for UUID workspace if needed</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte auto-starts OpenHands Agent Server for the UUID workspace if needed</span></div>
             <div class="info-row"><span class="info-key">5</span><span class="info-val">SSE streams <code>token_delta</code>, file edits, commands until <code>request_completed</code></span></div>
             <div class="info-row"><span class="info-key">6</span><span class="info-val">Preview hot-reloads edited files; deploy when user is ready</span></div>
           </div>
           <div class="note" style="margin-top:1rem"><strong>Sycord public API:</strong> <code>GET /sycord/api/agent_status</code>, <code>POST /sycord/api/agent_change</code>, <code>GET /sycord/api/agent_activity</code> — same API token as other <code>/sycord/api/*</code> routes.</div>
-          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent <code>cn serve</code> instances).</div>
+          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent OpenHands Agent Server instances).</div>
         </section>
         </div>
       </div>
