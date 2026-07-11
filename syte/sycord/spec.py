@@ -30,6 +30,9 @@ def project_connect_example() -> dict:
                 "POST /sycord/api/preview_start — body.uuid",
                 "GET /sycord/api/preview_status?uuid=",
                 "POST /sycord/api/preview_stop — body.uuid",
+                "GET /sycord/api/agent_status?uuid=",
+                "POST /sycord/api/agent_change — body.uuid + message",
+                "GET /sycord/api/agent_activity?uuid=&since_id=",
             ],
         },
         "project": {
@@ -46,10 +49,13 @@ def project_connect_example() -> dict:
         },
         "subdomain_pattern": "{slug}.sycord.site",
         "next_steps": {
+            "save_uuid": "testproject-a1b2c3",
             "upload": "POST /sycord/api/upload",
             "preview": "POST /sycord/api/preview_start",
             "deploy": "POST /sycord/api/issue_deployment",
             "container": "GET /sycord/api/container_get?uuid=testproject-a1b2c3",
+            "agent": "POST /sycord/api/agent_change — body {\"uuid\":\"testproject-a1b2c3\",\"message\":\"…\"}",
+            "agent_stream": "GET /api/projects/testproject-a1b2c3/agent/activity/stream?live=1",
         },
     }
 
@@ -104,10 +110,41 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "2. POST /sycord/api/upload {uuid, path, file} — add or update files",
             "3. POST /sycord/api/preview_start {uuid} — fast dev preview with HMR (~5s)",
             "4. GET /sycord/api/preview_status?uuid= — poll until preview_ready=true",
-            "5. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
-            "6. GET /sycord/api/container_get?uuid= — poll until running=true",
-            "7. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
+            "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; returns request_id",
+            "6. GET /api/projects/{uuid}/agent/activity/stream?live=1 — SSE token_delta, file edits, completion",
+            "7. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
+            "8. GET /sycord/api/container_get?uuid= — poll until running=true",
+            "9. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
         ],
+        "agent_session": {
+            "description": "Continuous workspace agent (cn serve) per project. Change requests are async jobs.",
+            "status": f"{prefix}/agent_status?uuid=",
+            "submit": f"POST {prefix}/agent_change",
+            "activity_snapshot": f"GET {prefix}/agent_activity?uuid=&since_id=",
+            "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
+            "stream_formats": ["default (SSE JSON)", "format=text", "format=jsonl"],
+            "async_response": {
+                "ok": True,
+                "request_id": "req_abc123def456",
+                "status": "accepted",
+                "stream_url": "/api/projects/{uuid}/agent/activity/stream?live=1",
+            },
+            "event_types": [
+                "request_started",
+                "token_delta",
+                "message_snapshot",
+                "file_created",
+                "file_modified",
+                "file_deleted",
+                "tool_call",
+                "command_run",
+                "thinking",
+                "request_completed",
+                "request_failed",
+            ],
+            "model_profiles": ["syra-nano", "syra-base", "syra-havy"],
+            "legacy_sync": "POST agent_change with wait:true for blocking reply",
+        },
         "errors": {
             "401_missing_api_key": "Send X-API-Key or Authorization: Bearer",
             "401_invalid_api_key": "Token revoked or incorrect",
@@ -295,6 +332,79 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "path": f"{prefix}/spec.json",
                 "auth": False,
                 "summary": "This machine-readable specification",
+            },
+            {
+                "method": "GET",
+                "path": f"{prefix}/agent_status",
+                "auth": True,
+                "summary": "Continuous workspace agent status",
+                "request": {"query": {"uuid": "string (required)"}},
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "myapp-a1b2c3",
+                        "agent_status": "running",
+                        "agent_running": True,
+                        "agent_healthy": True,
+                        "agent_port": 5204,
+                        "activity_stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1",
+                    }
+                },
+            },
+            {
+                "method": "GET",
+                "path": f"{prefix}/agent_activity",
+                "auth": True,
+                "summary": "Agent activity snapshot (incremental with since_id)",
+                "request": {"query": {"uuid": "string (required)", "since_id": "integer (default 0)", "limit": "integer (default 200)"}},
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "myapp-a1b2c3",
+                        "since_id": 0,
+                        "events": [
+                            {
+                                "id": 12,
+                                "event_type": "token_delta",
+                                "role": "assistant",
+                                "detail": "Adding",
+                                "payload": {"delta": "Adding", "request_id": "req_abc123def456"},
+                            },
+                            {
+                                "id": 15,
+                                "event_type": "request_completed",
+                                "role": "assistant",
+                                "detail": "Added ThemeToggle component",
+                                "payload": {"request_id": "req_abc123def456"},
+                            },
+                        ],
+                        "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1&since_id=0",
+                    }
+                },
+            },
+            {
+                "method": "POST",
+                "path": f"{prefix}/agent_change",
+                "auth": True,
+                "summary": "Request code change — returns request_id immediately (async)",
+                "request": {
+                    "content_type": "application/json",
+                    "body": {
+                        "uuid": "string (required)",
+                        "message": "string (required)",
+                        "model_profile": "syra-nano | syra-base | syra-havy (optional)",
+                        "wait": "bool (default false) — set true for blocking legacy mode",
+                    },
+                },
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "myapp-a1b2c3",
+                        "request_id": "req_abc123def456",
+                        "status": "accepted",
+                        "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1",
+                    }
+                },
             },
         ],
     }

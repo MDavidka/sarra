@@ -77,6 +77,7 @@
         <button class="nav-cat" data-panel="container"><i data-lucide="box"></i> container_get</button>
         <button class="nav-cat" data-panel="upload"><i data-lucide="upload"></i> upload</button>
         <button class="nav-cat" data-panel="preview"><i data-lucide="monitor-play"></i> preview</button>
+        <button class="nav-cat" data-panel="agent"><i data-lucide="bot"></i> agent</button>
         <button class="nav-cat" data-panel="domain"><i data-lucide="globe"></i> domain</button>
         <button class="nav-cat" data-panel="deploy"><i data-lucide="rocket"></i> issue_deployment</button>
         <button class="nav-cat" data-panel="errors"><i data-lucide="alert-circle"></i> Errors</button>
@@ -96,6 +97,7 @@
           <tr><th>syte_url</th><td>From <code>response.project.url</code> — show this link to users when live</td></tr>
           <tr><th>deploy_status</th><td>Mirror <code>created</code> → <code>deploying</code> → <code>running</code></td></tr>
           <tr><th>preview_url</th><td>Optional cache from <code>preview_start</code> / <code>preview_status</code></td></tr>
+          <tr><th>last_agent_event_id</th><td>Optional — for SSE reconnect via <code>since_id</code></td></tr>
         </table>
 
         <div class="step-card">
@@ -158,7 +160,37 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 5 — User clicks Deploy</div>
+          <div class="step-num">Step 5 — AI code change (async)</div>
+          <p><strong>POST</strong> <code>/sycord/api/agent_change</code> · Content-Type: <code>application/json</code></p>
+          <h3>You send</h3>
+          <pre>{ "uuid": "myapp-a1b2c3", "message": "Add a dark mode toggle", "model_profile": "syra-base" }</pre>
+          <h3>Syte returns JSON immediately</h3>
+          <pre>{ "ok": true, "request_id": "req_abc123def456", "status": "accepted", "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1" }</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Open SSE on <code>stream_url</code> (append to SYTE host) before or right after POST</li>
+            <li>Append <code>token_delta</code> events to the chat UI as they arrive</li>
+            <li>On <code>request_completed</code>, enable deploy / refresh preview</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 6 — Stream agent activity (SSE)</div>
+          <p><strong>GET</strong> <code>/api/projects/myapp-a1b2c3/agent/activity/stream?live=1&amp;since_id=0</code></p>
+          <h3>You receive (SSE)</h3>
+          <pre>data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure"}}}
+data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}
+data: {"type":"ping","since_id":16}</pre>
+          <h3>Your backend does</h3>
+          <ul>
+            <li>Save <code>event.id</code> as <code>since_id</code> for reconnect</li>
+            <li>Alternative poll: <code>GET /sycord/api/agent_activity?uuid=…&amp;since_id=N</code></li>
+            <li>Optional: <code>?format=text</code> or <code>?format=jsonl</code> for CLI consumers</li>
+          </ul>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">Step 7 — User clicks Deploy</div>
           <p><strong>POST</strong> <code>/sycord/api/issue_deployment</code> · Content-Type: <code>application/json</code></p>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3" }</pre>
@@ -172,7 +204,7 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 6 — Poll until live</div>
+          <div class="step-num">Step 8 — Poll until live</div>
           <p><strong>GET</strong> <code>/sycord/api/container_get?uuid=myapp-a1b2c3</code></p>
           <h3>You send</h3>
           <p>Query param <code>uuid</code> only (no body).</p>
@@ -187,7 +219,7 @@ file=&lt;binary&gt;</pre>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 7 — Custom domain (optional)</div>
+          <div class="step-num">Step 9 — Custom domain (optional)</div>
           <p><strong>POST</strong> <code>/sycord/api/domain</code></p>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3", "domain": "shop.example.com" }</pre>
@@ -239,6 +271,8 @@ async function deployProject(syteUuid) {
           <tr><td>Upload file</td><td>POST upload</td><td>multipart uuid+path+file</td><td>—</td></tr>
           <tr><td>Dev preview</td><td>POST preview_start</td><td><code>{"uuid"}</code></td><td>preview_url</td></tr>
           <tr><td>Poll preview</td><td>GET preview_status</td><td><code>?uuid=</code></td><td>preview_url when ready</td></tr>
+          <tr><td>AI code change</td><td>POST agent_change</td><td><code>{"uuid","message"}</code></td><td>request_id + stream_url</td></tr>
+          <tr><td>Stream agent</td><td>GET …/agent/activity/stream</td><td><code>?live=1&amp;since_id=</code></td><td>token_delta, file events</td></tr>
           <tr><td>Deploy</td><td>POST issue_deployment</td><td><code>{"uuid"}</code></td><td>status=deploying</td></tr>
           <tr><td>Poll status</td><td>GET container_get</td><td><code>?uuid=</code></td><td>url when running=true</td></tr>
           <tr><td>Custom domain</td><td>POST domain</td><td><code>{"uuid","domain"}</code></td><td>project.url</td></tr>
@@ -256,6 +290,8 @@ async function deployProject(syteUuid) {
           <li><code>POST /sycord/api/upload</code> — push files (optional if using scaffold)</li>
           <li><code>POST /sycord/api/preview_start</code> — fast dev preview (next dev / vite, HMR)</li>
           <li><code>GET /sycord/api/preview_status?uuid=</code> — poll until preview ready</li>
+          <li><code>POST /sycord/api/agent_change</code> — async AI code change (returns <code>request_id</code>)</li>
+          <li><code>GET /api/projects/{uuid}/agent/activity/stream?live=1</code> — SSE live agent events</li>
           <li><code>POST /sycord/api/issue_deployment</code> — docker build + deploy</li>
           <li><code>GET /sycord/api/container_get?uuid=</code> — verify running</li>
           <li><code>POST /sycord/api/domain</code> — optional custom hostname</li>
@@ -324,6 +360,9 @@ await db.projects.update({
           <li><code>POST /sycord/api/preview_start</code> — JSON <code>{"uuid":"…"}</code></li>
           <li><code>GET /sycord/api/preview_status?uuid=</code></li>
           <li><code>POST /sycord/api/preview_stop</code> — JSON <code>{"uuid":"…"}</code></li>
+          <li><code>GET /sycord/api/agent_status?uuid=</code></li>
+          <li><code>POST /sycord/api/agent_change</code> — JSON <code>{"uuid":"…","message":"…"}</code></li>
+          <li><code>GET /sycord/api/agent_activity?uuid=&amp;since_id=</code></li>
           <li><code>POST /sycord/api/issue_deployment</code> — JSON <code>{"uuid":"…"}</code></li>
           <li><code>GET /sycord/api/container_get?uuid=</code></li>
           <li><code>POST /sycord/api/domain</code> — JSON <code>{"uuid":"…","domain":"…"}</code></li>
@@ -483,6 +522,63 @@ await db.projects.update({
           <div class="endpoint-body">
             <pre>{ "uuid": "testproject-a1b2c3" }</pre>
             <pre>{ "ok": true, "uuid": "testproject-a1b2c3", "message": "Preview stopped", "preview_running": false, "preview_status": "stopped" }</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-agent">
+        <div class="note">Continuous workspace agent per project. <code>agent_change</code> returns immediately — stream progress via SSE.</div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/agent_status?uuid=</span></div>
+            <div class="endpoint-name">Agent status</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "agent_status": "running",
+  "agent_running": true,
+  "agent_port": 5204,
+  "activity_stream_url": "/api/projects/testproject-a1b2c3/agent/activity/stream?live=1"
+}</pre>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method">POST</span><span class="path">/sycord/api/agent_change</span></div>
+            <div class="endpoint-name">Request code change (async)</div>
+          </div>
+          <div class="endpoint-body">
+            <pre>{ "uuid": "testproject-a1b2c3", "message": "Add dark mode toggle", "model_profile": "syra-base", "wait": false }</pre>
+            <pre>{
+  "ok": true,
+  "uuid": "testproject-a1b2c3",
+  "request_id": "req_abc123def456",
+  "status": "accepted",
+  "stream_url": "/api/projects/testproject-a1b2c3/agent/activity/stream?live=1",
+  "change_applied": null
+}</pre>
+            <p>Set <code>wait: true</code> only for legacy blocking mode that waits for the full reply.</p>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/agent_activity?uuid=&amp;since_id=</span></div>
+            <div class="endpoint-name">Activity snapshot</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Incremental poll alternative to SSE. Pass <code>since_id</code> from last event <code>id</code>.</p>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/api/projects/{uuid}/agent/activity/stream?live=1</span></div>
+            <div class="endpoint-name">Live activity (SSE)</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Event types: <code>request_started</code>, <code>token_delta</code>, <code>message_snapshot</code>, <code>file_*</code>, <code>tool_call</code>, <code>command_run</code>, <code>request_completed</code>, <code>request_failed</code>.</p>
+            <p>Formats: default SSE JSON · <code>?format=text</code> · <code>?format=jsonl</code> · optional <code>?api_key=</code> for browser EventSource.</p>
           </div>
         </div>
       </div>
