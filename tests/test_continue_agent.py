@@ -35,6 +35,7 @@ async def test_ensure_agent_runtime_assigns_port_and_profile(
     })
 
     project = await get_project("proj-1")
+    assert project["agent_status"] == "running"
     project = await ensure_agent_runtime(project or {})
 
     assert project["agent_port"] == settings.continue_port_start

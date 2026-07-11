@@ -1459,6 +1459,8 @@ function openService(id) {
   switchSvcTab('general');
   updateServiceSidebarNav(p);
   renderServiceDashboard(p, true);
+  // Warm the assistant while the user reviews the project overview.
+  void ensureDebugChatAgentRunning(id);
   showView('service');
 }
 

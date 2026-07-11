@@ -128,8 +128,8 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
         await db.execute(
             """INSERT INTO projects
             (id, name, git_url, branch, port, domain, start_command, env_vars,
-             deploy_type, dockerfile_path, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             deploy_type, dockerfile_path, status, agent_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["name"],
@@ -142,6 +142,7 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("deploy_type", "shell"),
                 data.get("dockerfile_path"),
                 "stopped",
+                "running",
                 now,
                 now,
             ),
