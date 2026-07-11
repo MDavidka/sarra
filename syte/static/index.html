@@ -367,9 +367,9 @@
                     <div>
                       <div class="debug-chat-title-row">
                         <h2>OpenHands workspace agent</h2>
-                        <sl-badge pill variant="primary">native stream</sl-badge>
+                        <sl-badge pill variant="success">Live actions</sl-badge>
                       </div>
-                      <p>Describe a change in plain language. OpenHands edits your project and streams each action as it happens.</p>
+                      <p>Ask for a change, review, or test. Follow every file edit, command, and response without leaving this page.</p>
                     </div>
                   </div>
                   <sl-details class="debug-chat-runtime-details" summary="OpenHands tools and streaming">
@@ -380,17 +380,25 @@
                   </sl-details>
                   <div class="debug-chat-toolbar">
                     <div class="debug-chat-toolbar-left">
-                      <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" role="status" aria-label="Activity stream disconnected"></span>
+                      <span class="debug-chat-connection" id="debug-chat-connection">
+                        <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" role="status" aria-label="Activity stream disconnected"></span>
+                        <span id="debug-chat-stream-label">Offline</span>
+                      </span>
+                      <span class="debug-chat-toolbar-divider" aria-hidden="true"></span>
                       <span class="debug-chat-status" id="debug-chat-status">Checking agent…</span>
                     </div>
                     <div class="debug-chat-toolbar-right">
+                      <sl-button type="button" id="debug-chat-reconnect" class="debug-chat-reconnect hidden" size="small" aria-label="Reconnect activity stream">
+                        <i data-lucide="wifi"></i><span>Reconnect</span>
+                      </sl-button>
+                      <span class="debug-chat-profile-label">Model</span>
                       <sl-select id="debug-chat-profile" class="debug-chat-profile" value="syra-base" size="small" aria-label="Model profile">
                         <sl-option value="syra-nano">nano</sl-option>
                         <sl-option value="syra-base">base</sl-option>
                         <sl-option value="syra-havy">havy</sl-option>
                       </sl-select>
-                      <sl-tooltip content="Clear the local transcript">
-                        <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear chat" aria-label="Clear local chat transcript">
+                      <sl-tooltip content="Clear this conversation view">
+                        <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear conversation view" aria-label="Clear local conversation view">
                           <i data-lucide="trash-2"></i>
                         </button>
                       </sl-tooltip>
@@ -401,11 +409,16 @@
                     <span class="debug-chat-activity-label">Preparing response</span>
                     <span class="debug-chat-activity-detail"></span>
                   </div>
-                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="OpenHands agent conversation" aria-relevant="additions text">
-                    <div class="debug-chat-empty" id="debug-chat-empty">
-                      <i data-lucide="sparkles"></i>
-                      <p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>
+                  <div class="debug-chat-messages-wrap">
+                    <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="OpenHands agent conversation" aria-relevant="additions text">
+                      <div class="debug-chat-empty" id="debug-chat-empty">
+                        <i data-lucide="sparkles"></i>
+                        <p>Describe the outcome you want. The agent can inspect the project, edit files, run commands, and explain what changed.</p>
+                      </div>
                     </div>
+                    <sl-button type="button" id="debug-chat-scroll-latest" class="debug-chat-scroll-latest hidden" size="small" pill aria-label="Scroll to the latest message">
+                      <i data-lucide="arrow-down"></i><span>Latest</span>
+                    </sl-button>
                   </div>
                   <div class="debug-chat-composer">
                     <sl-textarea id="debug-chat-input" class="debug-chat-input" rows="2" resize="auto" aria-label="Message to the workspace agent" placeholder="e.g. Change the hero headline to Welcome and use a blue gradient background"></sl-textarea>
@@ -418,8 +431,9 @@
                       </sl-button>
                     </div>
                   </div>
+                  <div class="debug-chat-composer-hint" id="debug-chat-draft-status">Enter to send · Shift+Enter for a new line</div>
                   <div class="debug-chat-quick-actions" aria-label="Quick prompts">
-                    <span>Try:</span>
+                    <span>Try asking:</span>
                     <sl-button type="button" size="small" data-debug-chat-prompt="Improve the website copy so it sounds clearer and more natural.">Improve copy</sl-button>
                     <sl-button type="button" size="small" data-debug-chat-prompt="Check the current layout for usability issues and fix the most important one.">Fix layout</sl-button>
                     <sl-button type="button" size="small" data-debug-chat-prompt="Run a quick check of the website and tell me what needs attention.">Run a check</sl-button>
