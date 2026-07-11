@@ -1521,7 +1521,11 @@
 data: {"type":"processing","event":{"event_type":"processing","title":"Working","detail":"Agent is processing…"}}
 
 data: {"type":"ping","since_id":16}</pre>
-              <div class="field-desc"><strong>event_type values:</strong> <code>user_message</code>, <code>assistant_message</code>, <code>thinking</code>, <code>tool_call</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>agent_started</code>, <code>agent_stopped</code></div>
+              <div class="field-desc"><strong>event_type values:</strong> <code>user_message</code>, <code>assistant_message</code>, <code>token_delta</code>, <code>message_snapshot</code>, <code>thinking</code>, <code>tool_call</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>agent_started</code>, <code>agent_stopped</code></div>
+              <div class="field-desc"><strong>Stream formats:</strong> default SSE JSON · <code>?format=text</code> plain lines · <code>?format=jsonl</code> one JSON object per line · optional <code>?types=token_delta,file_modified</code> filter</div>
+              <pre>data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure","request_id":"req_abc"}}}
+
+data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}</pre>
             </div>
           </div>
           <div class="endpoint" id="agent-test">
@@ -1572,12 +1576,13 @@ data: {"type":"ping","since_id":16}</pre>
                 <span class="method post">POST</span>
                 <span class="endpoint-path">/agent_change</span>
               </div>
-              <div class="endpoint-name">Request code change (sycord.com)</div>
+              <div class="endpoint-name">Request code change (async)</div>
             </div>
             <div class="endpoint-body">
-              <div class="note"><strong>sycord.com flow.</strong> User asks for a change on sycord.com → sycord sends UUID + model + message → Syte VM routes to matching workspace Continue CLI.</div>
-              <pre>{"uuid":"my-site-a1b2c3","model_name":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
-              <pre>{"ok":true,"change_applied":true,"reply":"..."}</pre>
+              <div class="note"><strong>Default: async.</strong> Returns <code>request_id</code> immediately. Subscribe to <code>GET /api/projects/{uuid}/agent/activity/stream?live=1</code> for <code>token_delta</code>, file edits, and <code>request_completed</code>. Same behavior on <code>POST /sycord/api/agent_change</code>.</div>
+              <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
+              <pre>{"ok":true,"request_id":"req_abc123def456","status":"accepted","stream_url":"/api/projects/my-site-a1b2c3/agent/activity/stream?live=1","change_applied":null}</pre>
+              <div class="field-desc">Legacy blocking mode: <code>POST /sycord/api/agent_change</code> with <code>{"wait":true}</code> or use <code>POST /agent_communicate</code>.</div>
             </div>
           </div>
 
@@ -1637,12 +1642,13 @@ data: {"type":"ping","since_id":16}</pre>
           <h2 class="section-title">sycord.com change request flow</h2>
           <div class="info-grid">
             <div class="info-row"><span class="info-key">1</span><span class="info-val">User edits project on sycord.com and sends a change message</span></div>
-            <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com → <code>POST /api/internal/projects/{uuid}/agent/change</code> with <code>model_name</code> + <code>message</code></span></div>
-            <div class="info-row"><span class="info-key">3</span><span class="info-val">Syte starts <code>cn serve</code> for UUID workspace if needed</span></div>
-            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte forwards message to Continue CLI — agent edits files in workspace</span></div>
-            <div class="info-row"><span class="info-key">5</span><span class="info-val">Response <code>reply</code> returned to sycord.com (provider name included in agent metadata, not echoed to end user by default)</span></div>
-            <div class="info-row"><span class="info-key">6</span><span class="info-val"><code>POST /agent_stop</code> when session ends</span></div>
+            <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com opens SSE <code>GET /api/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=N</code> (or internal route with secret)</span></div>
+            <div class="info-row"><span class="info-key">3</span><span class="info-val">sycord.com → <code>POST /sycord/api/agent_change</code> or <code>POST /api/internal/projects/{uuid}/agent/change</code> — returns <code>request_id</code> immediately</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte auto-starts <code>cn serve</code> for UUID workspace if needed</span></div>
+            <div class="info-row"><span class="info-key">5</span><span class="info-val">SSE streams <code>token_delta</code>, file edits, commands until <code>request_completed</code></span></div>
+            <div class="info-row"><span class="info-key">6</span><span class="info-val">Preview hot-reloads edited files; deploy when user is ready</span></div>
           </div>
+          <div class="note" style="margin-top:1rem"><strong>Sycord public API:</strong> <code>GET /sycord/api/agent_status</code>, <code>POST /sycord/api/agent_change</code>, <code>GET /sycord/api/agent_activity</code> — same API token as other <code>/sycord/api/*</code> routes.</div>
           <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent <code>cn serve</code> instances).</div>
         </section>
         </div>

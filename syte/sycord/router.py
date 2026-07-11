@@ -35,6 +35,14 @@ class DomainBody(BaseModel):
     domain: str = Field(..., description="Production hostname e.g. myapp.sycord.site")
 
 
+class AgentChangeBody(BaseModel):
+    uuid: str = Field(..., description="Syte project UUID from project_connect")
+    message: str = Field(..., description="User change request for the workspace agent")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_name: str | None = Field(None, description="Alias for model_profile")
+    wait: bool = Field(False, description="If true, block until agent completes (legacy sync mode)")
+
+
 def _project_record(project: dict) -> dict:
     domain = normalize_domain(project.get("domain") or "")
     return {
@@ -68,6 +76,9 @@ def _persist_block(project_id: str) -> dict:
             "POST /sycord/api/preview_start — JSON body.uuid",
             "GET /sycord/api/preview_status?uuid=",
             "POST /sycord/api/preview_stop — JSON body.uuid",
+            "GET /sycord/api/agent_status?uuid=",
+            "POST /sycord/api/agent_change — JSON body.uuid + message",
+            "GET /sycord/api/agent_activity?uuid=&since_id=",
         ],
     }
 
@@ -123,7 +134,59 @@ async def api_project_connect(
             "preview": f"POST /sycord/api/preview_start — body {{\"uuid\": \"{project_id}\"}}",
             "deploy": "POST /sycord/api/issue_deployment",
             "container": f"GET /sycord/api/container_get?uuid={project_id}",
+            "agent": f"POST /sycord/api/agent_change — body {{\"uuid\": \"{project_id}\", \"message\": \"…\"}}",
+            "agent_stream": f"GET /api/projects/{project_id}/agent/activity/stream?live=1",
         },
+    }
+
+
+@router.get("/agent_status")
+async def api_agent_status(
+    request: Request,
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Continuous workspace agent status — hot cn serve per project."""
+    base = str(request.base_url).rstrip("/")
+    payload = await service.agent_status(uuid, request_base=base)
+    if not payload:
+        _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
+@router.get("/agent_activity")
+async def api_agent_activity(
+    uuid: str = Query(..., description="Project UUID"),
+    since_id: int = Query(0, description="Last event id for incremental fetch"),
+    limit: int = Query(200, ge=1, le=2000),
+    _token: dict = Depends(verify_api_token),
+):
+    """Agent activity snapshot — use SSE stream for live token/tool/file events."""
+    payload = await service.agent_activity(uuid, since_id=since_id, limit=limit)
+    if not payload:
+        _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
+@router.post("/agent_change")
+async def api_agent_change(body: AgentChangeBody, _token: dict = Depends(verify_api_token)):
+    """
+    Request a code change via the workspace agent.
+    Returns immediately with request_id — subscribe to activity stream for live updates.
+    """
+    profile = body.model_profile or body.model_name
+    result = await service.agent_change(
+        body.uuid,
+        body.message,
+        model_profile=profile,
+        wait=body.wait,
+    )
+    if not result.get("ok"):
+        _err(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
+    return {
+        **result,
+        "uuid": body.uuid,
+        "change_applied": bool(result.get("reply")) if body.wait else None,
     }
 
 

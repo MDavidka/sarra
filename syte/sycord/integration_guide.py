@@ -32,6 +32,8 @@ def build_backend_integration(base_url: str = "") -> dict:
             _step_upload(api),
             _step_preview_start(api),
             _step_preview_poll(api),
+            _step_agent_change(api, base),
+            _step_agent_stream(api, base),
             _step_deploy(api),
             _step_container_poll(api),
             _step_domain(api),
@@ -92,6 +94,34 @@ def build_backend_integration(base_url: str = "") -> dict:
                 "you_send": '{"uuid":"<syte_uuid>"}',
                 "you_save": "clear cached preview_url",
                 "you_show_user": "preview stopped state",
+            },
+            {
+                "when": "User asks AI to edit code (async)",
+                "call": f"POST {api}/agent_change",
+                "you_send": '{"uuid":"<syte_uuid>","message":"…","model_profile":"syra-base"}',
+                "you_save": "request_id from response; track since_id for SSE reconnect",
+                "you_show_user": "streaming assistant text + file edit timeline from SSE",
+            },
+            {
+                "when": "Open live agent activity stream",
+                "call": f"GET {base}/api/projects/<uuid>/agent/activity/stream?live=1&since_id=0",
+                "you_send": "SSE — optional ?api_key= for browser clients",
+                "you_save": "last event id as since_id on reconnect",
+                "you_show_user": "token_delta streaming, file_created/modified, request_completed",
+            },
+            {
+                "when": "Poll agent activity (no SSE)",
+                "call": f"GET {api}/agent_activity?uuid=<syte_uuid>&since_id=N",
+                "you_send": "query params uuid + since_id",
+                "you_save": "max event id for next poll",
+                "you_show_user": "append new events to chat UI",
+            },
+            {
+                "when": "Check agent health before chat",
+                "call": f"GET {api}/agent_status?uuid=<syte_uuid>",
+                "you_send": "query param uuid only",
+                "you_save": "activity_stream_url from response",
+                "you_show_user": "agent running indicator",
             },
         ],
     }
@@ -322,9 +352,132 @@ def _step_preview_poll(api: str) -> dict:
     }
 
 
-def _step_deploy(api: str) -> dict:
+def _step_agent_change(api: str, base: str) -> dict:
     return {
         "step": 5,
+        "name": "Request AI code change (async)",
+        "endpoint": f"POST {api}/agent_change",
+        "when_to_call": (
+            "User sends a natural-language edit request in your Sycord app. "
+            "Returns immediately — stream progress via SSE (step 6)."
+        ),
+        "request": {
+            "method": "POST",
+            "headers": {"Content-Type": "application/json", "X-API-Key": "syte_YOUR_TOKEN"},
+            "body_json": {
+                "uuid": "myapp-a1b2c3",
+                "message": "Add a dark mode toggle to the navbar",
+                "model_profile": "syra-base",
+                "wait": False,
+            },
+            "body_fields": {
+                "uuid": {"type": "string", "required": True, "source": "your syte_uuid column"},
+                "message": {"type": "string", "required": True, "description": "User change request"},
+                "model_profile": {
+                    "type": "string",
+                    "required": False,
+                    "enum": ["syra-nano", "syra-base", "syra-havy"],
+                },
+                "wait": {
+                    "type": "boolean",
+                    "required": False,
+                    "default": False,
+                    "description": "Set true only for legacy blocking mode",
+                },
+            },
+        },
+        "response": {
+            "content_type": "application/json",
+            "example": {
+                "ok": True,
+                "uuid": "myapp-a1b2c3",
+                "request_id": "req_abc123def456",
+                "status": "accepted",
+                "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1",
+                "change_applied": None,
+            },
+            "fields_to_use": {
+                "request_id": "Track this job in your UI",
+                "stream_url": "Append to SYTE_URL — open EventSource for live updates",
+                "status": "accepted — job queued; completion arrives on SSE",
+            },
+        },
+        "backend_pseudocode": (
+            "const res = await postJson('/sycord/api/agent_change', {\n"
+            "  uuid: project.syte_uuid,\n"
+            "  message: userMessage,\n"
+            "  model_profile: 'syra-base',\n"
+            "});\n"
+            "openAgentStream(project.syte_uuid, res.request_id, lastEventId);"
+        ),
+    }
+
+
+def _step_agent_stream(api: str, base: str) -> dict:
+    stream = f"{base}/api/projects/{{uuid}}/agent/activity/stream?live=1&since_id=0"
+    return {
+        "step": 6,
+        "name": "Stream agent activity (SSE)",
+        "endpoint": stream,
+        "when_to_call": (
+            "Open before or right after agent_change. Reconnect with since_id=last event id. "
+            "Alternative: poll GET /sycord/api/agent_activity."
+        ),
+        "request": {
+            "method": "GET",
+            "headers": {"Accept": "text/event-stream"},
+            "query": {
+                "live": "1",
+                "since_id": "0 — last event id for reconnect",
+                "format": "optional — text | jsonl (default SSE JSON)",
+                "api_key": "optional query param for browser EventSource",
+            },
+        },
+        "response": {
+            "content_type": "text/event-stream",
+            "sse_examples": [
+                'data: {"type":"activity","event":{"id":10,"event_type":"request_started","detail":"Add dark mode"}}',
+                'data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure"}}}',
+                'data: {"type":"activity","event":{"id":14,"event_type":"file_modified","detail":"app/components/ThemeToggle.tsx"}}',
+                'data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}',
+                'data: {"type":"ping","since_id":16}',
+            ],
+            "event_types": [
+                "request_started",
+                "token_delta",
+                "message_snapshot",
+                "file_created",
+                "file_modified",
+                "file_deleted",
+                "tool_call",
+                "command_run",
+                "thinking",
+                "request_completed",
+                "request_failed",
+            ],
+            "fields_to_use": {
+                "event.id": "Save as since_id for reconnect / agent_activity poll",
+                "token_delta.payload.delta": "Append to streaming assistant bubble",
+                "request_completed.detail": "Final assistant message when job done",
+            },
+        },
+        "backend_pseudocode": (
+            "const es = new EventSource(\n"
+            "  SYTE + '/api/projects/' + uuid + '/agent/activity/stream?live=1&since_id=' + sinceId\n"
+            "    + '&api_key=' + encodeURIComponent(SYTE_API_KEY)\n"
+            ");\n"
+            "es.onmessage = (e) => {\n"
+            "  const msg = JSON.parse(e.data);\n"
+            "  if (msg.type === 'activity') handleAgentEvent(msg.event);\n"
+            "  if (msg.type === 'ping') sinceId = msg.since_id;\n"
+            "};"
+        ),
+    }
+
+
+def _step_deploy(api: str) -> dict:
+    return {
+        "step": 7,
         "name": "Start deployment",
         "endpoint": f"POST {api}/issue_deployment",
         "when_to_call": "User clicks Deploy in your app, or after file uploads are complete.",
@@ -360,7 +513,7 @@ def _step_deploy(api: str) -> dict:
 
 def _step_container_poll(api: str) -> dict:
     return {
-        "step": 6,
+        "step": 8,
         "name": "Poll container status",
         "endpoint": f"GET {api}/container_get?uuid=<syte_uuid>",
         "when_to_call": "Every 3–5 seconds after issue_deployment until running=true or failed.",
@@ -402,7 +555,7 @@ def _step_container_poll(api: str) -> dict:
 
 def _step_domain(api: str) -> dict:
     return {
-        "step": 7,
+        "step": 9,
         "name": "Custom domain (optional)",
         "endpoint": f"POST {api}/domain",
         "when_to_call": "User configures a custom hostname instead of the auto subdomain.",
