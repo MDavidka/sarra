@@ -1,14 +1,11 @@
 """Tests for AI agent debug diagnostics."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from syte.agent_debug import (
-    inspect_agent_config,
-    mask_api_key,
-    probe_profile_provider,
-)
+from syte.agent_debug import inspect_agent_config, mask_api_key, probe_profile_provider
 
 
 def test_mask_api_key() -> None:
@@ -17,43 +14,41 @@ def test_mask_api_key() -> None:
     assert mask_api_key("sk-abcdefghijklmnop") == "sk-a…mnop"
 
 
-def test_inspect_agent_config_detects_broken_secret_refs(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        'models:\n  - name: "syra-base"\n    apiKey: "${ secrets.SYRA_BASE_API_KEY }"\n'
-    )
+def test_inspect_agent_config_detects_invalid_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "agent_server_config.json"
+    config.write_text("{ not-json")
+    monkeypatch.setattr("syte.openhands_agent.agent_config_path", lambda _id: config)
 
-    from syte import continue_agent
-
-    original = continue_agent.agent_config_path
-    continue_agent.agent_config_path = lambda _id: config
-    try:
-        info = inspect_agent_config("proj-x")
-    finally:
-        continue_agent.agent_config_path = original
+    info = inspect_agent_config("proj-x")
 
     assert info["exists"] is True
-    assert info["secret_syntax_ok"] is False
-    assert "SYRA_BASE_API_KEY" in info["broken_secret_refs"]
+    assert info["session_key_configured"] is False
+    assert "Invalid OpenHands" in info["snippet"]
 
 
-def test_inspect_agent_config_accepts_valid_secret_refs(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        'models:\n  - name: "syra-base"\n    apiKey: "${{ secrets.SYRA_BASE_API_KEY }}"\n'
-    )
+def test_inspect_agent_config_redacts_private_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "agent_server_config.json"
+    config.write_text(json.dumps({
+        "session_api_keys": ["session-secret"],
+        "secret_key": "encryption-secret",
+        "conversations_path": "/tmp/conversations",
+    }))
+    monkeypatch.setattr("syte.openhands_agent.agent_config_path", lambda _id: config)
 
-    from syte import continue_agent
+    info = inspect_agent_config("proj-x")
 
-    original = continue_agent.agent_config_path
-    continue_agent.agent_config_path = lambda _id: config
-    try:
-        info = inspect_agent_config("proj-x")
-    finally:
-        continue_agent.agent_config_path = original
-
-    assert info["secret_syntax_ok"] is True
-    assert info["valid_secret_refs"] == ["SYRA_BASE_API_KEY"]
+    assert info["session_key_configured"] is True
+    assert info["runtime"] == "openhands"
+    assert info["conversations_path"] == "/tmp/conversations"
+    assert "session-secret" not in info["snippet"]
+    assert "encryption-secret" not in info["snippet"]
+    assert "<redacted>" in info["snippet"]
 
 
 @pytest.mark.asyncio

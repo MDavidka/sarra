@@ -1768,6 +1768,53 @@ code {
   min-height: 420px;
 }
 
+.debug-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.debug-chat-title-row h2 { margin: 0; }
+
+.debug-chat-title-row sl-badge {
+  --sl-color-primary-600: #2563eb;
+  --sl-color-primary-100: #dbeafe;
+  font-size: 0.68rem;
+}
+
+.debug-chat-runtime-details::part(base) {
+  border: 1px solid #dbeafe;
+  border-radius: var(--radius-sm);
+  background: #f8fbff;
+  color: #1e3a8a;
+  font-size: 0.76rem;
+}
+
+.debug-chat-runtime-details::part(summary) {
+  padding: 0.45rem 0.6rem;
+  font-weight: 600;
+}
+
+.debug-chat-runtime-details::part(content) {
+  padding: 0 0.6rem 0.55rem;
+}
+
+.debug-chat-runtime-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: #475569;
+}
+
+.debug-chat-runtime-detail svg {
+  width: 14px;
+  height: 14px;
+  color: #2563eb;
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
 .debug-chat-access-details {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1867,7 +1914,12 @@ code {
 .debug-chat-profile {
   min-width: 5.5rem;
   font-size: 0.78rem;
-  padding: 0.35rem 0.5rem;
+  --sl-input-height-small: 30px;
+  --sl-input-font-size-small: 0.78rem;
+  --sl-input-border-color: var(--border);
+  --sl-input-border-color-hover: #93c5fd;
+  --sl-input-border-color-focus: #2563eb;
+  --sl-input-border-radius-medium: var(--radius-sm);
 }
 
 .debug-chat-activity {
@@ -2131,6 +2183,13 @@ code {
   padding: 0.55rem;
 }
 
+.debug-chat-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 .debug-chat-quick-actions {
   display: flex;
   align-items: center;
@@ -2140,18 +2199,20 @@ code {
   font-size: 0.72rem;
 }
 
-.debug-chat-quick-actions button {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.25rem 0.55rem;
-  background: #fff;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+.debug-chat-quick-actions sl-button {
+  --sl-input-height-small: 27px;
+  --sl-font-size-small: 0.72rem;
+  --sl-color-neutral-0: #fff;
+  --sl-color-neutral-600: var(--text-muted);
+  --sl-color-neutral-300: var(--border);
+  --sl-color-primary-600: #1d4ed8;
 }
 
-.debug-chat-quick-actions button:hover {
+.debug-chat-quick-actions sl-button::part(base) {
+  border-radius: 999px;
+}
+
+.debug-chat-quick-actions sl-button::part(base):hover {
   border-color: #93c5fd;
   background: #eff6ff;
   color: #1d4ed8;
@@ -2164,26 +2225,45 @@ code {
 
 .debug-chat-input {
   flex: 1;
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font);
-  font-size: 0.84rem;
-  line-height: 1.45;
-  color: var(--text);
-  background: transparent;
-  min-height: 2.5rem;
-  max-height: 120px;
+  min-width: 0;
+  --sl-input-border-width: 0;
+  --sl-input-border-color: transparent;
+  --sl-input-border-color-hover: transparent;
+  --sl-input-border-color-focus: transparent;
+  --sl-input-focus-ring-width: 0;
+  --sl-input-font-family: var(--font);
+  --sl-input-font-size-medium: 0.84rem;
+  --sl-input-color: var(--text);
+  --sl-input-background-color: transparent;
+  --sl-input-spacing-medium: 0.2rem;
+  --sl-input-spacing-small: 0.2rem;
 }
 
 .debug-chat-send {
   flex-shrink: 0;
-  min-height: 36px;
+  --sl-input-height-small: 36px;
+  --sl-color-primary-600: #18181b;
+  --sl-color-primary-500: #27272a;
+  --sl-color-primary-700: #09090b;
 }
 
-.debug-chat-send:disabled {
+.debug-chat-send::part(base) {
+  border-radius: 999px;
+}
+
+.debug-chat-send[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.debug-chat-cancel {
+  --sl-input-height-small: 36px;
+  --sl-color-neutral-600: #52525b;
+  --sl-color-neutral-300: #d4d4d8;
+}
+
+.debug-chat-cancel::part(base) {
+  border-radius: 999px;
 }
 
 .svc-block-title {
@@ -3052,7 +3132,14 @@ body.ai-settings-open { overflow: hidden; }
     flex-direction: column;
   }
 
-  .debug-chat-send {
+  .debug-chat-composer-actions {
+    width: 100%;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .debug-chat-send,
+  .debug-chat-cancel {
     width: 100%;
   }
 }

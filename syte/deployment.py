@@ -247,7 +247,7 @@ async def create_project_record(
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
-    from syte.continue_agent import ensure_agent_runtime
+    from syte.openhands_agent import ensure_agent_runtime
     from syte.certificates import apply_proxy_config
     from syte.preview_manager import ensure_preview_address
 

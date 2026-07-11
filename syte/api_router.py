@@ -6,10 +6,11 @@ from pydantic import BaseModel, Field
 from syte import deployment, process_manager
 from syte.api_responses import build_create_project_response
 from syte.auth import verify_api_token
-from syte.continue_agent import (
+from syte.openhands_agent import (
     communicate_with_agent,
     get_agent_logs,
     get_agent_status,
+    interrupt_agent,
     restart_agent,
     start_agent,
     stop_agent,
@@ -327,6 +328,18 @@ async def api_agent_stop(body: UuidRequest, request: Request, _token: dict = Dep
     ok, message = await stop_agent(body.uuid)
     meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
     return {"ok": ok, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_interrupt")
+async def api_agent_interrupt(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok, message = await interrupt_agent(body.uuid)
+    if not ok:
+        _http_error(400, "agent_interrupt_failed", message)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": True, "uuid": body.uuid, "message": message, **meta}
 
 
 @router.post("/agent_restart")
