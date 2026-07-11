@@ -130,6 +130,24 @@ def test_extract_message_and_state_events() -> None:
     assert state_events[0]["payload"]["execution_status"] == "running"
 
 
+def test_extract_server_error_event_finishes_request() -> None:
+    events = extract_events_from_openhands_event(
+        {
+            "kind": "ServerErrorEvent",
+            "id": "evt-error",
+            "code": "invalid_event",
+            "message": "The OpenHands event payload was rejected",
+        },
+        request_id="req-error",
+    )
+
+    assert len(events) == 1
+    assert events[0]["event_type"] == "request_failed"
+    assert events[0]["detail"] == "The OpenHands event payload was rejected"
+    assert events[0]["payload"]["request_id"] == "req-error"
+    assert events[0]["payload"]["error"] == "openhands_server_error"
+
+
 @pytest.mark.asyncio
 async def test_record_and_list_events(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import agent_activity

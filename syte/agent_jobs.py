@@ -108,3 +108,24 @@ async def _run_job(
                 source=source,
             )
             raise
+        except Exception as exc:
+            error = str(exc) or "Agent request failed"
+            await record_agent_event(
+                project_id,
+                "request_failed",
+                title="Request failed",
+                detail=error[:4000],
+                payload={
+                    "request_id": request_id,
+                    "error": "agent_job_failed",
+                    "message": error,
+                    "retry_message": message[:4000],
+                },
+                source=source,
+            )
+            return {
+                "ok": False,
+                "request_id": request_id,
+                "error": "agent_job_failed",
+                "message": error,
+            }

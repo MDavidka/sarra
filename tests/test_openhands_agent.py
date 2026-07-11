@@ -249,6 +249,7 @@ async def test_communicate_with_agent_requires_api_key(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from syte.agent_activity import list_agent_events
     from syte.database import create_project, init_db, update_project
     from syte.openhands_agent import communicate_with_agent
 
@@ -267,6 +268,57 @@ async def test_communicate_with_agent_requires_api_key(
     assert result["ok"] is False
     assert result["error"] == "api_key_missing"
     assert "API key" in result["message"]
+    failures = [
+        event
+        for event in await list_agent_events("proj-chat")
+        if event["event_type"] == "request_failed"
+    ]
+    assert len(failures) == 1
+    assert failures[0]["payload"]["error"] == "api_key_missing"
+    assert failures[0]["payload"]["retry_message"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_background_failure_emits_request_scoped_terminal_event(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.agent_activity import list_agent_events
+    from syte.agent_jobs import _running
+    from syte.database import create_project, init_db, update_project
+    from syte.openhands_agent import communicate_with_agent
+
+    await init_db()
+    await create_project({
+        "id": "proj-background-chat",
+        "name": "Background Chat",
+        "port": 3011,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-background-chat",
+        {"agent_model_profile": "syra-base"},
+    )
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+
+    accepted = await communicate_with_agent(
+        "proj-background-chat",
+        "fix the headline",
+        source="gui",
+        background=True,
+    )
+    await _running["proj-background-chat"]
+
+    failures = [
+        event
+        for event in await list_agent_events("proj-background-chat")
+        if event["event_type"] == "request_failed"
+    ]
+    assert accepted["status"] == "accepted"
+    assert len(failures) == 1
+    assert failures[0]["payload"]["request_id"] == accepted["request_id"]
+    assert failures[0]["payload"]["error"] == "api_key_missing"
+    assert failures[0]["payload"]["retry_message"] == "fix the headline"
 
 
 @pytest.mark.asyncio

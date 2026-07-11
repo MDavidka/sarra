@@ -468,14 +468,25 @@ def extract_events_from_openhands_event(
             "source": source,
         }]
 
-    if kind_lower == "conversationerrorevent":
-        detail = str(event.get("detail") or event.get("code") or "OpenHands conversation failed")
+    if kind_lower in {"conversationerrorevent", "servererrorevent"}:
+        detail = str(
+            event.get("detail")
+            or event.get("message")
+            or event.get("error")
+            or event.get("code")
+            or "OpenHands conversation failed"
+        )
         return [{
             "event_type": "request_failed",
             "role": "system",
             "title": "OpenHands error",
             "detail": detail[:4000],
-            "payload": {**common, "error": detail, "code": event.get("code") or ""},
+            "payload": {
+                **common,
+                "error": "openhands_server_error",
+                "message": detail,
+                "code": event.get("code") or "",
+            },
             "source": source,
         }]
 

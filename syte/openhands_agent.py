@@ -950,16 +950,26 @@ async def _stream_conversation_turn(
                 text = _message_event_text(event)
                 if text:
                     final_reply = text
-                if kind == "conversationerrorevent":
-                    failure = str(event.get("detail") or event.get("code") or "")
+                if kind in {"conversationerrorevent", "servererrorevent"}:
+                    failure = str(
+                        event.get("detail")
+                        or event.get("message")
+                        or event.get("error")
+                        or event.get("code")
+                        or "OpenHands could not process the request"
+                    )
 
-                await ingest_openhands_event(
-                    project_id,
-                    event,
-                    source=source,
-                    request_id=request_id,
-                    token_snapshot=token_snapshot,
-                )
+                # The turn coordinator emits one request_failed event with a
+                # stable request id below. Avoid persisting the native error as
+                # a second terminal event for the same turn.
+                if kind not in {"conversationerrorevent", "servererrorevent"}:
+                    await ingest_openhands_event(
+                        project_id,
+                        event,
+                        source=source,
+                        request_id=request_id,
+                        token_snapshot=token_snapshot,
+                    )
 
                 state = _state_update_status(event)
                 if state == "running":
@@ -1070,12 +1080,23 @@ async def communicate_with_agent(
         await record_agent_event(
             project_id,
             "request_failed",
-            title="Failed",
+            title="Request failed",
             detail=error[:4000],
-            payload={"error": error},
+            payload={
+                "error": "agent_communicate_failed",
+                "message": error,
+                "request_id": "",
+                "retry_message": message.strip()[:4000],
+                "runtime": OPENHANDS_RUNTIME,
+            },
             source=source,
         )
-        return {"ok": False, "error": "agent_communicate_failed", "message": error}
+        return {
+            "ok": False,
+            "error": "agent_communicate_failed",
+            "message": error,
+            "request_id": None,
+        }
 
 
 async def _communicate_with_agent_impl(
@@ -1091,12 +1112,55 @@ async def _communicate_with_agent_impl(
     from syte.agent_activity import record_agent_event
     from syte.agent_metrics import log_agent_request
 
+    message = message.strip()
+
+    async def fail(
+        error_code: str,
+        text: str,
+        *,
+        log_request: bool = False,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Finish every failed turn with one request-scoped activity event."""
+        error_text = str(text or "Agent request failed")
+        if log_request:
+            await log_agent_request(
+                project_id,
+                source=source,
+                model_profile=model_profile,
+                message=message,
+                status="error",
+                error=error_text,
+            )
+        event_payload = {
+            "error": error_code,
+            "message": error_text,
+            "request_id": request_id or "",
+            "retry_message": message[:4000],
+            "runtime": OPENHANDS_RUNTIME,
+            **(payload or {}),
+        }
+        await record_agent_event(
+            project_id,
+            "request_failed",
+            title="Request failed",
+            detail=error_text[:4000],
+            payload=event_payload,
+            source=source,
+        )
+        return {
+            "ok": False,
+            "error": error_code,
+            "message": error_text,
+            "request_id": request_id,
+            **(payload or {}),
+        }
+
     project = await get_project(project_id)
     if not project:
-        return {"ok": False, "error": "not_found", "message": "Project not found"}
-    message = message.strip()
+        return await fail("not_found", "Project not found")
     if not message:
-        return {"ok": False, "error": "invalid_message", "message": "Message cannot be empty"}
+        return await fail("invalid_message", "Message cannot be empty")
 
     if emit_request_started:
         await record_agent_event(
@@ -1119,13 +1183,13 @@ async def _communicate_with_agent_impl(
             "OpenHands Agent Server is not installed. "
             "Install the project's Python dependencies to add it."
         )
-        return {"ok": False, "error": "agent_server_not_installed", "message": text}
+        return await fail("agent_server_not_installed", text)
 
     if model_profile:
         try:
             await update_agent_settings(project_id, model_profile=model_profile)
         except ValueError as exc:
-            return {"ok": False, "error": "invalid_model_profile", "message": str(exc)}
+            return await fail("invalid_model_profile", str(exc))
         project = await get_project(project_id) or project
 
     project = await ensure_agent_runtime(project)
@@ -1134,57 +1198,41 @@ async def _communicate_with_agent_impl(
     except Exception as exc:
         text = str(exc)
         await update_project(project_id, {"agent_status": "error", "agent_last_error": text})
-        return {"ok": False, "error": "api_key_missing", "message": text}
+        return await fail("api_key_missing", text)
 
     status = await get_agent_status(project_id)
     if not status.get("agent_running") or not status.get("agent_healthy"):
         if not auto_start:
             error = "OpenHands agent is not running"
-            await log_agent_request(
-                project_id,
-                source=source,
-                model_profile=model_profile,
-                message=message,
-                status="error",
-                error=error,
+            return await fail(
+                "agent_not_running",
+                error,
+                log_request=True,
             )
-            return {"ok": False, "error": "agent_not_running", "message": error}
         ok, start_message, status = await start_agent(project_id)
         if not ok:
-            await log_agent_request(
-                project_id,
-                source=source,
-                model_profile=model_profile,
-                message=message,
-                status="error",
-                error=start_message,
+            return await fail(
+                "agent_start_failed",
+                start_message,
+                log_request=True,
             )
-            return {"ok": False, "error": "agent_start_failed", "message": start_message}
 
     port = status.get("agent_port")
     if not port:
         error = "Agent has no allocated port"
-        await log_agent_request(
-            project_id,
-            source=source,
-            model_profile=model_profile,
-            message=message,
-            status="error",
-            error=error,
+        return await fail(
+            "agent_no_port",
+            error,
+            log_request=True,
         )
-        return {"ok": False, "error": "agent_no_port", "message": error}
     ready, ready_message = await wait_for_agent_ready(int(port))
     if not ready:
         error = ready_message or "OpenHands agent is not ready"
-        await log_agent_request(
-            project_id,
-            source=source,
-            model_profile=model_profile,
-            message=message,
-            status="error",
-            error=error,
+        return await fail(
+            "agent_not_ready",
+            error,
+            log_request=True,
         )
-        return {"ok": False, "error": "agent_not_ready", "message": error}
 
     model = status.get("agent_model") or {}
     try:
@@ -1209,34 +1257,20 @@ async def _communicate_with_agent_impl(
             source=source,
         )
         if failure:
-            await log_agent_request(
-                project_id,
-                source=source,
-                model_profile=model.get("profile"),
-                message=message,
-                status="error",
-                error=failure,
+            error_code = (
+                "agent_interrupted"
+                if execution_status == "paused"
+                else "agent_runtime_error"
             )
-            await record_agent_event(
-                project_id,
-                "request_failed",
-                title="Failed",
-                detail=failure[:4000],
+            return await fail(
+                error_code,
+                failure,
+                log_request=True,
                 payload={
-                    "error": failure,
-                    "request_id": request_id or "",
                     "conversation_id": conversation_id,
                     "execution_status": execution_status,
                 },
-                source=source,
             )
-            return {
-                "ok": False,
-                "error": "agent_interrupted" if execution_status == "paused" else "agent_runtime_error",
-                "message": failure,
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-            }
 
         if reply:
             await record_agent_event(
@@ -1295,23 +1329,12 @@ async def _communicate_with_agent_impl(
     except Exception as exc:
         error = str(exc) or "OpenHands agent request failed"
 
-    await log_agent_request(
-        project_id,
-        source=source,
-        model_profile=model.get("profile"),
-        message=message,
-        status="error",
-        error=error,
+    return await fail(
+        "agent_communicate_failed",
+        error,
+        log_request=True,
+        payload={"model_profile": model.get("profile")},
     )
-    await record_agent_event(
-        project_id,
-        "request_failed",
-        title="Failed",
-        detail=error[:4000],
-        payload={"error": error, "request_id": request_id or ""},
-        source=source,
-    )
-    return {"ok": False, "error": "agent_communicate_failed", "message": error}
 
 
 async def test_agent(
