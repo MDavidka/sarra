@@ -4,8 +4,6 @@ import json
 
 import pytest
 
-from syte.log_stream import _tagged_activity_event, stream_agent_activity_tagged
-
 
 def _parse_tagged(record: str) -> tuple[str, dict]:
     tag, encoded = record.split("]<", 1)
@@ -42,6 +40,8 @@ def test_tagged_activity_event_vocabulary(
     payload: dict,
     expected_tag: str,
 ) -> None:
+    from syte.log_stream import _tagged_activity_event
+
     record = _tagged_activity_event({
         "id": 42,
         "event_type": event_type,
@@ -67,6 +67,8 @@ def test_tagged_activity_event_vocabulary(
 async def test_tagged_activity_stream_is_valid_sse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from syte.log_stream import stream_agent_activity_tagged
+
     async def fake_stream(*args, **kwargs):
         yield 'data: {"type":"session","text":"Live agent activity stream"}\n\n'
         yield (
@@ -95,6 +97,8 @@ async def test_tagged_activity_stream_is_valid_sse(
 async def test_tagged_activity_stream_applies_type_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from syte.log_stream import stream_agent_activity_tagged
+
     async def fake_stream(*args, **kwargs):
         yield (
             'data: {"type":"activity","event":{"id":1,'
