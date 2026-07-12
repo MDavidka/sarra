@@ -1703,10 +1703,21 @@ code {
 
 .svc-quick-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.35rem;
 }
+
+.svc-control-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.svc-control-hint svg { width: 12px; height: 12px; }
 
 .svc-action-btn {
   font-family: var(--font);
@@ -1733,6 +1744,26 @@ code {
 }
 
 .svc-action-deploy:hover { opacity: 0.92; }
+
+.svc-action-production {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  text-decoration: none;
+}
+
+.svc-action-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.svc-action-link {
+  grid-column: 1 / -1;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
 
 .svc-action-secondary {
   background: #fff;
@@ -2314,6 +2345,17 @@ code {
   align-items: center;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+
+.debug-chat-sync {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.debug-chat-sync:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .debug-chat-composer-hint {
@@ -3127,6 +3169,7 @@ code {
   .svc-section { padding: 1rem; }
 
   .svc-info-grid { grid-template-columns: 1fr; }
+  .svc-quick-actions { grid-template-columns: 1fr 1fr; }
 
   .svc-actions .btn-pill {
     flex: 1;
