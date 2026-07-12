@@ -1002,7 +1002,13 @@ async def _ensure_conversation(
                     {"name": "file_editor"},
                     {"name": "task_tracker"},
                 ],
-                "mcp_config": mcp_server_config(project_id, agent_root(project_id)),
+                # Agent.mcp_config is a direct server-name mapping. The
+                # mcp_server_config helper returns the standalone MCP JSON
+                # format, which intentionally wraps that mapping in
+                # ``mcpServers``.
+                "mcp_config": mcp_server_config(
+                    project_id, agent_root(project_id)
+                )["mcpServers"],
                 "agent_context": {
                     "system_message_suffix": instruction,
                     "load_project_skills": True,

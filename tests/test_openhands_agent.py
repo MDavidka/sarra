@@ -299,6 +299,10 @@ async def test_create_conversation_uses_supported_agent_context(
     assert "think before acting" in (
         request.agent.agent_context.system_message_suffix or ""
     )
+    assert "mcpServers" not in FakeClient.payload["agent"]["mcp_config"]
+    assert FakeClient.payload["agent"]["mcp_config"]["syte-tools"]["command"].endswith(
+        "/agent/bin/syte-mcp"
+    )
 
 
 @pytest.mark.asyncio
