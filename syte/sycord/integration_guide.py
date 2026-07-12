@@ -420,7 +420,8 @@ def _step_agent_stream(api: str, base: str) -> dict:
         "name": "Stream agent activity (SSE)",
         "endpoint": stream,
         "when_to_call": (
-            "Open before or right after agent_change. Reconnect with since_id=last event id. "
+            "Prewarm with POST /api/agent_warm when the user opens the project. "
+            "Open this stream before or right after agent_change. Reconnect with since_id=last event id. "
             "Alternative: poll GET /sycord/api/agent_activity."
         ),
         "request": {
@@ -429,7 +430,7 @@ def _step_agent_stream(api: str, base: str) -> dict:
             "query": {
                 "live": "1",
                 "since_id": "0 — last event id for reconnect",
-                "format": "optional — text | jsonl (default SSE JSON)",
+                "format": "optional — tagged | text | jsonl (default SSE JSON)",
                 "api_key": "optional query param for browser EventSource",
             },
         },
@@ -441,6 +442,17 @@ def _step_agent_stream(api: str, base: str) -> dict:
                 'data: {"type":"activity","event":{"id":14,"event_type":"file_modified","detail":"app/components/ThemeToggle.tsx"}}',
                 'data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}',
                 'data: {"type":"ping","since_id":16}',
+            ],
+            "tagged_sse_endpoint": (
+                f"{stream}&format=tagged"
+            ),
+            "tagged_sse_examples": [
+                'data: [start]<{"id":10,"request_id":"req_abc","type":"request_started","text":"Add dark mode"}>',
+                'data: [think]<{"id":11,"request_id":"req_abc","type":"thinking","text":"Inspect theme"}>',
+                'data: [tool:start]<{"id":12,"request_id":"req_abc","type":"file_read","phase":"started","text":"src/theme.ts"}>',
+                'data: [tool:result]<{"id":13,"request_id":"req_abc","type":"tool_call_finished","phase":"finished","text":"Read complete"}>',
+                'data: [delta]<{"id":14,"request_id":"req_abc","type":"token_delta","text":"Done"}>',
+                'data: [done]<{"id":16,"request_id":"req_abc","type":"request_completed","text":"Added ThemeToggle"}>',
             ],
             "event_types": [
                 "request_started",
@@ -457,6 +469,9 @@ def _step_agent_stream(api: str, base: str) -> dict:
             ],
             "fields_to_use": {
                 "event.id": "Save as since_id for reconnect / agent_activity poll",
+                "event.payload.request_id": "Correlate all activity with the accepted request",
+                "thinking.detail": "Display the agent plan before tool actions",
+                "tool payload.phase": "started or finished; correlate with tool_call_id",
                 "token_delta.payload.delta": "Append to streaming assistant bubble",
                 "request_completed.detail": "Final assistant message when job done",
             },

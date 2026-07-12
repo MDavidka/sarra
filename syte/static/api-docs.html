@@ -1352,11 +1352,28 @@
   "uuid": "my-site-a1b2c3",
   "agent_status": "running",
   "agent_running": true,
+  "agent_warming": false,
   "agent_port": 5201,
   "agent_proxy_url": "https://your-syte-host.com/api/internal/projects/my-site-a1b2c3/agent/proxy",
   "agent_model_profile": "syra-base",
   "agent_backend": { "ok": true, "profile": "syra-base", "url": "https://api.deepseek.com/v1/models" }
 }</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-warm">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_warm</span>
+              </div>
+              <div class="endpoint-name">Warm agent in background</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>Recommended for instant chat.</strong> Call when a user opens a project or chat. It returns immediately while OpenHands starts in the background. Once warm, the supervisor keeps that project runtime alive continuously and restarts it after a crash or Syte restart.</div>
+              <pre>{"uuid":"my-site-a1b2c3"}</pre>
+              <pre>{"ok":true,"uuid":"my-site-a1b2c3","status":"warming","already_warming":false}</pre>
+              <div class="field-desc">Poll <code>GET /agent_status?uuid=...</code> until <code>agent_status="running"</code> and <code>agent_healthy=true</code>, or listen for <code>agent_started</code> on the activity stream. Repeated warm calls are deduplicated.</div>
             </div>
           </div>
 
@@ -1373,7 +1390,7 @@
                 <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Starts OpenHands Agent Server in the project workspace if not already running.</div>
+                  <div class="field-desc">Starts OpenHands Agent Server and waits for readiness. For non-blocking preconnection use <code>/agent_warm</code>.</div>
                 </div>
               </div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
@@ -1515,17 +1532,48 @@
               <div class="endpoint-name">Agent activity (SSE stream)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Server-Sent Events — replays history then streams new activity in real time. Optional <code>api_key</code> query param.</div>
-              <pre>data: {"type":"activity","event":{"id":16,"event_type":"command_run","title":"Ran command","detail":"npm run lint"}}
+              <div class="field-desc">Server-Sent Events — replays up to 500 persisted events after <code>since_id</code>, then streams live activity. Save each <code>event.id</code> and reconnect with it to recover without gaps. Optional <code>api_key</code> query parameter for browser <code>EventSource</code>.</div>
+              <div class="field-desc"><strong>Query parameters:</strong> <code>live=1</code> emits a session marker and stays connected · <code>since_id=N</code> resumes after event N · <code>format=sse|tagged|text|jsonl</code> chooses the encoding · <code>types=thinking,command_run</code> filters formatted/tagged output.</div>
+              <pre>data: {"type":"session","text":"Live agent activity stream"}
 
-data: {"type":"processing","event":{"event_type":"processing","title":"Working","detail":"Agent is processing…"}}
+data: {"type":"activity","event":{"id":16,"event_type":"processing","title":"OpenHands working","detail":"Agent is processing…","payload":{"request_id":"req_abc","execution_status":"running"}}}
 
 data: {"type":"ping","since_id":16}</pre>
-              <div class="field-desc"><strong>event_type values:</strong> <code>user_message</code>, <code>assistant_message</code>, <code>token_delta</code>, <code>message_snapshot</code>, <code>thinking</code>, <code>tool_call</code>, <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>request_started</code>, <code>request_completed</code>, <code>request_failed</code>, <code>agent_started</code>, <code>agent_stopped</code></div>
-              <div class="field-desc"><strong>Stream formats:</strong> default SSE JSON · <code>?format=text</code> plain lines · <code>?format=jsonl</code> one JSON object per line · optional <code>?types=token_delta,file_modified</code> filter</div>
+              <div class="field-desc"><strong>Lifecycle order:</strong> <code>request_started</code> → <code>processing</code> / <code>thinking</code> → zero or more tool and <code>token_delta</code> events → <code>message_snapshot</code> → exactly one <code>request_completed</code> or <code>request_failed</code>. Correlate every turn with <code>event.payload.request_id</code>.</div>
+              <div class="field-desc"><strong>Tool events:</strong> <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>file_read</code>, <code>file_search</code>, <code>tool_call</code>, and <code>service_action</code> have <code>payload.phase="started"</code>. <code>command_output</code> and <code>tool_call_finished</code> have <code>payload.phase="finished"</code>, <code>tool_call_id</code>, and optional <code>is_error</code>.</div>
+              <div class="field-desc"><strong>Stream formats:</strong> default JSON SSE · <code>?format=tagged</code> parseable tagged SSE · <code>?format=text</code> plain text for <code>fetch</code>/curl (not EventSource) · <code>?format=jsonl</code> one JSON object per line.</div>
               <pre>data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure","request_id":"req_abc"}}}
 
 data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}</pre>
+              <div class="note"><strong>Tagged SSE (<code>?format=tagged</code>)</strong> uses one UTF-8 JSON object inside each <code>[tag]&lt;...&gt;</code> record. It remains <code>text/event-stream</code>, so it works with EventSource and streaming fetch clients.</div>
+              <pre>data: [session]&lt;{"text":"Live agent activity stream"}&gt;
+
+data: [start]&lt;{"id":20,"request_id":"req_abc","type":"request_started","text":"Add dark mode"}&gt;
+
+data: [think]&lt;{"id":21,"request_id":"req_abc","type":"thinking","text":"Inspect the current theme first"}&gt;
+
+data: [tool:start]&lt;{"id":22,"request_id":"req_abc","type":"file_read","text":"src/theme.ts","phase":"started","tool":"file_editor","tool_call_id":"call_1"}&gt;
+
+data: [tool:result]&lt;{"id":23,"request_id":"req_abc","type":"tool_call_finished","text":"Read complete","phase":"finished","tool_call_id":"call_1","is_error":false}&gt;
+
+data: [delta]&lt;{"id":24,"request_id":"req_abc","type":"token_delta","text":"Done"}&gt;
+
+data: [done]&lt;{"id":25,"request_id":"req_abc","type":"request_completed","text":"Added dark mode"}&gt;</pre>
+              <div class="field-desc"><strong>Tagged vocabulary:</strong> <code>[start]</code>, <code>[processing]</code>, <code>[think]</code>, <code>[tool:start]</code>, <code>[tool:result]</code>, <code>[delta]</code>, <code>[message]</code>, <code>[done]</code>, <code>[error]</code>, <code>[status]</code>, <code>[session]</code>, and <code>[ping]</code>.</div>
+              <pre>const es = new EventSource(
+  `/api/projects/${uuid}/agent/activity/stream?live=1&amp;format=tagged&amp;since_id=${lastId}`
+);
+es.onmessage = ({ data }) =&gt; {
+  const match = data.match(/^\[([^\]]+)\]&lt;(.*)&gt;$/);
+  if (!match) return;
+  const [, tag, json] = match;
+  const event = JSON.parse(json);
+  lastId = event.id || lastId;
+  if (tag === "think") showPlan(event.text);
+  if (tag === "tool:start") showTool(event.title, event.text);
+  if (tag === "delta") appendToken(event.text);
+  if (tag === "done" || tag === "error") es.close();
+};</pre>
             </div>
           </div>
           <div class="endpoint" id="agent-test">
@@ -1614,7 +1662,8 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
           <p class="section-desc">Base: <code>/api/internal</code> · Auth: <code>X-Syra-Internal-Secret</code> header (configure in AI tab → Agent configuration)</p>
           <div class="info-grid">
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent</code> — status</span></div>
-            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/start|stop|restart</code></span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/warm</code> — non-blocking prewarm</span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/start|stop|restart</code> — blocking lifecycle controls</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/change</code> — <code>{message, model_name}</code></span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — blocking OpenHands message</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/test</code> — health + probe chat</span></div>
@@ -1642,10 +1691,10 @@ data: {"type":"activity","event":{"id":16,"event_type":"request_completed","deta
           <h2 class="section-title">sycord.com change request flow</h2>
           <div class="info-grid">
             <div class="info-row"><span class="info-key">1</span><span class="info-val">User edits project on sycord.com and sends a change message</span></div>
-            <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com opens SSE <code>GET /api/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=N</code> (or internal route with secret)</span></div>
-            <div class="info-row"><span class="info-key">3</span><span class="info-val">sycord.com → <code>POST /sycord/api/agent_change</code> or <code>POST /api/internal/projects/{uuid}/agent/change</code> — returns <code>request_id</code> immediately</span></div>
-            <div class="info-row"><span class="info-key">4</span><span class="info-val">Syte auto-starts OpenHands Agent Server for the UUID workspace if needed</span></div>
-            <div class="info-row"><span class="info-key">5</span><span class="info-val">SSE streams <code>token_delta</code>, file edits, commands until <code>request_completed</code></span></div>
+            <div class="info-row"><span class="info-key">2</span><span class="info-val">sycord.com prewarms with <code>POST /api/agent_warm</code>; the supervisor keeps the runtime alive</span></div>
+            <div class="info-row"><span class="info-key">3</span><span class="info-val">Open SSE <code>GET /api/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=N</code> (optionally <code>&amp;format=tagged</code>)</span></div>
+            <div class="info-row"><span class="info-key">4</span><span class="info-val">sycord.com → <code>POST /sycord/api/agent_change</code> or <code>POST /api/internal/projects/{uuid}/agent/change</code> — returns <code>request_id</code> immediately</span></div>
+            <div class="info-row"><span class="info-key">5</span><span class="info-val">SSE streams planning, tool starts/results, token deltas, and exactly one terminal event</span></div>
             <div class="info-row"><span class="info-key">6</span><span class="info-val">Preview hot-reloads edited files; deploy when user is ready</span></div>
           </div>
           <div class="note" style="margin-top:1rem"><strong>Sycord public API:</strong> <code>GET /sycord/api/agent_status</code>, <code>POST /sycord/api/agent_change</code>, <code>GET /sycord/api/agent_activity</code> — same API token as other <code>/sycord/api/*</code> routes.</div>
