@@ -33,6 +33,7 @@ from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
 OPENHANDS_START_TIMEOUT_S = 60.0
+AGENT_INSTRUCTION_VERSION = 2
 
 
 def _now() -> str:
@@ -60,6 +61,10 @@ def agent_home(project_id: str) -> Path:
 
 def agent_config_path(project_id: str) -> Path:
     return agent_root(project_id) / "agent_server_config.json"
+
+
+def agent_runtime_path(project_id: str) -> Path:
+    return agent_root(project_id) / "runtime.json"
 
 
 def agent_log_path(project_id: str) -> Path:
@@ -260,10 +265,28 @@ def _build_syte_instruction(project_id: str, rules: list[dict[str, str]]) -> str
         "Work directly in the configured workspace. Use your file editor and "
         "terminal tools to inspect before editing, make focused changes, and "
         "verify useful work when practical.\n\n"
+        "For every user request, think before acting. Before your first tool "
+        "call, present a short concrete plan to the user. Keep the plan concise, "
+        "then execute it. Never begin file edits or commands before planning. "
+        "Finish every turn with a clear answer describing the result.\n\n"
         "Syte workspace rules:\n"
         f"{rule_lines}\n\n"
         f"Reference skill documents are available at {skills_dir}. "
         "Syte helper commands are available on PATH."
+    )
+
+
+def _agent_instruction_is_current(project_id: str) -> bool:
+    path = agent_runtime_path(project_id)
+    if not path.exists() or not agent_instruction_path(project_id).exists():
+        return False
+    try:
+        metadata = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("instruction_version") == AGENT_INSTRUCTION_VERSION
     )
 
 
@@ -319,10 +342,11 @@ async def write_agent_config(project: dict[str, Any]) -> Path:
         "lease_ttl_seconds": 0,
     }
     path = _write_server_config(project["id"], payload)
-    (root / "runtime.json").write_text(
+    agent_runtime_path(project["id"]).write_text(
         json.dumps(
             {
                 "runtime": OPENHANDS_RUNTIME,
+                "instruction_version": AGENT_INSTRUCTION_VERSION,
                 "model_profile": model["profile"],
                 "model": model["model"],
                 "provider": model["provider"],
@@ -393,21 +417,21 @@ async def probe_agent_http(port: int | None) -> dict[str, Any]:
     if not port:
         return {"ok": False, "url": None, "status_code": None}
     base = agent_local_url(port)
+    url = base + "/ready"
     async with httpx.AsyncClient(timeout=3.0) as client:
-        for path in ("/ready", "/health", "/alive"):
-            try:
-                response = await client.get(base + path)
-                if response.status_code < 400:
-                    return {
-                        "ok": True,
-                        "url": base + path,
-                        "status_code": response.status_code,
-                    }
-            except Exception:
-                continue
+        try:
+            response = await client.get(url)
+            return {
+                "ok": response.status_code < 400,
+                "url": url,
+                "status_code": response.status_code,
+                "port_open": True,
+            }
+        except Exception:
+            pass
     return {
         "ok": False,
-        "url": base,
+        "url": url,
         "status_code": None,
         "port_open": _port_listening(int(port)),
     }
@@ -476,7 +500,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     if is_agent_running(project_id) and _port_listening(port):
         healthy = await probe_agent_http(port)
         if healthy.get("ok"):
-            status = await get_agent_status(project_id)
+            status = await get_agent_status(project_id, check_backend=False)
             return True, "OpenHands agent already running.", status
 
     if not openhands_installed():
@@ -571,7 +595,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
             "agent_config_path": str(config_path),
         },
     )
-    status = await get_agent_status(project_id)
+    status = await get_agent_status(project_id, check_backend=False)
     await record_agent_event(
         project_id,
         "agent_started",
@@ -600,7 +624,12 @@ async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     return ok, message, status
 
 
-async def get_agent_status(project_id: str, *, request_base: str = "") -> dict[str, Any]:
+async def get_agent_status(
+    project_id: str,
+    *,
+    request_base: str = "",
+    check_backend: bool = True,
+) -> dict[str, Any]:
     project = await get_project(project_id)
     if not project:
         return {}
@@ -608,7 +637,22 @@ async def get_agent_status(project_id: str, *, request_base: str = "") -> dict[s
     port = project.get("agent_port")
     runtime_url = agent_local_url(port)
     healthy = await probe_agent_http(port)
-    backend = await backend_health(project)
+    model = await selected_model_metadata(project)
+    if check_backend:
+        backend = await backend_health(project)
+    else:
+        backend = {
+            "ok": bool(model["api_key"]),
+            "status_code": None,
+            "url": model["api_base"],
+            "profile": model["profile"],
+            "provider": model.get("provider_label"),
+            "error": "" if model["api_key"] else (
+                f"{model.get('provider_label', 'Provider')} API key not configured "
+                f"for {model['profile']}"
+            ),
+            "probes": [],
+        }
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     base_url = request_base.rstrip("/")
     if not base_url:
@@ -617,7 +661,6 @@ async def get_agent_status(project_id: str, *, request_base: str = "") -> dict[s
             if gui_domain
             else build_direct_url(settings.resolved_public_ip, settings.port)
         )
-    model = await selected_model_metadata(project)
     running = is_agent_running(project_id)
     status = project.get("agent_status") or ("running" if running else "stopped")
     if running and healthy["ok"]:
@@ -666,6 +709,7 @@ async def update_agent_settings(
     project_id: str,
     *,
     model_profile: str | None = None,
+    include_status: bool = True,
 ) -> dict[str, Any]:
     project = await get_project(project_id)
     if not project:
@@ -678,7 +722,9 @@ async def update_agent_settings(
         updates["agent_model_profile"] = profile
     if updates:
         await update_project(project_id, updates)
-    return await get_agent_status(project_id)
+    if include_status:
+        return await get_agent_status(project_id)
+    return await get_project(project_id) or {}
 
 
 def _server_url(port: int) -> str:
@@ -694,22 +740,26 @@ async def _response_error(response: httpx.Response, operation: str) -> RuntimeEr
     return RuntimeError(f"OpenHands {operation} returned HTTP {response.status_code}: {detail}")
 
 
-async def _conversation_exists(
+async def _conversation_info(
     client: httpx.AsyncClient,
     *,
     base_url: str,
     headers: dict[str, str],
     conversation_id: str,
-) -> bool:
+) -> dict[str, Any] | None:
     response = await client.get(
         f"{base_url}/api/conversations/{conversation_id}",
         headers=headers,
     )
     if response.status_code == 404:
-        return False
+        return None
     if response.status_code >= 400:
         raise await _response_error(response, "conversation lookup")
-    return True
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+    return data if isinstance(data, dict) else {}
 
 
 async def _ensure_conversation(
@@ -725,12 +775,18 @@ async def _ensure_conversation(
     existing = str(project.get("agent_conversation_id") or "").strip()
     async with httpx.AsyncClient(timeout=30.0) as client:
         if existing:
-            if await _conversation_exists(
+            conversation = await _conversation_info(
                 client,
                 base_url=base_url,
                 headers=headers,
                 conversation_id=existing,
-            ):
+            )
+            status = str((conversation or {}).get("execution_status") or "").lower()
+            if conversation is not None and status not in {
+                "error",
+                "waiting_for_confirmation",
+                "deleting",
+            }:
                 return existing
             await update_project(project_id, {"agent_conversation_id": ""})
 
@@ -745,11 +801,6 @@ async def _ensure_conversation(
                 "kind": "LocalWorkspace",
                 "working_dir": str(repo),
             },
-            "initial_message": {
-                "role": "system",
-                "content": [{"text": instruction}],
-                "run": False,
-            },
             "max_iterations": 100,
             "stuck_detection": True,
             "autotitle": False,
@@ -762,6 +813,10 @@ async def _ensure_conversation(
                     {"name": "file_editor"},
                     {"name": "task_tracker"},
                 ],
+                "agent_context": {
+                    "system_message_suffix": instruction,
+                    "load_project_skills": True,
+                },
                 "system_prompt_kwargs": {"cli_mode": True},
                 "tool_concurrency_limit": 1,
             },
@@ -878,7 +933,6 @@ async def _stream_conversation_turn(
     execution_status = ""
     failure = ""
     saw_running = False
-    status_poll_count = 0
     deadline = time.monotonic() + OPENHANDS_EVENT_TIMEOUT_S
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -907,7 +961,6 @@ async def _stream_conversation_turn(
                 try:
                     raw = await asyncio.wait_for(websocket.recv(), timeout=0.5)
                 except asyncio.TimeoutError:
-                    status_poll_count += 1
                     try:
                         info = await client.get(
                             f"{base_url}/api/conversations/{conversation_id}",
@@ -923,14 +976,13 @@ async def _stream_conversation_turn(
                                 if isinstance(conversation, dict)
                                 else ""
                             ).lower()
-                            # A completed run may settle on ``idle`` before a
-                            # terminal WebSocket event reaches us. Delay that
-                            # interpretation briefly so an initially idle
-                            # conversation cannot be mistaken for a completed
-                            # turn immediately after the POST succeeds.
-                            if state in {"finished", "error", "stuck", "paused"} or (
-                                state == "idle" and (saw_running or status_poll_count >= 6)
-                            ):
+                            if state in {
+                                "finished",
+                                "error",
+                                "stuck",
+                                "paused",
+                                "waiting_for_confirmation",
+                            } or (state == "idle" and saw_running):
                                 execution_status = state
                                 break
                     except httpx.HTTPError:
@@ -974,9 +1026,13 @@ async def _stream_conversation_turn(
                 state = _state_update_status(event)
                 if state == "running":
                     saw_running = True
-                if state in {"finished", "error", "stuck", "paused"} or (
-                    state == "idle" and saw_running
-                ):
+                if state in {
+                    "finished",
+                    "error",
+                    "stuck",
+                    "paused",
+                    "waiting_for_confirmation",
+                } or (state == "idle" and saw_running):
                     execution_status = state
                     break
                 if failure:
@@ -986,17 +1042,26 @@ async def _stream_conversation_turn(
                 execution_status = "timeout"
 
         if not final_reply:
-            final_reply = await _get_final_response(
-                client,
-                base_url=base_url,
-                headers=headers,
-                conversation_id=conversation_id,
-            )
+            for attempt in range(3):
+                final_reply = await _get_final_response(
+                    client,
+                    base_url=base_url,
+                    headers=headers,
+                    conversation_id=conversation_id,
+                )
+                if final_reply:
+                    break
+                await asyncio.sleep(0.1 * (attempt + 1))
 
     if execution_status == "timeout":
         failure = failure or "OpenHands did not finish before the request timeout"
     elif execution_status in {"error", "stuck", "paused"}:
         failure = failure or f"OpenHands conversation {execution_status}"
+    elif execution_status == "waiting_for_confirmation":
+        failure = (
+            failure
+            or "OpenHands is waiting for tool confirmation, which this chat cannot approve"
+        )
     return final_reply, execution_status or "finished", failure
 
 
@@ -1056,17 +1121,19 @@ async def communicate_with_agent(
         )
 
     from syte.agent_activity import record_agent_event
+    from syte.agent_jobs import project_agent_lock
     from syte.agent_metrics import log_agent_request
 
     try:
-        return await _communicate_with_agent_impl(
-            project_id,
-            message,
-            model_profile=model_profile,
-            source=source,
-            auto_start=auto_start,
-            emit_request_started=emit_request_started,
-        )
+        async with project_agent_lock(project_id):
+            return await _communicate_with_agent_impl(
+                project_id,
+                message,
+                model_profile=model_profile,
+                source=source,
+                auto_start=auto_start,
+                emit_request_started=emit_request_started,
+            )
     except Exception as exc:
         error = str(exc) or "Agent request failed"
         await log_agent_request(
@@ -1187,20 +1254,46 @@ async def _communicate_with_agent_impl(
 
     if model_profile:
         try:
-            await update_agent_settings(project_id, model_profile=model_profile)
+            await update_agent_settings(
+                project_id,
+                model_profile=model_profile,
+                include_status=False,
+            )
         except ValueError as exc:
             return await fail("invalid_model_profile", str(exc))
         project = await get_project(project_id) or project
 
     project = await ensure_agent_runtime(project)
-    try:
-        await write_agent_config(project)
-    except Exception as exc:
-        text = str(exc)
-        await update_project(project_id, {"agent_status": "error", "agent_last_error": text})
+    model = await selected_model_metadata(project)
+    if not model["api_key"]:
+        text = (
+            f"No API key configured for active profile {model['profile']}. "
+            f"Open AI settings and add the {model['provider_label']} key."
+        )
+        await update_project(
+            project_id,
+            {"agent_status": "error", "agent_last_error": text},
+        )
         return await fail("api_key_missing", text)
 
-    status = await get_agent_status(project_id)
+    # Refresh the durable conversation only when Syte's system instruction
+    # changes. Rewriting all runtime files on every turn adds latency and does
+    # not update an already-created OpenHands conversation.
+    if not _agent_instruction_is_current(project_id):
+        try:
+            await write_agent_config(project)
+        except Exception as exc:
+            text = str(exc) or "Could not prepare the OpenHands configuration"
+            await update_project(
+                project_id,
+                {"agent_status": "error", "agent_last_error": text},
+            )
+            return await fail("agent_config_failed", text)
+        if project.get("agent_conversation_id"):
+            await update_project(project_id, {"agent_conversation_id": ""})
+            project = await get_project(project_id) or project
+
+    status = await get_agent_status(project_id, check_backend=False)
     if not status.get("agent_running") or not status.get("agent_healthy"):
         if not auto_start:
             error = "OpenHands agent is not running"
@@ -1225,16 +1318,9 @@ async def _communicate_with_agent_impl(
             error,
             log_request=True,
         )
-    ready, ready_message = await wait_for_agent_ready(int(port))
-    if not ready:
-        error = ready_message or "OpenHands agent is not ready"
-        return await fail(
-            "agent_not_ready",
-            error,
-            log_request=True,
-        )
-
-    model = status.get("agent_model") or {}
+    # A healthy status probe and a successful start both require /ready=200,
+    # so a second readiness loop here only delays the first response.
+    model = status.get("agent_model") or model
     try:
         latest_project = await get_project(project_id) or project
         conversation_id = await _ensure_conversation(

@@ -588,7 +588,16 @@ async def api_agent_status_public(project_id: str, request: Request):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return {"ok": True, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+    return {
+        "ok": True,
+        **(
+            await get_agent_status(
+                project_id,
+                request_base=str(request.base_url).rstrip("/"),
+                check_backend=False,
+            )
+        ),
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/start")
@@ -598,7 +607,17 @@ async def api_agent_start_public(project_id: str, request: Request):
     ok, message, _meta = await start_agent(project_id)
     if not ok:
         raise HTTPException(400, message)
-    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+    return {
+        "ok": True,
+        "message": message,
+        **(
+            await get_agent_status(
+                project_id,
+                request_base=str(request.base_url).rstrip("/"),
+                check_backend=False,
+            )
+        ),
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/stop")
@@ -609,7 +628,17 @@ async def api_agent_stop_public(project_id: str, request: Request):
     if not project:
         raise HTTPException(404, "Project not found")
     ok, message = await stop_agent(project_id)
-    return {"ok": ok, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+    return {
+        "ok": ok,
+        "message": message,
+        **(
+            await get_agent_status(
+                project_id,
+                request_base=str(request.base_url).rstrip("/"),
+                check_backend=False,
+            )
+        ),
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/interrupt")
@@ -626,7 +655,13 @@ async def api_agent_interrupt_public(project_id: str, request: Request):
     return {
         "ok": True,
         "message": message,
-        **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
+        **(
+            await get_agent_status(
+                project_id,
+                request_base=str(request.base_url).rstrip("/"),
+                check_backend=False,
+            )
+        ),
     }
 
 
@@ -637,7 +672,17 @@ async def api_agent_restart_public(project_id: str, request: Request):
     ok, message, _meta = await restart_agent(project_id)
     if not ok:
         raise HTTPException(400, message)
-    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
+    return {
+        "ok": True,
+        "message": message,
+        **(
+            await get_agent_status(
+                project_id,
+                request_base=str(request.base_url).rstrip("/"),
+                check_backend=False,
+            )
+        ),
+    }
 
 
 @app.get("/api/projects/{project_id}/agent/logs")
