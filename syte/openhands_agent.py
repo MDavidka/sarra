@@ -423,12 +423,16 @@ async def backend_health(project: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def probe_agent_http(port: int | None) -> dict[str, Any]:
+async def probe_agent_http(
+    port: int | None,
+    *,
+    timeout_s: float = 3.0,
+) -> dict[str, Any]:
     if not port:
         return {"ok": False, "url": None, "status_code": None}
     base = agent_local_url(port)
     url = base + "/ready"
-    async with httpx.AsyncClient(timeout=3.0) as client:
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
         try:
             response = await client.get(url)
             return {
@@ -577,23 +581,41 @@ async def _start_agent_impl(
         stderr=subprocess.STDOUT,
         preexec_fn=os.setsid,
     )
+    agent_pid_file(project_id).write_text(str(proc.pid))
 
     ready = False
-    for _ in range(240):
-        if proc.poll() is not None:
-            log_file.close()
-            error = get_agent_logs(project_id, 80)
-            tail = error[-2000:] if error else "No log output"
-            await update_project(
-                project_id,
-                {"agent_status": "error", "agent_last_error": tail},
-            )
-            return False, f"OpenHands agent exited during startup.\n{tail}", {}
-        if _port_listening(port):
-            ready, _ = await wait_for_agent_ready(port, timeout_s=2.0)
-            if ready:
-                break
-        await asyncio.sleep(0.25)
+    try:
+        for _ in range(240):
+            if proc.poll() is not None:
+                log_file.close()
+                agent_pid_file(project_id).unlink(missing_ok=True)
+                error = get_agent_logs(project_id, 80)
+                tail = error[-2000:] if error else "No log output"
+                await update_project(
+                    project_id,
+                    {"agent_status": "error", "agent_last_error": tail},
+                )
+                return False, f"OpenHands agent exited during startup.\n{tail}", {}
+            if _port_listening(port):
+                ready, _ = await wait_for_agent_ready(port, timeout_s=2.0)
+                if ready:
+                    break
+            await asyncio.sleep(0.25)
+    except asyncio.CancelledError:
+        log_file.close()
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        agent_pid_file(project_id).unlink(missing_ok=True)
+        await update_project(
+            project_id,
+            {
+                "agent_status": "running",
+                "agent_last_error": "Agent warm-up interrupted; supervisor will retry",
+            },
+        )
+        raise
 
     if not ready:
         log_file.close()
@@ -607,7 +629,6 @@ async def _start_agent_impl(
         await update_project(project_id, {"agent_status": "error", "agent_last_error": tail})
         return False, f"OpenHands agent did not become ready on port {port}.\n{tail}", {}
 
-    agent_pid_file(project_id).write_text(str(proc.pid))
     log_file.close()
     await update_project(
         project_id,
@@ -690,16 +711,18 @@ async def warm_agent(
         and is_agent_running(project_id)
         and _port_listening(int(port))
     ):
-        await update_project(
-            project_id,
-            {"agent_status": "running", "agent_last_error": ""},
-        )
-        return {
-            "ok": True,
-            "status": "ready",
-            "already_warming": False,
-            "project_id": project_id,
-        }
+        health = await probe_agent_http(int(port), timeout_s=0.25)
+        if health.get("ok"):
+            await update_project(
+                project_id,
+                {"agent_status": "running", "agent_last_error": ""},
+            )
+            return {
+                "ok": True,
+                "status": "ready",
+                "already_warming": False,
+                "project_id": project_id,
+            }
 
     if not openhands_installed():
         await update_project(
