@@ -68,6 +68,8 @@ TOOLS: list[dict[str, Any]] = [
                 "action": {"type": "string", "description": "status|url|fetch|read|logs|screenshot"},
                 "url": {"type": "string"},
                 "lines": {"type": "integer"},
+                "width": {"type": "integer", "description": "Screenshot viewport width in pixels"},
+                "height": {"type": "integer", "description": "Screenshot viewport height in pixels"},
             },
             "required": ["action"],
         },
@@ -92,6 +94,10 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             body["url"] = arguments["url"]
         if arguments.get("lines") is not None:
             body["lines"] = arguments["lines"]
+        if arguments.get("width") is not None:
+            body["width"] = arguments["width"]
+        if arguments.get("height") is not None:
+            body["height"] = arguments["height"]
         return _post(f"/api/projects/{pid}/agent/access", body)
     return {"ok": False, "error": "unknown_tool", "message": name}
 
@@ -148,11 +154,23 @@ def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
         arguments = params.get("arguments") or {}
         try:
             result = _call_tool(name, arguments)
-            text = json.dumps(result, ensure_ascii=False, indent=2)
+            image = result.get("image_base64") if isinstance(result, dict) else None
+            text_result = dict(result) if isinstance(result, dict) else result
+            if isinstance(text_result, dict):
+                text_result.pop("image_base64", None)
+            content = [{
+                "type": "text",
+                "text": json.dumps(text_result, ensure_ascii=False, indent=2),
+            }]
+            if image:
+                content.append({"type": "image", "data": image, "mimeType": "image/png"})
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {"content": [{"type": "text", "text": text}], "isError": not result.get("ok", True)},
+                "result": {
+                    "content": content,
+                    "isError": not (result.get("ok", True) if isinstance(result, dict) else True),
+                },
             }
         except Exception as exc:
             return {

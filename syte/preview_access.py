@@ -81,6 +81,8 @@ async def run_access_action(
     *,
     url: str | None = None,
     lines: int = 200,
+    width: int = 1440,
+    height: int = 900,
 ) -> dict[str, Any]:
     project, ctx = await _preview_context(project_id)
     if not project:
@@ -160,13 +162,15 @@ async def run_access_action(
             return {"ok": False, "error": "no_url", "message": "No preview URL for screenshot"}
         if not _is_allowed_url(target, preview_url, custom_urls):
             return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for screenshot"}
-        shot = await _capture_screenshot(target)
+        shot = await _capture_screenshot(target, width=width, height=height)
         return {"ok": shot.get("ok", False), "action": "screenshot", "url": target, **shot}
 
     return {"ok": False, "error": "unknown_action", "message": f"Unknown action: {action}"}
 
 
-async def _capture_screenshot(url: str) -> dict[str, Any]:
+async def _capture_screenshot(
+    url: str, *, width: int = 1440, height: int = 900
+) -> dict[str, Any]:
     browser = (
         shutil.which("chromium")
         or shutil.which("chromium-browser")
@@ -181,12 +185,15 @@ async def _capture_screenshot(url: str) -> dict[str, Any]:
         }
 
     def _run() -> dict[str, Any]:
+        viewport_width = max(320, min(int(width), 3840))
+        viewport_height = max(240, min(int(height), 2160))
         proc = subprocess.run(
             [
                 browser,
                 "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
+                f"--window-size={viewport_width},{viewport_height}",
                 f"--screenshot=-",
                 url,
             ],
@@ -202,6 +209,8 @@ async def _capture_screenshot(url: str) -> dict[str, Any]:
         return {
             "ok": True,
             "format": "png",
+            "width": viewport_width,
+            "height": viewport_height,
             "image_base64": base64.b64encode(data).decode("ascii"),
             "bytes": len(data),
         }
