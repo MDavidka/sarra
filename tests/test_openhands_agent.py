@@ -388,6 +388,102 @@ async def test_stream_turn_waits_through_initial_idle_status(
 
 
 @pytest.mark.asyncio
+async def test_stream_turn_ignores_previous_finished_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.openhands_agent import _stream_conversation_turn
+
+    class FakeResponse:
+        def __init__(self, payload: dict):
+            self.status_code = 200
+            self.content = b"{}"
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class FakeWebSocket:
+        received = 0
+        events = [
+            {"kind": "ConversationStateUpdateEvent", "key": "execution_status", "value": "finished"},
+            {
+                "kind": "MessageEvent",
+                "llm_message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "hello"}],
+                },
+            },
+            {"kind": "ConversationStateUpdateEvent", "key": "execution_status", "value": "running"},
+            {"kind": "ConversationStateUpdateEvent", "key": "execution_status", "value": "finished"},
+        ]
+
+        async def send(self, _data):
+            pass
+
+        async def recv(self):
+            event = self.events[self.received]
+            self.received += 1
+            return json.dumps(event)
+
+    class FakeConnection:
+        async def __aenter__(self):
+            return FakeWebSocket()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, headers=None, json=None):
+            return FakeResponse({})
+
+        async def get(self, url, headers=None):
+            if url.endswith("/agent_final_response"):
+                reply = "new answer" if FakeWebSocket.received == 4 else "old answer"
+                return FakeResponse({"response": reply})
+            return FakeResponse({"execution_status": "finished"})
+
+    async def ignore_event(*args, **kwargs):
+        return []
+
+    client_module = types.ModuleType("websockets.asyncio.client")
+    client_module.connect = lambda *args, **kwargs: FakeConnection()
+    asyncio_module = types.ModuleType("websockets.asyncio")
+    asyncio_module.client = client_module
+    websockets_module = types.ModuleType("websockets")
+    websockets_module.asyncio = asyncio_module
+    monkeypatch.setitem(sys.modules, "websockets", websockets_module)
+    monkeypatch.setitem(sys.modules, "websockets.asyncio", asyncio_module)
+    monkeypatch.setitem(sys.modules, "websockets.asyncio.client", client_module)
+    monkeypatch.setattr("syte.openhands_agent.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("syte.agent_activity.ingest_openhands_event", ignore_event)
+    monkeypatch.setattr(
+        "syte.openhands_agent.agent_session_headers",
+        lambda _project_id: {"X-Session-API-Key": "session-key"},
+    )
+
+    result = await _stream_conversation_turn(
+        "proj-1",
+        port=5200,
+        conversation_id="conversation-1",
+        message="hello",
+        request_id="req-1",
+        source="test",
+    )
+
+    assert result == ("new answer", "finished", "")
+    assert FakeWebSocket.received == 4
+
+
+@pytest.mark.asyncio
 async def test_communicate_with_agent_requires_api_key(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

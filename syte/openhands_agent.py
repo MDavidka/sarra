@@ -867,14 +867,14 @@ def _state_update_status(event: dict[str, Any]) -> str:
     return ""
 
 
-def _message_event_text(event: dict[str, Any]) -> str:
+def _message_event_text(event: dict[str, Any], *, role: str = "assistant") -> str:
     kind = str(event.get("kind") or event.get("type") or "").lower()
     if kind != "messageevent":
         return ""
     message = event.get("llm_message") or event.get("message")
     if not isinstance(message, dict):
         return ""
-    if str(message.get("role") or "") != "assistant":
+    if str(message.get("role") or "") != role:
         return ""
     content = message.get("content")
     if not isinstance(content, list):
@@ -933,9 +933,25 @@ async def _stream_conversation_turn(
     execution_status = ""
     failure = ""
     saw_running = False
+    saw_current_user_message = False
+    pre_turn_status = ""
     deadline = time.monotonic() + OPENHANDS_EVENT_TIMEOUT_S
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            before = await client.get(
+                f"{base_url}/api/conversations/{conversation_id}",
+                headers=headers,
+            )
+            if before.status_code < 400:
+                before_data = before.json() if before.content else {}
+                if isinstance(before_data, dict):
+                    pre_turn_status = str(
+                        before_data.get("execution_status") or ""
+                    ).lower()
+        except (httpx.HTTPError, ValueError):
+            pass
+
         async with connect(
             ws_url,
             open_timeout=10,
@@ -976,13 +992,22 @@ async def _stream_conversation_turn(
                                 if isinstance(conversation, dict)
                                 else ""
                             ).lower()
-                            if state in {
+                            if state == "running":
+                                saw_running = True
+                            terminal_state = state in {
                                 "finished",
                                 "error",
                                 "stuck",
                                 "paused",
                                 "waiting_for_confirmation",
-                            } or (state == "idle" and saw_running):
+                            } or (state == "idle" and saw_running)
+                            terminal_is_current = (
+                                saw_running
+                                or saw_current_user_message
+                                or not pre_turn_status
+                                or state != pre_turn_status
+                            )
+                            if terminal_state and terminal_is_current:
                                 execution_status = state
                                 break
                     except httpx.HTTPError:
@@ -1002,6 +1027,8 @@ async def _stream_conversation_turn(
                 text = _message_event_text(event)
                 if text:
                     final_reply = text
+                if _message_event_text(event, role="user").strip() == message.strip():
+                    saw_current_user_message = True
                 if kind in {"conversationerrorevent", "servererrorevent"}:
                     failure = str(
                         event.get("detail")
@@ -1026,13 +1053,20 @@ async def _stream_conversation_turn(
                 state = _state_update_status(event)
                 if state == "running":
                     saw_running = True
-                if state in {
+                terminal_state = state in {
                     "finished",
                     "error",
                     "stuck",
                     "paused",
                     "waiting_for_confirmation",
-                } or (state == "idle" and saw_running):
+                } or (state == "idle" and saw_running)
+                terminal_is_current = (
+                    saw_running
+                    or saw_current_user_message
+                    or not pre_turn_status
+                    or state != pre_turn_status
+                )
+                if terminal_state and terminal_is_current:
                     execution_status = state
                     break
                 if failure:
