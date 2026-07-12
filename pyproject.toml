@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.34",
+    "uvicorn[standard]>=0.35",
     "aiosqlite>=0.20",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.7",
