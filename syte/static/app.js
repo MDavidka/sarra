@@ -642,6 +642,9 @@ function handleDebugChatActivity(event) {
       }
     }
   }
+  if (event.event_type === 'agent_started' && !debugChatReplayingHistory) {
+    void updateDebugChatAgentStatus();
+  }
 
   if (shouldSkipDebugChatEvent(event)) return;
 
@@ -808,6 +811,8 @@ async function updateDebugChatAgentStatus() {
     if (res.agent_running && res.agent_healthy) {
       const model = res.agent_model?.profile || res.agent_model?.model || 'agent';
       debugChatIdleStatus = `Ready · ${model}`;
+    } else if (res.agent_status === 'starting' || res.agent_warming) {
+      debugChatIdleStatus = 'Warming agent…';
     } else if (res.agent_last_error) {
       debugChatIdleStatus = 'Agent needs attention';
     } else if (res.agent_install_ok === false) {
@@ -960,8 +965,29 @@ async function getDebugChatProfile() {
   return select?.value || select?.getAttribute('value') || 'syra-base';
 }
 
+function warmProjectAgent(projectId) {
+  if (!projectId) return;
+  void api(`/projects/${projectId}/agent/warm`, { method: 'POST' })
+    .then((result) => {
+      if (
+        result.ok
+        && result.status === 'warming'
+        && activeServiceId === projectId
+        && activeSvcTab === 'debug-chat'
+        && !debugChatBusy
+        && !debugChatSendInFlight
+      ) {
+        debugChatIdleStatus = 'Warming agent…';
+        setDebugChatActivity(debugChatIdleStatus);
+      }
+    })
+    .catch(() => {});
+}
+
 async function openDebugChatTab() {
   if (!activeServiceId) return;
+  const projectId = activeServiceId;
+  warmProjectAgent(projectId);
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
   if (projectChanged) {
     clearDebugChatRequestWatchdog();
@@ -1814,6 +1840,7 @@ function openService(id) {
   const p = projects.find(x => x.id === id);
   if (!p) return;
   activeServiceId = id;
+  warmProjectAgent(id);
   activeSvcTab = 'general';
   switchSvcTab('general');
   updateServiceSidebarNav(p);

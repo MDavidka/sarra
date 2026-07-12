@@ -230,6 +230,130 @@ def _format_activity_event(event: dict, output_format: str) -> str | None:
     return f"[{event_type}] {detail}\n" if detail else None
 
 
+def _tagged_activity_event(event: dict) -> str:
+    """Render one activity event as a parseable ``[tag]<json>`` record."""
+    event_type = str(event.get("event_type") or "event")
+    payload = event.get("payload") or {}
+    phase = str(payload.get("phase") or "")
+
+    if event_type == "request_started":
+        tag = "start"
+    elif event_type == "processing":
+        tag = "processing"
+    elif event_type == "thinking":
+        tag = "think"
+    elif event_type == "token_delta":
+        tag = "delta"
+    elif event_type == "request_completed":
+        tag = "done"
+    elif event_type == "request_failed":
+        tag = "error"
+    elif event_type == "user_message":
+        tag = "user"
+    elif event_type in {"assistant_message", "message_snapshot"}:
+        tag = "message"
+    elif phase == "finished" or event_type in {
+        "tool_call_finished",
+        "command_output",
+    }:
+        tag = "tool:result"
+    elif phase == "started" or event_type in {
+        "tool_call",
+        "tool_call_started",
+        "command_run",
+        "file_created",
+        "file_modified",
+        "file_deleted",
+        "file_read",
+        "file_search",
+        "service_action",
+    }:
+        tag = "tool:start"
+    elif event_type == "file_changed":
+        tag = "file"
+    elif event_type.startswith("agent_") or event_type == "status":
+        tag = "status"
+    else:
+        tag = event_type.replace("_", ":")
+
+    text = str(event.get("detail") or "")
+    if event_type == "token_delta":
+        text = str(payload.get("delta") or text)
+    elif event_type == "request_completed":
+        text = str(payload.get("reply") or text)
+    elif event_type == "request_failed":
+        text = str(payload.get("message") or text)
+
+    body = {
+        "id": event.get("id"),
+        "request_id": payload.get("request_id") or "",
+        "type": event_type,
+        "role": event.get("role") or "",
+        "title": event.get("title") or "",
+        "text": text,
+        "created_at": event.get("created_at") or "",
+    }
+    optional_fields = {
+        "phase": phase,
+        "tool": payload.get("tool"),
+        "tool_call_id": payload.get("tool_call_id"),
+        "is_error": payload.get("is_error"),
+        "error": payload.get("error"),
+        "execution_status": payload.get("execution_status"),
+        "snapshot": payload.get("snapshot"),
+    }
+    body.update({
+        key: value
+        for key, value in optional_fields.items()
+        if value not in (None, "")
+    })
+    encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    return f"[{tag}]<{encoded}>"
+
+
+async def stream_agent_activity_tagged(
+    project_id: str,
+    *,
+    live_only: bool = False,
+    since_id: int = 0,
+    type_filter: list[str] | None = None,
+):
+    """SSE stream using compact ``[start]``, ``[think]``, and tool tags."""
+    allowed = set(type_filter) if type_filter else None
+    async for chunk in stream_agent_activity(
+        project_id,
+        live_only=live_only,
+        since_id=since_id,
+    ):
+        if not chunk.startswith("data: "):
+            continue
+        try:
+            message = json.loads(chunk[6:].strip())
+        except json.JSONDecodeError:
+            continue
+
+        message_type = message.get("type")
+        if message_type == "activity" and message.get("event"):
+            event = message["event"]
+            event_type = event.get("event_type") or ""
+            if allowed and event_type not in allowed:
+                continue
+            yield f"data: {_tagged_activity_event(event)}\n\n"
+        elif message_type == "session":
+            body = json.dumps(
+                {"text": message.get("text") or "Live agent activity stream"},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            yield f"data: [session]<{body}>\n\n"
+        elif message_type == "ping":
+            body = json.dumps(
+                {"since_id": message.get("since_id") or 0},
+                separators=(",", ":"),
+            )
+            yield f"data: [ping]<{body}>\n\n"
+
+
 async def stream_agent_activity_formatted(
     project_id: str,
     *,

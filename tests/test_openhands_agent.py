@@ -561,6 +561,67 @@ async def test_background_failure_emits_request_scoped_terminal_event(
 
 
 @pytest.mark.asyncio
+async def test_warm_agent_deduplicates_background_start(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.database import create_project, init_db, set_setting, update_project
+    from syte.openhands_agent import (
+        agent_warm_in_progress,
+        get_agent_status,
+        warm_agent,
+    )
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-warm",
+        "name": "Warm Agent",
+        "port": 3012,
+        "start_command": "",
+    })
+    await update_project("proj-warm", {"agent_model_profile": "syra-base"})
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def fake_start(_project_id):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return True, "ready", {"agent_status": "running"}
+
+    async def fake_probe(_port):
+        return {"ok": False, "status_code": None, "url": None}
+
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+    monkeypatch.setattr("syte.openhands_agent.start_agent", fake_start)
+    monkeypatch.setattr("syte.openhands_agent.probe_agent_http", fake_probe)
+
+    try:
+        first = await warm_agent("proj-warm", source="test")
+        second = await warm_agent("proj-warm", source="test")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        status = await get_agent_status("proj-warm", check_backend=False)
+
+        assert first["status"] == "warming"
+        assert first["already_warming"] is False
+        assert second["already_warming"] is True
+        assert calls == 1
+        assert agent_warm_in_progress("proj-warm") is True
+        assert status["agent_status"] == "starting"
+        assert status["agent_warming"] is True
+    finally:
+        release.set()
+        for _ in range(20):
+            if not agent_warm_in_progress("proj-warm"):
+                break
+            await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
 async def test_verify_internal_service_request_accepts_shared_secret(tmp_data_dir: Path) -> None:
     from syte.database import init_db, set_setting
 

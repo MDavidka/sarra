@@ -3,7 +3,7 @@ import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -600,6 +600,24 @@ async def api_agent_status_public(project_id: str, request: Request):
     }
 
 
+@app.post("/api/projects/{project_id}/agent/warm")
+async def api_agent_warm_public(project_id: str):
+    """Schedule the persistent OpenHands runtime without blocking for startup."""
+    from syte.openhands_agent import warm_agent
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await warm_agent(project_id, source="gui")
+    return {
+        **result,
+        "status_url": f"/api/projects/{project_id}/agent",
+        "stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream?live=1"
+        ),
+    }
+
+
 @app.post("/api/projects/{project_id}/agent/start")
 async def api_agent_start_public(project_id: str, request: Request):
     from syte.openhands_agent import get_agent_status, start_agent
@@ -732,6 +750,9 @@ async def api_agent_activity_public(
         "events": events,
         "since_id": since_id,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+        "tagged_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged"
+        ),
     }
 
 
@@ -741,10 +762,22 @@ async def api_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
-    format: str = "sse",
+    format: Literal[
+        "sse",
+        "tagged",
+        "tagged_sse",
+        "tags",
+        "text",
+        "plain",
+        "jsonl",
+    ] = "sse",
     types: str = "",
 ):
-    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
+    from syte.log_stream import (
+        stream_agent_activity,
+        stream_agent_activity_formatted,
+        stream_agent_activity_tagged,
+    )
 
     project = await get_project(project_id)
     if not project:
@@ -754,7 +787,15 @@ async def api_agent_activity_stream(
         await auth.verify_api_token_from_request(request)
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    if fmt in ("text", "jsonl", "plain"):
+    if fmt in ("tagged", "tagged_sse", "tags"):
+        generator = stream_agent_activity_tagged(
+            project_id,
+            live_only=live,
+            since_id=since_id,
+            type_filter=type_filter,
+        )
+        media = "text/event-stream"
+    elif fmt in ("text", "jsonl", "plain"):
         generator = stream_agent_activity_formatted(
             project_id,
             live_only=live,
@@ -769,7 +810,15 @@ async def api_agent_activity_stream(
     return StreamingResponse(
         generator,
         media_type=media,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "X-Syte-Stream-Format": "tagged-v1" if fmt in {
+                "tagged",
+                "tagged_sse",
+                "tags",
+            } else fmt,
+        },
     )
 
 

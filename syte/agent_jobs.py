@@ -78,6 +78,9 @@ async def submit_agent_request(
         "status": "accepted",
         "project_id": project_id,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+        "tagged_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged"
+        ),
     }
 
 
