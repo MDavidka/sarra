@@ -161,26 +161,29 @@ async def stream_agent_activity(
         since_id = max(since_id, int(event.get("id") or 0))
 
     queue = subscribe_agent_activity(project_id)
-    last_ping = 0.0
     ping_interval = 10.0
-    max_ticks = 36000  # ~1 hour at 100ms per tick
+    deadline = time.monotonic() + 3600.0
+    next_ping = time.monotonic() + ping_interval
 
     try:
-        for _ in range(max_ticks):
+        while time.monotonic() < deadline:
             now = time.monotonic()
-
-            drained = False
-            while not queue.empty():
-                event = queue.get_nowait()
+            timeout = max(0.0, min(next_ping, deadline) - now)
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=timeout)
                 since_id = max(since_id, int(event.get("id") or 0))
                 yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
-                drained = True
+                while not queue.empty():
+                    event = queue.get_nowait()
+                    since_id = max(since_id, int(event.get("id") or 0))
+                    yield f"data: {json.dumps({'type': 'activity', 'event': event})}\n\n"
+            except asyncio.TimeoutError:
+                pass
 
-            if (now - last_ping) >= ping_interval:
-                last_ping = now
+            now = time.monotonic()
+            if now >= next_ping:
+                next_ping = now + ping_interval
                 yield f"data: {json.dumps({'type': 'ping', 'since_id': since_id})}\n\n"
-
-            await asyncio.sleep(0.1)
     finally:
         unsubscribe_agent_activity(project_id, queue)
 

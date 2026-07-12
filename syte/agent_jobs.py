@@ -17,6 +17,11 @@ def new_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:12]}"
 
 
+def project_agent_lock(project_id: str) -> asyncio.Lock:
+    """Return the shared lock that serializes turns for one conversation."""
+    return _project_locks[project_id]
+
+
 async def submit_agent_request(
     project_id: str,
     message: str,
@@ -87,7 +92,7 @@ async def _run_job(
 ) -> dict[str, Any]:
     from syte.openhands_agent import _communicate_with_agent_impl
 
-    async with _project_locks[project_id]:
+    async with project_agent_lock(project_id):
         try:
             return await _communicate_with_agent_impl(
                 project_id,
