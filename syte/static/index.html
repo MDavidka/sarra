@@ -362,81 +362,36 @@
 
               <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
                 <div class="debug-chat-panel">
-                  <div class="svc-panel-intro">
-                    <div class="svc-panel-intro-icon"><i data-lucide="messages-square"></i></div>
+                  <div class="debug-chat-header">
                     <div>
-                      <div class="debug-chat-title-row">
-                        <h2>OpenHands workspace agent</h2>
-                        <sl-badge pill variant="success">Live actions</sl-badge>
-                      </div>
-                      <p>Ask for a change, review, or test. Follow every file edit, command, and response without leaving this page.</p>
+                      <h2>Agent chat</h2>
+                      <p>Describe what you want changed.</p>
                     </div>
+                    <label class="debug-chat-profile-label" for="debug-chat-profile">
+                      <span>Model</span>
+                      <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
+                        <option value="syra-nano">nano</option>
+                        <option value="syra-base" selected>base</option>
+                        <option value="syra-havy">havy</option>
+                      </select>
+                    </label>
                   </div>
-                  <sl-details class="debug-chat-runtime-details" summary="OpenHands tools and streaming">
-                    <div class="debug-chat-runtime-detail">
-                      <i data-lucide="workflow"></i>
-                      <span>Persistent project conversation · file editor · terminal · task tracking · native action and token streaming</span>
-                    </div>
-                  </sl-details>
-                  <div class="debug-chat-toolbar">
-                    <div class="debug-chat-toolbar-left">
-                      <span class="debug-chat-connection" id="debug-chat-connection">
-                        <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" role="status" aria-label="Activity stream disconnected"></span>
-                        <span id="debug-chat-stream-label">Offline</span>
-                      </span>
-                      <span class="debug-chat-toolbar-divider" aria-hidden="true"></span>
-                      <span class="debug-chat-status" id="debug-chat-status">Checking agent…</span>
-                    </div>
-                    <div class="debug-chat-toolbar-right">
-                      <sl-button type="button" id="debug-chat-reconnect" class="debug-chat-reconnect hidden" size="small" aria-label="Reconnect activity stream">
-                        <i data-lucide="wifi"></i><span>Reconnect</span>
-                      </sl-button>
-                      <span class="debug-chat-profile-label">Model</span>
-                      <sl-select id="debug-chat-profile" class="debug-chat-profile" value="syra-base" size="small" aria-label="Model profile">
-                        <sl-option value="syra-nano">nano</sl-option>
-                        <sl-option value="syra-base">base</sl-option>
-                        <sl-option value="syra-havy">havy</sl-option>
-                      </sl-select>
-                      <sl-tooltip content="Clear this conversation view">
-                        <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear conversation view" aria-label="Clear local conversation view">
-                          <i data-lucide="trash-2"></i>
-                        </button>
-                      </sl-tooltip>
-                    </div>
-                  </div>
-                  <div class="debug-chat-activity hidden" id="debug-chat-activity" role="status" aria-live="polite">
-                    <i data-lucide="loader" class="debug-chat-activity-icon"></i>
-                    <span class="debug-chat-activity-label">Preparing response</span>
+                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
+                    <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
+                    <span class="debug-chat-activity-label">Connecting…</span>
                     <span class="debug-chat-activity-detail"></span>
                   </div>
-                  <div class="debug-chat-messages-wrap">
-                    <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="OpenHands agent conversation" aria-relevant="additions text">
-                      <div class="debug-chat-empty" id="debug-chat-empty">
-                        <i data-lucide="sparkles"></i>
-                        <p>Describe the outcome you want. The agent can inspect the project, edit files, run commands, and explain what changed.</p>
-                      </div>
+                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
+                    <div class="debug-chat-empty" id="debug-chat-empty">
+                      <p>What would you like to change?</p>
                     </div>
-                    <sl-button type="button" id="debug-chat-scroll-latest" class="debug-chat-scroll-latest hidden" size="small" pill aria-label="Scroll to the latest message">
-                      <i data-lucide="arrow-down"></i><span>Latest</span>
-                    </sl-button>
                   </div>
                   <div class="debug-chat-composer">
-                    <sl-textarea id="debug-chat-input" class="debug-chat-input" rows="2" resize="auto" aria-label="Message to the workspace agent" placeholder="e.g. Change the hero headline to Welcome and use a blue gradient background"></sl-textarea>
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea>
                     <div class="debug-chat-composer-actions">
-                      <sl-button type="button" id="debug-chat-cancel" class="debug-chat-cancel hidden" size="small" aria-label="Stop the current response">
-                        <i data-lucide="square"></i><span>Stop</span>
-                      </sl-button>
-                      <sl-button type="button" variant="primary" id="debug-chat-send" class="debug-chat-send" size="small">
-                        <i data-lucide="send"></i><span>Send</span>
-                      </sl-button>
+                      <button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button>
+                      <button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button>
                     </div>
-                  </div>
-                  <div class="debug-chat-composer-hint" id="debug-chat-draft-status">Enter to send · Shift+Enter for a new line</div>
-                  <div class="debug-chat-quick-actions" aria-label="Quick prompts">
-                    <span>Try asking:</span>
-                    <sl-button type="button" size="small" data-debug-chat-prompt="Improve the website copy so it sounds clearer and more natural.">Improve copy</sl-button>
-                    <sl-button type="button" size="small" data-debug-chat-prompt="Check the current layout for usability issues and fix the most important one.">Fix layout</sl-button>
-                    <sl-button type="button" size="small" data-debug-chat-prompt="Run a quick check of the website and tell me what needs attention.">Run a check</sl-button>
                   </div>
                 </div>
               </div>
