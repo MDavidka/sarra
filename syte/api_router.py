@@ -16,6 +16,7 @@ from syte.openhands_agent import (
     stop_agent,
     test_agent,
     update_agent_settings,
+    warm_agent,
 )
 from syte.certificates import apply_proxy_config
 from syte.config import settings
@@ -320,6 +321,21 @@ async def api_agent_start(body: UuidRequest, request: Request, _token: dict = De
     return {"ok": True, "uuid": body.uuid, "message": message, **meta}
 
 
+@router.post("/agent_warm")
+async def api_agent_warm(
+    body: UuidRequest,
+    _token: dict = Depends(verify_api_token),
+):
+    """Schedule the persistent runtime without waiting for cold startup."""
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {
+        "uuid": body.uuid,
+        **(await warm_agent(body.uuid, source="external_api")),
+    }
+
+
 @router.post("/agent_stop")
 async def api_agent_stop(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
     project = await get_project(body.uuid)
@@ -396,6 +412,9 @@ async def api_agent_activity(
         "events": events,
         "since_id": since_id,
         "stream_url": f"/api/projects/{uuid}/agent/activity/stream?live=1",
+        "tagged_stream_url": (
+            f"/api/projects/{uuid}/agent/activity/stream?live=1&format=tagged"
+        ),
     }
 
 

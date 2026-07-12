@@ -195,6 +195,7 @@ async def agent_status(project_id: str, *, request_base: str = "") -> dict | Non
         "uuid": project_id,
         **status,
         "activity_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+        "activity_tagged_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged",
         "activity_text_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=text",
         "activity_jsonl_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=jsonl",
     }
@@ -212,6 +213,10 @@ async def agent_activity(project_id: str, *, since_id: int = 0, limit: int = 200
         "since_id": since_id,
         "events": events,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&since_id={since_id}",
+        "tagged_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream"
+            f"?live=1&since_id={since_id}&format=tagged"
+        ),
     }
 
 

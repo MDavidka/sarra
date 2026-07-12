@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import secrets
 import shlex
@@ -18,6 +19,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,14 @@ OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
 OPENHANDS_START_TIMEOUT_S = 60.0
 AGENT_INSTRUCTION_VERSION = 2
+
+logger = logging.getLogger(__name__)
+
+_agent_lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+_agent_warm_tasks: dict[
+    str,
+    asyncio.Task[tuple[bool, str, dict[str, Any]]],
+] = {}
 
 
 def _now() -> str:
@@ -462,7 +472,7 @@ async def wait_for_agent_ready(
     return False, last_error or f"OpenHands Agent Server did not become ready within {int(timeout_s)}s"
 
 
-async def stop_agent(project_id: str) -> tuple[bool, str]:
+async def _stop_agent_impl(project_id: str) -> tuple[bool, str]:
     from syte.agent_activity import record_agent_event
 
     pid_path = agent_pid_file(project_id)
@@ -487,7 +497,17 @@ async def stop_agent(project_id: str) -> tuple[bool, str]:
     return True, "OpenHands agent stopped."
 
 
-async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
+async def stop_agent(project_id: str) -> tuple[bool, str]:
+    """Stop one runtime after any in-flight start has completed."""
+    async with _agent_lifecycle_locks[project_id]:
+        return await _stop_agent_impl(project_id)
+
+
+async def _start_agent_impl(
+    project_id: str,
+    *,
+    force: bool = False,
+) -> tuple[bool, str, dict[str, Any]]:
     from syte.agent_activity import record_agent_event
     from syte.agent_skills import agent_path_env
 
@@ -497,7 +517,7 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     project = await ensure_agent_runtime(project)
     port = int(project["agent_port"])
 
-    if is_agent_running(project_id) and _port_listening(port):
+    if not force and is_agent_running(project_id) and _port_listening(port):
         healthy = await probe_agent_http(port)
         if healthy.get("ok"):
             status = await get_agent_status(project_id, check_backend=False)
@@ -511,7 +531,11 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
         await update_project(project_id, {"agent_status": "error", "agent_last_error": message})
         return False, message, {}
 
-    await stop_agent(project_id)
+    await _stop_agent_impl(project_id)
+    await update_project(
+        project_id,
+        {"agent_status": "starting", "agent_last_error": ""},
+    )
     bridge = await bridge_settings()
     try:
         config_path = await write_agent_config(project)
@@ -607,11 +631,121 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     return True, f"OpenHands agent started on port {port}.", status
 
 
+async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
+    """Start one runtime, serializing concurrent chat/supervisor requests."""
+    async with _agent_lifecycle_locks[project_id]:
+        return await _start_agent_impl(project_id)
+
+
+def agent_warm_in_progress(project_id: str) -> bool:
+    task = _agent_warm_tasks.get(project_id)
+    return bool(task and not task.done())
+
+
+async def _run_agent_warm(
+    project_id: str,
+) -> tuple[bool, str, dict[str, Any]]:
+    try:
+        return await start_agent(project_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        message = str(exc) or "OpenHands background warm-up failed"
+        logger.exception("OpenHands warm-up failed for %s", project_id)
+        await update_project(
+            project_id,
+            {"agent_status": "error", "agent_last_error": message[:4000]},
+        )
+        return False, message, {}
+
+
+async def warm_agent(
+    project_id: str,
+    *,
+    source: str = "api",
+) -> dict[str, Any]:
+    """Start an agent in the background and return without waiting for /ready."""
+    project = await get_project(project_id)
+    if not project:
+        return {
+            "ok": False,
+            "error": "not_found",
+            "message": "Project not found",
+            "project_id": project_id,
+        }
+    project = await ensure_agent_runtime(project)
+
+    existing = _agent_warm_tasks.get(project_id)
+    if existing and not existing.done():
+        return {
+            "ok": True,
+            "status": "warming",
+            "already_warming": True,
+            "project_id": project_id,
+        }
+
+    if not openhands_installed():
+        await update_project(
+            project_id,
+            {
+                "agent_status": "error",
+                "agent_last_error": "OpenHands Agent Server is not installed",
+            },
+        )
+        return {
+            "ok": False,
+            "error": "agent_server_not_installed",
+            "message": "OpenHands Agent Server is not installed",
+            "project_id": project_id,
+        }
+
+    model = await selected_model_metadata(project)
+    if not model["api_key"]:
+        message = f"No API key configured for active profile {model['profile']}"
+        await update_project(
+            project_id,
+            {"agent_status": "error", "agent_last_error": message},
+        )
+        return {
+            "ok": False,
+            "error": "api_key_missing",
+            "message": message,
+            "project_id": project_id,
+        }
+
+    await update_project(
+        project_id,
+        {
+            "agent_status": "starting",
+            "agent_runtime": OPENHANDS_RUNTIME,
+            "agent_last_error": "",
+        },
+    )
+    task = asyncio.create_task(
+        _run_agent_warm(project_id),
+        name=f"warm-openhands-{project_id}",
+    )
+    _agent_warm_tasks[project_id] = task
+
+    def forget(completed: asyncio.Task[Any]) -> None:
+        if _agent_warm_tasks.get(project_id) is completed:
+            _agent_warm_tasks.pop(project_id, None)
+
+    task.add_done_callback(forget)
+    return {
+        "ok": True,
+        "status": "warming",
+        "already_warming": False,
+        "project_id": project_id,
+        "source": source,
+    }
+
+
 async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     from syte.agent_activity import record_agent_event
 
-    await stop_agent(project_id)
-    ok, message, status = await start_agent(project_id)
+    async with _agent_lifecycle_locks[project_id]:
+        ok, message, status = await _start_agent_impl(project_id, force=True)
     if ok:
         await record_agent_event(
             project_id,
@@ -662,10 +796,11 @@ async def get_agent_status(
             else build_direct_url(settings.resolved_public_ip, settings.port)
         )
     running = is_agent_running(project_id)
+    warming = agent_warm_in_progress(project_id)
     status = project.get("agent_status") or ("running" if running else "stopped")
     if running and healthy["ok"]:
         status = "running"
-    elif running:
+    elif running or warming or status == "starting":
         status = "starting"
     elif status not in ("error", "stopped"):
         status = "stopped"
@@ -676,6 +811,7 @@ async def get_agent_status(
         "agent_status": status,
         "agent_running": running,
         "agent_healthy": healthy["ok"],
+        "agent_warming": warming,
         "agent_port": port,
         "agent_local_url": runtime_url,
         "agent_proxy_path": proxy_path,
@@ -693,7 +829,9 @@ async def get_agent_status(
         "agent_conversation_id": project.get("agent_conversation_id") or "",
         "agent_capabilities": [
             "persistent_conversations",
+            "always_on_runtime",
             "native_websocket_events",
+            "tagged_activity_stream",
             "terminal",
             "file_editor",
             "task_tracker",

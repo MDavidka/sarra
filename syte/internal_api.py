@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -22,6 +23,7 @@ from syte.openhands_agent import (
     start_agent,
     stop_agent,
     test_agent,
+    warm_agent,
 )
 from syte.database import get_project
 
@@ -75,6 +77,23 @@ async def internal_agent_start(
         "ok": True,
         "message": message,
         **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
+    }
+
+
+@router.post("/projects/{project_id}/agent/warm")
+async def internal_agent_warm(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Schedule a persistent runtime and return before it becomes ready."""
+    await _require_project(project_id)
+    result = await warm_agent(project_id, source="internal")
+    return {
+        **result,
+        "status_url": f"/api/internal/projects/{project_id}/agent",
+        "stream_url": (
+            f"/api/internal/projects/{project_id}/agent/activity/stream?live=1"
+        ),
     }
 
 
@@ -158,6 +177,10 @@ async def internal_agent_activity(
         "events": events,
         "since_id": since_id,
         "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
+        "tagged_stream_url": (
+            f"/api/internal/projects/{project_id}/agent/activity/stream"
+            "?live=1&format=tagged"
+        ),
     }
 
 
@@ -167,16 +190,36 @@ async def internal_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
-    format: str = "sse",
+    format: Literal[
+        "sse",
+        "tagged",
+        "tagged_sse",
+        "tags",
+        "text",
+        "plain",
+        "jsonl",
+    ] = "sse",
     types: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
+    from syte.log_stream import (
+        stream_agent_activity,
+        stream_agent_activity_formatted,
+        stream_agent_activity_tagged,
+    )
 
     await _require_project(project_id)
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    if fmt in ("text", "jsonl", "plain"):
+    if fmt in ("tagged", "tagged_sse", "tags"):
+        generator = stream_agent_activity_tagged(
+            project_id,
+            live_only=live,
+            since_id=since_id,
+            type_filter=type_filter,
+        )
+        media = "text/event-stream"
+    elif fmt in ("text", "jsonl", "plain"):
         generator = stream_agent_activity_formatted(
             project_id,
             live_only=live,
@@ -191,7 +234,15 @@ async def internal_agent_activity_stream(
     return StreamingResponse(
         generator,
         media_type=media,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "X-Syte-Stream-Format": "tagged-v1" if fmt in {
+                "tagged",
+                "tagged_sse",
+                "tags",
+            } else fmt,
+        },
     )
 
 
