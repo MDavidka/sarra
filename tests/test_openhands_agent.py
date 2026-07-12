@@ -421,8 +421,8 @@ async def test_stream_turn_ignores_previous_finished_state(
             pass
 
         async def recv(self):
-            event = self.events[self.received]
-            self.received += 1
+            event = self.events[FakeWebSocket.received]
+            FakeWebSocket.received += 1
             return json.dumps(event)
 
     class FakeConnection:
