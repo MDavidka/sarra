@@ -1108,6 +1108,45 @@ async def _get_final_response(
     return str(data.get("response") or "") if isinstance(data, dict) else ""
 
 
+async def _send_conversation_message(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str,
+    headers: dict[str, str],
+    conversation_id: str,
+    message: str,
+) -> None:
+    """Send a turn, retrying transient Agent Server failures.
+
+    OpenHands can briefly return a 5xx while a conversation has just become
+    ready or while its previous turn is being finalized. Retrying only these
+    server-side responses avoids surfacing a misleading immediate failure,
+    while leaving validation and provider errors terminal.
+    """
+    url = f"{base_url}/api/conversations/{conversation_id}/events"
+    payload = {
+        "role": "user",
+        "content": [{"type": "text", "text": message}],
+        "run": True,
+    }
+    retryable_statuses = {500, 502, 503, 504}
+    for attempt in range(3):
+        response = await client.post(url, headers=headers, json=payload)
+        if response.status_code < 400:
+            return
+        if response.status_code not in retryable_statuses or attempt == 2:
+            raise await _response_error(response, "message send")
+        delay = 0.25 * (2**attempt)
+        logger.warning(
+            "OpenHands message send returned HTTP %s; retrying in %.2fs "
+            "(attempt %s/3)",
+            response.status_code,
+            delay,
+            attempt + 1,
+        )
+        await asyncio.sleep(delay)
+
+
 async def _stream_conversation_turn(
     project_id: str,
     *,
@@ -1163,17 +1202,13 @@ async def _stream_conversation_turn(
             await websocket.send(
                 json.dumps({"type": "auth", "session_api_key": headers["X-Session-API-Key"]})
             )
-            response = await client.post(
-                f"{base_url}/api/conversations/{conversation_id}/events",
+            await _send_conversation_message(
+                client,
+                base_url=base_url,
                 headers=headers,
-                json={
-                    "role": "user",
-                    "content": [{"type": "text", "text": message}],
-                    "run": True,
-                },
+                conversation_id=conversation_id,
+                message=message,
             )
-            if response.status_code >= 400:
-                raise await _response_error(response, "message send")
 
             while time.monotonic() < deadline:
                 try:

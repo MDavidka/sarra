@@ -392,6 +392,49 @@ async def test_stream_turn_waits_through_initial_idle_status(
 
 
 @pytest.mark.asyncio
+async def test_send_conversation_message_retries_transient_server_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.openhands_agent import _send_conversation_message
+
+    class FakeResponse:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+            self.content = b"{}"
+            self.text = "temporary failure"
+
+        def json(self):
+            return {"detail": "temporary failure"}
+
+    class FakeClient:
+        statuses = [500, 503, 200]
+        calls = 0
+
+        async def post(self, _url, headers=None, json=None):
+            status = self.statuses[self.calls]
+            self.calls += 1
+            return FakeResponse(status)
+
+    delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr("syte.openhands_agent.asyncio.sleep", fake_sleep)
+    client = FakeClient()
+    await _send_conversation_message(
+        client,
+        base_url="http://127.0.0.1:5200",
+        headers={"X-Session-API-Key": "session-key"},
+        conversation_id="conversation-1",
+        message="hello",
+    )
+
+    assert client.calls == 3
+    assert delays == [0.25, 0.5]
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_ignores_previous_finished_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
