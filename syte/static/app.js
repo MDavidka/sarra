@@ -971,6 +971,7 @@ function warmProjectAgent(projectId) {
     .then((result) => {
       if (
         result.ok
+        && result.status === 'warming'
         && activeServiceId === projectId
         && activeSvcTab === 'debug-chat'
         && !debugChatBusy

@@ -684,6 +684,23 @@ async def warm_agent(
             "project_id": project_id,
         }
 
+    port = project.get("agent_port")
+    if (
+        port
+        and is_agent_running(project_id)
+        and _port_listening(int(port))
+    ):
+        await update_project(
+            project_id,
+            {"agent_status": "running", "agent_last_error": ""},
+        )
+        return {
+            "ok": True,
+            "status": "ready",
+            "already_warming": False,
+            "project_id": project_id,
+        }
+
     if not openhands_installed():
         await update_project(
             project_id,
