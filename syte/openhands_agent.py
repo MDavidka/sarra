@@ -35,7 +35,7 @@ from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
 OPENHANDS_START_TIMEOUT_S = 60.0
-AGENT_INSTRUCTION_VERSION = 2
+AGENT_INSTRUCTION_VERSION = 3
 
 logger = logging.getLogger(__name__)
 
@@ -948,9 +948,20 @@ async def _ensure_conversation(
 ) -> str:
     """Reuse a durable project conversation or create one with OpenHands tools."""
     project_id = project["id"]
+    from syte.agent_skills import mcp_server_config
+
     base_url = _server_url(port)
     headers = agent_session_headers(project_id)
     existing = str(project.get("agent_conversation_id") or "").strip()
+    conversation_meta_path = agent_root(project_id) / "conversation-meta.json"
+    conversation_version = None
+    if conversation_meta_path.exists():
+        try:
+            conversation_version = json.loads(conversation_meta_path.read_text()).get("tooling_version")
+        except (OSError, json.JSONDecodeError):
+            conversation_version = None
+    if conversation_version != AGENT_INSTRUCTION_VERSION:
+        existing = ""
     async with httpx.AsyncClient(timeout=30.0) as client:
         if existing:
             conversation = await _conversation_info(
@@ -991,6 +1002,7 @@ async def _ensure_conversation(
                     {"name": "file_editor"},
                     {"name": "task_tracker"},
                 ],
+                "mcp_config": mcp_server_config(project_id, agent_root(project_id)),
                 "agent_context": {
                     "system_message_suffix": instruction,
                     "load_project_skills": True,
@@ -1011,6 +1023,12 @@ async def _ensure_conversation(
     if not conversation_id:
         raise RuntimeError("OpenHands created a conversation without an id")
     await update_project(project_id, {"agent_conversation_id": conversation_id})
+    try:
+        conversation_meta_path.write_text(
+            json.dumps({"tooling_version": AGENT_INSTRUCTION_VERSION}) + "\n"
+        )
+    except OSError:
+        logger.warning("Could not persist conversation tooling version for %s", project_id)
     return conversation_id
 
 

@@ -108,3 +108,35 @@ async def test_map_tool_event_search_and_rewrite() -> None:
     assert event_type == "file_modified"
     assert title == "Rewrite file"
     assert detail == "app/page.tsx"
+
+
+@pytest.mark.asyncio
+async def test_screenshot_uses_requested_viewport(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import syte.preview_access as access
+
+    class FakeProcess:
+        returncode = 0
+        stdout = b"png-bytes"
+        stderr = b""
+
+    commands: list[list[str]] = []
+    monkeypatch.setattr(access.shutil, "which", lambda name: "/usr/bin/chromium" if name == "chromium" else None)
+    monkeypatch.setattr(access.subprocess, "run", lambda command, **kwargs: commands.append(command) or FakeProcess())
+
+    result = await access._capture_screenshot("http://127.0.0.1:3000", width=1600, height=1000)
+
+    assert result["ok"] is True
+    assert result["width"] == 1600
+    assert result["height"] == 1000
+    assert "--window-size=1600,1000" in commands[0]
+
+
+def test_mcp_server_config_is_agent_ready(tmp_data_dir: Path) -> None:
+    from syte.agent_skills import mcp_server_config
+
+    config = mcp_server_config("mcp-proj", tmp_data_dir / "agent")
+    server = config["mcpServers"]["syte-tools"]
+
+    assert server["command"].endswith("/agent/bin/syte-mcp")
+    assert server["env"]["SYTE_PROJECT_ID"] == "mcp-proj"
+    assert server["env"]["SYTE_API_BASE"].startswith("http://127.0.0.1:")

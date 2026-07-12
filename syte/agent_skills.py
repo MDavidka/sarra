@@ -224,6 +224,8 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
                 "Always use the CLI helpers `syte-service` and `syte-access` on PATH. "
                 "Use syte-service for deploy/start/stop/preview/run/logs. "
                 "Use syte-access for preview URL fetch and screenshots. "
+                "The syte-tools MCP server exposes the same operations directly; "
+                "use its screenshot action after starting preview to inspect the rendered UI. "
                 "Do not use raw systemctl, docker, or undocumented curl shortcuts."
             ),
         },
@@ -240,7 +242,8 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             "name": "Preview and access tools",
             "rule": (
                 "Use `syte-access` for preview: status, url, fetch/read page HTML, "
-                "logs (dev server output), and screenshot."
+                "logs (dev server output), and screenshot. Screenshots are returned as "
+                "PNG image content to the model so you can inspect the rendered page before planning edits."
                 f"{custom_block}"
             ),
         },
@@ -286,14 +289,17 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
 def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
     """Syte MCP stdio descriptor for integrations that opt into MCP."""
     return {
-        "name": "syte-tools",
-        "command": str(agent_root / "bin" / "syte-mcp"),
-        "args": [],
-        "env": {
-            "SYTE_PROJECT_ID": project_id,
-            "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
-            "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
-        },
+        "mcpServers": {
+            "syte-tools": {
+                "command": str(agent_root / "bin" / "syte-mcp"),
+                "args": [],
+                "env": {
+                    "SYTE_PROJECT_ID": project_id,
+                    "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
+                    "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
+                },
+            }
+        }
     }
 
 

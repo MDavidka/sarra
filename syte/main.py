@@ -835,6 +835,8 @@ class AgentAccessRequest(BaseModel):
     action: str
     url: str | None = None
     lines: int | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 class AgentAccessConfigRequest(BaseModel):
@@ -941,6 +943,8 @@ async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
         body.action,
         url=body.url,
         lines=body.lines or 200,
+        width=body.width or 1440,
+        height=body.height or 900,
     )
     if result.get("ok"):
         await record_agent_event(
