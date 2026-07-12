@@ -39,7 +39,9 @@ let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
 
-const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 330_000;
+const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 120_000;
+const DEBUG_CHAT_MAX_DOM_NODES = 140;
+const DEBUG_CHAT_HISTORY_EVENTS = 180;
 
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
@@ -179,6 +181,30 @@ function scrollDebugChatToBottom(force = false) {
   if (force) {
     debugChatAutoScroll = true;
   }
+}
+
+function trimDebugChatMessages() {
+  const el = getDebugChatMessagesEl();
+  if (!el) return;
+  const bubbles = [...el.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)')];
+  const excess = bubbles.length - DEBUG_CHAT_MAX_DOM_NODES;
+  if (excess > 0) bubbles.slice(0, excess).forEach((bubble) => bubble.remove());
+}
+
+function compactDebugChatHistory(events) {
+  const requestIds = [];
+  for (const event of events) {
+    const requestId = event.payload?.request_id || '';
+    if ((event.event_type === 'request_started' || event.event_type === 'user_message') && requestId) {
+      if (!requestIds.includes(requestId)) requestIds.push(requestId);
+    }
+  }
+  const recentIds = new Set(requestIds.slice(-5));
+  if (!recentIds.size) return events.slice(-40);
+  return events.filter((event) => {
+    const requestId = event.payload?.request_id || '';
+    return requestId && recentIds.has(requestId);
+  });
 }
 
 function setDebugChatActivity(label, detail = '', icon = 'loader', active = true) {
@@ -503,6 +529,7 @@ function appendDebugChatBubble(event) {
 
   if (role === 'error') addDebugChatErrorActions(bubble, event, errorPresentation);
   messagesEl.appendChild(bubble);
+  trimDebugChatMessages();
   scrollDebugChatToBottom();
 }
 
@@ -682,7 +709,7 @@ async function onDebugChatWorkspaceChange() {
 
 async function syncDebugChatHistory(projectId) {
   try {
-    const res = await api(`/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=500`);
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=120`);
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
     }
@@ -696,7 +723,7 @@ async function loadDebugChatHistory(projectId) {
   debugChatReplayingHistory = true;
   updateDebugChatControls();
   try {
-    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500`);
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=${DEBUG_CHAT_HISTORY_EVENTS}&latest=1`);
     const pendingRequests = new Map();
     for (const event of res.events || []) {
       const requestId = event.payload?.request_id || '';
@@ -710,7 +737,8 @@ async function loadDebugChatHistory(projectId) {
       }
     }
     clearDebugChatPanel({ resetCursor: true });
-    for (const event of res.events || []) {
+    const historyEvents = compactDebugChatHistory(res.events || []);
+    for (const event of historyEvents) {
       handleDebugChatActivity(event);
     }
     const lastId = (res.events || []).reduce((max, e) => Math.max(max, e.id || 0), 0);
@@ -834,6 +862,7 @@ function updateDebugChatControls() {
   const btn = document.getElementById('debug-chat-send');
   const input = document.getElementById('debug-chat-input');
   const cancel = document.getElementById('debug-chat-cancel');
+  const sync = document.getElementById('debug-chat-sync');
   const profile = document.getElementById('debug-chat-profile');
   const hasMessage = Boolean(String(input?.value || '').trim());
   const controlsBusy = debugChatBusy || debugChatSendInFlight || debugChatReplayingHistory;
@@ -849,6 +878,10 @@ function updateDebugChatControls() {
     input.setAttribute('aria-busy', debugChatBusy ? 'true' : 'false');
   }
   if (profile) profile.disabled = controlsBusy;
+  if (sync) {
+    sync.classList.toggle('hidden', !debugChatBusy);
+    sync.disabled = !debugChatBusy || debugChatStopping;
+  }
   if (cancel) {
     cancel.classList.toggle('hidden', !debugChatBusy);
     cancel.disabled = !debugChatBusy || debugChatStopping;
@@ -927,6 +960,20 @@ async function retryDebugChatMessage(message) {
   input.dispatchEvent(new Event('input'));
   input.focus();
   await sendDebugChatMessage();
+}
+
+async function syncDebugChatRequest() {
+  if (!activeServiceId) return;
+  await syncDebugChatHistory(activeServiceId);
+  if (debugChatActiveRequestId) {
+    toast('No finished response found yet. You can stop it safely.');
+    return;
+  }
+  setDebugChatTyping(false);
+  setDebugChatBusy(false);
+  clearDebugChatRequestWatchdog();
+  setDebugChatActivity('Conversation synced', 'Latest activity loaded', 'refresh-cw');
+  dismissDebugChatActivitySoon();
 }
 
 async function cancelDebugChatRequest() {
@@ -1776,14 +1823,17 @@ function switchSvcTab(tab) {
 function renderQuickActions(p) {
   const el = document.getElementById('svc-quick-actions');
   if (!el) return;
+  const deploying = p.status === 'deploying';
   el.innerHTML = `
-    <button type="button" class="svc-action-btn svc-action-deploy" onclick="serviceDeploy('${p.id}')">
-      <i data-lucide="rocket"></i><span>Deploy</span>
+    ${p.url && p.running ? `<a class="svc-action-btn svc-action-production" href="${esc(p.url)}" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Production</span></a>` : `<button type="button" class="svc-action-btn svc-action-secondary" onclick="switchSvcTab('preview')"><i data-lucide="monitor-play"></i><span>Preview</span></button>`}
+    <button type="button" class="svc-action-btn ${deploying ? 'svc-action-danger' : 'svc-action-deploy'}" onclick="${deploying ? `serviceDeployStop('${p.id}')` : `serviceDeploy('${p.id}')`}">
+      <i data-lucide="${deploying ? 'square' : 'rocket'}"></i><span>${deploying ? 'Force stop deploy' : 'Deploy'}</span>
     </button>
     ${p.running
       ? `<button type="button" class="svc-action-btn svc-action-secondary" onclick="serviceAction('${p.id}','stop')"><i data-lucide="square"></i><span>Stop server</span></button>`
       : `<button type="button" class="svc-action-btn svc-action-secondary" onclick="serviceAction('${p.id}','start')"><i data-lucide="play"></i><span>Start server</span></button>`
     }
+    <button type="button" class="svc-action-btn svc-action-link" onclick="switchSvcTab('env')"><i data-lucide="sliders-horizontal"></i><span>Service settings</span></button>
   `;
 }
 
@@ -2077,6 +2127,20 @@ async function servicePreviewStop(id) {
     await loadProjects();
     const p = projects.find(x => x.id === id);
     if (p) renderPreviewSection(p);
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function serviceDeployStop(id) {
+  if (!confirm('Force-stop this deployment? Any process started by it will be stopped.')) return;
+  try {
+    const res = await api(`/projects/${id}/deploy/stop`, { method: 'POST' });
+    toast(res.message || 'deployment stopped');
+    stopLogStream();
+    await loadProjects();
+    const p = projects.find(x => x.id === id);
+    if (p && activeServiceId === id) renderServiceDashboard(p, false);
   } catch (e) {
     toast('Error: ' + e.message);
   }
@@ -2774,6 +2838,7 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
 });
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
+document.getElementById('debug-chat-sync')?.addEventListener('click', syncDebugChatRequest);
 document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
 function bindDebugChatComposer() {
   const input = document.getElementById('debug-chat-input');

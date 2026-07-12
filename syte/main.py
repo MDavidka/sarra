@@ -734,6 +734,7 @@ async def api_agent_activity_public(
     request: Request,
     since_id: int = 0,
     limit: int = 200,
+    latest: bool = False,
 ):
     from syte.agent_activity import list_agent_events
 
@@ -743,7 +744,12 @@ async def api_agent_activity_public(
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
     if key:
         await auth.verify_api_token_from_request(request)
-    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        project_id,
+        since_id=since_id,
+        limit=min(limit, 2000),
+        latest=latest,
+    )
     return {
         "ok": True,
         "project_id": project_id,
@@ -1099,6 +1105,14 @@ async def api_issue_deploy(project_id: str):
         "message": message,
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
     }
+
+
+@app.post("/api/projects/{project_id}/deploy/stop")
+async def api_stop_deploy(project_id: str):
+    project, message = await deployment.stop_deploy(project_id)
+    if not project:
+        raise HTTPException(404, message)
+    return {"project": _enrich(project), "message": message}
 
 
 def _parse_env(raw: Any) -> dict:
