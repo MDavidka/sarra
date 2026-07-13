@@ -192,6 +192,19 @@ async def test_write_agent_config_requires_active_profile_key(tmp_data_dir: Path
         await write_agent_config(project or {})
 
 
+def test_openhands_installed_handles_missing_top_level_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.openhands_agent import openhands_installed
+
+    def missing_package(_name: str):
+        raise ModuleNotFoundError("No module named 'openhands'")
+
+    monkeypatch.setattr("syte.openhands_agent.importlib.util.find_spec", missing_package)
+
+    assert openhands_installed() is False
+
+
 def test_build_agent_server_command_uses_loopback() -> None:
     from syte.openhands_agent import build_agent_server_command
 
@@ -577,6 +590,78 @@ async def test_communicate_with_agent_requires_api_key(
     assert len(failures) == 1
     assert failures[0]["payload"]["error"] == "api_key_missing"
     assert failures[0]["payload"]["retry_message"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_communicate_with_agent_recovers_from_connection_failure(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from syte.database import create_project, init_db, set_setting, update_project
+    from syte.openhands_agent import communicate_with_agent
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-connection-recovery",
+        "name": "Connection Recovery",
+        "port": 3017,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-connection-recovery",
+        {"agent_model_profile": "syra-base", "agent_port": 5337},
+    )
+
+    attempts = 0
+    restarts = 0
+
+    async def fake_start(_project_id: str, **_kwargs):
+        nonlocal restarts
+        restarts += 1
+        return True, "restarted", {"agent_port": 5337}
+
+    async def fake_ensure(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ConnectError("All connection attempts failed")
+        return "conversation-1"
+
+    async def fake_switch(*_args, **_kwargs):
+        return None
+
+    async def fake_stream(*_args, **_kwargs):
+        return "recovered", "finished", ""
+
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+
+    async def fake_status(*_args, **_kwargs):
+        return {
+            "agent_running": True,
+            "agent_healthy": True,
+            "agent_port": 5337,
+            "agent_model": {"model": "test-model"},
+        }
+
+    monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
+    monkeypatch.setattr("syte.openhands_agent.restart_agent", fake_start)
+    monkeypatch.setattr("syte.openhands_agent._ensure_conversation", fake_ensure)
+    monkeypatch.setattr("syte.openhands_agent._switch_conversation_llm", fake_switch)
+    monkeypatch.setattr("syte.openhands_agent._stream_conversation_turn", fake_stream)
+
+    result = await communicate_with_agent(
+        "proj-connection-recovery",
+        "hello",
+        source="test",
+    )
+
+    assert result["ok"] is True
+    assert result["reply"] == "recovered"
+    assert attempts == 2
+    assert restarts == 1
 
 
 @pytest.mark.asyncio

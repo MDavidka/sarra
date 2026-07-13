@@ -97,7 +97,13 @@ def openhands_command() -> str:
 
 
 def openhands_installed() -> bool:
-    return importlib.util.find_spec("openhands.agent_server") is not None
+    try:
+        return importlib.util.find_spec("openhands.agent_server") is not None
+    except ModuleNotFoundError:
+        # ``find_spec`` raises when the top-level package is absent rather than
+        # returning None. Treat that as the normal uninstalled state so status
+        # and startup endpoints can report a useful error.
+        return False
 
 
 def build_agent_server_command(config_path: Path | str, port: int) -> str:
@@ -1460,6 +1466,7 @@ async def _communicate_with_agent_impl(
     auto_start: bool = True,
     emit_request_started: bool = True,
     request_id: str | None = None,
+    _recovered_connection: bool = False,
 ) -> dict[str, Any]:
     from syte.agent_activity import record_agent_event
     from syte.agent_metrics import log_agent_request
@@ -1718,6 +1725,37 @@ async def _communicate_with_agent_impl(
             },
         }
     except httpx.HTTPError as exc:
+        # The Agent Server is a child process. If it exits between the health
+        # probe above and the first conversation request, the client otherwise
+        # returns a generic connection error and leaves the user to retry
+        # manually. Restart once in this request; a second failure is returned
+        # with the normal startup diagnostics.
+        if (
+            not _recovered_connection
+            and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+            and auto_start
+        ):
+            logger.warning(
+                "OpenHands connection failed for %s; restarting the agent once",
+                project_id,
+            )
+            restarted, restart_message, _ = await restart_agent(project_id)
+            if restarted:
+                return await _communicate_with_agent_impl(
+                    project_id,
+                    message,
+                    model_profile=model_profile,
+                    source=source,
+                    auto_start=auto_start,
+                    emit_request_started=False,
+                    request_id=request_id,
+                    _recovered_connection=True,
+                )
+            return await fail(
+                "agent_start_failed",
+                restart_message,
+                log_request=True,
+            )
         error = f"Could not reach OpenHands agent: {exc}"
     except Exception as exc:
         error = str(exc) or "OpenHands agent request failed"
