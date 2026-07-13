@@ -12,10 +12,17 @@ class Settings(BaseSettings):
     caddy_config_path: Path = Path("/etc/caddy/Caddyfile")
     host: str = "0.0.0.0"
     port: int = 8787
-    continue_port_start: int = 5200
-    continue_port_end: int = 5999
+    agent_port_start: int = 5200
+    agent_port_end: int = 5999
     public_ip: str = ""
     admin_email: str = "admin@localhost"
+    docker_nano_cpus: int = 50_000_000
+    docker_memory_bytes: int = 100 * 1024 * 1024
+    docker_log_max_size: str = "10m"
+    docker_log_max_files: int = 3
+    agent_event_timeout_s: float = 300.0
+    agent_cache_ttl_s: float = 300.0
+    agent_cache_max_entries: int = 128
 
     @property
     def resolved_workspaces_dir(self) -> Path:
@@ -39,6 +46,14 @@ class Settings(BaseSettings):
             return ip
         except OSError:
             return "127.0.0.1"
+
+    @property
+    def resolved_agent_port_start(self) -> int:
+        return self.agent_port_start
+
+    @property
+    def resolved_agent_port_end(self) -> int:
+        return self.agent_port_end
 
 
 settings = Settings()

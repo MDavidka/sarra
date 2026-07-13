@@ -17,6 +17,11 @@ def new_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:12]}"
 
 
+def project_agent_lock(project_id: str) -> asyncio.Lock:
+    """Return the shared lock that serializes turns for one conversation."""
+    return _project_locks[project_id]
+
+
 async def submit_agent_request(
     project_id: str,
     message: str,
@@ -53,6 +58,17 @@ async def submit_agent_request(
     )
     prev = _running.get(project_id)
     if prev and not prev.done():
+        # Cancelling only the Syte task would leave the OpenHands run active.
+        # Interrupt the native conversation first so the next request gets a
+        # clean turn and the user sees a coherent activity stream.
+        try:
+            from syte.openhands_agent import interrupt_agent
+
+            await interrupt_agent(project_id)
+        except Exception:
+            # The previous task still gets cancelled below; a failed interrupt
+            # is surfaced by that task's normal runtime error handling.
+            pass
         prev.cancel()
     _running[project_id] = task
 
@@ -62,6 +78,9 @@ async def submit_agent_request(
         "status": "accepted",
         "project_id": project_id,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
+        "tagged_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged"
+        ),
     }
 
 
@@ -74,9 +93,9 @@ async def _run_job(
     source: str,
     auto_start: bool,
 ) -> dict[str, Any]:
-    from syte.continue_agent import _communicate_with_agent_impl
+    from syte.openhands_agent import _communicate_with_agent_impl
 
-    async with _project_locks[project_id]:
+    async with project_agent_lock(project_id):
         try:
             return await _communicate_with_agent_impl(
                 project_id,
@@ -97,3 +116,24 @@ async def _run_job(
                 source=source,
             )
             raise
+        except Exception as exc:
+            error = str(exc) or "Agent request failed"
+            await record_agent_event(
+                project_id,
+                "request_failed",
+                title="Request failed",
+                detail=error[:4000],
+                payload={
+                    "request_id": request_id,
+                    "error": "agent_job_failed",
+                    "message": error,
+                    "retry_message": message[:4000],
+                },
+                source=source,
+            )
+            return {
+                "ok": False,
+                "request_id": request_id,
+                "error": "agent_job_failed",
+                "message": error,
+            }

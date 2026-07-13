@@ -20,8 +20,17 @@ let debugChatReplayingHistory = false;
 let debugChatLoadedProjectId = null;
 let debugChatLastUserMessage = '';
 let debugChatStreamBuffers = new Map();
-let debugChatStreamFlushTimer = null;
-const DEBUG_CHAT_STREAM_FLUSH_MS = 50;
+let debugChatStreamFlushFrame = null;
+let debugChatActiveRequestId = '';
+let debugChatStopping = false;
+let debugChatActivityDismissTimer = null;
+let debugChatRequestWatchdogTimer = null;
+let debugChatRequestStartedAt = 0;
+let debugChatSendInFlight = false;
+let debugChatConnectionState = 'disconnected';
+let debugChatTerminalRequestIds = new Set();
+let debugChatIdleStatus = 'Agent ready';
+let debugChatActivityLabel = '';
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -29,6 +38,8 @@ let statsPollTimer = null;
 let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
+
+const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 330_000;
 
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
@@ -65,7 +76,7 @@ function shouldAttachApiKey(path) {
 function normalizeFetchError(message) {
   const msg = (message || '').trim();
   if (!msg || msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
-    return 'Network error — could not reach the Syte server. Refresh the page or check that Syte is running.';
+    return 'Could not reach the Syte server. Your message is still available to retry when the connection returns.';
   }
   return msg;
 }
@@ -114,12 +125,31 @@ function stopAgentActivityStream() {
     agentActivityStream.close();
     agentActivityStream = null;
   }
-  setDebugChatLiveIndicator(false);
+  setDebugChatConnectionState('disconnected');
 }
 
-function setDebugChatLiveIndicator(live) {
+function setDebugChatConnectionState(state) {
+  debugChatConnectionState = state;
   const dot = document.getElementById('debug-chat-live');
-  if (dot) dot.classList.toggle('live', !!live);
+  const meta = {
+    connected: 'Activity stream connected',
+    connecting: 'Activity stream connecting',
+    reconnecting: 'Activity stream reconnecting',
+    disconnected: 'Activity stream disconnected',
+  };
+  const ariaLabel = meta[state] || meta.disconnected;
+  if (dot) {
+    dot.classList.toggle('live', state === 'connected');
+    dot.classList.toggle('connecting', state === 'connecting' || state === 'reconnecting');
+    dot.setAttribute('aria-label', ariaLabel);
+  }
+  if (!debugChatBusy && !debugChatSendInFlight) {
+    if (state === 'connecting' || state === 'reconnecting') {
+      setDebugChatActivity(state === 'connecting' ? 'Connecting…' : 'Reconnecting…');
+    } else if (state === 'connected') {
+      setDebugChatActivity(debugChatIdleStatus);
+    }
+  }
 }
 
 function getDebugChatMessagesEl() {
@@ -135,41 +165,68 @@ function showDebugChatEmpty() {
   if (empty) empty.classList.remove('hidden');
 }
 
-function scrollDebugChatToBottom() {
+function updateDebugChatScrollState() {
   const el = getDebugChatMessagesEl();
-  if (el && debugChatAutoScroll) el.scrollTop = el.scrollHeight;
+  if (!el) return;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  debugChatAutoScroll = distanceFromBottom < 72;
+}
+
+function scrollDebugChatToBottom(force = false) {
+  const el = getDebugChatMessagesEl();
+  if (!el || (!debugChatAutoScroll && !force)) return;
+  el.scrollTop = el.scrollHeight;
+  if (force) {
+    debugChatAutoScroll = true;
+  }
 }
 
 function setDebugChatActivity(label, detail = '', icon = 'loader', active = true) {
+  void icon;
   const bar = document.getElementById('debug-chat-activity');
   if (!bar) return;
-  bar.classList.toggle('hidden', !active);
-  if (!active) return;
-  const iconEl = bar.querySelector('.debug-chat-activity-icon');
+  if (debugChatActivityDismissTimer) {
+    clearTimeout(debugChatActivityDismissTimer);
+    debugChatActivityDismissTimer = null;
+  }
+  bar.classList.remove('hidden');
   const labelEl = bar.querySelector('.debug-chat-activity-label');
   const detailEl = bar.querySelector('.debug-chat-activity-detail');
-  if (iconEl) {
-    iconEl.setAttribute('data-lucide', icon);
-    iconEl.classList.toggle('debug-chat-activity-spin', icon === 'loader');
-  }
-  if (labelEl) labelEl.textContent = label;
-  if (detailEl) detailEl.textContent = detail;
-  refreshIcons();
+  const nextLabel = active && label ? label : debugChatIdleStatus;
+  debugChatActivityLabel = nextLabel;
+  if (labelEl) labelEl.textContent = nextLabel;
+  if (detailEl) detailEl.textContent = active ? detail : '';
 }
 
-function clearDebugChatPanel() {
+function dismissDebugChatActivitySoon(delay = 2600) {
+  if (debugChatActivityDismissTimer) clearTimeout(debugChatActivityDismissTimer);
+  debugChatActivityDismissTimer = setTimeout(() => {
+    setDebugChatActivity(debugChatIdleStatus);
+  }, delay);
+}
+
+function clearDebugChatPanel({ resetCursor = false } = {}) {
   const el = getDebugChatMessagesEl();
   if (!el) return;
+  if (debugChatStreamFlushFrame) {
+    cancelAnimationFrame(debugChatStreamFlushFrame);
+    debugChatStreamFlushFrame = null;
+  }
+  debugChatStreamBuffers.clear();
   el.innerHTML = '';
   const empty = document.createElement('div');
   empty.className = 'debug-chat-empty';
   empty.id = 'debug-chat-empty';
-  empty.innerHTML = '<i data-lucide="sparkles"></i><p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>';
+  empty.innerHTML = '<p>What would you like to change?</p>';
   el.appendChild(empty);
   debugChatRenderedIds.clear();
-  debugChatSinceId = 0;
-  setDebugChatActivity('', '', 'loader', false);
-  refreshIcons();
+  if (resetCursor) {
+    debugChatSinceId = 0;
+    debugChatTerminalRequestIds.clear();
+  }
+  debugChatAutoScroll = true;
+  setDebugChatTyping(false);
+  if (!debugChatBusy) setDebugChatActivity(debugChatIdleStatus);
 }
 
 const DEBUG_CHAT_ACTION_LABELS = {
@@ -179,36 +236,16 @@ const DEBUG_CHAT_ACTION_LABELS = {
   file_read: 'Read file',
   file_search: 'Search',
   command_run: 'Run command',
+  command_output: 'Command output',
   tool_call: 'Tool call',
+  tool_call_started: 'Tool started',
+  tool_call_finished: 'Tool finished',
+  file_changed: 'File changed',
   service_action: 'Service',
   request_started: 'Request started',
   request_completed: 'Completed',
   processing: 'Working',
 };
-
-function debugChatIconForEvent(eventType) {
-  const map = {
-    user_message: 'user',
-    assistant_message: 'bot',
-    thinking: 'brain',
-    tool_call: 'wrench',
-    command_run: 'terminal',
-    service_action: 'settings-2',
-    file_created: 'file-plus-2',
-    file_modified: 'file-pen-line',
-    file_deleted: 'file-x-2',
-    file_read: 'file-text',
-    file_search: 'search',
-    request_started: 'play-circle',
-    request_completed: 'check-circle-2',
-    request_failed: 'circle-alert',
-    processing: 'loader',
-    agent_started: 'play',
-    agent_stopped: 'square',
-    status: 'info',
-  };
-  return map[eventType] || 'circle-dot';
-}
 
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
@@ -220,7 +257,8 @@ function debugChatRoleForEvent(event) {
   if (type === 'processing') return 'processing';
   if ([
     'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
-    'tool_call', 'command_run', 'service_action', 'request_started',
+    'file_changed', 'tool_call', 'tool_call_started', 'tool_call_finished',
+    'command_run', 'command_output', 'service_action', 'request_started',
   ].includes(type)) {
     return 'action';
   }
@@ -234,27 +272,14 @@ function debugChatActionTitle(event) {
 }
 
 function setDebugChatTyping(show) {
-  const messagesEl = getDebugChatMessagesEl();
-  if (!messagesEl) return;
-  const existing = document.getElementById('debug-chat-typing');
-  if (!show) {
-    existing?.remove();
-    return;
+  document.getElementById('debug-chat-typing')?.remove();
+  if (
+    show
+    && !debugChatReplayingHistory
+    && !['Planning…', 'Working…', 'Writing…'].includes(debugChatActivityLabel)
+  ) {
+    setDebugChatActivity('Planning…', 'Thinking before taking action');
   }
-  if (existing) return;
-  hideDebugChatEmpty();
-  const bubble = document.createElement('div');
-  bubble.className = 'debug-chat-bubble debug-chat-thinking debug-chat-typing';
-  bubble.id = 'debug-chat-typing';
-  bubble.innerHTML = `
-    <div class="debug-chat-bubble-head">
-      <i data-lucide="loader"></i>
-      <span>Agent working…</span>
-    </div>
-  `;
-  messagesEl.appendChild(bubble);
-  scrollDebugChatToBottom();
-  refreshIcons();
 }
 
 function ensureStreamingAssistantBubble(requestId) {
@@ -272,19 +297,17 @@ function ensureStreamingAssistantBubble(requestId) {
   bubble.dataset.requestId = rid;
   bubble.innerHTML = `
     <div class="debug-chat-bubble-head">
-      <i data-lucide="bot"></i>
-      <span>Assistant</span>
+      <span>Agent</span>
     </div>
     <div class="debug-chat-bubble-body"></div>
   `;
   messagesEl.appendChild(bubble);
   scrollDebugChatToBottom();
-  refreshIcons();
   return bubble.querySelector('.debug-chat-bubble-body');
 }
 
 function flushDebugChatStreamBuffers() {
-  debugChatStreamFlushTimer = null;
+  debugChatStreamFlushFrame = null;
   for (const [rid, text] of debugChatStreamBuffers.entries()) {
     const bodyEl = ensureStreamingAssistantBubble(rid);
     if (bodyEl) bodyEl.textContent = text;
@@ -296,23 +319,113 @@ function queueDebugChatStreamDelta(requestId, delta, snapshot) {
   const rid = requestId || 'pending';
   const next = snapshot || ((debugChatStreamBuffers.get(rid) || '') + (delta || ''));
   debugChatStreamBuffers.set(rid, next);
-  if (!debugChatStreamFlushTimer) {
-    debugChatStreamFlushTimer = setTimeout(flushDebugChatStreamBuffers, DEBUG_CHAT_STREAM_FLUSH_MS);
+  if (!debugChatStreamFlushFrame) {
+    debugChatStreamFlushFrame = requestAnimationFrame(flushDebugChatStreamBuffers);
   }
 }
 
-function finalizeDebugChatStream(requestId, finalText) {
+function finalizeDebugChatStream(requestId, finalText = '') {
   const rid = requestId || 'pending';
-  if (debugChatStreamFlushTimer) {
-    clearTimeout(debugChatStreamFlushTimer);
-    debugChatStreamFlushTimer = null;
+  if (debugChatStreamFlushFrame) {
+    cancelAnimationFrame(debugChatStreamFlushFrame);
+    debugChatStreamFlushFrame = null;
   }
+  const bufferedText = debugChatStreamBuffers.get(rid) || '';
   debugChatStreamBuffers.delete(rid);
-  const bodyEl = ensureStreamingAssistantBubble(rid);
-  if (bodyEl && finalText) bodyEl.textContent = finalText;
-  const bubble = document.getElementById(`debug-chat-stream-${rid}`);
+  const text = finalText || bufferedText;
+  let bubble = document.getElementById(`debug-chat-stream-${rid}`);
+  const bodyEl = bubble?.querySelector('.debug-chat-bubble-body')
+    || (text ? ensureStreamingAssistantBubble(rid) : null);
+  if (bodyEl && text) bodyEl.textContent = text;
+  bubble = document.getElementById(`debug-chat-stream-${rid}`);
   if (bubble) bubble.classList.remove('debug-chat-streaming');
   scrollDebugChatToBottom();
+}
+
+function finalizeAllDebugChatStreams() {
+  for (const [requestId, text] of [...debugChatStreamBuffers.entries()]) {
+    finalizeDebugChatStream(requestId, text);
+  }
+}
+
+function debugChatErrorPresentation(event) {
+  const code = event?.payload?.error || '';
+  const fallback = event?.detail || event?.payload?.message || 'The request could not be completed.';
+  const known = {
+    api_key_missing: {
+      title: 'Connect an AI provider',
+      detail: 'Add the API key for this model profile, then retry your message.',
+      settings: true,
+    },
+    invalid_model_profile: {
+      title: 'Choose another model',
+      detail: fallback,
+    },
+    agent_server_not_installed: {
+      title: 'OpenHands is not installed',
+      detail: fallback,
+    },
+    agent_start_failed: {
+      title: 'The agent could not start',
+      detail: fallback,
+    },
+    agent_not_ready: {
+      title: 'The agent is not ready',
+      detail: fallback,
+    },
+    agent_job_failed: {
+      title: 'The agent stopped unexpectedly',
+      detail: fallback,
+    },
+    request_timeout: {
+      title: 'This response took too long',
+      detail: 'The turn may still finish in the background. Reconnect to check for new activity, or retry.',
+    },
+    network_error: {
+      title: 'Connection interrupted',
+      detail: fallback,
+    },
+  };
+  return known[code] || {
+    title: event?.title || 'The request failed',
+    detail: fallback,
+    settings: /api key|provider key|credentials/i.test(fallback),
+  };
+}
+
+function addDebugChatErrorActions(bubble, event, presentation) {
+  const retryMessage = event?.payload?.retry_message || '';
+  const actions = document.createElement('div');
+  actions.className = 'debug-chat-error-actions';
+
+  if (retryMessage) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'debug-chat-error-button';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => retryDebugChatMessage(retryMessage));
+    actions.appendChild(retry);
+  }
+
+  if (presentation.settings) {
+    const settingsButton = document.createElement('button');
+    settingsButton.type = 'button';
+    settingsButton.className = 'debug-chat-error-button';
+    settingsButton.textContent = 'Provider settings';
+    settingsButton.addEventListener('click', openAiSettings);
+    actions.appendChild(settingsButton);
+  }
+
+  if (event?.payload?.reconnect) {
+    const reconnect = document.createElement('button');
+    reconnect.type = 'button';
+    reconnect.className = 'debug-chat-error-button';
+    reconnect.textContent = 'Reconnect';
+    reconnect.addEventListener('click', reconnectDebugChatStream);
+    actions.appendChild(reconnect);
+  }
+
+  if (actions.childElementCount) bubble.appendChild(actions);
 }
 
 function appendDebugChatBubble(event) {
@@ -320,7 +433,9 @@ function appendDebugChatBubble(event) {
   if (!messagesEl || !event) return;
 
   const role = debugChatRoleForEvent(event);
-  const detail = event.detail || event.payload?.content || event.payload?.reply || '';
+  let detail = event.detail || event.payload?.content || event.payload?.reply || '';
+  const errorPresentation = role === 'error' ? debugChatErrorPresentation(event) : null;
+  if (errorPresentation) detail = errorPresentation.detail;
   const actionTitle = debugChatActionTitle(event);
 
   hideDebugChatEmpty();
@@ -347,13 +462,14 @@ function appendDebugChatBubble(event) {
   bubble.className = `debug-chat-bubble debug-chat-${role}`;
   if (event.id != null) bubble.dataset.eventId = String(event.id);
 
-  const iconName = debugChatIconForEvent(event.event_type);
-
   if (role === 'user' || role === 'assistant' || role === 'error') {
-    const title = role === 'user' ? 'You' : role === 'error' ? 'Error' : 'Assistant';
+    const title = role === 'user'
+      ? 'You'
+      : role === 'error'
+        ? errorPresentation.title
+        : 'Assistant';
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
-        <i data-lucide="${iconName}"></i>
         <span>${esc(title)}</span>
       </div>
       <div class="debug-chat-bubble-body">${esc(detail)}</div>
@@ -361,19 +477,18 @@ function appendDebugChatBubble(event) {
   } else if (role === 'thinking') {
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
-        <i data-lucide="${iconName}"></i>
-        <span>${esc(event.title || 'Thinking')}</span>
+        <span>${esc(event.title || 'Plan')}</span>
       </div>
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
   } else if (role === 'action') {
     bubble.classList.add('debug-chat-action-new');
+    const compactDetail = String(detail || '').replace(/\s+/g, ' ').slice(0, 240);
     bubble.innerHTML = `
       <div class="debug-chat-action-row">
-        <i data-lucide="${iconName}"></i>
         <div class="debug-chat-action-text">
           <strong>${esc(actionTitle)}</strong>
-          ${detail ? `<span>${esc(detail)}</span>` : ''}
+          ${compactDetail ? `<span>${esc(compactDetail)}</span>` : ''}
         </div>
       </div>
     `;
@@ -381,22 +496,18 @@ function appendDebugChatBubble(event) {
   } else {
     bubble.innerHTML = `
       <div class="debug-chat-system-row">
-        <i data-lucide="${iconName}"></i>
         <span>${esc(event.title || event.event_type)}${detail ? ` — ${esc(detail)}` : ''}</span>
       </div>
     `;
   }
 
+  if (role === 'error') addDebugChatErrorActions(bubble, event, errorPresentation);
   messagesEl.appendChild(bubble);
   scrollDebugChatToBottom();
-  refreshIcons();
 }
 
 function shouldSkipDebugChatEvent(event) {
   if (event.event_type === 'request_started') {
-    if (!debugChatReplayingHistory && event.payload?.request_id) {
-      ensureStreamingAssistantBubble(event.payload.request_id);
-    }
     return true;
   }
   if (event.event_type === 'token_delta') return true;
@@ -458,19 +569,39 @@ function shouldSkipDebugChatEvent(event) {
 
 function handleDebugChatActivity(event) {
   if (!event) return;
+  const eventRequestId = event.payload?.request_id || '';
+  const isTerminal = event.event_type === 'request_completed' || event.event_type === 'request_failed';
+  if (isTerminal && eventRequestId) {
+    if (debugChatTerminalRequestIds.has(eventRequestId)) return;
+    debugChatTerminalRequestIds.add(eventRequestId);
+  }
+  const eventId = event.id;
+  if (eventId != null && debugChatRenderedIds.has(eventId)) return;
+  if (eventId != null) {
+    debugChatRenderedIds.add(eventId);
+    debugChatSinceId = Math.max(debugChatSinceId, eventId);
+    if (debugChatRenderedIds.size > 2000) {
+      for (const oldId of [...debugChatRenderedIds].slice(0, 500)) {
+        debugChatRenderedIds.delete(oldId);
+      }
+    }
+  }
 
   if (event.event_type === 'request_started') {
     if (!debugChatReplayingHistory) {
       setDebugChatTyping(true);
       setDebugChatBusy(true);
-      setDebugChatActivity('Preparing response', 'The agent is planning the next step');
-      if (event.payload?.request_id) {
-        ensureStreamingAssistantBubble(event.payload.request_id);
+      debugChatActiveRequestId = eventRequestId || debugChatActiveRequestId;
+      setDebugChatActivity('Planning…', 'Thinking before taking action');
+      if (eventRequestId) {
+        armDebugChatRequestWatchdog(activeServiceId, eventRequestId);
       }
     }
   }
-  if (event.event_type === 'token_delta' && !debugChatReplayingHistory) {
-    setDebugChatActivity('Writing response', 'Live text is arriving');
+  if (event.event_type === 'token_delta') {
+    if (!debugChatReplayingHistory && debugChatActivityLabel !== 'Writing…') {
+      setDebugChatActivity('Writing…');
+    }
     queueDebugChatStreamDelta(
       event.payload?.request_id,
       event.payload?.delta || event.detail,
@@ -483,38 +614,57 @@ function handleDebugChatActivity(event) {
     return;
   }
   if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
-    if (!debugChatReplayingHistory) {
-      setDebugChatTyping(false);
-      setDebugChatBusy(false);
-      setDebugChatActivity(
-        event.event_type === 'request_completed' ? 'Response ready' : 'Response failed',
-        '',
-        event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
-      );
+    const requestId = eventRequestId || debugChatActiveRequestId;
+    const isActiveRequest = !debugChatActiveRequestId
+      || (Boolean(eventRequestId) && eventRequestId === debugChatActiveRequestId);
+    const finalText = event.event_type === 'request_completed'
+      ? (event.payload?.reply || event.detail || '')
+      : '';
+    if (debugChatReplayingHistory || isActiveRequest) {
+      finalizeDebugChatStream(requestId, finalText);
     }
+    if (!debugChatReplayingHistory) {
+      if (isActiveRequest) {
+        const wasStopping = debugChatStopping;
+        setDebugChatTyping(false);
+        clearDebugChatRequestWatchdog();
+        setDebugChatBusy(false);
+        debugChatActiveRequestId = '';
+        setDebugChatActivity(
+          event.event_type === 'request_completed'
+            ? 'Response ready'
+            : (wasStopping ? 'Response stopped' : 'Response failed'),
+          '',
+          event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
+        );
+        dismissDebugChatActivitySoon();
+        void updateDebugChatAgentStatus();
+      }
+    }
+  }
+  if (event.event_type === 'agent_started' && !debugChatReplayingHistory) {
+    void updateDebugChatAgentStatus();
   }
 
   if (shouldSkipDebugChatEvent(event)) return;
-  const eventId = event.id;
-  if (eventId != null && debugChatRenderedIds.has(eventId)) return;
-  if (eventId != null) debugChatRenderedIds.add(eventId);
 
   appendDebugChatBubble(event);
+  if (!debugChatReplayingHistory && event.event_type === 'thinking') {
+    setDebugChatActivity('Planning…', String(event.detail || '').replace(/\s+/g, ' ').slice(0, 160));
+  }
   if (!debugChatReplayingHistory && [
     'tool_call', 'command_run', 'file_created', 'file_modified', 'file_deleted',
-    'file_read', 'file_search', 'service_action',
+    'file_read', 'file_search', 'file_changed', 'tool_call_started',
+    'tool_call_finished', 'command_output', 'service_action',
   ].includes(event.event_type)) {
     setDebugChatActivity(
-      debugChatActionTitle(event),
-      event.detail || 'Working in the project',
-      debugChatIconForEvent(event.event_type),
+      'Working…',
+      `${debugChatActionTitle(event)}${event.detail ? ` · ${event.detail}` : ''}`.slice(0, 200),
     );
   }
-  if (eventId != null) debugChatSinceId = Math.max(debugChatSinceId, eventId);
-
   const refreshTypes = [
-    'file_created', 'file_modified', 'file_deleted', 'file_search',
-    'service_action', 'command_run', 'request_completed',
+    'file_created', 'file_modified', 'file_deleted', 'file_changed',
+    'service_action', 'request_completed',
   ];
   if (refreshTypes.includes(event.event_type)) {
     onDebugChatWorkspaceChange();
@@ -531,25 +681,47 @@ async function onDebugChatWorkspaceChange() {
 }
 
 async function syncDebugChatHistory(projectId) {
-  if (debugChatSinceId <= 0) return;
   try {
     const res = await api(`/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=500`);
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
     }
-  } catch { /* best-effort catch-up */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function loadDebugChatHistory(projectId) {
   debugChatReplayingHistory = true;
+  updateDebugChatControls();
   try {
     const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500`);
-    clearDebugChatPanel();
+    const pendingRequests = new Map();
+    for (const event of res.events || []) {
+      const requestId = event.payload?.request_id || '';
+      if (event.event_type === 'request_started' && requestId) {
+        pendingRequests.set(requestId, event);
+      } else if (
+        requestId
+        && (event.event_type === 'request_completed' || event.event_type === 'request_failed')
+      ) {
+        pendingRequests.delete(requestId);
+      }
+    }
+    clearDebugChatPanel({ resetCursor: true });
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
     }
     const lastId = (res.events || []).reduce((max, e) => Math.max(max, e.id || 0), 0);
     if (lastId) debugChatSinceId = Math.max(debugChatSinceId, lastId);
+    const pendingRequestId = [...pendingRequests.keys()].pop() || '';
+    if (pendingRequestId) {
+      debugChatActiveRequestId = pendingRequestId;
+      setDebugChatBusy(true);
+      setDebugChatActivity('Working…', 'Reconnected to the active response');
+      armDebugChatRequestWatchdog(projectId, pendingRequestId);
+    }
   } catch (e) {
     appendDebugChatBubble({
       event_type: 'request_failed',
@@ -558,8 +730,13 @@ async function loadDebugChatHistory(projectId) {
     });
   } finally {
     debugChatReplayingHistory = false;
+    finalizeAllDebugChatStreams();
     setDebugChatTyping(false);
-    setDebugChatBusy(false);
+    if (!debugChatActiveRequestId && !debugChatSendInFlight) {
+      setDebugChatBusy(false);
+    } else {
+      updateDebugChatControls();
+    }
   }
 }
 
@@ -581,11 +758,14 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     agentActivityStream = null;
   }
   const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId) });
+  setDebugChatConnectionState(reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
   agentActivityStream = new EventSource(`${API}/projects/${projectId}/agent/activity/stream?${params}`);
-  setDebugChatLiveIndicator(true);
-  let streamErrorShown = false;
+  agentActivityStream.onopen = () => {
+    setDebugChatConnectionState('connected');
+  };
   agentActivityStream.onmessage = (e) => {
     try {
+      setDebugChatConnectionState('connected');
       const msg = JSON.parse(e.data);
       if (msg.type === 'activity' && msg.event) {
         if (msg.event.id != null) {
@@ -600,79 +780,227 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     } catch { /* ignore */ }
   };
   agentActivityStream.onerror = () => {
-    setDebugChatLiveIndicator(false);
+    setDebugChatConnectionState('reconnecting');
     agentActivityStream?.close();
     agentActivityStream = null;
-    if (!streamErrorShown && reconnectAttempt === 0) {
-      streamErrorShown = true;
-      appendDebugChatBubble({
-        event_type: 'request_failed',
-        title: 'Live stream disconnected',
-        detail: 'Activity stream lost connection — retrying. Chat send still works.',
-      });
+    void syncDebugChatHistory(projectId);
+    if (debugChatBusy) {
+      setDebugChatActivity(
+        'Reconnecting',
+        'Your response is still running; recovering its latest activity',
+        'wifi',
+      );
     }
     scheduleAgentActivityReconnect(projectId, reconnectAttempt);
   };
 }
 
+async function reconnectDebugChatStream() {
+  if (!activeServiceId || activeSvcTab !== 'debug-chat') return;
+  const projectId = activeServiceId;
+  stopAgentActivityStream();
+  setDebugChatConnectionState('connecting');
+  await syncDebugChatHistory(projectId);
+  startAgentActivityStream(projectId);
+}
+
 async function updateDebugChatAgentStatus() {
-  const statusEl = document.getElementById('debug-chat-status');
-  if (!statusEl || !activeServiceId) return;
+  if (!activeServiceId) return;
   try {
     const res = await api(`/projects/${activeServiceId}/agent`);
     if (res.agent_running && res.agent_healthy) {
       const model = res.agent_model?.profile || res.agent_model?.model || 'agent';
-      statusEl.textContent = `Agent online · ${model}`;
-      statusEl.title = '';
+      debugChatIdleStatus = `Ready · ${model}`;
+    } else if (res.agent_status === 'starting' || res.agent_warming) {
+      debugChatIdleStatus = 'Warming agent…';
     } else if (res.agent_last_error) {
-      statusEl.textContent = `Agent error — see chat for details`;
-      statusEl.title = res.agent_last_error;
+      debugChatIdleStatus = 'Agent needs attention';
     } else if (res.agent_install_ok === false) {
-      statusEl.textContent = 'Install Continue CLI: npm i -g @continuedev/cli';
-      statusEl.title = '';
+      debugChatIdleStatus = 'OpenHands is not installed';
     } else if (res.agent_backend && !res.agent_backend.ok) {
-      statusEl.textContent = res.agent_backend.error || 'Configure AI provider keys in Settings → AI';
-      statusEl.title = res.agent_backend.error || '';
+      debugChatIdleStatus = 'Connect an AI provider';
     } else {
-      statusEl.textContent = 'Agent offline — starts on first message';
-      statusEl.title = '';
+      debugChatIdleStatus = 'Ready · starts on first message';
     }
   } catch {
-    statusEl.textContent = 'Agent status unavailable';
-    statusEl.title = '';
+    debugChatIdleStatus = 'Agent status unavailable';
+  }
+  if (!debugChatBusy && !debugChatSendInFlight) {
+    setDebugChatActivity(debugChatIdleStatus);
+  }
+}
+
+function updateDebugChatControls() {
+  const btn = document.getElementById('debug-chat-send');
+  const input = document.getElementById('debug-chat-input');
+  const cancel = document.getElementById('debug-chat-cancel');
+  const profile = document.getElementById('debug-chat-profile');
+  const hasMessage = Boolean(String(input?.value || '').trim());
+  const controlsBusy = debugChatBusy || debugChatSendInFlight || debugChatReplayingHistory;
+  if (btn) {
+    btn.disabled = controlsBusy || !hasMessage;
+    btn.classList.toggle('is-loading', debugChatSendInFlight);
+    btn.setAttribute('aria-busy', debugChatSendInFlight ? 'true' : 'false');
+    const label = btn.querySelector('span');
+    if (label) label.textContent = debugChatSendInFlight ? 'Sending…' : 'Send';
+  }
+  if (input) {
+    input.disabled = false;
+    input.setAttribute('aria-busy', debugChatBusy ? 'true' : 'false');
+  }
+  if (profile) profile.disabled = controlsBusy;
+  if (cancel) {
+    cancel.classList.toggle('hidden', !debugChatBusy);
+    cancel.disabled = !debugChatBusy || debugChatStopping;
+    cancel.classList.toggle('is-loading', Boolean(debugChatBusy && debugChatStopping));
+    const label = cancel.querySelector('span');
+    if (label) label.textContent = debugChatStopping ? 'Stopping…' : 'Stop';
   }
 }
 
 function setDebugChatBusy(busy) {
   debugChatBusy = busy;
-  const btn = document.getElementById('debug-chat-send');
-  const input = document.getElementById('debug-chat-input');
-  if (btn) btn.disabled = busy;
-  if (input) input.disabled = busy;
+  if (!busy) debugChatStopping = false;
+  updateDebugChatControls();
 }
 
-async function ensureDebugChatAgentRunning(projectId) {
+function clearDebugChatRequestWatchdog() {
+  if (debugChatRequestWatchdogTimer) {
+    clearTimeout(debugChatRequestWatchdogTimer);
+    debugChatRequestWatchdogTimer = null;
+  }
+  debugChatRequestStartedAt = 0;
+}
+
+function armDebugChatRequestWatchdog(projectId, requestId) {
+  if (!projectId || !requestId) return;
+  clearDebugChatRequestWatchdog();
+  debugChatRequestStartedAt = Date.now();
+
+  const checkRequest = async () => {
+    if (debugChatActiveRequestId !== requestId) {
+      clearDebugChatRequestWatchdog();
+      return;
+    }
+
+    await syncDebugChatHistory(projectId);
+    if (debugChatActiveRequestId !== requestId) return;
+
+    if ((Date.now() - debugChatRequestStartedAt) >= DEBUG_CHAT_REQUEST_TIMEOUT_MS) {
+      const retryMessage = debugChatLastUserMessage;
+      debugChatTerminalRequestIds.add(requestId);
+      finalizeDebugChatStream(requestId);
+      debugChatActiveRequestId = '';
+      clearDebugChatRequestWatchdog();
+      setDebugChatTyping(false);
+      setDebugChatBusy(false);
+      appendDebugChatBubble({
+        event_type: 'request_failed',
+        title: 'Response timed out',
+        detail: 'The agent did not report a final result before the timeout.',
+        payload: {
+          request_id: requestId,
+          error: 'request_timeout',
+          retry_message: retryMessage,
+          reconnect: true,
+        },
+      });
+      setDebugChatActivity('Response timed out', 'You can reconnect or retry safely', 'clock-alert');
+      return;
+    }
+
+    const delay = debugChatConnectionState === 'connected' ? 8000 : 3000;
+    debugChatRequestWatchdogTimer = setTimeout(checkRequest, delay);
+  };
+
+  debugChatRequestWatchdogTimer = setTimeout(checkRequest, 4000);
+}
+
+async function retryDebugChatMessage(message) {
+  if (debugChatBusy || debugChatSendInFlight) {
+    toast('Wait for the current response or stop it before retrying.');
+    return;
+  }
+  const input = document.getElementById('debug-chat-input');
+  if (!input) return;
+  input.value = message || debugChatLastUserMessage;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+  await sendDebugChatMessage();
+}
+
+async function cancelDebugChatRequest() {
+  if (!activeServiceId || !debugChatBusy || debugChatStopping) return;
+  const cancel = document.getElementById('debug-chat-cancel');
+  debugChatStopping = true;
+  setDebugChatBusy(true);
+  setDebugChatActivity('Stopping response', 'Interrupting the OpenHands turn', 'square');
   try {
-    const res = await api(`/projects/${projectId}/agent`);
-    if (res.agent_running && res.agent_healthy) return;
-    if (res.agent_install_ok === false) return;
-    await api(`/projects/${projectId}/agent/start`, { method: 'POST' });
-  } catch { /* supervisor will retry */ }
+    const res = await api(`/projects/${activeServiceId}/agent/interrupt`, { method: 'POST' });
+    if (!res.ok) throw new Error(formatAgentChatError(res));
+    setDebugChatTyping(false);
+    if ((res.message || '').startsWith('No active')) {
+      finalizeDebugChatStream(debugChatActiveRequestId);
+      clearDebugChatRequestWatchdog();
+      setDebugChatBusy(false);
+      debugChatActiveRequestId = '';
+      setDebugChatActivity('Response stopped', 'Conversation history is preserved', 'square');
+      dismissDebugChatActivitySoon();
+    } else {
+      setDebugChatActivity('Stopping response', 'Waiting for the agent to finish cancelling', 'square');
+      setTimeout(() => {
+        if (activeServiceId) void syncDebugChatHistory(activeServiceId);
+      }, 1000);
+    }
+  } catch (e) {
+    debugChatStopping = false;
+    setDebugChatBusy(true);
+    toast('Could not stop response: ' + normalizeFetchError(e.message));
+    if (cancel) cancel.disabled = false;
+  }
+}
+
+async function getDebugChatProfile() {
+  const select = document.getElementById('debug-chat-profile');
+  return select?.value || select?.getAttribute('value') || 'syra-base';
+}
+
+function warmProjectAgent(projectId) {
+  if (!projectId) return;
+  void api(`/projects/${projectId}/agent/warm`, { method: 'POST' })
+    .then((result) => {
+      if (
+        result.ok
+        && result.status === 'warming'
+        && activeServiceId === projectId
+        && activeSvcTab === 'debug-chat'
+        && !debugChatBusy
+        && !debugChatSendInFlight
+      ) {
+        debugChatIdleStatus = 'Warming agent…';
+        setDebugChatActivity(debugChatIdleStatus);
+      }
+    })
+    .catch(() => {});
 }
 
 async function openDebugChatTab() {
   if (!activeServiceId) return;
+  const projectId = activeServiceId;
+  warmProjectAgent(projectId);
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
   if (projectChanged) {
+    clearDebugChatRequestWatchdog();
+    debugChatActiveRequestId = '';
+    debugChatSendInFlight = false;
+    setDebugChatBusy(false);
     await loadDebugChatHistory(activeServiceId);
     debugChatLoadedProjectId = activeServiceId;
   } else {
     await syncDebugChatHistory(activeServiceId);
   }
-  await ensureDebugChatAgentRunning(activeServiceId);
   startAgentActivityStream(activeServiceId);
   await updateDebugChatAgentStatus();
-  refreshIcons();
 }
 
 function formatAgentChatError(res) {
@@ -684,16 +1012,25 @@ function formatAgentChatError(res) {
 
 async function sendDebugChatMessage() {
   const input = document.getElementById('debug-chat-input');
-  const message = input?.value.trim();
+  const message = String(input?.value || '').trim();
   if (!message) return;
   if (!activeServiceId) {
-    toast('Open a project before using Debug Chat');
+    toast('Open a project before using agent chat.');
     return;
   }
-  if (debugChatBusy) return;
+  if (debugChatReplayingHistory) {
+    toast('The conversation is still loading. Try again in a moment.');
+    return;
+  }
+  if (debugChatBusy || debugChatSendInFlight) {
+    toast('The agent is still working. Keep drafting, or stop the current response first.');
+    input?.focus();
+    return;
+  }
 
-  setDebugChatBusy(true);
-  setDebugChatActivity('Sending request', 'Connecting to the website assistant');
+  debugChatSendInFlight = true;
+  updateDebugChatControls();
+  setDebugChatActivity('Sending…');
   hideDebugChatEmpty();
   debugChatLastUserMessage = message;
   appendDebugChatBubble({
@@ -701,11 +1038,15 @@ async function sendDebugChatMessage() {
     title: 'You',
     detail: message,
   });
+  scrollDebugChatToBottom(true);
   setDebugChatTyping(true);
 
-  const profile = document.getElementById('debug-chat-profile')?.value || 'syra-base';
+  const profile = await getDebugChatProfile();
   const sentMessage = message;
-  if (input) input.value = '';
+  if (input) {
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+  }
   let chatOk = false;
   let acceptedAsync = false;
   try {
@@ -719,15 +1060,34 @@ async function sendDebugChatMessage() {
         event_type: 'request_failed',
         title: 'Request failed',
         detail: formatAgentChatError(res),
+        payload: {
+          error: res.error || 'agent_request_failed',
+          message: res.message || formatAgentChatError(res),
+          retry_message: sentMessage,
+        },
       });
       toast(formatAgentChatError(res));
       setDebugChatTyping(false);
+      debugChatSendInFlight = false;
       setDebugChatBusy(false);
       setDebugChatActivity('Request failed', '', 'circle-alert');
+      dismissDebugChatActivitySoon();
     } else if (res.request_id && (res.status === 'accepted' || !res.reply)) {
       acceptedAsync = true;
-      setDebugChatActivity('Preparing response', 'The agent is planning the next step');
-      ensureStreamingAssistantBubble(res.request_id);
+      debugChatSendInFlight = false;
+      if (debugChatTerminalRequestIds.has(res.request_id)) {
+        // Fast failures (for example a missing provider key) can reach the
+        // activity stream before this POST response. Do not re-lock a turn
+        // that the stream has already finished.
+        debugChatActiveRequestId = '';
+        setDebugChatTyping(false);
+        setDebugChatBusy(false);
+      } else {
+        debugChatActiveRequestId = res.request_id;
+        setDebugChatBusy(true);
+        setDebugChatActivity('Planning…', 'Thinking before taking action');
+        armDebugChatRequestWatchdog(activeServiceId, res.request_id);
+      }
     } else if (res.reply) {
       await syncDebugChatHistory(activeServiceId);
       const messagesEl = getDebugChatMessagesEl();
@@ -741,25 +1101,50 @@ async function sendDebugChatMessage() {
         });
       }
       setDebugChatTyping(false);
+      debugChatSendInFlight = false;
       setDebugChatBusy(false);
       setDebugChatActivity('Response ready', '', 'check-circle-2');
+      dismissDebugChatActivitySoon();
+    } else {
+      throw new Error('The agent accepted the connection but returned no response or request id.');
     }
-    await updateDebugChatAgentStatus();
   } catch (e) {
     appendDebugChatBubble({
       event_type: 'request_failed',
       title: 'Request failed',
       detail: normalizeFetchError(e.message),
+      payload: {
+        error: 'network_error',
+        retry_message: sentMessage,
+        reconnect: true,
+      },
     });
     toast('Error: ' + normalizeFetchError(e.message));
     setDebugChatTyping(false);
-    setDebugChatBusy(false);
-    setDebugChatActivity('Request failed', '', 'circle-alert');
+    debugChatSendInFlight = false;
+    if (debugChatActiveRequestId) {
+      setDebugChatBusy(true);
+      setDebugChatActivity(
+        'Checking response',
+        'The request may still be running; reconnecting to recover its activity',
+        'wifi',
+      );
+    } else {
+      setDebugChatBusy(false);
+      setDebugChatActivity('Request failed', '', 'circle-alert');
+      dismissDebugChatActivitySoon();
+    }
+    if (!debugChatActiveRequestId && input && !String(input.value || '').trim()) {
+      input.value = sentMessage;
+      input.dispatchEvent(new Event('input'));
+    }
   } finally {
-    if (!acceptedAsync && !chatOk) {
+    debugChatSendInFlight = false;
+    if (!acceptedAsync && !chatOk && !debugChatActiveRequestId) {
       setDebugChatTyping(false);
       setDebugChatBusy(false);
     }
+    updateDebugChatControls();
     scrollDebugChatToBottom();
   }
 }
@@ -1027,16 +1412,16 @@ function updateAiApiWarning() {
   const warn = document.getElementById('ai-api-warning');
   const profile = document.getElementById('ai-test-profile')?.value || 'syra-base';
   const keyForProfile = {
-    'syra-nano': 'continue-nano-key',
-    'syra-base': 'continue-base-key',
-    'syra-havy': 'continue-havy-key',
+    'syra-nano': 'agent-nano-key',
+    'syra-base': 'agent-base-key',
+    'syra-havy': 'agent-havy-key',
   };
   const savedForProfile = {
     'syra-nano': aiApiConfigured.nano,
     'syra-base': aiApiConfigured.base,
     'syra-havy': aiApiConfigured.havy,
   };
-  const inputId = keyForProfile[profile] || 'continue-base-key';
+  const inputId = keyForProfile[profile] || 'agent-base-key';
   const ok = savedForProfile[profile] || aiKeySaved(inputId);
   if (warn) warn.classList.toggle('hidden', ok);
   return ok;
@@ -1455,6 +1840,7 @@ function openService(id) {
   const p = projects.find(x => x.id === id);
   if (!p) return;
   activeServiceId = id;
+  warmProjectAgent(id);
   activeSvcTab = 'general';
   switchSvcTab('general');
   updateServiceSidebarNav(p);
@@ -1880,9 +2266,9 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 
 document.getElementById('save-ai-settings-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('save-ai-settings-btn');
-  const nanoKey = document.getElementById('continue-nano-key')?.value?.trim() || '';
-  const baseKey = document.getElementById('continue-base-key')?.value?.trim() || '';
-  const havyKey = document.getElementById('continue-havy-key')?.value?.trim() || '';
+  const nanoKey = document.getElementById('agent-nano-key')?.value?.trim() || '';
+  const baseKey = document.getElementById('agent-base-key')?.value?.trim() || '';
+  const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const needNano = !nanoKey && !aiApiConfigured.nano;
@@ -1892,11 +2278,11 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     return toast('Enter at least one model API key');
   }
   const body = {
-    continue_default_model_profile: document.getElementById('continue-default-profile')?.value || 'syra-base',
+    agent_default_model_profile: document.getElementById('agent-default-profile')?.value || 'syra-base',
   };
-  if (nanoKey) body.continue_syra_nano_api_key = nanoKey;
-  if (baseKey) body.continue_syra_base_api_key = baseKey;
-  if (havyKey) body.continue_syra_havy_api_key = havyKey;
+  if (nanoKey) body.agent_syra_nano_api_key = nanoKey;
+  if (baseKey) body.agent_syra_base_api_key = baseKey;
+  if (havyKey) body.agent_syra_havy_api_key = havyKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   btn.disabled = true;
@@ -1904,9 +2290,9 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   try {
     const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
     toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Provider settings saved');
-    if (nanoKey) document.getElementById('continue-nano-key').value = '';
-    if (baseKey) document.getElementById('continue-base-key').value = '';
-    if (havyKey) document.getElementById('continue-havy-key').value = '';
+    if (nanoKey) document.getElementById('agent-nano-key').value = '';
+    if (baseKey) document.getElementById('agent-base-key').value = '';
+    if (havyKey) document.getElementById('agent-havy-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     await loadSettings();
     await loadAiDashboard();
@@ -2046,12 +2432,9 @@ async function loadSettings() {
     const previewDnsHint = document.getElementById('preview-dns-hint');
     const cfToken = document.getElementById('set-cf-token');
     const cfStatus = document.getElementById('cf-token-status');
-    const continueDefaultProfile = document.getElementById('continue-default-profile');
-    const continueNanoKey = document.getElementById('continue-nano-key');
-    const continueBaseKey = document.getElementById('continue-base-key');
-    const continueHavyKey = document.getElementById('continue-havy-key');
+    const agentDefaultProfile = document.getElementById('agent-default-profile');
     const agentMaxCount = document.getElementById('agent-max-count');
-    const continueRuntimeStatus = document.getElementById('continue-runtime-status');
+    const agentRuntimeStatus = document.getElementById('agent-runtime-status');
     const syraInternalSecret = document.getElementById('syra-internal-secret');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
@@ -2088,13 +2471,17 @@ async function loadSettings() {
         cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
       }
     }
-    if (continueDefaultProfile && s.continue_default_model_profile) continueDefaultProfile.value = s.continue_default_model_profile;
+    const defaultProfile = s.agent_default_model_profile || 'syra-base';
+    if (agentDefaultProfile) agentDefaultProfile.value = defaultProfile;
+    if (window.customElements?.whenDefined) await customElements.whenDefined('sl-select');
+    const debugChatProfile = document.getElementById('debug-chat-profile');
+    if (debugChatProfile) debugChatProfile.value = defaultProfile;
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [
-      ['continue-nano-key', 'continue-nano-key-hint', s.continue_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
-      ['continue-base-key', 'continue-base-key-hint', s.continue_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
-      ['continue-havy-key', 'continue-havy-key-hint', s.continue_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
+      ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
+      ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
+      ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
@@ -2105,23 +2492,23 @@ async function loadSettings() {
       if (hint) hint.textContent = saved ? savedText : requiredText;
     });
     aiApiConfigured = {
-      nano: Boolean(s.continue_syra_nano_api_key_set),
-      base: Boolean(s.continue_syra_base_api_key_set),
-      havy: Boolean(s.continue_syra_havy_api_key_set),
+      nano: Boolean(s.agent_syra_nano_api_key_set),
+      base: Boolean(s.agent_syra_base_api_key_set),
+      havy: Boolean(s.agent_syra_havy_api_key_set),
     };
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
         ? 'internal secret saved — enter new value to replace'
         : 'shared secret for sycord.com -> Syte';
     }
-    if (continueRuntimeStatus) {
+    if (agentRuntimeStatus) {
       const parts = [];
-      parts.push(`default: ${s.continue_default_model_profile || 'syra-base'}`);
-      parts.push(s.continue_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
-      parts.push(s.continue_syra_base_api_key_set ? 'base key saved' : 'no base key');
-      parts.push(s.continue_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
+      parts.push(`default: ${defaultProfile}`);
+      parts.push(s.agent_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
+      parts.push(s.agent_syra_base_api_key_set ? 'base key saved' : 'no base key');
+      parts.push(s.agent_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
-      continueRuntimeStatus.textContent = parts.join(' · ');
+      agentRuntimeStatus.textContent = parts.join(' · ');
     }
     const directUrl = document.getElementById('direct-url');
     const guiUrl = document.getElementById('gui-url');
@@ -2182,7 +2569,7 @@ async function loadAiDashboard() {
       if (fill) fill.style.width = `${d.mnoa.percent}%`;
     }
     const onboard = d.onboarding || {};
-    const doneCount = ['internal_api', 'ai_models', 'provider', 'cli_server'].filter(k => onboard[k]).length;
+    const doneCount = ['internal_api', 'ai_models', 'provider', 'agent_server'].filter(k => onboard[k]).length;
     const badge = document.getElementById('ai-onboard-badge');
     if (badge) badge.textContent = `${doneCount}/4`;
     document.querySelectorAll('#ai-checklist li').forEach(li => {
@@ -2256,11 +2643,11 @@ function renderAiDebug(report) {
     <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
     <div>
       <strong>Agent runtime</strong>
-      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · CLI ${report.continue_cli?.installed ? esc(report.continue_cli.version || 'installed') : 'missing'}</div>
+      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · Agent Server ${report.openhands_agent_server?.installed ? esc(report.openhands_agent_server.version || 'installed') : 'missing'}</div>
       ${agent.serve_command ? `<div class="hint">serve cmd: <code>${esc(agent.serve_command)}</code></div>` : ''}
       ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
     </div>
-    ${config.snippet ? `<div><strong>config.yaml</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
+    ${config.snippet ? `<div><strong>agent_server_config.json</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
     ${report.logs_tail ? `<div><strong>Agent logs (tail)</strong><pre class="ai-debug-logs">${esc(report.logs_tail)}</pre></div>` : ''}
   `;
 }
@@ -2386,27 +2773,21 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
   switchSvcTab(btn.dataset.svcTab);
 });
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
-document.getElementById('debug-chat-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendDebugChatMessage();
-  }
-});
-document.getElementById('debug-chat-clear')?.addEventListener('click', () => {
-  clearDebugChatPanel();
-  if (activeServiceId && activeSvcTab === 'debug-chat') {
-    startAgentActivityStream(activeServiceId);
-  }
-});
-document.querySelectorAll('[data-debug-chat-prompt]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const input = document.getElementById('debug-chat-input');
-    if (!input || debugChatBusy) return;
-    input.value = button.dataset.debugChatPrompt || '';
-    input.focus();
-    input.dispatchEvent(new Event('input'));
+document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
+document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
+function bindDebugChatComposer() {
+  const input = document.getElementById('debug-chat-input');
+  if (!input) return;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendDebugChatMessage();
+    }
   });
-});
+  input.addEventListener('input', updateDebugChatControls);
+  updateDebugChatControls();
+}
+bindDebugChatComposer();
 
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);

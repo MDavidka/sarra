@@ -7,9 +7,11 @@
   <title>Syte</title>
   <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js"></script>
 </head>
 <body>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -106,7 +108,7 @@
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
-                <i data-lucide="messages-square"></i><span>Debug Chat</span>
+                <i data-lucide="messages-square"></i><span>Agent chat</span>
               </button>
             </div>
           </div>
@@ -360,51 +362,36 @@
 
               <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
                 <div class="debug-chat-panel">
-                  <div class="svc-panel-intro">
-                    <div class="svc-panel-intro-icon"><i data-lucide="messages-square"></i></div>
+                  <div class="debug-chat-header">
                     <div>
-                      <h2>Website assistant</h2>
-                      <p>Describe a change in plain language. The assistant edits your project files for you.</p>
+                      <h2>Agent chat</h2>
+                      <p>Describe what you want changed.</p>
                     </div>
-                  </div>
-                  <div class="debug-chat-toolbar">
-                    <div class="debug-chat-toolbar-left">
-                      <span class="logs-live-dot" id="debug-chat-live" title="Activity stream"></span>
-                      <span class="debug-chat-status" id="debug-chat-status">Checking agent…</span>
-                    </div>
-                    <div class="debug-chat-toolbar-right">
-                      <select id="debug-chat-profile" class="toolbar-select debug-chat-profile" aria-label="Model profile">
+                    <label class="debug-chat-profile-label" for="debug-chat-profile">
+                      <span>Model</span>
+                      <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="syra-nano">nano</option>
                         <option value="syra-base" selected>base</option>
                         <option value="syra-havy">havy</option>
                       </select>
-                      <button type="button" class="logs-tool-btn" id="debug-chat-clear" title="Clear chat">
-                        <i data-lucide="trash-2"></i>
-                      </button>
-                    </div>
+                    </label>
                   </div>
-                  <div class="debug-chat-activity hidden" id="debug-chat-activity" role="status" aria-live="polite">
-                    <i data-lucide="loader" class="debug-chat-activity-icon"></i>
-                    <span class="debug-chat-activity-label">Preparing response</span>
+                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
+                    <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
+                    <span class="debug-chat-activity-label">Connecting…</span>
                     <span class="debug-chat-activity-detail"></span>
                   </div>
-                  <div class="debug-chat-messages" id="debug-chat-messages">
+                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
                     <div class="debug-chat-empty" id="debug-chat-empty">
-                      <i data-lucide="sparkles"></i>
-                      <p>Describe changes for this website. The AI agent edits files in your workspace — start preview to see updates live.</p>
+                      <p>What would you like to change?</p>
                     </div>
                   </div>
                   <div class="debug-chat-composer">
-                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" placeholder="e.g. Change the hero headline to Welcome and use a blue gradient background"></textarea>
-                    <button type="button" class="btn-pill btn-primary debug-chat-send" id="debug-chat-send">
-                      <i data-lucide="send"></i><span>Send</span>
-                    </button>
-                  </div>
-                  <div class="debug-chat-quick-actions" aria-label="Quick prompts">
-                    <span>Try:</span>
-                    <button type="button" data-debug-chat-prompt="Improve the website copy so it sounds clearer and more natural.">Improve copy</button>
-                    <button type="button" data-debug-chat-prompt="Check the current layout for usability issues and fix the most important one.">Fix layout</button>
-                    <button type="button" data-debug-chat-prompt="Run a quick check of the website and tell me what needs attention.">Run a check</button>
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea>
+                    <div class="debug-chat-composer-actions">
+                      <button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button>
+                      <button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -535,7 +522,7 @@
               <div class="ai-dash-header">
                 <div>
                   <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span></h1>
-                  <p class="projects-sub ai-dash-sub">Continue CLI agents — sycord.com routes by UUID</p>
+                  <p class="projects-sub ai-dash-sub">OpenHands agents — sycord.com routes by UUID</p>
                 </div>
               </div>
 
@@ -575,9 +562,9 @@
                 <summary class="ai-onboard-summary">Onboarding <span class="ai-onboard-badge" id="ai-onboard-badge">—</span></summary>
                 <ul class="ai-checklist" id="ai-checklist">
                   <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
-                  <li data-step="ai_models"><span class="ai-check-box"></span><span>3 model API keys</span></li>
-                  <li data-step="provider"><span class="ai-check-box"></span><span>Verted + DeepSeek</span></li>
-                  <li data-step="cli_server"><span class="ai-check-box"></span><span>Continue CLI installed</span></li>
+                  <li data-step="ai_models"><span class="ai-check-box"></span><span>At least one model API key</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Verted and DeepSeek keys</span></li>
+                  <li data-step="agent_server"><span class="ai-check-box"></span><span>OpenHands Agent Server installed</span></li>
                 </ul>
                 <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
               </details>
@@ -639,9 +626,9 @@
                 </div>
                 <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
                 <div class="form-group">
-                  <label for="continue-nano-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="continue-nano-key" placeholder="Verted API key" autocomplete="off">
-                  <span class="hint" id="continue-nano-key-hint">Required for nano profile.</span>
+                  <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-nano-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="agent-nano-key-hint">Required for nano profile.</span>
                 </div>
               </div>
 
@@ -652,9 +639,9 @@
                 </div>
                 <code class="ai-key-url">https://api.deepseek.com/v1</code>
                 <div class="form-group">
-                  <label for="continue-base-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="continue-base-key" placeholder="DeepSeek API key" autocomplete="off">
-                  <span class="hint" id="continue-base-key-hint">Required for base profile.</span>
+                  <label for="agent-base-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
+                  <span class="hint" id="agent-base-key-hint">Required for base profile.</span>
                 </div>
               </div>
 
@@ -665,16 +652,16 @@
                 </div>
                 <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
                 <div class="form-group">
-                  <label for="continue-havy-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="continue-havy-key" placeholder="Verted API key" autocomplete="off">
-                  <span class="hint" id="continue-havy-key-hint">Required for havy profile.</span>
+                  <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-havy-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="agent-havy-key-hint">Required for havy profile.</span>
                 </div>
               </div>
 
               <div class="form-row">
                 <div class="form-group">
-                  <label for="continue-default-profile">Default profile</label>
-                  <select id="continue-default-profile">
+                  <label for="agent-default-profile">Default profile</label>
+                  <select id="agent-default-profile">
                     <option value="syra-nano">syra-nano</option>
                     <option value="syra-base">syra-base</option>
                     <option value="syra-havy">syra-havy</option>
@@ -699,11 +686,11 @@
                   <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
                   <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
-                  <div class="ai-env-row"><code>CONTINUE_DISABLE_HUB</code><span>No Continue Hub login required</span></div>
+                  <div class="ai-env-row"><code>OPENHANDS_AGENT_SERVER_CONFIG_PATH</code><span>Per-project OpenHands server configuration</span></div>
                 </div>
               </details>
 
-              <div id="continue-runtime-status" class="hint"></div>
+              <div id="agent-runtime-status" class="hint"></div>
             </div>
             <div class="ai-settings-foot">
               <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>
