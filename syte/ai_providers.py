@@ -27,7 +27,7 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "provider": "openai",
         "api_base": VERTED_API_BASE,
         "model": "gemini-2.5-flash",
-        "setting_key": "continue_syra_nano_api_key",
+        "setting_key": "agent_syra_nano_api_key",
         "secret_env": "SYRA_NANO_API_KEY",
     },
     "syra-base": {
@@ -36,7 +36,7 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "provider": "openai",
         "api_base": DEEPSEEK_API_BASE,
         "model": "deepseek-chat",
-        "setting_key": "continue_syra_base_api_key",
+        "setting_key": "agent_syra_base_api_key",
         "secret_env": "SYRA_BASE_API_KEY",
     },
     "syra-havy": {
@@ -45,7 +45,7 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "provider": "openai",
         "api_base": VERTED_API_BASE,
         "model": "gemini-2.5-pro",
-        "setting_key": "continue_syra_havy_api_key",
+        "setting_key": "agent_syra_havy_api_key",
         "secret_env": "SYRA_HAVY_API_KEY",
     },
 }

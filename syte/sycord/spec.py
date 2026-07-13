@@ -117,12 +117,18 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "9. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
         ],
         "agent_session": {
-            "description": "Continuous workspace agent (cn serve) per project. Change requests are async jobs.",
+            "description": "Continuous always-warm OpenHands runtime per used project. Change requests are async jobs.",
             "status": f"{prefix}/agent_status?uuid=",
+            "warm": "POST /api/agent_warm {uuid} — non-blocking and deduplicated",
             "submit": f"POST {prefix}/agent_change",
             "activity_snapshot": f"GET {prefix}/agent_activity?uuid=&since_id=",
             "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
-            "stream_formats": ["default (SSE JSON)", "format=text", "format=jsonl"],
+            "stream_formats": [
+                "default (SSE JSON)",
+                "format=tagged ([think]<json>, [tool:start]<json>, etc.)",
+                "format=text",
+                "format=jsonl",
+            ],
             "async_response": {
                 "ok": True,
                 "request_id": "req_abc123def456",
