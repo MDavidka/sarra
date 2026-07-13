@@ -1774,7 +1774,7 @@ async def _communicate_with_agent_impl(
                 # once and resend the current user turn.
                 logger.warning(
                     "OpenHands message send failed for conversation %s; "
-                    "recreating the conversation",
+                    "recreating the conversation and waiting for it to become ready",
                     conversation_id,
                 )
                 await update_project(project_id, {"agent_conversation_id": ""})
@@ -1784,6 +1784,29 @@ async def _communicate_with_agent_impl(
                     port=int(port),
                     model=model,
                 )
+                # Wait for the freshly created conversation's event service to
+                # finish initializing before the retry send. Without this wait
+                # the immediate follow-up POST still returns HTTP 500 because
+                # the conversation is in a transient "starting" state.
+                base_url = _server_url(int(port))
+                headers = agent_session_headers(project_id)
+                async with httpx.AsyncClient(timeout=10.0) as _client:
+                    ready_status = await _wait_for_conversation_status(
+                        _client,
+                        base_url=base_url,
+                        headers=headers,
+                        conversation_id=conversation_id,
+                        acceptable=_REUSABLE_CONVERSATION_STATUSES,
+                        timeout_s=_CONVERSATION_READY_TIMEOUT_S,
+                    )
+                if ready_status not in _REUSABLE_CONVERSATION_STATUSES:
+                    logger.warning(
+                        "Recreated conversation %s did not reach a sendable status "
+                        "(last: %s); attempting send anyway",
+                        conversation_id,
+                        ready_status,
+                    )
+                created = True
         if failure:
             error_code = (
                 "agent_interrupted"
