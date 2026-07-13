@@ -3,7 +3,7 @@ import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -120,10 +120,10 @@ class SettingsRequest(BaseModel):
     preview_base_domain: str | None = None
     cloudflare_api_token: str | None = None
     preview_wildcard_tls: str | None = None
-    agent_default_model_profile: str | None = None
-    agent_syra_nano_api_key: str | None = None
-    agent_syra_base_api_key: str | None = None
-    agent_syra_havy_api_key: str | None = None
+    continue_default_model_profile: str | None = None
+    continue_syra_nano_api_key: str | None = None
+    continue_syra_base_api_key: str | None = None
+    continue_syra_havy_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
 
@@ -255,7 +255,7 @@ async def _gui_url() -> str:
 @app.get("/api/settings")
 async def get_settings():
     from syte.ai_providers import provider_catalog
-    from syte.openhands_agent import bridge_settings
+    from syte.continue_agent import bridge_settings
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -276,13 +276,13 @@ async def get_settings():
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
-        "agent_default_model_profile": bridge["default_profile"],
-        "agent_syra_nano_model": bridge["syra_nano_model"],
-        "agent_syra_base_model": bridge["syra_base_model"],
-        "agent_syra_havy_model": bridge["syra_havy_model"],
-        "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
-        "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
-        "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
+        "continue_default_model_profile": bridge["default_profile"],
+        "continue_syra_nano_model": bridge["syra_nano_model"],
+        "continue_syra_base_model": bridge["syra_base_model"],
+        "continue_syra_havy_model": bridge["syra_havy_model"],
+        "continue_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
+        "continue_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
+        "continue_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
@@ -383,33 +383,29 @@ async def save_settings(body: SettingsRequest):
         proxy_updated = True
         messages.append(f"Preview wildcard TLS mode: {mode}")
 
-    if body.agent_default_model_profile is not None:
-        from syte.ai_providers import PROFILE_PROVIDERS
-
-        profile = body.agent_default_model_profile.strip() or "syra-base"
-        if profile not in PROFILE_PROVIDERS:
-            raise HTTPException(400, f"Unknown model profile: {profile}")
-        await set_setting("agent_default_model_profile", profile)
-        messages.append(f"Default OpenHands model profile: {profile}")
-    if body.agent_syra_nano_api_key is not None:
-        await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
+    if body.continue_default_model_profile is not None:
+        profile = body.continue_default_model_profile.strip() or "syra-base"
+        await set_setting("continue_default_model_profile", profile)
+        messages.append(f"Default Continue model profile: {profile}")
+    if body.continue_syra_nano_api_key is not None:
+        await set_setting("continue_syra_nano_api_key", body.continue_syra_nano_api_key.strip())
         messages.append(
             "syra-nano (Verted) API key saved."
-            if body.agent_syra_nano_api_key.strip()
+            if body.continue_syra_nano_api_key.strip()
             else "syra-nano API key cleared."
         )
-    if body.agent_syra_base_api_key is not None:
-        await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
+    if body.continue_syra_base_api_key is not None:
+        await set_setting("continue_syra_base_api_key", body.continue_syra_base_api_key.strip())
         messages.append(
             "syra-base (DeepSeek) API key saved."
-            if body.agent_syra_base_api_key.strip()
+            if body.continue_syra_base_api_key.strip()
             else "syra-base API key cleared."
         )
-    if body.agent_syra_havy_api_key is not None:
-        await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
+    if body.continue_syra_havy_api_key is not None:
+        await set_setting("continue_syra_havy_api_key", body.continue_syra_havy_api_key.strip())
         messages.append(
             "syra-havy (Verted) API key saved."
-            if body.agent_syra_havy_api_key.strip()
+            if body.continue_syra_havy_api_key.strip()
             else "syra-havy API key cleared."
         )
     if body.agent_max_count is not None:
@@ -583,129 +579,48 @@ async def api_preview_stop(project_id: str):
 
 @app.get("/api/projects/{project_id}/agent")
 async def api_agent_status_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status
+    from syte.continue_agent import get_agent_status
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/warm")
-async def api_agent_warm_public(project_id: str):
-    """Schedule the persistent OpenHands runtime without blocking for startup."""
-    from syte.openhands_agent import warm_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await warm_agent(project_id, source="gui")
-    return {
-        **result,
-        "status_url": f"/api/projects/{project_id}/agent",
-        "stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1"
-        ),
-    }
+    return {"ok": True, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
 
 
 @app.post("/api/projects/{project_id}/agent/start")
 async def api_agent_start_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, start_agent
+    from syte.continue_agent import get_agent_status, start_agent
 
     ok, message, _meta = await start_agent(project_id)
     if not ok:
         raise HTTPException(400, message)
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
+    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
 
 
 @app.post("/api/projects/{project_id}/agent/stop")
 async def api_agent_stop_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, stop_agent
+    from syte.continue_agent import get_agent_status, stop_agent
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
     ok, message = await stop_agent(project_id)
-    return {
-        "ok": ok,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/interrupt")
-async def api_agent_interrupt_public(project_id: str, request: Request):
-    """Cancel the active OpenHands turn without discarding conversation history."""
-    from syte.openhands_agent import get_agent_status, interrupt_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    ok, message = await interrupt_agent(project_id)
-    if not ok:
-        raise HTTPException(400, message)
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
+    return {"ok": ok, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
 
 
 @app.post("/api/projects/{project_id}/agent/restart")
 async def api_agent_restart_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, restart_agent
+    from syte.continue_agent import get_agent_status, restart_agent
 
     ok, message, _meta = await restart_agent(project_id)
     if not ok:
         raise HTTPException(400, message)
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
+    return {"ok": True, "message": message, **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/")))}
 
 
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
-    from syte.openhands_agent import get_agent_logs
+    from syte.continue_agent import get_agent_logs
 
     project = await get_project(project_id)
     if not project:
@@ -750,9 +665,6 @@ async def api_agent_activity_public(
         "events": events,
         "since_id": since_id,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
-        "tagged_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged"
-        ),
     }
 
 
@@ -762,22 +674,10 @@ async def api_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
-    format: Literal[
-        "sse",
-        "tagged",
-        "tagged_sse",
-        "tags",
-        "text",
-        "plain",
-        "jsonl",
-    ] = "sse",
+    format: str = "sse",
     types: str = "",
 ):
-    from syte.log_stream import (
-        stream_agent_activity,
-        stream_agent_activity_formatted,
-        stream_agent_activity_tagged,
-    )
+    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
 
     project = await get_project(project_id)
     if not project:
@@ -787,15 +687,7 @@ async def api_agent_activity_stream(
         await auth.verify_api_token_from_request(request)
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    if fmt in ("tagged", "tagged_sse", "tags"):
-        generator = stream_agent_activity_tagged(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-        )
-        media = "text/event-stream"
-    elif fmt in ("text", "jsonl", "plain"):
+    if fmt in ("text", "jsonl", "plain"):
         generator = stream_agent_activity_formatted(
             project_id,
             live_only=live,
@@ -810,15 +702,7 @@ async def api_agent_activity_stream(
     return StreamingResponse(
         generator,
         media_type=media,
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Syte-Stream-Format": "tagged-v1" if fmt in {
-                "tagged",
-                "tagged_sse",
-                "tags",
-            } else fmt,
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -906,7 +790,7 @@ async def api_agent_access_capabilities(project_id: str):
 @app.get("/api/projects/{project_id}/agent/access-config")
 async def api_agent_access_config_get(project_id: str):
     from syte.agent_skills import read_access_config
-    from syte.openhands_agent import agent_root
+    from syte.continue_agent import agent_root
 
     project = await get_project(project_id)
     if not project:
@@ -917,7 +801,7 @@ async def api_agent_access_config_get(project_id: str):
 @app.put("/api/projects/{project_id}/agent/access-config")
 async def api_agent_access_config_put(project_id: str, body: AgentAccessConfigRequest):
     from syte.agent_skills import read_access_config, write_access_config
-    from syte.openhands_agent import agent_root, write_agent_config
+    from syte.continue_agent import agent_root, write_agent_config
 
     project = await get_project(project_id)
     if not project:
@@ -974,7 +858,7 @@ async def api_agent_debug_gui(project_id: str, profile: str | None = None):
 
 @app.post("/api/projects/{project_id}/agent/test")
 async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
-    from syte.openhands_agent import test_agent
+    from syte.continue_agent import test_agent
 
     project = await get_project(project_id)
     if not project:
@@ -985,7 +869,7 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
 
 @app.post("/api/projects/{project_id}/agent/chat")
 async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool = False):
-    from syte.openhands_agent import communicate_with_agent
+    from syte.continue_agent import communicate_with_agent
 
     project = await get_project(project_id)
     if not project:

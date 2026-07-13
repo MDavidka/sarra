@@ -61,7 +61,7 @@ async def test_sycord_agent_change_async(tmp_data_dir: Path, monkeypatch: pytest
             "stream_url": "/api/projects/sycord-proj/agent/activity/stream?live=1",
         }
 
-    monkeypatch.setattr("syte.openhands_agent.communicate_with_agent", fake_communicate)
+    monkeypatch.setattr("syte.continue_agent.communicate_with_agent", fake_communicate)
 
     result = await service.agent_change("sycord-proj", "Add footer", model_profile="syra-base")
     assert result["ok"] is True
@@ -89,7 +89,7 @@ async def test_sycord_agent_status_includes_stream_urls(tmp_data_dir: Path, monk
             "agent_port": 5204,
         }
 
-    monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
+    monkeypatch.setattr("syte.continue_agent.get_agent_status", fake_status)
 
     payload = await service.agent_status("sycord-status", request_base="https://sycord.site")
     assert payload is not None

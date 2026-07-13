@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from syte import __version__
-from syte.config import settings
 from syte.nextjs_layout import (
     ensure_nextjs_dockerfile,
     find_router_dir,
@@ -206,18 +205,6 @@ def _runtime_env_args(repo: Path, container_port: int, env_vars_raw: str | dict)
     return args
 
 
-def docker_runtime_args() -> list[str]:
-    """Return hard per-project container limits and bounded Docker logs."""
-    return [
-        "--cpus", str(settings.docker_nano_cpus / 1_000_000_000),
-        "--memory", str(settings.docker_memory_bytes),
-        "--memory-swap", str(settings.docker_memory_bytes),
-        "--log-driver", "json-file",
-        "--log-opt", f"max-size={settings.docker_log_max_size}",
-        "--log-opt", f"max-file={settings.docker_log_max_files}",
-    ]
-
-
 def _container_logs(container: str, lines: int = 80) -> str:
     code, out = run_cmd(["docker", "logs", "--tail", str(lines), container])
     if code == 0 and out.strip():
@@ -379,11 +366,11 @@ def deploy_docker(
         if hints:
             msg += f"\n\nHint:\n{hints}"
         return False, msg
+
     run_cmd_list = [
         "docker", "run", "-d",
         "--name", container,
         "--restart", "unless-stopped",
-        *docker_runtime_args(),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
         *_runtime_env_args(repo, container_port, env_vars_raw),

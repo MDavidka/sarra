@@ -36,16 +36,6 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 );
 """
 
-# Preserve saved provider credentials while moving runtime configuration to the
-# generic agent namespace. `INSERT OR IGNORE` makes this safe to run on every
-# startup and ensures a new setting always wins over a migrated value.
-AGENT_SETTING_MIGRATIONS = (
-    ("agent_default_model_profile", "continue_default_model_profile"),
-    ("agent_syra_nano_api_key", "continue_syra_nano_api_key"),
-    ("agent_syra_base_api_key", "continue_syra_base_api_key"),
-    ("agent_syra_havy_api_key", "continue_syra_havy_api_key"),
-)
-
 
 async def init_db() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -86,16 +76,8 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN agent_last_error TEXT")
     if "agent_config_path" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN agent_config_path TEXT")
-    if "agent_conversation_id" not in cols:
-        await db.execute("ALTER TABLE projects ADD COLUMN agent_conversation_id TEXT")
     if "preview_started_at" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_started_at TEXT")
-    for new_key, old_key in AGENT_SETTING_MIGRATIONS:
-        await db.execute(
-            "INSERT OR IGNORE INTO system_settings (key, value) "
-            "SELECT ?, value FROM system_settings WHERE key = ?",
-            (new_key, old_key),
-        )
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -179,7 +161,6 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "preview_port", "preview_status", "preview_domain", "preview_started_at",
         "agent_port", "agent_status", "agent_runtime", "agent_model_profile",
         "agent_last_started_at", "agent_last_error", "agent_config_path",
-        "agent_conversation_id",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):

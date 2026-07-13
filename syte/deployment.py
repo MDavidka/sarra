@@ -247,7 +247,7 @@ async def create_project_record(
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
-    from syte.openhands_agent import ensure_agent_runtime
+    from syte.continue_agent import ensure_agent_runtime
     from syte.certificates import apply_proxy_config
     from syte.preview_manager import ensure_preview_address
 
@@ -482,11 +482,8 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
     project = await get_project(project_id)
     if not project:
         return False, "Project not found."
-    from syte.openhands_agent import stop_agent
     from syte.preview_manager import stop_preview_async
-
     await stop_preview_async(project_id)
-    await stop_agent(project_id)
     process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()
