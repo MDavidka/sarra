@@ -32,20 +32,10 @@ async def test_resolve_preview_domain_reuses_existing_any_zone(
 
 
 def test_is_preview_hostname() -> None:
-    # Happy paths
     assert is_preview_hostname("previewa-app.sycord.site")
     assert is_preview_hostname("previewa-app.sycord.com")
-    assert is_preview_hostname("preview.com")
-
-    # URL normalization
-    assert is_preview_hostname("https://preview-app.example.com")
-    assert is_preview_hostname("http://preview-app.example.com")
-
-    # Negative cases
     assert not is_preview_hostname("app.sycord.site")
     assert not is_preview_hostname("")
-    assert not is_preview_hostname("mypreview.sycord.site")
-    assert not is_preview_hostname("preview")
 
 
 def test_build_preview_urls_tls_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

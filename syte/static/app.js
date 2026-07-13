@@ -39,10 +39,7 @@ let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
 
-// The agent may cold-boot (up to ~180s) before the first turn even starts, so
-// the client watchdog must allow boot time plus the model response window
-// before declaring a timeout. This must stay >= the server boot budget.
-const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 300_000;
+const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 120_000;
 const DEBUG_CHAT_MAX_DOM_NODES = 140;
 const DEBUG_CHAT_HISTORY_EVENTS = 180;
 
@@ -339,12 +336,7 @@ function flushDebugChatStreamBuffers() {
   debugChatStreamFlushFrame = null;
   for (const [rid, text] of debugChatStreamBuffers.entries()) {
     const bodyEl = ensureStreamingAssistantBubble(rid);
-    if (bodyEl) {
-      // Keep live streaming as plain text for smooth, cheap updates; the raw
-      // source is remembered so the final Markdown render and dedup match.
-      bodyEl.textContent = text;
-      bodyEl.dataset.raw = text;
-    }
+    if (bodyEl) bodyEl.textContent = text;
   }
   scrollDebugChatToBottom();
 }
@@ -370,7 +362,7 @@ function finalizeDebugChatStream(requestId, finalText = '') {
   let bubble = document.getElementById(`debug-chat-stream-${rid}`);
   const bodyEl = bubble?.querySelector('.debug-chat-bubble-body')
     || (text ? ensureStreamingAssistantBubble(rid) : null);
-  if (bodyEl && text) setChatBubbleBody(bodyEl, text);
+  if (bodyEl && text) bodyEl.textContent = text;
   bubble = document.getElementById(`debug-chat-stream-${rid}`);
   if (bubble) bubble.classList.remove('debug-chat-streaming');
   scrollDebugChatToBottom();
@@ -483,9 +475,9 @@ function appendDebugChatBubble(event) {
     const assistants = messagesEl.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
     const last = assistants[assistants.length - 1];
     const bodyEl = last?.querySelector('.debug-chat-bubble-body');
-    const prev = chatBubbleRaw(bodyEl);
+    const prev = bodyEl?.textContent || '';
     if (last && bodyEl && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
-      setChatBubbleBody(bodyEl, detail.length >= prev.length ? detail : prev);
+      bodyEl.textContent = detail.length >= prev.length ? detail : prev;
       if (event.id != null) last.dataset.eventId = String(event.id);
       scrollDebugChatToBottom();
       return;
@@ -506,17 +498,15 @@ function appendDebugChatBubble(event) {
       <div class="debug-chat-bubble-head">
         <span>${esc(title)}</span>
       </div>
-      <div class="debug-chat-bubble-body"></div>
+      <div class="debug-chat-bubble-body">${esc(detail)}</div>
     `;
-    setChatBubbleBody(bubble.querySelector('.debug-chat-bubble-body'), detail);
   } else if (role === 'thinking') {
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
         <span>${esc(event.title || 'Plan')}</span>
       </div>
-      <div class="debug-chat-bubble-body debug-chat-thinking"></div>
+      <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
-    setChatBubbleBody(bubble.querySelector('.debug-chat-bubble-body'), detail);
   } else if (role === 'action') {
     bubble.classList.add('debug-chat-action-new');
     const compactDetail = String(detail || '').replace(/\s+/g, ' ').slice(0, 240);
@@ -561,7 +551,7 @@ function shouldSkipDebugChatEvent(event) {
     const messagesEl = getDebugChatMessagesEl();
     const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
     const last = assistants?.[assistants.length - 1];
-    const body = chatBubbleRaw(last?.querySelector('.debug-chat-bubble-body'));
+    const body = last?.querySelector('.debug-chat-bubble-body')?.textContent || '';
     const detail = event.detail || event.payload?.reply || '';
     if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
       if (event.id != null) {
@@ -575,7 +565,7 @@ function shouldSkipDebugChatEvent(event) {
     const rid = event.payload?.request_id;
     const streamBubble = rid ? document.getElementById(`debug-chat-stream-${rid}`) : null;
     if (streamBubble) {
-      const body = chatBubbleRaw(streamBubble.querySelector('.debug-chat-bubble-body'));
+      const body = streamBubble.querySelector('.debug-chat-bubble-body')?.textContent || '';
       const detail = event.detail || event.payload?.content || '';
       if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
         if (event.id != null) {
@@ -591,7 +581,7 @@ function shouldSkipDebugChatEvent(event) {
     const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
     const last = bubbles?.[bubbles.length - 1];
     if (last?.classList.contains('debug-chat-user')) {
-      const body = chatBubbleRaw(last.querySelector('.debug-chat-bubble-body'));
+      const body = last.querySelector('.debug-chat-bubble-body')?.textContent;
       if (body === event.detail) {
         if (event.id != null) {
           debugChatRenderedIds.add(event.id);
@@ -939,8 +929,8 @@ function armDebugChatRequestWatchdog(projectId, requestId) {
       setDebugChatBusy(false);
       appendDebugChatBubble({
         event_type: 'request_failed',
-        title: 'Response is taking longer than expected',
-        detail: 'The agent has not reported a final result yet. It may still be starting up or finishing in the background — reconnect to pick up its latest activity, or retry.',
+        title: 'Response timed out',
+        detail: 'The agent did not report a final result before the timeout.',
         payload: {
           request_id: requestId,
           error: 'request_timeout',
@@ -1149,7 +1139,7 @@ async function sendDebugChatMessage() {
       await syncDebugChatHistory(activeServiceId);
       const messagesEl = getDebugChatMessagesEl();
       const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
-      const lastBody = chatBubbleRaw(assistants?.[assistants.length - 1]?.querySelector('.debug-chat-bubble-body'));
+      const lastBody = assistants?.[assistants.length - 1]?.querySelector('.debug-chat-bubble-body')?.textContent || '';
       if (!lastBody || (!lastBody.includes(res.reply) && !res.reply.includes(lastBody))) {
         appendDebugChatBubble({
           event_type: 'assistant_message',
@@ -2757,107 +2747,6 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
-}
-
-// Render a chat message as safe HTML. The source is HTML-escaped first, then a
-// small, dependency-free subset of Markdown is applied: fenced code blocks,
-// inline code, bold, italic, links, headings, ordered/unordered lists, and
-// paragraph/line breaks. Code spans are stashed as tokens before inline
-// formatting so their contents are never reinterpreted.
-function renderChatMarkdown(text) {
-  const src = String(text ?? '');
-  if (!src.trim()) return '';
-
-  const store = [];
-  const stash = (html) => {
-    const token = `\u0000${store.length}\u0000`;
-    store.push(html);
-    return token;
-  };
-
-  let s = esc(src);
-
-  // Fenced code blocks ```lang\n...```
-  s = s.replace(/```([a-zA-Z0-9_+#-]*)\n?([\s\S]*?)```/g, (_m, _lang, code) =>
-    stash(`<pre class="chat-code"><code>${code.replace(/\n+$/, '')}</code></pre>`),
-  );
-  // Inline code `...`
-  s = s.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code class="chat-inline-code">${code}</code>`));
-
-  const applyInline = (line) => line
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      (_m, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-
-  const lines = s.split('\n');
-  const out = [];
-  let listType = null;
-  let para = [];
-  const flushPara = () => {
-    if (para.length) {
-      out.push(`<div class="chat-p">${para.join('<br>')}</div>`);
-      para = [];
-    }
-  };
-  const closeList = () => {
-    if (listType) {
-      out.push(`</${listType}>`);
-      listType = null;
-    }
-  };
-
-  for (const line of lines) {
-    const isBlockToken = /^\s*\u0000\d+\u0000\s*$/.test(line);
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-    const ul = /^\s*[-*]\s+(.+)$/.exec(line);
-    const ol = /^\s*(\d+)\.\s+(.+)$/.exec(line);
-    if (isBlockToken) {
-      flushPara();
-      closeList();
-      out.push(line.trim());
-    } else if (heading) {
-      flushPara();
-      closeList();
-      out.push(`<div class="chat-heading chat-h${heading[1].length}">${applyInline(heading[2])}</div>`);
-    } else if (ul) {
-      flushPara();
-      if (listType !== 'ul') { closeList(); out.push('<ul class="chat-list">'); listType = 'ul'; }
-      out.push(`<li>${applyInline(ul[1])}</li>`);
-    } else if (ol) {
-      flushPara();
-      if (listType !== 'ol') { closeList(); out.push('<ol class="chat-list">'); listType = 'ol'; }
-      out.push(`<li>${applyInline(ol[2])}</li>`);
-    } else if (line.trim() === '') {
-      flushPara();
-      closeList();
-    } else {
-      closeList();
-      para.push(applyInline(line));
-    }
-  }
-  flushPara();
-  closeList();
-
-  let html = out.join('');
-  html = html.replace(/\u0000(\d+)\u0000/g, (_m, i) => store[Number(i)] ?? '');
-  return html;
-}
-
-// Read the raw (pre-render) text stored on a bubble body so dedup/merge logic
-// keeps comparing against source text rather than rendered HTML text.
-function chatBubbleRaw(bodyEl) {
-  if (!bodyEl) return '';
-  return bodyEl.dataset.raw ?? bodyEl.textContent ?? '';
-}
-
-// Set a bubble body from raw message text, rendering Markdown and remembering
-// the raw source on the element for later comparisons.
-function setChatBubbleBody(bodyEl, text) {
-  if (!bodyEl) return;
-  const raw = String(text ?? '');
-  bodyEl.dataset.raw = raw;
-  bodyEl.innerHTML = renderChatMarkdown(raw);
 }
 
 async function loadTokens() {

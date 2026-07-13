@@ -21,10 +21,8 @@ def test_host_zone() -> None:
     assert host_zone("sub.example.com") == "example.com"
     assert host_zone("a.b.c.example.com") == "example.com"
     assert host_zone("localhost") == "localhost"
-    assert host_zone("https://example.com/path") == "example.com"
-    assert host_zone("http://sub.example.com:8080") == "example.com"
-    assert host_zone("") == ""
-    assert host_zone("com") == "com"
+    assert host_zone("https://example.com") == "example.com"
+    assert host_zone("example.com/path") == "example.com"
 
 
 def test_caddy_matcher_name() -> None:

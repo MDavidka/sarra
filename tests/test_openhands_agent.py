@@ -13,21 +13,6 @@ from syte.auth import verify_internal_service_request
 from syte.config import settings
 
 
-@pytest.fixture(autouse=True)
-def _isolate_pooled_agent_clients():
-    """Clear the per-port pooled HTTP client cache around every test.
-
-    ``_get_agent_client`` memoizes clients in a module-global dict for
-    performance. Without clearing it, a monkeypatched ``httpx.AsyncClient``
-    from one test can leak into the next through the cache.
-    """
-    from syte import openhands_agent
-
-    openhands_agent._agent_http_clients.clear()
-    yield
-    openhands_agent._agent_http_clients.clear()
-
-
 @pytest.fixture
 def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     data_dir = tmp_path / "syte-data"
@@ -312,7 +297,7 @@ async def test_create_conversation_uses_supported_agent_context(
             FakeClient.payload = json
             return FakeResponse()
 
-        async def get(self, url, headers=None, **kwargs):
+        async def get(self, url, headers=None):
             return FakeResponse()
 
     async def fake_wait(*_args, **_kwargs):
@@ -373,7 +358,7 @@ async def test_stream_turn_waits_through_initial_idle_status(
             self.posted.append({"url": url, "headers": headers, "json": json})
             return FakeResponse({})
 
-        async def get(self, url, headers=None, **kwargs):
+        async def get(self, url, headers=None):
             if url.endswith("/agent_final_response"):
                 return FakeResponse({"response": "ok"})
             FakeClient.status_checks += 1
@@ -542,7 +527,7 @@ async def test_ensure_conversation_reuses_only_idle_or_finished(
         async def __aexit__(self, *args):
             return False
 
-        async def get(self, url, headers=None, **kwargs):
+        async def get(self, url, headers=None):
             FakeClient.get_calls += 1
             if "conversation-running" in url:
                 return FakeResponse(200, {"execution_status": "running"})
@@ -705,7 +690,7 @@ async def test_stream_turn_ignores_previous_finished_state(
         async def post(self, _url, headers=None, json=None):
             return FakeResponse({})
 
-        async def get(self, url, headers=None, **kwargs):
+        async def get(self, url, headers=None):
             if url.endswith("/agent_final_response"):
                 reply = "new answer" if FakeWebSocket.received == 4 else "old answer"
                 return FakeResponse({"response": reply})

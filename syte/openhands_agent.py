@@ -46,11 +46,7 @@ from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
 OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
-# Cold-starting the OpenHands Agent Server imports the SDK, tools and workspace
-# implementations and can take well over a minute on smaller hosts. Give the
-# boot a generous wall-clock budget so the first chat message does not fail
-# with a premature "could not start" / "could not reach" error.
-OPENHANDS_START_TIMEOUT_S = 180.0
+OPENHANDS_START_TIMEOUT_S = 60.0
 _CONVERSATION_READY_TIMEOUT_S = 30.0  # Increased from 15s for stability
 _REUSABLE_CONVERSATION_STATUSES = frozenset({"idle", "finished"})
 _RECOVERABLE_CONVERSATION_STATUSES = frozenset({"running", "paused", "stuck"})
@@ -656,12 +652,9 @@ async def _start_agent_impl(
     agent_pid_file(project_id).write_text(str(proc.pid))
 
     ready = False
-    # Wall-clock deadline instead of a fixed iteration count so the full boot
-    # budget is honoured regardless of how long individual probes take.
-    boot_deadline = time.monotonic() + OPENHANDS_START_TIMEOUT_S
     try:
-        check = 0
-        while time.monotonic() < boot_deadline:
+        # Initial fast polling to catch quick startups
+        for check in range(300):  # 300 checks over ~45 seconds max
             if proc.poll() is not None:
                 log_file.close()
                 agent_pid_file(project_id).unlink(missing_ok=True)
@@ -673,13 +666,11 @@ async def _start_agent_impl(
                 )
                 return False, f"OpenHands agent exited during startup.\n{tail}", {}
             if _port_listening(port):
-                probe = await probe_agent_http(port, timeout_s=2.0)
-                if probe.get("ok"):
-                    ready = True
+                ready, _ = await wait_for_agent_ready(port, timeout_s=2.0)
+                if ready:
                     break
-            # Adaptive sleep: faster initially, slower after the first checks
+            # Adaptive sleep: faster initially, slower after first 10 checks
             await asyncio.sleep(_AGENT_STARTUP_CHECK_INTERVAL_S if check < 40 else 0.25)
-            check += 1
     except asyncio.CancelledError:
         log_file.close()
         try:
@@ -706,14 +697,7 @@ async def _start_agent_impl(
         error = get_agent_logs(project_id, 80)
         tail = error[-2000:] if error else "Server never became ready"
         await update_project(project_id, {"agent_status": "error", "agent_last_error": tail})
-        return (
-            False,
-            (
-                f"OpenHands agent did not become ready on port {port} within "
-                f"{int(OPENHANDS_START_TIMEOUT_S)}s.\n{tail}"
-            ),
-            {},
-        )
+        return False, f"OpenHands agent did not become ready on port {port}.\n{tail}", {}
 
     log_file.close()
     await update_project(
@@ -1220,16 +1204,15 @@ async def _ensure_conversation(
         )
     except OSError:
         logger.warning("Could not persist conversation tooling version for %s", project_id)
-    # Wait for the freshly created conversation's event service to finish
-    # initializing before the first send.
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    # Wait for conversation to become ready with shorter timeout for new conversations
+    async with httpx.AsyncClient(timeout=10.0) as client:
         await _wait_for_conversation_status(
             client,
             base_url=base_url,
             headers=headers,
             conversation_id=conversation_id,
             acceptable=_REUSABLE_CONVERSATION_STATUSES,
-            timeout_s=_CONVERSATION_READY_TIMEOUT_S,
+            timeout_s=8.0,  # Increased from 5.0s but still faster than recovery
         )
     return conversation_id, True
 
@@ -1346,37 +1329,15 @@ async def _send_conversation_message(
         "run": True,
     }
     retryable_statuses = {500, 502, 503, 504}
-    # A freshly booted Agent Server may briefly refuse the socket or return a
-    # 5xx while the conversation's event service finishes initializing. Give
-    # the first turn a longer, bounded window of retries so the user is not
-    # shown a spurious failure right after the agent comes up.
-    max_attempts = 8
+    max_attempts = 8  # Increased from 5 for better resilience
     for attempt in range(max_attempts):
-        last = attempt == max_attempts - 1
-        try:
-            response = await client.post(url, headers=headers, json=payload)
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
-            if last:
-                raise RuntimeError(
-                    f"OpenHands message send could not reach the agent: {exc}"
-                ) from exc
-            delay = min(2.0, 0.25 * (2**attempt))
-            logger.warning(
-                "OpenHands message send connection error (%s); retrying in %.2fs "
-                "(attempt %s/%s)",
-                exc.__class__.__name__,
-                delay,
-                attempt + 1,
-                max_attempts,
-            )
-            await asyncio.sleep(delay)
-            continue
+        response = await client.post(url, headers=headers, json=payload)
         if response.status_code < 400:
             return
-        if response.status_code not in retryable_statuses or last:
+        if response.status_code not in retryable_statuses or attempt == max_attempts - 1:
             raise await _response_error(response, "message send")
-        # Bounded exponential backoff for transient server errors.
-        delay = min(2.0, 0.25 * (2**attempt))
+        # Exponential backoff with jitter for better retry distribution
+        delay = min(2.0, 0.2 * (1.5**attempt))
         logger.warning(
             "OpenHands message send returned HTTP %s; retrying in %.2fs "
             "(attempt %s/%s)",

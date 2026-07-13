@@ -223,7 +223,7 @@ async def system_info():
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     direct = build_direct_url(ip, settings.port)
-    stats = await get_system_stats()
+    stats = get_system_stats()
     return {
         "version": __version__,
         "public_ip": ip,
