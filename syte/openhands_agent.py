@@ -542,6 +542,18 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(content[-max(1, lines) :])
 
 
+def _current_agent_session_log(project_id: str) -> str:
+    """Return only the log output from the most recent agent process."""
+    log_path = agent_log_path(project_id)
+    if not log_path.exists():
+        return ""
+    content = log_path.read_text(errors="replace")
+    marker = "=== OpenHands Agent Server session "
+    if marker in content:
+        return content.rsplit(marker, 1)[-1]
+    return content
+
+
 def _augment_error_with_server_log(
     project_id: str, error: str, *, lines: int = 20, max_chars: int = 1500
 ) -> str:
@@ -1083,7 +1095,7 @@ def _is_mcp_session_error(error: BaseException, *, project_id: str = "") -> bool
     if not project_id:
         return False
     try:
-        tail = get_agent_logs(project_id, lines=40)
+        tail = _current_agent_session_log(project_id)
     except OSError:
         return False
     return any(marker in tail for marker in markers)
