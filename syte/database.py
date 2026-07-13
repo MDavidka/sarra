@@ -122,6 +122,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def check_domain_exists(normalized_domain: str) -> bool:
+    """Check if a domain exists exactly or with http/https prefixes."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT 1 FROM projects WHERE "
+            "domain = ? OR domain = ? OR domain = ? OR "
+            "domain LIKE ? OR domain LIKE ? LIMIT 1",
+            (
+                normalized_domain,
+                f"http://{normalized_domain}",
+                f"https://{normalized_domain}",
+                f"http://{normalized_domain}/%",
+                f"https://{normalized_domain}/%"
+            )
+        ) as cur:
+            row = await cur.fetchone()
+            if row is not None:
+                return True
+
+        # Fallback for complex URLs just in case
+        from syte.domain_utils import normalize_domain
+        async with db.execute("SELECT domain FROM projects WHERE domain IS NOT NULL") as cur:
+            rows = await cur.fetchall()
+            for (domain,) in rows:
+                if normalize_domain(domain) == normalized_domain:
+                    return True
+            return False
+
+
 async def list_projects() -> list[dict[str, Any]]:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         db.row_factory = aiosqlite.Row
