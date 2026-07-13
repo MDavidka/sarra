@@ -70,23 +70,40 @@ _agent_http_clients: dict[int, httpx.AsyncClient] = {}
 
 
 def _get_agent_client(port: int, timeout: float = 30.0) -> httpx.AsyncClient:
-    """Get or create a pooled HTTP client for an agent port."""
-    if port not in _agent_http_clients:
+    """Get or create a pooled HTTP/1.1 client for an agent port.
+
+    The OpenHands Agent Server runs under uvicorn, which only speaks HTTP/1.1
+    over the loopback connection. Enabling HTTP/2 here is a silent no-op (httpx
+    stays on HTTP/1.1 for cleartext origins when http1 is also enabled) and only
+    adds the ``h2`` dependency plus a confusing startup warning, so we
+    deliberately keep HTTP/1.1. Connection keep-alive still gives us the latency
+    win we want for repeated turns.
+    """
+    client = _agent_http_clients.get(port)
+    if client is None or client.is_closed:
         limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-        # Try to enable HTTP/2 if h2 is available, fall back to HTTP/1.1 otherwise
-        try:
-            _agent_http_clients[port] = httpx.AsyncClient(
-                timeout=timeout,
-                limits=limits,
-                http2=True,  # Enable HTTP/2 for multiplexing if available
-            )
-        except ImportError:
-            # h2 package not installed, use HTTP/1.1 with connection pooling
-            _agent_http_clients[port] = httpx.AsyncClient(
-                timeout=timeout,
-                limits=limits,
-            )
+        _agent_http_clients[port] = httpx.AsyncClient(timeout=timeout, limits=limits)
     return _agent_http_clients[port]
+
+
+async def _reset_agent_client(port: int | None) -> None:
+    """Discard any pooled client for a port.
+
+    A pooled client holds keep-alive sockets to a specific Agent Server process.
+    When that process is stopped and a new one is started on the same port, those
+    sockets are dead, and reusing them raises ``ConnectError`` /
+    ``RemoteProtocolError`` on the next turn — which previously cascaded into
+    another restart. Dropping the client forces fresh connections against the
+    new process.
+    """
+    if not port:
+        return
+    client = _agent_http_clients.pop(int(port), None)
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception:
+            logger.debug("Failed to close pooled agent client for port %s", port)
 
 
 def _safe_kill(pid: int) -> None:
@@ -525,6 +542,29 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(content[-max(1, lines) :])
 
 
+def _augment_error_with_server_log(
+    project_id: str, error: str, *, lines: int = 20, max_chars: int = 1500
+) -> str:
+    """Append the tail of the Agent Server log to a server-side failure.
+
+    The Agent Server returns opaque ``HTTP 500: Internal Server Error`` bodies
+    for unhandled exceptions (for example the ``inactive_service`` /
+    ``conversation_already_running`` ``ValueError``s raised by
+    ``EventService.run``), so the real cause only exists in the process log.
+    Surfacing that tail turns an undebuggable "Internal Server Error" into an
+    actionable message in the chat and activity feed.
+    """
+    try:
+        tail = get_agent_logs(project_id, lines).strip()
+    except OSError:
+        return error
+    if not tail or tail == "No OpenHands agent logs yet.":
+        return error
+    if len(tail) > max_chars:
+        tail = tail[-max_chars:]
+    return f"{error}\n\nOpenHands agent log (last {lines} lines):\n{tail}"
+
+
 async def wait_for_agent_ready(
     port: int, *, timeout_s: float = OPENHANDS_START_TIMEOUT_S
 ) -> tuple[bool, str]:
@@ -608,6 +648,9 @@ async def _start_agent_impl(
         return False, message, {}
 
     await _stop_agent_impl(project_id)
+    # The previous process (if any) is gone; drop pooled connections so the new
+    # process is reached over fresh sockets instead of dead keep-alive ones.
+    await _reset_agent_client(port)
     await update_project(
         project_id,
         {"agent_status": "starting", "agent_last_error": ""},
@@ -1856,7 +1899,19 @@ async def _communicate_with_agent_impl(
             port=int(port),
             model=model,
         )
-        for conversation_attempt in range(2):
+        # The Agent Server rejects a send with an opaque HTTP 500 in two common,
+        # transient situations: the conversation's previous run is still active
+        # ("conversation_already_running") or its event service has not finished
+        # wiring up the in-memory conversation yet ("inactive_service"). Neither
+        # requires discarding the durable conversation, so recovery escalates:
+        # (1) interrupt and wait for the SAME conversation to settle, then retry;
+        # (2) only if that still fails, recreate a clean conversation. Creating a
+        #     conversation already waits for it to become sendable, so no extra
+        #     readiness poll is needed here.
+        max_send_attempts = 3
+        recovered_once = False
+        recreated_once = False
+        for send_attempt in range(max_send_attempts):
             try:
                 if not created:
                     await _switch_conversation_llm(
@@ -1875,15 +1930,36 @@ async def _communicate_with_agent_impl(
                 )
                 break
             except RuntimeError as exc:
-                if conversation_attempt or not _is_message_send_server_error(exc):
+                last = send_attempt == max_send_attempts - 1
+                if last or not _is_message_send_server_error(exc):
                     raise
-                # A conversation can remain persisted after its event service
-                # has failed during initialization or shutdown. Retrying the
-                # same id only repeats the 500, so start a clean conversation
-                # once and resend the current user turn.
+                # First try to settle the existing conversation in place, so a
+                # lingering run is cleared and a still-initializing event service
+                # can catch up without discarding the durable history.
+                if not recovered_once and not recreated_once:
+                    recovered_once = True
+                    try:
+                        settled = await _recover_conversation_for_send(
+                            project_id,
+                            port=int(port),
+                            conversation_id=conversation_id,
+                        )
+                    except Exception:
+                        settled = False
+                    if settled:
+                        logger.warning(
+                            "OpenHands send failed for conversation %s; recovered "
+                            "the existing conversation and retrying",
+                            conversation_id,
+                        )
+                        created = False
+                        continue
+                # Escalate: the conversation could not be settled, so start a
+                # clean one. _ensure_conversation waits for the new conversation
+                # to become sendable before returning.
                 logger.warning(
-                    "OpenHands message send failed for conversation %s; "
-                    "recreating the conversation and waiting for it to become ready",
+                    "OpenHands send failed for conversation %s; recreating the "
+                    "conversation and retrying",
                     conversation_id,
                 )
                 await update_project(project_id, {"agent_conversation_id": ""})
@@ -1893,38 +1969,19 @@ async def _communicate_with_agent_impl(
                     port=int(port),
                     model=model,
                 )
-                # Wait for the freshly created conversation's event service to
-                # finish initializing before the retry send. Without this wait
-                # the immediate follow-up POST still returns HTTP 500 because
-                # the conversation is in a transient "starting" state.
-                base_url = _server_url(int(port))
-                headers = agent_session_headers(project_id)
-                async with httpx.AsyncClient(timeout=15.0) as _client:  # Increased timeout
-                    ready_status = await _wait_for_conversation_status(
-                        _client,
-                        base_url=base_url,
-                        headers=headers,
-                        conversation_id=conversation_id,
-                        acceptable=_REUSABLE_CONVERSATION_STATUSES,
-                        timeout_s=_CONVERSATION_READY_TIMEOUT_S,
-                    )
-                if ready_status not in _REUSABLE_CONVERSATION_STATUSES:
-                    logger.warning(
-                        "Recreated conversation %s did not reach a sendable status "
-                        "(last: %s); attempting send anyway",
-                        conversation_id,
-                        ready_status,
-                    )
-                created = True
+                recreated_once = True
         if failure:
             error_code = (
                 "agent_interrupted"
                 if execution_status == "paused"
                 else "agent_runtime_error"
             )
+            detail = failure
+            if error_code == "agent_runtime_error":
+                detail = _augment_error_with_server_log(project_id, failure)
             return await fail(
                 error_code,
-                failure,
+                detail,
                 log_request=True,
                 payload={
                     "conversation_id": conversation_id,
@@ -2022,7 +2079,7 @@ async def _communicate_with_agent_impl(
 
     return await fail(
         "agent_communicate_failed",
-        error,
+        _augment_error_with_server_log(project_id, error),
         log_request=True,
         payload={"model_profile": model.get("profile")},
     )
