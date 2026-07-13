@@ -657,12 +657,32 @@ def test_is_mcp_session_error_detects_connection_closed_in_agent_log(
     log_path = agent_log_path(project_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(
+        "=== OpenHands Agent Server session 2026-07-13T20:00:00+00:00 ===\n"
         "INFO starting\nMcpError: Connection closed\nmcp/shared/session.py:306\n"
     )
 
     error = RuntimeError("OpenHands message send returned HTTP 500: Internal Server Error")
     assert _is_mcp_session_error(error, project_id=project_id) is True
     assert _is_mcp_session_error(error, project_id="missing-project") is False
+
+
+def test_is_mcp_session_error_ignores_previous_agent_session(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.openhands_agent import _is_mcp_session_error, agent_log_path
+
+    project_id = "proj-mcp-stale-log"
+    log_path = agent_log_path(project_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "=== OpenHands Agent Server session 2026-07-13T19:00:00+00:00 ===\n"
+        "McpError: Connection closed\n"
+        "=== OpenHands Agent Server session 2026-07-13T20:00:00+00:00 ===\n"
+        "INFO ready\n"
+    )
+
+    error = RuntimeError("Could not reach OpenHands agent: All connection attempts failed")
+    assert _is_mcp_session_error(error, project_id=project_id) is False
 
 
 @pytest.mark.asyncio
