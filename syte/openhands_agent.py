@@ -49,6 +49,20 @@ _agent_warm_tasks: dict[
 ] = {}
 
 
+def _safe_kill(pid: int) -> None:
+    """Kill pid directly; only kill its process group if pgid != Syte's own pgid."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    try:
+        pgid = os.getpgid(pid)
+        if pgid != os.getpgid(os.getpid()):  # never kill our own group
+            os.killpg(pgid, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -174,17 +188,20 @@ async def bridge_settings() -> dict[str, Any]:
     }
 
 
-def is_agent_running(project_id: str) -> bool:
+def is_agent_running(project_id: str, port: int | None = None) -> bool:
     pid_path = agent_pid_file(project_id)
     if not pid_path.exists():
         return False
     try:
         pid = int(pid_path.read_text().strip())
         os.kill(pid, 0)
-        return True
     except (OSError, ValueError):
         pid_path.unlink(missing_ok=True)
         return False
+    # If a port is supplied, also confirm the process is actually listening
+    if port is not None:
+        return _port_listening(int(port))
+    return True
 
 
 def agent_local_url(port: int | None) -> str:
@@ -494,7 +511,7 @@ async def _stop_agent_impl(project_id: str) -> tuple[bool, str]:
         return True, "OpenHands agent already stopped."
     try:
         pid = int(pid_path.read_text().strip())
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        _safe_kill(pid)
     except (OSError, ValueError):
         pass
     pid_path.unlink(missing_ok=True)
@@ -582,13 +599,13 @@ async def _start_agent_impl(
     command = build_agent_server_command(config_path, port)
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
-        command,
+        shlex.split(command),
         cwd=repo,
-        shell=True,
+        shell=False,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        preexec_fn=os.setsid,
+        start_new_session=True,
     )
     agent_pid_file(project_id).write_text(str(proc.pid))
 
@@ -613,7 +630,7 @@ async def _start_agent_impl(
     except asyncio.CancelledError:
         log_file.close()
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            _safe_kill(proc.pid)
         except (OSError, ValueError):
             pass
         agent_pid_file(project_id).unlink(missing_ok=True)
@@ -629,7 +646,7 @@ async def _start_agent_impl(
     if not ready:
         log_file.close()
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            _safe_kill(proc.pid)
         except (OSError, ValueError):
             pass
         agent_pid_file(project_id).unlink(missing_ok=True)
