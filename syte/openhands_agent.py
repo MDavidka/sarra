@@ -35,6 +35,9 @@ from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
 OPENHANDS_START_TIMEOUT_S = 60.0
+_CONVERSATION_READY_TIMEOUT_S = 15.0
+_REUSABLE_CONVERSATION_STATUSES = frozenset({"idle", "finished"})
+_RECOVERABLE_CONVERSATION_STATUSES = frozenset({"running", "paused", "stuck"})
 AGENT_INSTRUCTION_VERSION = 3
 
 logger = logging.getLogger(__name__)
@@ -646,6 +649,28 @@ async def _start_agent_impl(
             "agent_config_path": str(config_path),
         },
     )
+    project = await get_project(project_id) or project
+    stored_conversation_id = str(project.get("agent_conversation_id") or "").strip()
+    if stored_conversation_id:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                info = await _conversation_info(
+                    client,
+                    base_url=_server_url(port),
+                    headers=agent_session_headers(project_id),
+                    conversation_id=stored_conversation_id,
+                )
+            if info is None:
+                await update_project(project_id, {"agent_conversation_id": ""})
+        except httpx.HTTPError:
+            logger.warning(
+                "Could not verify persisted OpenHands conversation for %s after restart",
+                project_id,
+            )
+
+    model = await selected_model_metadata(project)
+    await _prewarm_conversation(project_id, port=port, model=model)
+
     status = await get_agent_status(project_id, check_backend=False)
     await record_agent_event(
         project_id,
@@ -723,6 +748,8 @@ async def warm_agent(
                 project_id,
                 {"agent_status": "running", "agent_last_error": ""},
             )
+            model = await selected_model_metadata(project)
+            await _prewarm_conversation(project_id, port=int(port), model=model)
             return {
                 "ok": True,
                 "status": "ready",
@@ -954,12 +981,72 @@ async def _conversation_info(
     return data if isinstance(data, dict) else {}
 
 
+async def _wait_for_conversation_status(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str,
+    headers: dict[str, str],
+    conversation_id: str,
+    acceptable: frozenset[str],
+    timeout_s: float = _CONVERSATION_READY_TIMEOUT_S,
+) -> str:
+    """Poll a conversation until it reaches a sendable execution status."""
+    deadline = time.monotonic() + timeout_s
+    last_status = ""
+    while time.monotonic() < deadline:
+        conversation = await _conversation_info(
+            client,
+            base_url=base_url,
+            headers=headers,
+            conversation_id=conversation_id,
+        )
+        if conversation is None:
+            return ""
+        last_status = str(conversation.get("execution_status") or "").lower()
+        if last_status in acceptable:
+            return last_status
+        await asyncio.sleep(0.2)
+    return last_status
+
+
+async def _recover_conversation_for_send(
+    project_id: str,
+    *,
+    port: int,
+    conversation_id: str,
+) -> bool:
+    """Interrupt a busy conversation and wait for it to become sendable."""
+    headers = agent_session_headers(project_id)
+    base_url = _server_url(port)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{base_url}/api/conversations/{conversation_id}/interrupt",
+                headers=headers,
+            )
+        if response.status_code >= 400 and response.status_code != 404:
+            return False
+    except httpx.HTTPError:
+        return False
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        status = await _wait_for_conversation_status(
+            client,
+            base_url=base_url,
+            headers=headers,
+            conversation_id=conversation_id,
+            acceptable=_REUSABLE_CONVERSATION_STATUSES,
+            timeout_s=8.0,
+        )
+    return status in _REUSABLE_CONVERSATION_STATUSES
+
+
 async def _ensure_conversation(
     project: dict[str, Any],
     *,
     port: int,
     model: dict[str, str],
-) -> str:
+) -> tuple[str, bool]:
     """Reuse a durable project conversation or create one with OpenHands tools."""
     project_id = project["id"]
     from syte.agent_skills import mcp_server_config
@@ -985,12 +1072,15 @@ async def _ensure_conversation(
                 conversation_id=existing,
             )
             status = str((conversation or {}).get("execution_status") or "").lower()
-            if conversation is not None and status not in {
-                "error",
-                "waiting_for_confirmation",
-                "deleting",
-            }:
-                return existing
+            if conversation is not None and status in _REUSABLE_CONVERSATION_STATUSES:
+                return existing, False
+            if conversation is not None and status in _RECOVERABLE_CONVERSATION_STATUSES:
+                if await _recover_conversation_for_send(
+                    project_id,
+                    port=port,
+                    conversation_id=existing,
+                ):
+                    return existing, False
             await update_project(project_id, {"agent_conversation_id": ""})
 
         instruction = agent_instruction_path(project_id).read_text(
@@ -1049,7 +1139,36 @@ async def _ensure_conversation(
         )
     except OSError:
         logger.warning("Could not persist conversation tooling version for %s", project_id)
-    return conversation_id
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        await _wait_for_conversation_status(
+            client,
+            base_url=base_url,
+            headers=headers,
+            conversation_id=conversation_id,
+            acceptable=_REUSABLE_CONVERSATION_STATUSES,
+            timeout_s=5.0,
+        )
+    return conversation_id, True
+
+
+async def _prewarm_conversation(
+    project_id: str,
+    *,
+    port: int,
+    model: dict[str, str],
+) -> None:
+    """Create or validate the durable conversation while the runtime is idle."""
+    project = await get_project(project_id)
+    if not project:
+        return
+    try:
+        await _ensure_conversation(project, port=port, model=model)
+    except Exception:
+        logger.warning(
+            "OpenHands conversation prewarm failed for %s",
+            project_id,
+            exc_info=True,
+        )
 
 
 async def _switch_conversation_llm(
@@ -1144,19 +1263,21 @@ async def _send_conversation_message(
         "run": True,
     }
     retryable_statuses = {500, 502, 503, 504}
-    for attempt in range(3):
+    max_attempts = 5
+    for attempt in range(max_attempts):
         response = await client.post(url, headers=headers, json=payload)
         if response.status_code < 400:
             return
-        if response.status_code not in retryable_statuses or attempt == 2:
+        if response.status_code not in retryable_statuses or attempt == max_attempts - 1:
             raise await _response_error(response, "message send")
         delay = 0.25 * (2**attempt)
         logger.warning(
             "OpenHands message send returned HTTP %s; retrying in %.2fs "
-            "(attempt %s/3)",
+            "(attempt %s/%s)",
             response.status_code,
             delay,
             attempt + 1,
+            max_attempts,
         )
         await asyncio.sleep(delay)
 
@@ -1216,6 +1337,12 @@ async def _stream_conversation_turn(
             await websocket.send(
                 json.dumps({"type": "auth", "session_api_key": headers["X-Session-API-Key"]})
             )
+            # Give the Agent Server a moment to finish subscribing this socket
+            # before the HTTP message send starts the turn.
+            try:
+                await asyncio.wait_for(websocket.recv(), timeout=1.0)
+            except (asyncio.TimeoutError, TypeError, ValueError):
+                pass
             await _send_conversation_message(
                 client,
                 base_url=base_url,
@@ -1615,19 +1742,20 @@ async def _communicate_with_agent_impl(
     model = status.get("agent_model") or model
     try:
         latest_project = await get_project(project_id) or project
-        conversation_id = await _ensure_conversation(
+        conversation_id, created = await _ensure_conversation(
             latest_project,
             port=int(port),
             model=model,
         )
         for conversation_attempt in range(2):
             try:
-                await _switch_conversation_llm(
-                    project_id,
-                    port=int(port),
-                    conversation_id=conversation_id,
-                    model=model,
-                )
+                if not created:
+                    await _switch_conversation_llm(
+                        project_id,
+                        port=int(port),
+                        conversation_id=conversation_id,
+                        model=model,
+                    )
                 reply, execution_status, failure = await _stream_conversation_turn(
                     project_id,
                     port=int(port),
@@ -1651,7 +1779,7 @@ async def _communicate_with_agent_impl(
                 )
                 await update_project(project_id, {"agent_conversation_id": ""})
                 latest_project = await get_project(project_id) or latest_project
-                conversation_id = await _ensure_conversation(
+                conversation_id, created = await _ensure_conversation(
                     latest_project,
                     port=int(port),
                     model=model,
