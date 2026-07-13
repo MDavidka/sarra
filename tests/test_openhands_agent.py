@@ -391,6 +391,21 @@ async def test_stream_turn_waits_through_initial_idle_status(
     assert json.loads(FakeWebSocket.sent[0])["session_api_key"] == "session-key"
 
 
+def test_message_send_server_error_is_recoverable_only_for_5xx() -> None:
+    from syte.openhands_agent import _is_message_send_server_error
+
+    assert _is_message_send_server_error(
+        RuntimeError("OpenHands message send returned HTTP 500: Internal Server Error")
+    )
+    assert _is_message_send_server_error(
+        RuntimeError("OpenHands message send returned HTTP 504: Gateway Timeout")
+    )
+    assert not _is_message_send_server_error(
+        RuntimeError("OpenHands message send returned HTTP 409: already running")
+    )
+    assert not _is_message_send_server_error(RuntimeError("provider authentication failed"))
+
+
 @pytest.mark.asyncio
 async def test_send_conversation_message_retries_transient_server_errors(
     monkeypatch: pytest.MonkeyPatch,
