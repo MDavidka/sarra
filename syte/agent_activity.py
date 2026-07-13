@@ -319,6 +319,22 @@ def _openhands_action_arguments(event: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _openhands_tool_name(event: dict[str, Any]) -> str:
+    if event.get("tool_name"):
+        return str(event["tool_name"])
+    tool_call = event.get("tool_call")
+    if isinstance(tool_call, dict):
+        if tool_call.get("name"):
+            return str(tool_call["name"])
+        function = tool_call.get("function")
+        if isinstance(function, dict) and function.get("name"):
+            return str(function["name"])
+    action = event.get("action")
+    if isinstance(action, dict) and action.get("kind"):
+        return str(action["kind"])
+    return "tool"
+
+
 def extract_events_from_openhands_event(
     event: dict[str, Any],
     *,
@@ -400,12 +416,7 @@ def extract_events_from_openhands_event(
         return raw
 
     if kind_lower == "actionevent":
-        tool_call = event.get("tool_call") or {}
-        tool_name = str(
-            event.get("tool_name")
-            or (tool_call.get("name") if isinstance(tool_call, dict) else "")
-            or "tool"
-        )
+        tool_name = _openhands_tool_name(event)
         args = _openhands_action_arguments(event)
         event_type, title, detail, payload = _map_tool_event(tool_name, args)
         summary = str(event.get("summary") or "")
