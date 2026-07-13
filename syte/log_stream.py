@@ -110,20 +110,20 @@ async def stream_preview_logs(project_id: str, *, live_only: bool = False):
 
 
 async def stream_agent_logs(project_id: str, *, live_only: bool = False):
-    """SSE generator — tails OpenHands Agent Server logs."""
-    from syte.openhands_agent import agent_log_path, get_agent_logs
+    """SSE generator — tails Syte cloud agent logs."""
+    from syte.cloud_agent import agent_log_path, get_agent_logs
 
     log_path = agent_log_path(project_id)
 
     if not live_only:
         snapshot = get_agent_logs(project_id, 300)
-        if snapshot and snapshot != "No OpenHands agent logs yet.":
+        if snapshot and snapshot != "No Syte cloud agent logs yet.":
             for line in snapshot.splitlines():
                 yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
 
     offset = log_path.stat().st_size if log_path.exists() else 0
     if live_only:
-        yield f"data: {json.dumps({'type': 'session', 'text': 'Live OpenHands agent session'})}\n\n"
+        yield f"data: {json.dumps({'type': 'session', 'text': 'Live Syte cloud agent session'})}\n\n"
 
     for tick in range(7200):
         if not log_path.exists():
@@ -150,7 +150,7 @@ async def stream_agent_activity(
     live_only: bool = False,
     since_id: int = 0,
 ):
-    """SSE generator — replay + native OpenHands activity (Cursor-like chat feed)."""
+    """SSE generator — replay + native Syte cloud activity (Cursor-like chat feed)."""
     from syte.agent_activity import list_agent_events, subscribe_agent_activity, unsubscribe_agent_activity
 
     if live_only:

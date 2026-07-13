@@ -5,16 +5,3 @@ pydantic>=2.12.5,<3
 pydantic-settings==2.7.0
 python-multipart==0.0.20
 httpx>=0.28.1,<1
-
-# Keep the OpenHands runtime packages in lockstep. Agent Server 1.35 uses the
-# matching SDK, tools, and workspace implementations for local workspaces.
-openhands-agent-server==1.35.0
-openhands-sdk==1.35.0
-openhands-tools==1.35.0
-openhands-workspace==1.35.0
-websockets>=16.1,<17
-
-# OpenHands 1.35's lmnr dependency requires this compatible OpenTelemetry set.
-opentelemetry-instrumentation==0.60b1
-opentelemetry-instrumentation-threading==0.60b1
-opentelemetry-semantic-conventions==0.60b1

@@ -8,7 +8,7 @@ import aiosqlite
 
 from syte.ai_providers import PROFILE_ORDER
 from syte.config import settings
-from syte.openhands_agent import is_agent_running, openhands_installed
+from syte.cloud_agent import cloud_agent_installed
 from syte.database import get_setting, list_projects
 
 REQUESTS_SCHEMA = """
@@ -77,11 +77,11 @@ async def max_agents_allowed() -> int:
 
 async def agents_online_count() -> int:
     projects = await list_projects()
-    return sum(1 for p in projects if is_agent_running(p["id"]))
+    return sum(1 for p in projects if p.get("agent_status") not in (None, "stopped", "error"))
 
 
 async def get_dashboard_metrics() -> dict:
-    from syte.openhands_agent import bridge_settings
+    from syte.cloud_agent import bridge_settings
     from syte.system_stats import get_system_stats
 
     await ensure_agent_requests_table()
@@ -101,15 +101,15 @@ async def get_dashboard_metrics() -> dict:
     provider_ok = bool(bridge["profiles"]["syra-base"]["api_key"]) and any(
         bool(bridge["profiles"][name]["api_key"]) for name in ("syra-nano", "syra-havy")
     )
-    agent_server_ok = openhands_installed()
+    cloud_runtime_ok = cloud_agent_installed()
 
     onboarding = {
         "internal_api": internal_ok,
         "ai_models": keys_ok,
         "provider": provider_ok,
-        "agent_server": agent_server_ok,
+        "cloud_runtime": cloud_runtime_ok,
         "api_ready": keys_ok and internal_ok,
-        "complete": internal_ok and keys_ok and provider_ok and agent_server_ok,
+        "complete": internal_ok and keys_ok and provider_ok and cloud_runtime_ok,
     }
 
     return {
@@ -131,7 +131,7 @@ async def get_dashboard_metrics() -> dict:
             "detail": f"{online} / {mnoa_max} agents running",
         },
         "onboarding": onboarding,
-        "openhands_agent_server_installed": agent_server_ok,
+        "cloud_agent_runtime_installed": cloud_runtime_ok,
         "ai_providers": [
             {
                 "profile": name,

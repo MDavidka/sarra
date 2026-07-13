@@ -2,12 +2,6 @@ import asyncio
 import logging
 
 from syte.certificates import apply_proxy_config, ensure_caddy
-from syte.openhands_agent import (
-    is_agent_running,
-    openhands_installed,
-    probe_agent_http,
-    warm_agent,
-)
 from syte.database import list_projects, update_project
 from syte import process_manager
 from syte.workspace import command_exists
@@ -19,7 +13,7 @@ _fail_counts: dict[str, int] = {}
 
 
 async def maintain() -> None:
-    """Keep Caddy, deployed services, and OpenHands agents running."""
+    """Keep Caddy, deployed services, and Syte cloud agents running."""
     ensure_caddy()
     projects = await list_projects()
     for project in projects:
@@ -69,25 +63,6 @@ async def maintain() -> None:
                 await update_project(pid, {"status": "stopped"})
                 _fail_counts.pop(pid, None)
 
-    for project in projects:
-        pid = project["id"]
-        status = project.get("agent_status") or "stopped"
-        if status == "stopped":
-            continue
-        if is_agent_running(pid):
-            port = project.get("agent_port")
-            if port and (await probe_agent_http(int(port))).get("ok"):
-                continue
-        logger.warning("Warming OpenHands agent for %s (status=%s)", pid, status)
-        result = await warm_agent(pid, source="supervisor")
-        if not result.get("ok"):
-            message = str(result.get("message") or "Agent warm-up failed")
-            logger.error("Failed to warm OpenHands agent for %s: %s", pid, message)
-            await update_project(
-                pid,
-                {"agent_status": "error", "agent_last_error": message[:4000]},
-            )
-
     try:
         from syte.preview_manager import expire_stale_previews
         await expire_stale_previews()
@@ -112,39 +87,11 @@ def stop_supervisor() -> None:
 
 
 async def startup() -> None:
-    """Apply proxy config and ensure stack is up on boot."""
+    """Apply VM services and resume durable cloud-agent requests."""
     await apply_proxy_config()
     ensure_caddy()
     await maintain()
-
-
-async def autostart_project_agents() -> None:
-    """Start OpenHands agents for projects that should run continuously."""
-    from syte.openhands_agent import bridge_settings
-
-    if not openhands_installed():
-        return
-    try:
-        bridge = await bridge_settings()
-    except Exception:
-        return
-    has_key = any(bridge["profiles"][name]["api_key"] for name in bridge["profiles"])
-    if not has_key:
-        return
-
-    projects = await list_projects()
-    for project in projects:
-        pid = project["id"]
-        status = project.get("agent_status") or "running"
-        if status == "stopped":
-            continue
-        result = await warm_agent(pid, source="startup")
-        if result.get("ok"):
-            logger.info("Scheduled OpenHands warm-up for %s", pid)
-        else:
-            message = str(result.get("message") or "Agent warm-up failed")
-            logger.warning(
-                "Autostart OpenHands agent failed for %s: %s",
-                pid,
-                message[:200],
-            )
+    from syte.agent_jobs import resume_pending_requests
+    resumed = await resume_pending_requests()
+    if resumed:
+        logger.info("Resumed %d durable cloud-agent request(s)", resumed)

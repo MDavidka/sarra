@@ -130,25 +130,25 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/delete_project", "auth": True, "body": {"uuid": "str"}},
             {"method": "GET", "path": "/api/get_logs?uuid=&lines=200", "auth": True, "description": "Snapshot of deploy/runtime logs"},
             {"method": "GET", "path": "/api/projects/{uuid}/logs/stream?live=1", "auth": "optional", "description": "SSE live deploy logs"},
-            {"method": "GET", "path": "/api/agent_status?uuid=", "auth": True, "description": "OpenHands agent status + agent_proxy_url"},
+            {"method": "GET", "path": "/api/agent_status?uuid=", "auth": True, "description": "Syte cloud agent status + agent_proxy_url"},
             {"method": "POST", "path": "/api/agent_warm", "auth": True, "body": {"uuid": "str"}, "description": "Non-blocking, deduplicated runtime prewarm for instant chat"},
-            {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start OpenHands Agent Server"},
+            {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
             {"method": "POST", "path": "/api/agent_stop", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_restart", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy"}},
-            {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "OpenHands Agent Server log snapshot"},
+            {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
             {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id)"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|text|jsonl, types= filter"},
-            {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE OpenHands agent logs"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
         "agent_session": {
             "description": (
-                "Continuous per-workspace OpenHands Agent Server runtime. One hot agent per project; "
+                "Continuous per-workspace Syte cloud runtime runtime. One durable session per project; "
                 "change requests are async jobs that return request_id immediately."
             ),
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
@@ -179,7 +179,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "3. sycord.com opens SSE GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=N (or internal route with X-Syra-Internal-Secret)",
                 "4. sycord.com POST /sycord/api/agent_change {uuid, message, model_profile} — returns request_id immediately",
                 "5. Syte emits request_started → thinking/tool/token events → message_snapshot → request_completed on SSE",
-                "6. Syte sends the message to the persistent OpenHands conversation",
+                "6. Syte sends the message to the persistent Syte cloud conversation",
                 "7. Native WebSocket events become stable JSON or tagged activity records",
             ],
             "activity_api": {
@@ -260,9 +260,9 @@ def build_ai_spec(base_url: str = "") -> dict:
             },
             "errors": {
                 "agent_not_running": "Start agent before communicate/proxy",
-                "agent_start_failed": "OpenHands Agent Server not installed or configuration invalid",
+                "agent_start_failed": "Syte cloud runtime not installed or configuration invalid",
                 "backend_unreachable": "Provider API base not reachable",
-                "agent_server_not_installed": "Install the project's Python dependencies",
+                "cloud_runtime_not_installed": "Install the project's Python dependencies",
                 "internal_secret_not_configured": "Set syra_internal_secret in Settings → Keys",
             },
         },

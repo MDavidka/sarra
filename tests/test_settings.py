@@ -87,7 +87,7 @@ async def test_save_cloudflare_token_only(
 
 
 @pytest.mark.asyncio
-async def test_agent_settings_use_openhands_namespace(
+async def test_agent_settings_use_cloud_namespace(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -111,7 +111,7 @@ async def test_agent_settings_use_openhands_namespace(
     assert res["ok"] is True
     assert await get_setting("agent_default_model_profile") == "syra-havy"
     assert await get_setting("agent_syra_base_api_key") == "base-key"
-    assert "OpenHands" in " ".join(res["messages"])
+    assert "Syte cloud" in " ".join(res["messages"])
 
 
 @pytest.mark.asyncio
