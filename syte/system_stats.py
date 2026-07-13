@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-from pathlib import Path
 
 
 def _cpu_count() -> int:
