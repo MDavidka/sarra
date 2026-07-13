@@ -647,6 +647,98 @@ async def test_communicate_with_agent_recovers_from_message_send_server_error(
     assert stream_calls == 2
 
 
+def test_is_mcp_session_error_detects_connection_closed_in_agent_log(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.openhands_agent import _is_mcp_session_error, agent_log_path
+
+    project_id = "proj-mcp-log"
+    log_path = agent_log_path(project_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "INFO starting\nMcpError: Connection closed\nmcp/shared/session.py:306\n"
+    )
+
+    error = RuntimeError("OpenHands message send returned HTTP 500: Internal Server Error")
+    assert _is_mcp_session_error(error, project_id=project_id) is True
+    assert _is_mcp_session_error(error, project_id="missing-project") is False
+
+
+@pytest.mark.asyncio
+async def test_communicate_with_agent_restarts_agent_on_mcp_session_error(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.database import create_project, init_db, set_setting, update_project
+    from syte.openhands_agent import communicate_with_agent
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-mcp-recovery",
+        "name": "MCP Recovery",
+        "port": 3019,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-mcp-recovery",
+        {"agent_model_profile": "syra-base", "agent_port": 5340},
+    )
+
+    ensure_calls = 0
+    restart_calls = 0
+    stream_calls = 0
+
+    async def fake_ensure(*_args, **_kwargs):
+        nonlocal ensure_calls
+        ensure_calls += 1
+        return (f"conversation-{ensure_calls}", ensure_calls > 1)
+
+    async def fake_restart(project_id):
+        nonlocal restart_calls
+        restart_calls += 1
+        return True, "restarted", {"agent_port": 5340}
+
+    async def fake_stream(*_args, **_kwargs):
+        nonlocal stream_calls
+        stream_calls += 1
+        if stream_calls == 1:
+            raise RuntimeError(
+                "OpenHands message send returned HTTP 500: Internal Server Error\n\n"
+                "OpenHands agent log (last 20 lines):\nMcpError: Connection closed"
+            )
+        return "recovered", "finished", ""
+
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+    monkeypatch.setattr("syte.openhands_agent._agent_instruction_is_current", lambda _id: True)
+
+    async def fake_status(*_args, **_kwargs):
+        return {
+            "agent_running": True,
+            "agent_healthy": True,
+            "agent_port": 5340,
+            "agent_model": {"model": "test-model", "profile": "syra-base"},
+        }
+
+    async def fake_switch(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
+    monkeypatch.setattr("syte.openhands_agent._ensure_conversation", fake_ensure)
+    monkeypatch.setattr("syte.openhands_agent._switch_conversation_llm", fake_switch)
+    monkeypatch.setattr("syte.openhands_agent._stream_conversation_turn", fake_stream)
+    monkeypatch.setattr("syte.openhands_agent.restart_agent", fake_restart)
+
+    result = await communicate_with_agent("proj-mcp-recovery", "hello", source="test")
+
+    assert result["ok"] is True
+    assert result["reply"] == "recovered"
+    assert restart_calls == 1
+    assert ensure_calls == 2
+    assert stream_calls == 2
+
+
 @pytest.mark.asyncio
 async def test_stream_turn_ignores_previous_finished_state(
     monkeypatch: pytest.MonkeyPatch,
