@@ -14,8 +14,10 @@ Root causes identified:
 
 ## Optimizations Implemented
 
-### 1. **HTTP/2 Connection Pooling** 
+### 1. **HTTP Connection Pooling with Optional HTTP/2** 
 - Added persistent HTTP clients per agent port with connection keepalive
+- HTTP/2 enabled automatically when `h2` package is available (via `httpx[http2]`)
+- Graceful fallback to HTTP/1.1 if `h2` not installed
 - Reduces TCP handshake overhead on repeated requests
 - Max 5 keepalive connections, 10 total per agent
 
@@ -89,6 +91,10 @@ Key metrics to track:
 - Connection error rate (should decrease) 
 - HTTP 500 recovery success rate (should increase)
 - Request latency p50, p95, p99 (should decrease)
+
+## Dependencies
+
+Added `httpx[http2]` to requirements.txt to enable HTTP/2 support. The code gracefully falls back to HTTP/1.1 if the `h2` package is not available, so this is optional for deployment but recommended for best performance.
 
 ## Backward Compatibility
 
