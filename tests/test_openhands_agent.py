@@ -953,6 +953,94 @@ async def test_communicate_with_agent_recovers_from_connection_failure(
 
 
 @pytest.mark.asyncio
+async def test_communicate_with_agent_recovers_from_mcp_http_failure(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from syte.database import (
+        create_project,
+        get_project,
+        init_db,
+        set_setting,
+        update_project,
+    )
+    from syte.openhands_agent import agent_log_path, communicate_with_agent
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-mcp-http-recovery",
+        "name": "MCP HTTP Recovery",
+        "port": 3020,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-mcp-http-recovery",
+        {
+            "agent_model_profile": "syra-base",
+            "agent_port": 5341,
+            "agent_conversation_id": "stale-conversation",
+        },
+    )
+    log_path = agent_log_path("proj-mcp-http-recovery")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("McpError: Connection closed\n")
+
+    attempts = 0
+    restarts = 0
+
+    async def fake_restart(_project_id: str, **_kwargs):
+        nonlocal restarts
+        restarts += 1
+        return True, "restarted", {"agent_port": 5341}
+
+    async def fake_ensure(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ReadError("event connection closed")
+        await update_project(
+            "proj-mcp-http-recovery",
+            {"agent_conversation_id": "conversation-2"},
+        )
+        return "conversation-2", True
+
+    async def fake_stream(*_args, **_kwargs):
+        return "recovered", "finished", ""
+
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+    monkeypatch.setattr("syte.openhands_agent._agent_instruction_is_current", lambda _id: True)
+
+    async def fake_status(*_args, **_kwargs):
+        return {
+            "agent_running": True,
+            "agent_healthy": True,
+            "agent_port": 5341,
+            "agent_model": {"model": "test-model"},
+        }
+
+    monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
+    monkeypatch.setattr("syte.openhands_agent.restart_agent", fake_restart)
+    monkeypatch.setattr("syte.openhands_agent._ensure_conversation", fake_ensure)
+    monkeypatch.setattr("syte.openhands_agent._stream_conversation_turn", fake_stream)
+
+    result = await communicate_with_agent(
+        "proj-mcp-http-recovery",
+        "hello",
+        source="test",
+    )
+
+    project = await get_project("proj-mcp-http-recovery")
+    assert result["ok"] is True
+    assert result["reply"] == "recovered"
+    assert project["agent_conversation_id"] == "conversation-2"
+    assert attempts == 2
+    assert restarts == 1
+
+
+@pytest.mark.asyncio
 async def test_background_failure_emits_request_scoped_terminal_event(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
