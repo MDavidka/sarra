@@ -634,10 +634,15 @@ async def test_communicate_with_agent_recovers_from_message_send_server_error(
     async def fake_switch(*_args, **_kwargs):
         return None
 
+    async def fake_wait_status(*_args, **_kwargs):
+        return "idle"
+
+    monkeypatch.setattr("syte.openhands_agent._session_api_key", lambda _id: "fake-key")
     monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
     monkeypatch.setattr("syte.openhands_agent._ensure_conversation", fake_ensure)
     monkeypatch.setattr("syte.openhands_agent._switch_conversation_llm", fake_switch)
     monkeypatch.setattr("syte.openhands_agent._stream_conversation_turn", fake_stream)
+    monkeypatch.setattr("syte.openhands_agent._wait_for_conversation_status", fake_wait_status)
 
     result = await communicate_with_agent("proj-send-recovery", "hello", source="test")
 
