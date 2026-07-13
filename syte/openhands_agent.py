@@ -1113,7 +1113,7 @@ async def _stream_conversation_turn(
     saw_running = False
     saw_current_user_message = False
     pre_turn_status = ""
-    deadline = time.monotonic() + settings.agent_event_timeout_s
+    deadline = time.monotonic() + OPENHANDS_EVENT_TIMEOUT_S
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -1252,12 +1252,6 @@ async def _stream_conversation_turn(
                     break
             else:
                 execution_status = "timeout"
-
-        if execution_status == "timeout":
-            try:
-                await interrupt_agent(project_id)
-            except Exception:
-                logger.exception("Failed to interrupt timed-out agent turn for %s", project_id)
 
         if not final_reply:
             for attempt in range(3):
