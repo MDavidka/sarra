@@ -1,4 +1,4 @@
-"""Default OpenHands skills, rules, and workspace helpers for Syte projects."""
+"""Default Continue agent skills, rules, and workspace helpers for Syte projects."""
 
 from __future__ import annotations
 
@@ -170,7 +170,7 @@ def default_access_config() -> dict[str, Any]:
 
 
 async def read_access_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
-    from syte.openhands_agent import agent_root as default_root
+    from syte.continue_agent import agent_root as default_root
 
     root = agent_root or default_root(project_id)
     path = agent_access_config_path(project_id, root)
@@ -190,7 +190,7 @@ async def read_access_config(project_id: str, agent_root: Path | None = None) ->
 
 
 async def write_access_config(project_id: str, config: dict[str, Any], agent_root: Path | None = None) -> Path:
-    from syte.openhands_agent import agent_root as default_root
+    from syte.continue_agent import agent_root as default_root
 
     root = agent_root or default_root(project_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -284,7 +284,7 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
 
 
 def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
-    """Syte MCP stdio descriptor for integrations that opt into MCP."""
+    """Continue MCP server block for config.yaml (opt-in via continue_enable_mcp)."""
     return {
         "name": "syte-tools",
         "command": str(agent_root / "bin" / "syte-mcp"),

@@ -8,7 +8,7 @@ import aiosqlite
 
 from syte.ai_providers import PROFILE_ORDER
 from syte.config import settings
-from syte.openhands_agent import is_agent_running, openhands_installed
+from syte.continue_agent import continue_installed, is_agent_running
 from syte.database import get_setting, list_projects
 
 REQUESTS_SCHEMA = """
@@ -72,7 +72,7 @@ async def max_agents_allowed() -> int:
     raw = (await get_setting("agent_max_count", "")).strip()
     if raw.isdigit():
         return max(1, int(raw))
-    return settings.resolved_agent_port_end - settings.resolved_agent_port_start + 1
+    return settings.continue_port_end - settings.continue_port_start + 1
 
 
 async def agents_online_count() -> int:
@@ -81,7 +81,7 @@ async def agents_online_count() -> int:
 
 
 async def get_dashboard_metrics() -> dict:
-    from syte.openhands_agent import bridge_settings
+    from syte.continue_agent import bridge_settings
     from syte.system_stats import get_system_stats
 
     await ensure_agent_requests_table()
@@ -98,18 +98,15 @@ async def get_dashboard_metrics() -> dict:
 
     internal_ok = bool((await get_setting("syra_internal_secret", "")).strip())
     keys_ok = any(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
-    provider_ok = bool(bridge["profiles"]["syra-base"]["api_key"]) and any(
-        bool(bridge["profiles"][name]["api_key"]) for name in ("syra-nano", "syra-havy")
-    )
-    agent_server_ok = openhands_installed()
+    cli_ok = continue_installed()
 
     onboarding = {
         "internal_api": internal_ok,
         "ai_models": keys_ok,
-        "provider": provider_ok,
-        "agent_server": agent_server_ok,
+        "provider": True,
+        "cli_server": cli_ok,
         "api_ready": keys_ok and internal_ok,
-        "complete": internal_ok and keys_ok and provider_ok and agent_server_ok,
+        "complete": internal_ok and keys_ok and cli_ok,
     }
 
     return {
@@ -131,7 +128,7 @@ async def get_dashboard_metrics() -> dict:
             "detail": f"{online} / {mnoa_max} agents running",
         },
         "onboarding": onboarding,
-        "openhands_agent_server_installed": agent_server_ok,
+        "continue_cli_installed": cli_ok,
         "ai_providers": [
             {
                 "profile": name,

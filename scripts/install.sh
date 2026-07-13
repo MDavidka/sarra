@@ -18,7 +18,7 @@ fi
 if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
   echo "==> Installing system dependencies"
   apt-get update -qq
-  apt-get install -y -qq python3 python3-pip python3-venv python3.12 python3.12-venv git curl nodejs npm
+  apt-get install -y -qq python3 python3-pip python3-venv git curl nodejs npm
 
   if ! command -v docker &>/dev/null; then
     echo "==> Installing Docker (for Dockerfile deployments)"
@@ -44,27 +44,16 @@ fi
 
 # Python venv
 echo "==> Setting up Python environment"
-PYTHON_BIN="${SYTE_PYTHON_BIN:-python3}"
-if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
-  if command -v python3.12 >/dev/null 2>&1; then
-    PYTHON_BIN="python3.12"
-  else
-    echo "Python 3.12 or newer is required for the OpenHands Agent Server."
-    echo "Install Python 3.12 or set SYTE_PYTHON_BIN to a compatible interpreter."
-    exit 1
-  fi
-fi
-if ! "$PYTHON_BIN" -m venv "$VENV_DIR" 2>/dev/null; then
+if ! python3 -m venv "$VENV_DIR" 2>/dev/null; then
   echo "    venv unavailable — installing with pip --user"
-  "$PYTHON_BIN" -m pip install --user -r "$SYTE_DIR/requirements.txt" -q
+  pip3 install --user -r "$SYTE_DIR/requirements.txt" -q
   cat > "$SYTE_DIR/scripts/start.sh.local" << 'WRAPPER'
 #!/usr/bin/env bash
 SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="$HOME/.local/bin:$PATH"
 export SYTE_DATA_DIR="${SYTE_DATA_DIR:-/var/lib/syte}"
 mkdir -p "$SYTE_DATA_DIR/workspaces" "$SYTE_DATA_DIR/pids"
-PYTHON_BIN="${SYTE_PYTHON_BIN:-python3.12}"
-exec "$PYTHON_BIN" -m uvicorn syte.main:app --host "${SYTE_HOST:-0.0.0.0}" --port "${SYTE_PORT:-8787}" --app-dir "$SYTE_DIR"
+exec python3 -m uvicorn syte.main:app --host "${SYTE_HOST:-0.0.0.0}" --port "${SYTE_PORT:-8787}" --app-dir "$SYTE_DIR"
 WRAPPER
   chmod +x "$SYTE_DIR/scripts/start.sh.local"
   echo "    Use ./scripts/start.sh.local to start"

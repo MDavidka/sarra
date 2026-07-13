@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -12,18 +11,15 @@ from pydantic import BaseModel, Field
 import httpx
 
 from syte.auth import verify_internal_service_request
-from syte.openhands_agent import (
+from syte.continue_agent import (
     agent_local_url,
-    agent_session_headers,
     communicate_with_agent,
     get_agent_logs,
     get_agent_status,
-    interrupt_agent,
     restart_agent,
     start_agent,
     stop_agent,
     test_agent,
-    warm_agent,
 )
 from syte.database import get_project
 
@@ -80,23 +76,6 @@ async def internal_agent_start(
     }
 
 
-@router.post("/projects/{project_id}/agent/warm")
-async def internal_agent_warm(
-    project_id: str,
-    _auth: dict = Depends(verify_internal_service_request),
-):
-    """Schedule a persistent runtime and return before it becomes ready."""
-    await _require_project(project_id)
-    result = await warm_agent(project_id, source="internal")
-    return {
-        **result,
-        "status_url": f"/api/internal/projects/{project_id}/agent",
-        "stream_url": (
-            f"/api/internal/projects/{project_id}/agent/activity/stream?live=1"
-        ),
-    }
-
-
 @router.post("/projects/{project_id}/agent/stop")
 async def internal_agent_stop(
     project_id: str,
@@ -107,23 +86,6 @@ async def internal_agent_stop(
     ok, message = await stop_agent(project_id)
     return {
         "ok": ok,
-        "message": message,
-        **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
-    }
-
-
-@router.post("/projects/{project_id}/agent/interrupt")
-async def internal_agent_interrupt(
-    project_id: str,
-    request: Request,
-    _auth: dict = Depends(verify_internal_service_request),
-):
-    await _require_project(project_id)
-    ok, message = await interrupt_agent(project_id)
-    if not ok:
-        raise HTTPException(400, message)
-    return {
-        "ok": True,
         "message": message,
         **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
     }
@@ -177,10 +139,6 @@ async def internal_agent_activity(
         "events": events,
         "since_id": since_id,
         "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
-        "tagged_stream_url": (
-            f"/api/internal/projects/{project_id}/agent/activity/stream"
-            "?live=1&format=tagged"
-        ),
     }
 
 
@@ -190,36 +148,16 @@ async def internal_agent_activity_stream(
     request: Request,
     live: bool = False,
     since_id: int = 0,
-    format: Literal[
-        "sse",
-        "tagged",
-        "tagged_sse",
-        "tags",
-        "text",
-        "plain",
-        "jsonl",
-    ] = "sse",
+    format: str = "sse",
     types: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    from syte.log_stream import (
-        stream_agent_activity,
-        stream_agent_activity_formatted,
-        stream_agent_activity_tagged,
-    )
+    from syte.log_stream import stream_agent_activity, stream_agent_activity_formatted
 
     await _require_project(project_id)
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    if fmt in ("tagged", "tagged_sse", "tags"):
-        generator = stream_agent_activity_tagged(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-        )
-        media = "text/event-stream"
-    elif fmt in ("text", "jsonl", "plain"):
+    if fmt in ("text", "jsonl", "plain"):
         generator = stream_agent_activity_formatted(
             project_id,
             live_only=live,
@@ -234,15 +172,7 @@ async def internal_agent_activity_stream(
     return StreamingResponse(
         generator,
         media_type=media,
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Syte-Stream-Format": "tagged-v1" if fmt in {
-                "tagged",
-                "tagged_sse",
-                "tags",
-            } else fmt,
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -290,7 +220,7 @@ async def internal_agent_change(
     body: InternalAgentChangeRequest,
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    """sycord.com → Syte: request an OpenHands workspace change by UUID."""
+    """sycord.com → Syte: user requests a code change; VM routes to Continue CLI by UUID workspace."""
     await _require_project(project_id)
     profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
@@ -328,22 +258,9 @@ async def internal_agent_proxy(
     if not status:
         raise HTTPException(404, "Project not found")
     if not status.get("agent_port"):
-        raise HTTPException(503, "OpenHands agent has no allocated port")
+        raise HTTPException(503, "Continue agent has no allocated port")
     if not status.get("agent_running"):
-        raise HTTPException(503, "OpenHands agent is not running")
-
-    normalized_path = path.strip("/")
-    allowed_paths = ("ready", "health", "alive", "api/conversations")
-    if not any(
-        normalized_path == allowed or normalized_path.startswith(f"{allowed}/")
-        for allowed in allowed_paths
-    ):
-        raise HTTPException(
-            404,
-            "Only OpenHands health and conversation endpoints may be proxied. "
-            "Use Syte agent routes for chat and activity streaming.",
-        )
-
+        raise HTTPException(503, "Continue agent is not running")
     upstream = agent_local_url(status["agent_port"]).rstrip("/")
     target = upstream + ("/" + path.lstrip("/") if path else "")
     query_items = [(k, v) for k, v in request.query_params.multi_items() if k != "internal_secret"]
@@ -353,10 +270,8 @@ async def internal_agent_proxy(
     headers = {
         key: value
         for key, value in request.headers.items()
-        if key.lower()
-        not in {"host", "content-length", "x-syra-internal-secret", "x-session-api-key"}
+        if key.lower() not in {"host", "content-length", "x-syra-internal-secret"}
     }
-    headers.update(agent_session_headers(project_id))
     body = await request.body()
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
         upstream_response = await client.request(

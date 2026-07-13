@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
-import json
+import re
 import time
 from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import httpx
 
 from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
-from syte.openhands_agent import (
+from syte.continue_agent import (
+    agent_home,
     agent_log_path,
     bridge_settings,
-    build_agent_server_command,
+    build_serve_command,
+    continue_command,
+    continue_installed,
     get_agent_logs,
     get_agent_status,
     is_agent_running,
-    openhands_command,
-    openhands_installed,
     write_agent_config,
 )
+from syte.continue_agent import agent_config_path as resolve_agent_config_path
 from syte.database import get_project, update_project
+from syte.workspace import run_cmd
+
+SECRET_REF_RE = re.compile(r"\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}")
+BROKEN_SECRET_REF_RE = re.compile(r"\$\{\s*secrets\.([A-Z0-9_]+)\s*\}")
 
 
 def _now() -> str:
@@ -38,18 +43,18 @@ def mask_api_key(key: str) -> str:
     return f"{key[:4]}…{key[-4:]}"
 
 
-def openhands_agent_server_info() -> dict[str, Any]:
-    installed = openhands_installed()
-    package_version = ""
+def continue_cli_info() -> dict[str, Any]:
+    path = continue_command()
+    installed = continue_installed()
+    version = ""
     if installed:
-        try:
-            package_version = version("openhands-agent-server")
-        except PackageNotFoundError:
-            package_version = "installed"
+        code, out = run_cmd([path, "--version"])
+        if code == 0:
+            version = out.strip().splitlines()[0] if out.strip() else ""
     return {
         "installed": installed,
-        "path": openhands_command(),
-        "version": package_version,
+        "path": path,
+        "version": version,
     }
 
 
@@ -183,68 +188,75 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
 
 
 def inspect_agent_config(project_id: str) -> dict[str, Any]:
-    from syte.openhands_agent import agent_config_path
+    from syte.continue_agent import agent_config_path
 
     path = agent_config_path(project_id)
     if not path.exists():
         return {
             "path": str(path),
             "exists": False,
-            "session_key_configured": False,
-            "runtime": "",
-            "conversations_path": "",
+            "secret_syntax_ok": False,
+            "broken_secret_refs": [],
+            "valid_secret_refs": [],
+            "models_in_config": [],
             "snippet": "",
         }
 
     text = path.read_text(errors="replace")
-    try:
-        config = json.loads(text)
-    except json.JSONDecodeError:
-        return {
-            "path": str(path),
-            "exists": True,
-            "session_key_configured": False,
-            "runtime": "",
-            "conversations_path": "",
-            "snippet": "Invalid OpenHands Agent Server JSON configuration",
-        }
-    keys = config.get("session_api_keys") if isinstance(config, dict) else []
-    redacted = dict(config) if isinstance(config, dict) else {}
-    if redacted.get("secret_key"):
-        redacted["secret_key"] = "<redacted>"
-    if isinstance(redacted.get("session_api_keys"), list):
-        redacted["session_api_keys"] = [
-            "<redacted>" for _key in redacted["session_api_keys"]
-        ]
+    broken = BROKEN_SECRET_REF_RE.findall(text)
+    valid = SECRET_REF_RE.findall(text)
+    models = re.findall(r'name:\s*"([^"]+)"', text)
+    snippet_lines = []
+    for line in text.splitlines()[:40]:
+        if "apiKey" in line:
+            snippet_lines.append(line.split("apiKey:")[0] + 'apiKey: "<redacted>"')
+        else:
+            snippet_lines.append(line)
 
     return {
         "path": str(path),
         "exists": True,
-        "session_key_configured": bool(keys),
-        "runtime": "openhands",
-        "conversations_path": str(config.get("conversations_path") or ""),
-        "snippet": json.dumps(redacted, indent=2)[:4000],
+        "secret_syntax_ok": bool(valid) and not broken,
+        "broken_secret_refs": broken,
+        "valid_secret_refs": valid,
+        "models_in_config": models,
+        "snippet": "\n".join(snippet_lines),
     }
 
 
 def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
-    config = inspect_agent_config(project_id)
+    env_path = agent_home(project_id) / ".continue" / ".env"
+    if not env_path.exists():
+        return {
+            "path": str(env_path),
+            "exists": False,
+            "vars_set": [],
+        }
+    vars_set = []
+    for line in env_path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        vars_set.append(line.split("=", 1)[0].strip())
     return {
-        "path": config["path"],
-        "exists": config["exists"],
-        "vars_set": ["session_api_key"] if config.get("session_key_configured") else [],
+        "path": str(env_path),
+        "exists": True,
+        "vars_set": vars_set,
     }
 
 
 def build_debug_hints(report: dict[str, Any]) -> list[str]:
     hints: list[str] = []
-    agent_server = report.get("openhands_agent_server") or {}
-    if not agent_server.get("installed"):
-        hints.append("Install OpenHands Agent Server with the project's Python dependencies.")
+    cli = report.get("continue_cli") or {}
+    if not cli.get("installed"):
+        hints.append("Install Continue CLI: npm install -g @continuedev/cli")
 
     config = report.get("config") or {}
-    if config.get("exists") and not config.get("session_key_configured"):
-        hints.append("OpenHands Agent Server config has no session key; regenerate it by starting the agent.")
+    if config.get("broken_secret_refs"):
+        hints.append(
+            "config.yaml has broken secret placeholders (single braces). "
+            "Update Syte and run Test again to regenerate config."
+        )
 
     for profile in report.get("profiles") or []:
         hints.extend(profile.get("hints") or [])
@@ -253,10 +265,14 @@ def build_debug_hints(report: dict[str, Any]) -> list[str]:
 
     agent = report.get("agent") or {}
     logs = report.get("logs_tail") or ""
+    if "unknown option '--host'" in logs:
+        hints.append(
+            "Continue CLI rejected --host (fixed in newer Syte). Update Syte and run Test again."
+        )
     if agent.get("agent_last_error"):
         hints.append("Agent last error logged — see agent logs below.")
     if agent.get("agent_status") == "error":
-        hints.append("OpenHands agent is in error state — check agent-server.log tail.")
+        hints.append("Continue agent is in error state — check serve.log tail.")
 
     active = report.get("active_profile")
     active_row = next((p for p in report.get("profiles") or [] if p["profile"] == active), None)
@@ -300,15 +316,15 @@ async def build_ai_debug_report(
     agent_status = await get_agent_status(project_id)
     config_info = inspect_agent_config(project_id)
     secrets_info = inspect_agent_secrets(project_id)
-    agent_server_info = openhands_agent_server_info()
+    cli_info = continue_cli_info()
 
     active_probe = next((p for p in profiles if p["profile"] == active_profile), None)
     steps = [
         {
-            "id": "openhands_agent_server",
-            "label": "OpenHands Agent Server installed",
-            "ok": agent_server_info["installed"],
-            "detail": agent_server_info["version"] or agent_server_info["path"],
+            "id": "continue_cli",
+            "label": "Continue CLI installed",
+            "ok": cli_info["installed"],
+            "detail": cli_info["version"] or cli_info["path"],
         },
         {
             "id": "active_profile_key",
@@ -317,14 +333,17 @@ async def build_ai_debug_report(
             "detail": (active_probe or {}).get("api_key_hint") or "missing",
         },
         {
-            "id": "agent_session_key",
-            "label": "Agent Server session key",
-            "ok": config_info.get("session_key_configured", False),
-            "detail": "configured" if config_info.get("session_key_configured") else "missing",
+            "id": "config_secrets",
+            "label": "config.yaml secret syntax",
+            "ok": config_info.get("secret_syntax_ok", False),
+            "detail": (
+                f"valid: {', '.join(config_info.get('valid_secret_refs') or []) or 'none'}"
+                + (f"; broken: {', '.join(config_info['broken_secret_refs'])}" if config_info.get("broken_secret_refs") else "")
+            ),
         },
         {
             "id": "secrets_env",
-            "label": "Managed Agent Server credentials",
+            "label": "Agent .continue/.env",
             "ok": secrets_info.get("exists", False),
             "detail": ", ".join(secrets_info.get("vars_set") or []) or "not written yet",
         },
@@ -336,7 +355,7 @@ async def build_ai_debug_report(
         },
         {
             "id": "agent_running",
-            "label": "OpenHands agent process",
+            "label": "Continue agent process",
             "ok": bool(agent_status.get("agent_running")),
             "detail": agent_status.get("agent_status") or "unknown",
         },
@@ -358,12 +377,12 @@ async def build_ai_debug_report(
 
     report = {
         "ok": all(step["ok"] for step in steps if step["id"] in {
-            "openhands_agent_server", "active_profile_key", "agent_session_key", "provider_reachable"
+            "continue_cli", "active_profile_key", "config_secrets", "provider_reachable"
         }),
         "generated_at": _now(),
         "project_id": project_id,
         "active_profile": active_profile,
-        "openhands_agent_server": agent_server_info,
+        "continue_cli": cli_info,
         "profiles": profiles,
         "config": config_info,
         "secrets": secrets_info,
@@ -380,11 +399,11 @@ async def build_ai_debug_report(
             "agent_backend": agent_status.get("agent_backend"),
             "agent_install_ok": agent_status.get("agent_install_ok"),
             "is_agent_running_pid": is_agent_running(project_id),
-            "serve_command": build_agent_server_command(
-                config_info["path"],
+            "serve_command": build_serve_command(
+                resolve_agent_config_path(project_id),
                 int(agent_status.get("agent_port") or 5200),
             ),
-            "openhands_command": openhands_command(),
+            "continue_command": continue_command(),
         },
         "steps": steps,
         "logs_tail": get_agent_logs(project_id, log_lines) if include_logs else "",

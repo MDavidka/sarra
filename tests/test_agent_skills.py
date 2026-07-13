@@ -19,16 +19,11 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.mark.asyncio
 async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) -> None:
     from syte.agent_skills import read_access_config
-    from syte.openhands_agent import (
-        agent_config_path,
-        agent_instruction_path,
-        agent_root,
-        write_agent_config,
-    )
+    from syte.continue_agent import agent_config_path, agent_root, write_agent_config
     from syte.database import create_project, get_project, init_db, set_setting, update_project
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    await set_setting("continue_syra_base_api_key", "base-key")
     await create_project({
         "id": "skills-proj",
         "name": "Skills",
@@ -39,12 +34,13 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
 
     project = await get_project("skills-proj")
     path = await write_agent_config(project or {})
-    instruction = agent_instruction_path("skills-proj").read_text()
+    text = path.read_text()
     root = agent_root("skills-proj")
 
     assert path == agent_config_path("skills-proj")
-    assert "Syte website agent" in instruction
-    assert "CLI tools (required)" in instruction
+    assert "rules:" in text
+    assert "Syte website agent" in text
+    assert "CLI tools (required)" in text
     assert (root / "skills" / "cli-tools.md").exists()
     assert (root / "bin" / "syte-service").exists()
 
@@ -55,7 +51,7 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
 @pytest.mark.asyncio
 async def test_write_and_read_access_config(tmp_data_dir: Path) -> None:
     from syte.agent_skills import read_access_config, write_access_config
-    from syte.openhands_agent import agent_root
+    from syte.continue_agent import agent_root
     from syte.database import create_project, init_db
 
     await init_db()
