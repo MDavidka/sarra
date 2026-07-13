@@ -1949,13 +1949,13 @@ async def _communicate_with_agent_impl(
                     source=source,
                 )
                 break
-            except RuntimeError as exc:
+            except Exception as exc:
                 last = send_attempt == max_send_attempts - 1
-                if last or not _is_message_send_server_error(exc):
-                    raise
                 # A dead MCP stdio session poisons the Agent Server process until
                 # it is restarted. Interrupt/recreate alone cannot recover from
-                # "McpError: Connection closed" in the agent log.
+                # "McpError: Connection closed" in the agent log. This may
+                # surface as an HTTP send failure or as the event websocket
+                # closing, so classify it before narrowing to send errors.
                 if (
                     auto_start
                     and not restarted_for_mcp
@@ -1982,6 +1982,8 @@ async def _communicate_with_agent_impl(
                     )
                     recreated_once = True
                     continue
+                if last or not _is_message_send_server_error(exc):
+                    raise
                 # First try to settle the existing conversation in place, so a
                 # lingering run is cleared and a still-initializing event service
                 # can catch up without discarding the durable history.
@@ -2098,8 +2100,11 @@ async def _communicate_with_agent_impl(
         # with the normal startup diagnostics.
         if (
             not _recovered_connection
-            and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
             and auto_start
+            and (
+                isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+                or _is_mcp_session_error(exc, project_id=project_id)
+            )
         ):
             logger.warning(
                 "OpenHands connection failed for %s; restarting the agent once",
@@ -2107,6 +2112,7 @@ async def _communicate_with_agent_impl(
             )
             restarted, restart_message, _ = await restart_agent(project_id)
             if restarted:
+                await update_project(project_id, {"agent_conversation_id": ""})
                 return await _communicate_with_agent_impl(
                     project_id,
                     message,
