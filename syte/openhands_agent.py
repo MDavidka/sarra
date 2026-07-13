@@ -1070,6 +1070,25 @@ def _is_message_send_server_error(error: BaseException) -> bool:
     )
 
 
+def _is_mcp_session_error(error: BaseException, *, project_id: str = "") -> bool:
+    """Return whether an Agent Server failure looks like a dead MCP stdio session."""
+    text = str(error)
+    markers = (
+        "McpError",
+        "Connection closed",
+        "mcp/shared/session.py",
+    )
+    if any(marker in text for marker in markers):
+        return True
+    if not project_id:
+        return False
+    try:
+        tail = get_agent_logs(project_id, lines=40)
+    except OSError:
+        return False
+    return any(marker in tail for marker in markers)
+
+
 async def _response_error(response: httpx.Response, operation: str) -> RuntimeError:
     try:
         body = response.json()
@@ -1911,6 +1930,7 @@ async def _communicate_with_agent_impl(
         max_send_attempts = 3
         recovered_once = False
         recreated_once = False
+        restarted_for_mcp = False
         for send_attempt in range(max_send_attempts):
             try:
                 if not created:
@@ -1933,6 +1953,35 @@ async def _communicate_with_agent_impl(
                 last = send_attempt == max_send_attempts - 1
                 if last or not _is_message_send_server_error(exc):
                     raise
+                # A dead MCP stdio session poisons the Agent Server process until
+                # it is restarted. Interrupt/recreate alone cannot recover from
+                # "McpError: Connection closed" in the agent log.
+                if (
+                    auto_start
+                    and not restarted_for_mcp
+                    and _is_mcp_session_error(exc, project_id=project_id)
+                ):
+                    restarted_for_mcp = True
+                    logger.warning(
+                        "OpenHands MCP session failed for %s; restarting the agent "
+                        "and recreating the conversation",
+                        project_id,
+                    )
+                    restarted, restart_message, status = await restart_agent(project_id)
+                    if not restarted:
+                        raise RuntimeError(restart_message) from exc
+                    port = status.get("agent_port") or port
+                    if not port:
+                        raise RuntimeError("Agent has no allocated port after restart") from exc
+                    await update_project(project_id, {"agent_conversation_id": ""})
+                    latest_project = await get_project(project_id) or latest_project
+                    conversation_id, created = await _ensure_conversation(
+                        latest_project,
+                        port=int(port),
+                        model=model,
+                    )
+                    recreated_once = True
+                    continue
                 # First try to settle the existing conversation in place, so a
                 # lingering run is cleared and a still-initializing event service
                 # can catch up without discarding the durable history.

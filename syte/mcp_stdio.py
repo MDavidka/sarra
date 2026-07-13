@@ -110,13 +110,17 @@ def _write_message(msg: dict[str, Any]) -> None:
 
 
 def _read_message() -> dict[str, Any] | None:
-    line = sys.stdin.buffer.readline()
-    if not line:
-        return None
-    text = line.decode("utf-8", errors="replace").strip()
-    if not text:
-        return _read_message()
-    return json.loads(text)
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text:
+            continue
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            continue
 
 
 def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
@@ -186,12 +190,23 @@ def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     while True:
-        req = _read_message()
+        try:
+            req = _read_message()
+        except Exception:
+            break
         if req is None:
             break
-        if "method" not in req:
+        if not isinstance(req, dict) or "method" not in req:
             continue
-        resp = _handle_request(req)
+        try:
+            resp = _handle_request(req)
+        except Exception as exc:
+            req_id = req.get("id") if isinstance(req, dict) else None
+            resp = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32603, "message": str(exc)},
+            }
         if resp:
             _write_message(resp)
 
