@@ -4,7 +4,7 @@ aiosqlite==0.20.0
 pydantic>=2.12.5,<3
 pydantic-settings==2.7.0
 python-multipart==0.0.20
-httpx>=0.28.1,<1
+httpx[http2]>=0.28.1,<1  # http2 extra enables HTTP/2 support for better performance
 
 # Keep the OpenHands runtime packages in lockstep. Agent Server 1.35 uses the
 # matching SDK, tools, and workspace implementations for local workspaces.
