@@ -387,8 +387,12 @@
                         <button type="button" class="agent-ctl" data-agent-action="restart"><i data-lucide="rotate-cw"></i><span>Restart</span></button>
                         <button type="button" class="agent-ctl danger" data-agent-action="stop"><i data-lucide="square"></i><span>Stop</span></button>
                         <button type="button" class="agent-ctl danger" data-agent-action="interrupt" disabled><i data-lucide="octagon-x"></i><span>Interrupt</span></button>
-                        <button type="button" class="agent-ctl wide" data-agent-action="clear"><i data-lucide="eraser"></i><span>Clear view</span></button>
+                        <button type="button" class="agent-ctl" data-agent-action="clear"><i data-lucide="eraser"></i><span>Clear</span></button>
+                        <button type="button" class="agent-ctl" data-agent-action="export" title="Export conversation as Markdown (Ctrl/Cmd+E)"><i data-lucide="download"></i><span>Export</span></button>
                       </div>
+                      <p class="agent-shortcuts-hint">
+                        <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline · <kbd>Ctrl/Cmd+K</kbd> focus · <kbd>Ctrl/Cmd+B</kbd> pane
+                      </p>
                     </div>
 
                     <div class="agent-stats" id="agent-stats" aria-label="Session stats">

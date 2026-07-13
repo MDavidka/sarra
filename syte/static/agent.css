@@ -132,6 +132,23 @@
 .agent-ctl.danger:hover:not(:disabled) { color: var(--ag-red); border-color: #fca5a5; background: #fef2f2; }
 .agent-ctl.wide { grid-column: 1 / -1; }
 
+.agent-shortcuts-hint {
+  margin: 0.1rem 0 0;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--ag-text-dim);
+}
+.agent-shortcuts-hint kbd {
+  font-family: var(--ag-mono);
+  font-size: 0.62rem;
+  background: var(--ag-surface-3);
+  border: 1px solid var(--ag-border);
+  border-radius: 4px;
+  padding: 0.02rem 0.28rem;
+  color: var(--ag-text-muted);
+  white-space: nowrap;
+}
+
 .agent-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
