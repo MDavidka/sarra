@@ -3,6 +3,7 @@
 import asyncio
 import os
 import re
+import shlex
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -268,8 +269,8 @@ async def execute_command(
 
     def _run() -> tuple[int, str]:
         result = subprocess.run(
-            cmd,
-            shell=True,
+            shlex.split(cmd),
+            shell=False,
             cwd=workdir,
             env=merged_env,
             capture_output=True,
