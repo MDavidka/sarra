@@ -1,0 +1,545 @@
+"""VM-native cloud coding agent inspired by Kilo's durable session model.
+
+The runtime is part of the Syte service process. It stores admitted requests and
+conversation messages in SQLite, calls the configured Syra provider directly,
+and executes tools through Syte's workspace APIs. No per-project CLI server,
+port allocation, or WebSocket transport is required.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from syte.agent_activity import record_agent_event
+from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
+from syte.cloud_agent_store import (
+    append_message,
+    clear_conversation,
+    conversation_messages,
+    ensure_session,
+)
+from syte.config import settings
+from syte.database import get_project, get_setting, update_project
+from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.workspace import ensure_workspace, workspace_path
+
+CLOUD_RUNTIME = "kilo-cloud"
+# Compatibility for older API consumers that imported this symbol.
+OPENHANDS_RUNTIME = CLOUD_RUNTIME
+AGENT_INSTRUCTION_VERSION = 3
+MAX_AGENT_STEPS = 24
+MAX_HISTORY_MESSAGES = 80
+PROVIDER_TIMEOUT_S = 180.0
+
+logger = logging.getLogger(__name__)
+_lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+_active_turns: dict[str, asyncio.Task[Any]] = {}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def agent_root(project_id: str) -> Path:
+    path = ensure_workspace(project_id) / "data" / "cloud-agent"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def agent_config_path(project_id: str) -> Path:
+    return agent_root(project_id) / "runtime.json"
+
+
+def agent_runtime_path(project_id: str) -> Path:
+    return agent_config_path(project_id)
+
+
+def agent_log_path(project_id: str) -> Path:
+    return agent_root(project_id) / "agent.log"
+
+
+def agent_instruction_path(project_id: str) -> Path:
+    return agent_root(project_id) / "SYTE_AGENT.md"
+
+
+def cloud_agent_installed() -> bool:
+    return True
+
+
+
+
+def cloud_agent_command() -> str:
+    return "embedded Syte cloud agent"
+
+
+
+async def profile_api_key(profile: str) -> str:
+    spec = profile_provider(profile)
+    return (await get_setting(spec["setting_key"], "")).strip()
+
+
+async def bridge_settings() -> dict[str, Any]:
+    default_profile = (
+        await get_setting("agent_default_model_profile", "syra-base")
+    ).strip() or "syra-base"
+    if default_profile not in PROFILE_PROVIDERS:
+        default_profile = "syra-base"
+    profiles: dict[str, dict[str, str]] = {}
+    for name in PROFILE_ORDER:
+        spec = PROFILE_PROVIDERS[name]
+        profiles[name] = {
+            **spec,
+            "api_key": await profile_api_key(name),
+        }
+    active = profiles[default_profile]
+    return {
+        "default_profile": default_profile,
+        "profiles": profiles,
+        "api_base": active["api_base"],
+        "api_key": active["api_key"],
+        "provider": active["provider"],
+        "syra_nano_model": profiles["syra-nano"]["model"],
+        "syra_base_model": profiles["syra-base"]["model"],
+        "syra_havy_model": profiles["syra-havy"]["model"],
+        "syra_nano_api_key": profiles["syra-nano"]["api_key"],
+        "syra_base_api_key": profiles["syra-base"]["api_key"],
+        "syra_havy_api_key": profiles["syra-havy"]["api_key"],
+    }
+
+
+async def selected_model_metadata(project: dict[str, Any]) -> dict[str, str]:
+    bridge = await bridge_settings()
+    profile = str(project.get("agent_model_profile") or bridge["default_profile"])
+    spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
+    return {
+        "profile": profile if profile in PROFILE_PROVIDERS else "syra-base",
+        "provider": spec["provider"],
+        "provider_label": spec["label"],
+        "model": spec["model"],
+        "api_base": spec["api_base"],
+        "api_key": spec["api_key"],
+    }
+
+
+async def ensure_agent_runtime(project: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if not project.get("agent_status"):
+        updates["agent_status"] = "stopped"
+    if project.get("agent_runtime") != CLOUD_RUNTIME:
+        updates.update({"agent_runtime": CLOUD_RUNTIME, "agent_port": None})
+    if not project.get("agent_model_profile"):
+        updates["agent_model_profile"] = (await bridge_settings())["default_profile"]
+    if not project.get("agent_conversation_id"):
+        updates["agent_conversation_id"] = f"cloud-{project['id']}"
+    if updates:
+        await update_project(project["id"], updates)
+        project = await get_project(project["id"]) or {**project, **updates}
+    return project
+
+
+async def backend_health(project: dict[str, Any]) -> dict[str, Any]:
+    from syte.agent_debug import probe_profile_provider
+
+    model = await selected_model_metadata(project)
+    if not model["api_key"]:
+        return {
+            "ok": False,
+            "error": f"{model['provider_label']} API key not configured for {model['profile']}",
+            "url": model["api_base"],
+            "profile": model["profile"],
+            "provider": model["provider_label"],
+            "probes": [],
+        }
+    return await probe_profile_provider(model["profile"], model["api_key"])
+
+
+def _write_log(project_id: str, line: str) -> None:
+    path = agent_log_path(project_id)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{_now()}] {line}\n")
+
+
+def get_agent_logs(project_id: str, lines: int = 200) -> str:
+    path = agent_log_path(project_id)
+    if not path.exists():
+        return ""
+    return "\n".join(path.read_text(errors="replace").splitlines()[-max(1, lines):])
+
+
+async def _build_syte_instruction(project_id: str) -> str:
+    from syte.agent_skills import build_agent_rules, read_access_config, write_agent_skills
+
+    root = agent_root(project_id)
+    access = await read_access_config(project_id, root)
+    write_agent_skills(project_id, root)
+    rule_lines = "\n".join(
+        f"- {item['name']}: {item['rule']}"
+        for item in build_agent_rules(project_id, access)
+        if item.get("rule")
+    )
+    return (
+        "You are Syte's cloud coding agent running persistently on the project's VM. "
+        "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
+        "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
+        "and run the smallest useful verification after edits. Never expose credentials. "
+        "Do not discuss or configure unrelated model providers.\n\n"
+        "Use the service tool for deploy, preview, process status, and logs. Use workspace tools "
+        "for code and commands. Continue using tools until the request is actually complete, then "
+        "return a concise result with verification and any real blocker.\n\n"
+        f"Syte workspace rules:\n{rule_lines}\n\n"
+        f"Project workspace: {workspace_path(project_id) / 'app'}"
+    )
+
+
+async def write_agent_config(project: dict[str, Any]) -> Path:
+    project = await ensure_agent_runtime(project)
+    model = await selected_model_metadata(project)
+    if not model["api_key"]:
+        raise RuntimeError(
+            f"No API key configured for active profile {model['profile']}. "
+            f"Open AI settings and add the {model['provider_label']} key."
+        )
+    instruction = await _build_syte_instruction(project["id"])
+    agent_instruction_path(project["id"]).write_text(instruction + "\n")
+    payload = {
+        "runtime": CLOUD_RUNTIME,
+        "instruction_version": AGENT_INSTRUCTION_VERSION,
+        "model_profile": model["profile"],
+        "model": model["model"],
+        "provider": model["provider"],
+        "workspace_path": str(workspace_path(project["id"]) / "app"),
+        "transport": "direct-provider",
+        "streaming": False,
+    }
+    path = agent_config_path(project["id"])
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    await ensure_session(project["id"], model["profile"])
+    await update_project(project["id"], {"agent_config_path": str(path)})
+    return path
+
+
+async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
+    async with _lifecycle_locks[project_id]:
+        project = await get_project(project_id)
+        if not project:
+            return False, "Project not found", {}
+        already_running = project.get("agent_status") == "running"
+        try:
+            await write_agent_config(project)
+        except RuntimeError as exc:
+            await update_project(project_id, {"agent_status": "error", "agent_last_error": str(exc)})
+            return False, str(exc), await get_agent_status(project_id, check_backend=False)
+        if already_running:
+            return True, "Syte cloud agent is already ready.", await get_agent_status(
+                project_id, check_backend=False
+            )
+        await update_project(
+            project_id,
+            {"agent_status": "running", "agent_last_started_at": _now(), "agent_last_error": ""},
+        )
+        _write_log(project_id, "cloud runtime ready")
+        await record_agent_event(
+            project_id,
+            "agent_started",
+            title="Cloud agent ready",
+            detail="VM-native Syte cloud runtime is ready",
+            payload={"runtime": CLOUD_RUNTIME},
+            source=CLOUD_RUNTIME,
+        )
+        status = await get_agent_status(project_id, check_backend=False)
+        return True, "Syte cloud agent is ready.", status
+
+
+async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
+    ok, message, status = await start_agent(project_id)
+    return {"ok": ok, "status": status.get("agent_status", "error"), "message": message,
+            "project_id": project_id, "already_warming": False, "source": source}
+
+
+async def stop_agent(project_id: str) -> tuple[bool, str]:
+    task = _active_turns.get(project_id)
+    if task and not task.done():
+        task.cancel()
+    if not await get_project(project_id):
+        return False, "Project not found"
+    await update_project(project_id, {"agent_status": "stopped"})
+    await record_agent_event(project_id, "agent_stopped", title="Cloud agent stopped", source=CLOUD_RUNTIME)
+    return True, "Syte cloud agent stopped."
+
+
+async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
+    await stop_agent(project_id)
+    await clear_conversation(project_id)
+    ok, message, status = await start_agent(project_id)
+    if ok:
+        await record_agent_event(project_id, "agent_restarted", title="Cloud session restarted", source=CLOUD_RUNTIME)
+    return ok, message, status
+
+
+async def interrupt_agent(project_id: str) -> tuple[bool, str]:
+    task = _active_turns.get(project_id)
+    if task and not task.done():
+        task.cancel()
+        return True, "Active cloud-agent turn interrupted."
+    return True, "No active cloud-agent turn."
+
+
+async def get_agent_status(
+    project_id: str, *, request_base: str = "", check_backend: bool = True
+) -> dict[str, Any]:
+    project = await get_project(project_id)
+    if not project:
+        return {}
+    project = await ensure_agent_runtime(project)
+    model = await selected_model_metadata(project)
+    backend = await backend_health(project) if check_backend else {
+        "ok": bool(model["api_key"]), "url": model["api_base"], "profile": model["profile"],
+        "provider": model["provider_label"], "error": "" if model["api_key"] else "API key missing",
+        "probes": [],
+    }
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    base_url = request_base.rstrip("/") or (
+        build_https_url(gui_domain) if gui_domain
+        else build_direct_url(settings.resolved_public_ip, settings.port)
+    )
+    status = project.get("agent_status") or "stopped"
+    active = bool(_active_turns.get(project_id) and not _active_turns[project_id].done())
+    return {
+        "agent_runtime": CLOUD_RUNTIME,
+        "agent_runtime_type": "cloud",
+        "agent_status": "processing" if active else status,
+        "agent_running": status != "stopped",
+        "agent_healthy": status == "running" and bool(model["api_key"]),
+        "agent_warming": False,
+        "agent_port": None,
+        "agent_local_url": "",
+        "agent_proxy_path": "",
+        "agent_proxy_url": base_url,
+        "agent_workspace_path": str(workspace_path(project_id)),
+        "agent_log_path": str(agent_log_path(project_id)),
+        "agent_config_path": str(agent_config_path(project_id)),
+        "agent_last_started_at": project.get("agent_last_started_at"),
+        "agent_last_error": project.get("agent_last_error") or "",
+        "agent_backend": backend,
+        "agent_model": model,
+        "agent_command": cloud_agent_command(),
+        "agent_install_ok": True,
+        "agent_no_hub_required": True,
+        "agent_conversation_id": project.get("agent_conversation_id") or f"cloud-{project_id}",
+        "agent_capabilities": [
+            "durable_sessions", "restartable_requests", "background_jobs", "tagged_activity_stream",
+            "terminal", "file_editor", "service_control", "skills", "provider_retries",
+        ],
+    }
+
+
+async def update_agent_settings(
+    project_id: str, *, model_profile: str | None = None, include_status: bool = True
+) -> dict[str, Any]:
+    if model_profile is not None:
+        profile = model_profile.strip() or "syra-base"
+        if profile not in PROFILE_PROVIDERS:
+            raise ValueError(f"Unknown model profile: {profile}")
+        await update_project(project_id, {"agent_model_profile": profile})
+        project = await get_project(project_id)
+        if project:
+            await write_agent_config(project)
+    return await get_agent_status(project_id) if include_status else (await get_project(project_id) or {})
+
+
+TOOLS: list[dict[str, Any]] = [
+    {"type": "function", "function": {"name": "list_files", "description": "List files in a workspace directory.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "read_file", "description": "Read a UTF-8 workspace file.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "write_file", "description": "Create or replace a UTF-8 workspace file.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "delete_file", "description": "Delete a workspace file.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "run_command", "description": "Run a shell command in the project workspace.",
+     "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "service", "description": "Control or inspect the Syte project service and preview.",
+     "parameters": {"type": "object", "properties": {"action": {"type": "string"}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},
+]
+
+
+async def _execute_tool(project_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    from syte.agent_service import run_service_action
+    from syte.workspace_api import delete_file, execute_command, list_workspace_files, read_file, write_file
+
+    if name == "list_files":
+        return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
+    if name == "read_file":
+        ok, content, mime = await read_file(project_id, str(args["path"]))
+        return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
+    if name == "write_file":
+        ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
+        return {"ok": ok, "message": message}
+    if name == "delete_file":
+        ok, message = await delete_file(project_id, str(args["path"]))
+        return {"ok": ok, "message": message}
+    if name == "run_command":
+        code, output = await execute_command(
+            project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
+            timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
+        )
+        return {"ok": code == 0, "exit_code": code, "output": output[-16000:]}
+    if name == "service":
+        return await run_service_action(
+            project_id, str(args["action"]), command=args.get("command"),
+            cwd=str(args.get("cwd") or "app"), lines=int(args.get("lines") or 200),
+            timeout=int(args.get("timeout") or 300), source="agent",
+        )
+    return {"ok": False, "error": "unknown_tool", "message": name}
+
+
+async def _provider_completion(model: dict[str, str], messages: list[dict[str, Any]]) -> dict[str, Any]:
+    payload = {"model": model["model"], "messages": messages, "tools": TOOLS,
+               "tool_choice": "auto", "stream": False, "temperature": 0.1}
+    headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
+    error = "Provider request failed"
+    for attempt in range(3):
+        try:
+            timeout = httpx.Timeout(PROVIDER_TIMEOUT_S, connect=15.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    model["api_base"].rstrip("/") + "/chat/completions", headers=headers, json=payload
+                )
+            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
+                await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices or not isinstance(choices[0].get("message"), dict):
+                raise RuntimeError("Provider returned no assistant message")
+            return choices[0]["message"]
+        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+            error = str(exc)
+            if attempt < 2:
+                await asyncio.sleep(1.5 * (2 ** attempt))
+    raise RuntimeError(error)
+
+
+async def communicate_with_agent(
+    project_id: str, message: str, *, model_profile: str | None = None,
+    source: str = "api", auto_start: bool = True, background: bool = False,
+) -> dict[str, Any]:
+    if background:
+        from syte.agent_jobs import submit_agent_request
+        return await submit_agent_request(project_id, message, model_profile=model_profile,
+                                          source=source, auto_start=auto_start)
+    from syte.agent_jobs import new_request_id, project_agent_lock
+    request_id = new_request_id()
+    async with project_agent_lock(project_id):
+        return await _communicate_with_agent_impl(
+            project_id, message, model_profile=model_profile, source=source,
+            auto_start=auto_start, request_id=request_id,
+        )
+
+
+async def _communicate_with_agent_impl(
+    project_id: str, message: str, *, model_profile: str | None = None,
+    source: str = "api", auto_start: bool = True, emit_request_started: bool = True,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
+    project = await get_project(project_id)
+    if not project:
+        return {"ok": False, "error": "not_found", "message": "Project not found", "request_id": request_id}
+    if model_profile:
+        try:
+            await update_agent_settings(project_id, model_profile=model_profile, include_status=False)
+        except ValueError as exc:
+            return {"ok": False, "error": "invalid_model_profile", "message": str(exc), "request_id": request_id}
+    project = await get_project(project_id) or project
+    if auto_start and project.get("agent_status") != "running":
+        ok, start_message, _ = await start_agent(project_id)
+        if not ok:
+            return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
+    model = await selected_model_metadata(project)
+    if not model["api_key"]:
+        return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
+    if emit_request_started:
+        await record_agent_event(project_id, "request_started", role="user", title="Request",
+                                 detail=message[:4000], payload={"request_id": request_id}, source=source)
+    await append_message(project_id, request_id, "user", message)
+    await record_agent_event(project_id, "processing", title="Processing",
+                             detail="Cloud agent accepted the durable request",
+                             payload={"request_id": request_id}, source=source)
+    instruction = await _build_syte_instruction(project_id)
+    messages = [{"role": "system", "content": instruction}, *(await conversation_messages(
+        project_id, limit=MAX_HISTORY_MESSAGES
+    ))]
+    current = asyncio.current_task()
+    if current:
+        _active_turns[project_id] = current
+    try:
+        for step in range(MAX_AGENT_STEPS):
+            assistant = await _provider_completion(model, messages)
+            content = str(assistant.get("content") or "")
+            tool_calls = assistant.get("tool_calls") or []
+            stored_calls = tool_calls if isinstance(tool_calls, list) else []
+            await append_message(project_id, request_id, "assistant", content, tool_calls=stored_calls or None)
+            messages.append({"role": "assistant", "content": content, **({"tool_calls": stored_calls} if stored_calls else {})})
+            if not stored_calls:
+                reply = content.strip() or "Completed."
+                await record_agent_event(project_id, "request_completed", role="assistant", title="Completed",
+                                         detail=reply[:4000], payload={"request_id": request_id, "reply": reply}, source=source)
+                _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
+                return {"ok": True, "uuid": project_id, "request_id": request_id,
+                        "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
+                        "model": model["model"], "provider": model["provider"], "message": reply,
+                        "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
+            for call in stored_calls:
+                function = call.get("function") or {}
+                name = str(function.get("name") or "")
+                try:
+                    args = json.loads(function.get("arguments") or "{}")
+                    if not isinstance(args, dict):
+                        args = {}
+                except json.JSONDecodeError:
+                    args = {}
+                call_id = str(call.get("id") or f"tool-{step}")
+                await record_agent_event(project_id, "tool_call_started", title=name, detail=json.dumps(args)[:1000],
+                                         payload={"request_id": request_id, "tool": name, "arguments": args}, source=source)
+                result = await _execute_tool(project_id, name, args)
+                encoded = json.dumps(result, ensure_ascii=False)
+                await append_message(project_id, request_id, "tool", encoded, tool_call_id=call_id)
+                messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
+                await record_agent_event(project_id, "tool_call_finished", title=name,
+                                         detail=encoded[:4000], payload={"request_id": request_id, "tool": name,
+                                         "ok": bool(result.get("ok"))}, source=source)
+        raise RuntimeError(f"Agent exceeded the {MAX_AGENT_STEPS}-step reliability limit")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        error = str(exc) or "Cloud agent request failed"
+        _write_log(project_id, f"request {request_id} failed: {error}")
+        await update_project(project_id, {"agent_last_error": error[:4000]})
+        await record_agent_event(project_id, "request_failed", title="Request failed", detail=error[:4000],
+                                 payload={"request_id": request_id, "error": "cloud_agent_failed",
+                                          "retry_message": message[:4000]}, source=source)
+        return {"ok": False, "request_id": request_id, "error": "cloud_agent_failed", "message": error}
+    finally:
+        if _active_turns.get(project_id) is current:
+            _active_turns.pop(project_id, None)
+
+
+async def test_agent(project_id: str, *, source: str = "api", model_profile: str | None = None) -> dict[str, Any]:
+    result = await communicate_with_agent(
+        project_id, "Reply with exactly the word 'ok' and nothing else.",
+        source=source, model_profile=model_profile,
+    )
+    passed = bool(result.get("ok") and "ok" in str(result.get("reply") or "").lower())
+    return {**result, "ok": passed, "message": "Syte cloud agent test passed" if passed
+            else result.get("message", "Agent did not return expected reply"),
+            "checks": {"cloud_runtime": True, "backend": passed, "communicate": passed}}

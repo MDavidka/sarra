@@ -255,7 +255,7 @@ async def _gui_url() -> str:
 @app.get("/api/settings")
 async def get_settings():
     from syte.ai_providers import provider_catalog
-    from syte.openhands_agent import bridge_settings
+    from syte.cloud_agent import bridge_settings
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -390,7 +390,7 @@ async def save_settings(body: SettingsRequest):
         if profile not in PROFILE_PROVIDERS:
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
-        messages.append(f"Default OpenHands model profile: {profile}")
+        messages.append(f"Default Syte cloud model profile: {profile}")
     if body.agent_syra_nano_api_key is not None:
         await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
         messages.append(
@@ -583,7 +583,7 @@ async def api_preview_stop(project_id: str):
 
 @app.get("/api/projects/{project_id}/agent")
 async def api_agent_status_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status
+    from syte.cloud_agent import get_agent_status
 
     project = await get_project(project_id)
     if not project:
@@ -602,8 +602,8 @@ async def api_agent_status_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/warm")
 async def api_agent_warm_public(project_id: str):
-    """Schedule the persistent OpenHands runtime without blocking for startup."""
-    from syte.openhands_agent import warm_agent
+    """Schedule the persistent Syte cloud runtime without blocking for startup."""
+    from syte.cloud_agent import warm_agent
 
     project = await get_project(project_id)
     if not project:
@@ -620,7 +620,7 @@ async def api_agent_warm_public(project_id: str):
 
 @app.post("/api/projects/{project_id}/agent/start")
 async def api_agent_start_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, start_agent
+    from syte.cloud_agent import get_agent_status, start_agent
 
     ok, message, _meta = await start_agent(project_id)
     if not ok:
@@ -640,7 +640,7 @@ async def api_agent_start_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/stop")
 async def api_agent_stop_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, stop_agent
+    from syte.cloud_agent import get_agent_status, stop_agent
 
     project = await get_project(project_id)
     if not project:
@@ -661,8 +661,8 @@ async def api_agent_stop_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/interrupt")
 async def api_agent_interrupt_public(project_id: str, request: Request):
-    """Cancel the active OpenHands turn without discarding conversation history."""
-    from syte.openhands_agent import get_agent_status, interrupt_agent
+    """Cancel the active Syte cloud turn without discarding conversation history."""
+    from syte.cloud_agent import get_agent_status, interrupt_agent
 
     project = await get_project(project_id)
     if not project:
@@ -685,7 +685,7 @@ async def api_agent_interrupt_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/restart")
 async def api_agent_restart_public(project_id: str, request: Request):
-    from syte.openhands_agent import get_agent_status, restart_agent
+    from syte.cloud_agent import get_agent_status, restart_agent
 
     ok, message, _meta = await restart_agent(project_id)
     if not ok:
@@ -705,7 +705,7 @@ async def api_agent_restart_public(project_id: str, request: Request):
 
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
-    from syte.openhands_agent import get_agent_logs
+    from syte.cloud_agent import get_agent_logs
 
     project = await get_project(project_id)
     if not project:
@@ -906,7 +906,7 @@ async def api_agent_access_capabilities(project_id: str):
 @app.get("/api/projects/{project_id}/agent/access-config")
 async def api_agent_access_config_get(project_id: str):
     from syte.agent_skills import read_access_config
-    from syte.openhands_agent import agent_root
+    from syte.cloud_agent import agent_root
 
     project = await get_project(project_id)
     if not project:
@@ -917,7 +917,7 @@ async def api_agent_access_config_get(project_id: str):
 @app.put("/api/projects/{project_id}/agent/access-config")
 async def api_agent_access_config_put(project_id: str, body: AgentAccessConfigRequest):
     from syte.agent_skills import read_access_config, write_access_config
-    from syte.openhands_agent import agent_root, write_agent_config
+    from syte.cloud_agent import agent_root, write_agent_config
 
     project = await get_project(project_id)
     if not project:
@@ -974,7 +974,7 @@ async def api_agent_debug_gui(project_id: str, profile: str | None = None):
 
 @app.post("/api/projects/{project_id}/agent/test")
 async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
-    from syte.openhands_agent import test_agent
+    from syte.cloud_agent import test_agent
 
     project = await get_project(project_id)
     if not project:
@@ -985,7 +985,7 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
 
 @app.post("/api/projects/{project_id}/agent/chat")
 async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool = False):
-    from syte.openhands_agent import communicate_with_agent
+    from syte.cloud_agent import communicate_with_agent
 
     project = await get_project(project_id)
     if not project:

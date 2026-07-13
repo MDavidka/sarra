@@ -1327,10 +1327,10 @@
         <div class="cat-panel" id="panel-agent" data-cat="agent">
         <section class="section" id="agent">
           <h2 class="section-title">AI Session</h2>
-          <p class="section-desc">Control per-project OpenHands Agent Server conversations for long-lived coding sessions. Independent from preview/deploy processes.</p>
+          <p class="section-desc">Control per-project Syte cloud runtime conversations for long-lived coding sessions. Independent from preview/deploy processes.</p>
 
           <div class="note" style="margin:0 0 1.25rem">
-            <strong>AI session usage.</strong> One OpenHands Agent Server per project workspace. Use Syte chat and activity endpoints for normal work; <code>agent_proxy_url</code> is reserved for authenticated native conversation calls.
+            <strong>AI session usage.</strong> One embedded Syte cloud runtime with durable per-project sessions. Use Syte chat and activity endpoints for normal work; <code>agent_proxy_url</code> is reserved for authenticated native conversation calls.
             Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
             Configure Verted + DeepSeek API keys per profile in Syte GUI → <strong>AI</strong>.
             Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
@@ -1346,7 +1346,7 @@
               <div class="endpoint-name">Agent status</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Returns running/stopped/starting/error, allocated port, <code>agent_proxy_url</code>, model profile, bridge target, workspace paths, and last error.</div>
+              <div class="field-desc">Returns running/stopped/starting/error, embedded runtime health, model profile, bridge target, workspace paths, and last error.</div>
               <pre>{
   "ok": true,
   "uuid": "my-site-a1b2c3",
@@ -1370,7 +1370,7 @@
               <div class="endpoint-name">Warm agent in background</div>
             </div>
             <div class="endpoint-body">
-              <div class="note"><strong>Recommended for instant chat.</strong> Call when a user opens a project or chat. It returns immediately while OpenHands starts in the background. Once warm, the supervisor keeps that project runtime alive continuously and restarts it after a crash or Syte restart.</div>
+              <div class="note"><strong>Recommended for instant chat.</strong> Call when a user opens a project or chat. It returns immediately while Syte cloud starts in the background. Once warm, the supervisor keeps that project runtime alive continuously and restarts it after a crash or Syte restart.</div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
               <pre>{"ok":true,"uuid":"my-site-a1b2c3","status":"warming","already_warming":false}</pre>
               <div class="field-desc">Poll <code>GET /agent_status?uuid=...</code> until <code>agent_status="running"</code> and <code>agent_healthy=true</code>, or listen for <code>agent_started</code> on the activity stream. Repeated warm calls are deduplicated.</div>
@@ -1390,7 +1390,7 @@
                 <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">uuid<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Starts OpenHands Agent Server and waits for readiness. For non-blocking preconnection use <code>/agent_warm</code>.</div>
+                  <div class="field-desc">Starts Syte cloud runtime and waits for readiness. For non-blocking preconnection use <code>/agent_warm</code>.</div>
                 </div>
               </div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
@@ -1465,7 +1465,7 @@
               <div class="endpoint-name">Agent logs (snapshot)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Snapshot of OpenHands Agent Server output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
+              <div class="field-desc">Snapshot of Syte cloud runtime output. For live tail use <code>GET /api/projects/{uuid}/agent/logs/stream?live=1</code> (SSE).</div>
             </div>
           </div>
 
@@ -1536,7 +1536,7 @@
               <div class="field-desc"><strong>Query parameters:</strong> <code>live=1</code> emits a session marker and stays connected · <code>since_id=N</code> resumes after event N · <code>format=sse|tagged|text|jsonl</code> chooses the encoding · <code>types=thinking,command_run</code> filters formatted/tagged output.</div>
               <pre>data: {"type":"session","text":"Live agent activity stream"}
 
-data: {"type":"activity","event":{"id":16,"event_type":"processing","title":"OpenHands working","detail":"Agent is processing…","payload":{"request_id":"req_abc","execution_status":"running"}}}
+data: {"type":"activity","event":{"id":16,"event_type":"processing","title":"Syte cloud working","detail":"Agent is processing…","payload":{"request_id":"req_abc","execution_status":"running"}}}
 
 data: {"type":"ping","since_id":16}</pre>
               <div class="field-desc"><strong>Lifecycle order:</strong> <code>request_started</code> → <code>processing</code> / <code>thinking</code> → zero or more tool and <code>token_delta</code> events → <code>message_snapshot</code> → exactly one <code>request_completed</code> or <code>request_failed</code>. Correlate every turn with <code>event.payload.request_id</code>.</div>
@@ -1585,9 +1585,9 @@ es.onmessage = ({ data }) =&gt; {
               <div class="endpoint-name">Test agent</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Starts the agent if needed, verifies the provider API and Agent Server, then sends a probe message expecting <code>ok</code> in reply.</div>
+              <div class="field-desc">Starts the agent if needed, verifies the provider API and embedded cloud runtime, then sends a probe message expecting <code>ok</code> in reply.</div>
               <pre>{"uuid":"my-site-a1b2c3"}</pre>
-              <pre>{"ok":true,"checks":{"agent_server":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
+              <pre>{"ok":true,"checks":{"cloud_runtime":true,"backend":true,"agent":true,"communicate":true},"reply":"ok"}</pre>
             </div>
           </div>
 
@@ -1607,7 +1607,7 @@ es.onmessage = ({ data }) =&gt; {
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">message<span class="req">*</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Sent as an OpenHands conversation message in the project workspace.</div>
+                  <div class="field-desc">Sent as an Syte cloud conversation message in the project workspace.</div>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
@@ -1665,14 +1665,14 @@ es.onmessage = ({ data }) =&gt; {
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/warm</code> — non-blocking prewarm</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/start|stop|restart</code> — blocking lifecycle controls</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/change</code> — <code>{message, model_name}</code></span></div>
-            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — blocking OpenHands message</span></div>
+            <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/communicate</code> — blocking Syte cloud message</span></div>
             <div class="info-row"><span class="info-key">POST</span><span class="info-val"><code>/projects/{uuid}/agent/test</code> — health + probe chat</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/logs?lines=200</code></span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity?since_id=0</code> — Cursor-like activity snapshot</span></div>
             <div class="info-row"><span class="info-key">GET</span><span class="info-val"><code>/projects/{uuid}/agent/activity/stream?live=1</code> — SSE real-time activity</span></div>
-            <div class="info-row"><span class="info-key">GET|POST</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — authenticated OpenHands health and conversation API proxy</span></div>
+            <div class="info-row"><span class="info-key">GET|POST</span><span class="info-val"><code>/projects/{uuid}/agent/proxy[/{path}]</code> — authenticated cloud-runtime compatibility health</span></div>
           </div>
-          <div class="note" style="margin-top:1rem"><strong>OpenHands native HTTP</strong> (via authenticated proxy): <code>GET /ready</code>, <code>GET /health</code>, and <code>/api/conversations/*</code>. Use Syte activity SSE for browser streaming.</div>
+          <div class="note" style="margin-top:1rem"><strong>Cloud runtime health</strong>: <code>GET /ready</code>, <code>GET /health</code>, and <code>GET /alive</code>. Conversation proxy routes are removed. Use Syte activity SSE for browser streaming.</div>
         </section>
 
         <section class="section" id="agent-errors">
@@ -1680,7 +1680,7 @@ es.onmessage = ({ data }) =&gt; {
           <div class="info-grid">
             <div class="info-row"><span class="info-key">401</span><span class="info-val">Missing or invalid API key / internal secret</span></div>
             <div class="info-row"><span class="info-key">503 internal_secret_not_configured</span><span class="info-val">Set internal secret in Syte AI tab → Agent configuration</span></div>
-            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">OpenHands Agent Server missing or configuration invalid — install the project Python dependencies</span></div>
+            <div class="info-row"><span class="info-key">400 agent_start_failed</span><span class="info-val">Syte cloud runtime missing or configuration invalid — install the project Python dependencies</span></div>
             <div class="info-row"><span class="info-key">400 backend_unreachable</span><span class="info-val">Provider API unreachable — check AI tab → model API keys</span></div>
             <div class="info-row"><span class="info-key">503 agent not running</span><span class="info-val">Proxy called while agent stopped — <code>POST /agent/start</code> first</span></div>
             <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">UUID does not match any workspace</span></div>
@@ -1698,7 +1698,7 @@ es.onmessage = ({ data }) =&gt; {
             <div class="info-row"><span class="info-key">6</span><span class="info-val">Preview hot-reloads edited files; deploy when user is ready</span></div>
           </div>
           <div class="note" style="margin-top:1rem"><strong>Sycord public API:</strong> <code>GET /sycord/api/agent_status</code>, <code>POST /sycord/api/agent_change</code>, <code>GET /sycord/api/agent_activity</code> — same API token as other <code>/sycord/api/*</code> routes.</div>
-          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent OpenHands Agent Server instances).</div>
+          <div class="note" style="margin-top:1rem"><strong>Metrics:</strong> DPFA = Dedicated Performance For Agents (CPU). MNOA = Maximum Number Of Agents (concurrent active cloud sessions).</div>
         </section>
         </div>
       </div>

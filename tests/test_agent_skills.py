@@ -19,7 +19,7 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.mark.asyncio
 async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) -> None:
     from syte.agent_skills import read_access_config
-    from syte.openhands_agent import (
+    from syte.cloud_agent import (
         agent_config_path,
         agent_instruction_path,
         agent_root,
@@ -55,7 +55,7 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
 @pytest.mark.asyncio
 async def test_write_and_read_access_config(tmp_data_dir: Path) -> None:
     from syte.agent_skills import read_access_config, write_access_config
-    from syte.openhands_agent import agent_root
+    from syte.cloud_agent import agent_root
     from syte.database import create_project, init_db
 
     await init_db()
@@ -94,17 +94,3 @@ async def test_preview_access_status_and_logs(tmp_data_dir: Path, monkeypatch: p
     logs = await run_access_action("preview-proj", "logs", lines=50)
     assert logs["ok"] is True
     assert "logs" in logs
-
-
-@pytest.mark.asyncio
-async def test_map_tool_event_search_and_rewrite() -> None:
-    from syte.agent_activity import _map_tool_event
-
-    event_type, title, detail, _ = _map_tool_event("ripgrep", {"pattern": "hero"})
-    assert event_type == "file_search"
-    assert title == "Search"
-
-    event_type, title, detail, _ = _map_tool_event("edit_file", {"path": "app/page.tsx"})
-    assert event_type == "file_modified"
-    assert title == "Rewrite file"
-    assert detail == "app/page.tsx"

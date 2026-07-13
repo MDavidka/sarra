@@ -1,0 +1,67 @@
+# Syte Cloud Agent Contract
+
+Syte runs a VM-native background coding agent inside the main service process.
+The architecture follows KiloCode's cloud-session principles: durable admitted
+inputs, serialized per-session execution, persisted messages, structured events,
+and restartable work. It does not launch a CLI or HTTP server per project.
+
+## Runtime
+
+- Project code: `workspaces/<uuid>/app/`
+- Runtime metadata: `workspaces/<uuid>/data/cloud-agent/runtime.json`
+- Agent instructions: `workspaces/<uuid>/data/cloud-agent/SYTE_AGENT.md`
+- Runtime log: `workspaces/<uuid>/data/cloud-agent/agent.log`
+- Durable sessions, messages, and pending requests: Syte SQLite database
+
+The agent uses only Syte's configured Syra profiles and their existing fixed
+OpenAI-compatible endpoints:
+
+- `syra-nano`: Gemini Flash
+- `syra-base`: DeepSeek Chat
+- `syra-havy`: Gemini Pro
+
+Provider keys remain in Syte system settings. They are sent directly to the
+selected provider and are never copied into project runtime files.
+
+## Lifecycle and reliability
+
+`start` validates configuration and marks the embedded runtime ready without a
+process spawn or port wait. `warm` is idempotent. `stop` disables a project
+agent and interrupts an active turn. `restart` clears the durable conversation
+and creates a fresh session.
+
+Background requests are inserted into SQLite before execution. Requests that
+were running when the VM or service stopped are returned to `pending` and
+resumed at startup. Turns are serialized per project, provider calls use bounded
+exponential retries, and every accepted request produces a terminal success,
+failure, or cancellation event.
+
+## Agent execution
+
+The cloud agent calls the selected provider with non-streaming chat completions
+and structured tools. Available tools are limited to Syte operations:
+
+- list, read, write, and delete workspace files
+- execute commands inside the project workspace
+- inspect or control project service, preview, deploy, and logs
+
+The system instruction is generated for Syte and includes project access rules,
+workspace location, verification requirements, and credential handling.
+
+## Activity API
+
+Background chat returns a request ID immediately. Clients observe progress at:
+
+`GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=N`
+
+Events are persisted before broadcast. Important event types are
+`request_started`, `processing`, `tool_call_started`, `tool_call_finished`,
+`request_completed`, and `request_failed`. The existing JSON SSE, tagged SSE,
+text, and JSONL encodings remain stable for Sycord clients.
+
+## Compatibility health route
+
+The old internal proxy path remains only for authenticated health checks:
+`/agent/proxy`, `/agent/proxy/ready`, `/agent/proxy/health`, and
+`/agent/proxy/alive`. Conversation proxy routes return HTTP 410. Use Syte's
+communicate, change, activity, and lifecycle endpoints for all agent work.

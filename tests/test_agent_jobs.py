@@ -55,7 +55,7 @@ async def test_run_job_converts_unexpected_exception_to_terminal_event(
         raise RuntimeError("runtime crashed")
 
     monkeypatch.setattr(
-        "syte.openhands_agent._communicate_with_agent_impl",
+        "syte.cloud_agent._communicate_with_agent_impl",
         fail_request,
     )
 

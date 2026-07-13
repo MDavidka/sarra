@@ -5,21 +5,16 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import httpx
 
 from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
-from syte.openhands_agent import (
+from syte.cloud_agent import (
     agent_log_path,
     bridge_settings,
-    build_agent_server_command,
     get_agent_logs,
     get_agent_status,
-    is_agent_running,
-    openhands_command,
-    openhands_installed,
     write_agent_config,
 )
 from syte.database import get_project, update_project
@@ -37,20 +32,6 @@ def mask_api_key(key: str) -> str:
         return "••••"
     return f"{key[:4]}…{key[-4:]}"
 
-
-def openhands_agent_server_info() -> dict[str, Any]:
-    installed = openhands_installed()
-    package_version = ""
-    if installed:
-        try:
-            package_version = version("openhands-agent-server")
-        except PackageNotFoundError:
-            package_version = "installed"
-    return {
-        "installed": installed,
-        "path": openhands_command(),
-        "version": package_version,
-    }
 
 
 async def _http_probe(
@@ -182,20 +163,20 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     }
 
 
+def cloud_agent_runtime_info() -> dict[str, Any]:
+    return {
+        "installed": True,
+        "path": "embedded in the Syte VM service",
+        "version": "native",
+    }
+
+
 def inspect_agent_config(project_id: str) -> dict[str, Any]:
-    from syte.openhands_agent import agent_config_path
+    from syte.cloud_agent import agent_config_path
 
     path = agent_config_path(project_id)
     if not path.exists():
-        return {
-            "path": str(path),
-            "exists": False,
-            "session_key_configured": False,
-            "runtime": "",
-            "conversations_path": "",
-            "snippet": "",
-        }
-
+        return {"path": str(path), "exists": False, "runtime": "", "snippet": ""}
     text = path.read_text(errors="replace")
     try:
         config = json.loads(text)
@@ -203,69 +184,42 @@ def inspect_agent_config(project_id: str) -> dict[str, Any]:
         return {
             "path": str(path),
             "exists": True,
-            "session_key_configured": False,
             "runtime": "",
-            "conversations_path": "",
-            "snippet": "Invalid OpenHands Agent Server JSON configuration",
+            "snippet": "Invalid Syte cloud runtime JSON configuration",
         }
-    keys = config.get("session_api_keys") if isinstance(config, dict) else []
-    redacted = dict(config) if isinstance(config, dict) else {}
-    if redacted.get("secret_key"):
-        redacted["secret_key"] = "<redacted>"
-    if isinstance(redacted.get("session_api_keys"), list):
-        redacted["session_api_keys"] = [
-            "<redacted>" for _key in redacted["session_api_keys"]
-        ]
-
     return {
         "path": str(path),
         "exists": True,
-        "session_key_configured": bool(keys),
-        "runtime": "openhands",
-        "conversations_path": str(config.get("conversations_path") or ""),
-        "snippet": json.dumps(redacted, indent=2)[:4000],
+        "runtime": str(config.get("runtime") or ""),
+        "transport": str(config.get("transport") or ""),
+        "workspace_path": str(config.get("workspace_path") or ""),
+        "snippet": json.dumps(config, indent=2)[:4000],
     }
 
 
 def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
-    config = inspect_agent_config(project_id)
+    del project_id
     return {
-        "path": config["path"],
-        "exists": config["exists"],
-        "vars_set": ["session_api_key"] if config.get("session_key_configured") else [],
+        "path": "system_settings",
+        "exists": True,
+        "vars_set": [],
+        "detail": "Provider keys stay in Syte settings and are not copied into project files.",
     }
 
 
 def build_debug_hints(report: dict[str, Any]) -> list[str]:
     hints: list[str] = []
-    agent_server = report.get("openhands_agent_server") or {}
-    if not agent_server.get("installed"):
-        hints.append("Install OpenHands Agent Server with the project's Python dependencies.")
-
-    config = report.get("config") or {}
-    if config.get("exists") and not config.get("session_key_configured"):
-        hints.append("OpenHands Agent Server config has no session key; regenerate it by starting the agent.")
-
     for profile in report.get("profiles") or []:
         hints.extend(profile.get("hints") or [])
         if not profile.get("api_key_set"):
             hints.append(f"Add API key for {profile['profile']} ({profile['label']}) in AI settings.")
-
     agent = report.get("agent") or {}
-    logs = report.get("logs_tail") or ""
     if agent.get("agent_last_error"):
-        hints.append("Agent last error logged — see agent logs below.")
-    if agent.get("agent_status") == "error":
-        hints.append("OpenHands agent is in error state — check agent-server.log tail.")
-
+        hints.append("The last cloud-agent error is available in the log tail below.")
     active = report.get("active_profile")
     active_row = next((p for p in report.get("profiles") or [] if p["profile"] == active), None)
     if active_row and active_row.get("api_key_set") and not active_row.get("ok"):
-        hints.append(
-            f"Provider reachable check failed for active profile {active}. "
-            "Verify the key matches the provider shown in settings."
-        )
-
+        hints.append(f"Provider probe failed for {active}; verify the configured key and model endpoint.")
     return list(dict.fromkeys(hints))
 
 
@@ -281,114 +235,56 @@ async def build_ai_debug_report(
         return {"ok": False, "error": "not_found", "message": "Project not found"}
 
     bridge = await bridge_settings()
-    active_profile = (model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-base").strip()
-
+    active_profile = (
+        model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-base"
+    ).strip()
     if model_profile and model_profile != project.get("agent_model_profile"):
         await update_project(project_id, {"agent_model_profile": model_profile})
 
-    profiles: list[dict[str, Any]] = []
-    for name in PROFILE_ORDER:
-        spec = bridge["profiles"][name]
-        profiles.append(await probe_profile_provider(name, spec["api_key"]))
-
+    profiles = [
+        await probe_profile_provider(name, bridge["profiles"][name]["api_key"])
+        for name in PROFILE_ORDER
+    ]
     config_write_error = ""
     try:
         await write_agent_config(await get_project(project_id) or project)
     except RuntimeError as exc:
         config_write_error = str(exc)
 
-    agent_status = await get_agent_status(project_id)
-    config_info = inspect_agent_config(project_id)
-    secrets_info = inspect_agent_secrets(project_id)
-    agent_server_info = openhands_agent_server_info()
-
+    status = await get_agent_status(project_id, check_backend=False)
+    config = inspect_agent_config(project_id)
+    runtime = cloud_agent_runtime_info()
     active_probe = next((p for p in profiles if p["profile"] == active_profile), None)
     steps = [
-        {
-            "id": "openhands_agent_server",
-            "label": "OpenHands Agent Server installed",
-            "ok": agent_server_info["installed"],
-            "detail": agent_server_info["version"] or agent_server_info["path"],
-        },
-        {
-            "id": "active_profile_key",
-            "label": f"API key saved ({active_profile})",
-            "ok": bool(active_probe and active_probe.get("api_key_set")),
-            "detail": (active_probe or {}).get("api_key_hint") or "missing",
-        },
-        {
-            "id": "agent_session_key",
-            "label": "Agent Server session key",
-            "ok": config_info.get("session_key_configured", False),
-            "detail": "configured" if config_info.get("session_key_configured") else "missing",
-        },
-        {
-            "id": "secrets_env",
-            "label": "Managed Agent Server credentials",
-            "ok": secrets_info.get("exists", False),
-            "detail": ", ".join(secrets_info.get("vars_set") or []) or "not written yet",
-        },
-        {
-            "id": "provider_reachable",
-            "label": f"Provider probe ({active_profile})",
-            "ok": bool(active_probe and active_probe.get("ok")),
-            "detail": (active_probe or {}).get("error") or "ok",
-        },
-        {
-            "id": "agent_running",
-            "label": "OpenHands agent process",
-            "ok": bool(agent_status.get("agent_running")),
-            "detail": agent_status.get("agent_status") or "unknown",
-        },
-        {
-            "id": "agent_http",
-            "label": "Agent HTTP health",
-            "ok": bool(agent_status.get("agent_healthy")),
-            "detail": agent_status.get("agent_local_url") or "",
-        },
+        {"id": "cloud_runtime", "label": "Syte cloud runtime", "ok": True, "detail": runtime["path"]},
+        {"id": "durable_session", "label": "Durable session store", "ok": config.get("exists", False),
+         "detail": config.get("runtime") or config_write_error or "not initialized"},
+        {"id": "active_profile_key", "label": f"API key saved ({active_profile})",
+         "ok": bool(active_probe and active_probe.get("api_key_set")),
+         "detail": (active_probe or {}).get("api_key_hint") or "missing"},
+        {"id": "provider_reachable", "label": f"Provider probe ({active_profile})",
+         "ok": bool(active_probe and active_probe.get("ok")),
+         "detail": (active_probe or {}).get("error") or "ok"},
+        {"id": "agent_ready", "label": "Cloud agent ready",
+         "ok": bool(status.get("agent_healthy")), "detail": status.get("agent_status") or "unknown"},
     ]
-
     if config_write_error:
-        steps.insert(3, {
-            "id": "config_write",
-            "label": "Write agent config",
-            "ok": False,
-            "detail": config_write_error,
-        })
-
+        steps.append({"id": "config_write", "label": "Initialize cloud runtime", "ok": False,
+                      "detail": config_write_error})
     report = {
         "ok": all(step["ok"] for step in steps if step["id"] in {
-            "openhands_agent_server", "active_profile_key", "agent_session_key", "provider_reachable"
+            "cloud_runtime", "durable_session", "active_profile_key", "provider_reachable"
         }),
         "generated_at": _now(),
         "project_id": project_id,
         "active_profile": active_profile,
-        "openhands_agent_server": agent_server_info,
+        "cloud_agent_runtime": runtime,
         "profiles": profiles,
-        "config": config_info,
-        "secrets": secrets_info,
-        "agent": {
-            "agent_status": agent_status.get("agent_status"),
-            "agent_running": agent_status.get("agent_running"),
-            "agent_healthy": agent_status.get("agent_healthy"),
-            "agent_port": agent_status.get("agent_port"),
-            "agent_local_url": agent_status.get("agent_local_url"),
-            "agent_config_path": agent_status.get("agent_config_path"),
-            "agent_log_path": agent_status.get("agent_log_path"),
-            "agent_last_error": agent_status.get("agent_last_error"),
-            "agent_model": agent_status.get("agent_model"),
-            "agent_backend": agent_status.get("agent_backend"),
-            "agent_install_ok": agent_status.get("agent_install_ok"),
-            "is_agent_running_pid": is_agent_running(project_id),
-            "serve_command": build_agent_server_command(
-                config_info["path"],
-                int(agent_status.get("agent_port") or 5200),
-            ),
-            "openhands_command": openhands_command(),
-        },
+        "config": config,
+        "secrets": inspect_agent_secrets(project_id),
+        "agent": status,
         "steps": steps,
         "logs_tail": get_agent_logs(project_id, log_lines) if include_logs else "",
-        "config_write_error": config_write_error,
     }
     report["hints"] = build_debug_hints(report)
     return report

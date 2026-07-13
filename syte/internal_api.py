@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 from typing import Literal
-from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-import httpx
 
 from syte.auth import verify_internal_service_request
-from syte.openhands_agent import (
-    agent_local_url,
-    agent_session_headers,
+from syte.cloud_agent import (
     communicate_with_agent,
     get_agent_logs,
     get_agent_status,
@@ -290,7 +286,7 @@ async def internal_agent_change(
     body: InternalAgentChangeRequest,
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    """sycord.com → Syte: request an OpenHands workspace change by UUID."""
+    """sycord.com → Syte: request a Syte cloud workspace change by UUID."""
     await _require_project(project_id)
     profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
@@ -324,54 +320,21 @@ async def internal_agent_proxy(
     path: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    status = await get_agent_status(project_id)
+    """Compatibility health endpoint for the embedded cloud runtime."""
+    del request
+    status = await get_agent_status(project_id, check_backend=False)
     if not status:
         raise HTTPException(404, "Project not found")
-    if not status.get("agent_port"):
-        raise HTTPException(503, "OpenHands agent has no allocated port")
-    if not status.get("agent_running"):
-        raise HTTPException(503, "OpenHands agent is not running")
-
-    normalized_path = path.strip("/")
-    allowed_paths = ("ready", "health", "alive", "api/conversations")
-    if not any(
-        normalized_path == allowed or normalized_path.startswith(f"{allowed}/")
-        for allowed in allowed_paths
-    ):
-        raise HTTPException(
-            404,
-            "Only OpenHands health and conversation endpoints may be proxied. "
-            "Use Syte agent routes for chat and activity streaming.",
-        )
-
-    upstream = agent_local_url(status["agent_port"]).rstrip("/")
-    target = upstream + ("/" + path.lstrip("/") if path else "")
-    query_items = [(k, v) for k, v in request.query_params.multi_items() if k != "internal_secret"]
-    if query_items:
-        target += "?" + urlencode(query_items)
-
-    headers = {
-        key: value
-        for key, value in request.headers.items()
-        if key.lower()
-        not in {"host", "content-length", "x-syra-internal-secret", "x-session-api-key"}
-    }
-    headers.update(agent_session_headers(project_id))
-    body = await request.body()
-    async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
-        upstream_response = await client.request(
-            request.method,
-            target,
-            headers=headers,
-            content=body,
-        )
-    response_headers = {
-        key: value
-        for key, value in upstream_response.headers.items()
-        if key.lower() not in {"content-encoding", "transfer-encoding", "connection"}
-    }
-    return Response(
-        content=upstream_response.content,
-        status_code=upstream_response.status_code,
-        headers=response_headers,
+    normalized = path.strip("/")
+    if normalized in {"", "ready", "health", "alive"}:
+        return {
+            "ok": status.get("agent_healthy", False),
+            "runtime": status.get("agent_runtime"),
+            "status": status.get("agent_status"),
+            "embedded": True,
+        }
+    raise HTTPException(
+        410,
+        "The per-project agent server API was removed. Use Syte agent communicate, "
+        "change, activity, and lifecycle routes.",
     )

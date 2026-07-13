@@ -361,8 +361,8 @@ function debugChatErrorPresentation(event) {
       title: 'Choose another model',
       detail: fallback,
     },
-    agent_server_not_installed: {
-      title: 'OpenHands is not installed',
+    cloud_runtime_unavailable: {
+      title: 'Syte cloud runtime is unavailable',
       detail: fallback,
     },
     agent_start_failed: {
@@ -816,7 +816,7 @@ async function updateDebugChatAgentStatus() {
     } else if (res.agent_last_error) {
       debugChatIdleStatus = 'Agent needs attention';
     } else if (res.agent_install_ok === false) {
-      debugChatIdleStatus = 'OpenHands is not installed';
+      debugChatIdleStatus = 'Syte cloud runtime is unavailable';
     } else if (res.agent_backend && !res.agent_backend.ok) {
       debugChatIdleStatus = 'Connect an AI provider';
     } else {
@@ -934,7 +934,7 @@ async function cancelDebugChatRequest() {
   const cancel = document.getElementById('debug-chat-cancel');
   debugChatStopping = true;
   setDebugChatBusy(true);
-  setDebugChatActivity('Stopping response', 'Interrupting the OpenHands turn', 'square');
+  setDebugChatActivity('Stopping response', 'Interrupting the Syte cloud turn', 'square');
   try {
     const res = await api(`/projects/${activeServiceId}/agent/interrupt`, { method: 'POST' });
     if (!res.ok) throw new Error(formatAgentChatError(res));
@@ -2569,7 +2569,7 @@ async function loadAiDashboard() {
       if (fill) fill.style.width = `${d.mnoa.percent}%`;
     }
     const onboard = d.onboarding || {};
-    const doneCount = ['internal_api', 'ai_models', 'provider', 'agent_server'].filter(k => onboard[k]).length;
+    const doneCount = ['internal_api', 'ai_models', 'provider', 'cloud_runtime'].filter(k => onboard[k]).length;
     const badge = document.getElementById('ai-onboard-badge');
     if (badge) badge.textContent = `${doneCount}/4`;
     document.querySelectorAll('#ai-checklist li').forEach(li => {
@@ -2643,11 +2643,11 @@ function renderAiDebug(report) {
     <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
     <div>
       <strong>Agent runtime</strong>
-      <div class="hint">status ${esc(agent.agent_status || '—')} · port ${agent.agent_port ?? '—'} · Agent Server ${report.openhands_agent_server?.installed ? esc(report.openhands_agent_server.version || 'installed') : 'missing'}</div>
+      <div class="hint">status ${esc(agent.agent_status || '—')} · Cloud runtime ${report.cloud_agent_runtime?.installed ? esc(report.cloud_agent_runtime.version || 'installed') : 'missing'}</div>
       ${agent.serve_command ? `<div class="hint">serve cmd: <code>${esc(agent.serve_command)}</code></div>` : ''}
       ${agent.agent_last_error ? `<div class="ai-debug-hint">${esc(agent.agent_last_error)}</div>` : ''}
     </div>
-    ${config.snippet ? `<div><strong>agent_server_config.json</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
+    ${config.snippet ? `<div><strong>runtime.json</strong><pre class="ai-debug-config">${esc(config.snippet)}</pre></div>` : ''}
     ${report.logs_tail ? `<div><strong>Agent logs (tail)</strong><pre class="ai-debug-logs">${esc(report.logs_tail)}</pre></div>` : ''}
   `;
 }

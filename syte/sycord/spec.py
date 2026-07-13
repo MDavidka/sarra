@@ -117,7 +117,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "9. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
         ],
         "agent_session": {
-            "description": "Continuous always-warm OpenHands runtime per used project. Change requests are async jobs.",
+            "description": "Continuous always-warm Syte cloud runtime per used project. Change requests are async jobs.",
             "status": f"{prefix}/agent_status?uuid=",
             "warm": "POST /api/agent_warm {uuid} — non-blocking and deduplicated",
             "submit": f"POST {prefix}/agent_change",
