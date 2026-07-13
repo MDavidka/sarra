@@ -18,7 +18,6 @@ from syte.openhands_agent import (
     update_agent_settings,
     warm_agent,
 )
-from syte.certificates import apply_proxy_config
 from syte.config import settings
 from syte.database import get_project, get_setting
 from syte.domain_utils import build_direct_url, normalize_domain
