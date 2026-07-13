@@ -1071,6 +1071,9 @@
   function open(projectId) {
     if (!projectId) return;
     wire();
+    // Let the service editor use the full content width for the 3-pane layout
+    // (it is otherwise capped at 720px, which crushes the chat + input).
+    document.body.classList.add('agent-fullwidth');
     const changed = projectId !== S.projectId;
     S.open = true;
     S.projectId = projectId;
@@ -1092,6 +1095,7 @@
 
   function close() {
     S.open = false;
+    document.body.classList.remove('agent-fullwidth');
     stopStream();
     clearWatchdog();
     finalizeAllStreams();
