@@ -1458,7 +1458,6 @@ async def _stream_conversation_turn(
     execution_status = ""
     failure = ""
     saw_running = False
-    saw_current_user_message = False
     pre_turn_status = ""
     deadline = time.monotonic() + settings.agent_event_timeout_s
 
@@ -1531,9 +1530,12 @@ async def _stream_conversation_turn(
                                 "paused",
                                 "waiting_for_confirmation",
                             } or (state == "idle" and saw_running)
+                            # A user event only proves the message was queued. The
+                            # Agent Server can still report the previous turn's
+                            # terminal state until the new run task starts.
                             terminal_is_current = (
                                 saw_running
-                                or saw_current_user_message
+                                or bool(final_reply)
                                 or not pre_turn_status
                                 or state != pre_turn_status
                             )
@@ -1557,8 +1559,6 @@ async def _stream_conversation_turn(
                 text = _message_event_text(event)
                 if text:
                     final_reply = text
-                if _message_event_text(event, role="user").strip() == message.strip():
-                    saw_current_user_message = True
                 if kind in {"conversationerrorevent", "servererrorevent"}:
                     failure = str(
                         event.get("detail")
@@ -1592,7 +1592,7 @@ async def _stream_conversation_turn(
                 } or (state == "idle" and saw_running)
                 terminal_is_current = (
                     saw_running
-                    or saw_current_user_message
+                    or bool(final_reply)
                     or not pre_turn_status
                     or state != pre_turn_status
                 )
