@@ -38,3 +38,8 @@ def test_read_env_vars_malformed_json():
     raw = '{"invalid_key": invalid_value}'
     result = read_env_vars(raw)
     assert result == {}
+
+def test_read_env_vars_invalid_json():
+    """Test read_env_vars with invalid JSON strings explicitly."""
+    result = read_env_vars('invalid json string')
+    assert result == {}
