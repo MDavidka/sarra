@@ -1334,38 +1334,6 @@ async def _switch_conversation_llm(
         raise await _response_error(response, "model switch")
 
 
-def _state_update_status(event: dict[str, Any]) -> str:
-    kind = str(event.get("kind") or event.get("type") or "").lower()
-    if kind != "conversationstateupdateevent":
-        return ""
-    key = str(event.get("key") or "")
-    value = event.get("value")
-    if key == "execution_status":
-        return str(value or "").lower()
-    if key == "full_state" and isinstance(value, dict):
-        return str(value.get("execution_status") or "").lower()
-    return ""
-
-
-def _message_event_text(event: dict[str, Any], *, role: str = "assistant") -> str:
-    kind = str(event.get("kind") or event.get("type") or "").lower()
-    if kind != "messageevent":
-        return ""
-    message = event.get("llm_message") or event.get("message")
-    if not isinstance(message, dict):
-        return ""
-    if str(message.get("role") or "") != role:
-        return ""
-    content = message.get("content")
-    if not isinstance(content, list):
-        return str(content or "")
-    return "".join(
-        str(item.get("text") or "")
-        for item in content
-        if isinstance(item, dict)
-    )
-
-
 async def _get_final_response(
     client: httpx.AsyncClient,
     *,
@@ -1459,199 +1427,42 @@ async def _stream_conversation_turn(
     request_id: str | None,
     source: str,
 ) -> tuple[str, str, str]:
-    """Send a turn and bridge native OpenHands WebSocket events to Syte SSE."""
+    """Send a turn and bridge native OpenHands events to Syte's activity feed."""
     from syte.agent_activity import ingest_openhands_event
-
-    try:
-        from websockets.asyncio.client import connect
-    except ImportError as exc:
-        raise RuntimeError(
-            "OpenHands streaming requires the websockets Python package"
-        ) from exc
+    from syte.agent_turn import stream_turn
 
     base_url = _server_url(port)
     headers = agent_session_headers(project_id)
     ws_url = f"{base_url.replace('http://', 'ws://', 1)}/sockets/events/{conversation_id}"
-    token_snapshot = ""
-    final_reply = ""
-    execution_status = ""
-    failure = ""
-    saw_running = False
-    pre_turn_status = ""
-    deadline = time.monotonic() + settings.agent_event_timeout_s
-
-    # Use pooled client for better performance
     client = _get_agent_client(port, timeout=30.0)
-    try:
-        before = await client.get(
-            f"{base_url}/api/conversations/{conversation_id}",
-            headers=headers,
-            timeout=2.0,  # Fast pre-check
+
+    async def ingest(event: dict[str, Any], token_snapshot: str) -> None:
+        await ingest_openhands_event(
+            project_id,
+            event,
+            source=source,
+            request_id=request_id,
+            token_snapshot=token_snapshot,
         )
-        if before.status_code < 400:
-            before_data = before.json() if before.content else {}
-            if isinstance(before_data, dict):
-                pre_turn_status = str(
-                    before_data.get("execution_status") or ""
-                ).lower()
-    except (httpx.HTTPError, ValueError):
-        pass
 
-    async with connect(
-            ws_url,
-            open_timeout=5,  # Reduced from 10s for faster failure
-            ping_interval=20,
-            ping_timeout=20,
-        ) as websocket:
-            await websocket.send(
-                json.dumps({"type": "auth", "session_api_key": headers["X-Session-API-Key"]})
-            )
-            # Give the Agent Server a moment to finish subscribing this socket
-            # before the HTTP message send starts the turn.
-            try:
-                await asyncio.wait_for(websocket.recv(), timeout=0.5)  # Reduced from 1.0s
-            except (asyncio.TimeoutError, TypeError, ValueError):
-                pass
-            await _send_conversation_message(
-                client,
-                base_url=base_url,
-                headers=headers,
-                conversation_id=conversation_id,
-                message=message,
-            )
-
-            while time.monotonic() < deadline:
-                try:
-                    raw = await asyncio.wait_for(websocket.recv(), timeout=0.3)  # Reduced from 0.5s
-                except asyncio.TimeoutError:
-                    try:
-                        info = await client.get(
-                            f"{base_url}/api/conversations/{conversation_id}",
-                            headers=headers,
-                            timeout=1.0,  # Explicit fast timeout for status checks
-                        )
-                        if info.status_code < 400:
-                            try:
-                                conversation = info.json() if info.content else {}
-                            except ValueError:
-                                conversation = {}
-                            state = str(
-                                conversation.get("execution_status", "")
-                                if isinstance(conversation, dict)
-                                else ""
-                            ).lower()
-                            if state == "running":
-                                saw_running = True
-                            terminal_state = state in {
-                                "finished",
-                                "error",
-                                "stuck",
-                                "paused",
-                                "waiting_for_confirmation",
-                            } or (state == "idle" and saw_running)
-                            # A user event only proves the message was queued. The
-                            # Agent Server can still report the previous turn's
-                            # terminal state until the new run task starts.
-                            terminal_is_current = (
-                                saw_running
-                                or bool(final_reply)
-                                or not pre_turn_status
-                                or state != pre_turn_status
-                            )
-                            if terminal_state and terminal_is_current:
-                                execution_status = state
-                                break
-                    except httpx.HTTPError:
-                        pass
-                    continue
-
-                try:
-                    event = json.loads(raw)
-                except (TypeError, json.JSONDecodeError):
-                    continue
-                if not isinstance(event, dict):
-                    continue
-
-                kind = str(event.get("kind") or event.get("type") or "").lower()
-                if kind in {"streamingdeltaevent", "tokenevent"}:
-                    token_snapshot += str(event.get("content") or event.get("delta") or "")
-                text = _message_event_text(event)
-                if text:
-                    final_reply = text
-                if kind in {"conversationerrorevent", "servererrorevent"}:
-                    failure = str(
-                        event.get("detail")
-                        or event.get("message")
-                        or event.get("error")
-                        or event.get("code")
-                        or "OpenHands could not process the request"
-                    )
-
-                # The turn coordinator emits one request_failed event with a
-                # stable request id below. Avoid persisting the native error as
-                # a second terminal event for the same turn.
-                if kind not in {"conversationerrorevent", "servererrorevent"}:
-                    await ingest_openhands_event(
-                        project_id,
-                        event,
-                        source=source,
-                        request_id=request_id,
-                        token_snapshot=token_snapshot,
-                    )
-
-                state = _state_update_status(event)
-                if state == "running":
-                    saw_running = True
-                terminal_state = state in {
-                    "finished",
-                    "error",
-                    "stuck",
-                    "paused",
-                    "waiting_for_confirmation",
-                } or (state == "idle" and saw_running)
-                terminal_is_current = (
-                    saw_running
-                    or bool(final_reply)
-                    or not pre_turn_status
-                    or state != pre_turn_status
-                )
-                if terminal_state and terminal_is_current:
-                    execution_status = state
-                    break
-                if failure:
-                    execution_status = "error"
-                    break
-            else:
-                execution_status = "timeout"
-
-    if execution_status == "timeout":
+    result = await stream_turn(
+        client=client,
+        base_url=base_url,
+        websocket_url=ws_url,
+        headers=headers,
+        conversation_id=conversation_id,
+        message=message,
+        timeout_s=settings.agent_event_timeout_s,
+        send_message=_send_conversation_message,
+        ingest_event=ingest,
+        get_final_response=_get_final_response,
+    )
+    if result[1] == "timeout":
         try:
             await interrupt_agent(project_id)
         except Exception:
             logger.exception("Failed to interrupt timed-out agent turn for %s", project_id)
-
-    if not final_reply:
-        for attempt in range(3):
-            final_reply = await _get_final_response(
-                client,
-                base_url=base_url,
-                headers=headers,
-                conversation_id=conversation_id,
-            )
-            if final_reply:
-                break
-            await asyncio.sleep(0.1 * (attempt + 1))
-
-    if execution_status == "timeout":
-        failure = failure or "OpenHands did not finish before the request timeout"
-    elif execution_status in {"error", "stuck", "paused"}:
-        failure = failure or f"OpenHands conversation {execution_status}"
-    elif execution_status == "waiting_for_confirmation":
-        failure = (
-            failure
-            or "OpenHands is waiting for tool confirmation, which this chat cannot approve"
-        )
-    return final_reply, execution_status or "finished", failure
+    return result
 
 
 async def interrupt_agent(project_id: str) -> tuple[bool, str]:
