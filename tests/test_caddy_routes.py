@@ -36,6 +36,7 @@ def test_caddy_matcher_name() -> None:
     long_name = "a" * 60 + ".com"
     assert len(caddy_matcher_name(long_name)) == 56
     assert caddy_matcher_name("!@#$%^") == "______"
+    assert caddy_matcher_name("") == "host"
 
 
 def test_collect_project_routes() -> None:
