@@ -104,27 +104,19 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _write_message(msg: dict[str, Any]) -> None:
     payload = json.dumps(msg, ensure_ascii=False).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
     sys.stdout.buffer.write(payload)
+    sys.stdout.buffer.write(b"\n")
     sys.stdout.buffer.flush()
 
 
 def _read_message() -> dict[str, Any] | None:
-    header = sys.stdin.buffer.readline()
-    if not header:
+    line = sys.stdin.buffer.readline()
+    if not line:
         return None
-    if not header.startswith(b"Content-Length:"):
-        line = header.decode("utf-8", errors="replace").strip()
-        if not line:
-            return _read_message()
-        return json.loads(line)
-    length = int(header.decode("ascii").split(":", 1)[1].strip())
-    while True:
-        sep = sys.stdin.buffer.read(2)
-        if sep == b"\r\n":
-            break
-    body = sys.stdin.buffer.read(length)
-    return json.loads(body.decode("utf-8"))
+    text = line.decode("utf-8", errors="replace").strip()
+    if not text:
+        return _read_message()
+    return json.loads(text)
 
 
 def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
