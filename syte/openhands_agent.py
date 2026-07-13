@@ -909,6 +909,14 @@ def _server_url(port: int) -> str:
     return agent_local_url(port).rstrip("/")
 
 
+def _is_message_send_server_error(error: BaseException) -> bool:
+    """Return whether an Agent Server send failed in a recoverable way."""
+    text = str(error)
+    return "OpenHands message send returned HTTP " in text and any(
+        f"HTTP {status}" in text for status in (500, 502, 503, 504)
+    )
+
+
 async def _response_error(response: httpx.Response, operation: str) -> RuntimeError:
     try:
         body = response.json()
@@ -1605,20 +1613,42 @@ async def _communicate_with_agent_impl(
             port=int(port),
             model=model,
         )
-        await _switch_conversation_llm(
-            project_id,
-            port=int(port),
-            conversation_id=conversation_id,
-            model=model,
-        )
-        reply, execution_status, failure = await _stream_conversation_turn(
-            project_id,
-            port=int(port),
-            conversation_id=conversation_id,
-            message=message,
-            request_id=request_id,
-            source=source,
-        )
+        for conversation_attempt in range(2):
+            try:
+                await _switch_conversation_llm(
+                    project_id,
+                    port=int(port),
+                    conversation_id=conversation_id,
+                    model=model,
+                )
+                reply, execution_status, failure = await _stream_conversation_turn(
+                    project_id,
+                    port=int(port),
+                    conversation_id=conversation_id,
+                    message=message,
+                    request_id=request_id,
+                    source=source,
+                )
+                break
+            except RuntimeError as exc:
+                if conversation_attempt or not _is_message_send_server_error(exc):
+                    raise
+                # A conversation can remain persisted after its event service
+                # has failed during initialization or shutdown. Retrying the
+                # same id only repeats the 500, so start a clean conversation
+                # once and resend the current user turn.
+                logger.warning(
+                    "OpenHands message send failed for conversation %s; "
+                    "recreating the conversation",
+                    conversation_id,
+                )
+                await update_project(project_id, {"agent_conversation_id": ""})
+                latest_project = await get_project(project_id) or latest_project
+                conversation_id = await _ensure_conversation(
+                    latest_project,
+                    port=int(port),
+                    model=model,
+                )
         if failure:
             error_code = (
                 "agent_interrupted"
