@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import urllib.error
 import urllib.request
 from typing import Any
-from urllib.error import URLError
 
 from syte.domain_utils import build_https_url, normalize_domain
 from syte.preview_domains import preview_frame_ancestors_csp
@@ -33,6 +33,7 @@ def build_iframe_checklist(
 ) -> dict[str, Any]:
     """Return checklist items for preview iframe embedding (Syte hoster view)."""
     preview_domain = normalize_domain(project.get("preview_domain") or "")
+    preview_port = project.get("preview_port")
     preview_url = build_https_url(preview_domain) if preview_domain else ""
     headers = {k.lower(): v for k, v in (live_headers or {}).items()}
 
@@ -133,12 +134,12 @@ def probe_https_available(url: str, timeout: float = 4.0) -> bool:
         request = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return 200 <= response.status < 500
-    except (URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError):
         try:
             request = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return 200 <= response.status < 500
-        except (URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, TimeoutError, OSError):
             return False
 
 
@@ -150,10 +151,10 @@ def probe_preview_headers(url: str, timeout: float = 5.0) -> dict[str, str] | No
         request = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return {k: v for k, v in response.headers.items()}
-    except (URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError):
         try:
             request = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return {k: v for k, v in response.headers.items()}
-        except (URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, TimeoutError, OSError):
             return None

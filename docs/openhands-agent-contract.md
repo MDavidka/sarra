@@ -66,64 +66,6 @@ Every turn is correlated by `event.payload.request_id`. Save the highest
 Successful turns end in exactly one `request_completed`; failed or interrupted
 turns end in exactly one `request_failed`.
 
-### Recommended real-time client flow
-
-1. Open the project chat and call `POST /agent/warm`. This is asynchronous;
-   wait for the status response to report `agent_healthy=true` before showing a
-   cold-start error.
-2. Connect to the activity stream before sending the message. Use
-   `live=1&since_id=<last_seen_id>` so a reconnect cannot miss the terminal
-   event.
-3. Call `POST /agent/chat` and store its `request_id`. The response means the
-   request was accepted, not that the model has finished.
-4. Render `token_delta` events as they arrive, but treat
-   `message_snapshot`/`assistant_message` as the durable final text.
-5. Stop the spinner only on `request_completed` or `request_failed` for the
-   matching `request_id`.
-
-The stream is a replayable event log, not a one-shot response body. Persist the
-largest event `id` received (for example in browser storage), close the
-connection on network errors, and reconnect with that cursor. Do not create a
-second chat request just because the SSE connection was interrupted.
-
-Syte retries transient OpenHands message-send responses (`500`, `502`, `503`,
-and `504`) with bounded backoff. A final `request_failed` event means the
-bounded retry was exhausted or the error was non-transient; its payload
-contains `message`, `error`, and `retry_message` so a client can offer a safe
-manual retry without losing the original prompt. Provider authentication,
-invalid messages, and missing API keys are not retried.
-
-Minimal browser pattern:
-
-```js
-let lastEventId = Number(localStorage.getItem('syte-agent-last-id') || 0);
-let stream;
-
-function connectActivity(projectId) {
-  stream?.close();
-  stream = new EventSource(
-    `/api/projects/${projectId}/agent/activity/stream?live=1&since_id=${lastEventId}`
-  );
-  stream.onmessage = ({ data }) => {
-    const frame = JSON.parse(data);
-    if (frame.type !== 'activity') return;
-    const event = frame.event;
-    lastEventId = Math.max(lastEventId, event.id || 0);
-    localStorage.setItem('syte-agent-last-id', String(lastEventId));
-    renderAgentEvent(event);
-  };
-  stream.onerror = () => {
-    stream.close();
-    setTimeout(() => connectActivity(projectId), 1000);
-  };
-}
-```
-
-For server-side consumers, `format=jsonl` is easier to parse than SSE and
-supports the same `live`, `since_id`, and `types` parameters. Always correlate
-events by `event.payload.request_id`, because multiple requests can be replayed
-through one long-lived stream.
-
 ### Stream encodings
 
 The default is JSON SSE:

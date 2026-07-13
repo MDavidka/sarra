@@ -86,7 +86,7 @@ async def get_dashboard_metrics() -> dict:
 
     await ensure_agent_requests_table()
     bridge = await bridge_settings()
-    stats = await get_system_stats()
+    stats = get_system_stats()
     online = await agents_online_count()
     mnoa_max = await max_agents_allowed()
     since_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()

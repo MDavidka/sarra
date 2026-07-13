@@ -6,7 +6,7 @@ import subprocess
 
 from syte import deployment
 from syte.certificates import apply_proxy_config
-from syte.database import get_project, get_setting, list_projects, update_project, check_domain_exists
+from syte.database import get_project, get_setting, list_projects, update_project
 from syte.deployment import issue_deploy, set_custom_domain
 from syte.docker_deploy import container_name, docker_container_exists, is_docker_running
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
@@ -49,8 +49,9 @@ async def project_connect(
     base_zone = await resolve_base_zone()
     subdomain = project_subdomain(name, base_zone)
 
-    if await check_domain_exists(subdomain):
-        return None, f"Subdomain already in use: {subdomain}"
+    for p in await list_projects():
+        if normalize_domain(p.get("domain") or "") == subdomain:
+            return None, f"Subdomain already in use: {subdomain}"
 
     merged_env = {**(env_vars or {}), "SYTE_STACK": stack, "SYCORD_CONNECTED": "1"}
     project, message = await deployment.create_project_record(

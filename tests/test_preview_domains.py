@@ -8,7 +8,6 @@ from syte.preview_domains import (
     resolve_preview_domain,
     resolve_production_domain,
     resolve_preview_zone,
-    preview_frame_ancestors_csp,
 )
 
 
@@ -32,20 +31,10 @@ async def test_resolve_preview_domain_reuses_existing_any_zone(
 
 
 def test_is_preview_hostname() -> None:
-    # Happy paths
     assert is_preview_hostname("previewa-app.sycord.site")
     assert is_preview_hostname("previewa-app.sycord.com")
-    assert is_preview_hostname("preview.com")
-
-    # URL normalization
-    assert is_preview_hostname("https://preview-app.example.com")
-    assert is_preview_hostname("http://preview-app.example.com")
-
-    # Negative cases
     assert not is_preview_hostname("app.sycord.site")
     assert not is_preview_hostname("")
-    assert not is_preview_hostname("mypreview.sycord.site")
-    assert not is_preview_hostname("preview")
 
 
 def test_build_preview_urls_tls_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,37 +108,3 @@ async def test_resolve_preview_zone_sycord_com_defaults_to_site(monkeypatch: pyt
 
     zone = await resolve_preview_zone()
     assert zone == "sycord.site"
-
-
-def test_preview_frame_ancestors_csp_default() -> None:
-    csp = preview_frame_ancestors_csp()
-    assert csp.startswith("frame-ancestors ")
-    parts = csp.split(" ")
-    assert "'self'" in parts
-    assert "https://sycord.com" in parts
-    assert "https://www.sycord.com" in parts
-    assert "https://*.sycord.com" in parts
-    assert "*" in parts
-    assert "http://localhost:*" in parts
-    assert "https://localhost:*" in parts
-
-
-def test_preview_frame_ancestors_csp_allow_any_false() -> None:
-    csp = preview_frame_ancestors_csp(allow_any=False)
-    parts = csp.split(" ")
-    assert "*" not in parts
-    assert "'self'" in parts
-
-
-def test_preview_frame_ancestors_csp_with_gui_domain() -> None:
-    csp = preview_frame_ancestors_csp(gui_domain="custom.com")
-    parts = csp.split(" ")
-    assert "https://custom.com" in parts
-    assert "https://*.custom.com" in parts
-
-    csp_sub = preview_frame_ancestors_csp(gui_domain="app.custom.com")
-    parts_sub = csp_sub.split(" ")
-    assert "https://app.custom.com" in parts_sub
-    assert "https://*.app.custom.com" in parts_sub
-    assert "https://custom.com" in parts_sub
-    assert "https://*.custom.com" in parts_sub

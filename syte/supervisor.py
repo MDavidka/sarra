@@ -3,7 +3,6 @@ import logging
 
 from syte.certificates import apply_proxy_config, ensure_caddy
 from syte.openhands_agent import (
-    agent_warm_in_progress,
     is_agent_running,
     openhands_installed,
     probe_agent_http,
@@ -75,8 +74,6 @@ async def maintain() -> None:
         status = project.get("agent_status") or "stopped"
         if status == "stopped":
             continue
-        if status == "starting" or agent_warm_in_progress(pid):
-            continue
         if is_agent_running(pid):
             port = project.get("agent_port")
             if port and (await probe_agent_http(int(port))).get("ok"):
@@ -136,15 +133,12 @@ async def autostart_project_agents() -> None:
         return
 
     projects = await list_projects()
-    sem = asyncio.Semaphore(2)
-
-    async def _warm_one(project: dict) -> None:
+    for project in projects:
         pid = project["id"]
         status = project.get("agent_status") or "running"
         if status == "stopped":
-            return
-        async with sem:
-            result = await warm_agent(pid, source="startup")
+            continue
+        result = await warm_agent(pid, source="startup")
         if result.get("ok"):
             logger.info("Scheduled OpenHands warm-up for %s", pid)
         else:
@@ -154,5 +148,3 @@ async def autostart_project_agents() -> None:
                 pid,
                 message[:200],
             )
-
-    await asyncio.gather(*[_warm_one(p) for p in projects])

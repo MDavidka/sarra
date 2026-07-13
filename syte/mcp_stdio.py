@@ -68,8 +68,6 @@ TOOLS: list[dict[str, Any]] = [
                 "action": {"type": "string", "description": "status|url|fetch|read|logs|screenshot"},
                 "url": {"type": "string"},
                 "lines": {"type": "integer"},
-                "width": {"type": "integer", "description": "Screenshot viewport width in pixels"},
-                "height": {"type": "integer", "description": "Screenshot viewport height in pixels"},
             },
             "required": ["action"],
         },
@@ -94,33 +92,33 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             body["url"] = arguments["url"]
         if arguments.get("lines") is not None:
             body["lines"] = arguments["lines"]
-        if arguments.get("width") is not None:
-            body["width"] = arguments["width"]
-        if arguments.get("height") is not None:
-            body["height"] = arguments["height"]
         return _post(f"/api/projects/{pid}/agent/access", body)
     return {"ok": False, "error": "unknown_tool", "message": name}
 
 
 def _write_message(msg: dict[str, Any]) -> None:
     payload = json.dumps(msg, ensure_ascii=False).encode("utf-8")
+    sys.stdout.buffer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
     sys.stdout.buffer.write(payload)
-    sys.stdout.buffer.write(b"\n")
     sys.stdout.buffer.flush()
 
 
 def _read_message() -> dict[str, Any] | None:
-    while True:
-        line = sys.stdin.buffer.readline()
+    header = sys.stdin.buffer.readline()
+    if not header:
+        return None
+    if not header.startswith(b"Content-Length:"):
+        line = header.decode("utf-8", errors="replace").strip()
         if not line:
-            return None
-        text = line.decode("utf-8", errors="replace").strip()
-        if not text:
-            continue
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            continue
+            return _read_message()
+        return json.loads(line)
+    length = int(header.decode("ascii").split(":", 1)[1].strip())
+    while True:
+        sep = sys.stdin.buffer.read(2)
+        if sep == b"\r\n":
+            break
+    body = sys.stdin.buffer.read(length)
+    return json.loads(body.decode("utf-8"))
 
 
 def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
@@ -150,23 +148,11 @@ def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
         arguments = params.get("arguments") or {}
         try:
             result = _call_tool(name, arguments)
-            image = result.get("image_base64") if isinstance(result, dict) else None
-            text_result = dict(result) if isinstance(result, dict) else result
-            if isinstance(text_result, dict):
-                text_result.pop("image_base64", None)
-            content = [{
-                "type": "text",
-                "text": json.dumps(text_result, ensure_ascii=False, indent=2),
-            }]
-            if image:
-                content.append({"type": "image", "data": image, "mimeType": "image/png"})
+            text = json.dumps(result, ensure_ascii=False, indent=2)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {
-                    "content": content,
-                    "isError": not (result.get("ok", True) if isinstance(result, dict) else True),
-                },
+                "result": {"content": [{"type": "text", "text": text}], "isError": not result.get("ok", True)},
             }
         except Exception as exc:
             return {
@@ -190,23 +176,12 @@ def _handle_request(req: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     while True:
-        try:
-            req = _read_message()
-        except Exception:
-            break
+        req = _read_message()
         if req is None:
             break
-        if not isinstance(req, dict) or "method" not in req:
+        if "method" not in req:
             continue
-        try:
-            resp = _handle_request(req)
-        except Exception as exc:
-            req_id = req.get("id") if isinstance(req, dict) else None
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "error": {"code": -32603, "message": str(exc)},
-            }
+        resp = _handle_request(req)
         if resp:
             _write_message(resp)
 
