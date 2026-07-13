@@ -107,9 +107,12 @@ async def workspace_get(project_id: str) -> dict | None:
 
 
 async def workspace_list() -> list[dict]:
-    projects = await list_projects()
-    results = await asyncio.gather(*(workspace_get(p["id"]) for p in projects))
-    return [r for r in results if r]
+    result = []
+    for p in await list_projects():
+        detail = await workspace_get(p["id"])
+        if detail:
+            result.append(detail)
+    return result
 
 
 async def list_workspace_files(project_id: str, subpath: str = "") -> list[dict]:

@@ -163,7 +163,6 @@ async def list_agent_events(
     *,
     since_id: int = 0,
     limit: int = 200,
-    latest: bool = False,
 ) -> list[dict[str, Any]]:
     await ensure_agent_events_table()
     limit = max(1, min(limit, 2000))
@@ -171,15 +170,13 @@ async def list_agent_events(
         from syte.sqlite_utils import configure_sqlite
 
         await configure_sqlite(db, db_path=str(settings.resolved_db_path))
-        order = "DESC" if latest and since_id == 0 else "ASC"
         async with db.execute(
             "SELECT id, project_id, event_type, role, title, detail, payload, source, created_at "
-            f"FROM agent_events WHERE project_id = ? AND id > ? ORDER BY id {order} LIMIT ?",
+            "FROM agent_events WHERE project_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
             (project_id, since_id, limit),
         ) as cur:
             rows = await cur.fetchall()
-    events = [_event_row_to_dict(row) for row in rows]
-    return list(reversed(events)) if latest and since_id == 0 else events
+    return [_event_row_to_dict(row) for row in rows]
 
 
 def subscribe_agent_activity(project_id: str) -> asyncio.Queue[dict[str, Any]]:
@@ -319,22 +316,6 @@ def _openhands_action_arguments(event: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _openhands_tool_name(event: dict[str, Any]) -> str:
-    if event.get("tool_name"):
-        return str(event["tool_name"])
-    tool_call = event.get("tool_call")
-    if isinstance(tool_call, dict):
-        if tool_call.get("name"):
-            return str(tool_call["name"])
-        function = tool_call.get("function")
-        if isinstance(function, dict) and function.get("name"):
-            return str(function["name"])
-    action = event.get("action")
-    if isinstance(action, dict) and action.get("kind"):
-        return str(action["kind"])
-    return "tool"
-
-
 def extract_events_from_openhands_event(
     event: dict[str, Any],
     *,
@@ -416,7 +397,12 @@ def extract_events_from_openhands_event(
         return raw
 
     if kind_lower == "actionevent":
-        tool_name = _openhands_tool_name(event)
+        tool_call = event.get("tool_call") or {}
+        tool_name = str(
+            event.get("tool_name")
+            or (tool_call.get("name") if isinstance(tool_call, dict) else "")
+            or "tool"
+        )
         args = _openhands_action_arguments(event)
         event_type, title, detail, payload = _map_tool_event(tool_name, args)
         summary = str(event.get("summary") or "")

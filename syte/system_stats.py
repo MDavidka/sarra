@@ -1,7 +1,8 @@
 """Host CPU/RAM metrics for the GUI sidebar load indicator."""
 
-import asyncio
 import os
+import time
+from pathlib import Path
 
 
 def _cpu_count() -> int:
@@ -23,9 +24,9 @@ def _read_cpu_times() -> tuple[int, int]:
         return 0, 0
 
 
-async def _cpu_percent(sample_ms: int = 120) -> float:
+def _cpu_percent(sample_ms: int = 120) -> float:
     idle1, total1 = _read_cpu_times()
-    await asyncio.sleep(sample_ms / 1000)
+    time.sleep(sample_ms / 1000)
     idle2, total2 = _read_cpu_times()
     delta_total = total2 - total1
     delta_idle = idle2 - idle1
@@ -59,8 +60,8 @@ def _load_dots(overload_percent: float) -> int:
     return min(5, max(1, int((overload_percent + 19) // 20)))
 
 
-async def get_system_stats(*, sample_cpu: bool = True) -> dict:
-    cpu = round(await _cpu_percent(), 1) if sample_cpu else 0.0
+def get_system_stats(*, sample_cpu: bool = True) -> dict:
+    cpu = round(_cpu_percent(), 1) if sample_cpu else 0.0
     ram_used_mb, ram_total_mb, ram_percent = _mem_stats()
     overload = max(cpu, ram_percent)
     dots = _load_dots(overload)

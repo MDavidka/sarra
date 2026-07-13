@@ -1,6 +1,5 @@
 import uuid
 import asyncio
-from contextlib import suppress
 from pathlib import Path
 
 from syte import process_manager
@@ -18,9 +17,6 @@ from syte.workspace import (
     slugify,
     write_env_file,
 )
-
-
-_deploy_tasks: dict[str, asyncio.Task] = {}
 
 
 async def _ensure_production_domain(project_id: str) -> None:
@@ -301,41 +297,11 @@ async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found"
-    existing = _deploy_tasks.get(project_id)
-    if existing and not existing.done():
-        return project, "A deployment is already running. Stop it before starting another."
-
-    task = asyncio.create_task(run_deploy_job(project_id), name=f"deploy-{project_id}")
-    _deploy_tasks[project_id] = task
-
-    def forget(completed: asyncio.Task) -> None:
-        if _deploy_tasks.get(project_id) is completed:
-            _deploy_tasks.pop(project_id, None)
-
-    task.add_done_callback(forget)
+    asyncio.create_task(run_deploy_job(project_id))
     return project, (
         f"Deploy issued for {project_id}. "
         f"Stream logs: GET /api/projects/{project_id}/logs/stream"
     )
-
-
-async def stop_deploy(project_id: str) -> tuple[dict | None, str]:
-    """Cancel a background deployment and stop anything it has started."""
-    project = await get_project(project_id)
-    if not project:
-        return None, "Project not found"
-    task = _deploy_tasks.get(project_id)
-    if task and not task.done():
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-        message = "Deployment force-stopped."
-    else:
-        message = "No active deployment to stop."
-    process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
-    await update_project(project_id, {"status": "stopped"})
-    await apply_proxy_config()
-    return await get_project(project_id), message
 
 
 async def deploy_service(

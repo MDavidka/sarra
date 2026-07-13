@@ -111,50 +111,6 @@ def _docker_build_hints(output: str) -> str:
     return "\n\n".join(hints)
 
 
-def _ensure_public_directory(repo: Path, dockerfile_lower: str) -> str | None:
-    if "public" in dockerfile_lower and not (repo / "public").exists():
-        public = repo / "public"
-        public.mkdir(parents=True)
-        (public / ".gitkeep").write_text("")
-        return "Created missing public/ directory for Next.js Docker build."
-    return None
-
-
-def _patch_next_config_standalone(repo: Path, dockerfile_lower: str) -> str | None:
-    if ".next/standalone" not in dockerfile_lower:
-        return None
-    for name in ("next.config.js", "next.config.mjs", "next.config.ts"):
-        path = repo / name
-        if not path.exists():
-            continue
-        text = path.read_text()
-        if re.search(r"""output\s*:\s*['"]standalone['"]""", text):
-            break
-        if name == "next.config.js" and "module.exports" in text:
-            if re.search(r"module\.exports\s*=\s*\{", text):
-                path.write_text(
-                    re.sub(
-                        r"module\.exports\s*=\s*\{",
-                        "module.exports = {\n  output: 'standalone',",
-                        text,
-                        count=1,
-                    )
-                )
-                return f"Patched {name} with output: 'standalone'."
-        elif name == "next.config.mjs" and "export default" in text:
-            if re.search(r"export\s+default\s*\{", text):
-                path.write_text(
-                    re.sub(
-                        r"export\s+default\s*\{",
-                        "export default {\n  output: 'standalone',",
-                        text,
-                        count=1,
-                    )
-                )
-                return f"Patched {name} with output: 'standalone'."
-    return None
-
-
 def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
     """Fix common Next.js Docker issues in the cloned workspace before build."""
     actions: list[str] = []
@@ -176,11 +132,44 @@ def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
 
     dockerfile_lower = dockerfile_text.lower()
 
-    if public_action := _ensure_public_directory(repo, dockerfile_lower):
-        actions.append(public_action)
+    if "public" in dockerfile_lower and not (repo / "public").exists():
+        public = repo / "public"
+        public.mkdir(parents=True)
+        (public / ".gitkeep").write_text("")
+        actions.append("Created missing public/ directory for Next.js Docker build.")
 
-    if patch_action := _patch_next_config_standalone(repo, dockerfile_lower):
-        actions.append(patch_action)
+    if ".next/standalone" in dockerfile_lower:
+        for name in ("next.config.js", "next.config.mjs", "next.config.ts"):
+            path = repo / name
+            if not path.exists():
+                continue
+            text = path.read_text()
+            if re.search(r"""output\s*:\s*['"]standalone['"]""", text):
+                break
+            if name == "next.config.js" and "module.exports" in text:
+                if re.search(r"module\.exports\s*=\s*\{", text):
+                    path.write_text(
+                        re.sub(
+                            r"module\.exports\s*=\s*\{",
+                            "module.exports = {\n  output: 'standalone',",
+                            text,
+                            count=1,
+                        )
+                    )
+                    actions.append(f"Patched {name} with output: 'standalone'.")
+                    break
+            elif name == "next.config.mjs" and "export default" in text:
+                if re.search(r"export\s+default\s*\{", text):
+                    path.write_text(
+                        re.sub(
+                            r"export\s+default\s*\{",
+                            "export default {\n  output: 'standalone',",
+                            text,
+                            count=1,
+                        )
+                    )
+                    actions.append(f"Patched {name} with output: 'standalone'.")
+                    break
 
     return actions
 

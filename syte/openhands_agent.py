@@ -3,18 +3,6 @@
 This module keeps Syte's long-lived per-project agent contract while replacing
 the former agent transport with OpenHands conversations and native WebSocket
 events. Public route response shapes stay stable for Sycord consumers.
-
-Performance Optimizations (v2):
-- HTTP connection pooling for agent communication (reduces latency)
-- HTTP/2 support when h2 package is available (multiplexing)
-- Adaptive polling with faster initial checks during startup/conversation creation
-- Reduced timeouts on health checks (1.5s vs 3.0s)
-- Increased retry attempts for transient 5xx errors (8 vs 5)
-- Exponential backoff with jitter for better retry distribution  
-- WebSocket timeout reduced from 0.5s to 0.3s for faster event processing
-- Conversation ready timeout increased to 30s for better stability
-- Faster conversation status checks (0.1s intervals initially)
-- Pooled HTTP clients per agent port with keepalive connections
 """
 
 from __future__ import annotations
@@ -46,17 +34,8 @@ from syte.workspace import ensure_workspace, read_env_vars, workspace_path
 
 OPENHANDS_RUNTIME = "openhands"
 OPENHANDS_EVENT_TIMEOUT_S = 300.0
-# Cold-starting the OpenHands Agent Server imports the SDK, tools and workspace
-# implementations and can take well over a minute on smaller hosts. Give the
-# boot a generous wall-clock budget so the first chat message does not fail
-# with a premature "could not start" / "could not reach" error.
-OPENHANDS_START_TIMEOUT_S = 180.0
-_CONVERSATION_READY_TIMEOUT_S = 30.0  # Increased from 15s for stability
-_REUSABLE_CONVERSATION_STATUSES = frozenset({"idle", "finished"})
-_RECOVERABLE_CONVERSATION_STATUSES = frozenset({"running", "paused", "stuck"})
-AGENT_INSTRUCTION_VERSION = 3
-_AGENT_STARTUP_CHECK_INTERVAL_S = 0.15  # Faster polling during startup
-_CONVERSATION_STATUS_CHECK_INTERVAL_S = 0.1  # Faster conversation status checks
+OPENHANDS_START_TIMEOUT_S = 60.0
+AGENT_INSTRUCTION_VERSION = 2
 
 logger = logging.getLogger(__name__)
 
@@ -65,59 +44,6 @@ _agent_warm_tasks: dict[
     str,
     asyncio.Task[tuple[bool, str, dict[str, Any]]],
 ] = {}
-# HTTP client pool for agent connections - reuse connections for performance
-_agent_http_clients: dict[int, httpx.AsyncClient] = {}
-
-
-def _get_agent_client(port: int, timeout: float = 30.0) -> httpx.AsyncClient:
-    """Get or create a pooled HTTP/1.1 client for an agent port.
-
-    The OpenHands Agent Server runs under uvicorn, which only speaks HTTP/1.1
-    over the loopback connection. Enabling HTTP/2 here is a silent no-op (httpx
-    stays on HTTP/1.1 for cleartext origins when http1 is also enabled) and only
-    adds the ``h2`` dependency plus a confusing startup warning, so we
-    deliberately keep HTTP/1.1. Connection keep-alive still gives us the latency
-    win we want for repeated turns.
-    """
-    client = _agent_http_clients.get(port)
-    if client is None or client.is_closed:
-        limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-        _agent_http_clients[port] = httpx.AsyncClient(timeout=timeout, limits=limits)
-    return _agent_http_clients[port]
-
-
-async def _reset_agent_client(port: int | None) -> None:
-    """Discard any pooled client for a port.
-
-    A pooled client holds keep-alive sockets to a specific Agent Server process.
-    When that process is stopped and a new one is started on the same port, those
-    sockets are dead, and reusing them raises ``ConnectError`` /
-    ``RemoteProtocolError`` on the next turn — which previously cascaded into
-    another restart. Dropping the client forces fresh connections against the
-    new process.
-    """
-    if not port:
-        return
-    client = _agent_http_clients.pop(int(port), None)
-    if client is not None:
-        try:
-            await client.aclose()
-        except Exception:
-            logger.debug("Failed to close pooled agent client for port %s", port)
-
-
-def _safe_kill(pid: int) -> None:
-    """Kill pid directly; only kill its process group if pgid != Syte's own pgid."""
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except (OSError, ValueError):
-        pass
-    try:
-        pgid = os.getpgid(pid)
-        if pgid != os.getpgid(os.getpid()):  # never kill our own group
-            os.killpg(pgid, signal.SIGTERM)
-    except (OSError, ValueError):
-        pass
 
 
 def _now() -> str:
@@ -171,13 +97,7 @@ def openhands_command() -> str:
 
 
 def openhands_installed() -> bool:
-    try:
-        return importlib.util.find_spec("openhands.agent_server") is not None
-    except ModuleNotFoundError:
-        # ``find_spec`` raises when the top-level package is absent rather than
-        # returning None. Treat that as the normal uninstalled state so status
-        # and startup endpoints can report a useful error.
-        return False
+    return importlib.util.find_spec("openhands.agent_server") is not None
 
 
 def build_agent_server_command(config_path: Path | str, port: int) -> str:
@@ -245,20 +165,17 @@ async def bridge_settings() -> dict[str, Any]:
     }
 
 
-def is_agent_running(project_id: str, port: int | None = None) -> bool:
+def is_agent_running(project_id: str) -> bool:
     pid_path = agent_pid_file(project_id)
     if not pid_path.exists():
         return False
     try:
         pid = int(pid_path.read_text().strip())
         os.kill(pid, 0)
+        return True
     except (OSError, ValueError):
         pid_path.unlink(missing_ok=True)
         return False
-    # If a port is supplied, also confirm the process is actually listening
-    if port is not None:
-        return _port_listening(int(port))
-    return True
 
 
 def agent_local_url(port: int | None) -> str:
@@ -509,7 +426,7 @@ async def backend_health(project: dict[str, Any]) -> dict[str, Any]:
 async def probe_agent_http(
     port: int | None,
     *,
-    timeout_s: float = 1.5,  # Reduced from 3.0s for faster checks
+    timeout_s: float = 3.0,
 ) -> dict[str, Any]:
     if not port:
         return {"ok": False, "url": None, "status_code": None}
@@ -542,61 +459,20 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(content[-max(1, lines) :])
 
 
-def _current_agent_session_log(project_id: str) -> str:
-    """Return only the log output from the most recent agent process."""
-    log_path = agent_log_path(project_id)
-    if not log_path.exists():
-        return ""
-    content = log_path.read_text(errors="replace")
-    marker = "=== OpenHands Agent Server session "
-    if marker in content:
-        return content.rsplit(marker, 1)[-1]
-    return content
-
-
-def _augment_error_with_server_log(
-    project_id: str, error: str, *, lines: int = 20, max_chars: int = 1500
-) -> str:
-    """Append the tail of the Agent Server log to a server-side failure.
-
-    The Agent Server returns opaque ``HTTP 500: Internal Server Error`` bodies
-    for unhandled exceptions (for example the ``inactive_service`` /
-    ``conversation_already_running`` ``ValueError``s raised by
-    ``EventService.run``), so the real cause only exists in the process log.
-    Surfacing that tail turns an undebuggable "Internal Server Error" into an
-    actionable message in the chat and activity feed.
-    """
-    try:
-        tail = get_agent_logs(project_id, lines).strip()
-    except OSError:
-        return error
-    if not tail or tail == "No OpenHands agent logs yet.":
-        return error
-    if len(tail) > max_chars:
-        tail = tail[-max_chars:]
-    return f"{error}\n\nOpenHands agent log (last {lines} lines):\n{tail}"
-
-
 async def wait_for_agent_ready(
     port: int, *, timeout_s: float = OPENHANDS_START_TIMEOUT_S
 ) -> tuple[bool, str]:
     deadline = time.monotonic() + timeout_s
     last_error = ""
-    check_count = 0
-    # Adaptive polling: start faster, slow down as time passes
     while time.monotonic() < deadline:
-        check_count += 1
-        # Fast checks initially, then slow down
-        interval = min(0.5, 0.1 + (check_count * 0.02))
-        
         if _port_listening(int(port)):
-            probe = await probe_agent_http(int(port), timeout_s=1.0)
+            probe = await probe_agent_http(int(port))
             if probe.get("ok"):
                 return True, ""
             last_error = "Port is open but OpenHands is still initializing"
         else:
             last_error = f"Port {port} is not listening yet"
-        await asyncio.sleep(interval)
+        await asyncio.sleep(0.25)
     return False, last_error or f"OpenHands Agent Server did not become ready within {int(timeout_s)}s"
 
 
@@ -609,7 +485,7 @@ async def _stop_agent_impl(project_id: str) -> tuple[bool, str]:
         return True, "OpenHands agent already stopped."
     try:
         pid = int(pid_path.read_text().strip())
-        _safe_kill(pid)
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
     except (OSError, ValueError):
         pass
     pid_path.unlink(missing_ok=True)
@@ -660,9 +536,6 @@ async def _start_agent_impl(
         return False, message, {}
 
     await _stop_agent_impl(project_id)
-    # The previous process (if any) is gone; drop pooled connections so the new
-    # process is reached over fresh sockets instead of dead keep-alive ones.
-    await _reset_agent_client(port)
     await update_project(
         project_id,
         {"agent_status": "starting", "agent_last_error": ""},
@@ -700,23 +573,19 @@ async def _start_agent_impl(
     command = build_agent_server_command(config_path, port)
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
-        shlex.split(command),
+        command,
         cwd=repo,
-        shell=False,
+        shell=True,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
+        preexec_fn=os.setsid,
     )
     agent_pid_file(project_id).write_text(str(proc.pid))
 
     ready = False
-    # Wall-clock deadline instead of a fixed iteration count so the full boot
-    # budget is honoured regardless of how long individual probes take.
-    boot_deadline = time.monotonic() + OPENHANDS_START_TIMEOUT_S
     try:
-        check = 0
-        while time.monotonic() < boot_deadline:
+        for _ in range(240):
             if proc.poll() is not None:
                 log_file.close()
                 agent_pid_file(project_id).unlink(missing_ok=True)
@@ -728,17 +597,14 @@ async def _start_agent_impl(
                 )
                 return False, f"OpenHands agent exited during startup.\n{tail}", {}
             if _port_listening(port):
-                probe = await probe_agent_http(port, timeout_s=2.0)
-                if probe.get("ok"):
-                    ready = True
+                ready, _ = await wait_for_agent_ready(port, timeout_s=2.0)
+                if ready:
                     break
-            # Adaptive sleep: faster initially, slower after the first checks
-            await asyncio.sleep(_AGENT_STARTUP_CHECK_INTERVAL_S if check < 40 else 0.25)
-            check += 1
+            await asyncio.sleep(0.25)
     except asyncio.CancelledError:
         log_file.close()
         try:
-            _safe_kill(proc.pid)
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except (OSError, ValueError):
             pass
         agent_pid_file(project_id).unlink(missing_ok=True)
@@ -754,21 +620,14 @@ async def _start_agent_impl(
     if not ready:
         log_file.close()
         try:
-            _safe_kill(proc.pid)
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except (OSError, ValueError):
             pass
         agent_pid_file(project_id).unlink(missing_ok=True)
         error = get_agent_logs(project_id, 80)
         tail = error[-2000:] if error else "Server never became ready"
         await update_project(project_id, {"agent_status": "error", "agent_last_error": tail})
-        return (
-            False,
-            (
-                f"OpenHands agent did not become ready on port {port} within "
-                f"{int(OPENHANDS_START_TIMEOUT_S)}s.\n{tail}"
-            ),
-            {},
-        )
+        return False, f"OpenHands agent did not become ready on port {port}.\n{tail}", {}
 
     log_file.close()
     await update_project(
@@ -781,28 +640,6 @@ async def _start_agent_impl(
             "agent_config_path": str(config_path),
         },
     )
-    project = await get_project(project_id) or project
-    stored_conversation_id = str(project.get("agent_conversation_id") or "").strip()
-    if stored_conversation_id:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                info = await _conversation_info(
-                    client,
-                    base_url=_server_url(port),
-                    headers=agent_session_headers(project_id),
-                    conversation_id=stored_conversation_id,
-                )
-            if info is None:
-                await update_project(project_id, {"agent_conversation_id": ""})
-        except httpx.HTTPError:
-            logger.warning(
-                "Could not verify persisted OpenHands conversation for %s after restart",
-                project_id,
-            )
-
-    model = await selected_model_metadata(project)
-    await _prewarm_conversation(project_id, port=port, model=model)
-
     status = await get_agent_status(project_id, check_backend=False)
     await record_agent_event(
         project_id,
@@ -880,8 +717,6 @@ async def warm_agent(
                 project_id,
                 {"agent_status": "running", "agent_last_error": ""},
             )
-            model = await selected_model_metadata(project)
-            await _prewarm_conversation(project_id, port=int(port), model=model)
             return {
                 "ok": True,
                 "status": "ready",
@@ -1074,33 +909,6 @@ def _server_url(port: int) -> str:
     return agent_local_url(port).rstrip("/")
 
 
-def _is_message_send_server_error(error: BaseException) -> bool:
-    """Return whether an Agent Server send failed in a recoverable way."""
-    text = str(error)
-    return "OpenHands message send returned HTTP " in text and any(
-        f"HTTP {status}" in text for status in (500, 502, 503, 504)
-    )
-
-
-def _is_mcp_session_error(error: BaseException, *, project_id: str = "") -> bool:
-    """Return whether an Agent Server failure looks like a dead MCP stdio session."""
-    text = str(error)
-    markers = (
-        "McpError",
-        "Connection closed",
-        "mcp/shared/session.py",
-    )
-    if any(marker in text for marker in markers):
-        return True
-    if not project_id:
-        return False
-    try:
-        tail = _current_agent_session_log(project_id)
-    except OSError:
-        return False
-    return any(marker in tail for marker in markers)
-
-
 async def _response_error(response: httpx.Response, operation: str) -> RuntimeError:
     try:
         body = response.json()
@@ -1132,92 +940,17 @@ async def _conversation_info(
     return data if isinstance(data, dict) else {}
 
 
-async def _wait_for_conversation_status(
-    client: httpx.AsyncClient,
-    *,
-    base_url: str,
-    headers: dict[str, str],
-    conversation_id: str,
-    acceptable: frozenset[str],
-    timeout_s: float = _CONVERSATION_READY_TIMEOUT_S,
-) -> str:
-    """Poll a conversation until it reaches a sendable execution status."""
-    deadline = time.monotonic() + timeout_s
-    last_status = ""
-    check_count = 0
-    while time.monotonic() < deadline:
-        check_count += 1
-        conversation = await _conversation_info(
-            client,
-            base_url=base_url,
-            headers=headers,
-            conversation_id=conversation_id,
-        )
-        if conversation is None:
-            return ""
-        last_status = str(conversation.get("execution_status") or "").lower()
-        if last_status in acceptable:
-            return last_status
-        # Faster initial checks, then slow down
-        interval = _CONVERSATION_STATUS_CHECK_INTERVAL_S if check_count < 20 else 0.2
-        await asyncio.sleep(interval)
-    return last_status
-
-
-async def _recover_conversation_for_send(
-    project_id: str,
-    *,
-    port: int,
-    conversation_id: str,
-) -> bool:
-    """Interrupt a busy conversation and wait for it to become sendable."""
-    headers = agent_session_headers(project_id)
-    base_url = _server_url(port)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                f"{base_url}/api/conversations/{conversation_id}/interrupt",
-                headers=headers,
-            )
-        if response.status_code >= 400 and response.status_code != 404:
-            return False
-    except httpx.HTTPError:
-        return False
-
-    async with httpx.AsyncClient(timeout=15.0) as client:  # Increased timeout
-        status = await _wait_for_conversation_status(
-            client,
-            base_url=base_url,
-            headers=headers,
-            conversation_id=conversation_id,
-            acceptable=_REUSABLE_CONVERSATION_STATUSES,
-            timeout_s=12.0,  # Increased from 8.0s
-        )
-    return status in _REUSABLE_CONVERSATION_STATUSES
-
-
 async def _ensure_conversation(
     project: dict[str, Any],
     *,
     port: int,
     model: dict[str, str],
-) -> tuple[str, bool]:
+) -> str:
     """Reuse a durable project conversation or create one with OpenHands tools."""
     project_id = project["id"]
-    from syte.agent_skills import mcp_server_config
-
     base_url = _server_url(port)
     headers = agent_session_headers(project_id)
     existing = str(project.get("agent_conversation_id") or "").strip()
-    conversation_meta_path = agent_root(project_id) / "conversation-meta.json"
-    conversation_version = None
-    if conversation_meta_path.exists():
-        try:
-            conversation_version = json.loads(conversation_meta_path.read_text()).get("tooling_version")
-        except (OSError, json.JSONDecodeError):
-            conversation_version = None
-    if conversation_version != AGENT_INSTRUCTION_VERSION:
-        existing = ""
     async with httpx.AsyncClient(timeout=30.0) as client:
         if existing:
             conversation = await _conversation_info(
@@ -1227,15 +960,12 @@ async def _ensure_conversation(
                 conversation_id=existing,
             )
             status = str((conversation or {}).get("execution_status") or "").lower()
-            if conversation is not None and status in _REUSABLE_CONVERSATION_STATUSES:
-                return existing, False
-            if conversation is not None and status in _RECOVERABLE_CONVERSATION_STATUSES:
-                if await _recover_conversation_for_send(
-                    project_id,
-                    port=port,
-                    conversation_id=existing,
-                ):
-                    return existing, False
+            if conversation is not None and status not in {
+                "error",
+                "waiting_for_confirmation",
+                "deleting",
+            }:
+                return existing
             await update_project(project_id, {"agent_conversation_id": ""})
 
         instruction = agent_instruction_path(project_id).read_text(
@@ -1261,13 +991,6 @@ async def _ensure_conversation(
                     {"name": "file_editor"},
                     {"name": "task_tracker"},
                 ],
-                # Agent.mcp_config is a direct server-name mapping. The
-                # mcp_server_config helper returns the standalone MCP JSON
-                # format, which intentionally wraps that mapping in
-                # ``mcpServers``.
-                "mcp_config": mcp_server_config(
-                    project_id, agent_root(project_id)
-                )["mcpServers"],
                 "agent_context": {
                     "system_message_suffix": instruction,
                     "load_project_skills": True,
@@ -1288,44 +1011,7 @@ async def _ensure_conversation(
     if not conversation_id:
         raise RuntimeError("OpenHands created a conversation without an id")
     await update_project(project_id, {"agent_conversation_id": conversation_id})
-    try:
-        conversation_meta_path.write_text(
-            json.dumps({"tooling_version": AGENT_INSTRUCTION_VERSION}) + "\n"
-        )
-    except OSError:
-        logger.warning("Could not persist conversation tooling version for %s", project_id)
-    # Wait for the freshly created conversation's event service to finish
-    # initializing before the first send.
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        await _wait_for_conversation_status(
-            client,
-            base_url=base_url,
-            headers=headers,
-            conversation_id=conversation_id,
-            acceptable=_REUSABLE_CONVERSATION_STATUSES,
-            timeout_s=_CONVERSATION_READY_TIMEOUT_S,
-        )
-    return conversation_id, True
-
-
-async def _prewarm_conversation(
-    project_id: str,
-    *,
-    port: int,
-    model: dict[str, str],
-) -> None:
-    """Create or validate the durable conversation while the runtime is idle."""
-    project = await get_project(project_id)
-    if not project:
-        return
-    try:
-        await _ensure_conversation(project, port=port, model=model)
-    except Exception:
-        logger.warning(
-            "OpenHands conversation prewarm failed for %s",
-            project_id,
-            exc_info=True,
-        )
+    return conversation_id
 
 
 async def _switch_conversation_llm(
@@ -1344,6 +1030,38 @@ async def _switch_conversation_llm(
         )
     if response.status_code >= 400:
         raise await _response_error(response, "model switch")
+
+
+def _state_update_status(event: dict[str, Any]) -> str:
+    kind = str(event.get("kind") or event.get("type") or "").lower()
+    if kind != "conversationstateupdateevent":
+        return ""
+    key = str(event.get("key") or "")
+    value = event.get("value")
+    if key == "execution_status":
+        return str(value or "").lower()
+    if key == "full_state" and isinstance(value, dict):
+        return str(value.get("execution_status") or "").lower()
+    return ""
+
+
+def _message_event_text(event: dict[str, Any], *, role: str = "assistant") -> str:
+    kind = str(event.get("kind") or event.get("type") or "").lower()
+    if kind != "messageevent":
+        return ""
+    message = event.get("llm_message") or event.get("message")
+    if not isinstance(message, dict):
+        return ""
+    if str(message.get("role") or "") != role:
+        return ""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return str(content or "")
+    return "".join(
+        str(item.get("text") or "")
+        for item in content
+        if isinstance(item, dict)
+    )
 
 
 async def _get_final_response(
@@ -1366,70 +1084,6 @@ async def _get_final_response(
     return str(data.get("response") or "") if isinstance(data, dict) else ""
 
 
-async def _send_conversation_message(
-    client: httpx.AsyncClient,
-    *,
-    base_url: str,
-    headers: dict[str, str],
-    conversation_id: str,
-    message: str,
-) -> None:
-    """Send a turn, retrying transient Agent Server failures.
-
-    OpenHands can briefly return a 5xx while a conversation has just become
-    ready or while its previous turn is being finalized. Retrying only these
-    server-side responses avoids surfacing a misleading immediate failure,
-    while leaving validation and provider errors terminal.
-    """
-    url = f"{base_url}/api/conversations/{conversation_id}/events"
-    payload = {
-        "role": "user",
-        "content": [{"type": "text", "text": message}],
-        "run": True,
-    }
-    retryable_statuses = {500, 502, 503, 504}
-    # A freshly booted Agent Server may briefly refuse the socket or return a
-    # 5xx while the conversation's event service finishes initializing. Give
-    # the first turn a longer, bounded window of retries so the user is not
-    # shown a spurious failure right after the agent comes up.
-    max_attempts = 8
-    for attempt in range(max_attempts):
-        last = attempt == max_attempts - 1
-        try:
-            response = await client.post(url, headers=headers, json=payload)
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
-            if last:
-                raise RuntimeError(
-                    f"OpenHands message send could not reach the agent: {exc}"
-                ) from exc
-            delay = min(2.0, 0.25 * (2**attempt))
-            logger.warning(
-                "OpenHands message send connection error (%s); retrying in %.2fs "
-                "(attempt %s/%s)",
-                exc.__class__.__name__,
-                delay,
-                attempt + 1,
-                max_attempts,
-            )
-            await asyncio.sleep(delay)
-            continue
-        if response.status_code < 400:
-            return
-        if response.status_code not in retryable_statuses or last:
-            raise await _response_error(response, "message send")
-        # Bounded exponential backoff for transient server errors.
-        delay = min(2.0, 0.25 * (2**attempt))
-        logger.warning(
-            "OpenHands message send returned HTTP %s; retrying in %.2fs "
-            "(attempt %s/%s)",
-            response.status_code,
-            delay,
-            attempt + 1,
-            max_attempts,
-        )
-        await asyncio.sleep(delay)
-
-
 async def _stream_conversation_turn(
     project_id: str,
     *,
@@ -1439,42 +1093,194 @@ async def _stream_conversation_turn(
     request_id: str | None,
     source: str,
 ) -> tuple[str, str, str]:
-    """Send a turn and bridge native OpenHands events to Syte's activity feed."""
+    """Send a turn and bridge native OpenHands WebSocket events to Syte SSE."""
     from syte.agent_activity import ingest_openhands_event
-    from syte.agent_turn import stream_turn
+
+    try:
+        from websockets.asyncio.client import connect
+    except ImportError as exc:
+        raise RuntimeError(
+            "OpenHands streaming requires the websockets Python package"
+        ) from exc
 
     base_url = _server_url(port)
     headers = agent_session_headers(project_id)
     ws_url = f"{base_url.replace('http://', 'ws://', 1)}/sockets/events/{conversation_id}"
-    client = _get_agent_client(port, timeout=30.0)
+    token_snapshot = ""
+    final_reply = ""
+    execution_status = ""
+    failure = ""
+    saw_running = False
+    saw_current_user_message = False
+    pre_turn_status = ""
+    deadline = time.monotonic() + settings.agent_event_timeout_s
 
-    async def ingest(event: dict[str, Any], token_snapshot: str) -> None:
-        await ingest_openhands_event(
-            project_id,
-            event,
-            source=source,
-            request_id=request_id,
-            token_snapshot=token_snapshot,
-        )
-
-    result = await stream_turn(
-        client=client,
-        base_url=base_url,
-        websocket_url=ws_url,
-        headers=headers,
-        conversation_id=conversation_id,
-        message=message,
-        timeout_s=settings.agent_event_timeout_s,
-        send_message=_send_conversation_message,
-        ingest_event=ingest,
-        get_final_response=_get_final_response,
-    )
-    if result[1] == "timeout":
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            await interrupt_agent(project_id)
-        except Exception:
-            logger.exception("Failed to interrupt timed-out agent turn for %s", project_id)
-    return result
+            before = await client.get(
+                f"{base_url}/api/conversations/{conversation_id}",
+                headers=headers,
+            )
+            if before.status_code < 400:
+                before_data = before.json() if before.content else {}
+                if isinstance(before_data, dict):
+                    pre_turn_status = str(
+                        before_data.get("execution_status") or ""
+                    ).lower()
+        except (httpx.HTTPError, ValueError):
+            pass
+
+        async with connect(
+            ws_url,
+            open_timeout=10,
+            ping_interval=20,
+            ping_timeout=20,
+        ) as websocket:
+            await websocket.send(
+                json.dumps({"type": "auth", "session_api_key": headers["X-Session-API-Key"]})
+            )
+            response = await client.post(
+                f"{base_url}/api/conversations/{conversation_id}/events",
+                headers=headers,
+                json={
+                    "role": "user",
+                    "content": [{"type": "text", "text": message}],
+                    "run": True,
+                },
+            )
+            if response.status_code >= 400:
+                raise await _response_error(response, "message send")
+
+            while time.monotonic() < deadline:
+                try:
+                    raw = await asyncio.wait_for(websocket.recv(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    try:
+                        info = await client.get(
+                            f"{base_url}/api/conversations/{conversation_id}",
+                            headers=headers,
+                        )
+                        if info.status_code < 400:
+                            try:
+                                conversation = info.json() if info.content else {}
+                            except ValueError:
+                                conversation = {}
+                            state = str(
+                                conversation.get("execution_status", "")
+                                if isinstance(conversation, dict)
+                                else ""
+                            ).lower()
+                            if state == "running":
+                                saw_running = True
+                            terminal_state = state in {
+                                "finished",
+                                "error",
+                                "stuck",
+                                "paused",
+                                "waiting_for_confirmation",
+                            } or (state == "idle" and saw_running)
+                            terminal_is_current = (
+                                saw_running
+                                or saw_current_user_message
+                                or not pre_turn_status
+                                or state != pre_turn_status
+                            )
+                            if terminal_state and terminal_is_current:
+                                execution_status = state
+                                break
+                    except httpx.HTTPError:
+                        pass
+                    continue
+
+                try:
+                    event = json.loads(raw)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(event, dict):
+                    continue
+
+                kind = str(event.get("kind") or event.get("type") or "").lower()
+                if kind in {"streamingdeltaevent", "tokenevent"}:
+                    token_snapshot += str(event.get("content") or event.get("delta") or "")
+                text = _message_event_text(event)
+                if text:
+                    final_reply = text
+                if _message_event_text(event, role="user").strip() == message.strip():
+                    saw_current_user_message = True
+                if kind in {"conversationerrorevent", "servererrorevent"}:
+                    failure = str(
+                        event.get("detail")
+                        or event.get("message")
+                        or event.get("error")
+                        or event.get("code")
+                        or "OpenHands could not process the request"
+                    )
+
+                # The turn coordinator emits one request_failed event with a
+                # stable request id below. Avoid persisting the native error as
+                # a second terminal event for the same turn.
+                if kind not in {"conversationerrorevent", "servererrorevent"}:
+                    await ingest_openhands_event(
+                        project_id,
+                        event,
+                        source=source,
+                        request_id=request_id,
+                        token_snapshot=token_snapshot,
+                    )
+
+                state = _state_update_status(event)
+                if state == "running":
+                    saw_running = True
+                terminal_state = state in {
+                    "finished",
+                    "error",
+                    "stuck",
+                    "paused",
+                    "waiting_for_confirmation",
+                } or (state == "idle" and saw_running)
+                terminal_is_current = (
+                    saw_running
+                    or saw_current_user_message
+                    or not pre_turn_status
+                    or state != pre_turn_status
+                )
+                if terminal_state and terminal_is_current:
+                    execution_status = state
+                    break
+                if failure:
+                    execution_status = "error"
+                    break
+            else:
+                execution_status = "timeout"
+
+        if execution_status == "timeout":
+            try:
+                await interrupt_agent(project_id)
+            except Exception:
+                logger.exception("Failed to interrupt timed-out agent turn for %s", project_id)
+
+        if not final_reply:
+            for attempt in range(3):
+                final_reply = await _get_final_response(
+                    client,
+                    base_url=base_url,
+                    headers=headers,
+                    conversation_id=conversation_id,
+                )
+                if final_reply:
+                    break
+                await asyncio.sleep(0.1 * (attempt + 1))
+
+    if execution_status == "timeout":
+        failure = failure or "OpenHands did not finish before the request timeout"
+    elif execution_status in {"error", "stuck", "paused"}:
+        failure = failure or f"OpenHands conversation {execution_status}"
+    elif execution_status == "waiting_for_confirmation":
+        failure = (
+            failure
+            or "OpenHands is waiting for tool confirmation, which this chat cannot approve"
+        )
+    return final_reply, execution_status or "finished", failure
 
 
 async def interrupt_agent(project_id: str) -> tuple[bool, str]:
@@ -1587,7 +1393,6 @@ async def _communicate_with_agent_impl(
     auto_start: bool = True,
     emit_request_started: bool = True,
     request_id: str | None = None,
-    _recovered_connection: bool = False,
 ) -> dict[str, Any]:
     from syte.agent_activity import record_agent_event
     from syte.agent_metrics import log_agent_request
@@ -1736,126 +1541,34 @@ async def _communicate_with_agent_impl(
     model = status.get("agent_model") or model
     try:
         latest_project = await get_project(project_id) or project
-        conversation_id, created = await _ensure_conversation(
+        conversation_id = await _ensure_conversation(
             latest_project,
             port=int(port),
             model=model,
         )
-        # The Agent Server rejects a send with an opaque HTTP 500 in two common,
-        # transient situations: the conversation's previous run is still active
-        # ("conversation_already_running") or its event service has not finished
-        # wiring up the in-memory conversation yet ("inactive_service"). Neither
-        # requires discarding the durable conversation, so recovery escalates:
-        # (1) interrupt and wait for the SAME conversation to settle, then retry;
-        # (2) only if that still fails, recreate a clean conversation. Creating a
-        #     conversation already waits for it to become sendable, so no extra
-        #     readiness poll is needed here.
-        max_send_attempts = 3
-        recovered_once = False
-        recreated_once = False
-        restarted_for_mcp = False
-        for send_attempt in range(max_send_attempts):
-            try:
-                if not created:
-                    await _switch_conversation_llm(
-                        project_id,
-                        port=int(port),
-                        conversation_id=conversation_id,
-                        model=model,
-                    )
-                reply, execution_status, failure = await _stream_conversation_turn(
-                    project_id,
-                    port=int(port),
-                    conversation_id=conversation_id,
-                    message=message,
-                    request_id=request_id,
-                    source=source,
-                )
-                break
-            except Exception as exc:
-                last = send_attempt == max_send_attempts - 1
-                # A dead MCP stdio session poisons the Agent Server process until
-                # it is restarted. Interrupt/recreate alone cannot recover from
-                # "McpError: Connection closed" in the agent log. This may
-                # surface as an HTTP send failure or as the event websocket
-                # closing, so classify it before narrowing to send errors.
-                if (
-                    auto_start
-                    and not restarted_for_mcp
-                    and _is_mcp_session_error(exc, project_id=project_id)
-                ):
-                    restarted_for_mcp = True
-                    logger.warning(
-                        "OpenHands MCP session failed for %s; restarting the agent "
-                        "and recreating the conversation",
-                        project_id,
-                    )
-                    restarted, restart_message, status = await restart_agent(project_id)
-                    if not restarted:
-                        raise RuntimeError(restart_message) from exc
-                    port = status.get("agent_port") or port
-                    if not port:
-                        raise RuntimeError("Agent has no allocated port after restart") from exc
-                    await update_project(project_id, {"agent_conversation_id": ""})
-                    latest_project = await get_project(project_id) or latest_project
-                    conversation_id, created = await _ensure_conversation(
-                        latest_project,
-                        port=int(port),
-                        model=model,
-                    )
-                    recreated_once = True
-                    continue
-                if last or not _is_message_send_server_error(exc):
-                    raise
-                # First try to settle the existing conversation in place, so a
-                # lingering run is cleared and a still-initializing event service
-                # can catch up without discarding the durable history.
-                if not recovered_once and not recreated_once:
-                    recovered_once = True
-                    try:
-                        settled = await _recover_conversation_for_send(
-                            project_id,
-                            port=int(port),
-                            conversation_id=conversation_id,
-                        )
-                    except Exception:
-                        settled = False
-                    if settled:
-                        logger.warning(
-                            "OpenHands send failed for conversation %s; recovered "
-                            "the existing conversation and retrying",
-                            conversation_id,
-                        )
-                        created = False
-                        continue
-                # Escalate: the conversation could not be settled, so start a
-                # clean one. _ensure_conversation waits for the new conversation
-                # to become sendable before returning.
-                logger.warning(
-                    "OpenHands send failed for conversation %s; recreating the "
-                    "conversation and retrying",
-                    conversation_id,
-                )
-                await update_project(project_id, {"agent_conversation_id": ""})
-                latest_project = await get_project(project_id) or latest_project
-                conversation_id, created = await _ensure_conversation(
-                    latest_project,
-                    port=int(port),
-                    model=model,
-                )
-                recreated_once = True
+        await _switch_conversation_llm(
+            project_id,
+            port=int(port),
+            conversation_id=conversation_id,
+            model=model,
+        )
+        reply, execution_status, failure = await _stream_conversation_turn(
+            project_id,
+            port=int(port),
+            conversation_id=conversation_id,
+            message=message,
+            request_id=request_id,
+            source=source,
+        )
         if failure:
             error_code = (
                 "agent_interrupted"
                 if execution_status == "paused"
                 else "agent_runtime_error"
             )
-            detail = failure
-            if error_code == "agent_runtime_error":
-                detail = _augment_error_with_server_log(project_id, failure)
             return await fail(
                 error_code,
-                detail,
+                failure,
                 log_request=True,
                 payload={
                     "conversation_id": conversation_id,
@@ -1916,48 +1629,13 @@ async def _communicate_with_agent_impl(
             },
         }
     except httpx.HTTPError as exc:
-        # The Agent Server is a child process. If it exits between the health
-        # probe above and the first conversation request, the client otherwise
-        # returns a generic connection error and leaves the user to retry
-        # manually. Restart once in this request; a second failure is returned
-        # with the normal startup diagnostics.
-        if (
-            not _recovered_connection
-            and auto_start
-            and (
-                isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
-                or _is_mcp_session_error(exc, project_id=project_id)
-            )
-        ):
-            logger.warning(
-                "OpenHands connection failed for %s; restarting the agent once",
-                project_id,
-            )
-            restarted, restart_message, _ = await restart_agent(project_id)
-            if restarted:
-                await update_project(project_id, {"agent_conversation_id": ""})
-                return await _communicate_with_agent_impl(
-                    project_id,
-                    message,
-                    model_profile=model_profile,
-                    source=source,
-                    auto_start=auto_start,
-                    emit_request_started=False,
-                    request_id=request_id,
-                    _recovered_connection=True,
-                )
-            return await fail(
-                "agent_start_failed",
-                restart_message,
-                log_request=True,
-            )
         error = f"Could not reach OpenHands agent: {exc}"
     except Exception as exc:
         error = str(exc) or "OpenHands agent request failed"
 
     return await fail(
         "agent_communicate_failed",
-        _augment_error_with_server_log(project_id, error),
+        error,
         log_request=True,
         payload={"model_profile": model.get("profile")},
     )

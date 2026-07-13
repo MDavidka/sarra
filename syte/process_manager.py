@@ -1,6 +1,5 @@
 import os
 import signal
-import shlex
 import subprocess
 import time
 import shutil
@@ -121,12 +120,10 @@ def start_project(
     log_path = ws / "app.log"
     log_file = open(log_path, "a")
 
-    cmd_args = shlex.split(start_command)
-
     proc = subprocess.Popen(
-        cmd_args,
+        start_command,
         cwd=repo,
-        shell=False,
+        shell=True,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,

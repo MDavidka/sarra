@@ -223,7 +223,7 @@ async def system_info():
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     direct = build_direct_url(ip, settings.port)
-    stats = await get_system_stats()
+    stats = get_system_stats()
     return {
         "version": __version__,
         "public_ip": ip,
@@ -734,7 +734,6 @@ async def api_agent_activity_public(
     request: Request,
     since_id: int = 0,
     limit: int = 200,
-    latest: bool = False,
 ):
     from syte.agent_activity import list_agent_events
 
@@ -744,12 +743,7 @@ async def api_agent_activity_public(
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
     if key:
         await auth.verify_api_token_from_request(request)
-    events = await list_agent_events(
-        project_id,
-        since_id=since_id,
-        limit=min(limit, 2000),
-        latest=latest,
-    )
+    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
     return {
         "ok": True,
         "project_id": project_id,
@@ -841,8 +835,6 @@ class AgentAccessRequest(BaseModel):
     action: str
     url: str | None = None
     lines: int | None = None
-    width: int | None = None
-    height: int | None = None
 
 
 class AgentAccessConfigRequest(BaseModel):
@@ -949,8 +941,6 @@ async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
         body.action,
         url=body.url,
         lines=body.lines or 200,
-        width=body.width or 1440,
-        height=body.height or 900,
     )
     if result.get("ok"):
         await record_agent_event(
@@ -1105,14 +1095,6 @@ async def api_issue_deploy(project_id: str):
         "message": message,
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
     }
-
-
-@app.post("/api/projects/{project_id}/deploy/stop")
-async def api_stop_deploy(project_id: str):
-    project, message = await deployment.stop_deploy(project_id)
-    if not project:
-        raise HTTPException(404, message)
-    return {"project": _enrich(project), "message": message}
 
 
 def _parse_env(raw: Any) -> dict:

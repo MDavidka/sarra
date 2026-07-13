@@ -7,7 +7,6 @@
   <title>Syte</title>
   <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
-  <link rel="stylesheet" href="/static/agent.css?v=__VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -53,7 +52,7 @@
           <p class="nav-section-label">Platform</p>
           <div class="nav-group expanded" id="nav-group-main">
             <button type="button" class="nav-group-head" id="nav-group-main-toggle" aria-expanded="true">
-              <span class="nav-group-icon" aria-hidden="true">M</span>
+              <span class="nav-group-icon" aria-hidden="true"><i data-lucide="menu"></i></span>
               <span class="nav-group-title">Main</span>
               <i data-lucide="chevron-down" class="nav-group-chevron"></i>
             </button>
@@ -108,8 +107,8 @@
               <button type="button" class="nav-sublink" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="agent">
-                <i data-lucide="bot"></i><span>Agent</span>
+              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
+                <i data-lucide="messages-square"></i><span>Agent chat</span>
               </button>
             </div>
           </div>
@@ -276,7 +275,6 @@
                   <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
                   <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
                   <div class="svc-quick-actions" id="svc-quick-actions"></div>
-                  <p class="svc-control-hint"><i data-lucide="zap"></i> Production, deploy, and runtime controls</p>
                 </div>
                 <div class="svc-info-grid" id="svc-info-body"></div>
               </div>
@@ -362,94 +360,39 @@
                 </div>
               </div>
 
-              <div class="svc-tab-panel" id="svc-panel-agent" data-svc-panel="agent">
-                <div class="agent-tab" id="agent-tab">
-                  <!-- Sidebar: status, controls, model, stats -->
-                  <aside class="agent-side" id="agent-side">
-                    <div class="agent-status-pill" id="agent-status-pill" role="status" aria-live="polite">
-                      <span class="agent-status-dot"></span>
-                      <span class="agent-status-text">Checking…</span>
+              <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
+                <div class="debug-chat-panel">
+                  <div class="debug-chat-header">
+                    <div>
+                      <h2>Agent chat</h2>
+                      <p>Describe what you want changed.</p>
                     </div>
-
-                    <div class="agent-side-section">
-                      <label class="agent-side-label" for="agent-model">Model</label>
-                      <select id="agent-model" class="agent-select" aria-label="Model profile">
+                    <label class="debug-chat-profile-label" for="debug-chat-profile">
+                      <span>Model</span>
+                      <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="syra-nano">nano</option>
                         <option value="syra-base" selected>base</option>
                         <option value="syra-havy">havy</option>
                       </select>
+                    </label>
+                  </div>
+                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
+                    <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
+                    <span class="debug-chat-activity-label">Connecting…</span>
+                    <span class="debug-chat-activity-detail"></span>
+                  </div>
+                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
+                    <div class="debug-chat-empty" id="debug-chat-empty">
+                      <p>What would you like to change?</p>
                     </div>
-
-                    <div class="agent-side-section">
-                      <label class="agent-side-label">Session controls</label>
-                      <div class="agent-controls">
-                        <button type="button" class="agent-ctl" data-agent-action="start"><i data-lucide="play"></i><span>Start</span></button>
-                        <button type="button" class="agent-ctl" data-agent-action="restart"><i data-lucide="rotate-cw"></i><span>Restart</span></button>
-                        <button type="button" class="agent-ctl danger" data-agent-action="stop"><i data-lucide="square"></i><span>Stop</span></button>
-                        <button type="button" class="agent-ctl danger" data-agent-action="interrupt" disabled><i data-lucide="octagon-x"></i><span>Interrupt</span></button>
-                        <button type="button" class="agent-ctl" data-agent-action="clear"><i data-lucide="eraser"></i><span>Clear</span></button>
-                        <button type="button" class="agent-ctl" data-agent-action="export" title="Export conversation as Markdown (Ctrl/Cmd+E)"><i data-lucide="download"></i><span>Export</span></button>
-                      </div>
-                      <p class="agent-shortcuts-hint">
-                        <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline · <kbd>Ctrl/Cmd+K</kbd> focus · <kbd>Ctrl/Cmd+B</kbd> pane
-                      </p>
+                  </div>
+                  <div class="debug-chat-composer">
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea>
+                    <div class="debug-chat-composer-actions">
+                      <button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button>
+                      <button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button>
                     </div>
-
-                    <div class="agent-stats" id="agent-stats" aria-label="Session stats">
-                      <div class="agent-stat"><b id="agent-stat-turns">0</b><span>Turns</span></div>
-                      <div class="agent-stat"><b id="agent-stat-files">0</b><span>Files</span></div>
-                      <div class="agent-stat"><b id="agent-stat-tools">0</b><span>Tools</span></div>
-                      <div class="agent-stat"><b id="agent-stat-duration">—</b><span>Duration</span></div>
-                    </div>
-                  </aside>
-
-                  <!-- Main: streaming conversation + composer -->
-                  <section class="agent-main">
-                    <button type="button" class="agent-pane-toggle" id="agent-pane-toggle" title="Toggle terminal pane" aria-label="Toggle terminal pane"><i data-lucide="panel-right"></i></button>
-                    <div class="agent-thread" id="agent-thread" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
-                      <div class="agent-empty" id="agent-empty">
-                        <div class="agent-empty-icon"><i data-lucide="zap"></i></div>
-                        <h3>Your OpenHands modification specialist</h3>
-                        <p>Describe a change, fix, or task. I can edit files, run commands, search the codebase, and verify the result — streaming every step live.</p>
-                      </div>
-                    </div>
-                    <div class="agent-composer">
-                      <div class="agent-quick" id="agent-quick">
-                        <button type="button" class="agent-quick-chip" data-agent-quick="Explain what this project does and how it is structured.">Explain the project</button>
-                        <button type="button" class="agent-quick-chip" data-agent-quick="Find and fix any errors or bugs in the current code.">Fix errors</button>
-                        <button type="button" class="agent-quick-chip" data-agent-quick="Run the test suite and report the results.">Run tests</button>
-                      </div>
-                      <div class="agent-input-row">
-                        <textarea id="agent-input" class="agent-input" rows="1" aria-label="Message to the workspace agent" placeholder="Describe the change you need…  (Enter to send, Shift+Enter for a new line)"></textarea>
-                        <div class="agent-send-group">
-                          <button type="button" id="agent-stop" class="agent-btn stop hidden" aria-label="Stop the current response"><i data-lucide="square"></i><span>Stop</span></button>
-                          <button type="button" id="agent-send" class="agent-btn send"><i data-lucide="arrow-up"></i><span>Send</span></button>
-                        </div>
-                      </div>
-                      <div class="agent-conn" id="agent-conn">
-                        <span class="agent-conn-dot" id="agent-conn-dot"></span>
-                        <span class="agent-conn-text" id="agent-conn-text">Connecting…</span>
-                        <span class="agent-conn-detail" id="agent-conn-detail"></span>
-                      </div>
-                    </div>
-                  </section>
-
-                  <!-- Right pane: live terminal, file changes, tool calls -->
-                  <aside class="agent-pane" id="agent-pane">
-                    <div class="agent-pane-tabs">
-                      <button type="button" class="agent-pane-tab active" data-pane-tab="terminal"><i data-lucide="terminal"></i>Terminal <span class="agent-pane-count">0</span></button>
-                      <button type="button" class="agent-pane-tab" data-pane-tab="files"><i data-lucide="file-diff"></i>Files <span class="agent-pane-count">0</span></button>
-                      <button type="button" class="agent-pane-tab" data-pane-tab="tools"><i data-lucide="wrench"></i>Tools <span class="agent-pane-count">0</span></button>
-                    </div>
-                    <div class="agent-pane-toolbar">
-                      <button type="button" class="agent-pane-tool-btn" data-agent-term-copy title="Copy terminal output" aria-label="Copy terminal output"><i data-lucide="copy"></i></button>
-                    </div>
-                    <div class="agent-pane-body">
-                      <div class="agent-pane-view active" data-pane-view="terminal" id="agent-terminal"><div class="agent-term-empty">No command output yet.</div></div>
-                      <div class="agent-pane-view" data-pane-view="files" id="agent-files"><div class="agent-pane-empty">No file changes yet.</div></div>
-                      <div class="agent-pane-view" data-pane-view="tools" id="agent-tools"><div class="agent-pane-empty">No tool calls yet.</div></div>
-                    </div>
-                  </aside>
+                  </div>
                 </div>
               </div>
             </div>
@@ -854,6 +797,5 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js?v=__VERSION__"></script>
-  <script src="/static/agent.js?v=__VERSION__"></script>
 </body>
 </html>
