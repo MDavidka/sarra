@@ -91,3 +91,24 @@ async def test_maintain_respects_explicit_agent_stop(
     )
 
     await supervisor.maintain()
+
+@pytest.mark.asyncio
+async def test_autostart_project_agents_bridge_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import supervisor
+
+    async def fake_bridge_settings():
+        raise Exception("Failed to load bridge settings")
+
+    async def unexpected_projects():
+        raise AssertionError("list_projects should not be called")
+
+    monkeypatch.setattr(supervisor, "openhands_installed", lambda: True)
+    monkeypatch.setattr(
+        "syte.openhands_agent.bridge_settings", fake_bridge_settings
+    )
+    monkeypatch.setattr(supervisor, "list_projects", unexpected_projects)
+
+    # Should return silently and not call list_projects
+    await supervisor.autostart_project_agents()

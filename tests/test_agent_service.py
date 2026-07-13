@@ -19,8 +19,10 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.mark.asyncio
 async def test_list_service_capabilities(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import syte.preview_manager as pm
+    import syte.process_manager as proc_m
 
     monkeypatch.setattr(pm, "PID_DIR", tmp_data_dir / "pids")
+    monkeypatch.setattr(proc_m, "PID_DIR", tmp_data_dir / "pids")
     from syte.agent_service import list_service_capabilities
     from syte.database import create_project, init_db
 
@@ -41,8 +43,10 @@ async def test_list_service_capabilities(tmp_data_dir: Path, monkeypatch: pytest
 @pytest.mark.asyncio
 async def test_run_service_status(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import syte.preview_manager as pm
+    import syte.process_manager as proc_m
 
     monkeypatch.setattr(pm, "PID_DIR", tmp_data_dir / "pids")
+    monkeypatch.setattr(proc_m, "PID_DIR", tmp_data_dir / "pids")
     from syte.agent_service import run_service_action
     from syte.database import create_project, init_db
 
