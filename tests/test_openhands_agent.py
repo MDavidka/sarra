@@ -297,9 +297,16 @@ async def test_create_conversation_uses_supported_agent_context(
             FakeClient.payload = json
             return FakeResponse()
 
-    monkeypatch.setattr("syte.openhands_agent.httpx.AsyncClient", FakeClient)
+        async def get(self, url, headers=None):
+            return FakeResponse()
 
-    conversation_id = await _ensure_conversation(
+    async def fake_wait(*_args, **_kwargs):
+        return "idle"
+
+    monkeypatch.setattr("syte.openhands_agent.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("syte.openhands_agent._wait_for_conversation_status", fake_wait)
+
+    conversation_id, created = await _ensure_conversation(
         project or {},
         port=5336,
         model=model,
@@ -307,6 +314,7 @@ async def test_create_conversation_uses_supported_agent_context(
     request = StartConversationRequest.model_validate(FakeClient.payload)
 
     assert conversation_id == "conversation-1"
+    assert created is True
     assert request.initial_message is None
     assert request.agent.agent_context is not None
     assert "think before acting" in (
@@ -314,7 +322,7 @@ async def test_create_conversation_uses_supported_agent_context(
     )
     assert "mcpServers" not in FakeClient.payload["agent"]["mcp_config"]
     assert FakeClient.payload["agent"]["mcp_config"]["syte-tools"]["command"].endswith(
-        "/agent/bin/syte-mcp"
+        "/syte-mcp"
     )
 
 
@@ -460,6 +468,168 @@ async def test_send_conversation_message_retries_transient_server_errors(
 
     assert client.calls == 3
     assert delays == [0.25, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_ensure_conversation_reuses_only_idle_or_finished(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.database import create_project, get_project, init_db, set_setting, update_project
+    from syte.openhands_agent import _ensure_conversation, selected_model_metadata, write_agent_config
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-reuse-status",
+        "name": "Reuse Status",
+        "port": 3007,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-reuse-status",
+        {
+            "agent_model_profile": "syra-base",
+            "agent_port": 5338,
+            "agent_conversation_id": "conversation-running",
+        },
+    )
+    project = await get_project("proj-reuse-status")
+    await write_agent_config(project or {})
+    model = await selected_model_metadata(project or {})
+    from syte.openhands_agent import agent_root
+
+    meta_path = agent_root("proj-reuse-status") / "conversation-meta.json"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    from syte.openhands_agent import AGENT_INSTRUCTION_VERSION
+
+    meta_path.write_text(json.dumps({"tooling_version": AGENT_INSTRUCTION_VERSION}) + "\n")
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict | None = None):
+            self.status_code = status_code
+            self.content = b"{}"
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        get_calls = 0
+        post_calls = 0
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers=None):
+            FakeClient.get_calls += 1
+            if "conversation-running" in url:
+                return FakeResponse(200, {"execution_status": "running"})
+            if "conversation-new" in url:
+                return FakeResponse(200, {"execution_status": "idle"})
+            return FakeResponse(404)
+
+        async def post(self, url, headers=None, json=None):
+            FakeClient.post_calls += 1
+            if url.endswith("/interrupt"):
+                return FakeResponse(200)
+            return FakeResponse(200, {"id": "conversation-new"})
+
+    recovered: list[str] = []
+
+    async def fake_recover(project_id, *, port, conversation_id):
+        recovered.append(conversation_id)
+        return False
+
+    async def fake_wait(*_args, **_kwargs):
+        return "idle"
+
+    monkeypatch.setattr("syte.openhands_agent.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("syte.openhands_agent._recover_conversation_for_send", fake_recover)
+    monkeypatch.setattr("syte.openhands_agent._wait_for_conversation_status", fake_wait)
+
+    conversation_id, created = await _ensure_conversation(
+        project or {},
+        port=5338,
+        model=model,
+    )
+
+    assert recovered == ["conversation-running"]
+    assert conversation_id == "conversation-new"
+    assert created is True
+    assert FakeClient.post_calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_communicate_with_agent_recovers_from_message_send_server_error(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.database import create_project, init_db, set_setting, update_project
+    from syte.openhands_agent import communicate_with_agent
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-send-recovery",
+        "name": "Send Recovery",
+        "port": 3018,
+        "start_command": "",
+    })
+    await update_project(
+        "proj-send-recovery",
+        {"agent_model_profile": "syra-base", "agent_port": 5339},
+    )
+
+    ensure_calls = 0
+
+    async def fake_ensure(*_args, **_kwargs):
+        nonlocal ensure_calls
+        ensure_calls += 1
+        return (f"conversation-{ensure_calls}", ensure_calls == 1)
+
+    stream_calls = 0
+
+    async def fake_stream(*_args, **_kwargs):
+        nonlocal stream_calls
+        stream_calls += 1
+        if stream_calls == 1:
+            raise RuntimeError(
+                "OpenHands message send returned HTTP 500: Internal Server Error"
+            )
+        return "recovered", "finished", ""
+
+    monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+    monkeypatch.setattr("syte.openhands_agent._agent_instruction_is_current", lambda _id: True)
+
+    async def fake_status(*_args, **_kwargs):
+        return {
+            "agent_running": True,
+            "agent_healthy": True,
+            "agent_port": 5339,
+            "agent_model": {"model": "test-model", "profile": "syra-base"},
+        }
+
+    async def fake_switch(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("syte.openhands_agent.get_agent_status", fake_status)
+    monkeypatch.setattr("syte.openhands_agent._ensure_conversation", fake_ensure)
+    monkeypatch.setattr("syte.openhands_agent._switch_conversation_llm", fake_switch)
+    monkeypatch.setattr("syte.openhands_agent._stream_conversation_turn", fake_stream)
+
+    result = await communicate_with_agent("proj-send-recovery", "hello", source="test")
+
+    assert result["ok"] is True
+    assert result["reply"] == "recovered"
+    assert ensure_calls == 2
+    assert stream_calls == 2
 
 
 @pytest.mark.asyncio
@@ -628,7 +798,7 @@ async def test_communicate_with_agent_recovers_from_connection_failure(
         attempts += 1
         if attempts == 1:
             raise httpx.ConnectError("All connection attempts failed")
-        return "conversation-1"
+        return "conversation-1", False
 
     async def fake_switch(*_args, **_kwargs):
         return None
@@ -637,6 +807,7 @@ async def test_communicate_with_agent_recovers_from_connection_failure(
         return "recovered", "finished", ""
 
     monkeypatch.setattr("syte.openhands_agent.openhands_installed", lambda: True)
+    monkeypatch.setattr("syte.openhands_agent._agent_instruction_is_current", lambda _id: True)
 
     async def fake_status(*_args, **_kwargs):
         return {
