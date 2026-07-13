@@ -5,7 +5,8 @@ the former agent transport with OpenHands conversations and native WebSocket
 events. Public route response shapes stay stable for Sycord consumers.
 
 Performance Optimizations (v2):
-- HTTP/2 connection pooling for agent communication (reduces latency)
+- HTTP connection pooling for agent communication (reduces latency)
+- HTTP/2 support when h2 package is available (multiplexing)
 - Adaptive polling with faster initial checks during startup/conversation creation
 - Reduced timeouts on health checks (1.5s vs 3.0s)
 - Increased retry attempts for transient 5xx errors (8 vs 5)
@@ -68,11 +69,19 @@ def _get_agent_client(port: int, timeout: float = 30.0) -> httpx.AsyncClient:
     """Get or create a pooled HTTP client for an agent port."""
     if port not in _agent_http_clients:
         limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-        _agent_http_clients[port] = httpx.AsyncClient(
-            timeout=timeout,
-            limits=limits,
-            http2=True,  # Enable HTTP/2 for multiplexing
-        )
+        # Try to enable HTTP/2 if h2 is available, fall back to HTTP/1.1 otherwise
+        try:
+            _agent_http_clients[port] = httpx.AsyncClient(
+                timeout=timeout,
+                limits=limits,
+                http2=True,  # Enable HTTP/2 for multiplexing if available
+            )
+        except ImportError:
+            # h2 package not installed, use HTTP/1.1 with connection pooling
+            _agent_http_clients[port] = httpx.AsyncClient(
+                timeout=timeout,
+                limits=limits,
+            )
     return _agent_http_clients[port]
 
 
