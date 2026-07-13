@@ -673,7 +673,15 @@ async def test_stream_turn_ignores_previous_finished_state(
                     "content": [{"type": "text", "text": "hello"}],
                 },
             },
+            asyncio.TimeoutError(),
             {"kind": "ConversationStateUpdateEvent", "key": "execution_status", "value": "running"},
+            {
+                "kind": "MessageEvent",
+                "llm_message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "new answer"}],
+                },
+            },
             {"kind": "ConversationStateUpdateEvent", "key": "execution_status", "value": "finished"},
         ]
 
@@ -683,6 +691,8 @@ async def test_stream_turn_ignores_previous_finished_state(
         async def recv(self):
             event = self.events[FakeWebSocket.received]
             FakeWebSocket.received += 1
+            if isinstance(event, BaseException):
+                raise event
             return json.dumps(event)
 
     class FakeConnection:
@@ -707,7 +717,7 @@ async def test_stream_turn_ignores_previous_finished_state(
 
         async def get(self, url, headers=None, **kwargs):
             if url.endswith("/agent_final_response"):
-                reply = "new answer" if FakeWebSocket.received == 4 else "old answer"
+                reply = "new answer" if FakeWebSocket.received == 6 else "old answer"
                 return FakeResponse({"response": reply})
             return FakeResponse({"execution_status": "finished"})
 
@@ -740,7 +750,7 @@ async def test_stream_turn_ignores_previous_finished_state(
     )
 
     assert result == ("new answer", "finished", "")
-    assert FakeWebSocket.received == 4
+    assert FakeWebSocket.received == 6
 
 
 @pytest.mark.asyncio
