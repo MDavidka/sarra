@@ -966,6 +966,121 @@
     void api(`/projects/${S.projectId}/agent/warm`, { method: 'POST' }).catch(() => {});
   }
 
+  // ------------------------------------------------------------- export
+  function buildSessionMarkdown(events) {
+    const out = [
+      '# Agent session',
+      '',
+      `- Project: \`${S.projectId}\``,
+      `- Exported: ${new Date().toISOString()}`,
+      '',
+      '---',
+      '',
+    ];
+    let lastAssistant = '';
+    let lastAssistantIdx = -1;   // index in `out` of the last assistant text line
+    const heading = (h, body) => {
+      if (out.length && out[out.length - 1] !== '') out.push('');  // blank line before heading
+      out.push(h, '', body, '');
+      return out.length - 2;   // index of the body line
+    };
+    for (const e of events) {
+      const p = e.payload || {};
+      const type = e.event_type;
+      let text = e.detail || '';
+      if (type === 'request_completed') text = p.reply || text;
+      else if (type === 'assistant_message' || type === 'message_snapshot') text = p.content || text;
+      text = String(text || '').trim();
+      switch (type) {
+        case 'user_message':
+          if (text) heading('## You', text);
+          lastAssistant = '';       // new turn — don't merge with prior reply
+          lastAssistantIdx = -1;
+          break;
+        case 'assistant_message':
+        case 'request_completed':
+        case 'message_snapshot':
+          // Collapse the streamed message + final reply into one block, keeping
+          // the fullest version (deltas/snapshots are prefixes of the reply).
+          if (text) {
+            if (!lastAssistant) {
+              lastAssistantIdx = heading('## Assistant', text);
+              lastAssistant = text;
+            } else if (text === lastAssistant || lastAssistant.includes(text)) {
+              // Same or shorter than what we already have — keep existing.
+            } else if (text.includes(lastAssistant) && lastAssistantIdx >= 0) {
+              out[lastAssistantIdx] = text;   // fuller version supersedes
+              lastAssistant = text;
+            } else {
+              lastAssistantIdx = heading('## Assistant', text);
+              lastAssistant = text;
+            }
+          }
+          break;
+        case 'thinking':
+          if (text) out.push(`> Reasoning: ${text.replace(/\s+/g, ' ')}`, '');
+          break;
+        case 'command_run':
+          out.push('```bash', text, '```', '');
+          break;
+        case 'command_output':
+          if (text) out.push('```', text.slice(0, 2000), '```', '');
+          break;
+        case 'file_created': out.push(`- Created \`${text}\``); break;
+        case 'file_modified': out.push(`- Modified \`${text}\``); break;
+        case 'file_deleted': out.push(`- Deleted \`${text}\``); break;
+        case 'file_read': out.push(`- Read \`${text}\``); break;
+        case 'file_search': out.push(`- Searched \`${text}\``); break;
+        case 'tool_call':
+        case 'tool_call_started':
+          out.push(`- ${e.title || 'Tool'}${text ? `: ${text}` : ''}`);
+          break;
+        case 'service_action':
+          out.push(`- ${e.title || 'Service'}${text ? `: ${text}` : ''}`);
+          break;
+        case 'request_failed':
+          if (text) out.push('', `> Error: ${text}`, '');
+          break;
+        default:
+          break;
+      }
+    }
+    return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
+  }
+
+  async function exportSession() {
+    if (!S.projectId) { toast('Open a project first.'); return; }
+    try {
+      const res = await api(`/projects/${S.projectId}/agent/activity?since_id=0&limit=2000&latest=1`);
+      const events = res.events || [];
+      if (!events.length) { toast('Nothing to export yet.'); return; }
+      const md = buildSessionMarkdown(events);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `agent-session-${S.projectId.slice(0, 8)}-${stamp}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Session exported as Markdown');
+    } catch (e) {
+      toast('Could not export session: ' + normalizeErr(e));
+    }
+  }
+
+  // Tab-scoped keyboard shortcuts. Active only while the Agent tab is open.
+  function onShortcut(e) {
+    if (!S.open) return;
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = (e.key || '').toLowerCase();
+    if (k === 'k') { e.preventDefault(); $('agent-input')?.focus(); }
+    else if (k === 'b') { e.preventDefault(); $('agent-tab')?.classList.toggle('pane-hidden'); }
+    else if (k === 'e') { e.preventDefault(); exportSession(); }
+  }
+
   // ------------------------------------------------------------- panes/view
   function clearThreadDom(keepEmpty) {
     if (S.rafId) { cancelAnimationFrame(S.rafId); S.rafId = null; }
@@ -1022,6 +1137,7 @@
 
     $('agent-send')?.addEventListener('click', send);
     $('agent-stop')?.addEventListener('click', interrupt);
+    document.addEventListener('keydown', onShortcut);
 
     const input = $('agent-input');
     if (input) {
@@ -1037,6 +1153,7 @@
       btn.addEventListener('click', () => {
         const a = btn.dataset.agentAction;
         if (a === 'interrupt') interrupt();
+        else if (a === 'export') exportSession();
         else if (a === 'clear') { clearThreadDom(true); resetPanes(); resetSession(); toast('Cleared view (history preserved on the server)'); }
         else control(a);
       });
@@ -1071,6 +1188,9 @@
   function open(projectId) {
     if (!projectId) return;
     wire();
+    // Let the service editor use the full content width for the 3-pane layout
+    // (it is otherwise capped at 720px, which crushes the chat + input).
+    document.body.classList.add('agent-fullwidth');
     const changed = projectId !== S.projectId;
     S.open = true;
     S.projectId = projectId;
@@ -1092,6 +1212,7 @@
 
   function close() {
     S.open = false;
+    document.body.classList.remove('agent-fullwidth');
     stopStream();
     clearWatchdog();
     finalizeAllStreams();
