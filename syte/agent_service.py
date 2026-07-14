@@ -23,6 +23,8 @@ SERVICE_ACTIONS = frozenset({
     "preview_logs",
 })
 
+AGENT_BLOCKED_PRODUCTION_ACTIONS = frozenset({"start", "stop", "deploy", "update"})
+
 
 async def list_service_capabilities(project_id: str) -> dict[str, Any]:
     project = await get_project(project_id)
@@ -74,6 +76,13 @@ async def run_service_action(
     act = (action or "status").strip().lower()
     if act not in SERVICE_ACTIONS:
         return {"ok": False, "error": "unknown_action", "message": f"Unknown action: {action}"}
+    if source == "agent" and act in AGENT_BLOCKED_PRODUCTION_ACTIONS:
+        return {
+            "ok": False,
+            "error": "production_action_blocked",
+            "action": act,
+            "message": "Production lifecycle actions are blocked for agent testing. Use preview_start instead.",
+        }
 
     if act == "status":
         preview = preview_meta(project)

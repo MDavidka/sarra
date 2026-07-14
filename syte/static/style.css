@@ -2009,9 +2009,18 @@ code {
 }
 
 .debug-chat-activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
   flex-shrink: 0;
+  color: #2563eb;
+}
+
+.debug-chat-activity-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .debug-chat-activity-spin {
@@ -2199,7 +2208,8 @@ code {
 }
 
 .debug-chat-action {
-  border-left: 2px solid #cbd5e1;
+  border-left: 0;
+  padding-left: 0.45rem;
 }
 
 .debug-chat-action-new {
@@ -2270,7 +2280,8 @@ code {
   height: 14px;
   flex-shrink: 0;
   margin-top: 0.1rem;
-  opacity: 0.7;
+  color: #2563eb;
+  opacity: 0.9;
 }
 
 .debug-chat-action-text {

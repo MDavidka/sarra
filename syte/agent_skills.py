@@ -20,6 +20,8 @@ You are editing a live website project in the Syte workspace.
 - Prefer editing existing files over creating new ones unless necessary.
 - After file changes, mention whether preview hot-reload should pick them up.
 - Do not run production builds (`npm run build`, `next build`) — use preview instead.
+- For site creation or redesign, deliver a complete styled home page that uses the
+  project's existing design system and verify it in preview at desktop and mobile sizes.
 """,
     "workspace-search.md": """# Workspace search
 
@@ -54,18 +56,16 @@ Use **`syte-service`** for all project lifecycle actions (preferred over raw sys
 
 ```bash
 syte-service status
-syte-service start              # start production service
-syte-service stop               # stop production service
-syte-service deploy             # git pull + build + deploy
 syte-service preview_start      # dev preview with HMR
 syte-service preview_stop
-syte-service update             # git pull + restart
 syte-service run "npm run lint" # run command in app/ workspace
 syte-service logs 200           # deployment logs
 syte-service preview_logs 200   # preview dev-server log
 ```
 
 For `run`, pass the full shell command as one quoted argument. Default cwd is `app/`.
+Production start, stop, update, deploy, and build actions are intentionally unavailable
+to the agent. Test only with the isolated preview server.
 """,
     "cli-tools.md": """# Syte CLI tools (required)
 
@@ -222,7 +222,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             "name": "CLI tools (required)",
             "rule": (
                 "Always use the CLI helpers `syte-service` and `syte-access` on PATH. "
-                "Use syte-service for deploy/start/stop/preview/run/logs. "
+                "Use syte-service for preview/run/logs. "
                 "Use syte-access for preview URL fetch and screenshots. "
                 "Do not use raw systemctl, docker, or undocumented curl shortcuts."
             ),
@@ -230,9 +230,9 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         {
             "name": "Service management",
             "rule": (
-                "To start/stop/deploy/preview/run commands: `syte-service <action>`. "
-                "Examples: syte-service preview_start, syte-service deploy, "
-                "syte-service run \"npm run dev\". "
+                "To control preview or run verification commands: `syte-service <action>`. "
+                "Examples: syte-service preview_start and syte-service run \"npm run lint\". "
+                "Never use production start, stop, deploy, update, or build actions for testing. "
                 "Check syte-service status before assuming preview or production is running."
             ),
         },
@@ -249,6 +249,14 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
             "rule": (
                 "When changing the site: read files first, then create/edit/delete as needed. "
                 "Every file change should be intentional and verifiable via preview."
+            ),
+        },
+        {
+            "name": "Home page quality",
+            "rule": (
+                "For site creation or redesign work, make the home page complete and styled. "
+                "Integrate existing typography, color, spacing, components, and responsive behavior; "
+                "verify desktop and mobile preview instead of leaving a bare scaffold."
             ),
         },
     ]

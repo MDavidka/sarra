@@ -109,3 +109,16 @@ async def test_start_preview_skips_when_already_running(
     assert ok is True
     assert "already running" in msg.lower()
     assert meta["preview_domain"] == "previewk-live.sycord.site"
+
+
+def test_preview_process_gets_expanded_resources(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte.preview_manager import preview_process_env
+
+    monkeypatch.setenv("NODE_OPTIONS", "--trace-warnings")
+    env = preview_process_env({"env_vars": "{}"}, 4123)
+
+    assert env["PORT"] == "4123"
+    assert "--max-old-space-size=4096" in env["NODE_OPTIONS"]
+    assert "--trace-warnings" in env["NODE_OPTIONS"]
+    assert env["UV_THREADPOOL_SIZE"] == "16"
+    assert env["SYTE_PREVIEW_RESOURCE_PROFILE"] == "expanded"

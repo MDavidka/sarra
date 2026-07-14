@@ -57,3 +57,35 @@ async def test_run_service_status(tmp_data_dir: Path, monkeypatch: pytest.Monkey
     result = await run_service_action("svc-proj-2", "status")
     assert result["ok"] is True
     assert result["action"] == "status"
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_control_production_service(tmp_data_dir: Path) -> None:
+    from syte.agent_service import run_service_action
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({"id": "safe-preview", "name": "Safe", "port": 3017, "start_command": ""})
+
+    result = await run_service_action("safe-preview", "deploy", source="agent")
+
+    assert result["ok"] is False
+    assert result["error"] == "production_action_blocked"
+    assert "preview_start" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_run_production_build(tmp_data_dir: Path) -> None:
+    from syte.agent_service import run_service_action
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({"id": "safe-build", "name": "Safe", "port": 3018, "start_command": ""})
+
+    result = await run_service_action(
+        "safe-build", "run", command="npm run build", source="agent"
+    )
+
+    assert result["ok"] is False
+    assert result["exit_code"] == 1
+    assert "Build commands are not allowed" in result["output"]
