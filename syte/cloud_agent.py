@@ -372,38 +372,65 @@ TOOLS: list[dict[str, Any]] = [
 
 
 async def _execute_tool(project_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Run a tool and always return a JSON-serializable result.
+
+    Workspace helpers may raise (e.g. ValueError("Path not found")). Those must
+    become tool results — never abort the provider turn — otherwise the stored
+    assistant tool_calls message is left without matching tool responses and
+    DeepSeek rejects the next /chat/completions call with HTTP 400.
+    """
     from syte.agent_service import run_service_action
     from syte.workspace_api import delete_file, execute_command, list_workspace_files, read_file, write_file
 
-    if name == "list_files":
-        return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
-    if name == "read_file":
-        ok, content, mime = await read_file(project_id, str(args["path"]))
-        return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
-    if name == "write_file":
-        ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
-        return {"ok": ok, "message": message}
-    if name == "delete_file":
-        ok, message = await delete_file(project_id, str(args["path"]))
-        return {"ok": ok, "message": message}
-    if name == "run_command":
-        code, output = await execute_command(
-            project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
-            timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
-        )
-        return {"ok": code == 0, "exit_code": code, "output": output[-16000:]}
-    if name == "service":
-        return await run_service_action(
-            project_id, str(args["action"]), command=args.get("command"),
-            cwd=str(args.get("cwd") or "app"), lines=int(args.get("lines") or 200),
-            timeout=int(args.get("timeout") or 300), source="agent",
-        )
-    return {"ok": False, "error": "unknown_tool", "message": name}
+    try:
+        if name == "list_files":
+            return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
+        if name == "read_file":
+            ok, content, mime = await read_file(project_id, str(args["path"]))
+            return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
+        if name == "write_file":
+            ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
+            return {"ok": ok, "message": message}
+        if name == "delete_file":
+            ok, message = await delete_file(project_id, str(args["path"]))
+            return {"ok": ok, "message": message}
+        if name == "run_command":
+            code, output = await execute_command(
+                project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
+                timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
+            )
+            return {"ok": code == 0, "exit_code": code, "output": output[-16000:]}
+        if name == "service":
+            return await run_service_action(
+                project_id, str(args["action"]), command=args.get("command"),
+                cwd=str(args.get("cwd") or "app"), lines=int(args.get("lines") or 200),
+                timeout=int(args.get("timeout") or 300), source="agent",
+            )
+        return {"ok": False, "error": "unknown_tool", "message": name}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "tool_failed",
+            "message": str(exc) or type(exc).__name__,
+        }
 
 
 async def _provider_completion(model: dict[str, str], messages: list[dict[str, Any]]) -> dict[str, Any]:
-    payload = {"model": model["model"], "messages": messages, "tools": TOOLS,
-               "tool_choice": "auto", "stream": False, "temperature": 0.1}
+    from syte.cloud_agent_store import sanitize_provider_messages
+
+    payload = {
+        "model": model["model"],
+        "messages": sanitize_provider_messages(list(messages)),
+        "tools": TOOLS,
+        "tool_choice": "auto",
+        "stream": False,
+        "temperature": 0.1,
+    }
+    # DeepSeek thinking mode requires reasoning_content round-trips after tool
+    # calls. Explicitly disable thinking for the non-reasoning syra-base model
+    # so multi-turn tool loops stay OpenAI-compatible without that field.
+    if "deepseek.com" in (model.get("api_base") or ""):
+        payload["thinking"] = {"type": "disabled"}
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
     error = "Provider request failed"
     for attempt in range(3):
@@ -416,16 +443,26 @@ async def _provider_completion(model: dict[str, str], messages: list[dict[str, A
             if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
                 await asyncio.sleep(1.5 * (2 ** attempt))
                 continue
-            response.raise_for_status()
+            if response.status_code >= 400:
+                detail = (response.text or "").strip()[:800]
+                raise RuntimeError(
+                    f"Client error '{response.status_code} {response.reason_phrase}' "
+                    f"for url '{response.request.url}'"
+                    + (f": {detail}" if detail else "")
+                )
             data = response.json()
             choices = data.get("choices") or []
             if not choices or not isinstance(choices[0].get("message"), dict):
                 raise RuntimeError("Provider returned no assistant message")
             return choices[0]["message"]
-        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+        except httpx.HTTPError as exc:
             error = str(exc)
             if attempt < 2:
                 await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+        except (ValueError, RuntimeError) as exc:
+            error = str(exc)
+            break
     raise RuntimeError(error)
 
 
@@ -486,10 +523,23 @@ async def _communicate_with_agent_impl(
         for step in range(MAX_AGENT_STEPS):
             assistant = await _provider_completion(model, messages)
             content = str(assistant.get("content") or "")
+            reasoning = assistant.get("reasoning_content")
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = tool_calls if isinstance(tool_calls, list) else []
-            await append_message(project_id, request_id, "assistant", content, tool_calls=stored_calls or None)
-            messages.append({"role": "assistant", "content": content, **({"tool_calls": stored_calls} if stored_calls else {})})
+            await append_message(
+                project_id,
+                request_id,
+                "assistant",
+                content,
+                tool_calls=stored_calls or None,
+                reasoning_content=str(reasoning) if reasoning is not None else None,
+            )
+            next_assistant: dict[str, Any] = {"role": "assistant", "content": content}
+            if reasoning is not None and str(reasoning):
+                next_assistant["reasoning_content"] = str(reasoning)
+            if stored_calls:
+                next_assistant["tool_calls"] = stored_calls
+            messages.append(next_assistant)
             if not stored_calls:
                 reply = content.strip() or "Completed."
                 await record_agent_event(project_id, "request_completed", role="assistant", title="Completed",
