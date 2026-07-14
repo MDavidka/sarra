@@ -127,3 +127,27 @@ async def test_tool_loop_persists_messages_and_completes(tmp_data_dir: Path, mon
     assert result["ok"] is True
     assert result["reply"] == "Finished the inspection."
     assert [message["role"] for message in history] == ["user", "assistant", "tool", "assistant"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_messages_drops_orphaned_leading_tool_message(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent_store import append_message, conversation_messages
+    from syte.database import init_db
+
+    project_id = "history-proj"
+    await init_db()
+    await append_message(project_id, "req", "user", "start")
+    for i in range(45):
+        await append_message(
+            project_id, "req", "assistant", "",
+            tool_calls=[{"id": f"call-{i}", "type": "function",
+                         "function": {"name": "noop", "arguments": "{}"}}],
+        )
+        await append_message(project_id, "req", "tool", "result", tool_call_id=f"call-{i}")
+
+    # A window boundary that would otherwise split a tool_calls/tool pair
+    # must not leave a leading "tool" message without its assistant call,
+    # since OpenAI-compatible providers (e.g. DeepSeek) reject that shape.
+    history = await conversation_messages(project_id, limit=79)
+
+    assert history[0]["role"] != "tool"

@@ -134,6 +134,13 @@ async def conversation_messages(project_id: str, *, limit: int = 80) -> list[dic
             except json.JSONDecodeError:
                 pass
         messages.append(message)
+    # The row limit can truncate the oldest end of a tool-call/tool-response
+    # pair, leaving a leading "tool" message whose matching assistant
+    # tool_calls entry fell outside the window. OpenAI-compatible providers
+    # (DeepSeek in particular) reject that shape with HTTP 400, so drop any
+    # orphaned leading tool messages before returning the window.
+    while messages and messages[0]["role"] == "tool":
+        messages.pop(0)
     return messages
 
 
