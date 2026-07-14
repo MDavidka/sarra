@@ -398,6 +398,7 @@ async def api_agent_activity(
     uuid: str = Query(...),
     since_id: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=2000),
+    session: str = Query("", description="last | session number — load only that session"),
     _token: dict = Depends(verify_api_token),
 ):
     from syte.agent_activity import list_agent_events
@@ -405,15 +406,21 @@ async def api_agent_activity(
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    events = await list_agent_events(uuid, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        uuid, since_id=since_id, limit=limit, session=session or None,
+    )
     return {
         "ok": True,
         "uuid": uuid,
         "events": events,
         "since_id": since_id,
+        "session": session or None,
         "stream_url": f"/api/projects/{uuid}/agent/activity/stream?live=1",
         "tagged_stream_url": (
             f"/api/projects/{uuid}/agent/activity/stream?live=1&format=tagged"
+        ),
+        "marked_stream_url": (
+            f"/api/projects/{uuid}/agent/activity/stream?live=1&format=marked"
         ),
     }
 

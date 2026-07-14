@@ -159,10 +159,16 @@ async def api_agent_activity(
     uuid: str = Query(..., description="Project UUID"),
     since_id: int = Query(0, description="Last event id for incremental fetch"),
     limit: int = Query(200, ge=1, le=2000),
+    session: str = Query(
+        "",
+        description="Optional: last | session number — return only that chat session",
+    ),
     _token: dict = Depends(verify_api_token),
 ):
     """Agent activity snapshot — use SSE stream for live token/tool/file events."""
-    payload = await service.agent_activity(uuid, since_id=since_id, limit=limit)
+    payload = await service.agent_activity(
+        uuid, since_id=since_id, limit=limit, session=session or None,
+    )
     if not payload:
         _err(404, "not_found", "Project not found")
     return {"ok": True, **payload}

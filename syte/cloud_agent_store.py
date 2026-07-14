@@ -14,6 +14,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_sessions (
     project_id TEXT PRIMARY KEY,
     model_profile TEXT NOT NULL,
+    session_counter INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
     request_id TEXT NOT NULL,
+    session_number INTEGER NOT NULL DEFAULT 0,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     tool_call_id TEXT,
@@ -30,6 +32,8 @@ CREATE TABLE IF NOT EXISTS agent_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_messages_project
 ON agent_messages(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_session
+ON agent_messages(project_id, session_number, id);
 CREATE TABLE IF NOT EXISTS cloud_agent_requests (
     request_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -65,9 +69,19 @@ async def ensure_cloud_agent_tables() -> None:
         await configure_sqlite(db, db_path=path)
         await db.executescript(SCHEMA)
         async with db.execute("PRAGMA table_info(agent_messages)") as cur:
-            cols = {row[1] for row in await cur.fetchall()}
-        if "reasoning_content" not in cols:
+            message_cols = {row[1] for row in await cur.fetchall()}
+        if "reasoning_content" not in message_cols:
             await db.execute("ALTER TABLE agent_messages ADD COLUMN reasoning_content TEXT")
+        if "session_number" not in message_cols:
+            await db.execute(
+                "ALTER TABLE agent_messages ADD COLUMN session_number INTEGER NOT NULL DEFAULT 0"
+            )
+        async with db.execute("PRAGMA table_info(agent_sessions)") as cur:
+            session_cols = {row[1] for row in await cur.fetchall()}
+        if "session_counter" not in session_cols:
+            await db.execute(
+                "ALTER TABLE agent_sessions ADD COLUMN session_counter INTEGER NOT NULL DEFAULT 0"
+            )
         # A VM restart may interrupt an active turn. Re-admit it to the queue.
         await db.execute(
             "UPDATE cloud_agent_requests SET status = 'pending', started_at = NULL "
@@ -82,12 +96,53 @@ async def ensure_session(project_id: str, model_profile: str) -> None:
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
-            "INSERT INTO agent_sessions(project_id, model_profile, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET "
+            "INSERT INTO agent_sessions"
+            "(project_id, model_profile, session_counter, created_at, updated_at) "
+            "VALUES (?, ?, 0, ?, ?) ON CONFLICT(project_id) DO UPDATE SET "
             "model_profile = excluded.model_profile, updated_at = excluded.updated_at",
             (project_id, model_profile, now, now),
         )
         await db.commit()
+
+
+async def begin_turn_session(project_id: str, model_profile: str | None = None) -> int:
+    """Open a new chat session for one user message + the agent turn that follows.
+
+    Each user-submitted request increments ``session_counter``. Receivers see
+    ``[sessionN]`` on the marked activity stream; the agent loads provider
+    history only from this latest session.
+    """
+    await ensure_cloud_agent_tables()
+    now = _now()
+    profile = (model_profile or "syra-base").strip() or "syra-base"
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO agent_sessions"
+            "(project_id, model_profile, session_counter, created_at, updated_at) "
+            "VALUES (?, ?, 1, ?, ?) ON CONFLICT(project_id) DO UPDATE SET "
+            "session_counter = agent_sessions.session_counter + 1, "
+            "model_profile = COALESCE(?, agent_sessions.model_profile), "
+            "updated_at = excluded.updated_at",
+            (project_id, profile, now, now, model_profile),
+        )
+        async with db.execute(
+            "SELECT session_counter FROM agent_sessions WHERE project_id = ?",
+            (project_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        await db.commit()
+    return int(row[0]) if row else 1
+
+
+async def current_session_number(project_id: str) -> int:
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT session_counter FROM agent_sessions WHERE project_id = ?",
+            (project_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
 
 
 async def append_message(
@@ -96,6 +151,7 @@ async def append_message(
     role: str,
     content: str,
     *,
+    session_number: int = 0,
     tool_call_id: str | None = None,
     tool_calls: list[dict[str, Any]] | None = None,
     reasoning_content: str | None = None,
@@ -104,12 +160,13 @@ async def append_message(
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
             "INSERT INTO agent_messages "
-            "(project_id, request_id, role, content, tool_call_id, tool_calls, "
-            "reasoning_content, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(project_id, request_id, session_number, role, content, tool_call_id, "
+            "tool_calls, reasoning_content, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 project_id,
                 request_id,
+                max(0, int(session_number or 0)),
                 role,
                 content,
                 tool_call_id,
@@ -170,17 +227,56 @@ def sanitize_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str,
     return out
 
 
-async def conversation_messages(project_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
+async def latest_message_session(project_id: str) -> int:
+    """Return the highest ``session_number`` stored for the project (0 if none)."""
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT role, content, tool_call_id, tool_calls, reasoning_content FROM "
-            "(SELECT id, role, content, tool_call_id, tool_calls, reasoning_content "
-            "FROM agent_messages WHERE project_id = ? ORDER BY id DESC LIMIT ?) "
-            "ORDER BY id ASC",
-            (project_id, max(1, limit)),
+            "SELECT MAX(session_number) FROM agent_messages WHERE project_id = ?",
+            (project_id,),
         ) as cur:
-            rows = await cur.fetchall()
+            row = await cur.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+async def conversation_messages(
+    project_id: str,
+    *,
+    limit: int = 80,
+    last_session_only: bool = True,
+    session_number: int | None = None,
+) -> list[dict[str, Any]]:
+    """Load provider chat history.
+
+    By default only the latest chat session is returned so each user turn does
+    not re-hydrate every prior tool/plan message. Pass
+    ``last_session_only=False`` for a sliding window across all sessions, or
+    set ``session_number`` to pin a specific session.
+    """
+    await ensure_cloud_agent_tables()
+    target_session = session_number
+    if target_session is None and last_session_only:
+        target_session = await latest_message_session(project_id)
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        if target_session is not None and target_session > 0:
+            async with db.execute(
+                "SELECT role, content, tool_call_id, tool_calls, reasoning_content FROM "
+                "(SELECT id, role, content, tool_call_id, tool_calls, reasoning_content "
+                "FROM agent_messages WHERE project_id = ? AND session_number = ? "
+                "ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+                (project_id, int(target_session), max(1, limit)),
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute(
+                "SELECT role, content, tool_call_id, tool_calls, reasoning_content FROM "
+                "(SELECT id, role, content, tool_call_id, tool_calls, reasoning_content "
+                "FROM agent_messages WHERE project_id = ? ORDER BY id DESC LIMIT ?) "
+                "ORDER BY id ASC",
+                (project_id, max(1, limit)),
+            ) as cur:
+                rows = await cur.fetchall()
     messages: list[dict[str, Any]] = []
     for role, content, tool_call_id, tool_calls_raw, reasoning_content in rows:
         message: dict[str, Any] = {"role": role, "content": content}

@@ -1546,11 +1546,11 @@
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">format<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc"><code>sse</code> (default) &middot; <code>tagged</code> &middot; <code>text</code> &middot; <code>jsonl</code>. See <em>Stream formats</em> below.</div>
+                  <div class="field-desc"><code>sse</code> (default) &middot; <code>tagged</code> &middot; <code>marked</code> &middot; <code>text</code> &middot; <code>jsonl</code>. See <em>Stream formats</em> below.</div>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">types<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Comma-separated <code>event_type</code> allow-list applied to the <code>tagged</code>/<code>text</code>/<code>jsonl</code> encodings, e.g. <code>types=thinking,command_run</code>.</div>
+                  <div class="field-desc">Comma-separated <code>event_type</code> allow-list applied to the <code>tagged</code>/<code>marked</code>/<code>text</code>/<code>jsonl</code> encodings, e.g. <code>types=thinking,command_run</code>.</div>
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">Last-Event-ID<span class="opt">?</span></span><span class="field-type">header</span></div>
@@ -1562,7 +1562,7 @@
                 </div>
               </div>
 
-              <div class="field-desc"><strong>Response headers:</strong> <code>Content-Type: text/event-stream</code> (for <code>sse</code>/<code>tagged</code>), <code>Cache-Control: no-cache</code>, <code>X-Accel-Buffering: no</code> (disables proxy buffering), and <code>X-Syte-Stream-Format</code> echoing the negotiated encoding (<code>tagged-v1</code> for tagged).</div>
+              <div class="field-desc"><strong>Response headers:</strong> <code>Content-Type: text/event-stream</code> (for <code>sse</code>/<code>tagged</code>/<code>marked</code>), <code>Cache-Control: no-cache</code>, <code>X-Accel-Buffering: no</code> (disables proxy buffering), and <code>X-Syte-Stream-Format</code> echoing the negotiated encoding (<code>tagged-v1</code> / <code>marked-v1</code>).</div>
 
               <div class="field-desc"><strong>Control frames.</strong> Besides <code>activity</code> events the stream emits: a one-time <code>retry: 5000</code> directive (EventSource reconnect backoff); a <code>session</code> marker when <code>live=1</code>; a <code>ping</code> heartbeat every <strong>10s</strong> carrying the current <code>since_id</code>; and a terminal <code>reconnect</code> frame after the <strong>1-hour</strong> per-connection deadline asking the client to reopen from the given <code>since_id</code>. <code>activity</code> frames also include an SSE <code>id:</code> line so <code>EventSource</code> resume works out of the box.</div>
               <pre>retry: 5000
@@ -1589,11 +1589,21 @@ data: {"type":"reconnect","since_id":16}</pre>
               <ul>
                 <li><code>format=sse</code> — default. JSON SSE, one event per <code>data:</code> frame (shown above). <code>text/event-stream</code>, works with <code>EventSource</code>.</li>
                 <li><code>format=tagged</code> — compact <code>[tag]&lt;json&gt;</code> records inside <code>data:</code> frames. Still <code>text/event-stream</code>.</li>
+                <li><code>format=marked</code> — <code>[boot]</code>, <code>[sessionN]</code>, and <code>S{session}{msg}(d|g)-&lt;kind&gt;text</code>. <code>(d)</code>=done, <code>(g)</code>=going. Agent history loads only the latest session; poll with <code>session=last</code>.</li>
                 <li><code>format=text</code> — plain text lines (<code>text/plain</code>). Read with <code>fetch</code>/<code>curl</code>, <strong>not</strong> <code>EventSource</code>.</li>
                 <li><code>format=jsonl</code> — one compact JSON object per line (<code>application/x-ndjson</code>) for CLI/pipeline consumers.</li>
               </ul>
 
               <div class="note"><strong>Tagged SSE (<code>?format=tagged</code>)</strong> puts one UTF-8 JSON object inside each <code>[tag]&lt;...&gt;</code> record. Tool events are self-describing: the encoder derives <code>phase</code> (<code>started</code>/<code>finished</code>) and normalises success into <code>is_error</code> even though the runtime reports it as <code>ok</code>.</div>
+              <div class="note"><strong>Marked SSE (<code>?format=marked</code>)</strong>
+<pre>data: [boot]
+data: [session1]
+data: S1001(d)-&lt;user&gt;Add dark mode
+data: S1002(g)-&lt;tool&gt;read_file {"path":"app/page.tsx"}
+data: S1003(d)-&lt;plan&gt;1. Inspect 2. Patch
+data: [session2]
+data: S2003(g)-&lt;plan&gt;Updating header</pre>
+              Each user message opens <code>[sessionN]</code>. Marks are <code>S{session}{msg}(d|g)-&lt;kind&gt;</code>. Receivers can reload only the latest session via <code>?session=last</code> on activity snapshots.</div>
               <pre>data: [session]&lt;{"text":"Live agent activity stream"}&gt;
 
 data: [start]&lt;{"id":20,"request_id":"req_abc","type":"request_started","role":"user","text":"Add dark mode"}&gt;

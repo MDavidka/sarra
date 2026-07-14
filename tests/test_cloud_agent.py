@@ -126,7 +126,64 @@ async def test_tool_loop_persists_messages_and_completes(tmp_data_dir: Path, mon
 
     assert result["ok"] is True
     assert result["reply"] == "Finished the inspection."
+    assert result["session"] == 1
     assert [message["role"] for message in history] == ["user", "assistant", "tool", "assistant"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_messages_loads_only_last_session(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent_store import append_message, begin_turn_session, conversation_messages
+    from syte.database import init_db
+
+    project_id = "session-hist-proj"
+    await init_db()
+    s1 = await begin_turn_session(project_id, "syra-base")
+    await append_message(project_id, "req-1", "user", "old turn", session_number=s1)
+    await append_message(project_id, "req-1", "assistant", "old reply", session_number=s1)
+    s2 = await begin_turn_session(project_id, "syra-base")
+    await append_message(project_id, "req-2", "user", "new turn", session_number=s2)
+    await append_message(project_id, "req-2", "assistant", "new reply", session_number=s2)
+
+    assert s1 == 1 and s2 == 2
+    history = await conversation_messages(project_id, last_session_only=True)
+    assert [m["content"] for m in history] == ["new turn", "new reply"]
+
+    all_history = await conversation_messages(project_id, last_session_only=False)
+    assert [m["content"] for m in all_history] == [
+        "old turn", "old reply", "new turn", "new reply",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_activity_events_filter_last_session(tmp_data_dir: Path) -> None:
+    from syte.agent_activity import list_agent_events, record_agent_event
+    from syte.database import init_db
+
+    await init_db()
+    project_id = "mark-session-proj"
+    await record_agent_event(
+        project_id, "request_started", detail="one",
+        payload={"session": 1, "message_index": 1, "mark_status": "d", "mark_kind": "user"},
+    )
+    await record_agent_event(
+        project_id, "tool_call_finished", detail="tool",
+        payload={"session": 1, "message_index": 2, "mark_status": "d", "mark_kind": "tool"},
+    )
+    await record_agent_event(
+        project_id, "request_started", detail="two",
+        payload={"session": 2, "message_index": 1, "mark_status": "d", "mark_kind": "user"},
+    )
+    await record_agent_event(
+        project_id, "thinking", detail="plan",
+        payload={"session": 2, "message_index": 2, "mark_status": "g", "mark_kind": "plan"},
+    )
+
+    last = await list_agent_events(project_id, session="last")
+    assert [e["payload"]["session"] for e in last] == [2, 2]
+    assert last[1]["payload"]["mark_status"] == "g"
+
+    only_first = await list_agent_events(project_id, session=1)
+    assert [e["payload"]["session"] for e in only_first] == [1, 1]
 
 
 @pytest.mark.asyncio
@@ -148,7 +205,7 @@ async def test_conversation_messages_drops_orphaned_leading_tool_message(tmp_dat
     # A window boundary that would otherwise split a tool_calls/tool pair
     # must not leave a leading "tool" message without its assistant call,
     # since OpenAI-compatible providers (e.g. DeepSeek) reject that shape.
-    history = await conversation_messages(project_id, limit=79)
+    history = await conversation_messages(project_id, limit=79, last_session_only=False)
 
     assert history[0]["role"] != "tool"
 
@@ -175,7 +232,7 @@ async def test_conversation_messages_fills_incomplete_tool_calls(tmp_data_dir: P
     # Simulate a crashed turn: assistant tool_calls persisted, tool result did not.
     await append_message(project_id, "req-2", "user", "try again")
 
-    history = await conversation_messages(project_id)
+    history = await conversation_messages(project_id, last_session_only=False)
     assert [m["role"] for m in history] == ["user", "assistant", "tool", "user"]
     assert history[2]["tool_call_id"] == "call-missing"
     assert "tool_result_missing" in history[2]["content"]

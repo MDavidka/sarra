@@ -8,7 +8,13 @@ from collections import defaultdict
 from typing import Any
 
 from syte.agent_activity import record_agent_event
-from syte.cloud_agent_store import enqueue_request, mark_request, pending_requests
+from syte.cloud_agent_store import (
+    begin_turn_session,
+    current_session_number,
+    enqueue_request,
+    mark_request,
+    pending_requests,
+)
 
 _project_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _running: dict[str, asyncio.Task[Any]] = {}
@@ -41,13 +47,26 @@ async def submit_agent_request(
         source=source,
         auto_start=auto_start,
     )
+    # Session opens when the user message is admitted so the marked stream can
+    # emit [sessionN] immediately, before the worker starts tools.
+    session_number = await begin_turn_session(project_id, model_profile)
     await record_agent_event(
         project_id,
         "request_started",
         role="user",
         title="Request",
         detail=message[:4000],
-        payload={"message": message, "model_profile": model_profile, "request_id": request_id},
+        payload={
+            "message": message,
+            "model_profile": model_profile,
+            "request_id": request_id,
+            "session": session_number,
+            "message_index": 1,
+            "mark": f"S{session_number}001(d)",
+            "mark_status": "d",
+            "mark_kind": "user",
+            "session_started": True,
+        },
         source=source,
     )
 
@@ -69,16 +88,22 @@ async def submit_agent_request(
             model_profile=model_profile,
             source=source,
             auto_start=auto_start,
+            session_number=session_number,
+            message_index_start=1,
         )
     )
     _running[project_id] = task
     return {
         "ok": True,
         "request_id": request_id,
+        "session": session_number,
         "status": "accepted",
         "project_id": project_id,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
         "tagged_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged",
+        "marked_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=marked"
+        ),
     }
 
 
@@ -90,6 +115,8 @@ async def _run_job(
     model_profile: str | None,
     source: str,
     auto_start: bool,
+    session_number: int | None = None,
+    message_index_start: int = 0,
 ) -> dict[str, Any]:
     from syte.cloud_agent import _communicate_with_agent_impl
 
@@ -104,6 +131,8 @@ async def _run_job(
                 auto_start=auto_start,
                 emit_request_started=False,
                 request_id=request_id,
+                session_number=session_number,
+                message_index_start=message_index_start,
             )
             await mark_request(
                 request_id,
@@ -118,7 +147,13 @@ async def _run_job(
                 "request_failed",
                 title="Cancelled",
                 detail="Superseded by a newer request",
-                payload={"request_id": request_id, "error": "cancelled"},
+                payload={
+                    "request_id": request_id,
+                    "error": "cancelled",
+                    "session": session_number,
+                    "mark_status": "d",
+                    "mark_kind": "error",
+                },
                 source=source,
             )
             raise
@@ -135,6 +170,9 @@ async def _run_job(
                     "error": "agent_job_failed",
                     "message": error,
                     "retry_message": message[:4000],
+                    "session": session_number,
+                    "mark_status": "d",
+                    "mark_kind": "error",
                 },
                 source=source,
             )
@@ -146,6 +184,11 @@ async def resume_pending_requests() -> int:
     resumed = 0
     for row in await pending_requests():
         project_id = str(row["project_id"])
+        session_number = await current_session_number(project_id)
+        if session_number <= 0:
+            session_number = await begin_turn_session(
+                project_id, row.get("model_profile"),
+            )
         task = asyncio.create_task(
             _run_job(
                 project_id,
@@ -154,6 +197,8 @@ async def resume_pending_requests() -> int:
                 model_profile=row.get("model_profile"),
                 source=str(row.get("source") or "recovery"),
                 auto_start=bool(row.get("auto_start", 1)),
+                session_number=session_number,
+                message_index_start=1,
             )
         )
         _running[project_id] = task

@@ -186,7 +186,8 @@ data: {"type":"ping","since_id":16}</pre>
             <li>Save <code>event.id</code> as <code>since_id</code> for reconnect (or rely on the <code>Last-Event-ID</code> header)</li>
             <li>Correlate frames by <code>payload.request_id</code>; turn ends on <code>request_completed</code>/<code>request_failed</code></li>
             <li>Alternative poll: <code>GET /sycord/api/agent_activity?uuid=…&amp;since_id=N</code></li>
-            <li>Optional: <code>?format=tagged</code>, <code>?format=text</code>, or <code>?format=jsonl</code> for compact/CLI consumers</li>
+            <li>Optional: <code>?format=tagged</code>, <code>?format=marked</code>, <code>?format=text</code>, or <code>?format=jsonl</code> for compact/CLI consumers</li>
+            <li>Marked lines: <code>[boot]</code>, <code>[sessionN]</code>, <code>S{N}{mmm}(d|g)-&lt;kind&gt;…</code> — poll <code>session=last</code> to skip older sessions</li>
           </ul>
         </div>
 

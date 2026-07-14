@@ -120,3 +120,78 @@ async def test_tagged_activity_stream_applies_type_filter(
 
     assert len(chunks) == 1
     assert chunks[0].startswith("data: [think]<")
+
+
+def test_format_marked_activity_event_line() -> None:
+    from syte.log_stream import format_marked_activity_event
+
+    line = format_marked_activity_event({
+        "event_type": "tool_call_started",
+        "detail": '{"path":"app/page.tsx"}',
+        "payload": {
+            "session": 1,
+            "message_index": 2,
+            "mark_status": "g",
+            "mark_kind": "tool",
+            "tool": "read_file",
+        },
+    })
+    assert line == 'S1002(g)-<tool>read_file {"path":"app/page.tsx"}'
+
+    plan = format_marked_activity_event({
+        "event_type": "thinking",
+        "title": "Plan",
+        "detail": "Inspect first",
+        "payload": {
+            "session": 2,
+            "message_index": 3,
+            "mark_status": "g",
+            "mark_kind": "plan",
+        },
+    })
+    assert plan == "S2003(g)-<plan>Inspect first"
+
+
+@pytest.mark.asyncio
+async def test_marked_activity_stream_emits_boot_session_and_marks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.log_stream import stream_agent_activity_marked
+
+    async def fake_stream(*args, **kwargs):
+        yield (
+            'data: {"type":"activity","event":{"id":1,"event_type":"request_started",'
+            '"detail":"Add dark mode","payload":{"session":1,"message_index":1,'
+            '"mark_status":"d","mark_kind":"user","session_started":true}}}\n\n'
+        )
+        yield (
+            'data: {"type":"activity","event":{"id":2,"event_type":"tool_call_started",'
+            '"detail":"{}","payload":{"session":1,"message_index":2,"mark_status":"g",'
+            '"mark_kind":"tool","tool":"read_file"}}}\n\n'
+        )
+        yield (
+            'data: {"type":"activity","event":{"id":3,"event_type":"request_started",'
+            '"detail":"Next","payload":{"session":2,"message_index":1,"mark_status":"d",'
+            '"mark_kind":"user","session_started":true}}}\n\n'
+        )
+        yield (
+            'data: {"type":"activity","event":{"id":4,"event_type":"thinking",'
+            '"detail":"Updating header","payload":{"session":2,"message_index":3,'
+            '"mark_status":"g","mark_kind":"plan"}}}\n\n'
+        )
+        yield 'data: {"type":"ping","since_id":4}\n\n'
+
+    monkeypatch.setattr("syte.log_stream.stream_agent_activity", fake_stream)
+    chunks = [
+        chunk.removeprefix("data: ").rstrip("\n")
+        async for chunk in stream_agent_activity_marked("proj-1", live_only=True)
+    ]
+
+    assert chunks[0] == "[boot]"
+    assert chunks[1] == "[session1]"
+    assert chunks[2] == "S1001(d)-<user>Add dark mode"
+    assert chunks[3] == "S1002(g)-<tool>read_file {}"
+    assert chunks[4] == "[session2]"
+    assert chunks[5] == "S2001(d)-<user>Next"
+    assert chunks[6] == "S2003(g)-<plan>Updating header"
+    assert chunks[7] == '[ping]<{"since_id":4}>'

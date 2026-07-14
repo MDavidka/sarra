@@ -126,9 +126,24 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "stream_formats": [
                 "default (SSE JSON)",
                 "format=tagged ([think]<json>, [tool:start]<json>, etc.)",
+                "format=marked ([boot], [sessionN], S{N}{mmm}(d|g)-<kind>...)",
                 "format=text",
                 "format=jsonl",
             ],
+            "marked_protocol": {
+                "description": (
+                    "Each user message opens [sessionN]. Lines are "
+                    "S{session}{msg}(d|g)-<kind>text. Agent history loads only "
+                    "the latest session; poll with session=last to match."
+                ),
+                "example": [
+                    "[boot]",
+                    "[session1]",
+                    "S1001(d)-<user>Add dark mode",
+                    "S1002(g)-<tool>read_file",
+                    "S1003(d)-<plan>Inspect then patch",
+                ],
+            },
             "async_response": {
                 "ok": True,
                 "request_id": "req_abc123def456",
