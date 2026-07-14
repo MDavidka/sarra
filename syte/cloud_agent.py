@@ -35,7 +35,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 4
+AGENT_INSTRUCTION_VERSION = 5
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -208,6 +208,23 @@ async def _build_syte_instruction(project_id: str) -> str:
         "Integrate it with the project's existing typography, colors, spacing, components, and responsive "
         "behavior; do not leave a bare scaffold or an unstyled utility page. Verify the home page in the "
         "development preview at desktop and mobile sizes.\n\n"
+        "Paths and file writes: write_file paths are relative to the workspace root, and the Next.js "
+        "project root is the workspace app/ folder. App Router routes therefore live under app/app/ "
+        "(for example app/app/login/page.tsx and app/app/dashboard/page.tsx); config files sit at "
+        "app/tsconfig.json, app/tailwind.config.js, and app/app/globals.css. write_file overwrites the "
+        "entire file and reports the verified on-disk size, so always send the complete body and never an "
+        "empty string unless you mean to blank a file. After a batch of writes, list_files or read_file to "
+        "confirm they persisted before you rely on them.\n\n"
+        "Next.js App Router correctness: never create _document.tsx or _app.tsx (those are Pages Router "
+        "and are ignored by the App Router — use app/app/layout.tsx for the root layout and providers). "
+        "For the @/ import alias, ensure tsconfig.json has \"baseUrl\": \".\" and \"paths\": {\"@/*\": [\"./*\"]}. "
+        "Keep app/app/globals.css with the @tailwind base/components/utilities directives plus any CSS "
+        "variables, and import it once in app/app/layout.tsx. In tailwind.config.js set content to scan the "
+        "real source globs, e.g. ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'], and define theme "
+        "colors that match the CSS variables. Verify with the dev preview and lint, not a production build.\n\n"
+        "Preview caching: the dev server caches failed compilations, so after fixing a build or module "
+        "error that previously 500'd, restart it with preview_stop then preview_start to force a clean "
+        "recompile before judging the result.\n\n"
         f"Syte workspace rules:\n{rule_lines}\n\n"
         f"Project workspace root: {workspace_path(project_id)}\n"
         f"Application source: {workspace_path(project_id) / 'app'}\n"
@@ -377,11 +394,21 @@ TOOLS: list[dict[str, Any]] = [
      "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "read_file", "description": "Read a UTF-8 workspace file.",
      "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "write_file", "description": "Create or replace a UTF-8 workspace file.",
+    {"type": "function", "function": {"name": "write_file", "description": (
+        "Create or fully replace a UTF-8 workspace file. This OVERWRITES the whole file, so always send "
+        "the complete final body — never a fragment and never an empty string unless you truly mean to "
+        "blank the file. Paths are relative to the workspace root; the Next.js project root is the app/ "
+        "folder, so App Router routes live under app/app/ (e.g. app/app/login/page.tsx), not app/login/page.tsx. "
+        "The result reports the verified on-disk size; treat ok=false or an empty-file warning as a real "
+        "failure and re-read the file to confirm before moving on."),
      "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "delete_file", "description": "Delete a workspace file.",
      "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "run_command", "description": "Run a shell command in the project workspace.",
+    {"type": "function", "function": {"name": "run_command", "description": (
+        "Run a shell command in the project workspace (default cwd app/). Use it for install, lint, tests, "
+        "grep/ls, and inspection. Do NOT use it to hand-write files with heredocs — use write_file, which "
+        "verifies the result. Production build commands (npm run build, next build) are intentionally "
+        "blocked; verify with the dev preview and lint instead."),
      "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "service", "description": "Inspect the project or control its isolated dev preview. Production lifecycle actions are unavailable to the agent.",
      "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["status", "preview_start", "preview_stop", "run", "logs", "preview_logs"]}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},

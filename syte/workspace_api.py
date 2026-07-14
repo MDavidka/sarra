@@ -169,25 +169,107 @@ async def read_file(project_id: str, file_path: str, max_bytes: int = 512_000) -
         return True, raw, "binary"
 
 
+def _nextjs_path_advice(project_id: str, file_path: str) -> str:
+    """Return a short advisory when a Next.js file looks misplaced.
+
+    Purely advisory — it never blocks the write — so the model keeps legitimate
+    edits while learning the correct App Router layout. The Next.js project root
+    is the workspace ``app/`` folder, so App Router routes must live under
+    ``app/app/`` (or ``app/pages/`` / ``app/src/app/``) to be picked up.
+    """
+    from pathlib import PurePosixPath
+
+    rel = file_path.replace("\\", "/").strip("/")
+    parts = PurePosixPath(rel).parts
+    name = PurePosixPath(rel).name
+    stem = name.rsplit(".", 1)[0]
+
+    # Pages Router special files are silently ignored by the App Router.
+    if stem in ("_document", "_app"):
+        return (
+            f"Note: '{name}' is a Pages Router file that the App Router ignores. "
+            "Use app/app/layout.tsx (root layout) instead of _document/_app."
+        )
+
+    router_files = {"page", "layout", "template", "loading", "error", "not-found", "route", "default"}
+    if stem not in router_files:
+        return ""
+
+    project_root = workspace_path(project_id) / "app"
+    if not (project_root / "package.json").exists():
+        return ""
+    # parts[0] is the workspace app/ dir; the next segment must open a router dir.
+    router_segment = parts[1] if len(parts) > 1 else ""
+    if router_segment in ("app", "pages", "src"):
+        return ""
+    suggested = "/".join(("app", "app", *parts[1:])) if len(parts) > 1 else "app/app/page.tsx"
+    return (
+        f"Note: '{name}' only becomes a route when it lives under the Next.js app/ (or pages/) "
+        f"directory. The project root is the workspace app/ folder, so this belongs at "
+        f"'{suggested}', not '{rel}'."
+    )
+
+
 async def write_file(project_id: str, file_path: str, content: str) -> tuple[bool, str]:
     project = await get_project(project_id)
     if not project:
         return False, "Project not found"
+    if content is None:
+        return False, "Refusing to write: content was null. Send the full file body as a string."
     target = _resolve_workspace_path(project_id, file_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_dir():
         return False, "Target path is a directory"
-    from syte.agent_activity import record_workspace_activity
 
     existed = target.exists()
-    target.write_text(content)
+    prior_size = target.stat().st_size if existed else 0
+
+    # Atomic write: stage in a sibling temp file, then os.replace() into place so
+    # an interrupted write can never leave a half-written or empty file behind.
+    tmp = target.with_name(f".{target.name}.syte-tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError as exc:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False, f"Write failed for {file_path}: {exc}"
+
+    # Verify by reading back from disk — never report success on a phantom write.
+    try:
+        on_disk = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        return False, f"Wrote {file_path} but could not verify it on disk: {exc}"
+    if on_disk != content:
+        return False, (
+            f"Verification failed for {file_path}: on-disk content ({len(on_disk)} chars) "
+            f"does not match the {len(content)} chars sent. The file was not saved reliably."
+        )
+
+    from syte.agent_activity import record_workspace_activity
+
     await record_workspace_activity(
         project_id,
         "create_file" if not existed else "write_file",
         path=file_path,
         source="api",
     )
-    return True, f"Wrote {len(content)} chars to {file_path}"
+
+    rel = str(target.relative_to(workspace_path(project_id)))
+    message = f"Wrote and verified {len(content)} chars to {rel}"
+    if not content.strip():
+        # Surface an accidental truncation instead of silently blanking a file.
+        message += (
+            " — WARNING: content is empty so the file is now blank"
+            + (f" (previously {prior_size} bytes)" if prior_size else "")
+            + ". If you did not intend to clear it, re-send the full file contents."
+        )
+    advice = _nextjs_path_advice(project_id, file_path)
+    if advice:
+        message += f"\n{advice}"
+    return True, message
 
 
 async def delete_file(project_id: str, file_path: str) -> tuple[bool, str]:
