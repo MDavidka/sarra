@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -196,8 +196,17 @@ async def internal_agent_activity_stream(
         "jsonl",
     ] = "sse",
     types: str = "",
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     _auth: dict = Depends(verify_internal_service_request),
 ):
+    """Server-to-server mirror of the public agent activity stream.
+
+    Identical replay/live semantics and wire formats as
+    ``/api/projects/{uuid}/agent/activity/stream`` but authenticated with the
+    ``X-Syra-Internal-Secret`` header for the sycord.com backend. Supports
+    ``since_id`` and the ``Last-Event-ID`` header for gapless reconnection; see
+    ``syte.log_stream`` for the full frame protocol.
+    """
     from syte.log_stream import (
         stream_agent_activity,
         stream_agent_activity_formatted,
@@ -205,6 +214,11 @@ async def internal_agent_activity_stream(
     )
 
     await _require_project(project_id)
+    if not since_id and last_event_id:
+        try:
+            since_id = max(0, int(last_event_id))
+        except (TypeError, ValueError):
+            since_id = 0
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
     if fmt in ("tagged", "tagged_sse", "tags"):

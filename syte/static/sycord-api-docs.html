@@ -169,8 +169,8 @@ file=&lt;binary&gt;</pre>
           <h3>Your backend does</h3>
           <ul>
             <li>Open SSE on <code>stream_url</code> (append to SYTE host) before or right after POST</li>
-            <li>Append <code>token_delta</code> events to the chat UI as they arrive</li>
-            <li>On <code>request_completed</code>, enable deploy / refresh preview</li>
+            <li>Render activity events (<code>thinking</code>, <code>tool_call_started</code>/<code>tool_call_finished</code>) in the chat UI as they arrive</li>
+            <li>On <code>request_completed</code>, enable deploy / refresh preview; on <code>request_failed</code>, show <code>payload.error</code></li>
           </ul>
         </div>
 
@@ -178,14 +178,15 @@ file=&lt;binary&gt;</pre>
           <div class="step-num">Step 6 — Stream agent activity (SSE)</div>
           <p><strong>GET</strong> <code>/api/projects/myapp-a1b2c3/agent/activity/stream?live=1&amp;since_id=0</code></p>
           <h3>You receive (SSE)</h3>
-          <pre>data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure"}}}
-data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}
+          <pre>data: {"type":"activity","event":{"id":11,"event_type":"tool_call_started","title":"write_file","payload":{"request_id":"req_abc","tool":"write_file"}}}
+data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle","payload":{"request_id":"req_abc","reply":"Added ThemeToggle"}}}
 data: {"type":"ping","since_id":16}</pre>
           <h3>Your backend does</h3>
           <ul>
-            <li>Save <code>event.id</code> as <code>since_id</code> for reconnect</li>
+            <li>Save <code>event.id</code> as <code>since_id</code> for reconnect (or rely on the <code>Last-Event-ID</code> header)</li>
+            <li>Correlate frames by <code>payload.request_id</code>; turn ends on <code>request_completed</code>/<code>request_failed</code></li>
             <li>Alternative poll: <code>GET /sycord/api/agent_activity?uuid=…&amp;since_id=N</code></li>
-            <li>Optional: <code>?format=text</code> or <code>?format=jsonl</code> for CLI consumers</li>
+            <li>Optional: <code>?format=tagged</code>, <code>?format=text</code>, or <code>?format=jsonl</code> for compact/CLI consumers</li>
           </ul>
         </div>
 

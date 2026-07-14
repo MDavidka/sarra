@@ -54,10 +54,47 @@ Background chat returns a request ID immediately. Clients observe progress at:
 
 `GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=N`
 
-Events are persisted before broadcast. Important event types are
-`request_started`, `processing`, `tool_call_started`, `tool_call_finished`,
-`request_completed`, and `request_failed`. The existing JSON SSE, tagged SSE,
-text, and JSONL encodings remain stable for Sycord clients.
+On connect the stream replays up to 500 persisted events with `id > since_id`,
+then forwards live events. Because events are persisted *before* they are
+broadcast, a client that records the highest `event.id` and reconnects with
+`since_id=<id>` (or the standard SSE `Last-Event-ID` header, which the endpoint
+translates to `since_id`) recovers every missed event with no gaps and no
+duplicates.
+
+Each accepted turn produces this ordered sequence, correlated by
+`payload.request_id`:
+
+```
+request_started (role=user)
+  -> processing
+  -> [thinking]                         # optional plan/reasoning
+  -> (tool_call_started -> tool_call_finished)*
+  -> request_completed | request_failed # exactly one, terminal
+```
+
+Payload fields: `tool_call_started` carries `tool` and `arguments`;
+`tool_call_finished` carries `tool` and `ok` (boolean success);
+`request_completed` carries `reply`; `request_failed` carries `error` and
+`retry_message`. Lifecycle events `agent_started`, `agent_stopped`, and
+`agent_restarted` are emitted on start/stop/restart. `token_delta` and
+`message_snapshot` are reserved event types for a future token-streaming
+provider and are not emitted by the current non-streaming runtime.
+
+Besides `activity` events the stream emits control frames: a one-time
+`retry: 5000` directive, a `session` marker (when `live=1`), a `ping` heartbeat
+every 10 seconds carrying the current `since_id`, and a terminal `reconnect`
+hint after the 3600-second per-connection deadline. Four encodings are stable
+for Sycord clients and selected with `?format=`:
+
+- `sse` (default) — JSON SSE; `activity` frames include an `id:` line.
+- `tagged` — compact `[tag]<json>` records over `text/event-stream`.
+- `text` — plain text lines (`text/plain`; use `fetch`/`curl`, not EventSource).
+- `jsonl` — one JSON object per line (`application/x-ndjson`).
+
+An optional `types=` query parameter filters the tagged/text/jsonl encodings by
+event type. Snapshot polling is available at
+`GET /api/projects/{uuid}/agent/activity?since_id=N` and its `/api/internal`
+and `/sycord/api` mirrors.
 
 ## Compatibility health route
 
