@@ -39,8 +39,6 @@ let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
 
-const DEBUG_CHAT_REQUEST_TIMEOUT_MS = 330_000;
-
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
   python: { label: 'python', icon: 'Py', cls: 'stack-python' },
@@ -181,8 +179,7 @@ function scrollDebugChatToBottom(force = false) {
   }
 }
 
-function setDebugChatActivity(label, detail = '', icon = 'loader', active = true) {
-  void icon;
+function setDebugChatActivity(label, detail = '', icon = '', active = true) {
   const bar = document.getElementById('debug-chat-activity');
   if (!bar) return;
   if (debugChatActivityDismissTimer) {
@@ -192,10 +189,18 @@ function setDebugChatActivity(label, detail = '', icon = 'loader', active = true
   bar.classList.remove('hidden');
   const labelEl = bar.querySelector('.debug-chat-activity-label');
   const detailEl = bar.querySelector('.debug-chat-activity-detail');
+  const iconEl = bar.querySelector('.debug-chat-activity-icon');
   const nextLabel = active && label ? label : debugChatIdleStatus;
+  const isWorking = /planning|working|writing|sending|connecting|reconnecting|stopping/i.test(nextLabel);
+  const nextIcon = icon || (isWorking ? 'loader' : 'sparkles');
   debugChatActivityLabel = nextLabel;
   if (labelEl) labelEl.textContent = nextLabel;
   if (detailEl) detailEl.textContent = active ? detail : '';
+  if (iconEl) {
+    iconEl.innerHTML = `<i data-lucide="${esc(active ? nextIcon : 'sparkles')}"></i>`;
+    iconEl.classList.toggle('debug-chat-activity-spin', active && nextIcon === 'loader');
+  }
+  refreshIcons();
 }
 
 function dismissDebugChatActivitySoon(delay = 2600) {
@@ -247,6 +252,46 @@ const DEBUG_CHAT_ACTION_LABELS = {
   processing: 'Working',
 };
 
+const DEBUG_CHAT_EVENT_ICONS = {
+  file_created: 'file-plus-2',
+  file_modified: 'file-pen-line',
+  file_deleted: 'file-x-2',
+  file_read: 'file-search-2',
+  file_search: 'search',
+  command_run: 'terminal',
+  command_output: 'square-terminal',
+  file_changed: 'file-check-2',
+  service_action: 'wrench',
+  request_started: 'message-square',
+  tool_call: 'wrench',
+  tool_call_started: 'loader',
+  tool_call_finished: 'circle-check',
+};
+
+const DEBUG_CHAT_TOOL_META = {
+  list_files: { label: 'List files', icon: 'folder-search' },
+  read_file: { label: 'Read file', icon: 'file-search-2' },
+  write_file: { label: 'Write file', icon: 'file-pen-line' },
+  delete_file: { label: 'Delete file', icon: 'file-x-2' },
+  run_command: { label: 'Run command', icon: 'terminal' },
+  service: { label: 'Preview service', icon: 'wrench' },
+  update_plan: { label: 'Update plan', icon: 'list-checks' },
+  delegate_task: { label: 'Delegate task', icon: 'git-fork' },
+};
+
+function debugChatActionMeta(event) {
+  const tool = event.payload?.tool || (
+    ['tool_call', 'tool_call_started', 'tool_call_finished'].includes(event.event_type)
+      ? event.title
+      : ''
+  );
+  const toolMeta = DEBUG_CHAT_TOOL_META[tool];
+  return {
+    label: toolMeta?.label || DEBUG_CHAT_ACTION_LABELS[event.event_type] || event.title || event.event_type || 'Action',
+    icon: toolMeta?.icon || DEBUG_CHAT_EVENT_ICONS[event.event_type] || 'wrench',
+  };
+}
+
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
   if (type === 'user_message') return 'user';
@@ -268,7 +313,7 @@ function debugChatRoleForEvent(event) {
 function debugChatActionTitle(event) {
   if (event.event_type === 'request_completed') return 'Assistant';
   if (event.event_type === 'request_started') return 'Request';
-  return DEBUG_CHAT_ACTION_LABELS[event.event_type] || event.title || event.event_type || 'Action';
+  return debugChatActionMeta(event).label;
 }
 
 function setDebugChatTyping(show) {
@@ -483,9 +528,11 @@ function appendDebugChatBubble(event) {
     `;
   } else if (role === 'action') {
     bubble.classList.add('debug-chat-action-new');
+    const actionMeta = debugChatActionMeta(event);
     const compactDetail = String(detail || '').replace(/\s+/g, ' ').slice(0, 240);
     bubble.innerHTML = `
       <div class="debug-chat-action-row">
+        <i data-lucide="${esc(actionMeta.icon)}" aria-hidden="true"></i>
         <div class="debug-chat-action-text">
           <strong>${esc(actionTitle)}</strong>
           ${compactDetail ? `<span>${esc(compactDetail)}</span>` : ''}
@@ -503,6 +550,7 @@ function appendDebugChatBubble(event) {
 
   if (role === 'error') addDebugChatErrorActions(bubble, event, errorPresentation);
   messagesEl.appendChild(bubble);
+  refreshIcons();
   scrollDebugChatToBottom();
 }
 
@@ -657,9 +705,11 @@ function handleDebugChatActivity(event) {
     'file_read', 'file_search', 'file_changed', 'tool_call_started',
     'tool_call_finished', 'command_output', 'service_action',
   ].includes(event.event_type)) {
+    const actionMeta = debugChatActionMeta(event);
     setDebugChatActivity(
       'Working…',
       `${debugChatActionTitle(event)}${event.detail ? ` · ${event.detail}` : ''}`.slice(0, 200),
+      event.event_type === 'tool_call_started' ? 'loader' : actionMeta.icon,
     );
   }
   const refreshTypes = [
@@ -885,29 +935,6 @@ function armDebugChatRequestWatchdog(projectId, requestId) {
 
     await syncDebugChatHistory(projectId);
     if (debugChatActiveRequestId !== requestId) return;
-
-    if ((Date.now() - debugChatRequestStartedAt) >= DEBUG_CHAT_REQUEST_TIMEOUT_MS) {
-      const retryMessage = debugChatLastUserMessage;
-      debugChatTerminalRequestIds.add(requestId);
-      finalizeDebugChatStream(requestId);
-      debugChatActiveRequestId = '';
-      clearDebugChatRequestWatchdog();
-      setDebugChatTyping(false);
-      setDebugChatBusy(false);
-      appendDebugChatBubble({
-        event_type: 'request_failed',
-        title: 'Response timed out',
-        detail: 'The agent did not report a final result before the timeout.',
-        payload: {
-          request_id: requestId,
-          error: 'request_timeout',
-          retry_message: retryMessage,
-          reconnect: true,
-        },
-      });
-      setDebugChatActivity('Response timed out', 'You can reconnect or retry safely', 'clock-alert');
-      return;
-    }
 
     const delay = debugChatConnectionState === 'connected' ? 8000 : 3000;
     debugChatRequestWatchdogTimer = setTimeout(checkRequest, delay);

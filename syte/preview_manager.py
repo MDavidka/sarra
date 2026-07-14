@@ -27,6 +27,9 @@ PREVIEW_PORT_START = 4000
 PREVIEW_PORT_END = 4999
 PREVIEW_START_GRACE_SEC = 45
 PREVIEW_MAX_RUNTIME_SEC = 3600
+PREVIEW_NODE_MEMORY_MB = 4096
+PREVIEW_THREADPOOL_SIZE = 16
+PREVIEW_NICE_LEVEL = -5
 PID_DIR = settings.data_dir / "pids"
 
 
@@ -37,6 +40,33 @@ def preview_pid_file(project_id: str) -> Path:
 
 def preview_log_path(project_id: str) -> Path:
     return workspace_path(project_id) / "preview.log"
+
+
+def preview_process_env(project: dict, preview_port: int) -> dict[str, str]:
+    """Give the isolated dev server enough CPU and memory for framework tooling."""
+    env = {**os.environ, **read_env_vars(project.get("env_vars", "{}"))}
+    node_options = env.get("NODE_OPTIONS", "").strip()
+    if "--max-old-space-size" not in node_options:
+        node_options = f"{node_options} --max-old-space-size={PREVIEW_NODE_MEMORY_MB}".strip()
+    env.update({
+        "PORT": str(preview_port),
+        "SYTE_PREVIEW_PORT": str(preview_port),
+        "HOSTNAME": "0.0.0.0",
+        "NODE_ENV": "development",
+        "NEXT_TELEMETRY_DISABLED": "1",
+        "NODE_OPTIONS": node_options,
+        "UV_THREADPOOL_SIZE": str(PREVIEW_THREADPOOL_SIZE),
+        "SYTE_PREVIEW_RESOURCE_PROFILE": "expanded",
+    })
+    return env
+
+
+def configure_preview_process() -> None:
+    os.setsid()
+    try:
+        os.nice(PREVIEW_NICE_LEVEL)
+    except OSError:
+        pass
 
 
 async def next_preview_port() -> int:
@@ -314,14 +344,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
             log_file.write(f"Dependencies: {dep_msg}\n")
         log_file.write(f"$ {command}\n")
 
-    env = {**os.environ, **read_env_vars(project.get("env_vars", "{}"))}
-    env.update({
-        "PORT": str(preview_port),
-        "SYTE_PREVIEW_PORT": str(preview_port),
-        "HOSTNAME": "0.0.0.0",
-        "NODE_ENV": "development",
-        "NEXT_TELEMETRY_DISABLED": "1",
-    })
+    env = preview_process_env(project, int(preview_port))
 
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
@@ -331,7 +354,7 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        preexec_fn=os.setsid,
+        preexec_fn=configure_preview_process,
     )
 
     ready = False

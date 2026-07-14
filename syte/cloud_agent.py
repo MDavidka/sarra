@@ -9,6 +9,7 @@ port allocation, or WebSocket transport is required.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 from collections import defaultdict
@@ -34,10 +35,10 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 3
-MAX_AGENT_STEPS = 24
-MAX_HISTORY_MESSAGES = 80
-PROVIDER_TIMEOUT_S = 180.0
+AGENT_INSTRUCTION_VERSION = 4
+MAX_HISTORY_MESSAGES = 160
+PROVIDER_TIMEOUT_S = 600.0
+MAX_SUBAGENT_STEPS = 12
 
 logger = logging.getLogger(__name__)
 _lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -191,11 +192,26 @@ async def _build_syte_instruction(project_id: str) -> str:
         "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
         "and run the smallest useful verification after edits. Never expose credentials. "
         "Do not discuss or configure unrelated model providers.\n\n"
-        "Use the service tool for deploy, preview, process status, and logs. Use workspace tools "
-        "for code and commands. Continue using tools until the request is actually complete, then "
-        "return a concise result with verification and any real blocker.\n\n"
+        "You can list, read, write, and delete files; run workspace commands; maintain a visible "
+        "plan; delegate a bounded research or implementation task to a subagent; and inspect, start, "
+        "or stop the isolated development preview. The project source is in app/. The preview is a "
+        "separate dev server with hot reload and its URL, rendered HTML, screenshot, and logs are "
+        "available through the preview tools. Use update_plan for multi-step work and delegate_task "
+        "when an independent focused task benefits from a second pass.\n\n"
+        "Use preview_start and the preview access tools to test changes. Never deploy, start, stop, "
+        "update, or build the production service for testing, and never run production build commands "
+        "such as npm run build or next build. Use workspace commands for linting and tests. Continue "
+        "using tools until the request is actually complete; there is no short turn deadline, and the "
+        "user can explicitly interrupt a long-running turn. Then return a concise result with "
+        "verification and any real blocker.\n\n"
+        "For website creation or redesign work, make the home page a complete, styled experience. "
+        "Integrate it with the project's existing typography, colors, spacing, components, and responsive "
+        "behavior; do not leave a bare scaffold or an unstyled utility page. Verify the home page in the "
+        "development preview at desktop and mobile sizes.\n\n"
         f"Syte workspace rules:\n{rule_lines}\n\n"
-        f"Project workspace: {workspace_path(project_id) / 'app'}"
+        f"Project workspace root: {workspace_path(project_id)}\n"
+        f"Application source: {workspace_path(project_id) / 'app'}\n"
+        f"Agent tools and durable data: {root}"
     )
 
 
@@ -336,7 +352,8 @@ async def get_agent_status(
         "agent_conversation_id": project.get("agent_conversation_id") or f"cloud-{project_id}",
         "agent_capabilities": [
             "durable_sessions", "restartable_requests", "background_jobs", "tagged_activity_stream",
-            "terminal", "file_editor", "service_control", "skills", "provider_retries",
+            "terminal", "file_editor", "preview_control", "skills", "provider_retries",
+            "planning", "subagents", "visible_thinking",
         ],
     }
 
@@ -366,12 +383,24 @@ TOOLS: list[dict[str, Any]] = [
      "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "run_command", "description": "Run a shell command in the project workspace.",
      "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "service", "description": "Control or inspect the Syte project service and preview.",
-     "parameters": {"type": "object", "properties": {"action": {"type": "string"}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "service", "description": "Inspect the project or control its isolated dev preview. Production lifecycle actions are unavailable to the agent.",
+     "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["status", "preview_start", "preview_stop", "run", "logs", "preview_logs"]}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "update_plan", "description": "Publish or revise a concise execution plan for multi-step work.",
+     "parameters": {"type": "object", "properties": {"steps": {"type": "array", "items": {"type": "string"}}, "note": {"type": "string"}}, "required": ["steps"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "delegate_task", "description": "Delegate one bounded independent research, review, or implementation task to a subagent sharing this workspace.",
+     "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"], "additionalProperties": False}}},
 ]
 
+SUBAGENT_TOOLS = [tool for tool in TOOLS if tool["function"]["name"] != "delegate_task"]
 
-async def _execute_tool(project_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+
+async def _execute_tool(
+    project_id: str,
+    name: str,
+    args: dict[str, Any],
+    *,
+    model: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Run a tool and always return a JSON-serializable result.
 
     Workspace helpers may raise (e.g. ValueError("Path not found")). Those must
@@ -406,6 +435,18 @@ async def _execute_tool(project_id: str, name: str, args: dict[str, Any]) -> dic
                 cwd=str(args.get("cwd") or "app"), lines=int(args.get("lines") or 200),
                 timeout=int(args.get("timeout") or 300), source="agent",
             )
+        if name == "update_plan":
+            steps = [str(step).strip() for step in (args.get("steps") or []) if str(step).strip()]
+            if not steps:
+                return {"ok": False, "error": "empty_plan", "message": "Provide at least one plan step."}
+            return {"ok": True, "steps": steps, "note": str(args.get("note") or "")}
+        if name == "delegate_task":
+            task = str(args.get("task") or "").strip()
+            if not task:
+                return {"ok": False, "error": "empty_task", "message": "Provide a delegated task."}
+            if not model:
+                return {"ok": False, "error": "model_unavailable", "message": "Subagent model is unavailable."}
+            return await _run_subagent(project_id, task, model)
         return {"ok": False, "error": "unknown_tool", "message": name}
     except Exception as exc:
         return {
@@ -415,13 +456,18 @@ async def _execute_tool(project_id: str, name: str, args: dict[str, Any]) -> dic
         }
 
 
-async def _provider_completion(model: dict[str, str], messages: list[dict[str, Any]]) -> dict[str, Any]:
+async def _provider_completion(
+    model: dict[str, str],
+    messages: list[dict[str, Any]],
+    *,
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     from syte.cloud_agent_store import sanitize_provider_messages
 
     payload = {
         "model": model["model"],
         "messages": sanitize_provider_messages(list(messages)),
-        "tools": TOOLS,
+        "tools": tools or TOOLS,
         "tool_choice": "auto",
         "stream": False,
         "temperature": 0.1,
@@ -464,6 +510,54 @@ async def _provider_completion(model: dict[str, str], messages: list[dict[str, A
             error = str(exc)
             break
     raise RuntimeError(error)
+
+
+async def _run_subagent(
+    project_id: str, task: str, model: dict[str, str]
+) -> dict[str, Any]:
+    """Run a bounded secondary tool loop and return its findings to the parent."""
+    instruction = (
+        "You are a focused Syte subagent sharing the parent's project workspace. Complete only the "
+        "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
+        "update, or build the production service. Prefer the isolated preview for visual checks. "
+        "Return concise findings, changes, and verification for the parent agent.\n\n"
+        f"Application source: {workspace_path(project_id) / 'app'}"
+    )
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": instruction},
+        {"role": "user", "content": task},
+    ]
+    for step in range(MAX_SUBAGENT_STEPS):
+        assistant = await _provider_completion(model, messages, tools=SUBAGENT_TOOLS)
+        content = str(assistant.get("content") or "")
+        calls = assistant.get("tool_calls") or []
+        stored_calls = calls if isinstance(calls, list) else []
+        next_assistant: dict[str, Any] = {"role": "assistant", "content": content}
+        if stored_calls:
+            next_assistant["tool_calls"] = stored_calls
+        messages.append(next_assistant)
+        if not stored_calls:
+            return {"ok": True, "task": task, "result": content.strip() or "Task completed."}
+        for call in stored_calls:
+            function = call.get("function") or {}
+            name = str(function.get("name") or "")
+            try:
+                args = json.loads(function.get("arguments") or "{}")
+                if not isinstance(args, dict):
+                    args = {}
+            except json.JSONDecodeError:
+                args = {}
+            result = await _execute_tool(project_id, name, args, model=model)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": str(call.get("id") or f"subagent-{step}"),
+                "content": json.dumps(result, ensure_ascii=False),
+            })
+    return {
+        "ok": False,
+        "error": "subagent_step_limit",
+        "message": f"Subagent did not finish within {MAX_SUBAGENT_STEPS} steps.",
+    }
 
 
 async def communicate_with_agent(
@@ -520,7 +614,7 @@ async def _communicate_with_agent_impl(
     if current:
         _active_turns[project_id] = current
     try:
-        for step in range(MAX_AGENT_STEPS):
+        for step in itertools.count():
             assistant = await _provider_completion(model, messages)
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
@@ -540,6 +634,12 @@ async def _communicate_with_agent_impl(
             if stored_calls:
                 next_assistant["tool_calls"] = stored_calls
             messages.append(next_assistant)
+            visible_thought = str(reasoning or content).strip()
+            if stored_calls and visible_thought:
+                await record_agent_event(
+                    project_id, "thinking", role="assistant", title="Plan",
+                    detail=visible_thought[:4000], payload={"request_id": request_id}, source=source,
+                )
             if not stored_calls:
                 reply = content.strip() or "Completed."
                 await record_agent_event(project_id, "request_completed", role="assistant", title="Completed",
@@ -559,16 +659,22 @@ async def _communicate_with_agent_impl(
                 except json.JSONDecodeError:
                     args = {}
                 call_id = str(call.get("id") or f"tool-{step}")
+                if name == "update_plan":
+                    plan_steps = [str(item).strip() for item in (args.get("steps") or []) if str(item).strip()]
+                    plan_detail = "\n".join(f"{index}. {item}" for index, item in enumerate(plan_steps, 1))
+                    await record_agent_event(
+                        project_id, "thinking", role="assistant", title="Plan",
+                        detail=plan_detail[:4000], payload={"request_id": request_id}, source=source,
+                    )
                 await record_agent_event(project_id, "tool_call_started", title=name, detail=json.dumps(args)[:1000],
                                          payload={"request_id": request_id, "tool": name, "arguments": args}, source=source)
-                result = await _execute_tool(project_id, name, args)
+                result = await _execute_tool(project_id, name, args, model=model)
                 encoded = json.dumps(result, ensure_ascii=False)
                 await append_message(project_id, request_id, "tool", encoded, tool_call_id=call_id)
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
                 await record_agent_event(project_id, "tool_call_finished", title=name,
                                          detail=encoded[:4000], payload={"request_id": request_id, "tool": name,
                                          "ok": bool(result.get("ok"))}, source=source)
-        raise RuntimeError(f"Agent exceeded the {MAX_AGENT_STEPS}-step reliability limit")
     except asyncio.CancelledError:
         raise
     except Exception as exc:

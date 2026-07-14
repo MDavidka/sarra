@@ -26,8 +26,15 @@ BLOCKED_PATTERNS = (
     "curl http | bash",
 )
 
-# Builds via execute_command are allowed for the agent; external API may still prefer issue_deploy.
-FORBIDDEN_BUILD_PATTERNS: tuple[str, ...] = ()
+# Production bundles belong to the deployment workflow, never agent preview testing.
+FORBIDDEN_BUILD_PATTERNS = (
+    r"\bnpm(?:\s+run)?\s+build\b",
+    r"\bpnpm(?:\s+run)?\s+build\b",
+    r"\byarn(?:\s+run)?\s+build\b",
+    r"\bbun(?:\s+run)?\s+build\b",
+    r"\bnext\s+build\b",
+    r"\bvite\s+build\b",
+)
 
 
 def _resolve_workspace_path(project_id: str, rel_path: str = "") -> Path:
@@ -251,7 +258,7 @@ async def execute_command(
     if blocked:
         return 1, f"Command blocked (host safety): {blocked}"
 
-    build_blocked = _is_forbidden_build(cmd) if source not in ("agent", "gui", "mcp") else None
+    build_blocked = _is_forbidden_build(cmd) if source not in ("gui", "mcp") else None
     if build_blocked:
         return 1, (
             "Build commands are not allowed via execute_command. "

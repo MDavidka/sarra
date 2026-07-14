@@ -275,3 +275,27 @@ async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPat
         [{"role": "user", "content": "hello"}],
     )
     assert captured["json"]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent import _build_syte_instruction
+
+    project = await _project("instruction-proj")
+    instruction = await _build_syte_instruction(project["id"])
+
+    assert "update_plan" in instruction
+    assert "delegate_task" in instruction
+    assert "development preview" in instruction
+    assert "Never deploy" in instruction
+    assert "home page" in instruction
+
+
+@pytest.mark.asyncio
+async def test_update_plan_tool_returns_structured_plan(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent import _execute_tool
+
+    await _project("plan-proj")
+    result = await _execute_tool("plan-proj", "update_plan", {"steps": ["Inspect", "Verify"]})
+
+    assert result == {"ok": True, "steps": ["Inspect", "Verify"], "note": ""}
