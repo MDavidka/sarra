@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     content TEXT NOT NULL,
     tool_call_id TEXT,
     tool_calls TEXT,
+    reasoning_content TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_messages_project
@@ -63,6 +64,10 @@ async def ensure_cloud_agent_tables() -> None:
 
         await configure_sqlite(db, db_path=path)
         await db.executescript(SCHEMA)
+        async with db.execute("PRAGMA table_info(agent_messages)") as cur:
+            cols = {row[1] for row in await cur.fetchall()}
+        if "reasoning_content" not in cols:
+            await db.execute("ALTER TABLE agent_messages ADD COLUMN reasoning_content TEXT")
         # A VM restart may interrupt an active turn. Re-admit it to the queue.
         await db.execute(
             "UPDATE cloud_agent_requests SET status = 'pending', started_at = NULL "
@@ -93,13 +98,15 @@ async def append_message(
     *,
     tool_call_id: str | None = None,
     tool_calls: list[dict[str, Any]] | None = None,
+    reasoning_content: str | None = None,
 ) -> None:
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
             "INSERT INTO agent_messages "
-            "(project_id, request_id, role, content, tool_call_id, tool_calls, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(project_id, request_id, role, content, tool_call_id, tool_calls, "
+            "reasoning_content, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 project_id,
                 request_id,
@@ -107,24 +114,75 @@ async def append_message(
                 content,
                 tool_call_id,
                 json.dumps(tool_calls, ensure_ascii=False) if tool_calls else None,
+                reasoning_content,
                 _now(),
             ),
         )
         await db.commit()
 
 
+def sanitize_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Repair tool_calls / tool-response pairs for OpenAI-compatible providers.
+
+    DeepSeek returns HTTP 400 when an assistant tool_calls message is not
+    followed by a tool result for every call id (common after an interrupted
+    turn or a tool that raised before its result was stored). Also drops
+    leading orphaned tool messages left by history-window truncation.
+    """
+    while messages and messages[0].get("role") == "tool":
+        messages = messages[1:]
+
+    out: list[dict[str, Any]] = []
+    i = 0
+    while i < len(messages):
+        msg = dict(messages[i])
+        out.append(msg)
+        tool_calls = msg.get("tool_calls") if msg.get("role") == "assistant" else None
+        if not tool_calls:
+            i += 1
+            continue
+        expected: list[str] = []
+        for call in tool_calls:
+            if isinstance(call, dict):
+                call_id = str(call.get("id") or "")
+                if call_id:
+                    expected.append(call_id)
+        found: set[str] = set()
+        i += 1
+        while i < len(messages) and messages[i].get("role") == "tool":
+            tool_msg = dict(messages[i])
+            call_id = str(tool_msg.get("tool_call_id") or "")
+            if call_id in expected and call_id not in found:
+                out.append(tool_msg)
+                found.add(call_id)
+            i += 1
+        for call_id in expected:
+            if call_id not in found:
+                out.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": json.dumps({
+                        "ok": False,
+                        "error": "tool_result_missing",
+                        "message": "Previous tool call was interrupted and has no result.",
+                    }, ensure_ascii=False),
+                })
+    return out
+
+
 async def conversation_messages(project_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT role, content, tool_call_id, tool_calls FROM "
-            "(SELECT id, role, content, tool_call_id, tool_calls FROM agent_messages "
-            "WHERE project_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+            "SELECT role, content, tool_call_id, tool_calls, reasoning_content FROM "
+            "(SELECT id, role, content, tool_call_id, tool_calls, reasoning_content "
+            "FROM agent_messages WHERE project_id = ? ORDER BY id DESC LIMIT ?) "
+            "ORDER BY id ASC",
             (project_id, max(1, limit)),
         ) as cur:
             rows = await cur.fetchall()
     messages: list[dict[str, Any]] = []
-    for role, content, tool_call_id, tool_calls_raw in rows:
+    for role, content, tool_call_id, tool_calls_raw, reasoning_content in rows:
         message: dict[str, Any] = {"role": role, "content": content}
         if tool_call_id:
             message["tool_call_id"] = tool_call_id
@@ -133,15 +191,13 @@ async def conversation_messages(project_id: str, *, limit: int = 80) -> list[dic
                 message["tool_calls"] = json.loads(tool_calls_raw)
             except json.JSONDecodeError:
                 pass
+        if reasoning_content:
+            message["reasoning_content"] = reasoning_content
         messages.append(message)
-    # The row limit can truncate the oldest end of a tool-call/tool-response
-    # pair, leaving a leading "tool" message whose matching assistant
-    # tool_calls entry fell outside the window. OpenAI-compatible providers
-    # (DeepSeek in particular) reject that shape with HTTP 400, so drop any
-    # orphaned leading tool messages before returning the window.
-    while messages and messages[0]["role"] == "tool":
-        messages.pop(0)
-    return messages
+    # Drop leading orphans and synthesize any missing tool results so the
+    # window is always a valid OpenAI-compatible tool_calls/tool pair sequence.
+    # DeepSeek rejects incomplete pairs with HTTP 400.
+    return sanitize_provider_messages(messages)
 
 
 async def enqueue_request(

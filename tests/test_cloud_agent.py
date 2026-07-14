@@ -151,3 +151,127 @@ async def test_conversation_messages_drops_orphaned_leading_tool_message(tmp_dat
     history = await conversation_messages(project_id, limit=79)
 
     assert history[0]["role"] != "tool"
+
+
+@pytest.mark.asyncio
+async def test_conversation_messages_fills_incomplete_tool_calls(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent_store import append_message, conversation_messages
+    from syte.database import init_db
+
+    project_id = "incomplete-proj"
+    await init_db()
+    await append_message(project_id, "req", "user", "list files")
+    await append_message(
+        project_id,
+        "req",
+        "assistant",
+        "",
+        tool_calls=[{
+            "id": "call-missing",
+            "type": "function",
+            "function": {"name": "list_files", "arguments": '{"path":"app/missing"}'},
+        }],
+    )
+    # Simulate a crashed turn: assistant tool_calls persisted, tool result did not.
+    await append_message(project_id, "req-2", "user", "try again")
+
+    history = await conversation_messages(project_id)
+    assert [m["role"] for m in history] == ["user", "assistant", "tool", "user"]
+    assert history[2]["tool_call_id"] == "call-missing"
+    assert "tool_result_missing" in history[2]["content"]
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_returns_error_instead_of_raising(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from syte.cloud_agent import _execute_tool
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({"id": "tool-err", "name": "Tool", "port": 3001, "start_command": ""})
+
+    async def boom(*_args, **_kwargs):
+        raise ValueError("Path not found")
+
+    monkeypatch.setattr("syte.workspace_api.list_workspace_files", boom)
+    result = await _execute_tool("tool-err", "list_files", {"path": "app/does-not-exist"})
+    assert result["ok"] is False
+    assert result["error"] == "tool_failed"
+    assert "Path not found" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_provider_does_not_retry_http_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte.cloud_agent import _provider_completion
+
+    calls = 0
+
+    class Response:
+        status_code = 400
+        reason_phrase = "Bad Request"
+        text = '{"error":{"message":"Missing tool result"}}'
+        request = type("Req", (), {"url": "https://api.deepseek.com/v1/chat/completions"})()
+
+        def json(self):
+            return {}
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def post(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return Response()
+
+    monkeypatch.setattr("syte.cloud_agent.httpx.AsyncClient", Client)
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float):
+        sleeps.append(delay)
+
+    monkeypatch.setattr("syte.cloud_agent.asyncio.sleep", fake_sleep)
+    with pytest.raises(RuntimeError, match="400 Bad Request") as exc_info:
+        await _provider_completion(
+            {"model": "deepseek-chat", "api_key": "key", "api_base": "https://api.deepseek.com/v1"},
+            [{"role": "user", "content": "hello"}],
+        )
+    assert calls == 1
+    assert sleeps == []
+    assert "Missing tool result" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte.cloud_agent import _provider_completion
+
+    captured: dict = {}
+
+    class Response:
+        status_code = 200
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def post(self, url, headers=None, json=None):
+            captured["json"] = json
+            return Response()
+
+    monkeypatch.setattr("syte.cloud_agent.httpx.AsyncClient", Client)
+    await _provider_completion(
+        {"model": "deepseek-chat", "api_key": "key", "api_base": "https://api.deepseek.com/v1"},
+        [{"role": "user", "content": "hello"}],
+    )
+    assert captured["json"]["thinking"] == {"type": "disabled"}
