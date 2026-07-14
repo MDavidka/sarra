@@ -1532,48 +1532,108 @@
               <div class="endpoint-name">Agent activity (SSE stream)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Server-Sent Events — replays up to 500 persisted events after <code>since_id</code>, then streams live activity. Save each <code>event.id</code> and reconnect with it to recover without gaps. Optional <code>api_key</code> query parameter for browser <code>EventSource</code>.</div>
-              <div class="field-desc"><strong>Query parameters:</strong> <code>live=1</code> emits a session marker and stays connected · <code>since_id=N</code> resumes after event N · <code>format=sse|tagged|text|jsonl</code> chooses the encoding · <code>types=thinking,command_run</code> filters formatted/tagged output.</div>
-              <pre>data: {"type":"session","text":"Live agent activity stream"}
+              <div class="field-desc">Streams a durable agent turn in real time. On connect it replays up to <strong>500</strong> persisted events with <code>id &gt; since_id</code>, then stays open and forwards live events. Events are persisted <em>before</em> they are broadcast, so recording the highest <code>event.id</code> and reconnecting with it recovers every missed event with no gaps and no duplicates.</div>
 
-data: {"type":"activity","event":{"id":16,"event_type":"processing","title":"Syte cloud working","detail":"Agent is processing…","payload":{"request_id":"req_abc","execution_status":"running"}}}
+              <div class="panel">
+                <div class="panel-title">Query &amp; header parameters</div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">live<span class="opt">?</span></span><span class="field-type">bool</span></div>
+                  <div class="field-desc"><code>live=1</code> emits an opening <code>session</code> marker and keeps the connection open. Without it the stream still replays history then goes live.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">since_id<span class="opt">?</span></span><span class="field-type">int</span></div>
+                  <div class="field-desc">Resume point. Only events with a strictly greater id are replayed. Default <code>0</code> (from the beginning).</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">format<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc"><code>sse</code> (default) &middot; <code>tagged</code> &middot; <code>text</code> &middot; <code>jsonl</code>. See <em>Stream formats</em> below.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">types<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc">Comma-separated <code>event_type</code> allow-list applied to the <code>tagged</code>/<code>text</code>/<code>jsonl</code> encodings, e.g. <code>types=thinking,command_run</code>.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">Last-Event-ID<span class="opt">?</span></span><span class="field-type">header</span></div>
+                  <div class="field-desc">Standard SSE resume header. When <code>since_id</code> is not passed explicitly, this header is used — browser <code>EventSource</code> clients send it automatically on reconnect, so no client code is needed to resume.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head"><span class="field-name">api_key<span class="opt">?</span></span><span class="field-type">query / x-api-key header</span></div>
+                  <div class="field-desc">Optional. Authenticates browser <code>EventSource</code> connections (which cannot set an <code>Authorization</code> header).</div>
+                </div>
+              </div>
 
-data: {"type":"ping","since_id":16}</pre>
-              <div class="field-desc"><strong>Lifecycle order:</strong> <code>request_started</code> → <code>processing</code> / <code>thinking</code> → zero or more tool and <code>token_delta</code> events → <code>message_snapshot</code> → exactly one <code>request_completed</code> or <code>request_failed</code>. Correlate every turn with <code>event.payload.request_id</code>.</div>
-              <div class="field-desc"><strong>Tool events:</strong> <code>command_run</code>, <code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>file_read</code>, <code>file_search</code>, <code>tool_call</code>, and <code>service_action</code> have <code>payload.phase="started"</code>. <code>command_output</code> and <code>tool_call_finished</code> have <code>payload.phase="finished"</code>, <code>tool_call_id</code>, and optional <code>is_error</code>.</div>
-              <div class="field-desc"><strong>Stream formats:</strong> default JSON SSE · <code>?format=tagged</code> parseable tagged SSE · <code>?format=text</code> plain text for <code>fetch</code>/curl (not EventSource) · <code>?format=jsonl</code> one JSON object per line.</div>
-              <pre>data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure","request_id":"req_abc"}}}
+              <div class="field-desc"><strong>Response headers:</strong> <code>Content-Type: text/event-stream</code> (for <code>sse</code>/<code>tagged</code>), <code>Cache-Control: no-cache</code>, <code>X-Accel-Buffering: no</code> (disables proxy buffering), and <code>X-Syte-Stream-Format</code> echoing the negotiated encoding (<code>tagged-v1</code> for tagged).</div>
 
-data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}</pre>
-              <div class="note"><strong>Tagged SSE (<code>?format=tagged</code>)</strong> uses one UTF-8 JSON object inside each <code>[tag]&lt;...&gt;</code> record. It remains <code>text/event-stream</code>, so it works with EventSource and streaming fetch clients.</div>
+              <div class="field-desc"><strong>Control frames.</strong> Besides <code>activity</code> events the stream emits: a one-time <code>retry: 5000</code> directive (EventSource reconnect backoff); a <code>session</code> marker when <code>live=1</code>; a <code>ping</code> heartbeat every <strong>10s</strong> carrying the current <code>since_id</code>; and a terminal <code>reconnect</code> frame after the <strong>1-hour</strong> per-connection deadline asking the client to reopen from the given <code>since_id</code>. <code>activity</code> frames also include an SSE <code>id:</code> line so <code>EventSource</code> resume works out of the box.</div>
+              <pre>retry: 5000
+
+data: {"type":"session","text":"Live agent activity stream"}
+
+id: 16
+data: {"type":"activity","event":{"id":16,"event_type":"processing","role":"system","title":"Processing","detail":"Cloud agent accepted the durable request","payload":{"request_id":"req_abc"}}}
+
+data: {"type":"ping","since_id":16}
+
+data: {"type":"reconnect","since_id":16}</pre>
+
+              <div class="field-desc"><strong>Turn lifecycle</strong> (correlate every frame by <code>event.payload.request_id</code>):</div>
+              <pre>request_started        role=user     the submitted message
+  → processing         accepted, durable request queued
+  → thinking           (optional) the agent's plan / reasoning
+  → tool_call_started  ┐ repeated 0+ times, one pair per tool call
+  → tool_call_finished ┘
+  → request_completed  |  request_failed   (exactly one, terminal)</pre>
+              <div class="note"><strong>Event payloads.</strong> <code>request_started</code>/<code>processing</code>/<code>thinking</code> carry <code>payload.request_id</code>. <code>tool_call_started</code> carries <code>payload.tool</code> and <code>payload.arguments</code>; <code>tool_call_finished</code> carries <code>payload.tool</code> and <code>payload.ok</code> (boolean). <code>request_completed</code> carries <code>payload.reply</code>; <code>request_failed</code> carries <code>payload.error</code> and <code>payload.retry_message</code>. File and command events (<code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>command_run</code>, …) are emitted for workspace edits made through the API. <code>token_delta</code> and <code>message_snapshot</code> are reserved for a future token-streaming provider and are not emitted by the current non-streaming runtime.</div>
+
+              <div class="field-desc"><strong>Stream formats:</strong></div>
+              <ul>
+                <li><code>format=sse</code> — default. JSON SSE, one event per <code>data:</code> frame (shown above). <code>text/event-stream</code>, works with <code>EventSource</code>.</li>
+                <li><code>format=tagged</code> — compact <code>[tag]&lt;json&gt;</code> records inside <code>data:</code> frames. Still <code>text/event-stream</code>.</li>
+                <li><code>format=text</code> — plain text lines (<code>text/plain</code>). Read with <code>fetch</code>/<code>curl</code>, <strong>not</strong> <code>EventSource</code>.</li>
+                <li><code>format=jsonl</code> — one compact JSON object per line (<code>application/x-ndjson</code>) for CLI/pipeline consumers.</li>
+              </ul>
+
+              <div class="note"><strong>Tagged SSE (<code>?format=tagged</code>)</strong> puts one UTF-8 JSON object inside each <code>[tag]&lt;...&gt;</code> record. Tool events are self-describing: the encoder derives <code>phase</code> (<code>started</code>/<code>finished</code>) and normalises success into <code>is_error</code> even though the runtime reports it as <code>ok</code>.</div>
               <pre>data: [session]&lt;{"text":"Live agent activity stream"}&gt;
 
-data: [start]&lt;{"id":20,"request_id":"req_abc","type":"request_started","text":"Add dark mode"}&gt;
+data: [start]&lt;{"id":20,"request_id":"req_abc","type":"request_started","role":"user","text":"Add dark mode"}&gt;
 
-data: [think]&lt;{"id":21,"request_id":"req_abc","type":"thinking","text":"Inspect the current theme first"}&gt;
+data: [processing]&lt;{"id":21,"request_id":"req_abc","type":"processing","text":"Cloud agent accepted the durable request"}&gt;
 
-data: [tool:start]&lt;{"id":22,"request_id":"req_abc","type":"file_read","text":"src/theme.ts","phase":"started","tool":"file_editor","tool_call_id":"call_1"}&gt;
+data: [think]&lt;{"id":22,"request_id":"req_abc","type":"thinking","text":"Inspect the current theme first"}&gt;
 
-data: [tool:result]&lt;{"id":23,"request_id":"req_abc","type":"tool_call_finished","text":"Read complete","phase":"finished","tool_call_id":"call_1","is_error":false}&gt;
+data: [tool:start]&lt;{"id":23,"request_id":"req_abc","type":"tool_call_started","title":"write_file","text":"{\"path\":\"src/theme.ts\"}","phase":"started","tool":"write_file"}&gt;
 
-data: [delta]&lt;{"id":24,"request_id":"req_abc","type":"token_delta","text":"Done"}&gt;
+data: [tool:result]&lt;{"id":24,"request_id":"req_abc","type":"tool_call_finished","title":"write_file","phase":"finished","tool":"write_file","is_error":false}&gt;
 
-data: [done]&lt;{"id":25,"request_id":"req_abc","type":"request_completed","text":"Added dark mode"}&gt;</pre>
-              <div class="field-desc"><strong>Tagged vocabulary:</strong> <code>[start]</code>, <code>[processing]</code>, <code>[think]</code>, <code>[tool:start]</code>, <code>[tool:result]</code>, <code>[delta]</code>, <code>[message]</code>, <code>[done]</code>, <code>[error]</code>, <code>[status]</code>, <code>[session]</code>, and <code>[ping]</code>.</div>
-              <pre>const es = new EventSource(
-  `/api/projects/${uuid}/agent/activity/stream?live=1&amp;format=tagged&amp;since_id=${lastId}`
-);
-es.onmessage = ({ data }) =&gt; {
-  const match = data.match(/^\[([^\]]+)\]&lt;(.*)&gt;$/);
-  if (!match) return;
-  const [, tag, json] = match;
-  const event = JSON.parse(json);
-  lastId = event.id || lastId;
-  if (tag === "think") showPlan(event.text);
-  if (tag === "tool:start") showTool(event.title, event.text);
-  if (tag === "delta") appendToken(event.text);
-  if (tag === "done" || tag === "error") es.close();
-};</pre>
+data: [done]&lt;{"id":25,"request_id":"req_abc","type":"request_completed","text":"Added dark mode"}&gt;
+
+data: [ping]&lt;{"since_id":25}&gt;</pre>
+              <div class="field-desc"><strong>Tagged vocabulary:</strong> <code>[start]</code>, <code>[processing]</code>, <code>[think]</code>, <code>[tool:start]</code>, <code>[tool:result]</code>, <code>[delta]</code>, <code>[message]</code>, <code>[done]</code>, <code>[error]</code>, <code>[status]</code>, <code>[session]</code>, <code>[ping]</code>, and <code>[reconnect]</code>.</div>
+              <pre>let lastId = 0;
+function connect() {
+  const es = new EventSource(
+    `/api/projects/${uuid}/agent/activity/stream?live=1&amp;format=tagged&amp;since_id=${lastId}`
+  );
+  es.onmessage = ({ data }) =&gt; {
+    const match = data.match(/^\[([^\]]+)\]&lt;(.*)&gt;$/);
+    if (!match) return;
+    const [, tag, json] = match;
+    const event = JSON.parse(json);
+    lastId = event.id || lastId;
+    if (tag === "think") showPlan(event.text);
+    if (tag === "tool:start") showTool(event.title, event.text);
+    if (tag === "tool:result") markTool(event.title, event.is_error === false);
+    if (tag === "done" || tag === "error") es.close();
+    if (tag === "reconnect") { es.close(); connect(); } // resume from lastId
+  };
+  // Browsers auto-reconnect on transient errors and resend Last-Event-ID.
+  es.onerror = () =&gt; { /* EventSource retries automatically */ };
+}
+connect();</pre>
+              <div class="field-desc"><strong>Non-browser (streaming fetch) example:</strong></div>
+              <pre>curl -N "$HOST/api/projects/$UUID/agent/activity/stream?live=1&amp;format=jsonl" \
+  -H "x-api-key: $API_KEY"</pre>
             </div>
           </div>
           <div class="endpoint" id="agent-test">

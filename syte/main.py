@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -772,7 +772,29 @@ async def api_agent_activity_stream(
         "jsonl",
     ] = "sse",
     types: str = "",
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
+    """Stream a durable agent turn as Server-Sent Events (or text/JSONL).
+
+    Replays persisted activity events after ``since_id`` and then streams live
+    events for the project. See ``syte.log_stream`` for the full frame protocol.
+
+    Query/header parameters:
+        live: When true, emit an opening ``session`` marker and keep the
+            connection open for live events.
+        since_id: Resume point — only events with a greater id are replayed.
+        format: Wire encoding. ``sse`` (default) and ``tagged`` are
+            ``text/event-stream`` and work with ``EventSource``; ``text`` and
+            ``jsonl`` are raw byte streams for ``fetch``/``curl`` clients.
+        types: Comma-separated ``event_type`` allow-list applied to the
+            ``tagged``/``text``/``jsonl`` encodings (e.g. ``thinking,command_run``).
+        Last-Event-ID: Standard SSE resume header. When ``since_id`` is not
+            supplied explicitly, this header value is used so browser
+            ``EventSource`` clients resume automatically after a reconnect.
+
+    Authentication is optional; supply ``api_key`` (query) or ``x-api-key``
+    (header) to authenticate browser ``EventSource`` connections.
+    """
     from syte.log_stream import (
         stream_agent_activity,
         stream_agent_activity_formatted,
@@ -785,6 +807,13 @@ async def api_agent_activity_stream(
     key = request.headers.get("x-api-key") or request.query_params.get("api_key")
     if key:
         await auth.verify_api_token_from_request(request)
+    # Fall back to the SSE Last-Event-ID header when since_id is not explicit,
+    # so EventSource clients resume without gaps after an automatic reconnect.
+    if not since_id and last_event_id:
+        try:
+            since_id = max(0, int(last_event_id))
+        except (TypeError, ValueError):
+            since_id = 0
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
     if fmt in ("tagged", "tagged_sse", "tags"):
