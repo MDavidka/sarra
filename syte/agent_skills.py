@@ -67,6 +67,47 @@ For `run`, pass the full shell command as one quoted argument. Default cwd is `a
 Production start, stop, update, deploy, and build actions are intentionally unavailable
 to the agent. Test only with the isolated preview server.
 """,
+    "nextjs-app-router.md": """# Next.js App Router correctness
+
+The Next.js project root is the workspace `app/` folder (where `package.json` lives and where
+`next dev` runs). App Router routes therefore live one level deeper, under `app/app/`.
+
+## File paths (write_file is relative to the workspace root)
+
+| What | Correct path |
+|------|--------------|
+| Root layout | `app/app/layout.tsx` |
+| Home page | `app/app/page.tsx` |
+| A route | `app/app/login/page.tsx`, `app/app/dashboard/page.tsx` |
+| Global CSS | `app/app/globals.css` (import once in `app/app/layout.tsx`) |
+| Components | `app/components/ui/button.tsx` |
+| tsconfig | `app/tsconfig.json` |
+| Tailwind config | `app/tailwind.config.js` |
+
+Writing `app/login/page.tsx` puts the file at the project root, **outside** the router dir —
+Next.js ignores it and the route silently never appears. Always nest routes under `app/app/`.
+
+## App Router rules (avoid common failures)
+
+- **No `_document.tsx` / `_app.tsx`** — those are Pages Router files and are ignored by the App
+  Router. Put `<html>`/`<body>`, providers, and metadata in `app/app/layout.tsx`.
+- **`@/` alias** needs `"baseUrl": "."` and `"paths": { "@/*": ["./*"] }` in `tsconfig.json`,
+  or every `@/components/...` import fails with `Module not found`.
+- **`globals.css`** must contain `@tailwind base; @tailwind components; @tailwind utilities;`
+  plus any CSS variables, and be imported once in the root layout.
+- **`tailwind.config.js`** `content` must list real globs, e.g.
+  `['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}']` (never `[]`), and its theme colors
+  should match the CSS variables.
+
+## Verifying
+
+- `write_file` overwrites the whole file and reports the verified on-disk size. Send the complete
+  body every time; an empty-file warning means you truncated it — re-send the full contents.
+- After edits, re-read key files or `list_files` to confirm they persisted.
+- Production builds (`npm run build`, `next build`) are blocked. Verify with the dev preview and
+  `npm run lint`. If the preview previously 500'd, `preview_stop` then `preview_start` to clear the
+  cached failed compilation before judging the result.
+""",
     "cli-tools.md": """# Syte CLI tools (required)
 
 Use the **`syte-service`** and **`syte-access`** helpers on PATH for all Syte operations:
@@ -257,6 +298,18 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
                 "For site creation or redesign work, make the home page complete and styled. "
                 "Integrate existing typography, color, spacing, components, and responsive behavior; "
                 "verify desktop and mobile preview instead of leaving a bare scaffold."
+            ),
+        },
+        {
+            "name": "Next.js App Router",
+            "rule": (
+                "The Next.js project root is the workspace app/ folder, so App Router routes live under "
+                "app/app/ (e.g. app/app/login/page.tsx), globals.css at app/app/globals.css, and config at "
+                "app/tsconfig.json and app/tailwind.config.js. Never create _document.tsx or _app.tsx (Pages "
+                "Router, ignored by App Router) — use app/app/layout.tsx. Ensure tsconfig has baseUrl \".\" and "
+                "paths {\"@/*\": [\"./*\"]}, globals.css has the @tailwind directives and is imported in the "
+                "layout, and tailwind content globs cover ./app and ./components. write_file overwrites whole "
+                "files and verifies size; re-read after writes and treat an empty-file warning as a failure."
             ),
         },
     ]
