@@ -1553,6 +1553,10 @@
                   <div class="field-desc">Comma-separated <code>event_type</code> allow-list applied to the <code>tagged</code>/<code>marked</code>/<code>text</code>/<code>jsonl</code> encodings, e.g. <code>types=thinking,command_run</code>.</div>
                 </div>
                 <div class="field">
+                  <div class="field-head"><span class="field-name">session<span class="opt">?</span></span><span class="field-type">string</span></div>
+                  <div class="field-desc"><code>session=last</code> (or <code>session=N</code>) scopes only the connect-time replay to the newest <code>[sessionN]</code> block, so a client that already stored earlier sessions does not re-fetch them. Live events — including a brand-new session — are never filtered and still stream through.</div>
+                </div>
+                <div class="field">
                   <div class="field-head"><span class="field-name">Last-Event-ID<span class="opt">?</span></span><span class="field-type">header</span></div>
                   <div class="field-desc">Standard SSE resume header. When <code>since_id</code> is not passed explicitly, this header is used — browser <code>EventSource</code> clients send it automatically on reconnect, so no client code is needed to resume.</div>
                 </div>

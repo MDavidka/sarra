@@ -209,6 +209,7 @@ async def internal_agent_activity_stream(
         "jsonl",
     ] = "sse",
     types: str = "",
+    session: str = "",
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     _auth: dict = Depends(verify_internal_service_request),
 ):
@@ -217,7 +218,8 @@ async def internal_agent_activity_stream(
     Identical replay/live semantics and wire formats as
     ``/api/projects/{uuid}/agent/activity/stream`` but authenticated with the
     ``X-Syra-Internal-Secret`` header for the sycord.com backend. Supports
-    ``since_id`` and the ``Last-Event-ID`` header for gapless reconnection; see
+    ``since_id`` and the ``Last-Event-ID`` header for gapless reconnection, and
+    ``session=last`` to replay only the newest ``[sessionN]`` block; see
     ``syte.log_stream`` for the full frame protocol.
     """
     from syte.log_stream import (
@@ -235,12 +237,14 @@ async def internal_agent_activity_stream(
             since_id = 0
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
+    session_scope: str | None = session.strip() or None
     if fmt in ("tagged", "tagged_sse", "tags"):
         generator = stream_agent_activity_tagged(
             project_id,
             live_only=live,
             since_id=since_id,
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "text/event-stream"
         stream_format = "tagged-v1"
@@ -250,6 +254,7 @@ async def internal_agent_activity_stream(
             live_only=live,
             since_id=since_id,
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "text/event-stream"
         stream_format = "marked-v1"
@@ -260,11 +265,14 @@ async def internal_agent_activity_stream(
             since_id=since_id,
             output_format="jsonl" if fmt == "jsonl" else "text",
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
         stream_format = fmt
     else:
-        generator = stream_agent_activity(project_id, live_only=live, since_id=since_id)
+        generator = stream_agent_activity(
+            project_id, live_only=live, since_id=since_id, session=session_scope
+        )
         media = "text/event-stream"
         stream_format = fmt
     return StreamingResponse(

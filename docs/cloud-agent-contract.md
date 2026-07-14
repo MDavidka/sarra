@@ -61,6 +61,13 @@ broadcast, a client that records the highest `event.id` and reconnects with
 translates to `since_id`) recovers every missed event with no gaps and no
 duplicates.
 
+Add `session=last` (or `session=N`) to scope only the connect-time replay to
+the newest `[sessionN]` block. A client that already stored earlier sessions
+then streams just the latest one and does not re-fetch what it saved. Live
+events are never filtered, so the current session's completion and any brand-new
+session started afterward still stream through. This works on every `?format=`
+and on both the public and `/api/internal` stream routes.
+
 Each accepted turn produces this ordered sequence, correlated by
 `payload.request_id`:
 
@@ -119,7 +126,8 @@ data: S2003(g)-<plan>Updating header
 - `<tool>` / `<plan>` / `<user>` / `<message>` / `<error>` / `<status>` — kind
 
 An optional `types=` query parameter filters the tagged/marked/text/jsonl encodings by
-event type. Snapshot polling is available at
+event type, and `session=last` (or `session=N`) scopes the replay to a single
+session as described above. Snapshot polling is available at
 `GET /api/projects/{uuid}/agent/activity?since_id=N` (optional `session=last`
 or `session=2`) and its `/api/internal` and `/sycord/api` mirrors.
 
