@@ -155,6 +155,84 @@ async def test_conversation_messages_loads_only_last_session(tmp_data_dir: Path)
 
 
 @pytest.mark.asyncio
+async def test_ensure_migrates_legacy_agent_messages_without_session_number(
+    tmp_data_dir: Path,
+) -> None:
+    """Existing DBs lack session_number; ensure must ALTER before INSERT/INDEX."""
+    import aiosqlite
+
+    from syte.cloud_agent_store import (
+        _SCHEMA_EPOCH,
+        _ensured_paths,
+        append_message,
+        begin_turn_session,
+        ensure_cloud_agent_tables,
+    )
+
+    db_path = settings.resolved_db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(db_path) as db:
+        await db.executescript(
+            """
+            CREATE TABLE agent_sessions (
+                project_id TEXT PRIMARY KEY,
+                model_profile TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tool_call_id TEXT,
+                tool_calls TEXT,
+                reasoning_content TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE cloud_agent_requests (
+                request_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                model_profile TEXT,
+                source TEXT NOT NULL,
+                auto_start INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT
+            );
+            """
+        )
+        await db.commit()
+
+    # Simulate a long-lived process that already "ensured" the old schema.
+    _ensured_paths[str(db_path)] = 1
+    assert _ensured_paths[str(db_path)] != _SCHEMA_EPOCH
+
+    await ensure_cloud_agent_tables()
+    session = await begin_turn_session("legacy-proj", "syra-base")
+    await append_message(
+        "legacy-proj", "req-legacy", "user", "hello", session_number=session,
+    )
+
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("PRAGMA table_info(agent_messages)") as cur:
+            cols = {row[1] for row in await cur.fetchall()}
+        async with db.execute(
+            "SELECT session_number, content FROM agent_messages WHERE project_id = ?",
+            ("legacy-proj",),
+        ) as cur:
+            row = await cur.fetchone()
+
+    assert "session_number" in cols
+    assert row == (session, "hello")
+
+
+@pytest.mark.asyncio
 async def test_activity_events_filter_last_session(tmp_data_dir: Path) -> None:
     from syte.agent_activity import list_agent_events, record_agent_event
     from syte.database import init_db

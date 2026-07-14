@@ -32,8 +32,6 @@ CREATE TABLE IF NOT EXISTS agent_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_messages_project
 ON agent_messages(project_id, id);
-CREATE INDEX IF NOT EXISTS idx_agent_messages_session
-ON agent_messages(project_id, session_number, id);
 CREATE TABLE IF NOT EXISTS cloud_agent_requests (
     request_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -52,7 +50,10 @@ CREATE INDEX IF NOT EXISTS idx_cloud_agent_requests_pending
 ON cloud_agent_requests(status, created_at);
 """
 
-_ensured_paths: set[str] = set()
+# Bump when additive column migrations change so long-lived processes re-run
+# ensure after an upgrade (the path cache alone would skip ALTER TABLE).
+_SCHEMA_EPOCH = 2
+_ensured_paths: dict[str, int] = {}
 
 
 def _now() -> str:
@@ -60,14 +61,23 @@ def _now() -> str:
 
 
 async def ensure_cloud_agent_tables() -> None:
+    """Create cloud-agent tables and apply additive column migrations.
+
+    Existing databases predate ``session_number`` / ``session_counter``. The
+    session index is created *after* those columns are added — creating it in
+    the initial ``CREATE TABLE`` script would fail with
+    ``no such column: session_number`` on upgrade.
+    """
     path = str(settings.resolved_db_path)
-    if path in _ensured_paths:
+    if _ensured_paths.get(path) == _SCHEMA_EPOCH:
         return
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         from syte.sqlite_utils import configure_sqlite
 
         await configure_sqlite(db, db_path=path)
+        # Base tables/indexes that do not depend on migrated columns.
         await db.executescript(SCHEMA)
+
         async with db.execute("PRAGMA table_info(agent_messages)") as cur:
             message_cols = {row[1] for row in await cur.fetchall()}
         if "reasoning_content" not in message_cols:
@@ -76,19 +86,27 @@ async def ensure_cloud_agent_tables() -> None:
             await db.execute(
                 "ALTER TABLE agent_messages ADD COLUMN session_number INTEGER NOT NULL DEFAULT 0"
             )
+
         async with db.execute("PRAGMA table_info(agent_sessions)") as cur:
             session_cols = {row[1] for row in await cur.fetchall()}
         if "session_counter" not in session_cols:
             await db.execute(
                 "ALTER TABLE agent_sessions ADD COLUMN session_counter INTEGER NOT NULL DEFAULT 0"
             )
+
+        # Indexes that require migrated columns — must run after ALTER TABLE.
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_messages_session "
+            "ON agent_messages(project_id, session_number, id)"
+        )
+
         # A VM restart may interrupt an active turn. Re-admit it to the queue.
         await db.execute(
             "UPDATE cloud_agent_requests SET status = 'pending', started_at = NULL "
             "WHERE status = 'running'"
         )
         await db.commit()
-    _ensured_paths.add(path)
+    _ensured_paths[path] = _SCHEMA_EPOCH
 
 
 async def ensure_session(project_id: str, model_profile: str) -> None:
