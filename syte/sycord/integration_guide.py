@@ -430,7 +430,7 @@ def _step_agent_stream(api: str, base: str) -> dict:
             "query": {
                 "live": "1",
                 "since_id": "0 — last event id for reconnect",
-                "format": "optional — tagged | text | jsonl (default SSE JSON)",
+                "format": "optional — tagged | marked | text | jsonl (default SSE JSON)",
                 "api_key": "optional query param for browser EventSource",
             },
         },
@@ -454,6 +454,23 @@ def _step_agent_stream(api: str, base: str) -> dict:
                 'data: [delta]<{"id":14,"request_id":"req_abc","type":"token_delta","text":"Done"}>',
                 'data: [done]<{"id":16,"request_id":"req_abc","type":"request_completed","text":"Added ThemeToggle"}>',
             ],
+            "marked_sse_endpoint": f"{stream}&format=marked",
+            "marked_sse_examples": [
+                "data: [boot]",
+                "data: [session1]",
+                "data: S1001(d)-<user>Add dark mode",
+                "data: S1002(g)-<tool>read_file {\"path\":\"src/theme.ts\"}",
+                "data: S1003(d)-<tool>read_file Read complete",
+                "data: S1004(d)-<plan>1. Inspect theme 2. Patch toggle",
+                "data: [session2]",
+                "data: S2003(g)-<plan>Updating header",
+            ],
+            "marked_rules": {
+                "session": "[sessionN] opens when the user sends a message and the agent starts work",
+                "mark": "S{session}{msg:03d}(d|g) — session + message index; (d)=done (g)=going",
+                "kinds": "<user> <tool> <plan> <message> <error> <status>",
+                "last_session": "Agent loads provider history only from the latest session; poll GET /sycord/api/agent_activity?session=last",
+            },
             "event_types": [
                 "request_started",
                 "token_delta",

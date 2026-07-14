@@ -161,21 +161,32 @@ async def internal_agent_activity(
     project_id: str,
     since_id: int = 0,
     limit: int = 200,
+    session: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
     from syte.agent_activity import list_agent_events
 
     await _require_project(project_id)
-    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        project_id,
+        since_id=since_id,
+        limit=limit,
+        session=session or None,
+    )
     return {
         "ok": True,
         "project_id": project_id,
         "events": events,
         "since_id": since_id,
+        "session": session or None,
         "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
         "tagged_stream_url": (
             f"/api/internal/projects/{project_id}/agent/activity/stream"
             "?live=1&format=tagged"
+        ),
+        "marked_stream_url": (
+            f"/api/internal/projects/{project_id}/agent/activity/stream"
+            "?live=1&format=marked"
         ),
     }
 
@@ -191,6 +202,8 @@ async def internal_agent_activity_stream(
         "tagged",
         "tagged_sse",
         "tags",
+        "marked",
+        "marks",
         "text",
         "plain",
         "jsonl",
@@ -210,6 +223,7 @@ async def internal_agent_activity_stream(
     from syte.log_stream import (
         stream_agent_activity,
         stream_agent_activity_formatted,
+        stream_agent_activity_marked,
         stream_agent_activity_tagged,
     )
 
@@ -229,6 +243,16 @@ async def internal_agent_activity_stream(
             type_filter=type_filter,
         )
         media = "text/event-stream"
+        stream_format = "tagged-v1"
+    elif fmt in ("marked", "marks"):
+        generator = stream_agent_activity_marked(
+            project_id,
+            live_only=live,
+            since_id=since_id,
+            type_filter=type_filter,
+        )
+        media = "text/event-stream"
+        stream_format = "marked-v1"
     elif fmt in ("text", "jsonl", "plain"):
         generator = stream_agent_activity_formatted(
             project_id,
@@ -238,20 +262,18 @@ async def internal_agent_activity_stream(
             type_filter=type_filter,
         )
         media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
+        stream_format = fmt
     else:
         generator = stream_agent_activity(project_id, live_only=live, since_id=since_id)
         media = "text/event-stream"
+        stream_format = fmt
     return StreamingResponse(
         generator,
         media_type=media,
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "X-Syte-Stream-Format": "tagged-v1" if fmt in {
-                "tagged",
-                "tagged_sse",
-                "tags",
-            } else fmt,
+            "X-Syte-Stream-Format": stream_format,
         },
     )
 

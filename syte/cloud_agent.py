@@ -23,6 +23,7 @@ from syte.agent_activity import record_agent_event
 from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
 from syte.cloud_agent_store import (
     append_message,
+    begin_turn_session,
     clear_conversation,
     conversation_messages,
     ensure_session,
@@ -368,7 +369,8 @@ async def get_agent_status(
         "agent_no_hub_required": True,
         "agent_conversation_id": project.get("agent_conversation_id") or f"cloud-{project_id}",
         "agent_capabilities": [
-            "durable_sessions", "restartable_requests", "background_jobs", "tagged_activity_stream",
+            "durable_sessions", "restartable_requests", "background_jobs",
+            "tagged_activity_stream", "marked_activity_stream", "last_session_history",
             "terminal", "file_editor", "preview_control", "skills", "provider_retries",
             "planning", "subagents", "visible_thinking",
         ],
@@ -608,6 +610,8 @@ async def _communicate_with_agent_impl(
     project_id: str, message: str, *, model_profile: str | None = None,
     source: str = "api", auto_start: bool = True, emit_request_started: bool = True,
     request_id: str | None = None,
+    session_number: int | None = None,
+    message_index_start: int = 0,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
@@ -626,16 +630,60 @@ async def _communicate_with_agent_impl(
     model = await selected_model_metadata(project)
     if not model["api_key"]:
         return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
+
+    # One user message opens one numbered chat session. Stream receivers see
+    # [sessionN]; provider history is scoped to that session only.
+    if session_number is None:
+        session_number = await begin_turn_session(project_id, model["profile"])
+        message_index = 0
+    else:
+        message_index = max(0, int(message_index_start or 0))
+
+    def _mark_payload(
+        *,
+        status: str,
+        kind: str,
+        base: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        nonlocal message_index
+        message_index += 1
+        payload = dict(base or {})
+        payload.update({
+            "request_id": request_id,
+            "session": session_number,
+            "message_index": message_index,
+            "mark": f"S{session_number}{message_index:03d}({status})",
+            "mark_status": status,
+            "mark_kind": kind,
+        })
+        return payload
+
     if emit_request_started:
-        await record_agent_event(project_id, "request_started", role="user", title="Request",
-                                 detail=message[:4000], payload={"request_id": request_id}, source=source)
-    await append_message(project_id, request_id, "user", message)
-    await record_agent_event(project_id, "processing", title="Processing",
-                             detail="Cloud agent accepted the durable request",
-                             payload={"request_id": request_id}, source=source)
+        await record_agent_event(
+            project_id,
+            "request_started",
+            role="user",
+            title="Request",
+            detail=message[:4000],
+            payload=_mark_payload(status="d", kind="user", base={"session_started": True}),
+            source=source,
+        )
+    await append_message(
+        project_id, request_id, "user", message, session_number=session_number,
+    )
+    await record_agent_event(
+        project_id,
+        "processing",
+        title="Processing",
+        detail="Cloud agent accepted the durable request",
+        payload=_mark_payload(status="g", kind="status"),
+        source=source,
+    )
     instruction = await _build_syte_instruction(project_id)
+    # Only the latest session — prior sessions stay in the activity stream for
+    # clients, but are not re-sent to the provider on every turn.
     messages = [{"role": "system", "content": instruction}, *(await conversation_messages(
-        project_id, limit=MAX_HISTORY_MESSAGES
+        project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True,
     ))]
     current = asyncio.current_task()
     if current:
@@ -652,6 +700,7 @@ async def _communicate_with_agent_impl(
                 request_id,
                 "assistant",
                 content,
+                session_number=session_number,
                 tool_calls=stored_calls or None,
                 reasoning_content=str(reasoning) if reasoning is not None else None,
             )
@@ -665,14 +714,25 @@ async def _communicate_with_agent_impl(
             if stored_calls and visible_thought:
                 await record_agent_event(
                     project_id, "thinking", role="assistant", title="Plan",
-                    detail=visible_thought[:4000], payload={"request_id": request_id}, source=source,
+                    detail=visible_thought[:4000],
+                    payload=_mark_payload(status="g", kind="plan"),
+                    source=source,
                 )
             if not stored_calls:
                 reply = content.strip() or "Completed."
-                await record_agent_event(project_id, "request_completed", role="assistant", title="Completed",
-                                         detail=reply[:4000], payload={"request_id": request_id, "reply": reply}, source=source)
+                await record_agent_event(
+                    project_id, "request_completed", role="assistant", title="Completed",
+                    detail=reply[:4000],
+                    payload=_mark_payload(
+                        status="d",
+                        kind="message",
+                        base={"reply": reply},
+                    ),
+                    source=source,
+                )
                 _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
                 return {"ok": True, "uuid": project_id, "request_id": request_id,
+                        "session": session_number,
                         "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
                         "model": model["model"], "provider": model["provider"], "message": reply,
                         "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
@@ -691,27 +751,60 @@ async def _communicate_with_agent_impl(
                     plan_detail = "\n".join(f"{index}. {item}" for index, item in enumerate(plan_steps, 1))
                     await record_agent_event(
                         project_id, "thinking", role="assistant", title="Plan",
-                        detail=plan_detail[:4000], payload={"request_id": request_id}, source=source,
+                        detail=plan_detail[:4000],
+                        payload=_mark_payload(status="d", kind="plan"),
+                        source=source,
                     )
-                await record_agent_event(project_id, "tool_call_started", title=name, detail=json.dumps(args)[:1000],
-                                         payload={"request_id": request_id, "tool": name, "arguments": args}, source=source)
+                await record_agent_event(
+                    project_id, "tool_call_started", title=name, detail=json.dumps(args)[:1000],
+                    payload=_mark_payload(
+                        status="g",
+                        kind="tool",
+                        base={"tool": name, "arguments": args, "phase": "started"},
+                    ),
+                    source=source,
+                )
                 result = await _execute_tool(project_id, name, args, model=model)
                 encoded = json.dumps(result, ensure_ascii=False)
-                await append_message(project_id, request_id, "tool", encoded, tool_call_id=call_id)
+                await append_message(
+                    project_id, request_id, "tool", encoded,
+                    session_number=session_number, tool_call_id=call_id,
+                )
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
-                await record_agent_event(project_id, "tool_call_finished", title=name,
-                                         detail=encoded[:4000], payload={"request_id": request_id, "tool": name,
-                                         "ok": bool(result.get("ok"))}, source=source)
+                await record_agent_event(
+                    project_id, "tool_call_finished", title=name,
+                    detail=encoded[:4000],
+                    payload=_mark_payload(
+                        status="d",
+                        kind="tool",
+                        base={
+                            "tool": name,
+                            "ok": bool(result.get("ok")),
+                            "phase": "finished",
+                        },
+                    ),
+                    source=source,
+                )
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         error = str(exc) or "Cloud agent request failed"
         _write_log(project_id, f"request {request_id} failed: {error}")
         await update_project(project_id, {"agent_last_error": error[:4000]})
-        await record_agent_event(project_id, "request_failed", title="Request failed", detail=error[:4000],
-                                 payload={"request_id": request_id, "error": "cloud_agent_failed",
-                                          "retry_message": message[:4000]}, source=source)
-        return {"ok": False, "request_id": request_id, "error": "cloud_agent_failed", "message": error}
+        await record_agent_event(
+            project_id, "request_failed", title="Request failed", detail=error[:4000],
+            payload=_mark_payload(
+                status="d",
+                kind="error",
+                base={
+                    "error": "cloud_agent_failed",
+                    "retry_message": message[:4000],
+                },
+            ),
+            source=source,
+        )
+        return {"ok": False, "request_id": request_id, "session": session_number,
+                "error": "cloud_agent_failed", "message": error}
     finally:
         if _active_turns.get(project_id) is current:
             _active_turns.pop(project_id, None)

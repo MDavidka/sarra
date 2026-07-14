@@ -163,9 +163,48 @@ async def list_agent_events(
     *,
     since_id: int = 0,
     limit: int = 200,
+    session: int | str | None = None,
 ) -> list[dict[str, Any]]:
+    """List persisted activity events.
+
+    ``session`` may be an integer session number, or ``"last"`` to return only
+    events from the latest chat session (receivers that already rendered older
+    ``[sessionN]`` blocks can skip reloading them).
+    """
     await ensure_agent_events_table()
     limit = max(1, min(limit, 2000))
+    session_filter: int | None = None
+    if session is not None and str(session).strip() != "":
+        raw = str(session).strip().lower()
+        if raw == "last":
+            async with aiosqlite.connect(settings.resolved_db_path) as db:
+                from syte.sqlite_utils import configure_sqlite
+
+                await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+                async with db.execute(
+                    "SELECT payload FROM agent_events WHERE project_id = ? "
+                    "ORDER BY id DESC LIMIT 200",
+                    (project_id,),
+                ) as cur:
+                    rows = await cur.fetchall()
+            for (payload_raw,) in rows:
+                try:
+                    payload = json.loads(payload_raw or "{}")
+                except json.JSONDecodeError:
+                    continue
+                value = payload.get("session")
+                if value is not None:
+                    try:
+                        session_filter = int(value)
+                        break
+                    except (TypeError, ValueError):
+                        continue
+        else:
+            try:
+                session_filter = int(raw)
+            except (TypeError, ValueError):
+                session_filter = None
+
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         from syte.sqlite_utils import configure_sqlite
 
@@ -173,10 +212,17 @@ async def list_agent_events(
         async with db.execute(
             "SELECT id, project_id, event_type, role, title, detail, payload, source, created_at "
             "FROM agent_events WHERE project_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
-            (project_id, since_id, limit),
+            (project_id, since_id, limit if session_filter is None else min(limit * 5, 2000)),
         ) as cur:
             rows = await cur.fetchall()
-    return [_event_row_to_dict(row) for row in rows]
+    events = [_event_row_to_dict(row) for row in rows]
+    if session_filter is not None:
+        events = [
+            event
+            for event in events
+            if int((event.get("payload") or {}).get("session") or 0) == session_filter
+        ][:limit]
+    return events
 
 
 def subscribe_agent_activity(project_id: str) -> asyncio.Queue[dict[str, Any]]:

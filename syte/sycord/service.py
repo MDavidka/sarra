@@ -196,26 +196,40 @@ async def agent_status(project_id: str, *, request_base: str = "") -> dict | Non
         **status,
         "activity_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
         "activity_tagged_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged",
+        "activity_marked_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=marked",
         "activity_text_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=text",
         "activity_jsonl_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=jsonl",
     }
 
 
-async def agent_activity(project_id: str, *, since_id: int = 0, limit: int = 200) -> dict | None:
+async def agent_activity(
+    project_id: str,
+    *,
+    since_id: int = 0,
+    limit: int = 200,
+    session: str | None = None,
+) -> dict | None:
     from syte.agent_activity import list_agent_events
 
     project = await get_project(project_id)
     if not project:
         return None
-    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        project_id, since_id=since_id, limit=limit, session=session,
+    )
     return {
         "uuid": project_id,
         "since_id": since_id,
+        "session": session,
         "events": events,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&since_id={since_id}",
         "tagged_stream_url": (
             f"/api/projects/{project_id}/agent/activity/stream"
             f"?live=1&since_id={since_id}&format=tagged"
+        ),
+        "marked_stream_url": (
+            f"/api/projects/{project_id}/agent/activity/stream"
+            f"?live=1&since_id={since_id}&format=marked"
         ),
     }
 

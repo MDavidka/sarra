@@ -83,18 +83,45 @@ provider and are not emitted by the current non-streaming runtime.
 Besides `activity` events the stream emits control frames: a one-time
 `retry: 5000` directive, a `session` marker (when `live=1`), a `ping` heartbeat
 every 10 seconds carrying the current `since_id`, and a terminal `reconnect`
-hint after the 3600-second per-connection deadline. Four encodings are stable
+hint after the 3600-second per-connection deadline. Five encodings are stable
 for Sycord clients and selected with `?format=`:
 
 - `sse` (default) — JSON SSE; `activity` frames include an `id:` line.
 - `tagged` — compact `[tag]<json>` records over `text/event-stream`.
+- `marked` — session marks: `[boot]`, `[sessionN]`, and
+  `S{session}{msg}(d|g)-<kind>text` so receivers can track going/done progress
+  and reload only the latest session (`?session=last` on snapshots).
 - `text` — plain text lines (`text/plain`; use `fetch`/`curl`, not EventSource).
 - `jsonl` — one JSON object per line (`application/x-ndjson`).
 
-An optional `types=` query parameter filters the tagged/text/jsonl encodings by
+### Marked stream (`?format=marked`)
+
+Each user message opens a numbered chat session. The agent loads provider
+history only from that latest session (prior sessions remain available on the
+activity stream for clients). Marked lines look like:
+
+```
+data: [boot]
+data: [session1]
+data: S1001(d)-<user>Add dark mode
+data: S1002(g)-<tool>read_file {"path":"app/page.tsx"}
+data: S1003(d)-<tool>read_file ...
+data: S1004(d)-<plan>1. Inspect theme 2. Patch toggle
+data: [session2]
+data: S2001(d)-<user>Also fix mobile nav
+data: S2003(g)-<plan>Updating header
+```
+
+- `[boot]` — once on connect
+- `[sessionN]` — when a user message starts agent work for session N
+- `S{N}{mmm}(d|g)` — session number + zero-padded message index; `(d)` done,
+  `(g)` going
+- `<tool>` / `<plan>` / `<user>` / `<message>` / `<error>` / `<status>` — kind
+
+An optional `types=` query parameter filters the tagged/marked/text/jsonl encodings by
 event type. Snapshot polling is available at
-`GET /api/projects/{uuid}/agent/activity?since_id=N` and its `/api/internal`
-and `/sycord/api` mirrors.
+`GET /api/projects/{uuid}/agent/activity?since_id=N` (optional `session=last`
+or `session=2`) and its `/api/internal` and `/sycord/api` mirrors.
 
 ## Compatibility health route
 

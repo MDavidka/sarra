@@ -141,8 +141,8 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
             {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
-            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id)"},
-            {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|text|jsonl, types= filter"},
+            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id; optional session=last|N)"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|marked|text|jsonl, types= filter"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
@@ -184,27 +184,53 @@ def build_ai_spec(base_url: str = "") -> dict:
             ],
             "activity_api": {
                 "description": "Real-time Cursor-like chat feed — structured events, not raw logs",
-                "snapshot": "GET /api/agent_activity?uuid=&since_id=0",
+                "snapshot": "GET /api/agent_activity?uuid=&since_id=0&session=last",
                 "stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
                 "stream_formats": {
                     "default": "?format=sse (default) — SSE data: {\"type\":\"activity\",\"event\":{...}}; activity frames carry an id: line",
                     "tagged": "?format=tagged — SSE [start]<json>, [processing]<json>, [think]<json>, [tool:start]<json>, [tool:result]<json>, [done]<json>",
+                    "marked": (
+                        "?format=marked — [boot], [sessionN], "
+                        "S{session}{msg}(d|g)-<kind>text; (d)=done (g)=going; "
+                        "kinds: user|tool|plan|message|error|status"
+                    ),
                     "text": "?format=text — plain [assistant]/[file]/[cmd]/[thinking] lines (fetch/curl, not EventSource)",
                     "jsonl": "?format=jsonl — one JSON object per line (application/x-ndjson) for CLI consumers",
                 },
+                "marked_protocol": {
+                    "boot": "[boot] — once on connect",
+                    "session": "[sessionN] — emitted when a user message starts agent work (session N)",
+                    "line": "S{session}{msg:03d}(d|g)-<kind>text — e.g. S1002(d)-<tool>read_file {...}",
+                    "status": "(d)=done, (g)=going/in progress",
+                    "kinds": ["user", "tool", "plan", "message", "error", "status"],
+                    "last_session_only": (
+                        "Agent provider history loads only the latest session. "
+                        "Clients can poll snapshots with session=last to skip older sessions."
+                    ),
+                    "example": [
+                        "[boot]",
+                        "[session1]",
+                        "S1001(d)-<user>Add dark mode",
+                        "S1002(g)-<tool>read_file {\"path\":\"app/page.tsx\"}",
+                        "S1003(d)-<tool>read_file ...",
+                        "S1004(d)-<plan>1. Inspect 2. Patch",
+                        "[session2]",
+                        "S2003(g)-<plan>Updating header",
+                    ],
+                },
                 "control_frames": {
-                    "session": "emitted once when live=1",
+                    "session": "emitted once when live=1 (sse/tagged); marked format uses [boot]/[sessionN] instead",
                     "ping": "heartbeat every 10s with current since_id",
                     "reconnect": "terminal hint after the 3600s per-connection deadline; reopen with the given since_id",
                     "retry": "one-time SSE retry: 5000 backoff directive for EventSource",
                 },
                 "reconnection": "Record the highest event.id; reconnect with since_id=<id> or the Last-Event-ID header for gapless, duplicate-free resume (events persist before broadcast)",
-                "turn_lifecycle": "request_started -> processing -> [thinking] -> (tool_call_started -> tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id",
+                "turn_lifecycle": "request_started -> processing -> [thinking] -> (tool_call_started -> tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id; each carries payload.session + payload.message_index + payload.mark_status",
                 "note_reserved_events": "token_delta and message_snapshot are valid event types reserved for a future token-streaming provider; the current non-streaming runtime does not emit them",
-                "sycord_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0",
+                "sycord_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0&session=last",
                 "sycord_status": "GET /sycord/api/agent_status?uuid=",
-                "internal_snapshot": "GET /api/internal/projects/{uuid}/agent/activity?since_id=0",
-                "internal_stream": "GET /api/internal/projects/{uuid}/agent/activity/stream?live=1",
+                "internal_snapshot": "GET /api/internal/projects/{uuid}/agent/activity?since_id=0&session=last",
+                "internal_stream": "GET /api/internal/projects/{uuid}/agent/activity/stream?live=1&format=marked",
                 "event_types": [
                     "user_message",
                     "assistant_message",
@@ -233,6 +259,10 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "[start]", "[processing]", "[think]", "[tool:start]",
                     "[tool:result]", "[delta]", "[message]", "[done]",
                     "[error]", "[status]", "[session]", "[ping]",
+                ],
+                "marked_vocabulary": [
+                    "[boot]", "[sessionN]", "S{N}{mmm}(d|g)-<kind>...",
+                    "[ping]", "[reconnect]",
                 ],
             },
             "workflow": [

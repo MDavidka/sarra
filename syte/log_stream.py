@@ -9,10 +9,11 @@ to HTTP clients. Two families of streams exist:
    an SSE ``data:`` frame. Used for build/deploy/preview/runtime console output.
 
 2. **The agent activity stream** (:func:`stream_agent_activity` and its
-   ``tagged`` / ``formatted`` re-encoders) — a structured, Cursor-like chat feed
-   backed by the persisted ``agent_events`` table plus an in-process pub/sub
-   fan-out (see :mod:`syte.agent_activity`). This is the canonical way for
-   sycord.com and API clients to observe a durable agent turn end to end.
+   ``tagged`` / ``marked`` / ``formatted`` re-encoders) — a structured,
+   Cursor-like chat feed backed by the persisted ``agent_events`` table plus an
+   in-process pub/sub fan-out (see :mod:`syte.agent_activity`). This is the
+   canonical way for sycord.com and API clients to observe a durable agent turn
+   end to end.
 
 SSE framing
 -----------
@@ -579,6 +580,160 @@ async def stream_agent_activity_tagged(
                 separators=(",", ":"),
             )
             yield f"data: [reconnect]<{body}>\n\n"
+
+
+def _marked_kind_for_event(event: dict) -> str:
+    """Map an activity event to a compact marked-stream kind token."""
+    payload = event.get("payload") or {}
+    kind = str(payload.get("mark_kind") or "").strip()
+    if kind:
+        return kind
+    event_type = str(event.get("event_type") or "")
+    title = str(event.get("title") or "").strip().lower()
+    if event_type == "thinking" or title == "plan":
+        return "plan"
+    if event_type in {"tool_call", "tool_call_started", "tool_call_finished", "command_run",
+                      "command_output", "file_created", "file_modified", "file_deleted",
+                      "file_read", "file_search", "service_action"}:
+        return "tool"
+    if event_type in {"request_started", "user_message"}:
+        return "user"
+    if event_type in {"request_completed", "assistant_message", "message_snapshot", "token_delta"}:
+        return "message"
+    if event_type == "request_failed":
+        return "error"
+    return "status"
+
+
+def _marked_status_for_event(event: dict) -> str:
+    """Return ``g`` (going) or ``d`` (done) for a marked stream line."""
+    payload = event.get("payload") or {}
+    status = str(payload.get("mark_status") or "").strip().lower()
+    if status in {"g", "d"}:
+        return status
+    event_type = str(event.get("event_type") or "")
+    phase = _derive_phase(event_type, payload)
+    if event_type in {"processing", "thinking", "token_delta"} or phase == "started":
+        return "g"
+    return "d"
+
+
+def _marked_text_for_event(event: dict) -> str:
+    payload = event.get("payload") or {}
+    event_type = str(event.get("event_type") or "")
+    if event_type == "token_delta":
+        return str(payload.get("delta") or event.get("detail") or "")
+    if event_type == "request_completed":
+        return str(payload.get("reply") or event.get("detail") or "")
+    if event_type == "request_failed":
+        return str(payload.get("message") or payload.get("error") or event.get("detail") or "")
+    tool = payload.get("tool")
+    detail = str(event.get("detail") or "")
+    if tool and detail:
+        return f"{tool} {detail}"
+    if tool:
+        return str(tool)
+    return detail
+
+
+def format_marked_activity_event(event: dict) -> str | None:
+    """Render one activity event as ``S{session}{msg}(d|g)-<kind>text``.
+
+    Example lines::
+
+        S1001(d)-<tool>read_file {"path":"app/page.tsx"}
+        S1002(g)-<plan>Inspect the layout first
+        S2003(d)-<message>Updated the hero copy
+
+    ``S`` + session number + zero-padded message index identify the line.
+    ``(d)`` means done, ``(g)`` means going / in progress. Receivers that already
+    rendered older ``[sessionN]`` blocks can load only ``session=last``.
+    """
+    payload = event.get("payload") or {}
+    try:
+        session = int(payload.get("session") or 0)
+        index = int(payload.get("message_index") or 0)
+    except (TypeError, ValueError):
+        return None
+    if session <= 0 or index <= 0:
+        return None
+    status = _marked_status_for_event(event)
+    kind = _marked_kind_for_event(event)
+    text = _marked_text_for_event(event).replace("\n", " ").strip()
+    return f"S{session}{index:03d}({status})-<{kind}>{text}"
+
+
+async def stream_agent_activity_marked(
+    project_id: str,
+    *,
+    live_only: bool = False,
+    since_id: int = 0,
+    type_filter: list[str] | None = None,
+):
+    """Re-encode the activity stream using session message marks.
+
+    Wire shape (still ``text/event-stream``)::
+
+        data: [boot]
+        data: [session1]
+        data: S1001(d)-<user>Add dark mode
+        data: S1002(g)-<tool>read_file ...
+        data: S1003(d)-<tool>read_file ...
+        data: S1004(d)-<plan>1. Inspect 2. Patch
+        data: [session2]
+        data: S2001(d)-<user>Also fix mobile nav
+        data: S2003(g)-<plan>Updating header
+        data: [ping]<{"since_id":42}>
+
+    ``[boot]`` is emitted once on connect. ``[sessionN]`` is emitted whenever the
+    session number increases (a new user message started agent work).
+    """
+    allowed = set(type_filter) if type_filter else None
+    current_session = 0
+    yield "data: [boot]\n\n"
+    async for chunk in stream_agent_activity(
+        project_id,
+        live_only=live_only,
+        since_id=since_id,
+    ):
+        raw = _sse_payload(chunk)
+        if raw is None:
+            continue
+        try:
+            message = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+
+        message_type = message.get("type")
+        if message_type == "activity" and message.get("event"):
+            event = message["event"]
+            event_type = event.get("event_type") or ""
+            if allowed and event_type not in allowed:
+                continue
+            payload = event.get("payload") or {}
+            try:
+                session = int(payload.get("session") or 0)
+            except (TypeError, ValueError):
+                session = 0
+            if session > current_session:
+                current_session = session
+                yield f"data: [session{session}]\n\n"
+            line = format_marked_activity_event(event)
+            if line:
+                yield f"data: {line}\n\n"
+        elif message_type == "ping":
+            body = json.dumps(
+                {"since_id": message.get("since_id") or 0},
+                separators=(",", ":"),
+            )
+            yield f"data: [ping]<{body}>\n\n"
+        elif message_type == "reconnect":
+            body = json.dumps(
+                {"since_id": message.get("since_id") or 0},
+                separators=(",", ":"),
+            )
+            yield f"data: [reconnect]<{body}>\n\n"
+        # The legacy ``session`` live marker is replaced by ``[boot]`` above.
 
 
 async def stream_agent_activity_formatted(
