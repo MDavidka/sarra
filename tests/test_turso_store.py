@@ -129,6 +129,28 @@ async def test_record_message_and_list_messages(turso_local) -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local) -> None:
+    """A retried record_message() call for a message already mirrored must
+    return the existing row (not a spurious failure or a duplicate row) —
+    this is what makes future sync-retry/reconciliation logic safe."""
+    session_id = await turso_local.open_session("proj-retry", session_number=1)
+
+    first = await turso_local.record_message(
+        session_id, "proj-retry", "user", "hello", session_number=1, local_message_id=42,
+    )
+    assert first is not None
+
+    second = await turso_local.record_message(
+        session_id, "proj-retry", "user", "hello", session_number=1, local_message_id=42,
+    )
+    assert second is not None
+    assert second["local_message_id"] == 42
+
+    messages = await turso_local.list_messages(session_id)
+    assert len(messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_record_message_not_configured_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import turso_store
 

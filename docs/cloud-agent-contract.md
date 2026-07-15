@@ -215,22 +215,29 @@ configured — no manual migration step is required.
   agent's request pipeline. Local persistence and the chat turn itself are
   completely unaffected.
 
-### Real-time save on every message, including API-started sessions
+### Real-time save on every message
 
-For a session **started directly via the API** — `POST /api/agent_change`,
-the internal `/agent/change` route, or `POST /sycord/api/agent_change`, all
-of which go through `syte.agent_jobs.submit_agent_request` — the Turso
-session is opened and its `request_started` event is recorded **before the
-background worker even begins**, not after the turn finishes. From that
-point on, `syte.cloud_agent._persist_message()` runs after every single
-local `append_message()` call — for the admitted user message, for each
-assistant turn (including ones that only contain tool calls), and for every
-tool result — and immediately mirrors that one message into the shared
+`syte.cloud_agent._persist_message()` runs after every single local
+`append_message()` call — for the admitted user message, for each assistant
+turn (including ones that only contain tool calls), and for every tool
+result — and immediately mirrors that one message into the shared
 `agent_message` Turso table via `record_message()`. There is no batching and
 no "sync at the end": each message is durably saved (or attempted) the
-moment it is produced, whether the turn was started synchronously
-(`agent_communicate`) or as a background job (`agent_change` /
-`submit_agent_request`).
+moment it is produced. This is identical whether the turn was started
+synchronously (`agent_communicate`) or as a background job (`agent_change` /
+`submit_agent_request`) — both paths call the same `_persist_message()` for
+every message.
+
+The one difference for a session **started directly via the API**
+(`POST /api/agent_change`, the internal `/agent/change` route, or
+`POST /sycord/api/agent_change`, all of which go through
+`syte.agent_jobs.submit_agent_request`) is *when the Turso session itself is
+opened*: it is created and its `request_started` event is recorded
+synchronously during admission, **before** the background worker begins
+processing the turn — so a durable, pollable session (and its first
+activity event) exists immediately even though the actual chat messages are
+still written message-by-message as the worker runs, exactly as they are for
+the synchronous `agent_communicate` path.
 
 ### Retry & recovery
 
@@ -240,10 +247,32 @@ If that single write fails (Turso down, network blip, etc.), the local
 message is still saved and the turn is **not** blocked or failed — but the
 row is left `turso_synced = 0` and is not automatically retried later. The
 next message in the same turn is still attempted independently, so a single
-transient failure does not cascade. Operators who need a fully caught-up
-mirror after an outage should re-run the affected turn, or add a background
-reconciliation job (not built in) that finds `turso_synced = 0` rows and
-replays `record_message()` for them.
+transient failure does not cascade. `record_message()` is safe to retry
+(the Turso `agent_message` table has a unique `(project_id,
+local_message_id)` index, so re-sending an already-mirrored message returns
+the existing row instead of creating a duplicate or a false failure), but
+Syte does not currently run that retry automatically. Operators who need a
+fully caught-up mirror after an outage should re-run the affected turn, or
+add a background reconciliation job (not built in) that finds
+`turso_synced = 0` rows and replays `record_message()` for them.
+
+### Known limitation: sync status is keyed by session number, not session UUID
+
+`turso_message_sync_status()` (and therefore the brain indicator) aggregates
+local `agent_messages` rows by `(project_id, session_number)`, not by the
+live `turso_session_id`. In the normal case these always refer to the same
+Turso session. The one edge case where they can diverge: if the service
+restarts mid-turn, `resume_pending_requests()` may reuse the project's
+existing `session_number` while opening a **new** Turso session UUID for the
+resumed turn. In that narrow window the sync aggregate would count rows
+against a `session_number` that spans two different `turso_session_id`
+values. This does not lose or corrupt any data — every row still records
+its own correct `session_id` — but the aggregate `total_messages` /
+`synced_messages` counts for that session number could include messages
+mirrored into an earlier, now-superseded Turso session. Treat the brain
+indicator as an operational health signal, not a byte-for-byte audit of one
+specific Turso session UUID; use `GET /api/agent_session/{id}` for an exact,
+UUID-scoped view of one session's contents.
 
 ### Checking save status — the "brain" indicator
 

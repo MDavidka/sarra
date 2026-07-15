@@ -373,7 +373,17 @@ async def record_message(
         await client.execute(
             "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
         )
-    except Exception:
+    except Exception as exc:
+        # ``idx_agent_message_local_id`` is a unique index on
+        # ``(project_id, local_message_id)``. A retry (e.g. future
+        # reconciliation of rows left ``turso_synced = 0``) that re-sends a
+        # message already mirrored successfully must not be reported as a
+        # fresh failure — treat a unique-constraint conflict as "already
+        # saved" and return the existing row instead of ``None``.
+        if local_message_id is not None and "UNIQUE" in str(exc).upper():
+            existing = await _find_message_by_local_id(client, project_id, local_message_id)
+            if existing is not None:
+                return existing
         logger.exception(
             "Failed to record Turso agent message for session %s (local_id=%s)",
             session_id,
@@ -393,6 +403,50 @@ async def record_message(
         "tool_calls": tool_calls or None,
         "reasoning_content": reasoning_content,
         "created_at": now,
+    }
+
+
+async def _find_message_by_local_id(
+    client: Any, project_id: str, local_message_id: int
+) -> dict[str, Any] | None:
+    """Look up an already-mirrored message row by its local join key.
+
+    Used to make :func:`record_message` idempotent under retries: if the
+    unique ``(project_id, local_message_id)`` index rejects a re-insert
+    because the row was already written on a previous attempt, this returns
+    that existing row so the caller still marks it ``turso_synced``.
+    """
+    try:
+        rs = await client.execute(
+            "SELECT id, session_id, project_id, session_number, local_message_id, "
+            "request_id, role, content, tool_call_id, tool_calls, reasoning_content, "
+            "created_at FROM agent_message WHERE project_id = ? AND local_message_id = ? "
+            "LIMIT 1",
+            [project_id, local_message_id],
+        )
+    except Exception:
+        return None
+    if not rs.rows:
+        return None
+    row = rs.rows[0]
+    tool_calls_raw = _row_value(row, "tool_calls")
+    try:
+        tool_calls = json.loads(tool_calls_raw) if tool_calls_raw else None
+    except (json.JSONDecodeError, TypeError):
+        tool_calls = None
+    return {
+        "id": _row_value(row, "id"),
+        "session_id": _row_value(row, "session_id"),
+        "project_id": _row_value(row, "project_id"),
+        "session_number": _row_value(row, "session_number"),
+        "local_message_id": _row_value(row, "local_message_id"),
+        "request_id": _row_value(row, "request_id"),
+        "role": _row_value(row, "role"),
+        "content": _row_value(row, "content"),
+        "tool_call_id": _row_value(row, "tool_call_id"),
+        "tool_calls": tool_calls,
+        "reasoning_content": _row_value(row, "reasoning_content"),
+        "created_at": _row_value(row, "created_at"),
     }
 
 
