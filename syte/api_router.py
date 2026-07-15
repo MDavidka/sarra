@@ -401,6 +401,9 @@ async def api_agent_activity(
     session: str = Query("", description="last | session number — load only that session"),
     _token: dict = Depends(verify_api_token),
 ):
+    """Local SQLite activity snapshot. For the durable, UUID-addressable record
+    of a turn use ``GET /api/agent_session/{session_id}`` (see ``sessions_url``
+    below and ``GET /api/agent_sessions?uuid=``) instead of streaming."""
     from syte.agent_activity import list_agent_events
 
     project = await get_project(uuid)
@@ -415,14 +418,66 @@ async def api_agent_activity(
         "events": events,
         "since_id": since_id,
         "session": session or None,
-        "stream_url": f"/api/projects/{uuid}/agent/activity/stream?live=1",
-        "tagged_stream_url": (
-            f"/api/projects/{uuid}/agent/activity/stream?live=1&format=tagged"
-        ),
-        "marked_stream_url": (
-            f"/api/projects/{uuid}/agent/activity/stream?live=1&format=marked"
-        ),
+        "sessions_url": f"/api/agent_sessions?uuid={uuid}",
     }
+
+
+@router.get("/agent_sessions")
+async def api_agent_sessions(
+    uuid: str = Query(..., description="Project UUID"),
+    limit: int = Query(50, ge=1, le=500),
+    _token: dict = Depends(verify_api_token),
+):
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.turso_store import list_sessions_for_project, turso_configured
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    if not await turso_configured():
+        return {
+            "ok": True,
+            "uuid": uuid,
+            "turso_configured": False,
+            "sessions": [],
+            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
+        }
+    sessions = await list_sessions_for_project(uuid, limit=limit)
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "turso_configured": True,
+        "sessions": [
+            {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
+        ],
+    }
+
+
+@router.get("/agent_session/{session_id}")
+async def api_get_agent_session(
+    session_id: str,
+    since_id: int = Query(0, ge=0),
+    _token: dict = Depends(verify_api_token),
+):
+    """Turso access route — fetch a durable agent activity session by UUID.
+
+    This replaces the old activity SSE stream. Asking the agent something
+    still happens over ``agent_communicate``/``agent_change`` (which return
+    this session's id); poll this route by that id to see what happened.
+    """
+    from syte.turso_store import get_session, turso_configured
+
+    if not await turso_configured():
+        _http_error(
+            503,
+            "turso_not_configured",
+            "Turso is not configured — set turso_database_url (and turso_auth_token) "
+            "in Settings -> AI tab before fetching agent sessions.",
+        )
+    session = await get_session(session_id, since_id=since_id)
+    if not session:
+        _http_error(404, "not_found", "Agent session not found")
+    return {"ok": True, **session}
 
 
 @router.get("/agent_dashboard")

@@ -1475,16 +1475,16 @@
                 <span class="method get">GET</span>
                 <span class="endpoint-path">/agent_activity?uuid=&amp;since_id=0</span>
               </div>
-              <div class="endpoint-name">Agent activity feed (snapshot)</div>
+              <div class="endpoint-name">Agent activity feed (local snapshot)</div>
             </div>
             <div class="endpoint-body">
-              <div class="note"><strong>Cursor-like chat feed for sycord.com.</strong> Structured events: user messages, assistant replies, thinking, file create/edit/delete, commands run, request lifecycle.</div>
-              <div class="field-desc">Poll with <code>since_id</code> (last event id) for incremental updates. For real-time UI use SSE below.</div>
+              <div class="note"><strong>Fast, always-available local mirror.</strong> Structured events: user messages, assistant replies, thinking, file create/edit/delete, commands run, request lifecycle. Not durable across database moves — for the durable, UUID-addressable record of a turn use the Turso session routes below.</div>
+              <div class="field-desc">Poll with <code>since_id</code> (last event id) for incremental updates.</div>
               <pre>{
   "ok": true,
   "uuid": "my-site-a1b2c3",
   "since_id": 0,
-  "stream_url": "/api/projects/my-site-a1b2c3/agent/activity/stream?live=1",
+  "sessions_url": "/api/agent_sessions?uuid=my-site-a1b2c3",
   "events": [
     {
       "id": 12,
@@ -1494,22 +1494,6 @@
       "detail": "Add dark mode toggle",
       "source": "sycord",
       "created_at": "2026-07-09T17:00:00+00:00"
-    },
-    {
-      "id": 13,
-      "event_type": "thinking",
-      "role": "assistant",
-      "title": "Thinking",
-      "detail": "Planning component changes…",
-      "source": "agent"
-    },
-    {
-      "id": 14,
-      "event_type": "file_modified",
-      "role": "assistant",
-      "title": "Modified file",
-      "detail": "src/components/ThemeToggle.tsx",
-      "payload": {"path": "src/components/ThemeToggle.tsx"}
     },
     {
       "id": 15,
@@ -1523,131 +1507,103 @@
             </div>
           </div>
 
-          <div class="endpoint" id="agent-activity-stream">
+          <div class="endpoint" id="agent-sessions">
             <div class="endpoint-header">
               <div class="endpoint-row">
                 <span class="method get">GET</span>
-                <span class="endpoint-path">/projects/{uuid}/agent/activity/stream?live=1&amp;since_id=0</span>
+                <span class="endpoint-path">/agent_sessions?uuid=&amp;limit=50</span>
               </div>
-              <div class="endpoint-name">Agent activity (SSE stream)</div>
+              <div class="endpoint-name">List durable agent sessions (Turso)</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Streams a durable agent turn in real time. On connect it replays up to <strong>500</strong> persisted events with <code>id &gt; since_id</code>, then stays open and forwards live events. Events are persisted <em>before</em> they are broadcast, so recording the highest <code>event.id</code> and reconnecting with it recovers every missed event with no gaps and no duplicates.</div>
+              <div class="field-desc">Lists recent durable Turso agent-session UUIDs for a project, newest first. Use this to discover session ids when you did not save the <code>turso_session_id</code> returned by <code>agent_change</code>/<code>agent_communicate</code>.</div>
+              <pre>{
+  "ok": true,
+  "uuid": "my-site-a1b2c3",
+  "turso_configured": true,
+  "sessions": [
+    {
+      "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+      "session_number": 3,
+      "model_profile": "syra-base",
+      "status": "completed",
+      "created_at": "2026-07-15T12:00:00+00:00",
+      "updated_at": "2026-07-15T12:00:04+00:00",
+      "session_url": "/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9"
+    }
+  ]
+}</pre>
+              <div class="note">If Turso is not configured (no <code>turso_database_url</code> saved in the GUI's AI tab), this returns <code>"turso_configured": false</code> and an empty <code>sessions</code> array — <code>agent_change</code>/<code>agent_communicate</code> still work without it.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-session">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_session/{session_id}?since_id=0</span>
+              </div>
+              <div class="endpoint-name">Fetch a durable agent session (Turso access route)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note"><strong>This replaces the old SSE activity stream.</strong> Every event produced while the agent works a turn — the request, its plan, tool calls, and the final reply — is written to a durable Turso (libSQL) session identified by a UUID as it happens. Instead of holding open a streaming connection, fetch the whole session document by its id. Asking the agent something is unchanged: <code>agent_communicate</code>/<code>agent_change</code> return this session's id in <code>turso_session_id</code>.</div>
 
               <div class="panel">
-                <div class="panel-title">Query &amp; header parameters</div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">live<span class="opt">?</span></span><span class="field-type">bool</span></div>
-                  <div class="field-desc"><code>live=1</code> emits an opening <code>session</code> marker and keeps the connection open. Without it the stream still replays history then goes live.</div>
-                </div>
+                <div class="panel-title">Query parameters</div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">since_id<span class="opt">?</span></span><span class="field-type">int</span></div>
-                  <div class="field-desc">Resume point. Only events with a strictly greater id are replayed. Default <code>0</code> (from the beginning).</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">format<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc"><code>sse</code> (default) &middot; <code>tagged</code> &middot; <code>marked</code> &middot; <code>text</code> &middot; <code>jsonl</code>. See <em>Stream formats</em> below.</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">types<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc">Comma-separated <code>event_type</code> allow-list applied to the <code>tagged</code>/<code>marked</code>/<code>text</code>/<code>jsonl</code> encodings, e.g. <code>types=thinking,command_run</code>.</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">session<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc"><code>session=last</code> (or <code>session=N</code>) scopes only the connect-time replay to the newest <code>[sessionN]</code> block, so a client that already stored earlier sessions does not re-fetch them. Live events — including a brand-new session — are never filtered and still stream through.</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">Last-Event-ID<span class="opt">?</span></span><span class="field-type">header</span></div>
-                  <div class="field-desc">Standard SSE resume header. When <code>since_id</code> is not passed explicitly, this header is used — browser <code>EventSource</code> clients send it automatically on reconnect, so no client code is needed to resume.</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">api_key<span class="opt">?</span></span><span class="field-type">query / x-api-key header</span></div>
-                  <div class="field-desc">Optional. Authenticates browser <code>EventSource</code> connections (which cannot set an <code>Authorization</code> header).</div>
+                  <div class="field-desc">Only return events with a strictly greater id. Useful for polling a session whose <code>status</code> is still <code>open</code> without re-fetching everything already seen.</div>
                 </div>
               </div>
 
-              <div class="field-desc"><strong>Response headers:</strong> <code>Content-Type: text/event-stream</code> (for <code>sse</code>/<code>tagged</code>/<code>marked</code>), <code>Cache-Control: no-cache</code>, <code>X-Accel-Buffering: no</code> (disables proxy buffering), and <code>X-Syte-Stream-Format</code> echoing the negotiated encoding (<code>tagged-v1</code> / <code>marked-v1</code>).</div>
+              <pre>{
+  "ok": true,
+  "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+  "project_id": "my-site-a1b2c3",
+  "session_number": 3,
+  "model_profile": "syra-base",
+  "status": "completed",
+  "created_at": "2026-07-15T12:00:00+00:00",
+  "updated_at": "2026-07-15T12:00:04+00:00",
+  "events": [
+    {"id": 1, "event_type": "request_started", "role": "user", "detail": "Add dark mode toggle"},
+    {"id": 2, "event_type": "processing", "role": "system", "detail": "Cloud agent accepted the durable request"},
+    {"id": 3, "event_type": "thinking", "role": "assistant", "detail": "Inspect the current theme first"},
+    {"id": 4, "event_type": "tool_call_started", "payload": {"tool": "write_file", "arguments": {"path": "src/theme.ts"}}},
+    {"id": 5, "event_type": "tool_call_finished", "payload": {"tool": "write_file", "ok": true}},
+    {"id": 6, "event_type": "request_completed", "payload": {"reply": "Added dark mode"}}
+  ]
+}</pre>
 
-              <div class="field-desc"><strong>Control frames.</strong> Besides <code>activity</code> events the stream emits: a one-time <code>retry: 5000</code> directive (EventSource reconnect backoff); a <code>session</code> marker when <code>live=1</code>; a <code>ping</code> heartbeat every <strong>10s</strong> carrying the current <code>since_id</code>; and a terminal <code>reconnect</code> frame after the <strong>1-hour</strong> per-connection deadline asking the client to reopen from the given <code>since_id</code>. <code>activity</code> frames also include an SSE <code>id:</code> line so <code>EventSource</code> resume works out of the box.</div>
-              <pre>retry: 5000
-
-data: {"type":"session","text":"Live agent activity stream"}
-
-id: 16
-data: {"type":"activity","event":{"id":16,"event_type":"processing","role":"system","title":"Processing","detail":"Cloud agent accepted the durable request","payload":{"request_id":"req_abc"}}}
-
-data: {"type":"ping","since_id":16}
-
-data: {"type":"reconnect","since_id":16}</pre>
-
-              <div class="field-desc"><strong>Turn lifecycle</strong> (correlate every frame by <code>event.payload.request_id</code>):</div>
+              <div class="field-desc"><strong>Turn lifecycle</strong> (correlate events by <code>payload.request_id</code>):</div>
               <pre>request_started        role=user     the submitted message
   → processing         accepted, durable request queued
   → thinking           (optional) the agent's plan / reasoning
   → tool_call_started  ┐ repeated 0+ times, one pair per tool call
   → tool_call_finished ┘
   → request_completed  |  request_failed   (exactly one, terminal)</pre>
-              <div class="note"><strong>Event payloads.</strong> <code>request_started</code>/<code>processing</code>/<code>thinking</code> carry <code>payload.request_id</code>. <code>tool_call_started</code> carries <code>payload.tool</code> and <code>payload.arguments</code>; <code>tool_call_finished</code> carries <code>payload.tool</code> and <code>payload.ok</code> (boolean). <code>request_completed</code> carries <code>payload.reply</code>; <code>request_failed</code> carries <code>payload.error</code> and <code>payload.retry_message</code>. File and command events (<code>file_created</code>, <code>file_modified</code>, <code>file_deleted</code>, <code>command_run</code>, …) are emitted for workspace edits made through the API. <code>token_delta</code> and <code>message_snapshot</code> are reserved for a future token-streaming provider and are not emitted by the current non-streaming runtime.</div>
+              <div class="note"><strong>Event payloads.</strong> <code>request_started</code>/<code>processing</code>/<code>thinking</code> carry <code>payload.request_id</code>. <code>tool_call_started</code> carries <code>payload.tool</code> and <code>payload.arguments</code>; <code>tool_call_finished</code> carries <code>payload.tool</code> and <code>payload.ok</code> (boolean). <code>request_completed</code> carries <code>payload.reply</code>; <code>request_failed</code> carries <code>payload.error</code> and <code>payload.retry_message</code>.</div>
 
-              <div class="field-desc"><strong>Stream formats:</strong></div>
-              <ul>
-                <li><code>format=sse</code> — default. JSON SSE, one event per <code>data:</code> frame (shown above). <code>text/event-stream</code>, works with <code>EventSource</code>.</li>
-                <li><code>format=tagged</code> — compact <code>[tag]&lt;json&gt;</code> records inside <code>data:</code> frames. Still <code>text/event-stream</code>.</li>
-                <li><code>format=marked</code> — <code>[boot]</code>, <code>[sessionN]</code>, and <code>S{session}{msg}(d|g)-&lt;kind&gt;text</code>. <code>(d)</code>=done, <code>(g)</code>=going. Agent history loads only the latest session; poll with <code>session=last</code>.</li>
-                <li><code>format=text</code> — plain text lines (<code>text/plain</code>). Read with <code>fetch</code>/<code>curl</code>, <strong>not</strong> <code>EventSource</code>.</li>
-                <li><code>format=jsonl</code> — one compact JSON object per line (<code>application/x-ndjson</code>) for CLI/pipeline consumers.</li>
-              </ul>
+              <div class="note"><strong><code>status</code> values:</strong> <code>open</code> while the turn is in progress, then <code>completed</code>, <code>failed</code>, or <code>cancelled</code>. Poll <code>GET /api/agent_session/{id}?since_id=&lt;highest event.id seen&gt;</code> on a short interval until <code>status != "open"</code> to observe an in-progress turn.</div>
+              <div class="note">Requires Turso to be configured (<code>turso_database_url</code>, optional <code>turso_auth_token</code>, saved from the GUI's AI tab) — returns HTTP 503 otherwise.</div>
 
-              <div class="note"><strong>Tagged SSE (<code>?format=tagged</code>)</strong> puts one UTF-8 JSON object inside each <code>[tag]&lt;...&gt;</code> record. Tool events are self-describing: the encoder derives <code>phase</code> (<code>started</code>/<code>finished</code>) and normalises success into <code>is_error</code> even though the runtime reports it as <code>ok</code>.</div>
-              <div class="note"><strong>Marked SSE (<code>?format=marked</code>)</strong>
-<pre>data: [boot]
-data: [session1]
-data: S1001(d)-&lt;user&gt;Add dark mode
-data: S1002(g)-&lt;tool&gt;read_file {"path":"app/page.tsx"}
-data: S1003(d)-&lt;plan&gt;1. Inspect 2. Patch
-data: [session2]
-data: S2003(g)-&lt;plan&gt;Updating header</pre>
-              Each user message opens <code>[sessionN]</code>. Marks are <code>S{session}{msg}(d|g)-&lt;kind&gt;</code>. Receivers can reload only the latest session via <code>?session=last</code> on activity snapshots.</div>
-              <pre>data: [session]&lt;{"text":"Live agent activity stream"}&gt;
-
-data: [start]&lt;{"id":20,"request_id":"req_abc","type":"request_started","role":"user","text":"Add dark mode"}&gt;
-
-data: [processing]&lt;{"id":21,"request_id":"req_abc","type":"processing","text":"Cloud agent accepted the durable request"}&gt;
-
-data: [think]&lt;{"id":22,"request_id":"req_abc","type":"thinking","text":"Inspect the current theme first"}&gt;
-
-data: [tool:start]&lt;{"id":23,"request_id":"req_abc","type":"tool_call_started","title":"write_file","text":"{\"path\":\"src/theme.ts\"}","phase":"started","tool":"write_file"}&gt;
-
-data: [tool:result]&lt;{"id":24,"request_id":"req_abc","type":"tool_call_finished","title":"write_file","phase":"finished","tool":"write_file","is_error":false}&gt;
-
-data: [done]&lt;{"id":25,"request_id":"req_abc","type":"request_completed","text":"Added dark mode"}&gt;
-
-data: [ping]&lt;{"since_id":25}&gt;</pre>
-              <div class="field-desc"><strong>Tagged vocabulary:</strong> <code>[start]</code>, <code>[processing]</code>, <code>[think]</code>, <code>[tool:start]</code>, <code>[tool:result]</code>, <code>[delta]</code>, <code>[message]</code>, <code>[done]</code>, <code>[error]</code>, <code>[status]</code>, <code>[session]</code>, <code>[ping]</code>, and <code>[reconnect]</code>.</div>
-              <pre>let lastId = 0;
-function connect() {
-  const es = new EventSource(
-    `/api/projects/${uuid}/agent/activity/stream?live=1&amp;format=tagged&amp;since_id=${lastId}`
-  );
-  es.onmessage = ({ data }) =&gt; {
-    const match = data.match(/^\[([^\]]+)\]&lt;(.*)&gt;$/);
-    if (!match) return;
-    const [, tag, json] = match;
-    const event = JSON.parse(json);
-    lastId = event.id || lastId;
-    if (tag === "think") showPlan(event.text);
-    if (tag === "tool:start") showTool(event.title, event.text);
-    if (tag === "tool:result") markTool(event.title, event.is_error === false);
-    if (tag === "done" || tag === "error") es.close();
-    if (tag === "reconnect") { es.close(); connect(); } // resume from lastId
-  };
-  // Browsers auto-reconnect on transient errors and resend Last-Event-ID.
-  es.onerror = () =&gt; { /* EventSource retries automatically */ };
-}
-connect();</pre>
-              <div class="field-desc"><strong>Non-browser (streaming fetch) example:</strong></div>
-              <pre>curl -N "$HOST/api/projects/$UUID/agent/activity/stream?live=1&amp;format=jsonl" \
-  -H "x-api-key: $API_KEY"</pre>
+              <pre>async function pollAgentSession(sessionId) {
+  let sinceId = 0;
+  for (;;) {
+    const res = await fetch(`/api/agent_session/${sessionId}?since_id=${sinceId}`, {
+      headers: { 'x-api-key': API_KEY },
+    });
+    const session = await res.json();
+    for (const event of session.events) {
+      sinceId = Math.max(sinceId, event.id);
+      renderEvent(event);
+    }
+    if (session.status !== 'open') return session;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}</pre>
+              <div class="field-desc"><strong>curl example:</strong></div>
+              <pre>curl "$HOST/api/agent_session/$SESSION_ID" -H "x-api-key: $API_KEY"</pre>
             </div>
           </div>
           <div class="endpoint" id="agent-test">
@@ -1701,9 +1657,9 @@ connect();</pre>
               <div class="endpoint-name">Request code change (async)</div>
             </div>
             <div class="endpoint-body">
-              <div class="note"><strong>Default: async.</strong> Returns <code>request_id</code> immediately. Subscribe to <code>GET /api/projects/{uuid}/agent/activity/stream?live=1</code> for <code>token_delta</code>, file edits, and <code>request_completed</code>. Same behavior on <code>POST /sycord/api/agent_change</code>.</div>
+              <div class="note"><strong>Default: async.</strong> Returns <code>request_id</code> and <code>turso_session_id</code> immediately. Fetch <code>GET /api/agent_session/{turso_session_id}</code> (poll until <code>status != "open"</code>) to see the request, plan, tool calls, and final reply. Same behavior on <code>POST /sycord/api/agent_change</code>.</div>
               <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
-              <pre>{"ok":true,"request_id":"req_abc123def456","status":"accepted","stream_url":"/api/projects/my-site-a1b2c3/agent/activity/stream?live=1","change_applied":null}</pre>
+              <pre>{"ok":true,"request_id":"req_abc123def456","status":"accepted","turso_session_id":"b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9","session_url":"/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9","change_applied":null}</pre>
               <div class="field-desc">Legacy blocking mode: <code>POST /sycord/api/agent_change</code> with <code>{"wait":true}</code> or use <code>POST /agent_communicate</code>.</div>
             </div>
           </div>

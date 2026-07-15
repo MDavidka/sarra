@@ -79,6 +79,8 @@ def _persist_block(project_id: str) -> dict:
             "GET /sycord/api/agent_status?uuid=",
             "POST /sycord/api/agent_change — JSON body.uuid + message",
             "GET /sycord/api/agent_activity?uuid=&since_id=",
+            "GET /sycord/api/agent_sessions?uuid= — list durable Turso session ids",
+            "GET /sycord/api/agent_session/{session_id} — fetch one durable session",
         ],
     }
 
@@ -135,7 +137,7 @@ async def api_project_connect(
             "deploy": "POST /sycord/api/issue_deployment",
             "container": f"GET /sycord/api/container_get?uuid={project_id}",
             "agent": f"POST /sycord/api/agent_change — body {{\"uuid\": \"{project_id}\", \"message\": \"…\"}}",
-            "agent_stream": f"GET /api/projects/{project_id}/agent/activity/stream?live=1",
+            "agent_sessions": f"GET /sycord/api/agent_sessions?uuid={project_id}",
         },
     }
 
@@ -165,12 +167,38 @@ async def api_agent_activity(
     ),
     _token: dict = Depends(verify_api_token),
 ):
-    """Agent activity snapshot — use SSE stream for live token/tool/file events."""
+    """Agent activity snapshot — for durable per-turn records use agent_sessions."""
     payload = await service.agent_activity(
         uuid, since_id=since_id, limit=limit, session=session or None,
     )
     if not payload:
         _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
+@router.get("/agent_sessions")
+async def api_agent_sessions(
+    uuid: str = Query(..., description="Project UUID"),
+    limit: int = Query(50, ge=1, le=500),
+    _token: dict = Depends(verify_api_token),
+):
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    payload = await service.agent_sessions(uuid, limit=limit)
+    if not payload:
+        _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
+@router.get("/agent_session/{session_id}")
+async def api_agent_session(
+    session_id: str,
+    since_id: int = Query(0, ge=0),
+    _token: dict = Depends(verify_api_token),
+):
+    """Turso access route — fetch a durable agent activity session by UUID."""
+    payload = await service.agent_session(session_id, since_id=since_id)
+    if not payload:
+        _err(404, "not_found", "Agent session not found (or Turso is not configured)")
     return {"ok": True, **payload}
 
 

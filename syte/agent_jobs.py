@@ -11,10 +11,14 @@ from syte.agent_activity import record_agent_event
 from syte.cloud_agent_store import (
     begin_turn_session,
     current_session_number,
+    current_turso_session_id,
     enqueue_request,
     mark_request,
     pending_requests,
+    set_turso_session_id,
 )
+from syte.turso_store import close_session as close_turso_session
+from syte.turso_store import open_session as open_turso_session
 
 _project_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _running: dict[str, asyncio.Task[Any]] = {}
@@ -47,9 +51,15 @@ async def submit_agent_request(
         source=source,
         auto_start=auto_start,
     )
-    # Session opens when the user message is admitted so the marked stream can
-    # emit [sessionN] immediately, before the worker starts tools.
+    # Session opens when the user message is admitted so a durable Turso
+    # session (see syte.turso_store) exists from the very first event, before
+    # the worker starts tools.
     session_number = await begin_turn_session(project_id, model_profile)
+    turso_session_id = await open_turso_session(
+        project_id, session_number=session_number, model_profile=model_profile,
+    )
+    if turso_session_id:
+        await set_turso_session_id(project_id, turso_session_id)
     await record_agent_event(
         project_id,
         "request_started",
@@ -68,6 +78,7 @@ async def submit_agent_request(
             "session_started": True,
         },
         source=source,
+        turso_session_id=turso_session_id,
     )
 
     previous = _running.get(project_id)
@@ -90,6 +101,7 @@ async def submit_agent_request(
             auto_start=auto_start,
             session_number=session_number,
             message_index_start=1,
+            turso_session_id=turso_session_id,
         )
     )
     _running[project_id] = task
@@ -97,13 +109,10 @@ async def submit_agent_request(
         "ok": True,
         "request_id": request_id,
         "session": session_number,
+        "turso_session_id": turso_session_id,
         "status": "accepted",
         "project_id": project_id,
-        "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
-        "tagged_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged",
-        "marked_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=marked"
-        ),
+        "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
 
 
@@ -117,6 +126,7 @@ async def _run_job(
     auto_start: bool,
     session_number: int | None = None,
     message_index_start: int = 0,
+    turso_session_id: str | None = None,
 ) -> dict[str, Any]:
     from syte.cloud_agent import _communicate_with_agent_impl
 
@@ -133,11 +143,15 @@ async def _run_job(
                 request_id=request_id,
                 session_number=session_number,
                 message_index_start=message_index_start,
+                turso_session_id=turso_session_id,
             )
             await mark_request(
                 request_id,
                 "completed" if result.get("ok") else "failed",
                 error="" if result.get("ok") else str(result.get("message") or ""),
+            )
+            await close_turso_session(
+                turso_session_id, status="completed" if result.get("ok") else "failed"
             )
             return result
         except asyncio.CancelledError:
@@ -155,7 +169,9 @@ async def _run_job(
                     "mark_kind": "error",
                 },
                 source=source,
+                turso_session_id=turso_session_id,
             )
+            await close_turso_session(turso_session_id, status="cancelled")
             raise
         except Exception as exc:
             error = str(exc) or "Agent request failed"
@@ -175,7 +191,9 @@ async def _run_job(
                     "mark_kind": "error",
                 },
                 source=source,
+                turso_session_id=turso_session_id,
             )
+            await close_turso_session(turso_session_id, status="failed")
             return {"ok": False, "request_id": request_id, "error": "agent_job_failed", "message": error}
 
 
@@ -189,6 +207,13 @@ async def resume_pending_requests() -> int:
             session_number = await begin_turn_session(
                 project_id, row.get("model_profile"),
             )
+        turso_session_id = await current_turso_session_id(project_id)
+        if not turso_session_id:
+            turso_session_id = await open_turso_session(
+                project_id, session_number=session_number, model_profile=row.get("model_profile"),
+            )
+            if turso_session_id:
+                await set_turso_session_id(project_id, turso_session_id)
         task = asyncio.create_task(
             _run_job(
                 project_id,
@@ -199,6 +224,7 @@ async def resume_pending_requests() -> int:
                 auto_start=bool(row.get("auto_start", 1)),
                 session_number=session_number,
                 message_index_start=1,
+                turso_session_id=turso_session_id,
             )
         )
         _running[project_id] = task

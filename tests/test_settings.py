@@ -123,3 +123,57 @@ async def test_legacy_provider_settings_are_migrated_once(tmp_data_dir: Path) ->
     await init_db()
 
     assert await get_setting("agent_syra_base_api_key") == "saved-key"
+
+
+@pytest.mark.asyncio
+async def test_save_turso_settings_and_reset_client_cache(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.database import get_setting, init_db
+    from syte import turso_store
+
+    await init_db()
+
+    async def fake_apply() -> tuple[bool, str]:
+        return True, "proxy applied"
+
+    monkeypatch.setattr("syte.main.apply_proxy_config", fake_apply)
+    reset_calls = {"count": 0}
+    original_reset = turso_store.reset_client_cache
+
+    def fake_reset():
+        reset_calls["count"] += 1
+        original_reset()
+
+    monkeypatch.setattr("syte.turso_store.reset_client_cache", fake_reset)
+
+    from syte.main import SettingsRequest, save_settings
+
+    res = await save_settings(SettingsRequest(
+        turso_database_url="libsql://example.turso.io",
+        turso_auth_token="secret-token",
+    ))
+
+    assert res["ok"] is True
+    assert await get_setting("turso_database_url") == "libsql://example.turso.io"
+    assert await get_setting("turso_auth_token") == "secret-token"
+    assert reset_calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_settings_reports_turso_configuration(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.database import init_db, set_setting
+
+    await init_db()
+    await set_setting("turso_database_url", "libsql://example.turso.io")
+    await set_setting("turso_auth_token", "secret-token")
+
+    from syte.main import get_settings
+
+    res = await get_settings()
+    assert res["turso_database_url"] == "libsql://example.turso.io"
+    assert res["turso_auth_token_set"] is True
+    assert res["turso_configured"] is True

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
@@ -87,9 +84,7 @@ async def internal_agent_warm(
     return {
         **result,
         "status_url": f"/api/internal/projects/{project_id}/agent",
-        "stream_url": (
-            f"/api/internal/projects/{project_id}/agent/activity/stream?live=1"
-        ),
+        "sessions_url": f"/api/internal/projects/{project_id}/agent/sessions",
     }
 
 
@@ -164,6 +159,9 @@ async def internal_agent_activity(
     session: str = "",
     _auth: dict = Depends(verify_internal_service_request),
 ):
+    """Local SQLite activity snapshot. For the durable, UUID-addressable record
+    of a turn use the Turso session routes instead (``agent/sessions`` /
+    ``agent_session/{session_id}``)."""
     from syte.agent_activity import list_agent_events
 
     await _require_project(project_id)
@@ -179,111 +177,63 @@ async def internal_agent_activity(
         "events": events,
         "since_id": since_id,
         "session": session or None,
-        "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
-        "tagged_stream_url": (
-            f"/api/internal/projects/{project_id}/agent/activity/stream"
-            "?live=1&format=tagged"
-        ),
-        "marked_stream_url": (
-            f"/api/internal/projects/{project_id}/agent/activity/stream"
-            "?live=1&format=marked"
-        ),
+        "sessions_url": f"/api/internal/projects/{project_id}/agent/sessions",
     }
 
 
-@router.get("/projects/{project_id}/agent/activity/stream")
-async def internal_agent_activity_stream(
+@router.get("/projects/{project_id}/agent/sessions")
+async def internal_agent_sessions(
     project_id: str,
-    request: Request,
-    live: bool = False,
-    since_id: int = 0,
-    format: Literal[
-        "sse",
-        "tagged",
-        "tagged_sse",
-        "tags",
-        "marked",
-        "marks",
-        "text",
-        "plain",
-        "jsonl",
-    ] = "sse",
-    types: str = "",
-    session: str = "",
-    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    limit: int = 50,
     _auth: dict = Depends(verify_internal_service_request),
 ):
-    """Server-to-server mirror of the public agent activity stream.
-
-    Identical replay/live semantics and wire formats as
-    ``/api/projects/{uuid}/agent/activity/stream`` but authenticated with the
-    ``X-Syra-Internal-Secret`` header for the sycord.com backend. Supports
-    ``since_id`` and the ``Last-Event-ID`` header for gapless reconnection, and
-    ``session=last`` to replay only the newest ``[sessionN]`` block; see
-    ``syte.log_stream`` for the full frame protocol.
-    """
-    from syte.log_stream import (
-        stream_agent_activity,
-        stream_agent_activity_formatted,
-        stream_agent_activity_marked,
-        stream_agent_activity_tagged,
-    )
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.turso_store import list_sessions_for_project, turso_configured
 
     await _require_project(project_id)
-    if not since_id and last_event_id:
-        try:
-            since_id = max(0, int(last_event_id))
-        except (TypeError, ValueError):
-            since_id = 0
-    fmt = (format or "sse").strip().lower()
-    type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    session_scope: str | None = session.strip() or None
-    if fmt in ("tagged", "tagged_sse", "tags"):
-        generator = stream_agent_activity_tagged(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-            session=session_scope,
+    if not await turso_configured():
+        return {
+            "ok": True,
+            "project_id": project_id,
+            "turso_configured": False,
+            "sessions": [],
+            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
+        }
+    sessions = await list_sessions_for_project(project_id, limit=limit)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "turso_configured": True,
+        "sessions": [
+            {**s, "session_url": f"/api/internal/agent_session/{s['id']}"} for s in sessions
+        ],
+    }
+
+
+@router.get("/agent_session/{session_id}")
+async def internal_get_agent_session(
+    session_id: str,
+    since_id: int = 0,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Server-to-server Turso access route — fetch a durable agent session by UUID.
+
+    Replaces the old ``/agent/activity/stream`` SSE mirror. sycord.com now
+    fetches the session document produced while the agent worked instead of
+    holding open a streaming connection.
+    """
+    from syte.turso_store import get_session, turso_configured
+
+    if not await turso_configured():
+        raise HTTPException(
+            503,
+            "Turso is not configured — set turso_database_url (and turso_auth_token) "
+            "in Settings -> AI tab before fetching agent sessions.",
         )
-        media = "text/event-stream"
-        stream_format = "tagged-v1"
-    elif fmt in ("marked", "marks"):
-        generator = stream_agent_activity_marked(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-            session=session_scope,
-        )
-        media = "text/event-stream"
-        stream_format = "marked-v1"
-    elif fmt in ("text", "jsonl", "plain"):
-        generator = stream_agent_activity_formatted(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            output_format="jsonl" if fmt == "jsonl" else "text",
-            type_filter=type_filter,
-            session=session_scope,
-        )
-        media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
-        stream_format = fmt
-    else:
-        generator = stream_agent_activity(
-            project_id, live_only=live, since_id=since_id, session=session_scope
-        )
-        media = "text/event-stream"
-        stream_format = fmt
-    return StreamingResponse(
-        generator,
-        media_type=media,
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Syte-Stream-Format": stream_format,
-        },
-    )
+    session = await get_session(session_id, since_id=since_id)
+    if not session:
+        raise HTTPException(404, "Agent session not found")
+    return {"ok": True, **session}
 
 
 @router.get("/agent/dashboard")

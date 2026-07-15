@@ -10,8 +10,9 @@ let deployPollTimer = null;
 let previewPollTimer = null;
 let lastPreviewFrameSrc = '';
 let previewTabActive = false;
-let agentActivityStream = null;
-let agentActivityReconnectTimer = null;
+let agentActivityPollTimer = null;
+let agentActivityPollInFlight = false;
+const AGENT_ACTIVITY_POLL_INTERVAL_MS = 2000;
 let debugChatSinceId = 0;
 let debugChatRenderedIds = new Set();
 let debugChatAutoScroll = true;
@@ -115,14 +116,11 @@ function stopPreviewStream() {
 }
 
 function stopAgentActivityStream() {
-  if (agentActivityReconnectTimer) {
-    clearTimeout(agentActivityReconnectTimer);
-    agentActivityReconnectTimer = null;
+  if (agentActivityPollTimer) {
+    clearInterval(agentActivityPollTimer);
+    agentActivityPollTimer = null;
   }
-  if (agentActivityStream) {
-    agentActivityStream.close();
-    agentActivityStream = null;
-  }
+  agentActivityPollInFlight = false;
   setDebugChatConnectionState('disconnected');
 }
 
@@ -792,62 +790,33 @@ async function loadDebugChatHistory(projectId) {
   }
 }
 
-function scheduleAgentActivityReconnect(projectId, attempt = 0) {
-  if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) return;
-  const delay = attempt === 0 ? 1000 : Math.min(15000, 1000 * Math.pow(2, attempt));
-  agentActivityReconnectTimer = setTimeout(() => {
-    startAgentActivityStream(projectId, attempt + 1);
-  }, delay);
+// Agent activity is no longer streamed live over SSE. Every turn's events are
+// written durably (see syte.turso_store) as they happen and the local
+// snapshot endpoint (/agent/activity) still reflects them immediately, so the
+// debug chat UI polls that endpoint on a short interval instead of holding
+// open an EventSource connection.
+async function pollAgentActivityOnce(projectId) {
+  if (agentActivityPollInFlight) return;
+  agentActivityPollInFlight = true;
+  try {
+    const ok = await syncDebugChatHistory(projectId);
+    setDebugChatConnectionState(ok ? 'connected' : 'reconnecting');
+  } finally {
+    agentActivityPollInFlight = false;
+  }
 }
 
-function startAgentActivityStream(projectId, reconnectAttempt = 0) {
-  if (agentActivityReconnectTimer) {
-    clearTimeout(agentActivityReconnectTimer);
-    agentActivityReconnectTimer = null;
-  }
-  if (agentActivityStream) {
-    agentActivityStream.close();
-    agentActivityStream = null;
-  }
-  // session=last scopes only the connect-time replay to the newest session, so
-  // sessions the client already stored are not re-sent. Live events (including
-  // a brand-new session) are never filtered and still stream through.
-  const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId), session: 'last' });
-  setDebugChatConnectionState(reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
-  agentActivityStream = new EventSource(`${API}/projects/${projectId}/agent/activity/stream?${params}`);
-  agentActivityStream.onopen = () => {
-    setDebugChatConnectionState('connected');
-  };
-  agentActivityStream.onmessage = (e) => {
-    try {
-      setDebugChatConnectionState('connected');
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'activity' && msg.event) {
-        if (msg.event.id != null) {
-          debugChatSinceId = Math.max(debugChatSinceId, msg.event.id);
-        }
-        handleDebugChatActivity(msg.event);
-      } else if (msg.type === 'session') {
-        syncDebugChatHistory(projectId);
-      } else if (msg.type === 'ping' && msg.since_id != null) {
-        debugChatSinceId = Math.max(debugChatSinceId, msg.since_id);
-      }
-    } catch { /* ignore */ }
-  };
-  agentActivityStream.onerror = () => {
-    setDebugChatConnectionState('reconnecting');
-    agentActivityStream?.close();
-    agentActivityStream = null;
-    void syncDebugChatHistory(projectId);
-    if (debugChatBusy) {
-      setDebugChatActivity(
-        'Reconnecting',
-        'Your response is still running; recovering its latest activity',
-        'wifi',
-      );
+function startAgentActivityStream(projectId) {
+  stopAgentActivityStream();
+  setDebugChatConnectionState('connecting');
+  void pollAgentActivityOnce(projectId);
+  agentActivityPollTimer = setInterval(() => {
+    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+      stopAgentActivityStream();
+      return;
     }
-    scheduleAgentActivityReconnect(projectId, reconnectAttempt);
-  };
+    void pollAgentActivityOnce(projectId);
+  }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
 }
 
 async function reconnectDebugChatStream() {
@@ -2303,6 +2272,8 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
+  const tursoDatabaseUrl = document.getElementById('turso-database-url')?.value?.trim() || '';
+  const tursoAuthToken = document.getElementById('turso-auth-token')?.value?.trim() || '';
   const needNano = !nanoKey && !aiApiConfigured.nano;
   const needBase = !baseKey && !aiApiConfigured.base;
   const needHavy = !havyKey && !aiApiConfigured.havy;
@@ -2317,6 +2288,8 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   if (havyKey) body.agent_syra_havy_api_key = havyKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
+  if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
+  if (tursoAuthToken) body.turso_auth_token = tursoAuthToken;
   btn.disabled = true;
   btn.textContent = 'saving…';
   try {
@@ -2326,6 +2299,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     if (baseKey) document.getElementById('agent-base-key').value = '';
     if (havyKey) document.getElementById('agent-havy-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
+    if (tursoAuthToken) document.getElementById('turso-auth-token').value = '';
     await loadSettings();
     await loadAiDashboard();
     closeAiSettings();
@@ -2468,6 +2442,8 @@ async function loadSettings() {
     const agentMaxCount = document.getElementById('agent-max-count');
     const agentRuntimeStatus = document.getElementById('agent-runtime-status');
     const syraInternalSecret = document.getElementById('syra-internal-secret');
+    const tursoDatabaseUrl = document.getElementById('turso-database-url');
+    const tursoAuthToken = document.getElementById('turso-auth-token');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -2533,6 +2509,12 @@ async function loadSettings() {
         ? 'internal secret saved — enter new value to replace'
         : 'shared secret for sycord.com -> Syte';
     }
+    if (tursoDatabaseUrl && s.turso_database_url) tursoDatabaseUrl.value = s.turso_database_url;
+    if (tursoAuthToken) {
+      tursoAuthToken.placeholder = s.turso_auth_token_set
+        ? 'auth token saved — enter new value to replace'
+        : 'turso auth token';
+    }
     if (agentRuntimeStatus) {
       const parts = [];
       parts.push(`default: ${defaultProfile}`);
@@ -2540,6 +2522,7 @@ async function loadSettings() {
       parts.push(s.agent_syra_base_api_key_set ? 'base key saved' : 'no base key');
       parts.push(s.agent_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
+      parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
       agentRuntimeStatus.textContent = parts.join(' · ');
     }
     const directUrl = document.getElementById('direct-url');

@@ -680,12 +680,32 @@
                 <span class="hint">Header <code>X-Syra-Internal-Secret</code> for sycord.com server-to-server.</span>
               </div>
 
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>Turso (agent sessions)</strong>
+                  <span class="ai-key-provider">libSQL — durable activity storage</span>
+                </div>
+                <p class="hint block">Every agent turn (request, plan, tool calls, reply) is written to a durable Turso session keyed by UUID instead of a live stream. Clients fetch the session by id from the API. Leave blank to keep using local-only activity snapshots.</p>
+                <div class="form-group">
+                  <label for="turso-database-url">Database URL</label>
+                  <input type="text" id="turso-database-url" placeholder="libsql://your-db-name.turso.io" autocomplete="off">
+                  <span class="hint" id="turso-database-url-hint">Optional — from the Turso dashboard.</span>
+                </div>
+                <div class="form-group">
+                  <label for="turso-auth-token">Auth token</label>
+                  <input type="password" id="turso-auth-token" placeholder="turso auth token" autocomplete="off">
+                  <span class="hint" id="turso-auth-token-hint">Required for remote Turso databases.</span>
+                </div>
+              </div>
+
               <details class="ai-env-details">
                 <summary>Environment variables (auto-injected)</summary>
                 <div class="ai-env-grid">
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
                   <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
+                  <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
+                  <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
                   <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
                   <div class="ai-env-row"><code>SYTE cloud runtime</code><span>Embedded VM runtime</span></div>
                 </div>

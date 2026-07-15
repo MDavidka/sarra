@@ -3,9 +3,9 @@ import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -28,7 +28,7 @@ from syte import auth
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
-from syte.log_stream import stream_agent_activity, stream_agent_logs, stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
 import logging
 
 from syte import supervisor
@@ -126,6 +126,8 @@ class SettingsRequest(BaseModel):
     agent_syra_havy_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
+    turso_database_url: str | None = None
+    turso_auth_token: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -266,6 +268,8 @@ async def get_settings():
     cf_status = await cloudflare_tls_status()
     bridge = await bridge_settings()
     syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
+    turso_database_url = (await get_setting("turso_database_url", "")).strip()
+    turso_auth_token_set = bool((await get_setting("turso_auth_token", "")).strip())
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
@@ -286,6 +290,9 @@ async def get_settings():
         "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
+        "turso_database_url": turso_database_url,
+        "turso_auth_token_set": turso_auth_token_set,
+        "turso_configured": bool(turso_database_url),
         "preview_dns_hint": (
             f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
             if preview_zone
@@ -423,6 +430,26 @@ async def save_settings(body: SettingsRequest):
             if body.syra_internal_secret.strip()
             else "Syra internal secret cleared."
         )
+    if body.turso_database_url is not None or body.turso_auth_token is not None:
+        from syte.turso_store import reset_client_cache
+
+        if body.turso_database_url is not None:
+            await set_setting("turso_database_url", body.turso_database_url.strip())
+            messages.append(
+                "Turso database URL saved."
+                if body.turso_database_url.strip()
+                else "Turso database URL cleared — agent sessions will not be persisted to Turso."
+            )
+        if body.turso_auth_token is not None:
+            await set_setting("turso_auth_token", body.turso_auth_token.strip())
+            messages.append(
+                "Turso auth token saved."
+                if body.turso_auth_token.strip()
+                else "Turso auth token cleared."
+            )
+        # Drop any cached client so the next agent session picks up the new
+        # connection details immediately instead of an out-of-date client.
+        reset_client_cache()
 
     if proxy_updated or not messages:
         ok, msg = await apply_proxy_config()
@@ -612,9 +639,7 @@ async def api_agent_warm_public(project_id: str):
     return {
         **result,
         "status_url": f"/api/projects/{project_id}/agent",
-        "stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1"
-        ),
+        "sessions_url": f"/api/projects/{project_id}/agent/sessions",
     }
 
 
@@ -736,6 +761,12 @@ async def api_agent_activity_public(
     limit: int = 200,
     session: str = "",
 ):
+    """Local SQLite activity snapshot (fast, always available; not durable across DB moves).
+
+    For the durable, UUID-addressable record of a turn use the Turso session
+    routes instead: ``GET /api/agent_session/{session_id}`` or
+    ``GET /api/projects/{project_id}/agent/sessions`` to list recent session ids.
+    """
     from syte.agent_activity import list_agent_events
 
     project = await get_project(project_id)
@@ -756,134 +787,61 @@ async def api_agent_activity_public(
         "events": events,
         "since_id": since_id,
         "session": session or None,
-        "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
-        "tagged_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged"
-        ),
-        "marked_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream?live=1&format=marked"
-        ),
+        "sessions_url": f"/api/projects/{project_id}/agent/sessions",
     }
 
 
-@app.get("/api/projects/{project_id}/agent/activity/stream")
-async def api_agent_activity_stream(
-    project_id: str,
-    request: Request,
-    live: bool = False,
-    since_id: int = 0,
-    format: Literal[
-        "sse",
-        "tagged",
-        "tagged_sse",
-        "tags",
-        "marked",
-        "marks",
-        "text",
-        "plain",
-        "jsonl",
-    ] = "sse",
-    types: str = "",
-    session: str = "",
-    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-):
-    """Stream a durable agent turn as Server-Sent Events (or text/JSONL).
-
-    Replays persisted activity events after ``since_id`` and then streams live
-    events for the project. See ``syte.log_stream`` for the full frame protocol.
-
-    Query/header parameters:
-        live: When true, emit an opening ``session`` marker and keep the
-            connection open for live events.
-        since_id: Resume point — only events with a greater id are replayed.
-        format: Wire encoding. ``sse`` (default), ``tagged``, and ``marked`` are
-            ``text/event-stream`` and work with ``EventSource``; ``text`` and
-            ``jsonl`` are raw byte streams for ``fetch``/``curl`` clients.
-            ``marked`` emits ``[boot]``, ``[sessionN]``, and
-            ``S{session}{msg}(d|g)-<kind>text`` lines for receivers that track
-            per-session progress without reloading older sessions.
-        types: Comma-separated ``event_type`` allow-list applied to the
-            ``tagged``/``marked``/``text``/``jsonl`` encodings (e.g. ``thinking,command_run``).
-        session: Replay scope. ``last`` streams only the newest ``[sessionN]``
-            block on connect (an integer pins a specific session); older
-            sessions a client already stored are not replayed. Live events —
-            including a subsequent new session — are never filtered.
-        Last-Event-ID: Standard SSE resume header. When ``since_id`` is not
-            supplied explicitly, this header value is used so browser
-            ``EventSource`` clients resume automatically after a reconnect.
-
-    Authentication is optional; supply ``api_key`` (query) or ``x-api-key``
-    (header) to authenticate browser ``EventSource`` connections.
-    """
-    from syte.log_stream import (
-        stream_agent_activity,
-        stream_agent_activity_formatted,
-        stream_agent_activity_marked,
-        stream_agent_activity_tagged,
-    )
+@app.get("/api/projects/{project_id}/agent/sessions")
+async def api_agent_sessions_public(project_id: str, limit: int = 50):
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.turso_store import list_sessions_for_project, turso_configured
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
-    if key:
-        await auth.verify_api_token_from_request(request)
-    # Fall back to the SSE Last-Event-ID header when since_id is not explicit,
-    # so EventSource clients resume without gaps after an automatic reconnect.
-    if not since_id and last_event_id:
-        try:
-            since_id = max(0, int(last_event_id))
-        except (TypeError, ValueError):
-            since_id = 0
-    fmt = (format or "sse").strip().lower()
-    type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
-    session_scope: str | None = session.strip() or None
-    if fmt in ("tagged", "tagged_sse", "tags"):
-        generator = stream_agent_activity_tagged(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-            session=session_scope,
+    if not await turso_configured():
+        return {
+            "ok": True,
+            "project_id": project_id,
+            "turso_configured": False,
+            "sessions": [],
+            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
+        }
+    sessions = await list_sessions_for_project(project_id, limit=limit)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "turso_configured": True,
+        "sessions": [
+            {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
+        ],
+    }
+
+
+@app.get("/api/agent_session/{session_id}")
+async def api_get_agent_session(session_id: str, since_id: int = 0):
+    """Fetch a durable agent activity session by UUID from Turso.
+
+    This is the Turso access route that replaces the old activity SSE stream.
+    Asking the agent something still happens over the normal request/response
+    API (``agent_communicate`` / ``agent_change`` / the GUI chat endpoint,
+    which return this session's ``id``); to observe what happened, poll this
+    route by that ``id`` instead of opening a streaming connection. Pass
+    ``since_id`` to fetch only events recorded after a previously-seen event
+    id (useful for polling a session that is still ``open``).
+    """
+    from syte.turso_store import get_session, turso_configured
+
+    if not await turso_configured():
+        raise HTTPException(
+            503,
+            "Turso is not configured — set turso_database_url (and turso_auth_token) "
+            "in Settings -> AI tab before fetching agent sessions.",
         )
-        media = "text/event-stream"
-        stream_format = "tagged-v1"
-    elif fmt in ("marked", "marks"):
-        generator = stream_agent_activity_marked(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            type_filter=type_filter,
-            session=session_scope,
-        )
-        media = "text/event-stream"
-        stream_format = "marked-v1"
-    elif fmt in ("text", "jsonl", "plain"):
-        generator = stream_agent_activity_formatted(
-            project_id,
-            live_only=live,
-            since_id=since_id,
-            output_format="jsonl" if fmt == "jsonl" else "text",
-            type_filter=type_filter,
-            session=session_scope,
-        )
-        media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
-        stream_format = fmt
-    else:
-        generator = stream_agent_activity(
-            project_id, live_only=live, since_id=since_id, session=session_scope
-        )
-        media = "text/event-stream"
-        stream_format = fmt
-    return StreamingResponse(
-        generator,
-        media_type=media,
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Syte-Stream-Format": stream_format,
-        },
-    )
+    session = await get_session(session_id, since_id=since_id)
+    if not session:
+        raise HTTPException(404, "Agent session not found")
+    return {"ok": True, **session}
 
 
 class AgentChatRequest(BaseModel):

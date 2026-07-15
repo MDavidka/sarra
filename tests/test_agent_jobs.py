@@ -37,7 +37,8 @@ async def test_submit_agent_request_returns_immediately(tmp_data_dir: Path, monk
     assert result["ok"] is True
     assert result["status"] == "accepted"
     assert result["request_id"].startswith("req_")
-    assert "stream_url" in result
+    assert "turso_session_id" in result
+    assert "session_url" in result
 
 
 @pytest.mark.asyncio

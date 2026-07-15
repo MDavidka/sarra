@@ -33,7 +33,7 @@ def build_backend_integration(base_url: str = "") -> dict:
             _step_preview_start(api),
             _step_preview_poll(api),
             _step_agent_change(api, base),
-            _step_agent_stream(api, base),
+            _step_agent_session(api, base),
             _step_deploy(api),
             _step_container_poll(api),
             _step_domain(api),
@@ -99,18 +99,25 @@ def build_backend_integration(base_url: str = "") -> dict:
                 "when": "User asks AI to edit code (async)",
                 "call": f"POST {api}/agent_change",
                 "you_send": '{"uuid":"<syte_uuid>","message":"…","model_profile":"syra-base"}',
-                "you_save": "request_id from response; track since_id for SSE reconnect",
-                "you_show_user": "streaming assistant text + file edit timeline from SSE",
+                "you_save": "request_id and turso_session_id from response",
+                "you_show_user": "chat timeline built by polling the durable Turso session",
             },
             {
-                "when": "Open live agent activity stream",
-                "call": f"GET {base}/api/projects/<uuid>/agent/activity/stream?live=1&since_id=0",
-                "you_send": "SSE — optional ?api_key= for browser clients",
-                "you_save": "last event id as since_id on reconnect",
-                "you_show_user": "token_delta streaming, file_created/modified, request_completed",
+                "when": "Fetch the durable agent session (no live stream)",
+                "call": f"GET {api}/agent_session/<turso_session_id>?since_id=0",
+                "you_send": "query param since_id only",
+                "you_save": "highest event.id seen, for the next poll's since_id",
+                "you_show_user": "plan, tool calls, and final reply from session.events; poll every 2–3s while status is 'open'",
             },
             {
-                "when": "Poll agent activity (no SSE)",
+                "when": "Discover session ids for a project",
+                "call": f"GET {api}/agent_sessions?uuid=<syte_uuid>&limit=50",
+                "you_send": "query params uuid + limit",
+                "you_save": "nothing required — each entry has its own session_url",
+                "you_show_user": "history list of past AI requests",
+            },
+            {
+                "when": "Poll agent activity (local fallback, no Turso configured)",
                 "call": f"GET {api}/agent_activity?uuid=<syte_uuid>&since_id=N",
                 "you_send": "query params uuid + since_id",
                 "you_save": "max event id for next poll",
@@ -120,7 +127,7 @@ def build_backend_integration(base_url: str = "") -> dict:
                 "when": "Check agent health before chat",
                 "call": f"GET {api}/agent_status?uuid=<syte_uuid>",
                 "you_send": "query param uuid only",
-                "you_save": "activity_stream_url from response",
+                "you_save": "sessions_url from response",
                 "you_show_user": "agent running indicator",
             },
         ],
@@ -359,7 +366,8 @@ def _step_agent_change(api: str, base: str) -> dict:
         "endpoint": f"POST {api}/agent_change",
         "when_to_call": (
             "User sends a natural-language edit request in your Sycord app. "
-            "Returns immediately — stream progress via SSE (step 6)."
+            "Returns immediately with a durable Turso session id — fetch its progress (step 6) "
+            "instead of opening a live stream."
         ),
         "request": {
             "method": "POST",
@@ -393,13 +401,14 @@ def _step_agent_change(api: str, base: str) -> dict:
                 "uuid": "myapp-a1b2c3",
                 "request_id": "req_abc123def456",
                 "status": "accepted",
-                "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1",
+                "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
                 "change_applied": None,
             },
             "fields_to_use": {
                 "request_id": "Track this job in your UI",
-                "stream_url": "Append to SYTE_URL — open EventSource for live updates",
-                "status": "accepted — job queued; completion arrives on SSE",
+                "turso_session_id": "Save — use it to fetch the durable session (step 6)",
+                "status": "accepted — job queued; poll the session for completion",
             },
         },
         "backend_pseudocode": (
@@ -408,101 +417,86 @@ def _step_agent_change(api: str, base: str) -> dict:
             "  message: userMessage,\n"
             "  model_profile: 'syra-base',\n"
             "});\n"
-            "openAgentStream(project.syte_uuid, res.request_id, lastEventId);"
+            "pollAgentSession(project.syte_uuid, res.turso_session_id);"
         ),
     }
 
 
-def _step_agent_stream(api: str, base: str) -> dict:
-    stream = f"{base}/api/projects/{{uuid}}/agent/activity/stream?live=1&since_id=0"
+def _step_agent_session(api: str, base: str) -> dict:
+    session_route = f"{api}/agent_session/{{session_id}}"
     return {
         "step": 6,
-        "name": "Stream agent activity (SSE)",
-        "endpoint": stream,
+        "name": "Fetch the durable agent session (Turso access route)",
+        "endpoint": f"{session_route}?since_id=0",
         "when_to_call": (
-            "Prewarm with POST /api/agent_warm when the user opens the project. "
-            "Open this stream before or right after agent_change. Reconnect with since_id=last event id. "
-            "Alternative: poll GET /sycord/api/agent_activity."
+            "Right after agent_change returns turso_session_id. There is no live stream — every event "
+            "produced while the agent works (request, plan, tool calls, reply) is written to this "
+            "session as it happens. Poll it on a short interval (every 2–3s) until status != 'open'. "
+            "Alternative when Turso is not configured yet: poll GET /sycord/api/agent_activity."
         ),
         "request": {
             "method": "GET",
-            "headers": {"Accept": "text/event-stream"},
+            "headers": {"X-API-Key": "syte_YOUR_TOKEN"},
             "query": {
-                "live": "1",
-                "since_id": "0 — last event id for reconnect",
-                "format": "optional — tagged | marked | text | jsonl (default SSE JSON)",
-                "api_key": "optional query param for browser EventSource",
+                "since_id": "0 — only return events with a strictly greater id; pass the highest id seen so far to avoid re-fetching",
             },
         },
         "response": {
-            "content_type": "text/event-stream",
-            "sse_examples": [
-                'data: {"type":"activity","event":{"id":10,"event_type":"request_started","detail":"Add dark mode"}}',
-                'data: {"type":"activity","event":{"id":11,"event_type":"token_delta","payload":{"delta":"Sure"}}}',
-                'data: {"type":"activity","event":{"id":14,"event_type":"file_modified","detail":"app/components/ThemeToggle.tsx"}}',
-                'data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle"}}',
-                'data: {"type":"ping","since_id":16}',
-            ],
-            "tagged_sse_endpoint": (
-                f"{stream}&format=tagged"
-            ),
-            "tagged_sse_examples": [
-                'data: [start]<{"id":10,"request_id":"req_abc","type":"request_started","text":"Add dark mode"}>',
-                'data: [think]<{"id":11,"request_id":"req_abc","type":"thinking","text":"Inspect theme"}>',
-                'data: [tool:start]<{"id":12,"request_id":"req_abc","type":"file_read","phase":"started","text":"src/theme.ts"}>',
-                'data: [tool:result]<{"id":13,"request_id":"req_abc","type":"tool_call_finished","phase":"finished","text":"Read complete"}>',
-                'data: [delta]<{"id":14,"request_id":"req_abc","type":"token_delta","text":"Done"}>',
-                'data: [done]<{"id":16,"request_id":"req_abc","type":"request_completed","text":"Added ThemeToggle"}>',
-            ],
-            "marked_sse_endpoint": f"{stream}&format=marked",
-            "marked_sse_examples": [
-                "data: [boot]",
-                "data: [session1]",
-                "data: S1001(d)-<user>Add dark mode",
-                "data: S1002(g)-<tool>read_file {\"path\":\"src/theme.ts\"}",
-                "data: S1003(d)-<tool>read_file Read complete",
-                "data: S1004(d)-<plan>1. Inspect theme 2. Patch toggle",
-                "data: [session2]",
-                "data: S2003(g)-<plan>Updating header",
-            ],
-            "marked_rules": {
-                "session": "[sessionN] opens when the user sends a message and the agent starts work",
-                "mark": "S{session}{msg:03d}(d|g) — session + message index; (d)=done (g)=going",
-                "kinds": "<user> <tool> <plan> <message> <error> <status>",
-                "last_session": "Agent loads provider history only from the latest session; poll GET /sycord/api/agent_activity?session=last",
+            "content_type": "application/json",
+            "example": {
+                "ok": True,
+                "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                "project_id": "myapp-a1b2c3",
+                "session_number": 3,
+                "model_profile": "syra-base",
+                "status": "completed",
+                "created_at": "2026-07-15T12:00:00+00:00",
+                "updated_at": "2026-07-15T12:00:04+00:00",
+                "events": [
+                    {"id": 10, "event_type": "request_started", "detail": "Add dark mode"},
+                    {"id": 11, "event_type": "thinking", "detail": "Inspect the current theme first"},
+                    {"id": 12, "event_type": "tool_call_started", "payload": {"tool": "write_file"}},
+                    {"id": 13, "event_type": "tool_call_finished", "payload": {"tool": "write_file", "ok": True}},
+                    {"id": 16, "event_type": "request_completed", "payload": {"reply": "Added ThemeToggle"}},
+                ],
             },
+            "status_values": ["open", "completed", "failed", "cancelled"],
             "event_types": [
                 "request_started",
-                "token_delta",
-                "message_snapshot",
+                "processing",
+                "thinking",
+                "tool_call_started",
+                "tool_call_finished",
                 "file_created",
                 "file_modified",
                 "file_deleted",
-                "tool_call",
-                "command_run",
-                "thinking",
                 "request_completed",
                 "request_failed",
             ],
             "fields_to_use": {
-                "event.id": "Save as since_id for reconnect / agent_activity poll",
-                "event.payload.request_id": "Correlate all activity with the accepted request",
+                "status": "'open' while working; poll until it becomes completed/failed/cancelled",
+                "events[].id": "Save the max value as since_id on the next poll",
+                "events[].payload.request_id": "Correlate all events with the accepted request",
                 "thinking.detail": "Display the agent plan before tool actions",
-                "tool payload.phase": "started or finished; correlate with tool_call_id",
-                "token_delta.payload.delta": "Append to streaming assistant bubble",
-                "request_completed.detail": "Final assistant message when job done",
+                "tool_call_started/finished.payload.tool": "Show a tool-use timeline",
+                "request_completed.payload.reply": "Final assistant message when the turn finishes",
             },
         },
         "backend_pseudocode": (
-            "const es = new EventSource(\n"
-            "  SYTE + '/api/projects/' + uuid + '/agent/activity/stream?live=1&since_id=' + sinceId\n"
-            "    + '&api_key=' + encodeURIComponent(SYTE_API_KEY)\n"
-            ");\n"
-            "es.onmessage = (e) => {\n"
-            "  const msg = JSON.parse(e.data);\n"
-            "  if (msg.type === 'activity') handleAgentEvent(msg.event);\n"
-            "  if (msg.type === 'ping') sinceId = msg.since_id;\n"
-            "};"
+            "async function pollAgentSession(uuid, sessionId) {\n"
+            "  let sinceId = 0;\n"
+            "  for (;;) {\n"
+            "    const res = await getJson(\n"
+            "      `/sycord/api/agent_session/${sessionId}?since_id=${sinceId}`\n"
+            "    );\n"
+            "    for (const event of res.events) {\n"
+            "      sinceId = Math.max(sinceId, event.id);\n"
+            "      handleAgentEvent(event);\n"
+            "    }\n"
+            "    if (res.status !== 'open') return res;\n"
+            "    await sleep(2000);\n"
+            "  }\n"
+            "}"
         ),
     }
 
