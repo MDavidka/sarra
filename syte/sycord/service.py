@@ -234,6 +234,16 @@ async def agent_turso_sync(project_id: str) -> dict | None:
     return {"uuid": project_id, **(await turso_message_sync_status(project_id))}
 
 
+async def agent_turso_debug(project_id: str) -> dict | None:
+    """Diagnose why the brain indicator is red — live Turso connectivity + schema check."""
+    from syte.turso_store import turso_debug_status
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    return {"uuid": project_id, **(await turso_debug_status())}
+
+
 async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
     """List durable Turso agent-session UUIDs for a project (newest first)."""
     from syte.turso_store import list_sessions_for_project, turso_configured

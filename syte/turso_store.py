@@ -114,6 +114,10 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 # changes (saved from the AI tab) transparently pick up a fresh connection.
 _client_cache: dict[tuple[str, str], Any] = {}
 _schema_ready: set[tuple[str, str]] = set()
+# Last error observed for a given (url, token) pair — surfaced through
+# turso_debug_status() so the "brain won't turn green" case can be diagnosed
+# from the GUI / browser console instead of only server logs.
+_last_error: dict[tuple[str, str], str] = {}
 
 
 def _now() -> str:
@@ -142,6 +146,7 @@ def reset_client_cache() -> None:
     """
     _client_cache.clear()
     _schema_ready.clear()
+    _last_error.clear()
 
 
 def _build_client(url: str, token: str):
@@ -154,7 +159,23 @@ def _build_client(url: str, token: str):
 
 
 async def get_turso_client() -> Any | None:
-    """Return a ready-to-use Turso client, or ``None`` if not configured."""
+    """Return a ready-to-use Turso client, or ``None`` if not configured.
+
+    Schema initialization is deliberately **per-statement resilient**: each
+    ``CREATE TABLE`` / ``CREATE INDEX`` in ``SCHEMA_STATEMENTS`` is attempted
+    independently. Earlier versions ran the whole list in one loop and
+    aborted the *entire* client on the first failing statement — since the
+    client is then evicted from ``_client_cache`` and ``_schema_ready`` is
+    never populated, every later call re-ran (and re-failed on) the same
+    statement, permanently disabling all Turso writes (the message-save
+    "brain" indicator would stay red forever) even with fully valid
+    credentials, as long as any single statement — e.g. one particular index
+    — was rejected by that Turso database (version/engine differences,
+    quota, etc.). Now a failing statement is logged and skipped so tables
+    that *do* create successfully (most importantly ``agent_message``) are
+    still usable, and the specific failure is recorded via
+    :func:`turso_debug_status` for diagnosis.
+    """
     url, token = await turso_settings()
     if not url:
         return None
@@ -163,20 +184,79 @@ async def get_turso_client() -> Any | None:
     if client is None:
         try:
             client = _build_client(url, token)
-        except Exception:
-            logger.exception("Failed to create Turso client")
+        except Exception as exc:
+            logger.exception("Failed to create Turso client for %s", url)
+            _last_error[key] = f"client_creation_failed: {exc}"
             return None
         _client_cache[key] = client
     if key not in _schema_ready:
-        try:
-            for stmt in SCHEMA_STATEMENTS:
+        failures: list[str] = []
+        for stmt in SCHEMA_STATEMENTS:
+            try:
                 await client.execute(stmt)
-            _schema_ready.add(key)
-        except Exception:
-            logger.exception("Failed to initialize Turso agent_session schema")
-            _client_cache.pop(key, None)
-            return None
+            except Exception as exc:
+                short = stmt.strip().splitlines()[0][:80]
+                failures.append(f"{short}... -> {exc}")
+                logger.warning(
+                    "Turso schema statement failed (continuing): %s -> %r", short, exc
+                )
+        if failures:
+            _last_error[key] = "; ".join(failures)
+            logger.error(
+                "Turso schema init had %d failing statement(s) for %s — "
+                "continuing with whatever tables/indexes succeeded: %s",
+                len(failures), url, "; ".join(failures),
+            )
+        else:
+            _last_error.pop(key, None)
+        # Mark ready even on partial failure — a missing *index* must never
+        # block INSERT/SELECT against a table that *did* get created.
+        _schema_ready.add(key)
     return client
+
+
+async def turso_debug_status() -> dict[str, Any]:
+    """Diagnostic snapshot for the 'why is the brain red' debugging path.
+
+    Attempts a real round-trip (client build + a trivial ``SELECT 1``) against
+    the configured database so connectivity/auth problems are surfaced
+    immediately, rather than only showing up as a generic ``all_saved: false``
+    later. Never raises. Intended to be exposed through an API route and
+    logged to the browser console by the GUI when the brain indicator is red.
+    """
+    url, token = await turso_settings()
+    if not url:
+        return {
+            "configured": False,
+            "database_url": "",
+            "reachable": False,
+            "error": "turso_database_url is not set",
+            "schema_ready": False,
+            "schema_errors": "",
+        }
+    key = (url, token)
+    result: dict[str, Any] = {
+        "configured": True,
+        "database_url": url,
+        "auth_token_set": bool(token),
+        "reachable": False,
+        "error": "",
+        "schema_ready": key in _schema_ready,
+        "schema_errors": _last_error.get(key, ""),
+    }
+    client = await get_turso_client()
+    if client is None:
+        result["error"] = _last_error.get(key, "get_turso_client() returned None")
+        return result
+    try:
+        await client.execute("SELECT 1")
+        result["reachable"] = True
+    except Exception as exc:
+        result["error"] = f"round_trip_failed: {exc}"
+        logger.exception("Turso debug round-trip failed for %s", url)
+    result["schema_ready"] = key in _schema_ready
+    result["schema_errors"] = _last_error.get(key, "")
+    return result
 
 
 def _row_value(row: Any, name: str) -> Any:
@@ -370,9 +450,6 @@ async def record_message(
                 now,
             ],
         )
-        await client.execute(
-            "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
-        )
     except Exception as exc:
         # ``idx_agent_message_local_id`` is a unique index on
         # ``(project_id, local_message_id)``. A retry (e.g. future
@@ -390,6 +467,23 @@ async def record_message(
             local_message_id,
         )
         return None
+    # The message row is the source of truth for "was this saved" — a
+    # failure touching agent_session.updated_at (a cosmetic bookkeeping
+    # field) must never cause an already-successful INSERT to be reported
+    # back to the caller as unsynced. This was a real bug: an exception here
+    # used to fall into the same except-block as the INSERT above and return
+    # None, permanently marking a message "not saved" (feeding the red brain
+    # indicator) even though the row was safely committed to Turso.
+    try:
+        await client.execute(
+            "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
+        )
+    except Exception:
+        logger.warning(
+            "Turso agent_message %s inserted, but touching agent_session.updated_at "
+            "failed (non-fatal, message is still recorded as saved)",
+            local_message_id,
+        )
     return {
         "id": result.last_insert_rowid,
         "session_id": session_id,

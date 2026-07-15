@@ -129,6 +129,41 @@ async def test_record_message_and_list_messages(turso_local) -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_message_succeeds_even_if_session_touch_fails(
+    turso_local, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: a message must be reported as saved once its INSERT
+    commits, even if the secondary 'touch agent_session.updated_at' write
+    afterward fails. Previously both statements shared one try/except, so a
+    failure in the cosmetic touch step caused an already-successful insert
+    to be reported back as unsynced — permanently feeding a false 'red
+    brain' even though the message really was durably saved."""
+    from syte import turso_store
+
+    session_id = await turso_local.open_session("proj-touch-fail", session_number=1)
+    client = await turso_local.get_turso_client()
+
+    original_execute = client.execute
+
+    async def flaky_execute(sql, *args, **kwargs):
+        if sql.strip().startswith("UPDATE agent_session"):
+            raise RuntimeError("simulated agent_session touch failure")
+        return await original_execute(sql, *args, **kwargs)
+
+    client.execute = flaky_execute
+    try:
+        saved = await turso_local.record_message(
+            session_id, "proj-touch-fail", "user", "hello", session_number=1, local_message_id=1,
+        )
+    finally:
+        client.execute = original_execute
+
+    assert saved is not None
+    assert saved["content"] == "hello"
+    assert await turso_local.count_messages(session_id) == 1
+
+
+@pytest.mark.asyncio
 async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local) -> None:
     """A retried record_message() call for a message already mirrored must
     return the existing row (not a spurious failure or a duplicate row) —
@@ -148,6 +183,82 @@ async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local
 
     messages = await turso_local.list_messages(session_id)
     assert len(messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_bad_schema_statement_does_not_disable_all_turso_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: a single failing CREATE TABLE/INDEX statement must not
+    permanently break every other Turso operation.
+
+    Previously, ``get_turso_client()`` ran ``SCHEMA_STATEMENTS`` in one loop
+    and aborted (evicting the client from cache, never marking the schema
+    ready) on the *first* exception — so if any one statement was rejected
+    by a given Turso database, every later call re-ran and re-failed on that
+    same statement forever, permanently keeping the "brain" indicator red
+    even with fully valid credentials. Schema init must now continue past a
+    failing statement so tables that succeed remain usable.
+    """
+    from syte import turso_store
+
+    db_path = tmp_path / "turso-partial-fail.db"
+
+    async def fake_settings():
+        return f"file:{db_path}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_settings)
+    turso_store.reset_client_cache()
+
+    bad_statement = "CREATE THIS IS NOT VALID SQL"
+    original_statements = turso_store.SCHEMA_STATEMENTS
+    monkeypatch.setattr(
+        turso_store, "SCHEMA_STATEMENTS", (*original_statements, bad_statement),
+    )
+
+    # Despite one statement failing, the client must still come back usable
+    # and later calls must not keep re-attempting (and re-failing) forever.
+    client = await turso_store.get_turso_client()
+    assert client is not None
+
+    session_id = await turso_store.open_session("proj-partial-fail", session_number=1)
+    assert session_id is not None
+
+    saved = await turso_store.record_message(
+        session_id, "proj-partial-fail", "user", "hello", session_number=1, local_message_id=1,
+    )
+    assert saved is not None
+    assert await turso_store.count_messages(session_id) == 1
+
+    debug = await turso_store.turso_debug_status()
+    assert debug["configured"] is True
+    assert debug["reachable"] is True
+    assert bad_statement in debug["schema_errors"]
+
+    turso_store.reset_client_cache()
+
+
+@pytest.mark.asyncio
+async def test_turso_debug_status_reports_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import turso_store
+
+    async def empty_settings():
+        return "", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", empty_settings)
+    turso_store.reset_client_cache()
+
+    debug = await turso_store.turso_debug_status()
+    assert debug["configured"] is False
+    assert debug["reachable"] is False
+
+
+@pytest.mark.asyncio
+async def test_turso_debug_status_reachable_when_configured(turso_local) -> None:
+    debug = await turso_local.turso_debug_status()
+    assert debug["configured"] is True
+    assert debug["reachable"] is True
+    assert debug["schema_errors"] == ""
 
 
 @pytest.mark.asyncio

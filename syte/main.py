@@ -746,6 +746,27 @@ async def api_agent_turso_sync_public(project_id: str):
     return {"ok": True, "project_id": project_id, **(await turso_message_sync_status(project_id))}
 
 
+@app.get("/api/projects/{project_id}/agent/turso_debug")
+async def api_agent_turso_debug_public(project_id: str):
+    """Diagnose why the 'brain' indicator is red — connectivity + schema check.
+
+    Returns whether Turso is configured, whether the configured
+    database/token pair is actually reachable right now (a live round-trip,
+    not just "is a URL set"), whether schema initialization succeeded for
+    every statement, and the specific error text for anything that failed.
+    Meant to be called from the browser console
+    (``fetch('/api/projects/<id>/agent/turso_debug').then(r=>r.json()).then(console.log)``)
+    or surfaced by the GUI when the brain icon is red, since ``all_saved:
+    false`` alone does not say *why* a message failed to sync.
+    """
+    from syte.turso_store import turso_debug_status
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, **(await turso_debug_status())}
+
+
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
     from syte.cloud_agent import get_agent_logs

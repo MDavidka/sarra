@@ -443,6 +443,20 @@ async def api_agent_turso_sync(
     return {"ok": True, "uuid": uuid, **(await turso_message_sync_status(uuid))}
 
 
+@router.get("/agent_turso_debug")
+async def api_agent_turso_debug(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Diagnose why the brain indicator is red — live Turso connectivity + schema check."""
+    from syte.turso_store import turso_debug_status
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, **(await turso_debug_status())}
+
+
 @router.get("/agent_sessions")
 async def api_agent_sessions(
     uuid: str = Query(..., description="Project UUID"),

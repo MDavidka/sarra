@@ -193,6 +193,18 @@ async def internal_agent_turso_sync(
     return {"ok": True, "project_id": project_id, **(await turso_message_sync_status(project_id))}
 
 
+@router.get("/projects/{project_id}/agent/turso_debug")
+async def internal_agent_turso_debug(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Diagnose why the brain indicator is red — live Turso connectivity + schema check."""
+    from syte.turso_store import turso_debug_status
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, **(await turso_debug_status())}
+
+
 @router.get("/projects/{project_id}/agent/sessions")
 async def internal_agent_sessions(
     project_id: str,
