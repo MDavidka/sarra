@@ -1,6 +1,7 @@
 """Tests for the Turso (libSQL) durable agent-session store."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -251,6 +252,8 @@ async def test_turso_debug_status_reports_not_configured(monkeypatch: pytest.Mon
     debug = await turso_store.turso_debug_status()
     assert debug["configured"] is False
     assert debug["reachable"] is False
+    assert debug["effective_url"] == ""
+    assert debug["hint"] == ""
 
 
 @pytest.mark.asyncio
@@ -259,6 +262,75 @@ async def test_turso_debug_status_reachable_when_configured(turso_local) -> None
     assert debug["configured"] is True
     assert debug["reachable"] is True
     assert debug["schema_errors"] == ""
+    assert debug["hint"] == ""
+    # Local file URLs are not rewritten.
+    assert debug["effective_url"] == debug["database_url"]
+
+
+def test_normalize_turso_url_rewrites_libsql_to_https() -> None:
+    from syte.turso_store import normalize_turso_url
+
+    aws = "libsql://sycorf-mystical-leo-kb.aws-us-west-2.turso.io"
+    assert normalize_turso_url(aws) == (
+        "https://sycorf-mystical-leo-kb.aws-us-west-2.turso.io"
+    )
+    assert normalize_turso_url("LIBSQL://Example.Turso.IO") == "https://Example.Turso.IO"
+    assert normalize_turso_url("https://already.https.turso.io") == (
+        "https://already.https.turso.io"
+    )
+    assert normalize_turso_url("file:/tmp/local.db") == "file:/tmp/local.db"
+    assert normalize_turso_url("wss://explicit.ws.turso.io") == "wss://explicit.ws.turso.io"
+    assert normalize_turso_url("  libsql://padded.turso.io  ") == "https://padded.turso.io"
+    assert normalize_turso_url("") == ""
+
+
+def test_websocket_rejected_hint_matches_aws_handshake_errors() -> None:
+    from syte.turso_store import _websocket_rejected_hint
+
+    err = (
+        "round_trip_failed: 400, message='Invalid response status', "
+        "url='wss://sycorf-mystical-leo-kb.aws-us-west-2.turso.io'"
+    )
+    hint = _websocket_rejected_hint(err)
+    assert "WebSocket" in hint
+    assert "HTTPS" in hint
+    assert _websocket_rejected_hint("auth failed: unauthorized") == ""
+
+
+@pytest.mark.asyncio
+async def test_build_client_uses_https_for_libsql_dashboard_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dashboard ``libsql://`` pastes must open the HTTP client, not WSS.
+
+    AWS-hosted Turso rejects WebSocket upgrades; ``libsql-client`` maps
+    ``libsql://`` → ``wss://`` unless we rewrite to ``https://`` first.
+    """
+    from syte import turso_store
+
+    captured: dict[str, Any] = {}
+
+    def fake_create_client(url: str, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+
+        class _Fake:
+            async def execute(self, *a, **k):
+                return None
+
+            async def close(self):
+                return None
+
+        return _Fake()
+
+    import libsql_client
+
+    monkeypatch.setattr(libsql_client, "create_client", fake_create_client)
+    turso_store._build_client(
+        "libsql://sycorf-mystical-leo-kb.aws-us-west-2.turso.io", "tok"
+    )
+    assert captured["url"] == "https://sycorf-mystical-leo-kb.aws-us-west-2.turso.io"
+    assert captured["kwargs"]["auth_token"] == "tok"
 
 
 @pytest.mark.asyncio

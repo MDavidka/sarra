@@ -177,6 +177,10 @@ async function logDebugChatTursoDiagnostics(projectId, sync) {
       console.warn('Turso is NOT configured — set turso_database_url in Settings -> AI tab.');
     } else if (debugInfo && debugInfo.reachable === false) {
       console.error('Turso is configured but NOT reachable right now:', debugInfo.error || '(no error captured)');
+      if (debugInfo.hint) console.warn('hint:', debugInfo.hint);
+      if (debugInfo.effective_url && debugInfo.effective_url !== debugInfo.database_url) {
+        console.warn('effective_url (after libsql→https rewrite):', debugInfo.effective_url);
+      }
       console.warn('database_url:', debugInfo.database_url, '| auth_token_set:', debugInfo.auth_token_set);
     } else if (debugInfo && debugInfo.schema_errors) {
       console.error('Turso is reachable, but schema setup had failing statement(s):', debugInfo.schema_errors);

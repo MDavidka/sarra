@@ -149,13 +149,57 @@ def reset_client_cache() -> None:
     _last_error.clear()
 
 
+def normalize_turso_url(url: str) -> str:
+    """Rewrite remote ``libsql://`` URLs to ``https://`` for the HTTP client.
+
+    Turso's dashboard still issues ``libsql://…`` connection strings, and the
+    Python ``libsql-client`` package historically maps that scheme to a
+    WebSocket (``wss://``) Hrana connection. AWS-hosted Turso databases
+    (hostnames like ``*.aws-*.turso.io``) reject WebSocket upgrades with
+    HTTP 400 ``protocol upgrade not supported (websocket)`` / aiohttp
+    ``Invalid response status``. The same host accepts the HTTP Hrana API
+    when the URL scheme is ``https://``.
+
+    Local ``file:`` / ``file://`` URLs and already-``http(s):`` / ``ws(s):``
+    URLs are left unchanged. Callers may keep pasting the dashboard's
+    ``libsql://`` value — Syte normalizes it before opening a client.
+    """
+    stripped = (url or "").strip()
+    if not stripped:
+        return stripped
+    lower = stripped.lower()
+    if lower.startswith("libsql://"):
+        return "https://" + stripped[len("libsql://") :]
+    return stripped
+
+
+def _websocket_rejected_hint(error: str) -> str:
+    """Return an operator-facing hint when Turso rejects a WebSocket upgrade."""
+    lower = (error or "").lower()
+    if (
+        "invalid response status" in lower
+        or "protocol upgrade not supported" in lower
+        or ("wss://" in lower and ("400" in lower or "505" in lower))
+    ):
+        return (
+            "Turso rejected the WebSocket (wss) upgrade — AWS-hosted "
+            "databases only support HTTPS. Syte rewrites libsql:// → https:// "
+            "automatically; if you still see this, clear the cache by "
+            "re-saving Settings → AI (Turso URL/token) or confirm the token "
+            "matches this database."
+        )
+    return ""
+
+
 def _build_client(url: str, token: str):
     import libsql_client
 
     kwargs: dict[str, Any] = {}
     if token:
         kwargs["auth_token"] = token
-    return libsql_client.create_client(url, **kwargs)
+    # Always connect via the normalized URL so a dashboard ``libsql://`` paste
+    # uses HTTPS Hrana instead of the broken WebSocket path on AWS Turso.
+    return libsql_client.create_client(normalize_turso_url(url), **kwargs)
 
 
 async def get_turso_client() -> Any | None:
@@ -229,31 +273,40 @@ async def turso_debug_status() -> dict[str, Any]:
         return {
             "configured": False,
             "database_url": "",
+            "effective_url": "",
             "reachable": False,
             "error": "turso_database_url is not set",
+            "hint": "",
             "schema_ready": False,
             "schema_errors": "",
         }
     key = (url, token)
+    effective = normalize_turso_url(url)
     result: dict[str, Any] = {
         "configured": True,
         "database_url": url,
+        "effective_url": effective,
         "auth_token_set": bool(token),
         "reachable": False,
         "error": "",
+        "hint": "",
         "schema_ready": key in _schema_ready,
         "schema_errors": _last_error.get(key, ""),
     }
     client = await get_turso_client()
     if client is None:
-        result["error"] = _last_error.get(key, "get_turso_client() returned None")
+        err = _last_error.get(key, "get_turso_client() returned None")
+        result["error"] = err
+        result["hint"] = _websocket_rejected_hint(err)
         return result
     try:
         await client.execute("SELECT 1")
         result["reachable"] = True
     except Exception as exc:
-        result["error"] = f"round_trip_failed: {exc}"
-        logger.exception("Turso debug round-trip failed for %s", url)
+        err = f"round_trip_failed: {exc}"
+        result["error"] = err
+        result["hint"] = _websocket_rejected_hint(err)
+        logger.exception("Turso debug round-trip failed for %s (effective %s)", url, effective)
     result["schema_ready"] = key in _schema_ready
     result["schema_errors"] = _last_error.get(key, "")
     return result

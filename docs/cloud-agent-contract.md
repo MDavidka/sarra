@@ -196,8 +196,13 @@ configured — no manual migration step is required.
   - `turso_database_url` — e.g. `libsql://<db-name>-<org>.turso.io` (a
     remote Turso database) or, for local/dev testing without a live Turso
     server, a local libSQL file URL such as `file:/path/to/local.db`.
-  - `turso_auth_token` — optional; required for remote `libsql://` databases,
-    omitted for local `file:` URLs.
+    Paste the dashboard value as-is: Syte rewrites remote `libsql://`
+    URLs to `https://` before connecting. That rewrite is required for
+    AWS-hosted Turso databases (`*.aws-*.turso.io`), which reject
+    WebSocket (`wss://`) upgrades with HTTP 400 / "Invalid response
+    status". You may also paste an `https://…` URL directly.
+  - `turso_auth_token` — optional; required for remote `libsql://` /
+    `https://` databases, omitted for local `file:` URLs.
   - Set both from the Syte GUI's **Settings → AI** tab, or via
     `PUT /api/settings` with `turso_database_url` / `turso_auth_token` in the
     JSON body.
@@ -205,6 +210,7 @@ configured — no manual migration step is required.
   (pinned `>=0.3.1,<1` in `requirements.txt` / `pyproject.toml`), the official
   async Python client for Turso/libSQL. Syte creates one client per
   `(url, token)` pair via `libsql_client.create_client(url, auth_token=token)`
+  after normalizing the URL with `syte.turso_store.normalize_turso_url`,
   and caches it (`syte.turso_store._client_cache`); saving new settings calls
   `reset_client_cache()` so the next call picks up the new connection.
 - **No connection = no-op, not an error.** Every read/write function in
@@ -332,9 +338,11 @@ reports exactly what's wrong:
   "project_id": "myapp-a1b2c3",
   "configured": true,
   "database_url": "libsql://my-db-my-org.turso.io",
+  "effective_url": "https://my-db-my-org.turso.io",
   "auth_token_set": true,
   "reachable": true,
   "error": "",
+  "hint": "",
   "schema_ready": true,
   "schema_errors": ""
 }
@@ -344,7 +352,17 @@ reports exactly what's wrong:
   Settings → AI.
 - `reachable: false` → the URL/token pair is set but the live `SELECT 1`
   round-trip failed; `error` has the underlying exception text (bad token,
-  network-unreachable host, wrong URL scheme, etc.).
+  network-unreachable host, wrong URL scheme, etc.). `hint` may include an
+  operator-facing explanation when the failure matches a known pattern —
+  most importantly the AWS Turso WebSocket rejection
+  (`400` / `Invalid response status` / `protocol upgrade not supported`),
+  which means the client tried `wss://` against a host that only speaks
+  HTTPS. Syte rewrites `libsql://` → `https://` automatically
+  (`effective_url`); if you still see that error after upgrading, re-save
+  the Turso settings to clear any cached WebSocket client.
+- `effective_url` → the URL actually passed to `libsql-client` after the
+  `libsql://` → `https://` rewrite (identical to `database_url` when no
+  rewrite applies, e.g. `file:` or already-`https:` URLs).
 - `schema_errors` non-empty → the connection itself is fine, but one or more
   `CREATE TABLE` / `CREATE INDEX` statements were rejected by this specific
   Turso database (e.g. an index feature not supported by that
