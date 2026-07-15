@@ -468,6 +468,82 @@ async def test_communicate_without_turso_configured_still_succeeds(
 
 
 @pytest.mark.asyncio
+async def test_communicate_persists_every_message_to_turso(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every user/assistant/tool message is mirrored to the shared Turso
+    ``agent_message`` table in real time, and the aggregate sync status
+    (the GUI's green/red 'brain' indicator) reports all_saved=True."""
+    from syte import turso_store
+    from syte.cloud_agent import _communicate_with_agent_impl, turso_message_sync_status
+
+    project = await _project("turso-msgs-proj")
+    turso_db = tmp_data_dir / "turso-local-msgs.db"
+
+    async def fake_turso_settings():
+        return f"file:{turso_db}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_turso_settings)
+    turso_store.reset_client_cache()
+
+    replies = iter([
+        {"role": "assistant", "content": "", "tool_calls": [{
+            "id": "call-1", "type": "function",
+            "function": {"name": "read_file", "arguments": '{"path":"app/README.md"}'},
+        }]},
+        {"role": "assistant", "content": "Done."},
+    ])
+
+    async def fake_provider(*_args, **_kwargs):
+        return next(replies)
+
+    async def fake_tool(*_args, **_kwargs):
+        return {"ok": True, "content": "hello"}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+    monkeypatch.setattr("syte.cloud_agent._execute_tool", fake_tool)
+
+    result = await _communicate_with_agent_impl(project["id"], "inspect", request_id="req-turso-msgs")
+    assert result["ok"] is True
+    session_id = result["turso_session_id"]
+    assert session_id
+
+    messages = await turso_store.list_messages(session_id)
+    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
+    assert await turso_store.count_messages(session_id) == 4
+
+    sync = await turso_message_sync_status(project["id"])
+    assert sync["turso_configured"] is True
+    assert sync["total_messages"] == 4
+    assert sync["synced_messages"] == 4
+    assert sync["all_saved"] is True
+    turso_store.reset_client_cache()
+
+
+@pytest.mark.asyncio
+async def test_turso_sync_status_without_turso_reports_all_saved(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When Turso is not configured, the brain indicator stays green (there
+    is nothing unsaved to report) rather than falsely alarming red."""
+    from syte.cloud_agent import _communicate_with_agent_impl, turso_message_sync_status
+
+    project = await _project("no-turso-msgs-proj")
+
+    async def fake_provider(*_args, **_kwargs):
+        return {"role": "assistant", "content": "Done."}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+    result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso-msgs")
+    assert result["ok"] is True
+    assert result["turso_session_id"] is None
+
+    sync = await turso_message_sync_status(project["id"])
+    assert sync["turso_configured"] is False
+    assert sync["all_saved"] is True
+
+
+@pytest.mark.asyncio
 async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import _build_syte_instruction
 

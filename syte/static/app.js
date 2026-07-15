@@ -13,6 +13,9 @@ let previewTabActive = false;
 let agentActivityPollTimer = null;
 let agentActivityPollInFlight = false;
 const AGENT_ACTIVITY_POLL_INTERVAL_MS = 2000;
+let debugChatBrainPollTimer = null;
+let debugChatBrainPollInFlight = false;
+const DEBUG_CHAT_BRAIN_POLL_INTERVAL_MS = 3000;
 let debugChatSinceId = 0;
 let debugChatRenderedIds = new Set();
 let debugChatAutoScroll = true;
@@ -122,6 +125,68 @@ function stopAgentActivityStream() {
   }
   agentActivityPollInFlight = false;
   setDebugChatConnectionState('disconnected');
+  stopDebugChatBrainPoll();
+}
+
+// "Brain" indicator: green when every message in the current chat session has
+// been durably saved to Turso, red when at least one has not synced (or
+// Turso is unreachable), gray/dim when Turso isn't configured or status is
+// not yet known. Backed by GET /projects/{id}/agent/turso_sync.
+function setDebugChatBrainStatus(sync) {
+  const btn = document.getElementById('debug-chat-brain');
+  if (!btn) return;
+  btn.classList.remove('brain-saved', 'brain-unsaved', 'brain-unconfigured');
+  if (!sync || !sync.turso_configured) {
+    btn.classList.add('brain-unconfigured');
+    btn.setAttribute('aria-label', 'Turso is not configured — messages are only saved locally');
+    btn.title = 'Turso is not configured — messages are only saved locally';
+    return;
+  }
+  if (sync.all_saved) {
+    btn.classList.add('brain-saved');
+    const label = `All ${sync.total_messages || 0} session message(s) saved to Turso`;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  } else {
+    btn.classList.add('brain-unsaved');
+    const label = `${sync.synced_messages || 0} of ${sync.total_messages || 0} session messages saved to Turso — retrying`;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+}
+
+async function pollDebugChatBrainOnce(projectId) {
+  if (debugChatBrainPollInFlight) return;
+  debugChatBrainPollInFlight = true;
+  try {
+    const res = await api(`/projects/${projectId}/agent/turso_sync`);
+    if (res.ok) setDebugChatBrainStatus(res);
+  } catch {
+    // Leave the last known state on transient errors — never claim unsaved
+    // just because the status poll itself failed to reach the server.
+  } finally {
+    debugChatBrainPollInFlight = false;
+  }
+}
+
+function startDebugChatBrainPoll(projectId) {
+  stopDebugChatBrainPoll();
+  void pollDebugChatBrainOnce(projectId);
+  debugChatBrainPollTimer = setInterval(() => {
+    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+      stopDebugChatBrainPoll();
+      return;
+    }
+    void pollDebugChatBrainOnce(projectId);
+  }, DEBUG_CHAT_BRAIN_POLL_INTERVAL_MS);
+}
+
+function stopDebugChatBrainPoll() {
+  if (debugChatBrainPollTimer) {
+    clearInterval(debugChatBrainPollTimer);
+    debugChatBrainPollTimer = null;
+  }
+  debugChatBrainPollInFlight = false;
 }
 
 function setDebugChatConnectionState(state) {
@@ -817,6 +882,7 @@ function startAgentActivityStream(projectId) {
     }
     void pollAgentActivityOnce(projectId);
   }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
+  startDebugChatBrainPoll(projectId);
 }
 
 async function reconnectDebugChatStream() {

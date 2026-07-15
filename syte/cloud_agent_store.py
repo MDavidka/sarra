@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     tool_call_id TEXT,
     tool_calls TEXT,
     reasoning_content TEXT,
+    turso_synced INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_messages_project
@@ -53,7 +54,7 @@ ON cloud_agent_requests(status, created_at);
 
 # Bump when additive column migrations change so long-lived processes re-run
 # ensure after an upgrade (the path cache alone would skip ALTER TABLE).
-_SCHEMA_EPOCH = 3
+_SCHEMA_EPOCH = 4
 _ensured_paths: dict[str, int] = {}
 
 
@@ -86,6 +87,10 @@ async def ensure_cloud_agent_tables() -> None:
         if "session_number" not in message_cols:
             await db.execute(
                 "ALTER TABLE agent_messages ADD COLUMN session_number INTEGER NOT NULL DEFAULT 0"
+            )
+        if "turso_synced" not in message_cols:
+            await db.execute(
+                "ALTER TABLE agent_messages ADD COLUMN turso_synced INTEGER NOT NULL DEFAULT 0"
             )
 
         async with db.execute("PRAGMA table_info(agent_sessions)") as cur:
@@ -199,14 +204,22 @@ async def append_message(
     tool_call_id: str | None = None,
     tool_calls: list[dict[str, Any]] | None = None,
     reasoning_content: str | None = None,
-) -> None:
+) -> int:
+    """Persist one chat message locally and return its local ``id``.
+
+    The returned id is the join key used to mirror this exact message into
+    the durable Turso ``agent_message`` table (see
+    :func:`syte.turso_store.record_message` and :func:`mark_message_synced`)
+    and to compute the aggregate "all messages saved" status shown by the
+    GUI's brain indicator.
+    """
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
-        await db.execute(
+        cursor = await db.execute(
             "INSERT INTO agent_messages "
             "(project_id, request_id, session_number, role, content, tool_call_id, "
-            "tool_calls, reasoning_content, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "tool_calls, reasoning_content, turso_synced, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             (
                 project_id,
                 request_id,
@@ -220,6 +233,44 @@ async def append_message(
             ),
         )
         await db.commit()
+        return int(cursor.lastrowid)
+
+
+async def mark_message_synced(message_id: int, *, synced: bool = True) -> None:
+    """Flag one locally-stored message as durably mirrored to Turso (or not)."""
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "UPDATE agent_messages SET turso_synced = ? WHERE id = ?",
+            (1 if synced else 0, message_id),
+        )
+        await db.commit()
+
+
+async def session_sync_status(project_id: str, session_number: int) -> dict[str, Any]:
+    """Aggregate local Turso-sync status for one chat session.
+
+    Returns ``{"total": N, "synced": M, "all_saved": bool}`` for every
+    message locally recorded under ``session_number`` for ``project_id``.
+    ``all_saved`` is ``True`` only when there is at least one message and
+    every one of them has been mirrored to Turso (``turso_synced = 1``).
+    Used to drive the green ("all_saved") / red (not all saved) brain
+    indicator in the GUI.
+    """
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(turso_synced), 0) FROM agent_messages "
+            "WHERE project_id = ? AND session_number = ?",
+            (project_id, int(session_number or 0)),
+        ) as cur:
+            row = await cur.fetchone()
+    total = int(row[0] or 0) if row else 0
+    synced = int(row[1] or 0) if row else 0
+    # Vacuously "all saved" when there is nothing to save yet (no messages
+    # recorded for this session so far) — the brain indicator should read
+    # green before the very first message, not red.
+    return {"total": total, "synced": synced, "all_saved": synced == total}
 
 
 def sanitize_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
