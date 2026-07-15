@@ -22,7 +22,7 @@ def test_sycord_integration_guide_includes_agent_steps() -> None:
     guide = build_backend_integration("https://sycord.site")
     names = [step["name"] for step in guide["steps"]]
     assert "Request AI code change (async)" in names
-    assert "Stream agent activity (SSE)" in names
+    assert "Fetch the durable agent session (Turso access route)" in names
     whens = [row["when"] for row in guide["quick_reference"]]
     assert any("AI to edit code" in w for w in whens)
 
@@ -58,7 +58,8 @@ async def test_sycord_agent_change_async(tmp_data_dir: Path, monkeypatch: pytest
             "ok": True,
             "request_id": "req_test123",
             "status": "accepted",
-            "stream_url": "/api/projects/sycord-proj/agent/activity/stream?live=1",
+            "turso_session_id": "sess_test123",
+            "session_url": "/api/agent_session/sess_test123",
         }
 
     monkeypatch.setattr("syte.cloud_agent.communicate_with_agent", fake_communicate)
@@ -70,7 +71,7 @@ async def test_sycord_agent_change_async(tmp_data_dir: Path, monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_sycord_agent_status_includes_stream_urls(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sycord_agent_status_includes_sessions_url(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte.database import create_project, init_db
     from syte.sycord import service
 
@@ -94,6 +95,5 @@ async def test_sycord_agent_status_includes_stream_urls(tmp_data_dir: Path, monk
     payload = await service.agent_status("sycord-status", request_base="https://sycord.site")
     assert payload is not None
     assert payload["uuid"] == "sycord-status"
-    assert "activity_stream_url" in payload
-    assert "activity_text_stream_url" in payload
-    assert "format=text" in payload["activity_text_stream_url"]
+    assert "sessions_url" in payload
+    assert "agent_sessions" in payload["sessions_url"]

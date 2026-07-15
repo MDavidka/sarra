@@ -33,6 +33,8 @@ def project_connect_example() -> dict:
                 "GET /sycord/api/agent_status?uuid=",
                 "POST /sycord/api/agent_change — body.uuid + message",
                 "GET /sycord/api/agent_activity?uuid=&since_id=",
+                "GET /sycord/api/agent_sessions?uuid= — list durable Turso session ids",
+                "GET /sycord/api/agent_session/{session_id} — fetch one durable session",
             ],
         },
         "project": {
@@ -55,7 +57,7 @@ def project_connect_example() -> dict:
             "deploy": "POST /sycord/api/issue_deployment",
             "container": "GET /sycord/api/container_get?uuid=testproject-a1b2c3",
             "agent": "POST /sycord/api/agent_change — body {\"uuid\":\"testproject-a1b2c3\",\"message\":\"…\"}",
-            "agent_stream": "GET /api/projects/testproject-a1b2c3/agent/activity/stream?live=1",
+            "agent_sessions": "GET /sycord/api/agent_sessions?uuid=testproject-a1b2c3",
         },
     }
 
@@ -110,55 +112,61 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "2. POST /sycord/api/upload {uuid, path, file} — add or update files",
             "3. POST /sycord/api/preview_start {uuid} — fast dev preview with HMR (~5s)",
             "4. GET /sycord/api/preview_status?uuid= — poll until preview_ready=true",
-            "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; returns request_id",
-            "6. GET /api/projects/{uuid}/agent/activity/stream?live=1 — SSE token_delta, file edits, completion",
+            "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; returns request_id + turso_session_id",
+            "6. GET /sycord/api/agent_session/{session_id} — fetch the durable Turso session (poll until status != 'open')",
             "7. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
             "8. GET /sycord/api/container_get?uuid= — poll until running=true",
             "9. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
         ],
         "agent_session": {
-            "description": "Continuous always-warm Syte cloud runtime per used project. Change requests are async jobs.",
+            "description": (
+                "Continuous always-warm Syte cloud runtime per used project. Change requests are "
+                "async jobs. Every turn's activity (request, plan, tool calls, reply) is written "
+                "durably to a Turso (libSQL) session identified by a UUID as it happens — there is "
+                "no live stream any more; fetch the session document by its id instead."
+            ),
             "status": f"{prefix}/agent_status?uuid=",
             "warm": "POST /api/agent_warm {uuid} — non-blocking and deduplicated",
             "submit": f"POST {prefix}/agent_change",
             "activity_snapshot": f"GET {prefix}/agent_activity?uuid=&since_id=",
-            "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
-            "stream_formats": [
-                "default (SSE JSON)",
-                "format=tagged ([think]<json>, [tool:start]<json>, etc.)",
-                "format=marked ([boot], [sessionN], S{N}{mmm}(d|g)-<kind>...)",
-                "format=text",
-                "format=jsonl",
-            ],
-            "marked_protocol": {
-                "description": (
-                    "Each user message opens [sessionN]. Lines are "
-                    "S{session}{msg}(d|g)-<kind>text. Agent history loads only "
-                    "the latest session; poll with session=last to match."
-                ),
-                "example": [
-                    "[boot]",
-                    "[session1]",
-                    "S1001(d)-<user>Add dark mode",
-                    "S1002(g)-<tool>read_file",
-                    "S1003(d)-<plan>Inspect then patch",
-                ],
-            },
+            "sessions_list": f"GET {prefix}/agent_sessions?uuid=",
+            "session_fetch": f"GET {prefix}/agent_session/{{session_id}}",
+            "turso_configuration": (
+                "Set turso_database_url (and optional turso_auth_token) in the Syte GUI's "
+                "AI tab. Until configured, agent_session/agent_sessions return "
+                "turso_configured=false / an empty session list, but agent_change still works."
+            ),
             "async_response": {
                 "ok": True,
                 "request_id": "req_abc123def456",
                 "status": "accepted",
-                "stream_url": "/api/projects/{uuid}/agent/activity/stream?live=1",
+                "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+            },
+            "session_document": {
+                "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                "project_id": "myapp-a1b2c3",
+                "session_number": 1,
+                "model_profile": "syra-base",
+                "status": "open | completed | failed | cancelled",
+                "created_at": "2026-07-15T12:00:00+00:00",
+                "updated_at": "2026-07-15T12:00:04+00:00",
+                "events": [
+                    {"id": 1, "event_type": "request_started", "role": "user", "detail": "Add dark mode"},
+                    {"id": 2, "event_type": "processing", "role": "system", "detail": "Cloud agent accepted the durable request"},
+                    {"id": 3, "event_type": "tool_call_started", "payload": {"tool": "write_file"}},
+                    {"id": 4, "event_type": "tool_call_finished", "payload": {"tool": "write_file", "ok": True}},
+                    {"id": 5, "event_type": "request_completed", "payload": {"reply": "Added dark mode"}},
+                ],
             },
             "event_types": [
                 "request_started",
-                "token_delta",
-                "message_snapshot",
+                "processing",
                 "file_created",
                 "file_modified",
                 "file_deleted",
-                "tool_call",
-                "command_run",
+                "tool_call_started",
+                "tool_call_finished",
                 "thinking",
                 "request_completed",
                 "request_failed",
@@ -376,7 +384,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "method": "GET",
                 "path": f"{prefix}/agent_activity",
                 "auth": True,
-                "summary": "Agent activity snapshot (incremental with since_id)",
+                "summary": "Agent activity snapshot (incremental with since_id); local SQLite, not durable across DB moves",
                 "request": {"query": {"uuid": "string (required)", "since_id": "integer (default 0)", "limit": "integer (default 200)"}},
                 "response": {
                     "example": {
@@ -385,13 +393,6 @@ def build_sycord_spec(base_url: str = "") -> dict:
                         "since_id": 0,
                         "events": [
                             {
-                                "id": 12,
-                                "event_type": "token_delta",
-                                "role": "assistant",
-                                "detail": "Adding",
-                                "payload": {"delta": "Adding", "request_id": "req_abc123def456"},
-                            },
-                            {
                                 "id": 15,
                                 "event_type": "request_completed",
                                 "role": "assistant",
@@ -399,7 +400,48 @@ def build_sycord_spec(base_url: str = "") -> dict:
                                 "payload": {"request_id": "req_abc123def456"},
                             },
                         ],
-                        "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1&since_id=0",
+                        "sessions_url": "/sycord/api/agent_sessions?uuid=myapp-a1b2c3",
+                    }
+                },
+            },
+            {
+                "method": "GET",
+                "path": f"{prefix}/agent_sessions",
+                "auth": True,
+                "summary": "List durable Turso agent-session UUIDs for a project (newest first)",
+                "request": {"query": {"uuid": "string (required)", "limit": "integer (default 50)"}},
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "uuid": "myapp-a1b2c3",
+                        "turso_configured": True,
+                        "sessions": [
+                            {
+                                "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                                "session_number": 1,
+                                "status": "completed",
+                                "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                            }
+                        ],
+                    }
+                },
+            },
+            {
+                "method": "GET",
+                "path": f"{prefix}/agent_session/{{session_id}}",
+                "auth": True,
+                "summary": "Fetch one durable agent session (metadata + events) from Turso by UUID",
+                "request": {"query": {"since_id": "integer (default 0) — only events after this id"}},
+                "response": {
+                    "example": {
+                        "ok": True,
+                        "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                        "project_id": "myapp-a1b2c3",
+                        "status": "completed",
+                        "events": [
+                            {"id": 1, "event_type": "request_started", "detail": "Add dark mode"},
+                            {"id": 5, "event_type": "request_completed", "payload": {"reply": "Added dark mode"}},
+                        ],
                     }
                 },
             },
@@ -407,7 +449,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "method": "POST",
                 "path": f"{prefix}/agent_change",
                 "auth": True,
-                "summary": "Request code change — returns request_id immediately (async)",
+                "summary": "Request code change — returns request_id + turso_session_id immediately (async)",
                 "request": {
                     "content_type": "application/json",
                     "body": {
@@ -423,7 +465,8 @@ def build_sycord_spec(base_url: str = "") -> dict:
                         "uuid": "myapp-a1b2c3",
                         "request_id": "req_abc123def456",
                         "status": "accepted",
-                        "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1",
+                        "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                        "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
                     }
                 },
             },

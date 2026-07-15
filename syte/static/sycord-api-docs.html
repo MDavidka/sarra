@@ -97,7 +97,7 @@
           <tr><th>syte_url</th><td>From <code>response.project.url</code> — show this link to users when live</td></tr>
           <tr><th>deploy_status</th><td>Mirror <code>created</code> → <code>deploying</code> → <code>running</code></td></tr>
           <tr><th>preview_url</th><td>Optional cache from <code>preview_start</code> / <code>preview_status</code></td></tr>
-          <tr><th>last_agent_event_id</th><td>Optional — for SSE reconnect via <code>since_id</code></td></tr>
+          <tr><th>syte_turso_session_id</th><td>Optional cache of the latest <code>turso_session_id</code> returned by <code>agent_change</code>, for re-polling that turn</td></tr>
         </table>
 
         <div class="step-card">
@@ -165,29 +165,36 @@ file=&lt;binary&gt;</pre>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3", "message": "Add a dark mode toggle", "model_profile": "syra-base" }</pre>
           <h3>Syte returns JSON immediately</h3>
-          <pre>{ "ok": true, "request_id": "req_abc123def456", "status": "accepted", "stream_url": "/api/projects/myapp-a1b2c3/agent/activity/stream?live=1" }</pre>
+          <pre>{ "ok": true, "request_id": "req_abc123def456", "status": "accepted", "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9", "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9" }</pre>
           <h3>Your backend does</h3>
           <ul>
-            <li>Open SSE on <code>stream_url</code> (append to SYTE host) before or right after POST</li>
-            <li>Render activity events (<code>thinking</code>, <code>tool_call_started</code>/<code>tool_call_finished</code>) in the chat UI as they arrive</li>
-            <li>On <code>request_completed</code>, enable deploy / refresh preview; on <code>request_failed</code>, show <code>payload.error</code></li>
+            <li>Save <code>turso_session_id</code> (append to SYTE host to get <code>session_url</code>)</li>
+            <li>Poll <code>GET /sycord/api/agent_session/{turso_session_id}</code> every couple seconds and render its <code>events</code> (<code>thinking</code>, <code>tool_call_started</code>/<code>tool_call_finished</code>) in the chat UI as they appear</li>
+            <li>When <code>session.status</code> is no longer <code>"open"</code>: <code>completed</code> → enable deploy / refresh preview; <code>failed</code> → show the <code>request_failed</code> event's <code>payload.error</code></li>
           </ul>
         </div>
 
         <div class="step-card">
-          <div class="step-num">Step 6 — Stream agent activity (SSE)</div>
-          <p><strong>GET</strong> <code>/api/projects/myapp-a1b2c3/agent/activity/stream?live=1&amp;since_id=0</code></p>
-          <h3>You receive (SSE)</h3>
-          <pre>data: {"type":"activity","event":{"id":11,"event_type":"tool_call_started","title":"write_file","payload":{"request_id":"req_abc","tool":"write_file"}}}
-data: {"type":"activity","event":{"id":16,"event_type":"request_completed","detail":"Added ThemeToggle","payload":{"request_id":"req_abc","reply":"Added ThemeToggle"}}}
-data: {"type":"ping","since_id":16}</pre>
+          <div class="step-num">Step 6 — Fetch the durable agent session (Turso)</div>
+          <p><strong>GET</strong> <code>/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9?since_id=0</code></p>
+          <h3>You receive</h3>
+          <pre>{
+  "ok": true,
+  "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+  "project_id": "myapp-a1b2c3",
+  "status": "completed",
+  "events": [
+    {"id": 11, "event_type": "tool_call_started", "title": "write_file", "payload": {"request_id": "req_abc", "tool": "write_file"}},
+    {"id": 16, "event_type": "request_completed", "detail": "Added ThemeToggle", "payload": {"request_id": "req_abc", "reply": "Added ThemeToggle"}}
+  ]
+}</pre>
           <h3>Your backend does</h3>
           <ul>
-            <li>Save <code>event.id</code> as <code>since_id</code> for reconnect (or rely on the <code>Last-Event-ID</code> header)</li>
-            <li>Correlate frames by <code>payload.request_id</code>; turn ends on <code>request_completed</code>/<code>request_failed</code></li>
-            <li>Alternative poll: <code>GET /sycord/api/agent_activity?uuid=…&amp;since_id=N</code></li>
-            <li>Optional: <code>?format=tagged</code>, <code>?format=marked</code>, <code>?format=text</code>, or <code>?format=jsonl</code> for compact/CLI consumers</li>
-            <li>Marked lines: <code>[boot]</code>, <code>[sessionN]</code>, <code>S{N}{mmm}(d|g)-&lt;kind&gt;…</code> — poll <code>session=last</code> to skip older sessions</li>
+            <li>There is no live stream — poll this route every 2–3s while <code>status === "open"</code></li>
+            <li>Save the highest <code>event.id</code> as <code>since_id</code> so the next poll only returns new events</li>
+            <li>Correlate events by <code>payload.request_id</code>; the turn ends on <code>request_completed</code>/<code>request_failed</code></li>
+            <li>Fallback if Turso isn't configured yet: <code>GET /sycord/api/agent_activity?uuid=…&amp;since_id=N</code> (local snapshot, not durable)</li>
+            <li>Discover session ids without saving one: <code>GET /sycord/api/agent_sessions?uuid=…</code></li>
           </ul>
         </div>
 
@@ -197,7 +204,7 @@ data: {"type":"ping","since_id":16}</pre>
           <h3>You send</h3>
           <pre>{ "uuid": "myapp-a1b2c3" }</pre>
           <h3>Syte returns JSON</h3>
-          <pre>{ "ok": true, "status": "deploying", "stream_url": "/api/projects/myapp-a1b2c3/logs/stream?live=1" }</pre>
+          <pre>{ "ok": true, "status": "deploying" }</pre>
           <h3>Your backend does</h3>
           <ul>
             <li>Set <code>deploy_status = 'deploying'</code></li>
@@ -273,8 +280,8 @@ async function deployProject(syteUuid) {
           <tr><td>Upload file</td><td>POST upload</td><td>multipart uuid+path+file</td><td>—</td></tr>
           <tr><td>Dev preview</td><td>POST preview_start</td><td><code>{"uuid"}</code></td><td>preview_url</td></tr>
           <tr><td>Poll preview</td><td>GET preview_status</td><td><code>?uuid=</code></td><td>preview_url when ready</td></tr>
-          <tr><td>AI code change</td><td>POST agent_change</td><td><code>{"uuid","message"}</code></td><td>request_id + stream_url</td></tr>
-          <tr><td>Stream agent</td><td>GET …/agent/activity/stream</td><td><code>?live=1&amp;since_id=</code></td><td>token_delta, file events</td></tr>
+          <tr><td>AI code change</td><td>POST agent_change</td><td><code>{"uuid","message"}</code></td><td>request_id + turso_session_id</td></tr>
+          <tr><td>Fetch agent session</td><td>GET agent_session/{id}</td><td><code>?since_id=</code></td><td>events, status (poll until != open)</td></tr>
           <tr><td>Deploy</td><td>POST issue_deployment</td><td><code>{"uuid"}</code></td><td>status=deploying</td></tr>
           <tr><td>Poll status</td><td>GET container_get</td><td><code>?uuid=</code></td><td>url when running=true</td></tr>
           <tr><td>Custom domain</td><td>POST domain</td><td><code>{"uuid","domain"}</code></td><td>project.url</td></tr>
@@ -292,8 +299,8 @@ async function deployProject(syteUuid) {
           <li><code>POST /sycord/api/upload</code> — push files (optional if using scaffold)</li>
           <li><code>POST /sycord/api/preview_start</code> — fast dev preview (next dev / vite, HMR)</li>
           <li><code>GET /sycord/api/preview_status?uuid=</code> — poll until preview ready</li>
-          <li><code>POST /sycord/api/agent_change</code> — async AI code change (returns <code>request_id</code>)</li>
-          <li><code>GET /api/projects/{uuid}/agent/activity/stream?live=1</code> — SSE live agent events</li>
+          <li><code>POST /sycord/api/agent_change</code> — async AI code change (returns <code>request_id</code> + <code>turso_session_id</code>)</li>
+          <li><code>GET /sycord/api/agent_session/{session_id}</code> — poll the durable Turso session until it finishes</li>
           <li><code>POST /sycord/api/issue_deployment</code> — docker build + deploy</li>
           <li><code>GET /sycord/api/container_get?uuid=</code> — verify running</li>
           <li><code>POST /sycord/api/domain</code> — optional custom hostname</li>
@@ -365,6 +372,8 @@ await db.projects.update({
           <li><code>GET /sycord/api/agent_status?uuid=</code></li>
           <li><code>POST /sycord/api/agent_change</code> — JSON <code>{"uuid":"…","message":"…"}</code></li>
           <li><code>GET /sycord/api/agent_activity?uuid=&amp;since_id=</code></li>
+          <li><code>GET /sycord/api/agent_sessions?uuid=</code></li>
+          <li><code>GET /sycord/api/agent_session/{session_id}</code></li>
           <li><code>POST /sycord/api/issue_deployment</code> — JSON <code>{"uuid":"…"}</code></li>
           <li><code>GET /sycord/api/container_get?uuid=</code></li>
           <li><code>POST /sycord/api/domain</code> — JSON <code>{"uuid":"…","domain":"…"}</code></li>
@@ -529,7 +538,7 @@ await db.projects.update({
       </div>
 
       <div class="panel" id="panel-agent">
-        <div class="note">Continuous workspace agent per project. <code>agent_change</code> returns immediately — stream progress via SSE.</div>
+        <div class="note">Continuous workspace agent per project. <code>agent_change</code> returns immediately with a <code>turso_session_id</code>; there is no live stream — poll the durable Turso session by that id instead.</div>
         <div class="endpoint">
           <div class="endpoint-head">
             <div><span class="method get">GET</span><span class="path">/sycord/api/agent_status?uuid=</span></div>
@@ -542,7 +551,7 @@ await db.projects.update({
   "agent_status": "running",
   "agent_running": true,
   "agent_port": 5204,
-  "activity_stream_url": "/api/projects/testproject-a1b2c3/agent/activity/stream?live=1"
+  "sessions_url": "/sycord/api/agent_sessions?uuid=testproject-a1b2c3"
 }</pre>
           </div>
         </div>
@@ -558,7 +567,8 @@ await db.projects.update({
   "uuid": "testproject-a1b2c3",
   "request_id": "req_abc123def456",
   "status": "accepted",
-  "stream_url": "/api/projects/testproject-a1b2c3/agent/activity/stream?live=1",
+  "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+  "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
   "change_applied": null
 }</pre>
             <p>Set <code>wait: true</code> only for legacy blocking mode that waits for the full reply.</p>
@@ -567,20 +577,29 @@ await db.projects.update({
         <div class="endpoint">
           <div class="endpoint-head">
             <div><span class="method get">GET</span><span class="path">/sycord/api/agent_activity?uuid=&amp;since_id=</span></div>
-            <div class="endpoint-name">Activity snapshot</div>
+            <div class="endpoint-name">Activity snapshot (local)</div>
           </div>
           <div class="endpoint-body">
-            <p>Incremental poll alternative to SSE. Pass <code>since_id</code> from last event <code>id</code>.</p>
+            <p>Fast local SQLite mirror, not durable across database moves. Pass <code>since_id</code> from last event <code>id</code>.</p>
           </div>
         </div>
         <div class="endpoint">
           <div class="endpoint-head">
-            <div><span class="method get">GET</span><span class="path">/api/projects/{uuid}/agent/activity/stream?live=1</span></div>
-            <div class="endpoint-name">Live activity (SSE)</div>
+            <div><span class="method get">GET</span><span class="path">/sycord/api/agent_sessions?uuid=&amp;limit=50</span></div>
+            <div class="endpoint-name">List durable agent sessions (Turso)</div>
           </div>
           <div class="endpoint-body">
-            <p>Event types: <code>request_started</code>, <code>token_delta</code>, <code>message_snapshot</code>, <code>file_*</code>, <code>tool_call</code>, <code>command_run</code>, <code>request_completed</code>, <code>request_failed</code>.</p>
-            <p>Formats: default SSE JSON · <code>?format=text</code> · <code>?format=jsonl</code> · optional <code>?api_key=</code> for browser EventSource.</p>
+            <p>Newest-first list of durable Turso session ids for a project, each with a <code>session_url</code>. Returns <code>turso_configured: false</code> if Turso is not set up in the AI tab.</p>
+          </div>
+        </div>
+        <div class="endpoint">
+          <div class="endpoint-head">
+            <div><span class="method get">GET</span><span class="path">/sycord/api/agent_session/{session_id}?since_id=0</span></div>
+            <div class="endpoint-name">Fetch a durable agent session (Turso access route)</div>
+          </div>
+          <div class="endpoint-body">
+            <p>Replaces the old SSE activity stream — every event produced while the agent works a turn is written to this session as it happens. Poll this route (every 2–3s) until <code>status != "open"</code>.</p>
+            <p>Event types: <code>request_started</code>, <code>processing</code>, <code>thinking</code>, <code>tool_call_started</code>/<code>tool_call_finished</code>, <code>file_*</code>, <code>request_completed</code>, <code>request_failed</code>.</p>
           </div>
         </div>
       </div>

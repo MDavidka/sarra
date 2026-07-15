@@ -413,6 +413,61 @@ async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
+async def test_communicate_writes_durable_turso_session(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When Turso is configured, a turn's activity is mirrored to a durable session."""
+    from syte import turso_store
+    from syte.cloud_agent import _communicate_with_agent_impl
+
+    project = await _project("turso-proj")
+    turso_db = tmp_data_dir / "turso-local.db"
+
+    async def fake_turso_settings():
+        return f"file:{turso_db}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_turso_settings)
+    turso_store.reset_client_cache()
+
+    async def fake_provider(*_args, **_kwargs):
+        return {"role": "assistant", "content": "Done."}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+
+    result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-turso")
+
+    assert result["ok"] is True
+    assert result["turso_session_id"]
+    session = await turso_store.get_session(result["turso_session_id"])
+    assert session is not None
+    assert session["status"] == "completed"
+    event_types = [e["event_type"] for e in session["events"]]
+    assert "request_started" in event_types
+    assert "request_completed" in event_types
+    turso_store.reset_client_cache()
+
+
+@pytest.mark.asyncio
+async def test_communicate_without_turso_configured_still_succeeds(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Turso is optional — a turn completes normally when it is not configured."""
+    from syte.cloud_agent import _communicate_with_agent_impl
+
+    project = await _project("no-turso-proj")
+
+    async def fake_provider(*_args, **_kwargs):
+        return {"role": "assistant", "content": "Done."}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+
+    result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso")
+
+    assert result["ok"] is True
+    assert result["turso_session_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import _build_syte_instruction
 

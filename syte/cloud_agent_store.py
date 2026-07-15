@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     project_id TEXT PRIMARY KEY,
     model_profile TEXT NOT NULL,
     session_counter INTEGER NOT NULL DEFAULT 0,
+    turso_session_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -52,7 +53,7 @@ ON cloud_agent_requests(status, created_at);
 
 # Bump when additive column migrations change so long-lived processes re-run
 # ensure after an upgrade (the path cache alone would skip ALTER TABLE).
-_SCHEMA_EPOCH = 2
+_SCHEMA_EPOCH = 3
 _ensured_paths: dict[str, int] = {}
 
 
@@ -93,6 +94,8 @@ async def ensure_cloud_agent_tables() -> None:
             await db.execute(
                 "ALTER TABLE agent_sessions ADD COLUMN session_counter INTEGER NOT NULL DEFAULT 0"
             )
+        if "turso_session_id" not in session_cols:
+            await db.execute("ALTER TABLE agent_sessions ADD COLUMN turso_session_id TEXT")
 
         # Indexes that require migrated columns — must run after ALTER TABLE.
         await db.execute(
@@ -150,6 +153,29 @@ async def begin_turn_session(project_id: str, model_profile: str | None = None) 
             row = await cur.fetchone()
         await db.commit()
     return int(row[0]) if row else 1
+
+
+async def set_turso_session_id(project_id: str, turso_session_id: str | None) -> None:
+    """Record the durable Turso session UUID backing the project's current turn."""
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "UPDATE agent_sessions SET turso_session_id = ?, updated_at = ? WHERE project_id = ?",
+            (turso_session_id, _now(), project_id),
+        )
+        await db.commit()
+
+
+async def current_turso_session_id(project_id: str) -> str | None:
+    """Return the Turso session UUID for the project's most recent turn, if any."""
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT turso_session_id FROM agent_sessions WHERE project_id = ?",
+            (project_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return str(row[0]) if row and row[0] else None
 
 
 async def current_session_number(project_id: str) -> int:

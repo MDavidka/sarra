@@ -27,10 +27,13 @@ from syte.cloud_agent_store import (
     clear_conversation,
     conversation_messages,
     ensure_session,
+    set_turso_session_id,
 )
 from syte.config import settings
 from syte.database import get_project, get_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.turso_store import close_session as close_turso_session
+from syte.turso_store import open_session as open_turso_session
 from syte.workspace import ensure_workspace, workspace_path
 
 CLOUD_RUNTIME = "kilo-cloud"
@@ -370,7 +373,7 @@ async def get_agent_status(
         "agent_conversation_id": project.get("agent_conversation_id") or f"cloud-{project_id}",
         "agent_capabilities": [
             "durable_sessions", "restartable_requests", "background_jobs",
-            "tagged_activity_stream", "marked_activity_stream", "last_session_history",
+            "turso_session_storage", "last_session_history",
             "terminal", "file_editor", "preview_control", "skills", "provider_retries",
             "planning", "subagents", "visible_thinking",
         ],
@@ -612,6 +615,7 @@ async def _communicate_with_agent_impl(
     request_id: str | None = None,
     session_number: int | None = None,
     message_index_start: int = 0,
+    turso_session_id: str | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
@@ -631,11 +635,20 @@ async def _communicate_with_agent_impl(
     if not model["api_key"]:
         return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
 
-    # One user message opens one numbered chat session. Stream receivers see
-    # [sessionN]; provider history is scoped to that session only.
+    # One user message opens one numbered chat session. Every event produced
+    # while working the turn is mirrored to a durable Turso session (see
+    # syte.turso_store) so clients fetch the whole session by UUID from the
+    # Turso access route instead of streaming it live.
+    opened_turso_session = False
     if session_number is None:
         session_number = await begin_turn_session(project_id, model["profile"])
         message_index = 0
+        turso_session_id = await open_turso_session(
+            project_id, session_number=session_number, model_profile=model["profile"],
+        )
+        opened_turso_session = True
+        if turso_session_id:
+            await set_turso_session_id(project_id, turso_session_id)
     else:
         message_index = max(0, int(message_index_start or 0))
 
@@ -667,6 +680,7 @@ async def _communicate_with_agent_impl(
             detail=message[:4000],
             payload=_mark_payload(status="d", kind="user", base={"session_started": True}),
             source=source,
+            turso_session_id=turso_session_id,
         )
     await append_message(
         project_id, request_id, "user", message, session_number=session_number,
@@ -678,6 +692,7 @@ async def _communicate_with_agent_impl(
         detail="Cloud agent accepted the durable request",
         payload=_mark_payload(status="g", kind="status"),
         source=source,
+        turso_session_id=turso_session_id,
     )
     instruction = await _build_syte_instruction(project_id)
     # Only the latest session — prior sessions stay in the activity stream for
@@ -717,6 +732,7 @@ async def _communicate_with_agent_impl(
                     detail=visible_thought[:4000],
                     payload=_mark_payload(status="g", kind="plan"),
                     source=source,
+                    turso_session_id=turso_session_id,
                 )
             if not stored_calls:
                 reply = content.strip() or "Completed."
@@ -729,10 +745,14 @@ async def _communicate_with_agent_impl(
                         base={"reply": reply},
                     ),
                     source=source,
+                    turso_session_id=turso_session_id,
                 )
+                if opened_turso_session:
+                    await close_turso_session(turso_session_id, status="completed")
                 _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
                 return {"ok": True, "uuid": project_id, "request_id": request_id,
                         "session": session_number,
+                        "turso_session_id": turso_session_id,
                         "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
                         "model": model["model"], "provider": model["provider"], "message": reply,
                         "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
@@ -754,6 +774,7 @@ async def _communicate_with_agent_impl(
                         detail=plan_detail[:4000],
                         payload=_mark_payload(status="d", kind="plan"),
                         source=source,
+                        turso_session_id=turso_session_id,
                     )
                 await record_agent_event(
                     project_id, "tool_call_started", title=name, detail=json.dumps(args)[:1000],
@@ -763,6 +784,7 @@ async def _communicate_with_agent_impl(
                         base={"tool": name, "arguments": args, "phase": "started"},
                     ),
                     source=source,
+                    turso_session_id=turso_session_id,
                 )
                 result = await _execute_tool(project_id, name, args, model=model)
                 encoded = json.dumps(result, ensure_ascii=False)
@@ -784,6 +806,7 @@ async def _communicate_with_agent_impl(
                         },
                     ),
                     source=source,
+                    turso_session_id=turso_session_id,
                 )
     except asyncio.CancelledError:
         raise
@@ -802,8 +825,12 @@ async def _communicate_with_agent_impl(
                 },
             ),
             source=source,
+            turso_session_id=turso_session_id,
         )
+        if opened_turso_session:
+            await close_turso_session(turso_session_id, status="failed")
         return {"ok": False, "request_id": request_id, "session": session_number,
+                "turso_session_id": turso_session_id,
                 "error": "cloud_agent_failed", "message": error}
     finally:
         if _active_turns.get(project_id) is current:

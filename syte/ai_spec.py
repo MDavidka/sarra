@@ -140,16 +140,20 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
-            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
-            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id; optional session=last|N)"},
-            {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|marked|text|jsonl, types= filter, session=last|N scopes replay to newest session"},
+            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
+            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Local SQLite activity snapshot (incremental with since_id; optional session=last|N)"},
+            {"method": "GET", "path": "/api/agent_sessions?uuid=", "auth": True, "description": "List durable Turso agent-session UUIDs for a project (newest first)"},
+            {"method": "GET", "path": "/api/agent_session/{session_id}?since_id=0", "auth": True, "description": "Fetch a durable agent activity session (metadata + events) from Turso by UUID"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
         "agent_session": {
             "description": (
-                "Continuous per-workspace Syte cloud runtime runtime. One durable session per project; "
-                "change requests are async jobs that return request_id immediately."
+                "Continuous per-workspace Syte cloud runtime. One durable session per project; "
+                "change requests are async jobs that return request_id immediately. Every turn's "
+                "activity (request, plan, tool calls, reply) is written as it happens to a durable "
+                "Turso (libSQL) session identified by a UUID — see turso_sessions below. There is no "
+                "live activity stream any more; fetch the session document by its id instead."
             ),
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
             "model_profiles": {
@@ -157,7 +161,10 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
             },
-            "gui_configuration": "Syte GUI → AI tab — internal secret + per-profile Verted/DeepSeek API keys",
+            "gui_configuration": (
+                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek API keys, and "
+                "turso_database_url / turso_auth_token for durable session storage"
+            ),
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",
                 "mnoa": "Maximum Number Of Agents — running agents vs configured max",
@@ -169,114 +176,58 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "ok": True,
                     "request_id": "req_abc123def456",
                     "status": "accepted",
-                    "stream_url": "/api/projects/{uuid}/agent/activity/stream?live=1",
+                    "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+                    "session_url": "/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
                 },
                 "legacy_sync": "POST with ?wait=1 on /sycord/api/agent_change or POST /api/agent_communicate for blocking reply",
             },
             "sycord_change_flow": [
                 "1. User requests code change on sycord.com",
                 "2. Prewarm with POST /api/agent_warm {uuid}; the supervisor keeps used agents alive",
-                "3. sycord.com opens SSE GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=N (or internal route with X-Syra-Internal-Secret)",
-                "4. sycord.com POST /sycord/api/agent_change {uuid, message, model_profile} — returns request_id immediately",
-                "5. Syte emits request_started -> processing -> [thinking] -> (tool_call_started/tool_call_finished)* -> request_completed|request_failed on SSE; correlate by payload.request_id",
+                "3. sycord.com POST /sycord/api/agent_change {uuid, message, model_profile} — returns request_id + turso_session_id immediately",
+                "4. sycord.com polls GET /sycord/api/agent_session/{turso_session_id} (or the internal route with X-Syra-Internal-Secret) until status != 'open'",
+                "5. Each event in session.events is one of request_started -> processing -> [thinking] -> (tool_call_started/tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id",
                 "6. The durable request runs serialized per project against the persistent Syte cloud conversation",
-                "7. Each persisted agent_event is broadcast as a JSON, tagged, text, or JSONL activity record (SSE transport only; there is no WebSocket)",
             ],
-            "activity_api": {
-                "description": "Real-time Cursor-like chat feed — structured events, not raw logs",
-                "snapshot": "GET /api/agent_activity?uuid=&since_id=0&session=last",
-                "stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
-                "session_scope": (
-                    "?session=last (or session=N) scopes only the connect-time replay to "
-                    "the newest [sessionN] block, so clients skip re-streaming sessions they "
-                    "already stored. Live events — including a new session — are never filtered."
+            "turso_sessions": {
+                "description": (
+                    "Durable, UUID-addressable record of one agent turn, replacing the old SSE "
+                    "activity stream. Requires turso_database_url configured in the AI tab; if unset, "
+                    "agent_change/agent_communicate still work but no durable session is created."
                 ),
-                "stream_formats": {
-                    "default": "?format=sse (default) — SSE data: {\"type\":\"activity\",\"event\":{...}}; activity frames carry an id: line",
-                    "tagged": "?format=tagged — SSE [start]<json>, [processing]<json>, [think]<json>, [tool:start]<json>, [tool:result]<json>, [done]<json>",
-                    "marked": (
-                        "?format=marked — [boot], [sessionN], "
-                        "S{session}{msg}(d|g)-<kind>text; (d)=done (g)=going; "
-                        "kinds: user|tool|plan|message|error|status"
-                    ),
-                    "text": "?format=text — plain [assistant]/[file]/[cmd]/[thinking] lines (fetch/curl, not EventSource)",
-                    "jsonl": "?format=jsonl — one JSON object per line (application/x-ndjson) for CLI consumers",
-                },
-                "marked_protocol": {
-                    "boot": "[boot] — once on connect",
-                    "session": "[sessionN] — emitted when a user message starts agent work (session N)",
-                    "line": "S{session}{msg:03d}(d|g)-<kind>text — e.g. S1002(d)-<tool>read_file {...}",
-                    "status": "(d)=done, (g)=going/in progress",
-                    "kinds": ["user", "tool", "plan", "message", "error", "status"],
-                    "last_session_only": (
-                        "Agent provider history loads only the latest session. "
-                        "Clients can poll snapshots with session=last to skip older sessions."
-                    ),
-                    "example": [
-                        "[boot]",
-                        "[session1]",
-                        "S1001(d)-<user>Add dark mode",
-                        "S1002(g)-<tool>read_file {\"path\":\"app/page.tsx\"}",
-                        "S1003(d)-<tool>read_file ...",
-                        "S1004(d)-<plan>1. Inspect 2. Patch",
-                        "[session2]",
-                        "S2003(g)-<plan>Updating header",
-                    ],
-                },
-                "control_frames": {
-                    "session": "emitted once when live=1 (sse/tagged); marked format uses [boot]/[sessionN] instead",
-                    "ping": "heartbeat every 10s with current since_id",
-                    "reconnect": "terminal hint after the 3600s per-connection deadline; reopen with the given since_id",
-                    "retry": "one-time SSE retry: 5000 backoff directive for EventSource",
-                },
-                "reconnection": "Record the highest event.id; reconnect with since_id=<id> or the Last-Event-ID header for gapless, duplicate-free resume (events persist before broadcast)",
-                "turn_lifecycle": "request_started -> processing -> [thinking] -> (tool_call_started -> tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id; each carries payload.session + payload.message_index + payload.mark_status",
-                "note_reserved_events": "token_delta and message_snapshot are valid event types reserved for a future token-streaming provider; the current non-streaming runtime does not emit them",
-                "sycord_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0&session=last",
-                "sycord_status": "GET /sycord/api/agent_status?uuid=",
-                "internal_snapshot": "GET /api/internal/projects/{uuid}/agent/activity?since_id=0&session=last",
-                "internal_stream": "GET /api/internal/projects/{uuid}/agent/activity/stream?live=1&format=marked",
+                "list": "GET /api/agent_sessions?uuid= — recent session ids for a project, newest first",
+                "fetch": "GET /api/agent_session/{session_id}?since_id=0 — session metadata + events; since_id fetches only newer events for polling an 'open' session",
+                "local_snapshot": "GET /api/agent_activity?uuid=&since_id=0&session=last — fast local SQLite mirror (not durable across DB moves)",
+                "sycord_list": "GET /sycord/api/agent_sessions?uuid=",
+                "sycord_fetch": "GET /sycord/api/agent_session/{session_id}",
+                "internal_list": "GET /api/internal/projects/{uuid}/agent/sessions",
+                "internal_fetch": "GET /api/internal/agent_session/{session_id}",
+                "session_fields": ["id", "project_id", "session_number", "model_profile", "status", "created_at", "updated_at", "events"],
+                "session_status_values": ["open", "completed", "failed", "cancelled"],
                 "event_types": [
-                    "user_message",
-                    "assistant_message",
-                    "token_delta",
-                    "message_snapshot",
-                    "thinking",
+                    "request_started",
                     "processing",
-                    "tool_call",
+                    "thinking",
+                    "tool_call_started",
                     "tool_call_finished",
-                    "command_run",
-                    "command_output",
                     "file_created",
                     "file_modified",
                     "file_deleted",
-                    "file_read",
-                    "file_search",
-                    "request_started",
                     "request_completed",
                     "request_failed",
                     "agent_started",
                     "agent_stopped",
+                    "agent_restarted",
                 ],
-                "sse_format": 'data: {"type":"activity","event":{...}}',
-                "reconnect": "Pass since_id=last_event_id on snapshot or stream reconnect to avoid gaps",
-                "tagged_vocabulary": [
-                    "[start]", "[processing]", "[think]", "[tool:start]",
-                    "[tool:result]", "[delta]", "[message]", "[done]",
-                    "[error]", "[status]", "[session]", "[ping]",
-                ],
-                "marked_vocabulary": [
-                    "[boot]", "[sessionN]", "S{N}{mmm}(d|g)-<kind>...",
-                    "[ping]", "[reconnect]",
-                ],
+                "turn_lifecycle": "request_started -> processing -> [thinking] -> (tool_call_started -> tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id",
             },
             "workflow": [
-                "1. GET /api/agent_status?uuid= — check agent_status, agent_running, activity_stream_url",
+                "1. GET /api/agent_status?uuid= — check agent_status, agent_running, sessions_url",
                 "2. POST /api/agent_warm {uuid} when opening a project; returns immediately",
-                "3. POST /api/agent_change {uuid, message} — async; save request_id from response",
-                "4. GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0 — stream processing/thinking/tool + request_completed events",
+                "3. POST /api/agent_change {uuid, message} — async; save request_id and turso_session_id from response",
+                "4. GET /api/agent_session/{turso_session_id} — poll until status != 'open' to see the completed turn (request, plan, tool calls, reply)",
                 "5. POST /api/agent_settings {uuid, model_profile} — switch profile mid-session",
-                "6. GET /api/agent_activity?uuid=&since_id=N — poll snapshot if SSE unavailable",
+                "6. GET /api/agent_activity?uuid=&since_id=N — local snapshot if Turso is not configured",
                 "7. POST /api/agent_stop {uuid} only when continuous warm service is no longer wanted",
             ],
             "status_fields": [
@@ -298,7 +249,8 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "POST /projects/{uuid}/agent/test",
                     "GET /projects/{uuid}/agent/logs",
                     "GET /projects/{uuid}/agent/activity",
-                    "GET /projects/{uuid}/agent/activity/stream?live=1",
+                    "GET /projects/{uuid}/agent/sessions",
+                    "GET /agent_session/{session_id}",
                     "GET|POST /projects/{uuid}/agent/proxy[/{path}]",
                 ],
             },
@@ -308,6 +260,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "backend_unreachable": "Provider API base not reachable",
                 "cloud_runtime_not_installed": "Install the project's Python dependencies",
                 "internal_secret_not_configured": "Set syra_internal_secret in Settings → Keys",
+                "turso_not_configured": "Set turso_database_url (and turso_auth_token) in Settings → AI tab before fetching agent_session/agent_sessions",
             },
         },
         "create_project_response": {
@@ -368,8 +321,8 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "2. POST /sycord/api/upload — multipart file upload (uuid required)",
                 "3. POST /sycord/api/preview_start {uuid} — fast dev preview with HMR",
                 "4. GET /sycord/api/preview_status?uuid= — poll until preview_ready=true",
-                "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; stream activity",
-                "6. GET /sycord/api/agent_activity?uuid=&since_id= — poll or use SSE stream_url",
+                "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; returns turso_session_id",
+                "6. GET /sycord/api/agent_session/{turso_session_id} — poll the durable Turso session until status != 'open'",
                 "7. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
                 "8. GET /sycord/api/container_get?uuid= — container status",
                 "9. POST /sycord/api/domain {uuid, domain} — optional custom domain",
@@ -379,8 +332,9 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "status": "GET /sycord/api/agent_status?uuid=",
                 "submit_change": "POST /sycord/api/agent_change {uuid, message, model_profile?, wait?}",
                 "activity_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0",
-                "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0 (SSE; api_key query optional)",
-                "async_response": {"ok": True, "request_id": "req_…", "status": "accepted", "stream_url": "/api/projects/{uuid}/agent/activity/stream?live=1"},
+                "sessions_list": "GET /sycord/api/agent_sessions?uuid=",
+                "session_fetch": "GET /sycord/api/agent_session/{session_id}?since_id=0 — durable Turso record, no streaming",
+                "async_response": {"ok": True, "request_id": "req_…", "status": "accepted", "turso_session_id": "…", "session_url": "/sycord/api/agent_session/…"},
             },
             "project_connect_response": {
                 "save": "uuid",
@@ -394,8 +348,10 @@ def build_ai_spec(base_url: str = "") -> dict:
                 {"method": "GET", "path": "/sycord/api/preview_status?uuid=", "auth": True},
                 {"method": "POST", "path": "/sycord/api/preview_stop", "auth": True},
                 {"method": "GET", "path": "/sycord/api/agent_status?uuid=", "auth": True},
-                {"method": "POST", "path": "/sycord/api/agent_change", "auth": True, "description": "Async code change — returns request_id"},
+                {"method": "POST", "path": "/sycord/api/agent_change", "auth": True, "description": "Async code change — returns request_id + turso_session_id"},
                 {"method": "GET", "path": "/sycord/api/agent_activity?uuid=&since_id=", "auth": True},
+                {"method": "GET", "path": "/sycord/api/agent_sessions?uuid=", "auth": True},
+                {"method": "GET", "path": "/sycord/api/agent_session/{session_id}", "auth": True},
                 {"method": "POST", "path": "/sycord/api/domain", "auth": True},
                 {"method": "POST", "path": "/sycord/api/issue_deployment", "auth": True},
                 {"method": "GET", "path": "/sycord/api/spec.json", "auth": False},

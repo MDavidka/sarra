@@ -194,11 +194,7 @@ async def agent_status(project_id: str, *, request_base: str = "") -> dict | Non
     return {
         "uuid": project_id,
         **status,
-        "activity_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1",
-        "activity_tagged_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=tagged",
-        "activity_marked_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=marked",
-        "activity_text_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=text",
-        "activity_jsonl_stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&format=jsonl",
+        "sessions_url": f"/sycord/api/agent_sessions?uuid={project_id}",
     }
 
 
@@ -209,6 +205,8 @@ async def agent_activity(
     limit: int = 200,
     session: str | None = None,
 ) -> dict | None:
+    """Local SQLite activity snapshot. For the durable, UUID-addressable turn
+    record use :func:`agent_sessions` / the Turso ``agent_session`` route."""
     from syte.agent_activity import list_agent_events
 
     project = await get_project(project_id)
@@ -222,16 +220,41 @@ async def agent_activity(
         "since_id": since_id,
         "session": session,
         "events": events,
-        "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&since_id={since_id}",
-        "tagged_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream"
-            f"?live=1&since_id={since_id}&format=tagged"
-        ),
-        "marked_stream_url": (
-            f"/api/projects/{project_id}/agent/activity/stream"
-            f"?live=1&since_id={since_id}&format=marked"
-        ),
+        "sessions_url": f"/sycord/api/agent_sessions?uuid={project_id}",
     }
+
+
+async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.turso_store import list_sessions_for_project, turso_configured
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    if not await turso_configured():
+        return {
+            "uuid": project_id,
+            "turso_configured": False,
+            "sessions": [],
+            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
+        }
+    sessions = await list_sessions_for_project(project_id, limit=limit)
+    return {
+        "uuid": project_id,
+        "turso_configured": True,
+        "sessions": [
+            {**s, "session_url": f"/sycord/api/agent_session/{s['id']}"} for s in sessions
+        ],
+    }
+
+
+async def agent_session(session_id: str, *, since_id: int = 0) -> dict | None:
+    """Fetch one durable Turso agent session by UUID."""
+    from syte.turso_store import get_session, turso_configured
+
+    if not await turso_configured():
+        return None
+    return await get_session(session_id, since_id=since_id)
 
 
 async def agent_change(

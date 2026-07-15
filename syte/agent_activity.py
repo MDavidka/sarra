@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -107,8 +108,18 @@ async def record_agent_event(
     detail: str = "",
     payload: dict[str, Any] | None = None,
     source: str = "agent",
+    turso_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Persist an activity event and push to live subscribers."""
+    """Persist an activity event locally and mirror it to the durable Turso session.
+
+    Local persistence (the ``agent_events`` SQLite table below) remains the
+    fast, always-available store used by internal status/debug endpoints. When
+    ``turso_session_id`` is supplied (the caller's current durable agent
+    session UUID — see :mod:`syte.turso_store`), the same event is additionally
+    written to Turso so clients can fetch the whole session by UUID instead of
+    streaming it live. Turso writes are best-effort: any failure (including
+    Turso not being configured) never blocks or fails the local write.
+    """
     await ensure_agent_events_table()
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
     now = _now()
@@ -155,6 +166,25 @@ async def record_agent_event(
                 queue.put_nowait(event)
             except asyncio.QueueEmpty:
                 pass
+
+    if turso_session_id:
+        from syte.turso_store import record_event as record_turso_event
+
+        try:
+            await record_turso_event(
+                turso_session_id,
+                project_id,
+                event_type,
+                role=role,
+                title=title,
+                detail=detail,
+                payload=payload,
+                source=source,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to mirror agent event to Turso session %s", turso_session_id
+            )
     return event
 
 

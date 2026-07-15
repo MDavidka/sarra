@@ -11,7 +11,8 @@ and restartable work. It does not launch a CLI or HTTP server per project.
 - Runtime metadata: `workspaces/<uuid>/data/cloud-agent/runtime.json`
 - Agent instructions: `workspaces/<uuid>/data/cloud-agent/SYTE_AGENT.md`
 - Runtime log: `workspaces/<uuid>/data/cloud-agent/agent.log`
-- Durable sessions, messages, and pending requests: Syte SQLite database
+- Conversation history and pending requests: Syte SQLite database
+- Durable, UUID-addressable activity per turn: Turso (libSQL) — see Activity API below
 
 The agent uses only Syte's configured Syra profiles and their existing fixed
 OpenAI-compatible endpoints:
@@ -50,26 +51,36 @@ workspace location, verification requirements, and credential handling.
 
 ## Activity API
 
-Background chat returns a request ID immediately. Clients observe progress at:
+Background chat returns a request ID immediately, together with a durable
+Turso (libSQL) session id: `turso_session_id`. There is no live activity
+stream — every event produced while the agent works on a turn (the request,
+its plan, tool calls, and the final reply) is written to that session as it
+happens, and clients fetch the whole session document by UUID instead of
+holding open a streaming connection:
 
-`GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=N`
+`GET /api/agent_session/{session_id}?since_id=N`
 
-On connect the stream replays up to 500 persisted events with `id > since_id`,
-then forwards live events. Because events are persisted *before* they are
-broadcast, a client that records the highest `event.id` and reconnects with
-`since_id=<id>` (or the standard SSE `Last-Event-ID` header, which the endpoint
-translates to `since_id`) recovers every missed event with no gaps and no
-duplicates.
+The response is the session's metadata plus its `events` array (only events
+with `id > since_id` when polling an still-`open` session). This works
+identically on the public, `/api/internal`, and `/sycord/api` mirrors
+(`GET /api/internal/agent_session/{id}`, `GET /sycord/api/agent_session/{id}`).
+To discover recent session ids for a project without already having one, use:
 
-Add `session=last` (or `session=N`) to scope only the connect-time replay to
-the newest `[sessionN]` block. A client that already stored earlier sessions
-then streams just the latest one and does not re-fetch what it saved. Live
-events are never filtered, so the current session's completion and any brand-new
-session started afterward still stream through. This works on every `?format=`
-and on both the public and `/api/internal` stream routes.
+`GET /api/agent_sessions?uuid={uuid}&limit=50`
 
-Each accepted turn produces this ordered sequence, correlated by
-`payload.request_id`:
+which lists the newest sessions first (each with a `session_url`). Turso must
+be configured (`turso_database_url`, optional `turso_auth_token`, saved from
+the Syte GUI's AI tab) for these routes to return data; if it is not
+configured, `agent_change`/`agent_communicate` still work, but no durable
+session is created and `agent_sessions`/`agent_session` report
+`turso_configured: false` / 503 respectively. A fast, always-available local
+mirror (not durable across database moves) remains at
+`GET /api/agent_activity?since_id=N` (optional `session=last` or `session=2`)
+and its `/api/internal` and `/sycord/api` mirrors, for callers that have not
+configured Turso yet.
+
+Each accepted turn produces this ordered sequence of session events,
+correlated by `payload.request_id`:
 
 ```
 request_started (role=user)
@@ -83,53 +94,34 @@ Payload fields: `tool_call_started` carries `tool` and `arguments`;
 `tool_call_finished` carries `tool` and `ok` (boolean success);
 `request_completed` carries `reply`; `request_failed` carries `error` and
 `retry_message`. Lifecycle events `agent_started`, `agent_stopped`, and
-`agent_restarted` are emitted on start/stop/restart. `token_delta` and
-`message_snapshot` are reserved event types for a future token-streaming
-provider and are not emitted by the current non-streaming runtime.
+`agent_restarted` are emitted on start/stop/restart.
 
-Besides `activity` events the stream emits control frames: a one-time
-`retry: 5000` directive, a `session` marker (when `live=1`), a `ping` heartbeat
-every 10 seconds carrying the current `since_id`, and a terminal `reconnect`
-hint after the 3600-second per-connection deadline. Five encodings are stable
-for Sycord clients and selected with `?format=`:
+A session document looks like:
 
-- `sse` (default) — JSON SSE; `activity` frames include an `id:` line.
-- `tagged` — compact `[tag]<json>` records over `text/event-stream`.
-- `marked` — session marks: `[boot]`, `[sessionN]`, and
-  `S{session}{msg}(d|g)-<kind>text` so receivers can track going/done progress
-  and reload only the latest session (`?session=last` on snapshots).
-- `text` — plain text lines (`text/plain`; use `fetch`/`curl`, not EventSource).
-- `jsonl` — one JSON object per line (`application/x-ndjson`).
-
-### Marked stream (`?format=marked`)
-
-Each user message opens a numbered chat session. The agent loads provider
-history only from that latest session (prior sessions remain available on the
-activity stream for clients). Marked lines look like:
-
-```
-data: [boot]
-data: [session1]
-data: S1001(d)-<user>Add dark mode
-data: S1002(g)-<tool>read_file {"path":"app/page.tsx"}
-data: S1003(d)-<tool>read_file ...
-data: S1004(d)-<plan>1. Inspect theme 2. Patch toggle
-data: [session2]
-data: S2001(d)-<user>Also fix mobile nav
-data: S2003(g)-<plan>Updating header
+```json
+{
+  "ok": true,
+  "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
+  "project_id": "myapp-a1b2c3",
+  "session_number": 1,
+  "model_profile": "syra-base",
+  "status": "completed",
+  "created_at": "2026-07-15T12:00:00+00:00",
+  "updated_at": "2026-07-15T12:00:04+00:00",
+  "events": [
+    {"id": 1, "event_type": "request_started", "role": "user", "detail": "Add dark mode"},
+    {"id": 2, "event_type": "processing", "detail": "Cloud agent accepted the durable request"},
+    {"id": 3, "event_type": "tool_call_started", "payload": {"tool": "write_file"}},
+    {"id": 4, "event_type": "tool_call_finished", "payload": {"tool": "write_file", "ok": true}},
+    {"id": 5, "event_type": "request_completed", "payload": {"reply": "Added dark mode"}}
+  ]
+}
 ```
 
-- `[boot]` — once on connect
-- `[sessionN]` — when a user message starts agent work for session N
-- `S{N}{mmm}(d|g)` — session number + zero-padded message index; `(d)` done,
-  `(g)` going
-- `<tool>` / `<plan>` / `<user>` / `<message>` / `<error>` / `<status>` — kind
-
-An optional `types=` query parameter filters the tagged/marked/text/jsonl encodings by
-event type, and `session=last` (or `session=N`) scopes the replay to a single
-session as described above. Snapshot polling is available at
-`GET /api/projects/{uuid}/agent/activity?since_id=N` (optional `session=last`
-or `session=2`) and its `/api/internal` and `/sycord/api` mirrors.
+`status` is `open` while the turn is in progress, and `completed`, `failed`,
+or `cancelled` once it finishes. Clients that want to observe an in-progress
+turn poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>` on a
+short interval (a few seconds) until `status != "open"`.
 
 ## Compatibility health route
 
