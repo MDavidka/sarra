@@ -142,7 +142,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
             {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id; optional session=last|N)"},
-            {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|marked|text|jsonl, types= filter"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|marked|text|jsonl, types= filter, session=last|N scopes replay to newest session"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
@@ -186,6 +186,11 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "description": "Real-time Cursor-like chat feed — structured events, not raw logs",
                 "snapshot": "GET /api/agent_activity?uuid=&since_id=0&session=last",
                 "stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
+                "session_scope": (
+                    "?session=last (or session=N) scopes only the connect-time replay to "
+                    "the newest [sessionN] block, so clients skip re-streaming sessions they "
+                    "already stored. Live events — including a new session — are never filtered."
+                ),
                 "stream_formats": {
                     "default": "?format=sse (default) — SSE data: {\"type\":\"activity\",\"event\":{...}}; activity frames carry an id: line",
                     "tagged": "?format=tagged — SSE [start]<json>, [processing]<json>, [think]<json>, [tool:start]<json>, [tool:result]<json>, [done]<json>",

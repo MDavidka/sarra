@@ -195,3 +195,80 @@ async def test_marked_activity_stream_emits_boot_session_and_marks(
     assert chunks[5] == "S2001(d)-<user>Next"
     assert chunks[6] == "S2003(g)-<plan>Updating header"
     assert chunks[7] == '[ping]<{"since_id":4}>'
+
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_activity_scopes_replay_to_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``session`` is forwarded to the replay query; the live phase is unscoped."""
+    import asyncio
+
+    from syte import agent_activity
+    import syte.log_stream as ls
+
+    captured: dict = {}
+
+    async def fake_list(project_id, *, since_id=0, limit=200, session=None):
+        captured["session"] = session
+        captured["since_id"] = since_id
+        captured["limit"] = limit
+        return [{
+            "id": 5,
+            "event_type": "request_completed",
+            "role": "assistant",
+            "title": "Completed",
+            "detail": "Done",
+            "payload": {"session": 3, "request_id": "req-3"},
+        }]
+
+    monkeypatch.setattr(agent_activity, "list_agent_events", fake_list)
+    monkeypatch.setattr(
+        agent_activity, "subscribe_agent_activity", lambda pid: asyncio.Queue()
+    )
+    monkeypatch.setattr(agent_activity, "unsubscribe_agent_activity", lambda pid, q: None)
+    # Exit the live loop immediately after replay so the test does not block.
+    monkeypatch.setattr(ls, "ACTIVITY_STREAM_MAX_SECONDS", 0.0)
+
+    frames = [
+        chunk
+        async for chunk in ls.stream_agent_activity(
+            "proj-1", live_only=True, since_id=0, session="last"
+        )
+    ]
+
+    # Replay was scoped to the requested session ...
+    assert captured["session"] == "last"
+    # ... and the persisted event was replayed with its SSE id line.
+    assert any("id: 5" in frame and '"id": 5' in frame for frame in frames)
+    # ... and the connection ends with a reconnect hint carrying the high-water id.
+    assert any('"type": "reconnect"' in frame and '"since_id": 5' in frame for frame in frames)
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_activity_defaults_to_unscoped_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without ``session`` the replay query is not filtered (session stays None)."""
+    import asyncio
+
+    from syte import agent_activity
+    import syte.log_stream as ls
+
+    captured: dict = {}
+
+    async def fake_list(project_id, *, since_id=0, limit=200, session=None):
+        captured["session"] = session
+        return []
+
+    monkeypatch.setattr(agent_activity, "list_agent_events", fake_list)
+    monkeypatch.setattr(
+        agent_activity, "subscribe_agent_activity", lambda pid: asyncio.Queue()
+    )
+    monkeypatch.setattr(agent_activity, "unsubscribe_agent_activity", lambda pid, q: None)
+    monkeypatch.setattr(ls, "ACTIVITY_STREAM_MAX_SECONDS", 0.0)
+
+    _ = [chunk async for chunk in ls.stream_agent_activity("proj-1")]
+
+    assert captured["session"] is None

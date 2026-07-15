@@ -746,7 +746,9 @@ async function loadDebugChatHistory(projectId) {
   debugChatReplayingHistory = true;
   updateDebugChatControls();
   try {
-    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500`);
+    // Only the latest [sessionN] block is loaded on open; earlier sessions are
+    // already saved and never re-fetched. New live sessions arrive over the stream.
+    const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500&session=last`);
     const pendingRequests = new Map();
     for (const event of res.events || []) {
       const requestId = event.payload?.request_id || '';
@@ -807,7 +809,10 @@ function startAgentActivityStream(projectId, reconnectAttempt = 0) {
     agentActivityStream.close();
     agentActivityStream = null;
   }
-  const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId) });
+  // session=last scopes only the connect-time replay to the newest session, so
+  // sessions the client already stored are not re-sent. Live events (including
+  // a brand-new session) are never filtered and still stream through.
+  const params = new URLSearchParams({ live: '1', since_id: String(debugChatSinceId), session: 'last' });
   setDebugChatConnectionState(reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
   agentActivityStream = new EventSource(`${API}/projects/${projectId}/agent/activity/stream?${params}`);
   agentActivityStream.onopen = () => {

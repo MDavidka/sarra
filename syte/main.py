@@ -784,6 +784,7 @@ async def api_agent_activity_stream(
         "jsonl",
     ] = "sse",
     types: str = "",
+    session: str = "",
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
     """Stream a durable agent turn as Server-Sent Events (or text/JSONL).
@@ -803,6 +804,10 @@ async def api_agent_activity_stream(
             per-session progress without reloading older sessions.
         types: Comma-separated ``event_type`` allow-list applied to the
             ``tagged``/``marked``/``text``/``jsonl`` encodings (e.g. ``thinking,command_run``).
+        session: Replay scope. ``last`` streams only the newest ``[sessionN]``
+            block on connect (an integer pins a specific session); older
+            sessions a client already stored are not replayed. Live events —
+            including a subsequent new session — are never filtered.
         Last-Event-ID: Standard SSE resume header. When ``since_id`` is not
             supplied explicitly, this header value is used so browser
             ``EventSource`` clients resume automatically after a reconnect.
@@ -832,12 +837,14 @@ async def api_agent_activity_stream(
             since_id = 0
     fmt = (format or "sse").strip().lower()
     type_filter = [t.strip() for t in types.split(",") if t.strip()] or None
+    session_scope: str | None = session.strip() or None
     if fmt in ("tagged", "tagged_sse", "tags"):
         generator = stream_agent_activity_tagged(
             project_id,
             live_only=live,
             since_id=since_id,
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "text/event-stream"
         stream_format = "tagged-v1"
@@ -847,6 +854,7 @@ async def api_agent_activity_stream(
             live_only=live,
             since_id=since_id,
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "text/event-stream"
         stream_format = "marked-v1"
@@ -857,11 +865,14 @@ async def api_agent_activity_stream(
             since_id=since_id,
             output_format="jsonl" if fmt == "jsonl" else "text",
             type_filter=type_filter,
+            session=session_scope,
         )
         media = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
         stream_format = fmt
     else:
-        generator = stream_agent_activity(project_id, live_only=live, since_id=since_id)
+        generator = stream_agent_activity(
+            project_id, live_only=live, since_id=since_id, session=session_scope
+        )
         media = "text/event-stream"
         stream_format = fmt
     return StreamingResponse(

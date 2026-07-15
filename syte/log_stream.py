@@ -261,6 +261,7 @@ async def stream_agent_activity(
     *,
     live_only: bool = False,
     since_id: int = 0,
+    session: int | str | None = None,
 ):
     """Stream a durable agent turn as JSON Server-Sent Events.
 
@@ -277,6 +278,12 @@ async def stream_agent_activity(
             replayed. Pass the highest ``event.id`` previously observed (or the
             value from the ``Last-Event-ID`` header) to reconnect without gaps
             or duplicates.
+        session: Optional chat-session scope for the *replay* phase only. Pass
+            ``"last"`` to replay only the latest ``[sessionN]`` block, or an
+            integer to pin a specific session. Older sessions a client has
+            already rendered are then skipped on connect. Live events are never
+            filtered, so a brand-new session started after connect (and the
+            completion of the current one) still streams through.
 
     Yields:
         SSE frames (see the module docstring) of ``type`` ``session``,
@@ -310,8 +317,15 @@ async def stream_agent_activity(
     # high-water mark below.
     queue = subscribe_agent_activity(project_id)
     try:
+        # Replay is scoped to ``session`` when requested so a client that has
+        # already stored older ``[sessionN]`` blocks only reloads the latest
+        # one. Live events below stay unscoped so new sessions still arrive.
+        replay_session = session if session not in (None, "") else None
         for event in await list_agent_events(
-            project_id, since_id=since_id, limit=ACTIVITY_REPLAY_LIMIT
+            project_id,
+            since_id=since_id,
+            limit=ACTIVITY_REPLAY_LIMIT,
+            session=replay_session,
         ):
             yield _activity_frame(event)
             since_id = max(since_id, int(event.get("id") or 0))
@@ -522,6 +536,7 @@ async def stream_agent_activity_tagged(
     live_only: bool = False,
     since_id: int = 0,
     type_filter: list[str] | None = None,
+    session: int | str | None = None,
 ):
     """Re-encode the activity stream using the compact tagged vocabulary.
 
@@ -539,12 +554,14 @@ async def stream_agent_activity_tagged(
         type_filter: When provided, only activity events whose ``event_type`` is
             in this collection are forwarded (``session``/``ping``/``reconnect``
             control frames are always passed through).
+        session: Optional replay scope; see :func:`stream_agent_activity`.
     """
     allowed = set(type_filter) if type_filter else None
     async for chunk in stream_agent_activity(
         project_id,
         live_only=live_only,
         since_id=since_id,
+        session=session,
     ):
         raw = _sse_payload(chunk)
         if raw is None:
@@ -669,6 +686,7 @@ async def stream_agent_activity_marked(
     live_only: bool = False,
     since_id: int = 0,
     type_filter: list[str] | None = None,
+    session: int | str | None = None,
 ):
     """Re-encode the activity stream using session message marks.
 
@@ -687,6 +705,10 @@ async def stream_agent_activity_marked(
 
     ``[boot]`` is emitted once on connect. ``[sessionN]`` is emitted whenever the
     session number increases (a new user message started agent work).
+
+    Pass ``session="last"`` so the replay only re-emits the latest ``[sessionN]``
+    block; receivers that already stored earlier sessions skip reloading them.
+    Live events (including a subsequent new session) still stream through.
     """
     allowed = set(type_filter) if type_filter else None
     current_session = 0
@@ -695,6 +717,7 @@ async def stream_agent_activity_marked(
         project_id,
         live_only=live_only,
         since_id=since_id,
+        session=session,
     ):
         raw = _sse_payload(chunk)
         if raw is None:
@@ -743,6 +766,7 @@ async def stream_agent_activity_formatted(
     since_id: int = 0,
     output_format: str = "text",
     type_filter: list[str] | None = None,
+    session: int | str | None = None,
 ):
     """Re-encode the activity stream as plain text or JSON Lines.
 
@@ -759,6 +783,7 @@ async def stream_agent_activity_formatted(
             ``fetch`` reader; ``"jsonl"`` yields one compact JSON object per
             line (``application/x-ndjson``) for CLI/pipeline consumers.
         type_filter: Optional allow-list of ``event_type`` values to forward.
+        session: Optional replay scope; see :func:`stream_agent_activity`.
 
     Note:
         This encoding is a raw byte stream, **not** ``text/event-stream`` — read
@@ -769,6 +794,7 @@ async def stream_agent_activity_formatted(
         project_id,
         live_only=live_only,
         since_id=since_id,
+        session=session,
     ):
         raw = _sse_payload(chunk)
         if not raw:
