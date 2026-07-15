@@ -422,6 +422,27 @@ async def api_agent_activity(
     }
 
 
+@router.get("/agent_turso_sync")
+async def api_agent_turso_sync(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Aggregate 'all messages saved to Turso' status for the current session.
+
+    Drives the GUI's green/red brain indicator: ``all_saved: true`` means
+    every message appended locally for the project's current chat session
+    has been durably mirrored into the shared Turso ``agent_message`` table
+    (see ``docs/cloud-agent-contract.md``); ``all_saved: false`` means at
+    least one has not.
+    """
+    from syte.cloud_agent import turso_message_sync_status
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, **(await turso_message_sync_status(uuid))}
+
+
 @router.get("/agent_sessions")
 async def api_agent_sessions(
     uuid: str = Query(..., description="Project UUID"),

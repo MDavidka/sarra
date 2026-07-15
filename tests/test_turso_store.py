@@ -102,3 +102,64 @@ async def test_list_sessions_for_project_orders_newest_first(turso_local) -> Non
 @pytest.mark.asyncio
 async def test_get_session_returns_none_for_unknown_id(turso_local) -> None:
     assert await turso_local.get_session("does-not-exist") is None
+
+
+@pytest.mark.asyncio
+async def test_record_message_and_list_messages(turso_local) -> None:
+    """Messages for every project/session live in the single shared
+    ``agent_message`` table, logically separated only by ``session_id``."""
+    session_a = await turso_local.open_session("proj-msg-a", session_number=1)
+    session_b = await turso_local.open_session("proj-msg-b", session_number=1)
+
+    await turso_local.record_message(
+        session_a, "proj-msg-a", "user", "hello", session_number=1, local_message_id=1,
+    )
+    await turso_local.record_message(
+        session_a, "proj-msg-a", "assistant", "hi there", session_number=1, local_message_id=2,
+    )
+    await turso_local.record_message(
+        session_b, "proj-msg-b", "user", "unrelated", session_number=1, local_message_id=1,
+    )
+
+    messages_a = await turso_local.list_messages(session_a)
+    assert [m["role"] for m in messages_a] == ["user", "assistant"]
+    assert [m["content"] for m in messages_a] == ["hello", "hi there"]
+    assert await turso_local.count_messages(session_a) == 2
+    assert await turso_local.count_messages(session_b) == 1
+
+
+@pytest.mark.asyncio
+async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local) -> None:
+    """A retried record_message() call for a message already mirrored must
+    return the existing row (not a spurious failure or a duplicate row) —
+    this is what makes future sync-retry/reconciliation logic safe."""
+    session_id = await turso_local.open_session("proj-retry", session_number=1)
+
+    first = await turso_local.record_message(
+        session_id, "proj-retry", "user", "hello", session_number=1, local_message_id=42,
+    )
+    assert first is not None
+
+    second = await turso_local.record_message(
+        session_id, "proj-retry", "user", "hello", session_number=1, local_message_id=42,
+    )
+    assert second is not None
+    assert second["local_message_id"] == 42
+
+    messages = await turso_local.list_messages(session_id)
+    assert len(messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_record_message_not_configured_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import turso_store
+
+    async def empty_settings():
+        return "", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", empty_settings)
+    turso_store.reset_client_cache()
+
+    assert await turso_store.record_message("missing", "proj-1", "user", "hi") is None
+    assert await turso_store.list_messages("missing") == []
+    assert await turso_store.count_messages("missing") == 0

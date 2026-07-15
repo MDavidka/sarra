@@ -181,6 +181,18 @@ async def internal_agent_activity(
     }
 
 
+@router.get("/projects/{project_id}/agent/turso_sync")
+async def internal_agent_turso_sync(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Aggregate 'all messages saved to Turso' status for the brain indicator."""
+    from syte.cloud_agent import turso_message_sync_status
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, **(await turso_message_sync_status(project_id))}
+
+
 @router.get("/projects/{project_id}/agent/sessions")
 async def internal_agent_sessions(
     project_id: str,

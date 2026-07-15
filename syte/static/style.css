@@ -2041,6 +2041,48 @@ code {
   color: var(--text-muted);
 }
 
+/* "Brain" indicator — green when every message in the current chat session
+   has been durably saved to Turso (see GET .../agent/turso_sync), red when
+   at least one message has not synced yet or Turso is unreachable. Gray
+   while status is unknown (e.g. before the first poll completes). */
+.debug-chat-brain {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #9ca3af;
+  cursor: default;
+  padding: 0;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.debug-chat-brain svg {
+  width: 16px;
+  height: 16px;
+}
+
+.debug-chat-brain.brain-saved {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.debug-chat-brain.brain-unsaved {
+  color: #dc2626;
+  background: #fee2e2;
+  animation: pulse 2s ease infinite;
+}
+
+.debug-chat-brain.brain-unconfigured {
+  color: #9ca3af;
+  background: transparent;
+}
+
 .debug-chat-messages-wrap {
   position: relative;
   flex: 1;

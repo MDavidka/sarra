@@ -81,6 +81,7 @@ def _persist_block(project_id: str) -> dict:
             "GET /sycord/api/agent_activity?uuid=&since_id=",
             "GET /sycord/api/agent_sessions?uuid= — list durable Turso session ids",
             "GET /sycord/api/agent_session/{session_id} — fetch one durable session",
+            "GET /sycord/api/agent_turso_sync?uuid= — all-messages-saved status (brain indicator)",
         ],
     }
 
@@ -184,6 +185,18 @@ async def api_agent_sessions(
 ):
     """List durable Turso agent-session UUIDs for a project (newest first)."""
     payload = await service.agent_sessions(uuid, limit=limit)
+    if not payload:
+        _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
+@router.get("/agent_turso_sync")
+async def api_agent_turso_sync(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Aggregate 'all messages saved to Turso' status for the brain indicator."""
+    payload = await service.agent_turso_sync(uuid)
     if not payload:
         _err(404, "not_found", "Project not found")
     return {"ok": True, **payload}

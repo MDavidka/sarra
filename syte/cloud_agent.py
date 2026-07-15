@@ -26,7 +26,11 @@ from syte.cloud_agent_store import (
     begin_turn_session,
     clear_conversation,
     conversation_messages,
+    current_session_number,
+    current_turso_session_id,
     ensure_session,
+    mark_message_synced,
+    session_sync_status,
     set_turso_session_id,
 )
 from syte.config import settings
@@ -34,6 +38,7 @@ from syte.database import get_project, get_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
 from syte.turso_store import close_session as close_turso_session
 from syte.turso_store import open_session as open_turso_session
+from syte.turso_store import record_message as record_turso_message
 from syte.workspace import ensure_workspace, workspace_path
 
 CLOUD_RUNTIME = "kilo-cloud"
@@ -51,6 +56,72 @@ _active_turns: dict[str, asyncio.Task[Any]] = {}
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _persist_message(
+    project_id: str,
+    request_id: str,
+    role: str,
+    content: str,
+    *,
+    session_number: int,
+    turso_session_id: str | None,
+    tool_call_id: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    reasoning_content: str | None = None,
+) -> int:
+    """Append one message locally, then mirror it to Turso in real time.
+
+    Every message the cloud agent produces (user / assistant / tool) is
+    written to the local durable store first (never fails the turn), and —
+    when a durable Turso session is open for this turn (``turso_session_id``
+    set, i.e. Turso is configured) — immediately mirrored into the shared
+    ``agent_message`` Turso table (see :mod:`syte.turso_store`). This is what
+    makes message persistence "live" for sessions started directly from the
+    API (see :mod:`syte.agent_jobs`): the Turso session is opened before the
+    first message is even admitted, so each subsequent message — including
+    every assistant reply and tool result while the turn is still running —
+    is synced to Turso as soon as it is produced, not just at the end.
+
+    The local row is flagged ``turso_synced`` only after a successful Turso
+    write, so :func:`syte.cloud_agent_store.session_sync_status` can report
+    an accurate green/red "all messages saved" status for the GUI's brain
+    indicator even if a particular write failed or Turso is unreachable.
+    """
+    local_id = await append_message(
+        project_id,
+        request_id,
+        role,
+        content,
+        session_number=session_number,
+        tool_call_id=tool_call_id,
+        tool_calls=tool_calls,
+        reasoning_content=reasoning_content,
+    )
+    if turso_session_id:
+        try:
+            saved = await record_turso_message(
+                turso_session_id,
+                project_id,
+                role,
+                content,
+                session_number=session_number,
+                local_message_id=local_id,
+                request_id=request_id,
+                tool_call_id=tool_call_id,
+                tool_calls=tool_calls,
+                reasoning_content=reasoning_content,
+            )
+        except Exception:
+            saved = None
+            logger.exception(
+                "Failed to mirror agent message %s to Turso session %s",
+                local_id,
+                turso_session_id,
+            )
+        if saved:
+            await mark_message_synced(local_id, synced=True)
+    return local_id
 
 
 def agent_root(project_id: str) -> Path:
@@ -329,6 +400,38 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
     return True, "No active cloud-agent turn."
 
 
+async def turso_message_sync_status(project_id: str) -> dict[str, Any]:
+    """Aggregate "all messages saved to Turso" status for a project's latest session.
+
+    Backs the GUI's green/red "brain" indicator:
+
+    - ``green`` (``all_saved: true``) — every message appended locally for the
+      project's most recent chat session has been durably mirrored into the
+      shared Turso ``agent_message`` table (see :mod:`syte.turso_store`).
+    - ``red`` (``all_saved: false``) — at least one message in the current
+      session has not (yet, or ever) been written to Turso — e.g. Turso is
+      unreachable, not configured, or a mirror write failed.
+
+    Returns ``turso_configured: false`` (and ``all_saved: true`` — nothing to
+    report as unsaved) when Turso itself is not configured, since local
+    persistence remains fully intact either way.
+    """
+    from syte.turso_store import turso_configured
+
+    session_number = await current_session_number(project_id)
+    turso_session_id = await current_turso_session_id(project_id)
+    configured = await turso_configured()
+    status = await session_sync_status(project_id, session_number)
+    return {
+        "turso_configured": configured,
+        "session": session_number,
+        "turso_session_id": turso_session_id,
+        "total_messages": status["total"],
+        "synced_messages": status["synced"],
+        "all_saved": status["all_saved"] if configured else True,
+    }
+
+
 async def get_agent_status(
     project_id: str, *, request_base: str = "", check_backend: bool = True
 ) -> dict[str, Any]:
@@ -347,14 +450,16 @@ async def get_agent_status(
         build_https_url(gui_domain) if gui_domain
         else build_direct_url(settings.resolved_public_ip, settings.port)
     )
-    status = project.get("agent_status") or "stopped"
+    agent_status_value = project.get("agent_status") or "stopped"
     active = bool(_active_turns.get(project_id) and not _active_turns[project_id].done())
+    turso_sync = await turso_message_sync_status(project_id)
     return {
         "agent_runtime": CLOUD_RUNTIME,
         "agent_runtime_type": "cloud",
-        "agent_status": "processing" if active else status,
-        "agent_running": status != "stopped",
-        "agent_healthy": status == "running" and bool(model["api_key"]),
+        "agent_status": "processing" if active else agent_status_value,
+        "agent_turso_sync": turso_sync,
+        "agent_running": agent_status_value != "stopped",
+        "agent_healthy": agent_status_value == "running" and bool(model["api_key"]),
         "agent_warming": False,
         "agent_port": None,
         "agent_local_url": "",
@@ -373,7 +478,7 @@ async def get_agent_status(
         "agent_conversation_id": project.get("agent_conversation_id") or f"cloud-{project_id}",
         "agent_capabilities": [
             "durable_sessions", "restartable_requests", "background_jobs",
-            "turso_session_storage", "last_session_history",
+            "turso_session_storage", "turso_message_persistence", "last_session_history",
             "terminal", "file_editor", "preview_control", "skills", "provider_retries",
             "planning", "subagents", "visible_thinking",
         ],
@@ -682,8 +787,9 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
-    await append_message(
-        project_id, request_id, "user", message, session_number=session_number,
+    await _persist_message(
+        project_id, request_id, "user", message,
+        session_number=session_number, turso_session_id=turso_session_id,
     )
     await record_agent_event(
         project_id,
@@ -710,12 +816,13 @@ async def _communicate_with_agent_impl(
             reasoning = assistant.get("reasoning_content")
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = tool_calls if isinstance(tool_calls, list) else []
-            await append_message(
+            await _persist_message(
                 project_id,
                 request_id,
                 "assistant",
                 content,
                 session_number=session_number,
+                turso_session_id=turso_session_id,
                 tool_calls=stored_calls or None,
                 reasoning_content=str(reasoning) if reasoning is not None else None,
             )
@@ -788,9 +895,10 @@ async def _communicate_with_agent_impl(
                 )
                 result = await _execute_tool(project_id, name, args, model=model)
                 encoded = json.dumps(result, ensure_ascii=False)
-                await append_message(
+                await _persist_message(
                     project_id, request_id, "tool", encoded,
-                    session_number=session_number, tool_call_id=call_id,
+                    session_number=session_number, turso_session_id=turso_session_id,
+                    tool_call_id=call_id,
                 )
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
                 await record_agent_event(

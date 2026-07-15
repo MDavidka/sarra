@@ -728,6 +728,24 @@ async def api_agent_restart_public(project_id: str, request: Request):
     }
 
 
+@app.get("/api/projects/{project_id}/agent/turso_sync")
+async def api_agent_turso_sync_public(project_id: str):
+    """Aggregate 'all messages saved to Turso' status for the brain indicator.
+
+    ``all_saved: true`` -> green brain (every message in the current session
+    was durably written to the shared Turso ``agent_message`` table).
+    ``all_saved: false`` -> red brain (at least one message failed to sync,
+    or Turso is unreachable for a message that was already appended
+    locally).
+    """
+    from syte.cloud_agent import turso_message_sync_status
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, **(await turso_message_sync_status(project_id))}
+
+
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
     from syte.cloud_agent import get_agent_logs
