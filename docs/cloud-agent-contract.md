@@ -357,6 +357,16 @@ reports exactly what's wrong:
   `schema_errors` still reports which statement failed so it can be
   corrected.
 
+A second, related bug also caused false-red statuses: `record_message()`
+used to run the `INSERT INTO agent_message` and the secondary, purely
+cosmetic `UPDATE agent_session SET updated_at = ...` "touch" in the same
+`try`/`except`. If the touch failed *after* the insert had already
+committed, the exception handler still returned `None` — reporting a
+message that was genuinely saved in Turso as unsynced. The touch is now
+isolated in its own `try`/`except` so a message is reported saved as soon
+as its `INSERT` succeeds, regardless of whether the secondary bookkeeping
+write succeeds.
+
 The Syte GUI automatically logs this diagnostic to the browser console
 (grouped under `[Syte][turso]`) the moment the brain indicator turns red or
 shows "not configured," so opening devtools while reproducing the issue is

@@ -450,9 +450,6 @@ async def record_message(
                 now,
             ],
         )
-        await client.execute(
-            "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
-        )
     except Exception as exc:
         # ``idx_agent_message_local_id`` is a unique index on
         # ``(project_id, local_message_id)``. A retry (e.g. future
@@ -470,6 +467,23 @@ async def record_message(
             local_message_id,
         )
         return None
+    # The message row is the source of truth for "was this saved" — a
+    # failure touching agent_session.updated_at (a cosmetic bookkeeping
+    # field) must never cause an already-successful INSERT to be reported
+    # back to the caller as unsynced. This was a real bug: an exception here
+    # used to fall into the same except-block as the INSERT above and return
+    # None, permanently marking a message "not saved" (feeding the red brain
+    # indicator) even though the row was safely committed to Turso.
+    try:
+        await client.execute(
+            "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
+        )
+    except Exception:
+        logger.warning(
+            "Turso agent_message %s inserted, but touching agent_session.updated_at "
+            "failed (non-fatal, message is still recorded as saved)",
+            local_message_id,
+        )
     return {
         "id": result.last_insert_rowid,
         "session_id": session_id,

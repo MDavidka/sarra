@@ -129,6 +129,41 @@ async def test_record_message_and_list_messages(turso_local) -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_message_succeeds_even_if_session_touch_fails(
+    turso_local, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: a message must be reported as saved once its INSERT
+    commits, even if the secondary 'touch agent_session.updated_at' write
+    afterward fails. Previously both statements shared one try/except, so a
+    failure in the cosmetic touch step caused an already-successful insert
+    to be reported back as unsynced — permanently feeding a false 'red
+    brain' even though the message really was durably saved."""
+    from syte import turso_store
+
+    session_id = await turso_local.open_session("proj-touch-fail", session_number=1)
+    client = await turso_local.get_turso_client()
+
+    original_execute = client.execute
+
+    async def flaky_execute(sql, *args, **kwargs):
+        if sql.strip().startswith("UPDATE agent_session"):
+            raise RuntimeError("simulated agent_session touch failure")
+        return await original_execute(sql, *args, **kwargs)
+
+    client.execute = flaky_execute
+    try:
+        saved = await turso_local.record_message(
+            session_id, "proj-touch-fail", "user", "hello", session_number=1, local_message_id=1,
+        )
+    finally:
+        client.execute = original_execute
+
+    assert saved is not None
+    assert saved["content"] == "hello"
+    assert await turso_local.count_messages(session_id) == 1
+
+
+@pytest.mark.asyncio
 async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local) -> None:
     """A retried record_message() call for a message already mirrored must
     return the existing row (not a spurious failure or a duplicate row) —
