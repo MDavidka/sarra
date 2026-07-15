@@ -151,6 +151,82 @@ async def test_record_message_retry_with_same_local_id_is_idempotent(turso_local
 
 
 @pytest.mark.asyncio
+async def test_one_bad_schema_statement_does_not_disable_all_turso_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: a single failing CREATE TABLE/INDEX statement must not
+    permanently break every other Turso operation.
+
+    Previously, ``get_turso_client()`` ran ``SCHEMA_STATEMENTS`` in one loop
+    and aborted (evicting the client from cache, never marking the schema
+    ready) on the *first* exception — so if any one statement was rejected
+    by a given Turso database, every later call re-ran and re-failed on that
+    same statement forever, permanently keeping the "brain" indicator red
+    even with fully valid credentials. Schema init must now continue past a
+    failing statement so tables that succeed remain usable.
+    """
+    from syte import turso_store
+
+    db_path = tmp_path / "turso-partial-fail.db"
+
+    async def fake_settings():
+        return f"file:{db_path}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_settings)
+    turso_store.reset_client_cache()
+
+    bad_statement = "CREATE THIS IS NOT VALID SQL"
+    original_statements = turso_store.SCHEMA_STATEMENTS
+    monkeypatch.setattr(
+        turso_store, "SCHEMA_STATEMENTS", (*original_statements, bad_statement),
+    )
+
+    # Despite one statement failing, the client must still come back usable
+    # and later calls must not keep re-attempting (and re-failing) forever.
+    client = await turso_store.get_turso_client()
+    assert client is not None
+
+    session_id = await turso_store.open_session("proj-partial-fail", session_number=1)
+    assert session_id is not None
+
+    saved = await turso_store.record_message(
+        session_id, "proj-partial-fail", "user", "hello", session_number=1, local_message_id=1,
+    )
+    assert saved is not None
+    assert await turso_store.count_messages(session_id) == 1
+
+    debug = await turso_store.turso_debug_status()
+    assert debug["configured"] is True
+    assert debug["reachable"] is True
+    assert bad_statement in debug["schema_errors"]
+
+    turso_store.reset_client_cache()
+
+
+@pytest.mark.asyncio
+async def test_turso_debug_status_reports_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import turso_store
+
+    async def empty_settings():
+        return "", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", empty_settings)
+    turso_store.reset_client_cache()
+
+    debug = await turso_store.turso_debug_status()
+    assert debug["configured"] is False
+    assert debug["reachable"] is False
+
+
+@pytest.mark.asyncio
+async def test_turso_debug_status_reachable_when_configured(turso_local) -> None:
+    debug = await turso_local.turso_debug_status()
+    assert debug["configured"] is True
+    assert debug["reachable"] is True
+    assert debug["schema_errors"] == ""
+
+
+@pytest.mark.asyncio
 async def test_record_message_not_configured_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import turso_store
 

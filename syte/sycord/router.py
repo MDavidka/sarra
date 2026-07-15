@@ -202,6 +202,18 @@ async def api_agent_turso_sync(
     return {"ok": True, **payload}
 
 
+@router.get("/agent_turso_debug")
+async def api_agent_turso_debug(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Diagnose why the brain indicator is red — live Turso connectivity + schema check."""
+    payload = await service.agent_turso_debug(uuid)
+    if not payload:
+        _err(404, "not_found", "Project not found")
+    return {"ok": True, **payload}
+
+
 @router.get("/agent_session/{session_id}")
 async def api_agent_session(
     session_id: str,

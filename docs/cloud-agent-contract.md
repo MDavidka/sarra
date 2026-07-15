@@ -313,6 +313,55 @@ The GUI polls this route every 3 seconds while the "Agent chat" tab is open
 independent of the 2-second activity poll, so the brain icon updates live as
 new messages are produced during an in-progress turn.
 
+### Diagnosing a stuck-red brain — `agent/turso_debug`
+
+If the brain indicator stays red even though `turso_database_url` /
+`turso_auth_token` look correct, call the companion diagnostic route:
+
+`GET /api/projects/{project_id}/agent/turso_debug` (mirrored at
+`GET /api/agent_turso_debug?uuid=`,
+`GET /api/internal/projects/{project_id}/agent/turso_debug`, and
+`GET /sycord/api/agent_turso_debug?uuid=`). Unlike `agent/turso_sync`
+(which only reports counts), this route performs a **live round-trip**
+against the configured database (build the client, run `SELECT 1`) and
+reports exactly what's wrong:
+
+```json
+{
+  "ok": true,
+  "project_id": "myapp-a1b2c3",
+  "configured": true,
+  "database_url": "libsql://my-db-my-org.turso.io",
+  "auth_token_set": true,
+  "reachable": true,
+  "error": "",
+  "schema_ready": true,
+  "schema_errors": ""
+}
+```
+
+- `configured: false` → `turso_database_url` is empty; set it in
+  Settings → AI.
+- `reachable: false` → the URL/token pair is set but the live `SELECT 1`
+  round-trip failed; `error` has the underlying exception text (bad token,
+  network-unreachable host, wrong URL scheme, etc.).
+- `schema_errors` non-empty → the connection itself is fine, but one or more
+  `CREATE TABLE` / `CREATE INDEX` statements were rejected by this specific
+  Turso database (e.g. an index feature not supported by that
+  database/plan). **This previously caused a permanently red brain despite
+  fully valid credentials**: schema initialization used to abort entirely
+  on the first failing statement, so every later call kept re-hitting (and
+  re-failing on) the same bad statement forever. Schema init is now
+  per-statement resilient — a single bad `CREATE INDEX` no longer blocks
+  the `agent_message` table (or any other table) from being usable — but
+  `schema_errors` still reports which statement failed so it can be
+  corrected.
+
+The Syte GUI automatically logs this diagnostic to the browser console
+(grouped under `[Syte][turso]`) the moment the brain indicator turns red or
+shows "not configured," so opening devtools while reproducing the issue is
+usually enough to see the exact cause without a separate `curl` call.
+
 ## Compatibility health route
 
 The old internal proxy path remains only for authenticated health checks:

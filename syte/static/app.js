@@ -155,15 +155,68 @@ function setDebugChatBrainStatus(sync) {
   }
 }
 
+let debugChatBrainLastLoggedState = '';
+
+// Fetches the live Turso connectivity/schema diagnostic and logs it to the
+// browser console (grouped, so it's easy to spot in devtools) whenever the
+// brain indicator is red or unconfigured. This is the "debug on web console"
+// path — open devtools and look for "[Syte][turso]" groups to see exactly
+// why messages aren't syncing (bad/missing credentials, an unreachable
+// database, or a schema statement Turso rejected).
+async function logDebugChatTursoDiagnostics(projectId, sync) {
+  try {
+    const debugInfo = await api(`/projects/${projectId}/agent/turso_debug`);
+    // eslint-disable-next-line no-console
+    console.groupCollapsed(
+      `%c[Syte][turso] brain=${sync && sync.all_saved ? 'green' : 'red'} — sync status for project ${projectId}`,
+      'color:#dc2626;font-weight:600;'
+    );
+    console.log('sync status (GET .../agent/turso_sync):', sync);
+    console.log('diagnostics (GET .../agent/turso_debug):', debugInfo);
+    if (debugInfo && debugInfo.configured === false) {
+      console.warn('Turso is NOT configured — set turso_database_url in Settings -> AI tab.');
+    } else if (debugInfo && debugInfo.reachable === false) {
+      console.error('Turso is configured but NOT reachable right now:', debugInfo.error || '(no error captured)');
+      console.warn('database_url:', debugInfo.database_url, '| auth_token_set:', debugInfo.auth_token_set);
+    } else if (debugInfo && debugInfo.schema_errors) {
+      console.error('Turso is reachable, but schema setup had failing statement(s):', debugInfo.schema_errors);
+      console.warn('Messages can still fail to sync until these are resolved (e.g. an index Turso rejected).');
+    } else if (sync && !sync.all_saved) {
+      console.warn(
+        `Turso is reachable and schema is fine, but ${sync.synced_messages ?? '?'} of ` +
+        `${sync.total_messages ?? '?'} messages in session ${sync.session ?? '?'} are synced. ` +
+        'This usually means a transient write failure — check server logs for ' +
+        '"Failed to record Turso agent message" around the time the message was sent.'
+      );
+    }
+    console.groupEnd();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[Syte][turso] Failed to fetch turso_debug diagnostics:', err);
+  }
+}
+
 async function pollDebugChatBrainOnce(projectId) {
   if (debugChatBrainPollInFlight) return;
   debugChatBrainPollInFlight = true;
   try {
     const res = await api(`/projects/${projectId}/agent/turso_sync`);
-    if (res.ok) setDebugChatBrainStatus(res);
-  } catch {
+    if (res.ok) {
+      setDebugChatBrainStatus(res);
+      const state = res.turso_configured ? (res.all_saved ? 'green' : 'red') : 'unconfigured';
+      // Only re-run (and re-log) the heavier diagnostic call when the
+      // brain's state actually changes, so a healthy green connection
+      // does not spam the console every 3 seconds.
+      if (state !== 'green' && state !== debugChatBrainLastLoggedState) {
+        void logDebugChatTursoDiagnostics(projectId, res);
+      }
+      debugChatBrainLastLoggedState = state;
+    }
+  } catch (err) {
     // Leave the last known state on transient errors — never claim unsaved
     // just because the status poll itself failed to reach the server.
+    // eslint-disable-next-line no-console
+    console.warn('[Syte][turso] agent/turso_sync poll failed (leaving last known brain state):', err);
   } finally {
     debugChatBrainPollInFlight = false;
   }
@@ -171,6 +224,7 @@ async function pollDebugChatBrainOnce(projectId) {
 
 function startDebugChatBrainPoll(projectId) {
   stopDebugChatBrainPoll();
+  debugChatBrainLastLoggedState = '';
   void pollDebugChatBrainOnce(projectId);
   debugChatBrainPollTimer = setInterval(() => {
     if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
