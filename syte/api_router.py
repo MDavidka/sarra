@@ -120,6 +120,34 @@ class AgentChangeRequest(BaseModel):
     model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
 
 
+class AgentQuestionAnswerBody(BaseModel):
+    uuid: str
+    question_id: str
+    answer: str | int | float | list[str] | dict
+
+
+class AgentMcpConnectBody(BaseModel):
+    uuid: str
+    addon: str
+
+
+class AgentMcpCallBody(BaseModel):
+    uuid: str
+    addon: str
+    tool: str
+    arguments: dict = Field(default_factory=dict)
+
+
+class AgentMcpRegisterBody(BaseModel):
+    uuid: str
+    name: str
+    command: str
+    description: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    transport: str = "stdio"
+
+
 def _http_error(status: int, error: str, message: str):
     raise HTTPException(status, detail={"error": error, "message": message})
 
@@ -420,6 +448,169 @@ async def api_agent_activity(
         "session": session or None,
         "sessions_url": f"/api/agent_sessions?uuid={uuid}",
     }
+
+
+@router.get("/agent_screenshots")
+async def api_agent_screenshots(
+    uuid: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_screenshots
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "screenshots": await list_screenshots(uuid, limit=limit)}
+
+
+@router.get("/agent_plans")
+async def api_agent_plans(
+    uuid: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_plans
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "plans": await list_plans(uuid, limit=limit)}
+
+
+@router.get("/agent_questions")
+async def api_agent_questions(
+    uuid: str = Query(...),
+    status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_questions
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "questions": await list_questions(uuid, status=status, limit=limit),
+    }
+
+
+@router.post("/agent_answer_question")
+async def api_agent_answer_question(
+    body: AgentQuestionAnswerBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_activity import record_agent_event
+    from syte.agent_artifacts import answer_question
+    from syte.cloud_agent_store import current_turso_session_id
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await answer_question(body.uuid, body.question_id, body.answer)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "answer_failed",
+            result.get("message") or "Failed to answer question",
+        )
+    if not result.get("already_answered"):
+        turso_session_id = await current_turso_session_id(body.uuid)
+        await record_agent_event(
+            body.uuid,
+            "question_answered",
+            role="user",
+            title="Answer",
+            detail=str(result.get("answer") or "")[:4000],
+            payload={"question_id": body.question_id, "answer": result.get("answer")},
+            source="external_api",
+            turso_session_id=turso_session_id,
+        )
+    return result
+
+
+@router.get("/agent_stops")
+async def api_agent_stops(
+    uuid: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_session_stops
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "stops": await list_session_stops(uuid, limit=limit)}
+
+
+@router.get("/agent_mcp")
+async def api_agent_mcp_list(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_mcp_addons
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "addons": await list_mcp_addons(uuid)}
+
+
+@router.post("/agent_mcp_register")
+async def api_agent_mcp_register(
+    body: AgentMcpRegisterBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import register_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    addon = await register_mcp_addon(
+        body.uuid,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+        transport=body.transport,
+    )
+    return {"ok": True, **addon}
+
+
+@router.post("/agent_mcp_connect")
+async def api_agent_mcp_connect(
+    body: AgentMcpConnectBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import connect_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await connect_mcp_addon(body.uuid, body.addon)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "mcp_connect_failed",
+            result.get("message") or "Failed to connect MCP addon",
+        )
+    return result
+
+
+@router.post("/agent_mcp_call")
+async def api_agent_mcp_call(
+    body: AgentMcpCallBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import call_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return await call_mcp_addon(body.uuid, body.addon, body.tool, body.arguments)
 
 
 @router.get("/agent_turso_sync")

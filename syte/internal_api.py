@@ -35,6 +35,10 @@ class InternalAgentCommunicateRequest(BaseModel):
     model_name: str | None = None
 
 
+class InternalQuestionAnswerRequest(BaseModel):
+    answer: str | int | float | list[str] | dict
+
+
 async def _require_project(project_id: str) -> dict:
     project = await get_project(project_id)
     if not project:
@@ -179,6 +183,100 @@ async def internal_agent_activity(
         "session": session or None,
         "sessions_url": f"/api/internal/projects/{project_id}/agent/sessions",
     }
+
+
+@router.get("/projects/{project_id}/agent/screenshots")
+async def internal_agent_screenshots(
+    project_id: str,
+    limit: int = 50,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_artifacts import list_screenshots
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, "screenshots": await list_screenshots(project_id, limit=limit)}
+
+
+@router.get("/projects/{project_id}/agent/plans")
+async def internal_agent_plans(
+    project_id: str,
+    limit: int = 50,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_artifacts import list_plans
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, "plans": await list_plans(project_id, limit=limit)}
+
+
+@router.get("/projects/{project_id}/agent/questions")
+async def internal_agent_questions(
+    project_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_artifacts import list_questions
+
+    await _require_project(project_id)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "questions": await list_questions(project_id, status=status, limit=limit),
+    }
+
+
+@router.post("/projects/{project_id}/agent/questions/{question_id}/answer")
+async def internal_agent_answer_question(
+    project_id: str,
+    question_id: str,
+    body: InternalQuestionAnswerRequest,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_activity import record_agent_event
+    from syte.agent_artifacts import answer_question
+    from syte.cloud_agent_store import current_turso_session_id
+
+    await _require_project(project_id)
+    result = await answer_question(project_id, question_id, body.answer)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    if not result.get("already_answered"):
+        turso_session_id = await current_turso_session_id(project_id)
+        await record_agent_event(
+            project_id,
+            "question_answered",
+            role="user",
+            title="Answer",
+            detail=str(result.get("answer") or "")[:4000],
+            payload={"question_id": question_id, "answer": result.get("answer")},
+            source="internal",
+            turso_session_id=turso_session_id,
+        )
+    return result
+
+
+@router.get("/projects/{project_id}/agent/stops")
+async def internal_agent_stops(
+    project_id: str,
+    limit: int = 50,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_artifacts import list_session_stops
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, "stops": await list_session_stops(project_id, limit=limit)}
+
+
+@router.get("/projects/{project_id}/agent/mcp")
+async def internal_agent_mcp(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.agent_artifacts import list_mcp_addons
+
+    await _require_project(project_id)
+    return {"ok": True, "project_id": project_id, "addons": await list_mcp_addons(project_id)}
 
 
 @router.get("/projects/{project_id}/agent/turso_sync")

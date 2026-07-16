@@ -43,14 +43,52 @@ failure, or cancellation event.
 ## Agent execution
 
 The cloud agent calls the selected provider with non-streaming chat completions
-and structured tools. Available tools are limited to Syte operations:
+and structured tools. Available tools:
 
 - list, read, write, and delete workspace files
 - execute commands inside the project workspace
-- inspect or control project service, preview, deploy, and logs
+- inspect or control the isolated development preview (`service`)
+- `update_plan` — publish steps; **persisted** in `agent_plans` and shown as chat thinking
+- `screenshot_preview` — capture **desktop (1280×800) + phone (390×844)** screenshots of a
+  preview route; saved under `data/cloud-agent/screenshots/`, mirrored in `agent_screenshots`,
+  emitted as `screenshot` activity events (optimized thumbnails for chat), and injected as
+  vision `image_url` parts for providers that support images (Gemini profiles; DeepSeek gets
+  text metadata + URLs only)
+- `ask_question` — interactive mid-turn questions (`answer` / `input` / `slider` / `choice` /
+  `multi_choice`); blocks until answered via API/GUI or times out
+- `env_get` / `env_set` / `request_env` — project env access; `request_env` asks the user for
+  missing keys as a question and writes the answer into env
+- `list_mcp_addons` / `connect_mcp` / `call_mcp` — available MCP addons (built-in `syte` plus
+  registered custom addons)
+- `delegate_task` — bounded subagent
+
+### Code policy
+
+The agent builds **any** kind of code (libraries, CLIs, APIs, scripts, backends, data jobs,
+etc.). It must **not** assume every request is a website. When the work *is* a website / web UI,
+it must follow the Sycord Design Contract (shadcn/ui under `components/ui/*`, Lucide, Inter,
+Tailwind tokens).
+
+### Session stop markers
+
+`stop`, `interrupt`, and cancelled turns write a row to local `agent_session_stops` with
+`stopped_at`, emit `agent_stopped` (payload includes `stopped_at` / `reason` / `stop_id`), and
+close the Turso session with status `stopped` (stop) or `cancelled` (interrupt/cancel). List
+stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
+
+### Artifact APIs
+
+| Resource | List | Notes |
+|----------|------|--------|
+| Screenshots | `GET /api/agent_screenshots?uuid=` | PNG at `/api/projects/{uuid}/agent/screenshots/{id}?variant=thumb\|full` |
+| Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
+| Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
+| MCP addons | `GET /api/agent_mcp?uuid=` | `POST /api/agent_mcp_connect` / `agent_mcp_call` |
+| Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 
 The system instruction is generated for Syte and includes project access rules,
-workspace location, verification requirements, and credential handling.
+workspace location, design contract (for websites), verification requirements, and
+credential handling.
 
 ## Activity API
 
@@ -88,15 +126,18 @@ correlated by `payload.request_id`:
 ```
 request_started (role=user)
   -> processing
-  -> [thinking]                         # optional plan/reasoning
+  -> [thinking | question | screenshot]   # optional plan / user prompt / preview shots
   -> (tool_call_started -> tool_call_finished)*
-  -> request_completed | request_failed # exactly one, terminal
+  -> request_completed | request_failed | agent_stopped  # terminal
 ```
 
 Payload fields: `tool_call_started` carries `tool` and `arguments`;
 `tool_call_finished` carries `tool` and `ok` (boolean success);
 `request_completed` carries `reply`; `request_failed` carries `error` and
-`retry_message`. Lifecycle events `agent_started`, `agent_stopped`, and
+`retry_message`; `screenshot` carries `screenshots[]` with viewport metadata +
+`image_url` / optional `chat_image_base64`; `question` carries `question_id`,
+`question_type`, and widget fields; `agent_stopped` carries `stopped_at` and
+`reason`. Lifecycle events `agent_started`, `agent_stopped`, and
 `agent_restarted` are emitted on start/stop/restart.
 
 A session document looks like:
@@ -122,9 +163,11 @@ A session document looks like:
 ```
 
 `status` is `open` while the turn is in progress, and `completed`, `failed`,
-or `cancelled` once it finishes. Clients that want to observe an in-progress
-turn poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>` on a
-short interval (a few seconds) until `status != "open"`.
+`cancelled`, or `stopped` once it finishes. Clients that want to observe an
+in-progress turn poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>`
+on a short interval (a few seconds) until `status != "open"`. When a `question`
+event is pending, answer it (`POST /api/agent_answer_question` or the GUI widget)
+before expecting the turn to complete.
 
 ## Durable message store (Turso) — "brain" save status
 

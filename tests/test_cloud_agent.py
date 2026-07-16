@@ -552,9 +552,10 @@ async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir:
 
     assert "update_plan" in instruction
     assert "delegate_task" in instruction
-    assert "development preview" in instruction
+    assert "isolated preview" in instruction or "development preview" in instruction
     assert "Never deploy" in instruction
-    assert "home page" in instruction
+    assert "shadcn" in instruction.lower()
+    assert "ANY kind of code" in instruction
 
 
 @pytest.mark.asyncio
@@ -564,4 +565,7 @@ async def test_update_plan_tool_returns_structured_plan(tmp_data_dir: Path) -> N
     await _project("plan-proj")
     result = await _execute_tool("plan-proj", "update_plan", {"steps": ["Inspect", "Verify"]})
 
-    assert result == {"ok": True, "steps": ["Inspect", "Verify"], "note": ""}
+    assert result["ok"] is True
+    assert result["steps"] == ["Inspect", "Verify"]
+    assert result["note"] == ""
+    assert result.get("plan_id")

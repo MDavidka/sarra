@@ -69,8 +69,12 @@ async def list_access_capabilities(project_id: str) -> dict[str, Any]:
             {"action": "fetch", "description": "Fetch HTML/text from preview or allowed URL"},
             {"action": "read", "description": "Alias for fetch"},
             {"action": "logs", "description": "Read preview dev-server log"},
-            {"action": "screenshot", "description": "Capture preview screenshot (when chromium available)"},
+            {"action": "screenshot", "description": "Capture preview screenshot (desktop + phone when chromium available)"},
         ],
+        "viewports": {
+            "desktop": {"width": 1280, "height": 800},
+            "phone": {"width": 390, "height": 844},
+        },
         "cli": "syte-access <action> [url|lines]",
     }
 
@@ -160,13 +164,51 @@ async def run_access_action(
             return {"ok": False, "error": "no_url", "message": "No preview URL for screenshot"}
         if not _is_allowed_url(target, preview_url, custom_urls):
             return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for screenshot"}
-        shot = await _capture_screenshot(target)
-        return {"ok": shot.get("ok", False), "action": "screenshot", "url": target, **shot}
+        # Legacy single-shot (desktop) plus dual-viewport helpers for agents.
+        shots = await capture_preview_screenshots(target, viewports=("desktop", "phone"))
+        public = {
+            name: {k: v for k, v in (shot or {}).items() if k != "png_bytes"}
+            for name, shot in shots.items()
+        }
+        desktop = public.get("desktop") or {}
+        return {
+            "ok": bool(desktop.get("ok")),
+            "action": "screenshot",
+            "url": target,
+            **desktop,
+            "viewports": public,
+        }
 
     return {"ok": False, "error": "unknown_action", "message": f"Unknown action: {action}"}
 
 
-async def _capture_screenshot(url: str) -> dict[str, Any]:
+VIEWPORTS: dict[str, tuple[int, int]] = {
+    "desktop": (1280, 800),
+    "phone": (390, 844),
+    "thumb": (480, 300),
+}
+
+
+async def capture_preview_screenshots(
+    url: str,
+    *,
+    viewports: tuple[str, ...] = ("desktop", "phone"),
+) -> dict[str, dict[str, Any]]:
+    """Capture one or more viewport screenshots of ``url``."""
+    results: dict[str, dict[str, Any]] = {}
+    for name in viewports:
+        size = VIEWPORTS.get(name) or VIEWPORTS["desktop"]
+        results[name] = await _capture_screenshot(url, width=size[0], height=size[1], viewport=name)
+    return results
+
+
+async def _capture_screenshot(
+    url: str,
+    *,
+    width: int = 1280,
+    height: int = 800,
+    viewport: str = "desktop",
+) -> dict[str, Any]:
     browser = (
         shutil.which("chromium")
         or shutil.which("chromium-browser")
@@ -178,6 +220,9 @@ async def _capture_screenshot(url: str) -> dict[str, Any]:
             "ok": False,
             "error": "no_browser",
             "message": "No headless browser found. Use syte-access fetch to read HTML instead.",
+            "viewport": viewport,
+            "width": width,
+            "height": height,
         }
 
     def _run() -> dict[str, Any]:
@@ -187,7 +232,9 @@ async def _capture_screenshot(url: str) -> dict[str, Any]:
                 "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
-                f"--screenshot=-",
+                "--hide-scrollbars",
+                f"--window-size={int(width)},{int(height)}",
+                "--screenshot=-",
                 url,
             ],
             capture_output=True,
@@ -195,20 +242,52 @@ async def _capture_screenshot(url: str) -> dict[str, Any]:
         )
         if proc.returncode != 0:
             err = proc.stderr.decode(errors="replace")[:500]
-            return {"ok": False, "error": "screenshot_failed", "message": err or "Screenshot command failed"}
+            return {
+                "ok": False,
+                "error": "screenshot_failed",
+                "message": err or "Screenshot command failed",
+                "viewport": viewport,
+                "width": width,
+                "height": height,
+            }
         data = proc.stdout
         if not data:
-            return {"ok": False, "error": "screenshot_empty", "message": "Screenshot produced no data"}
+            return {
+                "ok": False,
+                "error": "screenshot_empty",
+                "message": "Screenshot produced no data",
+                "viewport": viewport,
+                "width": width,
+                "height": height,
+            }
         return {
             "ok": True,
             "format": "png",
+            "viewport": viewport,
+            "width": width,
+            "height": height,
             "image_base64": base64.b64encode(data).decode("ascii"),
             "bytes": len(data),
+            "png_bytes": data,
         }
 
     try:
         return await asyncio.to_thread(_run)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "screenshot_timeout", "message": "Screenshot timed out"}
+        return {
+            "ok": False,
+            "error": "screenshot_timeout",
+            "message": "Screenshot timed out",
+            "viewport": viewport,
+            "width": width,
+            "height": height,
+        }
     except Exception as exc:
-        return {"ok": False, "error": "screenshot_failed", "message": str(exc)}
+        return {
+            "ok": False,
+            "error": "screenshot_failed",
+            "message": str(exc),
+            "viewport": viewport,
+            "width": width,
+            "height": height,
+        }
