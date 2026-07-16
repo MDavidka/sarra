@@ -840,6 +840,11 @@ async def _tool_screenshot_preview(
             })
 
     ok_any = any(s.get("ok") for s in shots_out)
+    fail_msgs = [
+        str(s.get("message") or "")
+        for s in shots_out
+        if not s.get("ok") and s.get("message")
+    ]
     return {
         "ok": ok_any,
         "action": "screenshot_preview",
@@ -852,7 +857,14 @@ async def _tool_screenshot_preview(
             f"Captured {sum(1 for s in shots_out if s.get('ok'))} viewport(s) of {route}. "
             "Inspect the attached images for layout issues."
             if ok_any
-            else "Screenshot capture failed — check preview is running and chromium is installed."
+            else (
+                fail_msgs[0]
+                if fail_msgs
+                else (
+                    "Screenshot capture failed — check preview is running and chromium is installed "
+                    "(apt install chromium-browser, or set SYTE_CHROMIUM_PATH)."
+                )
+            )
         ),
     }
 
