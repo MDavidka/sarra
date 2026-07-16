@@ -78,6 +78,60 @@ Tailwind tokens).
 close the Turso session with status `stopped` (stop) or `cancelled` (interrupt/cancel). List
 stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
 
+When a turn finishes (success, failure, cancel, stop, or step-limit), Turso
+`agent_session` is updated with a terminal `status` **and** `ended_at`. Clients
+must treat `status != "open"` (or a non-null `ended_at`) as the end of
+generation — never rely on the last `mark_status: "g"` event alone. On service
+restart, any leftover `open` sessions for a project are closed as `cancelled`
+before a resumed request opens a new session.
+
+### Skill settings
+
+Per-project skill toggles and MCP connection preferences live in
+`workspaces/<uuid>/data/cloud-agent/skills.json` (defaults: all built-in skills
+enabled, builtin `syte` MCP auto-connected):
+
+```json
+{
+  "enabled_skills": [
+    "website-editing", "workspace-search", "preview-access",
+    "service-management", "nextjs-app-router", "cli-tools"
+  ],
+  "mcp": {
+    "enabled": true,
+    "auto_connect_builtin": true,
+    "auto_connect_addons": []
+  }
+}
+```
+
+APIs:
+
+- `GET/PUT /api/projects/{uuid}/agent/skills`
+- `GET /api/agent_skills?uuid=` / `POST /api/agent_skills`
+- `POST /api/agent_settings` also accepts optional `enabled_skills` and `mcp`
+
+Disabled skills are omitted from the system instruction and removed from the
+on-disk `skills/` markdown set. MCP settings control whether the project MCP
+stdio helper (`bin/syte-mcp`) is written and which addons are auto-connected at
+turn start.
+
+### MCP connection (project functions)
+
+Each project exposes a built-in MCP addon named `syte` whose tools map to the
+same project functions as the CLI helpers:
+
+| MCP tool | Project function |
+|----------|------------------|
+| `syte_service` | `POST /api/projects/{uuid}/agent/service` |
+| `syte_access` | `POST /api/projects/{uuid}/agent/access` |
+
+The stdio descriptor (for external MCP clients) is returned from
+`GET /api/agent_skills?uuid=` / `GET /api/agent_mcp?uuid=` as `mcp_server`, and
+from agent status as `agent_mcp.server`. Agent tools
+`list_mcp_addons` / `connect_mcp` / `call_mcp` use the same registry. Register
+extra stdio servers with `POST /api/agent_mcp_register`.
+
 ### Artifact APIs
 
 | Resource | List | Notes |
@@ -85,12 +139,13 @@ stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
 | Screenshots | `GET /api/agent_screenshots?uuid=` | PNG at `/api/projects/{uuid}/agent/screenshots/{id}?variant=thumb\|full` |
 | Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
 | Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
+| Skills / MCP | `GET /api/agent_skills?uuid=` | Enable skills + MCP connection; `GET /api/agent_mcp` lists addons |
 | MCP addons | `GET /api/agent_mcp?uuid=` | `POST /api/agent_mcp_connect` / `agent_mcp_call` |
 | Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 
 The system instruction is generated for Syte and includes project access rules,
-workspace location, design contract (for websites), verification requirements, and
-credential handling.
+enabled skills, workspace location, design contract (for websites), verification
+requirements, and credential handling.
 
 ## Activity API
 
@@ -165,11 +220,14 @@ A session document looks like:
 ```
 
 `status` is `open` while the turn is in progress, and `completed`, `failed`,
-`cancelled`, or `stopped` once it finishes. Clients that want to observe an
-in-progress turn poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>`
-on a short interval (a few seconds) until `status != "open"`. When a `question`
-event is pending, answer it (`POST /api/agent_answer_question` or the GUI widget)
-before expecting the turn to complete.
+`cancelled`, or `stopped` once it finishes. Terminal sessions also set
+`ended_at` (ISO timestamp). Clients that want to observe an in-progress turn
+poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>` on a short
+interval (a few seconds) until `status != "open"` (or `ended_at` is set). When a
+`question` event is pending, answer it (`POST /api/agent_answer_question` or the
+GUI widget) before expecting the turn to complete. The main agent tool loop is
+capped (`MAX_AGENT_STEPS`); hitting the cap emits `request_failed` with
+`error: agent_step_limit` and closes the session as `failed`.
 
 ## Durable message store (Turso) — "brain" save status
 

@@ -9,7 +9,6 @@ port allocation, or WebSocket transport is required.
 from __future__ import annotations
 
 import asyncio
-import itertools
 import json
 import logging
 from collections import defaultdict
@@ -44,10 +43,13 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 6
+AGENT_INSTRUCTION_VERSION = 7
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
+# Bound the main agent tool loop so a runaway turn cannot leave Turso
+# status='open' / UI "Working…" forever.
+MAX_AGENT_STEPS = 48
 QUESTION_WAIT_TIMEOUT_S = 1800.0
 # Cap inline vision payloads so provider requests stay bounded.
 MAX_VISION_IMAGE_BYTES = 700_000
@@ -254,15 +256,34 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
 
 
 async def _build_syte_instruction(project_id: str) -> str:
-    from syte.agent_skills import build_agent_rules, read_access_config, write_agent_skills
+    from syte.agent_skills import (
+        apply_mcp_connection_settings,
+        build_agent_rules,
+        read_access_config,
+        read_skills_config,
+        write_agent_skills,
+    )
     from syte.design_contract import DESIGN_CONTRACT_MARKDOWN
 
     root = agent_root(project_id)
     access = await read_access_config(project_id, root)
-    write_agent_skills(project_id, root)
+    skills_config = await read_skills_config(project_id, root)
+    enabled_skills = list(skills_config.get("enabled_skills") or [])
+    mcp_enabled = bool((skills_config.get("mcp") or {}).get("enabled", True))
+    write_agent_skills(
+        project_id,
+        root,
+        enabled_skills=enabled_skills,
+        mcp_enabled=mcp_enabled,
+    )
+    if mcp_enabled:
+        await apply_mcp_connection_settings(project_id, skills_config)
+    rules = build_agent_rules(project_id, access, enabled_skills=enabled_skills)
+    if not mcp_enabled:
+        rules = [item for item in rules if item.get("name") != "MCP project tools"]
     rule_lines = "\n".join(
         f"- {item['name']}: {item['rule']}"
-        for item in build_agent_rules(project_id, access)
+        for item in rules
         if item.get("rule")
     )
     return (
@@ -417,21 +438,34 @@ async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     return ok, message, status
 
 
-async def interrupt_agent(project_id: str) -> tuple[bool, str]:
+async def interrupt_agent(
+    project_id: str,
+    *,
+    turso_session_id: str | None = None,
+) -> tuple[bool, str]:
+    """Interrupt the active turn and close the superseded Turso session.
+
+    ``turso_session_id`` should be the session belonging to the turn being
+    cancelled. Callers that already opened a *new* session (e.g.
+    ``submit_agent_request``) must pass the previous id explicitly so the
+    new turn is not closed as ``cancelled`` mid-flight.
+    """
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
     task = _active_turns.get(project_id)
     if task and not task.done():
         task.cancel()
         session_number = await current_session_number(project_id)
-        turso_session_id = await current_turso_session_id(project_id)
+        close_id = turso_session_id
+        if close_id is None:
+            close_id = await current_turso_session_id(project_id)
         await cancel_pending_questions(project_id)
         stop = await mark_session_stopped(
             project_id,
             reason="interrupted",
             source="api",
             session_number=session_number,
-            turso_session_id=turso_session_id,
+            turso_session_id=close_id,
         )
         await record_agent_event(
             project_id,
@@ -442,15 +476,19 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
                 "stopped_at": stop["stopped_at"],
                 "reason": "interrupted",
                 "session": session_number,
-                "turso_session_id": turso_session_id,
+                "turso_session_id": close_id,
                 "stop_id": stop["id"],
             },
             source=CLOUD_RUNTIME,
-            turso_session_id=turso_session_id,
+            turso_session_id=close_id,
         )
-        if turso_session_id:
-            await close_turso_session(turso_session_id, status="cancelled")
+        if close_id:
+            await close_turso_session(close_id, status="cancelled")
         return True, "Active cloud-agent turn interrupted."
+    # No in-process turn, but still close a known orphaned Turso session so
+    # clients never poll an endless status=open / "generating" state.
+    if turso_session_id:
+        await close_turso_session(turso_session_id, status="cancelled")
     return True, "No active cloud-agent turn."
 
 async def turso_message_sync_status(project_id: str) -> dict[str, Any]:
@@ -532,26 +570,84 @@ async def get_agent_status(
         "agent_capabilities": [
             "durable_sessions", "restartable_requests", "background_jobs",
             "turso_session_storage", "turso_message_persistence", "last_session_history",
-            "terminal", "file_editor", "preview_control", "skills", "provider_retries",
-            "planning", "plan_persistence", "subagents", "visible_thinking",
+            "terminal", "file_editor", "preview_control", "skills", "skill_settings",
+            "provider_retries", "planning", "plan_persistence", "subagents", "visible_thinking",
             "screenshot_preview", "vision_screenshots", "interactive_questions",
-            "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
-            "shadcn_websites",
+            "env_access", "mcp_addons", "mcp_project_connection", "session_stop_markers",
+            "any_code_type", "shadcn_websites",
         ],
+        **(await _agent_skills_status_fields(project_id)),
     }
 
 
+async def _agent_skills_status_fields(project_id: str) -> dict[str, Any]:
+    """Attach skills + MCP connection summary to agent status responses."""
+    try:
+        from syte.agent_artifacts import list_mcp_addons
+        from syte.agent_skills import (
+            available_skills,
+            mcp_server_config,
+            read_skills_config,
+        )
+
+        root = agent_root(project_id)
+        skills_config = await read_skills_config(project_id, root)
+        mcp_cfg = skills_config.get("mcp") or {}
+        addons = await list_mcp_addons(project_id) if mcp_cfg.get("enabled", True) else []
+        return {
+            "agent_skills": {
+                "available": available_skills(),
+                "enabled_skills": skills_config.get("enabled_skills") or [],
+                "mcp": mcp_cfg,
+            },
+            "agent_mcp": {
+                "enabled": bool(mcp_cfg.get("enabled", True)),
+                "server": mcp_server_config(project_id, root),
+                "addons": addons,
+                "documentation": "/api/#agent-mcp",
+            },
+        }
+    except Exception:
+        return {
+            "agent_skills": {"available": [], "enabled_skills": [], "mcp": {}},
+            "agent_mcp": {"enabled": False, "server": None, "addons": [], "documentation": "/api/#agent-mcp"},
+        }
+
+
 async def update_agent_settings(
-    project_id: str, *, model_profile: str | None = None, include_status: bool = True
+    project_id: str,
+    *,
+    model_profile: str | None = None,
+    enabled_skills: list[str] | None = None,
+    mcp: dict[str, Any] | None = None,
+    include_status: bool = True,
 ) -> dict[str, Any]:
+    from syte.agent_skills import read_skills_config, write_agent_skills, write_skills_config
+
     if model_profile is not None:
         profile = model_profile.strip() or "syra-base"
         if profile not in PROFILE_PROVIDERS:
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
-        project = await get_project(project_id)
-        if project:
-            await write_agent_config(project)
+    if enabled_skills is not None or mcp is not None:
+        root = agent_root(project_id)
+        current = await read_skills_config(project_id, root)
+        patch: dict[str, Any] = {}
+        if enabled_skills is not None:
+            patch["enabled_skills"] = enabled_skills
+        if mcp is not None:
+            patch["mcp"] = {**(current.get("mcp") or {}), **mcp}
+        await write_skills_config(project_id, {**current, **patch}, root)
+        refreshed = await read_skills_config(project_id, root)
+        write_agent_skills(
+            project_id,
+            root,
+            enabled_skills=list(refreshed.get("enabled_skills") or []),
+            mcp_enabled=bool((refreshed.get("mcp") or {}).get("enabled", True)),
+        )
+    project = await get_project(project_id)
+    if project and (model_profile is not None or enabled_skills is not None or mcp is not None):
+        await write_agent_config(project)
     return await get_agent_status(project_id) if include_status else (await get_project(project_id) or {})
 
 
@@ -1245,8 +1341,11 @@ async def _communicate_with_agent_impl(
         "emit_question": _emit_question,
     }
 
+    # Who opened the Turso session owns closing it (sync path). Async jobs
+    # pass a pre-opened session and close it in agent_jobs._run_job finally.
+    terminal_status: str | None = None
     try:
-        for step in itertools.count():
+        for step in range(MAX_AGENT_STEPS):
             assistant = await _provider_completion(model, messages)
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
@@ -1312,8 +1411,7 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-                if opened_turso_session:
-                    await close_turso_session(turso_session_id, status="completed")
+                terminal_status = "completed"
                 _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
                 return {"ok": True, "uuid": project_id, "request_id": request_id,
                         "session": session_number,
@@ -1473,6 +1571,37 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
+        # Step budget exhausted — end the turn cleanly so the session is not
+        # left open / "generating" indefinitely.
+        error = (
+            f"Agent did not finish within {MAX_AGENT_STEPS} steps. "
+            "Send a more focused follow-up or stop the agent."
+        )
+        _write_log(project_id, f"request {request_id} hit step limit ({MAX_AGENT_STEPS})")
+        await update_project(project_id, {"agent_last_error": error[:4000]})
+        await record_agent_event(
+            project_id, "request_failed", title="Step limit reached", detail=error[:4000],
+            payload=_mark_payload(
+                status="d",
+                kind="error",
+                base={
+                    "error": "agent_step_limit",
+                    "retry_message": message[:4000],
+                    "max_steps": MAX_AGENT_STEPS,
+                },
+            ),
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+        terminal_status = "failed"
+        return {
+            "ok": False,
+            "request_id": request_id,
+            "session": session_number,
+            "turso_session_id": turso_session_id,
+            "error": "agent_step_limit",
+            "message": error,
+        }
     except asyncio.CancelledError:
         from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
@@ -1501,8 +1630,7 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
-        if opened_turso_session:
-            await close_turso_session(turso_session_id, status="cancelled")
+        terminal_status = "cancelled"
         raise
     except Exception as exc:
         error = str(exc) or "Cloud agent request failed"
@@ -1521,12 +1649,13 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
-        if opened_turso_session:
-            await close_turso_session(turso_session_id, status="failed")
+        terminal_status = "failed"
         return {"ok": False, "request_id": request_id, "session": session_number,
                 "turso_session_id": turso_session_id,
                 "error": "cloud_agent_failed", "message": error}
     finally:
+        if opened_turso_session and turso_session_id and terminal_status:
+            await close_turso_session(turso_session_id, status=terminal_status)
         if _active_turns.get(project_id) is current:
             _active_turns.pop(project_id, None)
 

@@ -105,6 +105,8 @@ class CreateProjectRequest(BaseModel):
 class AgentSettingsRequest(BaseModel):
     uuid: str
     model_profile: str | None = None
+    enabled_skills: list[str] | None = None
+    mcp: dict | None = None
 
 
 class AgentCommunicateRequest(BaseModel):
@@ -400,7 +402,15 @@ async def api_agent_settings(body: AgentSettingsRequest, _token: dict = Depends(
     project = await get_project(body.uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    meta = await update_agent_settings(body.uuid, model_profile=body.model_profile)
+    try:
+        meta = await update_agent_settings(
+            body.uuid,
+            model_profile=body.model_profile,
+            enabled_skills=body.enabled_skills,
+            mcp=body.mcp,
+        )
+    except ValueError as exc:
+        _http_error(400, "invalid_settings", str(exc))
     return {"ok": True, "uuid": body.uuid, **meta}
 
 
@@ -545,17 +555,115 @@ async def api_agent_stops(
     return {"ok": True, "uuid": uuid, "stops": await list_session_stops(uuid, limit=limit)}
 
 
+@router.get("/agent_skills")
+async def api_agent_skills_get(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import list_mcp_addons
+    from syte.agent_skills import (
+        apply_mcp_connection_settings,
+        available_skills,
+        mcp_server_config,
+        read_skills_config,
+    )
+    from syte.cloud_agent import agent_root
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    root = agent_root(uuid)
+    config = await read_skills_config(uuid, root)
+    mcp_state = await apply_mcp_connection_settings(uuid, config)
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "available": available_skills(),
+        "enabled_skills": config.get("enabled_skills") or [],
+        "mcp": config.get("mcp") or {},
+        "mcp_connection": mcp_state,
+        "mcp_server": mcp_server_config(uuid, root),
+        "addons": await list_mcp_addons(uuid),
+        "documentation": "/api/#agent-skills",
+    }
+
+
+class AgentSkillsBody(BaseModel):
+    uuid: str
+    enabled_skills: list[str] | None = None
+    mcp: dict | None = None
+
+
+@router.post("/agent_skills")
+async def api_agent_skills_set(
+    body: AgentSkillsBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import (
+        apply_mcp_connection_settings,
+        available_skills,
+        mcp_server_config,
+        read_skills_config,
+        write_agent_skills,
+        write_skills_config,
+    )
+    from syte.cloud_agent import agent_root, write_agent_config
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    root = agent_root(body.uuid)
+    current = await read_skills_config(body.uuid, root)
+    patch = body.model_dump(exclude_none=True)
+    patch.pop("uuid", None)
+    path = await write_skills_config(body.uuid, {**current, **patch}, root)
+    config = await read_skills_config(body.uuid, root)
+    write_agent_skills(
+        body.uuid,
+        root,
+        enabled_skills=list(config.get("enabled_skills") or []),
+        mcp_enabled=bool((config.get("mcp") or {}).get("enabled", True)),
+    )
+    await write_agent_config(project)
+    mcp_state = await apply_mcp_connection_settings(body.uuid, config)
+    return {
+        "ok": True,
+        "uuid": body.uuid,
+        "path": str(path),
+        "available": available_skills(),
+        "enabled_skills": config.get("enabled_skills") or [],
+        "mcp": config.get("mcp") or {},
+        "mcp_connection": mcp_state,
+        "mcp_server": mcp_server_config(body.uuid, root),
+        "documentation": "/api/#agent-skills",
+    }
+
+
 @router.get("/agent_mcp")
 async def api_agent_mcp_list(
     uuid: str = Query(...),
     _token: dict = Depends(verify_api_token),
 ):
     from syte.agent_artifacts import list_mcp_addons
+    from syte.agent_skills import mcp_server_config
+    from syte.cloud_agent import agent_root
 
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    return {"ok": True, "uuid": uuid, "addons": await list_mcp_addons(uuid)}
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "addons": await list_mcp_addons(uuid),
+        "mcp_server": mcp_server_config(uuid, agent_root(uuid)),
+        "documentation": "/api/#agent-mcp",
+        "project_routes": {
+            "skills": f"/api/projects/{uuid}/agent/skills",
+            "list": f"/api/projects/{uuid}/agent/mcp",
+            "connect": f"/api/projects/{uuid}/agent/mcp/connect",
+            "call": f"/api/projects/{uuid}/agent/mcp/call",
+        },
+    }
 
 
 @router.post("/agent_mcp_register")

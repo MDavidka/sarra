@@ -192,8 +192,53 @@ exec python3 -m syte.mcp_stdio
 """
 
 
+# Skill id → markdown filename (under data/cloud-agent/skills/).
+SKILL_CATALOG: dict[str, dict[str, str]] = {
+    "website-editing": {
+        "file": "website-editing.md",
+        "title": "Website editing",
+        "description": "Focused live-site edits under app/ with preview verification.",
+        "rule_name": "Syte website agent",
+    },
+    "workspace-search": {
+        "file": "workspace-search.md",
+        "title": "Workspace search",
+        "description": "Search/read/list before rewriting files.",
+        "rule_name": "File operations",
+    },
+    "preview-access": {
+        "file": "preview-access.md",
+        "title": "Preview access",
+        "description": "syte-access helpers for preview URL, HTML, logs, screenshots.",
+        "rule_name": "Preview and access tools",
+    },
+    "service-management": {
+        "file": "service-management.md",
+        "title": "Service management",
+        "description": "syte-service for preview/run/logs (no production lifecycle).",
+        "rule_name": "Service management",
+    },
+    "nextjs-app-router": {
+        "file": "nextjs-app-router.md",
+        "title": "Next.js App Router",
+        "description": "Correct app/app/ routes, layout, Tailwind, and tsconfig paths.",
+        "rule_name": "Next.js App Router",
+    },
+    "cli-tools": {
+        "file": "cli-tools.md",
+        "title": "CLI tools",
+        "description": "Require syte-service / syte-access instead of raw systemctl/docker.",
+        "rule_name": "CLI tools (required)",
+    },
+}
+
+
 def agent_access_config_path(project_id: str, agent_root: Path) -> Path:
     return agent_root / "access.json"
+
+
+def agent_skills_config_path(project_id: str, agent_root: Path) -> Path:
+    return agent_root / "skills.json"
 
 
 def default_access_config() -> dict[str, Any]:
@@ -208,6 +253,30 @@ def default_access_config() -> dict[str, Any]:
             "screenshot",
         ],
     }
+
+
+def default_skills_config() -> dict[str, Any]:
+    """Per-project skill + MCP connection settings (written to skills.json)."""
+    return {
+        "enabled_skills": list(SKILL_CATALOG.keys()),
+        "mcp": {
+            "enabled": True,
+            "auto_connect_builtin": True,
+            "auto_connect_addons": [],
+        },
+    }
+
+
+def available_skills() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": skill_id,
+            "file": meta["file"],
+            "title": meta["title"],
+            "description": meta["description"],
+        }
+        for skill_id, meta in SKILL_CATALOG.items()
+    ]
 
 
 async def read_access_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
@@ -243,16 +312,135 @@ async def write_access_config(project_id: str, config: dict[str, Any], agent_roo
     return path
 
 
-def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[dict[str, str]]:
+def _normalize_enabled_skills(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return list(SKILL_CATALOG.keys())
+    known = set(SKILL_CATALOG.keys())
+    out: list[str] = []
+    for item in raw:
+        skill_id = str(item or "").strip()
+        if skill_id in known and skill_id not in out:
+            out.append(skill_id)
+    return out
+
+
+def _normalize_mcp_config(raw: Any) -> dict[str, Any]:
+    base = default_skills_config()["mcp"]
+    if not isinstance(raw, dict):
+        return base
+    addons_raw = raw.get("auto_connect_addons")
+    addons: list[str] = []
+    if isinstance(addons_raw, list):
+        for item in addons_raw:
+            name = str(item or "").strip()
+            if name and name not in addons:
+                addons.append(name[:120])
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "auto_connect_builtin": bool(raw.get("auto_connect_builtin", True)),
+        "auto_connect_addons": addons,
+    }
+
+
+async def read_skills_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
+    from syte.cloud_agent import agent_root as default_root
+
+    root = agent_root or default_root(project_id)
+    path = agent_skills_config_path(project_id, root)
+    payload = default_skills_config()
+    if not path.exists():
+        return payload
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            return payload
+        payload["enabled_skills"] = _normalize_enabled_skills(data.get("enabled_skills"))
+        payload["mcp"] = _normalize_mcp_config(data.get("mcp"))
+        return payload
+    except (json.JSONDecodeError, OSError):
+        return payload
+
+
+async def write_skills_config(
+    project_id: str, config: dict[str, Any], agent_root: Path | None = None
+) -> Path:
+    from syte.cloud_agent import agent_root as default_root
+
+    root = agent_root or default_root(project_id)
+    root.mkdir(parents=True, exist_ok=True)
+    path = agent_skills_config_path(project_id, root)
+    payload = default_skills_config()
+    if "enabled_skills" in config:
+        payload["enabled_skills"] = _normalize_enabled_skills(config.get("enabled_skills"))
+    if "mcp" in config:
+        payload["mcp"] = _normalize_mcp_config(config.get("mcp"))
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path
+
+
+async def apply_mcp_connection_settings(project_id: str, skills_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Connect project MCP addons according to skills.json mcp settings."""
+    from syte.agent_artifacts import connect_mcp_addon, list_mcp_addons
+
+    root = None
+    try:
+        from syte.cloud_agent import agent_root as default_root
+
+        root = default_root(project_id)
+    except Exception:
+        root = None
+    config = skills_config or await read_skills_config(project_id, root)
+    mcp = _normalize_mcp_config((config or {}).get("mcp"))
+    result: dict[str, Any] = {
+        "enabled": mcp["enabled"],
+        "connected": [],
+        "skipped": [],
+        "server": mcp_server_config(project_id, root) if root is not None else None,
+    }
+    if not mcp["enabled"]:
+        return result
+    addons = await list_mcp_addons(project_id)
+    wanted: list[str] = []
+    if mcp["auto_connect_builtin"]:
+        wanted.append("syte")
+    wanted.extend(mcp["auto_connect_addons"])
+    for name in wanted:
+        addon = next((a for a in addons if a["name"] == name or a["id"] == name), None)
+        if not addon:
+            result["skipped"].append({"addon": name, "reason": "not_found"})
+            continue
+        connected = await connect_mcp_addon(project_id, addon["id"])
+        if connected.get("ok"):
+            result["connected"].append({
+                "id": connected.get("id"),
+                "name": connected.get("name"),
+                "tools": connected.get("tools") or [],
+            })
+        else:
+            result["skipped"].append({
+                "addon": name,
+                "reason": connected.get("error") or "connect_failed",
+            })
+    return result
+
+
+def build_agent_rules(
+    project_id: str,
+    access_config: dict[str, Any],
+    *,
+    enabled_skills: list[str] | None = None,
+) -> list[dict[str, str]]:
     custom_urls = access_config.get("custom_urls") or []
     custom_block = ""
     if custom_urls:
         urls = "\n".join(f"- {u}" for u in custom_urls)
         custom_block = f"\n\nAdditional URLs you may fetch with `syte-access fetch <url>`:\n{urls}"
 
-    return [
+    enabled = set(enabled_skills if enabled_skills is not None else SKILL_CATALOG.keys())
+    all_rules: list[dict[str, str]] = [
         {
             "name": "Syte website agent",
+            "skill_id": "website-editing",
             "rule": (
                 "You edit websites inside the Syte workspace. Work in the app/ directory, "
                 "match existing conventions, and keep changes small and verifiable. "
@@ -261,6 +449,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "CLI tools (required)",
+            "skill_id": "cli-tools",
             "rule": (
                 "Always use the CLI helpers `syte-service` and `syte-access` on PATH. "
                 "Use syte-service for preview/run/logs. "
@@ -270,6 +459,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "Service management",
+            "skill_id": "service-management",
             "rule": (
                 "To control preview or run verification commands: `syte-service <action>`. "
                 "Examples: syte-service preview_start and syte-service run \"npm run lint\". "
@@ -279,6 +469,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "Preview and access tools",
+            "skill_id": "preview-access",
             "rule": (
                 "Use `syte-access` for preview: status, url, fetch/read page HTML, "
                 "logs (dev server output), and screenshot."
@@ -287,6 +478,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "File operations",
+            "skill_id": "workspace-search",
             "rule": (
                 "When changing the site: read files first, then create/edit/delete as needed. "
                 "Every file change should be intentional and verifiable via preview."
@@ -294,6 +486,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "Home page quality",
+            "skill_id": "website-editing",
             "rule": (
                 "For site creation or redesign work, make the home page complete and styled. "
                 "Integrate existing typography, color, spacing, components, and responsive behavior; "
@@ -302,6 +495,7 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
         },
         {
             "name": "Next.js App Router",
+            "skill_id": "nextjs-app-router",
             "rule": (
                 "The Next.js project root is the workspace app/ folder, so App Router routes live under "
                 "app/app/ (e.g. app/app/login/page.tsx), globals.css at app/app/globals.css, and config at "
@@ -312,18 +506,56 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
                 "files and verifies size; re-read after writes and treat an empty-file warning as a failure."
             ),
         },
+        {
+            "name": "MCP project tools",
+            "skill_id": "__mcp__",
+            "rule": (
+                "Use list_mcp_addons / connect_mcp / call_mcp for project MCP addons. "
+                "Built-in addon `syte` exposes syte_service and syte_access (same as the CLI helpers). "
+                "Register extra stdio MCP servers via the project MCP APIs when needed."
+            ),
+        },
     ]
+    out: list[dict[str, str]] = []
+    for item in all_rules:
+        skill_id = item.get("skill_id") or ""
+        if skill_id == "__mcp__":
+            # MCP rule is controlled by skills.json mcp.enabled (caller may strip).
+            out.append({"name": item["name"], "rule": item["rule"]})
+            continue
+        if skill_id in enabled:
+            out.append({"name": item["name"], "rule": item["rule"]})
+    return out
 
 
-def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
-    """Write skill markdown files and syte-access helper into the agent workspace."""
+def write_agent_skills(
+    project_id: str,
+    agent_root: Path,
+    *,
+    enabled_skills: list[str] | None = None,
+    mcp_enabled: bool = True,
+) -> list[Path]:
+    """Write enabled skill markdown files and syte-* helpers into the agent workspace."""
     skills_dir = agent_root / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    enabled = set(enabled_skills if enabled_skills is not None else SKILL_CATALOG.keys())
+    enabled_files = {
+        SKILL_CATALOG[skill_id]["file"]
+        for skill_id in enabled
+        if skill_id in SKILL_CATALOG
+    }
+
     for name, content in SKILL_FILES.items():
         path = skills_dir / name
-        path.write_text(content.strip() + "\n")
-        written.append(path)
+        if name in enabled_files:
+            path.write_text(content.strip() + "\n")
+            written.append(path)
+        elif path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     bin_dir = agent_root / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -338,22 +570,50 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
     written.append(service_path)
 
     mcp_path = bin_dir / "syte-mcp"
-    mcp_path.write_text(MCP_SCRIPT)
-    mcp_path.chmod(mcp_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    written.append(mcp_path)
+    if mcp_enabled:
+        mcp_path.write_text(MCP_SCRIPT)
+        mcp_path.chmod(mcp_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        written.append(mcp_path)
+    elif mcp_path.exists():
+        try:
+            mcp_path.unlink()
+        except OSError:
+            pass
     return written
 
 
-def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
+def mcp_server_config(project_id: str, agent_root: Path | None) -> dict[str, Any]:
     """Syte MCP stdio descriptor for integrations that opt into MCP."""
+    bin_cmd = "syte-mcp"
+    if agent_root is not None:
+        bin_cmd = str(agent_root / "bin" / "syte-mcp")
     return {
         "name": "syte-tools",
-        "command": str(agent_root / "bin" / "syte-mcp"),
+        "transport": "stdio",
+        "command": bin_cmd,
         "args": [],
         "env": {
             "SYTE_PROJECT_ID": project_id,
             "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
             "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
+        },
+        "tools": [
+            {
+                "name": "syte_service",
+                "description": "Control project preview/service/logs (function → /agent/service)",
+            },
+            {
+                "name": "syte_access",
+                "description": "Preview URL fetch/logs/screenshot (function → /agent/access)",
+            },
+        ],
+        "documentation": "/api/#agent-mcp",
+        "project_routes": {
+            "list": f"/api/projects/{project_id}/agent/mcp",
+            "register": f"/api/projects/{project_id}/agent/mcp",
+            "connect": f"/api/projects/{project_id}/agent/mcp/connect",
+            "call": f"/api/projects/{project_id}/agent/mcp/call",
+            "skills": f"/api/projects/{project_id}/agent/skills",
         },
     }
 

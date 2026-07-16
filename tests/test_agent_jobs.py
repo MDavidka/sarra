@@ -137,3 +137,97 @@ async def test_run_job_converts_unexpected_exception_to_terminal_event(
     assert len(failures) == 1
     assert failures[0]["payload"]["request_id"] == "req-error"
     assert failures[0]["payload"]["retry_message"] == "fix the page"
+
+
+@pytest.mark.asyncio
+async def test_run_job_always_closes_turso_session_on_success(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import turso_store
+    from syte.agent_jobs import _run_job
+    from syte.database import create_project, init_db, set_setting
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({"id": "job-close-proj", "name": "Close", "port": 3022, "start_command": ""})
+
+    turso_db = tmp_data_dir / "turso-close.db"
+
+    async def fake_turso_settings():
+        return f"file:{turso_db}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_turso_settings)
+    turso_store.reset_client_cache()
+
+    session_id = await turso_store.open_session("job-close-proj", session_number=1)
+
+    async def ok_request(*_args, **_kwargs):
+        return {"ok": True, "reply": "done", "turso_session_id": session_id}
+
+    monkeypatch.setattr("syte.cloud_agent._communicate_with_agent_impl", ok_request)
+
+    result = await _run_job(
+        "job-close-proj",
+        "req-close",
+        "hello",
+        model_profile="syra-base",
+        source="test",
+        auto_start=True,
+        session_number=1,
+        turso_session_id=session_id,
+    )
+    assert result["ok"] is True
+    session = await turso_store.get_session(session_id)
+    assert session["status"] == "completed"
+    assert session["ended_at"]
+    turso_store.reset_client_cache()
+
+
+@pytest.mark.asyncio
+async def test_submit_interrupts_previous_turso_session_not_new(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.agent_jobs import submit_agent_request
+    from syte.cloud_agent_store import ensure_session, set_turso_session_id
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({"id": "job-int-proj", "name": "Int", "port": 3023, "start_command": ""})
+    await ensure_session("job-int-proj", "syra-base")
+    await set_turso_session_id("job-int-proj", "old-session-id")
+
+    interrupted: list[str | None] = []
+
+    async def fake_interrupt(project_id, *, turso_session_id=None):
+        interrupted.append(turso_session_id)
+        return True, "ok"
+
+    async def fake_open(*_args, **_kwargs):
+        return "new-session-id"
+
+    async def fake_run(*_args, **_kwargs):
+        return {"ok": True, "reply": "done"}
+
+    monkeypatch.setattr("syte.cloud_agent.interrupt_agent", fake_interrupt)
+    monkeypatch.setattr("syte.agent_jobs.open_turso_session", fake_open)
+    monkeypatch.setattr("syte.agent_jobs._run_job", fake_run)
+
+    # Pretend a previous job is still running.
+    import asyncio
+
+    from syte import agent_jobs
+
+    async def hang():
+        await asyncio.sleep(3600)
+
+    previous = asyncio.create_task(hang())
+    agent_jobs._running["job-int-proj"] = previous
+
+    result = await submit_agent_request("job-int-proj", "next", source="test")
+    assert result["turso_session_id"] == "new-session-id"
+    assert interrupted == ["old-session-id"]
+    previous.cancel()
+    try:
+        await previous
+    except asyncio.CancelledError:
+        pass

@@ -72,6 +72,71 @@ async def test_write_and_read_access_config(tmp_data_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_skills_config_enables_subset_and_mcp_server(tmp_data_dir: Path) -> None:
+    from syte.agent_skills import (
+        available_skills,
+        build_agent_rules,
+        mcp_server_config,
+        read_skills_config,
+        write_agent_skills,
+        write_skills_config,
+    )
+    from syte.cloud_agent import agent_root
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "skills-cfg",
+        "name": "SkillsCfg",
+        "port": 3013,
+        "start_command": "",
+    })
+    root = agent_root("skills-cfg")
+    await write_skills_config(
+        "skills-cfg",
+        {
+            "enabled_skills": ["cli-tools", "preview-access"],
+            "mcp": {"enabled": True, "auto_connect_builtin": True, "auto_connect_addons": []},
+        },
+        root,
+    )
+    config = await read_skills_config("skills-cfg", root)
+    assert config["enabled_skills"] == ["cli-tools", "preview-access"]
+    assert config["mcp"]["enabled"] is True
+
+    written = write_agent_skills(
+        "skills-cfg",
+        root,
+        enabled_skills=config["enabled_skills"],
+        mcp_enabled=True,
+    )
+    names = {p.name for p in written}
+    assert "cli-tools.md" in names
+    assert "preview-access.md" in names
+    assert "nextjs-app-router.md" not in names
+    assert "syte-mcp" in names
+    assert not (root / "skills" / "nextjs-app-router.md").exists()
+
+    rules = build_agent_rules(
+        "skills-cfg",
+        {"custom_urls": []},
+        enabled_skills=config["enabled_skills"],
+    )
+    rule_names = {r["name"] for r in rules}
+    assert "CLI tools (required)" in rule_names
+    assert "Preview and access tools" in rule_names
+    assert "Next.js App Router" not in rule_names
+
+    catalog_ids = {s["id"] for s in available_skills()}
+    assert "cli-tools" in catalog_ids
+    server = mcp_server_config("skills-cfg", root)
+    assert server["name"] == "syte-tools"
+    assert server["transport"] == "stdio"
+    assert any(t["name"] == "syte_service" for t in server["tools"])
+    assert server["project_routes"]["skills"].endswith("/agent/skills")
+
+
+@pytest.mark.asyncio
 async def test_preview_access_status_and_logs(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import syte.preview_manager as pm
 

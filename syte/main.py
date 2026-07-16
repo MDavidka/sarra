@@ -902,6 +902,11 @@ class AgentAccessConfigRequest(BaseModel):
     custom_urls: list[str] = []
 
 
+class AgentSkillsConfigRequest(BaseModel):
+    enabled_skills: list[str] | None = None
+    mcp: dict | None = None
+
+
 class AgentServiceRequest(BaseModel):
     action: str
     command: str | None = None
@@ -1010,6 +1015,77 @@ async def api_agent_access_config_put(project_id: str, body: AgentAccessConfigRe
     path = await write_access_config(project_id, body.model_dump(), root)
     await write_agent_config(project)
     return {"ok": True, "path": str(path), **(await read_access_config(project_id, root))}
+
+
+@app.get("/api/projects/{project_id}/agent/skills")
+async def api_agent_skills_get(project_id: str):
+    from syte.agent_artifacts import list_mcp_addons
+    from syte.agent_skills import (
+        apply_mcp_connection_settings,
+        available_skills,
+        mcp_server_config,
+        read_skills_config,
+    )
+    from syte.cloud_agent import agent_root
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    root = agent_root(project_id)
+    config = await read_skills_config(project_id, root)
+    mcp_state = await apply_mcp_connection_settings(project_id, config)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "available": available_skills(),
+        "enabled_skills": config.get("enabled_skills") or [],
+        "mcp": config.get("mcp") or {},
+        "mcp_connection": mcp_state,
+        "mcp_server": mcp_server_config(project_id, root),
+        "addons": await list_mcp_addons(project_id),
+        "documentation": "/api/#agent-skills",
+    }
+
+
+@app.put("/api/projects/{project_id}/agent/skills")
+async def api_agent_skills_put(project_id: str, body: AgentSkillsConfigRequest):
+    from syte.agent_skills import (
+        apply_mcp_connection_settings,
+        available_skills,
+        mcp_server_config,
+        read_skills_config,
+        write_agent_skills,
+        write_skills_config,
+    )
+    from syte.cloud_agent import agent_root, write_agent_config
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    root = agent_root(project_id)
+    current = await read_skills_config(project_id, root)
+    patch = body.model_dump(exclude_none=True)
+    path = await write_skills_config(project_id, {**current, **patch}, root)
+    config = await read_skills_config(project_id, root)
+    write_agent_skills(
+        project_id,
+        root,
+        enabled_skills=list(config.get("enabled_skills") or []),
+        mcp_enabled=bool((config.get("mcp") or {}).get("enabled", True)),
+    )
+    await write_agent_config(project)
+    mcp_state = await apply_mcp_connection_settings(project_id, config)
+    return {
+        "ok": True,
+        "path": str(path),
+        "project_id": project_id,
+        "available": available_skills(),
+        "enabled_skills": config.get("enabled_skills") or [],
+        "mcp": config.get("mcp") or {},
+        "mcp_connection": mcp_state,
+        "mcp_server": mcp_server_config(project_id, root),
+        "documentation": "/api/#agent-skills",
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/access")
@@ -1133,11 +1209,26 @@ async def api_agent_stops_list(project_id: str, limit: int = 50):
 @app.get("/api/projects/{project_id}/agent/mcp")
 async def api_agent_mcp_list(project_id: str):
     from syte.agent_artifacts import list_mcp_addons
+    from syte.agent_skills import mcp_server_config
+    from syte.cloud_agent import agent_root
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "addons": await list_mcp_addons(project_id)}
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "addons": await list_mcp_addons(project_id),
+        "mcp_server": mcp_server_config(project_id, agent_root(project_id)),
+        "documentation": "/api/#agent-mcp",
+        "project_routes": {
+            "skills": f"/api/projects/{project_id}/agent/skills",
+            "service": f"/api/projects/{project_id}/agent/service",
+            "access": f"/api/projects/{project_id}/agent/access",
+            "connect": f"/api/projects/{project_id}/agent/mcp/connect",
+            "call": f"/api/projects/{project_id}/agent/mcp/call",
+        },
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/mcp")
