@@ -40,6 +40,17 @@ if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list 2>/dev/null || true
     apt-get update -qq && apt-get install -y -qq caddy 2>/dev/null || echo "Caddy install skipped — install manually for HTTPS"
   fi
+
+  # Headless Chromium for agent screenshot_preview (desktop + phone viewports).
+  if ! command -v chromium &>/dev/null \
+    && ! command -v chromium-browser &>/dev/null \
+    && ! command -v google-chrome &>/dev/null \
+    && ! command -v google-chrome-stable &>/dev/null; then
+    echo "==> Installing Chromium (agent preview screenshots)"
+    apt-get install -y -qq chromium-browser 2>/dev/null \
+      || apt-get install -y -qq chromium 2>/dev/null \
+      || echo "Chromium install skipped — screenshots need chromium; set SYTE_CHROMIUM_PATH or apt install chromium"
+  fi
 fi
 
 # Python venv

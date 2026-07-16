@@ -53,7 +53,9 @@ and structured tools. Available tools:
   preview route; saved under `data/cloud-agent/screenshots/`, mirrored in `agent_screenshots`,
   emitted as `screenshot` activity events (optimized thumbnails for chat), and injected as
   vision `image_url` parts for providers that support images (Gemini profiles; DeepSeek gets
-  text metadata + URLs only)
+  text metadata + URLs only). Requires a headless Chromium/Chrome on the Syte host
+  (`chromium-browser` / `chromium` / `google-chrome`, installed by `scripts/install.sh`, or
+  override with `SYTE_CHROMIUM_PATH`).
 - `ask_question` — interactive mid-turn questions (`answer` / `input` / `slider` / `choice` /
   `multi_choice`); blocks until answered via API/GUI or times out
 - `env_get` / `env_set` / `request_env` — project env access; `request_env` asks the user for

@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import os
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -16,10 +20,73 @@ from syte.agent_skills import read_access_config
 from syte.database import get_project
 from syte.preview_manager import get_preview_logs, get_preview_status, preview_meta
 
+logger = logging.getLogger(__name__)
+
+# Common Chromium/Chrome locations on Ubuntu/Debian Syte hosts (beyond PATH).
+_BROWSER_CANDIDATES = (
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium-headless-shell",
+    "chrome",
+)
+_BROWSER_PATH_CANDIDATES = (
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/local/bin/google-chrome",
+    "/usr/local/bin/chromium",
+    "/snap/bin/chromium",
+    "/usr/lib/chromium/chromium",
+    "/usr/lib/chromium-browser/chromium-browser",
+    "/opt/google/chrome/chrome",
+)
+
+_resolved_browser: str | None | bool = False  # False = unset, None = missing, str = path
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
+def find_headless_browser(*, force_refresh: bool = False) -> str | None:
+    """Locate a Chromium/Chrome binary for headless screenshots.
+
+    Order: ``SYTE_CHROMIUM_PATH`` env → PATH names → well-known absolute paths.
+    Result is cached for the process lifetime.
+    """
+    global _resolved_browser
+    if not force_refresh and _resolved_browser is not False:
+        return _resolved_browser if isinstance(_resolved_browser, str) else None
+
+    env_path = (os.environ.get("SYTE_CHROMIUM_PATH") or "").strip()
+    if env_path and Path(env_path).is_file() and os.access(env_path, os.X_OK):
+        _resolved_browser = env_path
+        return env_path
+
+    for name in _BROWSER_CANDIDATES:
+        found = shutil.which(name)
+        if found and Path(found).is_file():
+            _resolved_browser = found
+            return found
+
+    for path in _BROWSER_PATH_CANDIDATES:
+        if Path(path).is_file() and os.access(path, os.X_OK):
+            _resolved_browser = path
+            return path
+
+    _resolved_browser = None
+    return None
+
+
+def browser_install_hint() -> str:
+    return (
+        "No headless browser found for screenshots. On the Syte host install Chromium, e.g. "
+        "`sudo apt-get install -y chromium-browser` or `sudo apt-get install -y chromium`, "
+        "or set SYTE_CHROMIUM_PATH to the chrome/chromium binary, then restart Syte."
+    )
 
 def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
     if not url:
@@ -75,6 +142,9 @@ async def list_access_capabilities(project_id: str) -> dict[str, Any]:
             "desktop": {"width": 1280, "height": 800},
             "phone": {"width": 390, "height": 844},
         },
+        "browser": find_headless_browser() or None,
+        "browser_available": bool(find_headless_browser()),
+        "browser_hint": None if find_headless_browser() else browser_install_hint(),
         "cli": "syte-access <action> [url|lines]",
     }
 
@@ -195,12 +265,32 @@ async def capture_preview_screenshots(
     viewports: tuple[str, ...] = ("desktop", "phone"),
 ) -> dict[str, dict[str, Any]]:
     """Capture one or more viewport screenshots of ``url``."""
-    results: dict[str, dict[str, Any]] = {}
-    for name in viewports:
-        size = VIEWPORTS.get(name) or VIEWPORTS["desktop"]
-        results[name] = await _capture_screenshot(url, width=size[0], height=size[1], viewport=name)
-    return results
+    browser = find_headless_browser()
+    if not browser:
+        missing = {
+            "ok": False,
+            "error": "no_browser",
+            "message": browser_install_hint(),
+        }
+        return {
+            name: {
+                **missing,
+                "viewport": name,
+                "width": (VIEWPORTS.get(name) or VIEWPORTS["desktop"])[0],
+                "height": (VIEWPORTS.get(name) or VIEWPORTS["desktop"])[1],
+            }
+            for name in viewports
+        }
 
+    async def _one(name: str) -> tuple[str, dict[str, Any]]:
+        size = VIEWPORTS.get(name) or VIEWPORTS["desktop"]
+        shot = await _capture_screenshot(
+            url, width=size[0], height=size[1], viewport=name, browser=browser,
+        )
+        return name, shot
+
+    pairs = await asyncio.gather(*(_one(name) for name in viewports))
+    return {name: shot for name, shot in pairs}
 
 async def _capture_screenshot(
     url: str,
@@ -208,81 +298,123 @@ async def _capture_screenshot(
     width: int = 1280,
     height: int = 800,
     viewport: str = "desktop",
+    browser: str | None = None,
 ) -> dict[str, Any]:
-    browser = (
-        shutil.which("chromium")
-        or shutil.which("chromium-browser")
-        or shutil.which("google-chrome")
-        or shutil.which("google-chrome-stable")
-    )
+    browser = browser or find_headless_browser()
     if not browser:
         return {
             "ok": False,
             "error": "no_browser",
-            "message": "No headless browser found. Use syte-access fetch to read HTML instead.",
+            "message": browser_install_hint(),
             "viewport": viewport,
             "width": width,
             "height": height,
         }
 
     def _run() -> dict[str, Any]:
-        proc = subprocess.run(
-            [
+        # Chromium writes --screenshot to a filesystem path; stdout "-" is not reliable.
+        # Use a fresh --user-data-dir so concurrent/service chrome profile locks cannot abort us.
+        with tempfile.TemporaryDirectory(prefix="syte-shot-", ignore_cleanup_errors=True) as tmp:
+            tmp_path = Path(tmp)
+            out_path = tmp_path / f"{viewport}.png"
+            profile_dir = tmp_path / "chrome-profile"
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            cmd = [
                 browser,
                 "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
+                "--disable-dev-shm-usage",
                 "--hide-scrollbars",
+                "--force-device-scale-factor=1",
+                f"--user-data-dir={profile_dir}",
                 f"--window-size={int(width)},{int(height)}",
-                "--screenshot=-",
+                f"--screenshot={out_path}",
                 url,
-            ],
-            capture_output=True,
-            timeout=45,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.decode(errors="replace")[:500]
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=45,
+                    cwd=tmp,
+                )
+            except subprocess.TimeoutExpired as exc:
+                # Prefer a partial screenshot if chrome wrote it before hanging.
+                for candidate in (out_path, tmp_path / "screenshot.png"):
+                    if candidate.is_file() and candidate.stat().st_size >= 32:
+                        data = candidate.read_bytes()
+                        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+                            return {
+                                "ok": True,
+                                "format": "png",
+                                "viewport": viewport,
+                                "width": width,
+                                "height": height,
+                                "image_base64": base64.b64encode(data).decode("ascii"),
+                                "bytes": len(data),
+                                "png_bytes": data,
+                                "browser": browser,
+                                "partial": True,
+                            }
+                return {
+                    "ok": False,
+                    "error": "screenshot_timeout",
+                    "message": f"Screenshot timed out after {exc.timeout}s",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "browser": browser,
+                }
+            if not out_path.is_file() or out_path.stat().st_size < 32:
+                err = (proc.stderr or b"").decode(errors="replace")[:800]
+                # Some builds ignore --screenshot=path and write ./screenshot.png in cwd.
+                fallback = tmp_path / "screenshot.png"
+                if fallback.is_file() and fallback.stat().st_size >= 32:
+                    data = fallback.read_bytes()
+                else:
+                    return {
+                        "ok": False,
+                        "error": "screenshot_failed" if proc.returncode != 0 else "screenshot_empty",
+                        "message": err
+                        or (
+                            f"Screenshot produced no PNG (exit {proc.returncode}). "
+                            "Confirm the preview URL is reachable from the Syte host."
+                        ),
+                        "viewport": viewport,
+                        "width": width,
+                        "height": height,
+                        "browser": browser,
+                    }
+            else:
+                data = out_path.read_bytes()
+            # Basic PNG signature check.
+            if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                return {
+                    "ok": False,
+                    "error": "screenshot_invalid",
+                    "message": "Browser wrote a non-PNG screenshot file",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "browser": browser,
+                }
             return {
-                "ok": False,
-                "error": "screenshot_failed",
-                "message": err or "Screenshot command failed",
+                "ok": True,
+                "format": "png",
                 "viewport": viewport,
                 "width": width,
                 "height": height,
+                "image_base64": base64.b64encode(data).decode("ascii"),
+                "bytes": len(data),
+                "png_bytes": data,
+                "browser": browser,
             }
-        data = proc.stdout
-        if not data:
-            return {
-                "ok": False,
-                "error": "screenshot_empty",
-                "message": "Screenshot produced no data",
-                "viewport": viewport,
-                "width": width,
-                "height": height,
-            }
-        return {
-            "ok": True,
-            "format": "png",
-            "viewport": viewport,
-            "width": width,
-            "height": height,
-            "image_base64": base64.b64encode(data).decode("ascii"),
-            "bytes": len(data),
-            "png_bytes": data,
-        }
 
     try:
         return await asyncio.to_thread(_run)
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": False,
-            "error": "screenshot_timeout",
-            "message": "Screenshot timed out",
-            "viewport": viewport,
-            "width": width,
-            "height": height,
-        }
     except Exception as exc:
+        logger.exception("Screenshot capture failed for %s", url)
         return {
             "ok": False,
             "error": "screenshot_failed",
@@ -290,4 +422,5 @@ async def _capture_screenshot(
             "viewport": viewport,
             "width": width,
             "height": height,
+            "browser": browser,
         }
