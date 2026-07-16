@@ -144,6 +144,16 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Local SQLite activity snapshot (incremental with since_id; optional session=last|N)"},
             {"method": "GET", "path": "/api/agent_sessions?uuid=", "auth": True, "description": "List durable Turso agent-session UUIDs for a project (newest first)"},
             {"method": "GET", "path": "/api/agent_session/{session_id}?since_id=0", "auth": True, "description": "Fetch a durable agent activity session (metadata + events) from Turso by UUID"},
+            {"method": "GET", "path": "/api/agent_screenshots?uuid=", "auth": True, "description": "List saved desktop/phone preview screenshots for a project"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/screenshots/{id}", "auth": False, "description": "Fetch screenshot PNG (?variant=thumb for compact chat image)"},
+            {"method": "GET", "path": "/api/agent_plans?uuid=", "auth": True, "description": "List persisted agent plans (update_plan / thinking steps)"},
+            {"method": "GET", "path": "/api/agent_questions?uuid=&status=", "auth": True, "description": "List interactive agent questions (pending/answered)"},
+            {"method": "POST", "path": "/api/agent_answer_question", "auth": True, "body": {"uuid": "str", "question_id": "str", "answer": "str|number|string[]|object"}, "description": "Answer an ask_question / request_env prompt so the agent can continue"},
+            {"method": "GET", "path": "/api/agent_stops?uuid=", "auth": True, "description": "List session stop markers (stop/interrupt/cancel) with stopped_at timestamps"},
+            {"method": "GET", "path": "/api/agent_mcp?uuid=", "auth": True, "description": "List available MCP addons (built-in syte + registered)"},
+            {"method": "POST", "path": "/api/agent_mcp_register", "auth": True, "body": {"uuid": "str", "name": "str", "command": "str", "args": [], "env": {}, "description": "optional"}},
+            {"method": "POST", "path": "/api/agent_mcp_connect", "auth": True, "body": {"uuid": "str", "addon": "str"}},
+            {"method": "POST", "path": "/api/agent_mcp_call", "auth": True, "body": {"uuid": "str", "addon": "str", "tool": "str", "arguments": {}}},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
@@ -186,9 +196,19 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "2. Prewarm with POST /api/agent_warm {uuid}; the supervisor keeps used agents alive",
                 "3. sycord.com POST /sycord/api/agent_change {uuid, message, model_profile} — returns request_id + turso_session_id immediately",
                 "4. sycord.com polls GET /sycord/api/agent_session/{turso_session_id} (or the internal route with X-Syra-Internal-Secret) until status != 'open'",
-                "5. Each event in session.events is one of request_started -> processing -> [thinking] -> (tool_call_started/tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id",
+                "5. Each event in session.events is one of request_started -> processing -> [thinking|question|screenshot] -> (tool_call_started/tool_call_finished)* -> request_completed|request_failed|agent_stopped; correlate by payload.request_id",
                 "6. The durable request runs serialized per project against the persistent Syte cloud conversation",
+                "7. When a question event appears, POST /api/agent_answer_question (or GUI widget) so the turn can continue",
             ],
+            "tools": [
+                "list_files", "read_file", "write_file", "delete_file", "run_command", "service",
+                "update_plan", "screenshot_preview", "ask_question", "env_get", "env_set",
+                "request_env", "list_mcp_addons", "connect_mcp", "call_mcp", "delegate_task",
+            ],
+            "code_policy": {
+                "any_code": "Agent builds libraries, CLIs, APIs, scripts, backends, mobile, data jobs, or websites — not website-only",
+                "websites_require_shadcn": "Website/web UI work must use shadcn/ui + Lucide + Inter + Tailwind per design_contract",
+            },
             "turso_sessions": {
                 "description": (
                     "Durable, UUID-addressable record of one agent turn, replacing the old SSE "
@@ -203,11 +223,14 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "internal_list": "GET /api/internal/projects/{uuid}/agent/sessions",
                 "internal_fetch": "GET /api/internal/agent_session/{session_id}",
                 "session_fields": ["id", "project_id", "session_number", "model_profile", "status", "created_at", "updated_at", "events"],
-                "session_status_values": ["open", "completed", "failed", "cancelled"],
+                "session_status_values": ["open", "completed", "failed", "cancelled", "stopped"],
                 "event_types": [
                     "request_started",
                     "processing",
                     "thinking",
+                    "screenshot",
+                    "question",
+                    "question_answered",
                     "tool_call_started",
                     "tool_call_finished",
                     "file_created",
@@ -219,16 +242,28 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "agent_stopped",
                     "agent_restarted",
                 ],
-                "turn_lifecycle": "request_started -> processing -> [thinking] -> (tool_call_started -> tool_call_finished)* -> request_completed|request_failed; correlate by payload.request_id",
+                "turn_lifecycle": (
+                    "request_started -> processing -> [thinking|question|screenshot] -> "
+                    "(tool_call_started -> tool_call_finished)* -> "
+                    "request_completed|request_failed|agent_stopped; correlate by payload.request_id"
+                ),
+            },
+            "artifacts": {
+                "plans": "GET /api/agent_plans?uuid= — structured steps from update_plan / thinking",
+                "screenshots": "GET /api/agent_screenshots?uuid= + image at /api/projects/{uuid}/agent/screenshots/{id}",
+                "questions": "GET /api/agent_questions?uuid= ; answer with POST /api/agent_answer_question",
+                "stops": "GET /api/agent_stops?uuid= — stopped_at markers for stop/interrupt/cancel",
+                "mcp": "GET /api/agent_mcp?uuid= ; connect/call via agent_mcp_connect / agent_mcp_call",
             },
             "workflow": [
                 "1. GET /api/agent_status?uuid= — check agent_status, agent_running, sessions_url",
                 "2. POST /api/agent_warm {uuid} when opening a project; returns immediately",
                 "3. POST /api/agent_change {uuid, message} — async; save request_id and turso_session_id from response",
                 "4. GET /api/agent_session/{turso_session_id} — poll until status != 'open' to see the completed turn (request, plan, tool calls, reply)",
-                "5. POST /api/agent_settings {uuid, model_profile} — switch profile mid-session",
-                "6. GET /api/agent_activity?uuid=&since_id=N — local snapshot if Turso is not configured",
-                "7. POST /api/agent_stop {uuid} only when continuous warm service is no longer wanted",
+                "5. If a question event appears, POST /api/agent_answer_question before the turn can finish",
+                "6. POST /api/agent_settings {uuid, model_profile} — switch profile mid-session",
+                "7. GET /api/agent_activity?uuid=&since_id=N — local snapshot if Turso is not configured",
+                "8. POST /api/agent_stop {uuid} marks the session stopped in DB (agent_stops + Turso status=stopped)",
             ],
             "status_fields": [
                 "agent_status", "agent_running", "agent_warming", "agent_port", "agent_proxy_url",

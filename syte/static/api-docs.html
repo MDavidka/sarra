@@ -1578,13 +1578,15 @@
               <div class="field-desc"><strong>Turn lifecycle</strong> (correlate events by <code>payload.request_id</code>):</div>
               <pre>request_started        role=user     the submitted message
   → processing         accepted, durable request queued
-  → thinking           (optional) the agent's plan / reasoning
+  → thinking           (optional) plan / reasoning — also persisted in agent_plans
+  → question           (optional) interactive ask_question / request_env widget
+  → screenshot         (optional) desktop + phone preview captures
   → tool_call_started  ┐ repeated 0+ times, one pair per tool call
   → tool_call_finished ┘
-  → request_completed  |  request_failed   (exactly one, terminal)</pre>
-              <div class="note"><strong>Event payloads.</strong> <code>request_started</code>/<code>processing</code>/<code>thinking</code> carry <code>payload.request_id</code>. <code>tool_call_started</code> carries <code>payload.tool</code> and <code>payload.arguments</code>; <code>tool_call_finished</code> carries <code>payload.tool</code> and <code>payload.ok</code> (boolean). <code>request_completed</code> carries <code>payload.reply</code>; <code>request_failed</code> carries <code>payload.error</code> and <code>payload.retry_message</code>.</div>
+  → request_completed | request_failed | agent_stopped   (terminal)</pre>
+              <div class="note"><strong>Event payloads.</strong> <code>request_started</code>/<code>processing</code>/<code>thinking</code> carry <code>payload.request_id</code>. <code>tool_call_started</code> carries <code>payload.tool</code> and <code>payload.arguments</code>; <code>tool_call_finished</code> carries <code>payload.tool</code> and <code>payload.ok</code> (boolean). <code>screenshot</code> carries <code>payload.screenshots[]</code> (<code>viewport</code>, <code>image_url</code>, optional <code>chat_image_base64</code>). <code>question</code> carries <code>question_id</code>, <code>question_type</code> (<code>answer|input|slider|choice|multi_choice</code>), and widget fields. <code>request_completed</code> carries <code>payload.reply</code>; <code>request_failed</code> carries <code>payload.error</code>; <code>agent_stopped</code> carries <code>stopped_at</code> + <code>reason</code>.</div>
 
-              <div class="note"><strong><code>status</code> values:</strong> <code>open</code> while the turn is in progress, then <code>completed</code>, <code>failed</code>, or <code>cancelled</code>. Poll <code>GET /api/agent_session/{id}?since_id=&lt;highest event.id seen&gt;</code> on a short interval until <code>status != "open"</code> to observe an in-progress turn.</div>
+              <div class="note"><strong><code>status</code> values:</strong> <code>open</code> while the turn is in progress, then <code>completed</code>, <code>failed</code>, <code>cancelled</code>, or <code>stopped</code>. Poll <code>GET /api/agent_session/{id}?since_id=&lt;highest event.id seen&gt;</code> until <code>status != "open"</code>. Answer pending <code>question</code> events with <code>POST /agent_answer_question</code> so the turn can continue.</div>
               <div class="note">Requires Turso to be configured (<code>turso_database_url</code>, optional <code>turso_auth_token</code>, saved from the GUI's AI tab) — returns HTTP 503 otherwise.</div>
 
               <pre>async function pollAgentSession(sessionId) {
@@ -1661,6 +1663,91 @@
               <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy","message":"Refactor the navbar to use shadcn tabs"}</pre>
               <pre>{"ok":true,"request_id":"req_abc123def456","status":"accepted","turso_session_id":"b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9","session_url":"/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9","change_applied":null}</pre>
               <div class="field-desc">Legacy blocking mode: <code>POST /sycord/api/agent_change</code> with <code>{"wait":true}</code> or use <code>POST /agent_communicate</code>.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-screenshots">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_screenshots?uuid=</span>
+              </div>
+              <div class="endpoint-name">List preview screenshots</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note">Agent tool <code>screenshot_preview</code> captures desktop (1280×800) and phone (390×844) viewports of a route. Images are stored on disk + SQLite and shown in chat. Fetch PNG: <code>GET /api/projects/{uuid}/agent/screenshots/{id}?variant=thumb|full</code>.</div>
+              <pre>{"ok":true,"screenshots":[{"id":"shot_…","viewport":"desktop","route":"/","image_url":"/api/projects/…/agent/screenshots/shot_…"}]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-plans">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_plans?uuid=</span>
+              </div>
+              <div class="endpoint-name">List persisted plans</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Structured steps from <code>update_plan</code> (and multi-line thinking). Also mirrored as <code>thinking</code> events in the activity/session feed.</div>
+              <pre>{"ok":true,"plans":[{"id":1,"steps":["Inspect theme","Add toggle"],"note":"","created_at":"…"}]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-questions">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_questions?uuid=</span>
+              </div>
+              <div class="endpoint-name">List interactive questions</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Questions generated mid-turn by <code>ask_question</code> / <code>request_env</code>. Types: <code>answer</code>, <code>input</code>, <code>slider</code>, <code>choice</code>, <code>multi_choice</code>.</div>
+              <pre>{"ok":true,"questions":[{"id":"q_…","question_type":"choice","prompt":"Which accent?","options":["blue","green"],"status":"pending"}]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-answer-question">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_answer_question</span>
+              </div>
+              <div class="endpoint-name">Answer an agent question</div>
+            </div>
+            <div class="endpoint-body">
+              <pre>{"uuid":"my-site-a1b2c3","question_id":"q_…","answer":"blue"}</pre>
+              <pre>{"ok":true,"id":"q_…","status":"answered","answer":"blue"}</pre>
+              <div class="note">GUI mirror: <code>POST /api/projects/{uuid}/agent/questions/{question_id}/answer</code> with <code>{"answer":…}</code>.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-stops">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_stops?uuid=</span>
+              </div>
+              <div class="endpoint-name">Session stop markers</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Every <code>agent_stop</code>, interrupt, or cancelled turn writes <code>stopped_at</code> + reason to the DB (and closes Turso with <code>stopped</code>/<code>cancelled</code>).</div>
+              <pre>{"ok":true,"stops":[{"id":1,"reason":"stopped","stopped_at":"2026-07-16T12:00:00+00:00","turso_session_id":"…"}]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-mcp">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_mcp?uuid=</span>
+              </div>
+              <div class="endpoint-name">MCP addons</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">Built-in <code>syte</code> addon plus any registered custom MCP servers. Connect/call: <code>POST /agent_mcp_connect</code>, <code>POST /agent_mcp_call</code>, register with <code>POST /agent_mcp_register</code>. The agent also has <code>list_mcp_addons</code> / <code>connect_mcp</code> / <code>call_mcp</code> tools and <code>env_get</code>/<code>env_set</code>/<code>request_env</code> for project env access.</div>
+              <pre>{"ok":true,"addons":[{"id":"…:syte","name":"syte","status":"available","tools":[],"builtin":true}]}</pre>
             </div>
           </div>
 

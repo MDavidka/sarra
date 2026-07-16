@@ -371,6 +371,10 @@ const DEBUG_CHAT_ACTION_LABELS = {
   request_started: 'Request started',
   request_completed: 'Completed',
   processing: 'Working',
+  screenshot: 'Screenshot',
+  question: 'Question',
+  question_answered: 'Answer',
+  agent_stopped: 'Stopped',
 };
 
 const DEBUG_CHAT_EVENT_ICONS = {
@@ -387,6 +391,10 @@ const DEBUG_CHAT_EVENT_ICONS = {
   tool_call: 'wrench',
   tool_call_started: 'loader',
   tool_call_finished: 'circle-check',
+  screenshot: 'monitor-smartphone',
+  question: 'circle-help',
+  question_answered: 'message-circle',
+  agent_stopped: 'square',
 };
 
 const DEBUG_CHAT_TOOL_META = {
@@ -397,6 +405,14 @@ const DEBUG_CHAT_TOOL_META = {
   run_command: { label: 'Run command', icon: 'terminal' },
   service: { label: 'Preview service', icon: 'wrench' },
   update_plan: { label: 'Update plan', icon: 'list-checks' },
+  screenshot_preview: { label: 'Screenshot preview', icon: 'monitor-smartphone' },
+  ask_question: { label: 'Ask question', icon: 'circle-help' },
+  env_get: { label: 'Get env', icon: 'key-round' },
+  env_set: { label: 'Set env', icon: 'key-round' },
+  request_env: { label: 'Request env', icon: 'key-round' },
+  list_mcp_addons: { label: 'List MCP', icon: 'plug' },
+  connect_mcp: { label: 'Connect MCP', icon: 'plug' },
+  call_mcp: { label: 'Call MCP', icon: 'plug' },
   delegate_task: { label: 'Delegate task', icon: 'git-fork' },
 };
 
@@ -420,11 +436,15 @@ function debugChatRoleForEvent(event) {
   if (type === 'token_delta') return 'stream';
   if (type === 'request_failed') return 'error';
   if (type === 'thinking') return 'thinking';
+  if (type === 'screenshot') return 'screenshot';
+  if (type === 'question') return 'question';
+  if (type === 'question_answered') return 'user';
   if (type === 'processing') return 'processing';
   if ([
     'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
     'file_changed', 'tool_call', 'tool_call_started', 'tool_call_finished',
     'command_run', 'command_output', 'service_action', 'request_started',
+    'agent_stopped',
   ].includes(type)) {
     return 'action';
   }
@@ -594,6 +614,121 @@ function addDebugChatErrorActions(bubble, event, presentation) {
   if (actions.childElementCount) bubble.appendChild(actions);
 }
 
+async function submitDebugChatQuestionAnswer(questionId, answer, formEl) {
+  if (!activeServiceId || !questionId) return;
+  const controls = formEl?.querySelectorAll('button, input, select');
+  controls?.forEach((el) => { el.disabled = true; });
+  try {
+    const res = await api(
+      `/api/projects/${encodeURIComponent(activeServiceId)}/agent/questions/${encodeURIComponent(questionId)}/answer`,
+      { method: 'POST', body: JSON.stringify({ answer }) },
+    );
+    if (!res.ok) {
+      toast(res.message || 'Failed to send answer', 'error');
+      controls?.forEach((el) => { el.disabled = false; });
+      return;
+    }
+    const status = formEl?.querySelector('.debug-chat-question-status');
+    if (status) status.textContent = 'Answer sent';
+    setDebugChatActivity('Working…', 'Continuing with your answer');
+  } catch (err) {
+    toast(String(err), 'error');
+    controls?.forEach((el) => { el.disabled = false; });
+  }
+}
+
+function mountDebugChatQuestionWidget(container, event) {
+  if (!container || !event) return;
+  const qid = event.payload?.question_id;
+  const qtype = event.payload?.question_type || 'answer';
+  const options = Array.isArray(event.payload?.options) ? event.payload.options : [];
+  const form = document.createElement('form');
+  form.className = 'debug-chat-question-form';
+  form.dataset.questionId = qid || '';
+
+  if (qtype === 'choice' || qtype === 'multi_choice') {
+    const list = document.createElement('div');
+    list.className = 'debug-chat-question-options';
+    options.forEach((opt, idx) => {
+      const id = `qopt-${qid || 'x'}-${idx}`;
+      const label = document.createElement('label');
+      label.className = 'debug-chat-question-option';
+      const input = document.createElement('input');
+      input.type = qtype === 'multi_choice' ? 'checkbox' : 'radio';
+      input.name = 'option';
+      input.value = String(opt);
+      input.id = id;
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(String(opt)));
+      list.appendChild(label);
+    });
+    form.appendChild(list);
+  } else if (qtype === 'slider') {
+    const min = Number(event.payload?.min_value ?? 0);
+    const max = Number(event.payload?.max_value ?? 100);
+    const step = Number(event.payload?.step_value ?? 1);
+    const def = Number(event.payload?.default_value ?? min);
+    const row = document.createElement('div');
+    row.className = 'debug-chat-question-slider-row';
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = String(min);
+    range.max = String(max);
+    range.step = String(step);
+    range.value = String(Number.isFinite(def) ? def : min);
+    const value = document.createElement('output');
+    value.textContent = range.value;
+    range.addEventListener('input', () => { value.textContent = range.value; });
+    row.appendChild(range);
+    row.appendChild(value);
+    form.appendChild(row);
+  } else {
+    const input = document.createElement(qtype === 'answer' ? 'textarea' : 'input');
+    if (input.tagName === 'INPUT') input.type = 'text';
+    input.className = 'debug-chat-question-input';
+    input.placeholder = qtype === 'answer' ? 'Type your answer…' : 'Enter value…';
+    if (event.payload?.default_value != null) input.value = String(event.payload.default_value);
+    form.appendChild(input);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'debug-chat-question-actions';
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'debug-chat-error-button';
+  submit.textContent = 'Send answer';
+  const status = document.createElement('span');
+  status.className = 'debug-chat-question-status';
+  if (event.payload?.status === 'answered') {
+    status.textContent = 'Already answered';
+    submit.disabled = true;
+  }
+  actions.appendChild(submit);
+  actions.appendChild(status);
+  form.appendChild(actions);
+
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (!qid) return;
+    let answer;
+    if (qtype === 'choice') {
+      answer = form.querySelector('input[name="option"]:checked')?.value;
+      if (!answer) { toast('Pick an option', 'error'); return; }
+    } else if (qtype === 'multi_choice') {
+      answer = [...form.querySelectorAll('input[name="option"]:checked')].map((el) => el.value);
+      if (!answer.length) { toast('Pick at least one option', 'error'); return; }
+    } else if (qtype === 'slider') {
+      answer = Number(form.querySelector('input[type="range"]')?.value || 0);
+    } else {
+      answer = form.querySelector('.debug-chat-question-input')?.value?.trim() || '';
+      if (!answer) { toast('Enter an answer', 'error'); return; }
+    }
+    void submitDebugChatQuestionAnswer(qid, answer, form);
+  });
+
+  container.appendChild(form);
+}
+
 function appendDebugChatBubble(event) {
   const messagesEl = getDebugChatMessagesEl();
   if (!messagesEl || !event) return;
@@ -647,6 +782,56 @@ function appendDebugChatBubble(event) {
       </div>
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
+  } else if (role === 'screenshot') {
+    bubble.innerHTML = `
+      <div class="debug-chat-bubble-head">
+        <span>${esc(event.title || 'Screenshot')}</span>
+      </div>
+      <div class="debug-chat-bubble-body debug-chat-screenshot-body"></div>
+    `;
+    const body = bubble.querySelector('.debug-chat-screenshot-body');
+    const shots = event.payload?.screenshots || [];
+    const grid = document.createElement('div');
+    grid.className = 'debug-chat-screenshot-grid';
+    shots.forEach((shot) => {
+      if (!shot?.ok && !shot?.image_url && !shot?.chat_image_base64) return;
+      const fig = document.createElement('figure');
+      fig.className = 'debug-chat-screenshot-card';
+      const img = document.createElement('img');
+      img.alt = `${shot.viewport || 'preview'} screenshot`;
+      img.loading = 'lazy';
+      if (shot.chat_image_base64) {
+        img.src = `data:image/png;base64,${shot.chat_image_base64}`;
+      } else {
+        img.src = shot.thumb_url || shot.image_url || '';
+      }
+      if (shot.image_url) {
+        img.addEventListener('click', () => window.open(shot.image_url, '_blank', 'noopener'));
+      }
+      const cap = document.createElement('figcaption');
+      cap.textContent = `${shot.viewport || 'view'} · ${shot.width || '?'}×${shot.height || '?'}`;
+      fig.appendChild(img);
+      fig.appendChild(cap);
+      grid.appendChild(fig);
+    });
+    if (detail) {
+      const p = document.createElement('p');
+      p.className = 'debug-chat-screenshot-note';
+      p.textContent = detail;
+      body.appendChild(p);
+    }
+    body.appendChild(grid);
+  } else if (role === 'question') {
+    bubble.innerHTML = `
+      <div class="debug-chat-bubble-head">
+        <span>${esc(event.title || 'Question')}</span>
+      </div>
+      <div class="debug-chat-bubble-body debug-chat-question-body">
+        <p class="debug-chat-question-prompt">${esc(detail)}</p>
+      </div>
+    `;
+    const body = bubble.querySelector('.debug-chat-question-body');
+    mountDebugChatQuestionWidget(body, event);
   } else if (role === 'action') {
     bubble.classList.add('debug-chat-action-new');
     const actionMeta = debugChatActionMeta(event);
@@ -820,6 +1005,12 @@ function handleDebugChatActivity(event) {
   appendDebugChatBubble(event);
   if (!debugChatReplayingHistory && event.event_type === 'thinking') {
     setDebugChatActivity('Planning…', String(event.detail || '').replace(/\s+/g, ' ').slice(0, 160));
+  }
+  if (!debugChatReplayingHistory && event.event_type === 'screenshot') {
+    setDebugChatActivity('Capturing…', String(event.detail || 'Preview screenshots').slice(0, 160), 'monitor-smartphone');
+  }
+  if (!debugChatReplayingHistory && event.event_type === 'question') {
+    setDebugChatActivity('Waiting for answer…', String(event.detail || '').slice(0, 160), 'circle-help');
   }
   if (!debugChatReplayingHistory && [
     'tool_call', 'command_run', 'file_created', 'file_modified', 'file_deleted',

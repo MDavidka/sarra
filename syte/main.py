@@ -910,6 +910,29 @@ class AgentServiceRequest(BaseModel):
     timeout: int | None = None
 
 
+class AgentQuestionAnswerRequest(BaseModel):
+    answer: str | int | float | list[str] | dict
+
+
+class AgentMcpRegisterRequest(BaseModel):
+    name: str
+    command: str
+    description: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    transport: str = "stdio"
+
+
+class AgentMcpConnectRequest(BaseModel):
+    addon: str
+
+
+class AgentMcpCallRequest(BaseModel):
+    addon: str
+    tool: str
+    arguments: dict = Field(default_factory=dict)
+
+
 @app.get("/api/projects/{project_id}/agent/service")
 async def api_agent_service_capabilities(project_id: str):
     from syte.agent_service import list_service_capabilities
@@ -1014,6 +1037,149 @@ async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
             source="gui",
         )
     return result
+
+
+@app.get("/api/projects/{project_id}/agent/screenshots")
+async def api_agent_screenshots_list(project_id: str, limit: int = 50):
+    from syte.agent_artifacts import list_screenshots
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, "screenshots": await list_screenshots(project_id, limit=limit)}
+
+
+@app.get("/api/projects/{project_id}/agent/screenshots/{screenshot_id}")
+async def api_agent_screenshot_get(project_id: str, screenshot_id: str, variant: str = "full"):
+    from fastapi.responses import Response
+
+    from syte.agent_artifacts import get_screenshot, read_screenshot_bytes
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    record = await get_screenshot(project_id, screenshot_id)
+    if not record:
+        raise HTTPException(404, "Screenshot not found")
+    data = read_screenshot_bytes(record, variant="thumb" if variant == "thumb" else "full")
+    if not data:
+        raise HTTPException(404, "Screenshot file missing")
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.get("/api/projects/{project_id}/agent/plans")
+async def api_agent_plans_list(project_id: str, limit: int = 50):
+    from syte.agent_artifacts import list_plans
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, "plans": await list_plans(project_id, limit=limit)}
+
+
+@app.get("/api/projects/{project_id}/agent/questions")
+async def api_agent_questions_list(project_id: str, status: str | None = None, limit: int = 50):
+    from syte.agent_artifacts import list_questions
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "questions": await list_questions(project_id, status=status, limit=limit),
+    }
+
+
+@app.post("/api/projects/{project_id}/agent/questions/{question_id}/answer")
+async def api_agent_question_answer(
+    project_id: str, question_id: str, body: AgentQuestionAnswerRequest
+):
+    from syte.agent_activity import record_agent_event
+    from syte.agent_artifacts import answer_question
+    from syte.cloud_agent_store import current_turso_session_id
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await answer_question(project_id, question_id, body.answer)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    if not result.get("already_answered"):
+        turso_session_id = await current_turso_session_id(project_id)
+        await record_agent_event(
+            project_id,
+            "question_answered",
+            role="user",
+            title="Answer",
+            detail=str(result.get("answer") or "")[:4000],
+            payload={"question_id": question_id, "answer": result.get("answer")},
+            source="gui",
+            turso_session_id=turso_session_id,
+        )
+    return result
+
+
+@app.get("/api/projects/{project_id}/agent/stops")
+async def api_agent_stops_list(project_id: str, limit: int = 50):
+    from syte.agent_artifacts import list_session_stops
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, "stops": await list_session_stops(project_id, limit=limit)}
+
+
+@app.get("/api/projects/{project_id}/agent/mcp")
+async def api_agent_mcp_list(project_id: str):
+    from syte.agent_artifacts import list_mcp_addons
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, "addons": await list_mcp_addons(project_id)}
+
+
+@app.post("/api/projects/{project_id}/agent/mcp")
+async def api_agent_mcp_register(project_id: str, body: AgentMcpRegisterRequest):
+    from syte.agent_artifacts import register_mcp_addon
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    addon = await register_mcp_addon(
+        project_id,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+        transport=body.transport,
+    )
+    return {"ok": True, **addon}
+
+
+@app.post("/api/projects/{project_id}/agent/mcp/connect")
+async def api_agent_mcp_connect(project_id: str, body: AgentMcpConnectRequest):
+    from syte.agent_artifacts import connect_mcp_addon
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await connect_mcp_addon(project_id, body.addon)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    return result
+
+
+@app.post("/api/projects/{project_id}/agent/mcp/call")
+async def api_agent_mcp_call(project_id: str, body: AgentMcpCallRequest):
+    from syte.agent_artifacts import call_mcp_addon
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return await call_mcp_addon(project_id, body.addon, body.tool, body.arguments)
 
 
 @app.get("/api/agent_dashboard")
