@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Syte</title>
+  <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
+  <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js"></script>
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <div class="app-shell">
+    <aside class="app-sidebar" id="app-sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-brand-row">
+          <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="sidebar-logo">
+          <span class="sidebar-brand-name">Syte</span>
+        </div>
+
+        <div class="context-switcher-wrap">
+          <button type="button" class="context-switcher" id="context-switcher-btn" aria-expanded="false" aria-haspopup="listbox">
+            <i data-lucide="book-open" class="context-switcher-leading"></i>
+            <span class="context-switcher-label" id="context-label">non-conected</span>
+            <i data-lucide="chevron-down" class="context-chevron"></i>
+          </button>
+          <div class="context-menu hidden" id="context-menu" role="listbox">
+            <button type="button" class="context-option" data-context="non-conected" role="option">
+              <i data-lucide="book-open"></i><span>non-conected</span>
+            </button>
+            <button type="button" class="context-option" data-context="xwf" role="option">
+              <img src="/static/icon.png?v=__VERSION__" alt="" class="context-xwf-icon"><span>xwf</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-divider" aria-hidden="true"></div>
+
+        <div class="sidebar-load-row">
+          <div class="load-dots" id="load-dots" aria-label="Server load indicator"></div>
+          <span class="load-stats" id="load-stats">— cpu — Ram</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
+        <div id="nav-block-home" class="nav-block">
+          <p class="nav-section-label">Platform</p>
+          <div class="nav-group expanded" id="nav-group-main">
+            <button type="button" class="nav-group-head" id="nav-group-main-toggle" aria-expanded="true">
+              <span class="nav-group-icon" aria-hidden="true">M</span>
+              <span class="nav-group-title">Main</span>
+              <i data-lucide="chevron-down" class="nav-group-chevron"></i>
+            </button>
+            <div class="nav-group-body" id="nav-group-main-body">
+              <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
+                <i data-lucide="layout-grid"></i><span>Home</span>
+              </button>
+              <p class="nav-sublabel">System</p>
+              <button type="button" class="nav-sublink sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
+                <img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="server-swarm">
+                <i data-lucide="boxes"></i><span>Server Swarm</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="users">
+                <i data-lucide="users"></i><span>Users</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="logs">
+                <i data-lucide="scroll-text"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-view="ai">
+                <i data-lucide="sparkles"></i><span>AI</span>
+              </button>
+              <a class="nav-sublink" href="/api/" data-view="api">
+                <i data-lucide="file-code-2"></i><span>API</span>
+              </a>
+              <button type="button" class="nav-sublink" data-view="settings">
+                <i data-lucide="settings-2"></i><span>Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="nav-block-service" class="nav-block hidden">
+          <p class="nav-section-label">Project</p>
+          <div class="nav-group expanded" id="nav-group-service">
+            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
+              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
+              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
+              <span class="nav-group-title" id="nav-service-title">Service</span>
+            </button>
+            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
+              <button type="button" class="nav-sublink active" data-svc-tab="general">
+                <i data-lucide="layout-dashboard"></i><span>General</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="env">
+                <i data-lucide="braces"></i><span>Environment</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="logs">
+                <i data-lucide="terminal-square"></i><span>Logs</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="preview">
+                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
+                <i data-lucide="messages-square"></i><span>Agent chat</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="app-main">
+      <header class="main-topbar">
+        <button type="button" class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle menu">
+          <i data-lucide="panel-left"></i>
+        </button>
+        <span class="breadcrumb" id="breadcrumb">Projects</span>
+        <div class="topbar-actions">
+          <button type="button" class="icon-btn hidden" id="ai-header-settings-btn" aria-label="AI provider settings">
+            <i data-lucide="settings"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="view-dashboard" class="view active">
+          <div class="projects-page">
+            <div class="projects-hero-card">
+              <div class="projects-title-block">
+                <i data-lucide="folder-input" class="projects-icon"></i>
+                <div>
+                  <h1>Projects</h1>
+                  <p class="projects-sub">Create and manage your projects</p>
+                </div>
+              </div>
+
+              <button type="button" class="btn-create" onclick="showView('new-service')">
+                <i data-lucide="plus"></i>
+                <span>Create Project</span>
+              </button>
+
+              <div class="search-field">
+                <input type="search" id="project-filter" placeholder="Filter projects..." autocomplete="off">
+                <i data-lucide="search" class="search-icon"></i>
+              </div>
+            </div>
+
+            <div id="services-list" class="projects-grid"></div>
+            <div id="empty-state" class="projects-empty hidden">
+              <i data-lucide="folder-input" class="empty-icon"></i>
+              <p>No projects found</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-new-service" class="view">
+          <div class="create-project">
+            <div class="create-brand">
+              <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
+              <span class="create-brand-name">syte</span>
+            </div>
+
+            <form id="create-form" class="create-form">
+              <div class="create-name-field">
+                <div class="create-name-label-row">
+                  <label for="create-name">project name</label>
+                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name">
+                    <i data-lucide="square-pen"></i>
+                  </button>
+                </div>
+                <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
+              </div>
+
+              <div class="create-section">
+                <p class="create-section-label">deployment type</p>
+                <div class="stack-picker" id="stack-picker" role="listbox" aria-label="Deployment type">
+                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true">
+                    <span class="stack-card-icon stack-icon-nextjs">N</span>
+                    <span class="stack-card-label">next.js</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-python">Py</span>
+                    <span class="stack-card-label">python</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-javascript">JS</span>
+                    <span class="stack-card-label">javascript</span>
+                  </button>
+                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false">
+                    <span class="stack-card-icon stack-icon-html5">5</span>
+                    <span class="stack-card-label">html5</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="create-accordion">
+                <button type="button" class="create-accordion-head" data-accordion="create-starter-panel" aria-expanded="false">
+                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
+                  <span>starter command</span>
+                </button>
+                <div class="create-accordion-body hidden" id="create-starter-panel">
+                  <input type="text" id="create-start-cmd" class="create-inline-input" placeholder="optional — runtime start command">
+                </div>
+              </div>
+
+              <div class="create-accordion">
+                <button type="button" class="create-accordion-head" data-accordion="create-build-panel" aria-expanded="false">
+                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
+                  <span>build command</span>
+                </button>
+                <div class="create-accordion-body hidden" id="create-build-panel">
+                  <input type="text" id="create-build-cmd" class="create-inline-input" placeholder="optional — docker build arg or custom build step">
+                </div>
+              </div>
+
+              <div class="create-section create-server-section">
+                <button type="button" class="create-accordion-head create-accordion-static" tabindex="-1">
+                  <i data-lucide="chevron-right" class="accordion-chevron muted"></i>
+                  <span>server</span>
+                </button>
+                <div class="server-picker">
+                  <button type="button" class="server-pill active" disabled>This server (vps)</button>
+                  <button type="button" class="server-pill server-pill-add" disabled title="Coming soon">+ add server</button>
+                </div>
+              </div>
+
+              <div class="create-log-box logs-panel" id="create-log-wrap">
+                <div class="create-log-placeholder" id="create-log-placeholder">Deploy logs appear here…</div>
+                <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
+              </div>
+
+              <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
+                <i data-lucide="rocket"></i>
+                <span>Create &amp; Deploy</span>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <section id="view-service" class="view">
+          <div class="svc-editor">
+            <div class="svc-tab-panels">
+              <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="layout-dashboard"></i></div>
+                  <div>
+                    <h2>Project overview</h2>
+                    <p>Check your project status, connection, and deployment actions at a glance.</p>
+                  </div>
+                </div>
+                <div class="svc-info-block">
+                  <div class="svc-identity">
+                    <div class="svc-identity-main">
+                      <div class="svc-name-row">
+                        <h1 class="svc-name" id="svc-title">service</h1>
+                        <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name & domain" aria-label="Edit">
+                          <i data-lucide="square-pen"></i>
+                        </button>
+                        <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
+                      </div>
+                    </div>
+                    <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch">
+                      <i data-lucide="git-branch"></i>
+                      <span id="svc-branch-label">main</span>
+                      <i data-lucide="chevron-down" class="svc-branch-chevron"></i>
+                    </button>
+                  </div>
+                  <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
+                  <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
+                  <div class="svc-quick-actions" id="svc-quick-actions"></div>
+                </div>
+                <div class="svc-info-grid" id="svc-info-body"></div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="braces"></i></div>
+                  <div>
+                    <h2>Environment variables</h2>
+                    <p>Values here are available to your project at runtime. Keep one <code>KEY=value</code> pair per line.</p>
+                  </div>
+                </div>
+                <label class="svc-field-label" for="svc-env-input">Project environment</label>
+                <textarea id="svc-env-input" class="svc-env-textarea" rows="10" placeholder="NODE_ENV=production"></textarea>
+                <p class="svc-field-help"><i data-lucide="info"></i> Changes apply after the next deploy or restart.</p>
+                <div class="svc-panel-actions">
+                  <button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-save-btn">
+                    <i data-lucide="save"></i><span>Save environment</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
+                <div class="svc-panel-intro svc-panel-intro-compact">
+                  <div class="svc-panel-intro-icon"><i data-lucide="terminal-square"></i></div>
+                  <div>
+                    <h2>Deployment logs</h2>
+                    <p>Follow the latest build and runtime output in real time.</p>
+                  </div>
+                </div>
+                <div class="logs-panel">
+                  <div class="logs-toolbar">
+                    <div class="logs-toolbar-left">
+                      <span class="logs-live-dot" id="svc-logs-live" title="Stream status"></span>
+                      <span class="logs-toolbar-label" id="svc-log-hint">Deployment log</span>
+                    </div>
+                    <div class="logs-toolbar-right">
+                      <button type="button" class="logs-tool-btn" id="svc-logs-refresh" title="Refresh logs">
+                        <i data-lucide="refresh-cw"></i>
+                      </button>
+                      <button type="button" class="logs-tool-btn active" id="svc-logs-autoscroll" title="Auto-scroll">
+                        <i data-lucide="arrow-down-to-line"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="logs-terminal logs-terminal-dark" id="svc-live-logs"></div>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
+                <div class="svc-panel-intro">
+                  <div class="svc-panel-intro-icon"><i data-lucide="monitor-smartphone"></i></div>
+                  <div>
+                    <h2>Live preview</h2>
+                    <p>Open a temporary dev server to check your website before sharing it.</p>
+                  </div>
+                </div>
+                <div class="svc-preview-domain-row" id="svc-preview-domain-row">
+                  <span class="hint">Preview domain</span>
+                  <code id="svc-preview-domain">—</code>
+                </div>
+                <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab</p>
+                <div class="svc-actions" id="svc-preview-actions"></div>
+                <div class="svc-preview-card" id="svc-preview-card">
+                  <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                  <div class="svc-preview-placeholder" id="svc-preview-placeholder">
+                    <i data-lucide="layout-template"></i>
+                    <span>Start preview to see your site here</span>
+                  </div>
+                  <div class="svc-stack-badge" id="svc-stack-badge">
+                    <span class="svc-stack-icon" id="svc-stack-icon">N</span>
+                    <span id="svc-stack-label">next.js</span>
+                  </div>
+                </div>
+                <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap">
+                  <div class="logs-toolbar logs-toolbar-compact">
+                    <div class="logs-toolbar-left">
+                      <span class="logs-live-dot" id="svc-preview-logs-live"></span>
+                      <span class="logs-toolbar-label">Preview server log</span>
+                    </div>
+                  </div>
+                  <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                </div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
+                <div class="debug-chat-panel">
+                  <div class="debug-chat-header">
+                    <div>
+                      <h2>Agent chat</h2>
+                      <p>Describe what you want changed.</p>
+                    </div>
+                    <label class="debug-chat-profile-label" for="debug-chat-profile">
+                      <span>Model</span>
+                      <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
+                        <option value="syra-nano">nano</option>
+                        <option value="syra-base" selected>base</option>
+                        <option value="syra-havy">havy</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
+                    <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
+                    <span class="debug-chat-activity-icon" aria-hidden="true"><i data-lucide="sparkles"></i></span>
+                    <span class="debug-chat-activity-label">Connecting…</span>
+                    <span class="debug-chat-activity-detail"></span>
+                    <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="All session messages saved to Turso">
+                      <i data-lucide="brain"></i>
+                    </button>
+                  </div>
+                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
+                    <div class="debug-chat-empty" id="debug-chat-empty">
+                      <p>What would you like to change?</p>
+                    </div>
+                  </div>
+                  <div class="debug-chat-composer">
+                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea>
+                    <div class="debug-chat-composer-actions">
+                      <button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button>
+                      <button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="svc-edit-modal" class="svc-edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="svc-edit-title">
+            <div class="svc-edit-backdrop" id="svc-edit-backdrop"></div>
+            <div class="svc-edit-dialog">
+              <h3 id="svc-edit-title">Edit project</h3>
+              <div class="form-group">
+                <label for="svc-edit-name-input">Name</label>
+                <input type="text" id="svc-edit-name-input" placeholder="my-app">
+              </div>
+              <div class="form-group">
+                <label for="svc-edit-domain-input">Domain</label>
+                <input type="text" id="svc-edit-domain-input" placeholder="app.example.com">
+                <span class="hint">HTTPS via Caddy once DNS points here</span>
+              </div>
+              <div class="svc-edit-actions">
+                <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
+                <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-sycord" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon" style="width:22px;height:22px">
+                <div>
+                  <h1>Sycord</h1>
+                  <p class="projects-sub">External deployer API for Sycord websites and connected projects</p>
+                </div>
+              </div>
+              <a href="/sycord/api/" class="btn-create" style="text-decoration:none">
+                <i data-lucide="book-open"></i>
+                <span>API Docs</span>
+              </a>
+            </div>
+            <div class="note" style="margin:0 0 1rem;padding:0.85rem;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;font-size:13px;color:#71717a">
+              Base URL: <code>/sycord/api</code> · <a href="/sycord/api/integration.json" class="link">integration.json</a> · <a href="/sycord/api/spec.json" class="link">spec.json</a>
+            </div>
+            <div class="swarm-grid">
+              <div class="swarm-stat full"><span class="swarm-label">project_connect</span><span class="swarm-value">POST — returns <code>uuid</code> to save + subdomain</span></div>
+              <div class="swarm-stat"><span class="swarm-label">container_get</span><span class="swarm-value">GET — Docker status</span></div>
+              <div class="swarm-stat"><span class="swarm-label">upload</span><span class="swarm-value">POST — multipart files</span></div>
+              <div class="swarm-stat"><span class="swarm-label">domain</span><span class="swarm-value">POST — set hostname</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">issue_deployment</span><span class="swarm-value">POST — docker build + deploy</span></div>
+            </div>
+            <p class="hint" style="margin-top:1rem">Stacks: <strong>nextjs</strong> (default), <strong>python</strong>, <strong>javascript</strong></p>
+          </div>
+        </section>
+
+        <section id="view-server-swarm" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="boxes" class="projects-icon"></i>
+                <div>
+                  <h1>Server Swarm</h1>
+                  <p class="projects-sub">Server status and deployment overview</p>
+                </div>
+              </div>
+            </div>
+            <div class="swarm-grid" id="swarm-stats">
+              <div class="swarm-stat"><span class="swarm-label">Public IP</span><span class="swarm-value" id="swarm-ip">—</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Version</span><span class="swarm-value" id="swarm-version">—</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Projects</span><span class="swarm-value" id="swarm-total">0</span></div>
+              <div class="swarm-stat"><span class="swarm-label">Running</span><span class="swarm-value" id="swarm-running">0</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">GUI URL</span><span class="swarm-value" id="swarm-gui-url">—</span></div>
+              <div class="swarm-stat full"><span class="swarm-label">Direct URL</span><span class="swarm-value" id="swarm-direct-url">—</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-users" class="view">
+          <div class="projects-card panel-form">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="users" class="projects-icon"></i>
+                <div>
+                  <h1>Users</h1>
+                  <p class="projects-sub">API tokens for programmatic access</p>
+                </div>
+              </div>
+            </div>
+            <div class="form-inner">
+              <p class="hint block">Create tokens for the external API — see <a href="/api/" class="link">API documentation</a></p>
+              <div class="form-group">
+                <label for="token-name">Token name</label>
+                <input type="text" id="token-name" placeholder="ci-deploy">
+              </div>
+              <button class="btn-pill btn-primary" id="create-token-btn">
+                <i data-lucide="plus"></i>
+                <span>Create token</span>
+              </button>
+              <div id="new-token-box" class="result-box hidden"></div>
+              <div id="tokens-list" class="tokens-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-logs" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="scroll-text" class="projects-icon"></i>
+                <div>
+                  <h1>Logs</h1>
+                  <p class="projects-sub">Deployment logs across all projects</p>
+                </div>
+              </div>
+            </div>
+            <div id="logs-project-list" class="logs-list"></div>
+            <div id="logs-empty" class="projects-empty hidden">
+              <i data-lucide="scroll-text" class="empty-icon"></i>
+              <p>No projects yet</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-ai" class="view">
+          <div class="ai-channel">
+            <div class="ai-channel-top">
+              <div class="ai-dash-header">
+                <div>
+                  <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span></h1>
+                  <p class="projects-sub ai-dash-sub">Syte cloud agents — sycord.com routes by UUID</p>
+                </div>
+              </div>
+
+              <div class="ai-stat-row ai-stat-row-compact" id="ai-stat-row">
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-online">0</span>
+                  <span class="ai-stat-label">online</span>
+                </div>
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-incoming">0</span>
+                  <span class="ai-stat-label">requests 30d</span>
+                </div>
+                <div class="ai-stat-card">
+                  <span class="ai-stat-value" id="ai-stat-failed">0</span>
+                  <span class="ai-stat-label">failed</span>
+                </div>
+              </div>
+
+              <div class="ai-meter-block ai-meter-compact">
+                <div class="ai-meter">
+                  <div class="ai-meter-head">
+                    <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA</span>
+                    <span class="ai-meter-pct" id="ai-dpfa-pct">0%</span>
+                  </div>
+                  <div class="ai-meter-track"><div class="ai-meter-fill" id="ai-dpfa-fill" style="width:0%"></div></div>
+                </div>
+                <div class="ai-meter">
+                  <div class="ai-meter-head">
+                    <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA</span>
+                    <span class="ai-meter-pct" id="ai-mnoa-pct">0%</span>
+                  </div>
+                  <div class="ai-meter-track"><div class="ai-meter-fill ai-meter-fill-alt" id="ai-mnoa-fill" style="width:0%"></div></div>
+                </div>
+              </div>
+
+              <details class="ai-onboard-details">
+                <summary class="ai-onboard-summary">Onboarding <span class="ai-onboard-badge" id="ai-onboard-badge">—</span></summary>
+                <ul class="ai-checklist" id="ai-checklist">
+                  <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
+                  <li data-step="ai_models"><span class="ai-check-box"></span><span>At least one model API key</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Verted and DeepSeek keys</span></li>
+                  <li data-step="cloud_runtime"><span class="ai-check-box"></span><span>Syte cloud runtime ready</span></li>
+                </ul>
+                <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
+              </details>
+
+              <div class="ai-api-warning hidden" id="ai-api-warning">
+                <i data-lucide="alert-triangle"></i>
+                <span>Add the API key for the profile you want to test — open settings.</span>
+              </div>
+            </div>
+
+            <div class="ai-test-bar">
+              <select id="ai-test-project" class="toolbar-select ai-test-select" aria-label="Project">
+                <option value="">Project…</option>
+              </select>
+              <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
+                <option value="syra-nano">nano</option>
+                <option value="syra-base" selected>base</option>
+                <option value="syra-havy">havy</option>
+              </select>
+              <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
+                <i data-lucide="zap"></i>
+                <span>Test</span>
+              </button>
+              <div id="ai-test-status" class="hint ai-test-status"></div>
+            </div>
+
+            <details class="ai-debug-panel" id="ai-debug-panel" open>
+              <summary class="ai-debug-summary">
+                Connection debug
+                <button type="button" class="btn-pill btn-ghost btn-sm ai-debug-refresh" id="ai-debug-refresh">Refresh</button>
+              </summary>
+              <div id="ai-debug-content" class="ai-debug-content">
+                <p class="hint">Select a project and click Refresh to run diagnostics.</p>
+              </div>
+            </details>
+
+            <footer class="ai-footer">
+              <a href="/api/#agent" class="ai-footer-link"><i data-lucide="book-open"></i> API documentation</a>
+            </footer>
+          </div>
+        </section>
+
+        <div id="ai-settings-sheet" class="ai-settings-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
+          <div class="ai-settings-backdrop" id="ai-settings-backdrop"></div>
+          <div class="ai-settings-panel">
+            <div class="ai-settings-head">
+              <h2 id="ai-settings-title">AI provider settings</h2>
+              <button type="button" class="icon-btn" id="ai-settings-close" aria-label="Close">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div class="ai-settings-body">
+              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, and <code>SYRA_HAVY_API_KEY</code> on the VM.</p>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-nano</strong>
+                  <span class="ai-key-provider">Verted · gemini-2.5-flash</span>
+                </div>
+                <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
+                <div class="form-group">
+                  <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-nano-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="agent-nano-key-hint">Required for nano profile.</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-base</strong>
+                  <span class="ai-key-provider">DeepSeek · deepseek-chat</span>
+                </div>
+                <code class="ai-key-url">https://api.deepseek.com/v1</code>
+                <div class="form-group">
+                  <label for="agent-base-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
+                  <span class="hint" id="agent-base-key-hint">Required for base profile.</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-havy</strong>
+                  <span class="ai-key-provider">Verted · gemini-2.5-pro</span>
+                </div>
+                <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
+                <div class="form-group">
+                  <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-havy-key" placeholder="Verted API key" autocomplete="off">
+                  <span class="hint" id="agent-havy-key-hint">Required for havy profile.</span>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="agent-default-profile">Default profile</label>
+                  <select id="agent-default-profile">
+                    <option value="syra-nano">syra-nano</option>
+                    <option value="syra-base">syra-base</option>
+                    <option value="syra-havy">syra-havy</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="agent-max-count">MNOA max agents</label>
+                  <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="syra-internal-secret">Internal API secret</label>
+                <input type="password" id="syra-internal-secret" placeholder="sycord.com → Syte" autocomplete="off">
+                <span class="hint">Header <code>X-Syra-Internal-Secret</code> for sycord.com server-to-server.</span>
+              </div>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>Turso (agent sessions)</strong>
+                  <span class="ai-key-provider">libSQL — durable activity storage</span>
+                </div>
+                <p class="hint block">Every agent turn (request, plan, tool calls, reply) is written to a durable Turso session keyed by UUID instead of a live stream. Clients fetch the session by id from the API. Leave blank to keep using local-only activity snapshots.</p>
+                <div class="form-group">
+                  <label for="turso-database-url">Database URL</label>
+                  <input type="text" id="turso-database-url" placeholder="libsql://your-db-name.turso.io" autocomplete="off">
+                  <span class="hint" id="turso-database-url-hint">Optional — from the Turso dashboard. <code>libsql://</code> pastes are rewritten to HTTPS automatically (required for AWS-hosted DBs).</span>
+                </div>
+                <div class="form-group">
+                  <label for="turso-auth-token">Auth token</label>
+                  <input type="password" id="turso-auth-token" placeholder="turso auth token" autocomplete="off">
+                  <span class="hint" id="turso-auth-token-hint">Required for remote Turso databases.</span>
+                </div>
+              </div>
+
+              <details class="ai-env-details">
+                <summary>Environment variables (auto-injected)</summary>
+                <div class="ai-env-grid">
+                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
+                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
+                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
+                  <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
+                  <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
+                  <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
+                  <div class="ai-env-row"><code>SYTE cloud runtime</code><span>Embedded VM runtime</span></div>
+                </div>
+              </details>
+
+              <div id="agent-runtime-status" class="hint"></div>
+            </div>
+            <div class="ai-settings-foot">
+              <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>
+            </div>
+          </div>
+        </div>
+
+        <section id="view-settings" class="view">
+          <div class="settings-stack">
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="server" class="projects-icon"></i>
+                <div><h1>Server</h1></div>
+              </div>
+              <div class="form-inner">
+                <div class="form-group">
+                  <label for="set-ip">Public IP</label>
+                  <input type="text" id="set-ip" placeholder="152.89.245.113">
+                  <span class="hint">IPv4 only — not a domain name</span>
+                </div>
+                <div class="form-group">
+                  <label for="set-email">Admin email</label>
+                  <input type="email" id="set-email" placeholder="admin@example.com">
+                </div>
+                <button class="btn-pill btn-primary" id="save-server-btn">Save</button>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="globe" class="projects-icon"></i>
+                <div><h1>Web GUI domain</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Custom domain for this interface — TLS via Caddy</p>
+                <div class="form-group">
+                  <label for="set-domain">Domain</label>
+                  <input type="text" id="set-domain" placeholder="sycord.site">
+                  <span class="hint">Enter domain only — no https:// prefix</span>
+                </div>
+                <div class="form-group">
+                  <label>Direct access (IP)</label>
+                  <div class="gui-url" id="direct-url">—</div>
+                </div>
+                <div class="form-group">
+                  <label>Custom domain</label>
+                  <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
+                </div>
+                <button class="btn-pill btn-primary" id="save-domain-btn">Apply domain</button>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="monitor-play" class="projects-icon"></i>
+                <div><h1>Preview domain</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Wildcard zone for production and preview HTTPS on <code>*.{zone}</code>.</p>
+                <div class="form-group">
+                  <label for="set-preview-domain">Preview base domain</label>
+                  <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
+                  <span class="hint" id="preview-dns-hint">Wildcard DNS <code>*.{zone}</code> → server. Hosts: <code id="preview-host-example">previewa-myapp.sycord.site</code></span>
+                </div>
+                <div class="form-group">
+                  <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
+                  <input type="password" id="set-cf-token" placeholder="Zone DNS Edit token for *.sycord.site" autocomplete="off">
+                  <span class="hint">Create in Cloudflare → My Profile → API Tokens → Zone DNS Edit for your preview zone.</span>
+                  <div id="cf-token-status" class="hint cf-token-status hidden"></div>
+                </div>
+                <div class="form-actions">
+                  <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
+                  <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form">
+              <div class="projects-title-block mb">
+                <i data-lucide="refresh-cw" class="projects-icon"></i>
+                <div><h1>Update Syte</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Pull newest version from the latest open GitHub PR, refresh dependencies, and restart automatically — data preserved</p>
+                <div class="version-row">
+                  <div>
+                    <span class="version-label">Installed</span>
+                    <span class="version-value" id="syte-version">—</span>
+                  </div>
+                  <button class="btn-pill btn-primary" id="update-syte-btn">
+                    <i data-lucide="download"></i>
+                    <span>Update Syte</span>
+                  </button>
+                </div>
+                <p class="hint" id="syte-update-source">Checking update source…</p>
+                <div id="update-result" class="result-box hidden"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js?v=__VERSION__"></script>
+</body>
+</html>

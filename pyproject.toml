@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syte"
+version = "0.2.0"
+description = "Workspace deployment and publishing service for Ubuntu"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.35",
+    "aiosqlite>=0.20",
+    "libsql-client>=0.3.1",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.7",
+    "python-multipart>=0.0.20",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+syte = "syte.main:app"
+
+[tool.setuptools.packages.find]
+include = ["syte*"]

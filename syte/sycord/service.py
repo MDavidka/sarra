@@ -1,0 +1,298 @@
+"""Sycord API business logic."""
+
+import json
+import shutil
+import subprocess
+
+from syte import deployment
+from syte.certificates import apply_proxy_config
+from syte.database import get_project, get_setting, list_projects, update_project
+from syte.deployment import issue_deploy, set_custom_domain
+from syte.docker_deploy import container_name, docker_container_exists, is_docker_running
+from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.preview_domains import _preview_base_domain
+from syte import workspace_api
+from syte.workspace import slugify, write_env_file
+from syte.sycord.scaffold import STACKS, scaffold_project
+from syte.config import settings
+
+
+def _base_zone() -> str:
+    """Root zone for auto subdomains (e.g. sycord.site)."""
+    return "sycord.site"
+
+
+async def resolve_base_zone() -> str:
+    gui = normalize_domain(await get_setting("gui_domain", ""))
+    if gui:
+        return _preview_base_domain(gui)
+    return _base_zone()
+
+
+def project_subdomain(name: str, base_zone: str) -> str:
+    slug = slugify(name)[:48] or "project"
+    return f"{slug}.{base_zone}"
+
+
+async def project_connect(
+    name: str,
+    *,
+    stack: str = "nextjs",
+    env_vars: dict | None = None,
+    project_uuid: str | None = None,
+) -> tuple[dict | None, str]:
+    """Create workspace, scaffold stack, assign {name}.{zone} subdomain."""
+    stack = (stack or "nextjs").lower().strip()
+    if stack not in STACKS:
+        return None, f"Invalid stack '{stack}'. Use: {', '.join(STACKS)}"
+
+    base_zone = await resolve_base_zone()
+    subdomain = project_subdomain(name, base_zone)
+
+    for p in await list_projects():
+        if normalize_domain(p.get("domain") or "") == subdomain:
+            return None, f"Subdomain already in use: {subdomain}"
+
+    merged_env = {**(env_vars or {}), "SYTE_STACK": stack, "SYCORD_CONNECTED": "1"}
+    project, message = await deployment.create_project_record(
+        name=name,
+        domain=subdomain,
+        env_vars=merged_env,
+        project_uuid=project_uuid,
+        deploy_now=False,
+    )
+    if not project:
+        return None, message
+
+    await update_project(project["id"], {"deploy_type": "docker"})
+    write_env_file(project["id"], merged_env)
+    scaffolded = scaffold_project(project["id"], stack)
+    await apply_proxy_config()
+
+    project = await get_project(project["id"]) or project
+    return project, message + (f" Scaffolded: {', '.join(scaffolded)}" if scaffolded else "")
+
+
+async def container_get_async(project_id: str) -> dict | None:
+    project = await get_project(project_id)
+    if not project:
+        return None
+    ip = await get_setting("public_ip", settings.resolved_public_ip)
+    return _container_payload(project_id, project, ip)
+
+
+def _container_payload(project_id: str, project: dict, public_ip: str) -> dict:
+    name = container_name(project_id)
+    exists = docker_container_exists(project_id)
+    running = is_docker_running(project_id) if exists else False
+    state = image = started_at = ""
+    if exists and shutil.which("docker"):
+        code, state = _docker_inspect(name, "{{.State.Status}}")
+        _, image = _docker_inspect(name, "{{.Config.Image}}")
+        _, started_at = _docker_inspect(name, "{{.State.StartedAt}}")
+
+    port = project.get("port")
+    domain = normalize_domain(project.get("domain") or "")
+    if domain:
+        url = build_https_url(domain)
+    elif port:
+        url = build_direct_url(public_ip, int(port))
+    else:
+        url = None
+
+    return {
+        "uuid": project_id,
+        "container_name": name,
+        "exists": exists,
+        "running": running,
+        "state": state or ("running" if running else "missing"),
+        "image": image,
+        "started_at": started_at,
+        "host_port": port,
+        "domain": domain or None,
+        "url": url,
+        "deploy_type": project.get("deploy_type"),
+        "status": project.get("status"),
+    }
+
+
+def _docker_inspect(container: str, fmt: str) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            ["docker", "inspect", "-f", fmt, container],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return proc.returncode, (proc.stdout or "").strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return 1, ""
+
+
+async def upload_file(project_id: str, path: str, content: bytes) -> tuple[bool, str]:
+    return await workspace_api.upload_file(project_id, path, content)
+
+
+async def set_domain(
+    project_id: str,
+    domain: str,
+    *,
+    email: str | None = None,
+) -> tuple[dict | None, str]:
+    from syte.config import settings
+
+    domain = normalize_domain(domain)
+    if not domain:
+        return None, "domain is required"
+    admin_email = email or await get_setting("admin_email", settings.admin_email)
+    return await set_custom_domain(project_id, domain, admin_email)
+
+
+async def issue_deployment(project_id: str) -> tuple[dict | None, str]:
+    return await issue_deploy(project_id)
+
+
+async def preview_start(project_id: str) -> tuple[bool, str, dict]:
+    """Start fast dev preview (next dev / vite) with HMR."""
+    from syte.preview_manager import start_preview
+
+    return await start_preview(project_id)
+
+
+async def preview_stop(project_id: str) -> tuple[bool, str, dict]:
+    """Stop preview dev server and remove HTTPS route."""
+    from syte.preview_manager import get_preview_status, stop_preview_async
+
+    await stop_preview_async(project_id)
+    meta, _ = await get_preview_status(project_id)
+    return True, "Preview stopped", meta or {}
+
+
+async def preview_status(project_id: str) -> tuple[dict | None, str]:
+    """Preview server status and URLs."""
+    from syte.preview_manager import get_preview_status
+
+    return await get_preview_status(project_id)
+
+
+def project_stack(project: dict) -> str:
+    raw = project.get("env_vars") or "{}"
+    try:
+        env = json.loads(raw) if isinstance(raw, str) else raw
+    except json.JSONDecodeError:
+        env = {}
+    return env.get("SYTE_STACK", "nextjs")
+
+
+async def agent_status(project_id: str, *, request_base: str = "") -> dict | None:
+    from syte.cloud_agent import get_agent_status
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    status = await get_agent_status(project_id, request_base=request_base)
+    return {
+        "uuid": project_id,
+        **status,
+        "sessions_url": f"/sycord/api/agent_sessions?uuid={project_id}",
+    }
+
+
+async def agent_activity(
+    project_id: str,
+    *,
+    since_id: int = 0,
+    limit: int = 200,
+    session: str | None = None,
+) -> dict | None:
+    """Local SQLite activity snapshot. For the durable, UUID-addressable turn
+    record use :func:`agent_sessions` / the Turso ``agent_session`` route."""
+    from syte.agent_activity import list_agent_events
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    events = await list_agent_events(
+        project_id, since_id=since_id, limit=limit, session=session,
+    )
+    return {
+        "uuid": project_id,
+        "since_id": since_id,
+        "session": session,
+        "events": events,
+        "sessions_url": f"/sycord/api/agent_sessions?uuid={project_id}",
+    }
+
+
+async def agent_turso_sync(project_id: str) -> dict | None:
+    """Aggregate 'all messages saved to Turso' status for the brain indicator."""
+    from syte.cloud_agent import turso_message_sync_status
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    return {"uuid": project_id, **(await turso_message_sync_status(project_id))}
+
+
+async def agent_turso_debug(project_id: str) -> dict | None:
+    """Diagnose why the brain indicator is red — live Turso connectivity + schema check."""
+    from syte.turso_store import turso_debug_status
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    return {"uuid": project_id, **(await turso_debug_status())}
+
+
+async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
+    """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.turso_store import list_sessions_for_project, turso_configured
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    if not await turso_configured():
+        return {
+            "uuid": project_id,
+            "turso_configured": False,
+            "sessions": [],
+            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
+        }
+    sessions = await list_sessions_for_project(project_id, limit=limit)
+    return {
+        "uuid": project_id,
+        "turso_configured": True,
+        "sessions": [
+            {**s, "session_url": f"/sycord/api/agent_session/{s['id']}"} for s in sessions
+        ],
+    }
+
+
+async def agent_session(session_id: str, *, since_id: int = 0) -> dict | None:
+    """Fetch one durable Turso agent session by UUID."""
+    from syte.turso_store import get_session, turso_configured
+
+    if not await turso_configured():
+        return None
+    return await get_session(session_id, since_id=since_id)
+
+
+async def agent_change(
+    project_id: str,
+    message: str,
+    *,
+    model_profile: str | None = None,
+    wait: bool = False,
+) -> dict:
+    from syte.cloud_agent import communicate_with_agent
+
+    project = await get_project(project_id)
+    if not project:
+        return {"ok": False, "error": "not_found", "message": "Project not found"}
+    return await communicate_with_agent(
+        project_id,
+        message,
+        model_profile=model_profile,
+        source="sycord",
+        background=not wait,
+    )

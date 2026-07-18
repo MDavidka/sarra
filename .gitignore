@@ -1,0 +1,14 @@
+# Syte
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.env
+*.log
+
+# Data (local dev)
+.syte-data/
+/var/
