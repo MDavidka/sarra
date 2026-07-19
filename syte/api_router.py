@@ -181,6 +181,30 @@ class AgentSkillDisableBody(BaseModel):
     skill_id: str
 
 
+class AgentSkillAddBody(BaseModel):
+    uuid: str
+    name: str
+    content: str
+    description: str = ""
+    parameters: dict[str, str] = Field(default_factory=dict)
+    enable: bool = True
+    skill_id: str | None = None
+
+
+class AgentSkillUpdateBody(BaseModel):
+    uuid: str
+    skill_id: str
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    parameters: dict[str, str] | None = None
+
+
+class AgentSkillDeleteBody(BaseModel):
+    uuid: str
+    skill_id: str
+
+
 def _http_error(status: int, error: str, message: str):
     raise HTTPException(status, detail={"error": error, "message": message})
 
@@ -708,6 +732,61 @@ async def api_agent_skills_list(
     return {"ok": True, "uuid": uuid, "skills": await get_project_skills(uuid)}
 
 
+@router.post("/agent_skills_add")
+async def api_agent_skills_add(
+    body: AgentSkillAddBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import add_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await add_custom_skill(
+        body.uuid,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+        enable=body.enable,
+        skill_id=body.skill_id,
+    )
+    if not result.get("ok"):
+        _http_error(
+            400,
+            result.get("error") or "skill_add_failed",
+            result.get("message") or "Failed to add skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_update")
+async def api_agent_skills_update(
+    body: AgentSkillUpdateBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import update_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await update_custom_skill(
+        body.uuid,
+        body.skill_id,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+    )
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_update_failed",
+            result.get("message") or "Failed to update skill",
+        )
+    return result
+
+
 @router.post("/agent_skills_enable")
 async def api_agent_skills_enable(
     body: AgentSkillEnableBody,
@@ -744,6 +823,26 @@ async def api_agent_skills_disable(
             404 if result.get("error") == "not_found" else 400,
             result.get("error") or "skill_disable_failed",
             result.get("message") or "Failed to disable skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_delete")
+async def api_agent_skills_delete(
+    body: AgentSkillDeleteBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import delete_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await delete_custom_skill(body.uuid, body.skill_id)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_delete_failed",
+            result.get("message") or "Failed to delete skill",
         )
     return result
 

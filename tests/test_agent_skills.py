@@ -103,6 +103,65 @@ async def test_project_skills_can_be_enabled_and_disabled(tmp_data_dir: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_custom_skills_can_be_added_edited_and_deleted(tmp_data_dir: Path) -> None:
+    from syte.agent_skills import (
+        add_custom_skill,
+        delete_custom_skill,
+        disable_skill,
+        get_project_skills,
+        update_custom_skill,
+    )
+    from syte.cloud_agent import _build_syte_instruction
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "custom-skill-proj",
+        "name": "Custom skills",
+        "port": 3015,
+        "start_command": "",
+    })
+
+    added = await add_custom_skill(
+        "custom-skill-proj",
+        name="Brand voice",
+        description="Product copy rules",
+        content="Prefer short sentences. Never invent feature claims.",
+        enable=True,
+    )
+    assert added["ok"] is True
+    skill = added["skill"]
+    assert skill["id"] == "brand-voice"
+    assert skill["custom"] is True
+    assert skill["active"] is True
+
+    instruction = await _build_syte_instruction("custom-skill-proj", force_refresh=True)
+    assert "Prefer short sentences" in instruction
+
+    updated = await update_custom_skill(
+        "custom-skill-proj",
+        "brand-voice",
+        content="Use warm, confident product language.",
+    )
+    assert updated["ok"] is True
+    assert updated["skill"]["content"] == "Use warm, confident product language."
+
+    instruction = await _build_syte_instruction("custom-skill-proj", force_refresh=True)
+    assert "warm, confident" in instruction
+
+    disabled = await disable_skill("custom-skill-proj", "brand-voice")
+    assert disabled["active"] is False
+    listed = await get_project_skills("custom-skill-proj")
+    custom = next(s for s in listed if s["id"] == "brand-voice")
+    assert custom["active"] is False
+    assert custom["custom"] is True
+
+    deleted = await delete_custom_skill("custom-skill-proj", "brand-voice")
+    assert deleted == {"ok": True, "skill_id": "brand-voice", "deleted": True}
+    assert not any(s["id"] == "brand-voice" for s in await get_project_skills("custom-skill-proj"))
+
+
+@pytest.mark.asyncio
 async def test_api_router_skills_enable_and_disable(tmp_data_dir: Path) -> None:
     from syte import api_router
     from syte.database import create_project, init_db
@@ -136,6 +195,40 @@ async def test_api_router_skills_enable_and_disable(tmp_data_dir: Path) -> None:
         _token={},
     )
     assert disabled == {"ok": True, "skill_id": "cli-tools", "active": False}
+
+
+@pytest.mark.asyncio
+async def test_api_router_skills_add_and_delete(tmp_data_dir: Path) -> None:
+    from syte import api_router
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "skill-add-api",
+        "name": "Skill add API",
+        "port": 3016,
+        "start_command": "",
+    })
+
+    added = await api_router.api_agent_skills_add(
+        api_router.AgentSkillAddBody(
+            uuid="skill-add-api",
+            name="QA checklist",
+            content="Always verify preview on phone and desktop.",
+            description="Verification habit",
+            enable=True,
+        ),
+        _token={},
+    )
+    assert added["ok"] is True
+    assert added["skill"]["id"] == "qa-checklist"
+    assert added["skill"]["active"] is True
+
+    deleted = await api_router.api_agent_skills_delete(
+        api_router.AgentSkillDeleteBody(uuid="skill-add-api", skill_id="qa-checklist"),
+        _token={},
+    )
+    assert deleted == {"ok": True, "skill_id": "qa-checklist", "deleted": True}
 
 
 @pytest.mark.asyncio

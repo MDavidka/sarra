@@ -110,7 +110,8 @@ chmod +x scripts/*.sh
 Per-project MCP providers and skills can be **added, enabled, disabled, and edited**
 from the agent chat UI or directly via API (session routes under
 `/api/projects/{id}/agent/mcp` and `/agent/skills`, plus token mirrors
-`/api/agent_mcp*` and `/api/agent_skills*`). See [`docs/api-agent.md`](docs/api-agent.md).
+`/api/agent_mcp*` and `/api/agent_skills*`). Custom skills can be added with
+name + guidance content. See [`docs/api-agent.md`](docs/api-agent.md).
 
 ## Configuration
 

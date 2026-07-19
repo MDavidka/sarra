@@ -1362,17 +1362,31 @@ function renderDebugChatResources(mode, data) {
   } else {
     const skills = data.skills || [];
     title.textContent = 'Agent skills';
-    subtitle.textContent = 'Enable focused guidance without changing the project files.';
+    subtitle.textContent = 'Enable built-in guidance or add custom skills for this project.';
     const active = skills.filter(skill => skill.active).length;
     const count = document.getElementById('debug-chat-skills-count');
     if (count) count.textContent = String(active);
-    body.innerHTML = skills.length ? skills.map(skill => `<div class="debug-chat-resource-card">
+    body.innerHTML = (skills.length ? skills.map(skill => {
+      const actions = skill.custom
+        ? `<div class="debug-chat-resource-actions">
+            <button type="button" class="debug-chat-resource-action" onclick="${skill.active ? `disableDebugChatSkill('${esc(skill.id)}')` : `enableDebugChatSkill('${esc(skill.id)}')`}">${skill.active ? 'Disable' : 'Enable'}</button>
+            <button type="button" class="debug-chat-resource-action" onclick="deleteDebugChatSkill('${esc(skill.id)}')">Delete</button>
+          </div>`
+        : `<button type="button" class="debug-chat-resource-action" onclick="${skill.active ? `disableDebugChatSkill('${esc(skill.id)}')` : `enableDebugChatSkill('${esc(skill.id)}')`}">${skill.active ? 'Disable' : 'Enable'}</button>`;
+      return `<div class="debug-chat-resource-card">
       <div class="debug-chat-resource-main">
-        <div class="debug-chat-resource-name"><i data-lucide="sparkles"></i>${esc(skill.name)} <span class="debug-chat-resource-status ${skill.active ? 'active' : ''}">${skill.active ? 'Active' : 'Off'}</span></div>
-        <div class="debug-chat-resource-description">${esc(skill.description)}</div>
+        <div class="debug-chat-resource-name"><i data-lucide="sparkles"></i>${esc(skill.name)} <span class="debug-chat-resource-status ${skill.active ? 'active' : ''}">${skill.active ? 'Active' : 'Off'}</span>${skill.custom ? ' <span class="debug-chat-resource-status">Custom</span>' : ''}</div>
+        <div class="debug-chat-resource-description">${esc(skill.description || skill.content || '')}</div>
       </div>
-      <button type="button" class="debug-chat-resource-action" onclick="${skill.active ? `disableDebugChatSkill('${esc(skill.id)}')` : `enableDebugChatSkill('${esc(skill.id)}')`}">${skill.active ? 'Disable' : 'Enable'}</button>
-    </div>`).join('') : '<div class="debug-chat-resource-empty">No skills are available.</div>';
+      ${actions}
+    </div>`;
+    }).join('') : '<div class="debug-chat-resource-empty">No skills are available.</div>')
+      + `<div class="debug-chat-resource-form debug-chat-resource-form-skill">
+      <input id="debug-chat-skill-name" placeholder="Skill name" aria-label="Skill name">
+      <input id="debug-chat-skill-description" placeholder="Short description (optional)" aria-label="Skill description">
+      <textarea id="debug-chat-skill-content" placeholder="Guidance content for the agent" aria-label="Skill content" rows="3"></textarea>
+      <button type="button" class="debug-chat-resource-action" onclick="addDebugChatSkill()">Add</button>
+    </div>`;
   }
   refreshIcons();
 }
@@ -1449,6 +1463,31 @@ async function disableDebugChatSkill(skillId) {
   try {
     await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' });
     toast('Skill disabled for this project.');
+    await refreshDebugChatResources('skills');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function addDebugChatSkill() {
+  const name = document.getElementById('debug-chat-skill-name')?.value?.trim();
+  const description = document.getElementById('debug-chat-skill-description')?.value?.trim() || '';
+  const content = document.getElementById('debug-chat-skill-content')?.value?.trim();
+  if (!name || !content) { toast('Skill name and content are required.'); return; }
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/skills`, {
+      method: 'POST',
+      body: JSON.stringify({ name, description, content, enable: true, parameters: {} }),
+    });
+    toast('Custom skill added.');
+    await refreshDebugChatResources('skills');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function deleteDebugChatSkill(skillId) {
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/skills/${encodeURIComponent(skillId)}?purge=1`, {
+      method: 'DELETE',
+    });
+    toast('Custom skill deleted.');
     await refreshDebugChatResources('skills');
   } catch (error) { toast(normalizeFetchError(error.message)); }
 }

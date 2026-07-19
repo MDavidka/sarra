@@ -97,9 +97,12 @@ API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
 
 - Built-in catalog: `website-editing`, `workspace-search`, `preview-access`,
   `service-management`, `nextjs-app-router`, `cli-tools`.
-- Active skills are injected under `## Active Skills` in the system instruction.
+- Custom skills can be **added** (name + markdown/content guidance), edited, enabled,
+  disabled, or deleted per project.
+- Active skills (built-in and custom) are injected under `## Active Skills` in the
+  system instruction.
 - Enable stores optional string `parameters` (re-enable upserts / edits them);
-  disable removes the project activation row.
+  disable removes the project activation row; purge deletes a custom definition.
 
 ### Artifact APIs
 
@@ -108,7 +111,7 @@ API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
 | Screenshots | `GET /api/agent_screenshots?uuid=` | PNG at `/api/projects/{uuid}/agent/screenshots/{id}?variant=thumb\|full` |
 | Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
 | Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
-| Skills | `GET /api/agent_skills?uuid=` | Enable: `POST /api/agent_skills_enable`; disable: `POST /api/agent_skills_disable` |
+| Skills | `GET /api/agent_skills?uuid=` | Add: `POST /api/agent_skills_add`; enable: `agent_skills_enable`; update: `agent_skills_update`; disable: `agent_skills_disable`; delete custom: `agent_skills_delete` |
 | MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` |
 | Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 

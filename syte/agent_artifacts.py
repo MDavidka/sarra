@@ -116,9 +116,23 @@ CREATE TABLE IF NOT EXISTS agent_project_skills (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_project_skills_project
 ON agent_project_skills(project_id, enabled_at);
+
+CREATE TABLE IF NOT EXISTS agent_custom_skills (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    skill_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project_id, skill_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_custom_skills_project
+ON agent_custom_skills(project_id, skill_id);
 """
 
-_SCHEMA_EPOCH = 2
+_SCHEMA_EPOCH = 3
 _ensured_paths: dict[str, int] = {}
 
 # In-process waiters for interactive questions (question_id -> Future[answer]).

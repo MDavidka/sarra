@@ -261,7 +261,7 @@ def default_access_config() -> dict[str, Any]:
 
 
 async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
-    """Return the catalog with the project's enabled state and parameters."""
+    """Return built-in + custom skills with the project's enabled state and parameters."""
     from syte.agent_artifacts import ensure_artifact_tables
 
     await ensure_artifact_tables()
@@ -271,10 +271,16 @@ async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
             "WHERE project_id = ?",
             (project_id,),
         ) as cursor:
-            rows = await cursor.fetchall()
+            active_rows = await cursor.fetchall()
+        async with db.execute(
+            "SELECT id, skill_id, name, description, content, created_at, updated_at "
+            "FROM agent_custom_skills WHERE project_id = ? ORDER BY name ASC",
+            (project_id,),
+        ) as cursor:
+            custom_rows = await cursor.fetchall()
 
     active: dict[str, tuple[dict[str, str], str]] = {}
-    for skill_id, raw_parameters, enabled_at in rows:
+    for skill_id, raw_parameters, enabled_at in active_rows:
         try:
             parameters = json.loads(raw_parameters or "{}")
         except json.JSONDecodeError:
@@ -288,12 +294,221 @@ async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
             "id": skill["id"],
             "name": skill["name"],
             "description": skill["description"],
+            "content": skill["content"],
             "priority": skill["priority"],
             "parameters": parameters,
             "active": skill["id"] in active,
             "enabled_at": enabled_at,
+            "builtin": True,
+            "custom": False,
+        })
+
+    for row in custom_rows:
+        record_id, skill_id, name, description, content, created_at, updated_at = row
+        parameters, enabled_at = active.get(skill_id, ({}, None))
+        skills.append({
+            "id": skill_id,
+            "record_id": record_id,
+            "name": name,
+            "description": description,
+            "content": content,
+            "priority": 1000,
+            "parameters": parameters,
+            "active": skill_id in active,
+            "enabled_at": enabled_at,
+            "builtin": False,
+            "custom": True,
+            "created_at": created_at,
+            "updated_at": updated_at,
         })
     return skills
+
+
+def _slugify_skill_id(name: str) -> str:
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return (slug or "custom-skill")[:80]
+
+
+async def _unique_custom_skill_id(project_id: str, preferred: str) -> str:
+    base = _slugify_skill_id(preferred)
+    if base in SKILL_REGISTRY:
+        base = f"custom-{base}"
+    candidate = base
+    suffix = 2
+    existing = {skill["id"] for skill in await get_project_skills(project_id)}
+    while candidate in existing:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+async def add_custom_skill(
+    project_id: str,
+    *,
+    name: str,
+    description: str = "",
+    content: str = "",
+    parameters: dict[str, str] | None = None,
+    enable: bool = True,
+    skill_id: str | None = None,
+) -> dict[str, Any]:
+    """Add (register) a custom project skill. Optionally enable it immediately."""
+    import uuid as uuid_mod
+
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    clean_name = (name or "").strip()[:120]
+    if not clean_name:
+        return {"ok": False, "error": "invalid_name", "message": "Skill name is required"}
+    clean_description = (description or "").strip()[:1000]
+    clean_content = (content or "").strip()
+    if not clean_content:
+        return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+
+    await ensure_artifact_tables()
+    resolved_id = await _unique_custom_skill_id(project_id, skill_id or clean_name)
+    if resolved_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_conflict",
+            "message": f"Skill id conflicts with built-in skill: {resolved_id}",
+        }
+
+    now = datetime.now(timezone.utc).isoformat()
+    record_id = f"{project_id}:skill_{uuid_mod.uuid4().hex[:16]}"
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO agent_custom_skills "
+            "(id, project_id, skill_id, name, description, content, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record_id,
+                project_id,
+                resolved_id,
+                clean_name,
+                clean_description,
+                clean_content,
+                now,
+                now,
+            ),
+        )
+        await db.commit()
+
+    if enable:
+        enabled = await enable_skill(project_id, resolved_id, parameters)
+        if not enabled.get("ok"):
+            return enabled
+        skill = enabled["skill"]
+    else:
+        skill = next(s for s in await get_project_skills(project_id) if s["id"] == resolved_id)
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        pass
+    return {"ok": True, "skill": skill}
+
+
+async def update_custom_skill(
+    project_id: str,
+    skill_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    content: str | None = None,
+    parameters: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Edit a custom skill definition. Built-in skills cannot be edited this way."""
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    if skill_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_readonly",
+            "message": "Built-in skills cannot be edited; enable with parameters instead",
+        }
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT id, name, description, content FROM agent_custom_skills "
+            "WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return {"ok": False, "error": "not_found", "message": f"Custom skill not found: {skill_id}"}
+
+        next_name = (name if name is not None else row[1] or "").strip()[:120]
+        next_description = description if description is not None else row[2] or ""
+        next_content = content if content is not None else row[3] or ""
+        if not next_name:
+            return {"ok": False, "error": "invalid_name", "message": "Skill name is required"}
+        if not str(next_content).strip():
+            return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            "UPDATE agent_custom_skills SET name = ?, description = ?, content = ?, updated_at = ? "
+            "WHERE project_id = ? AND skill_id = ?",
+            (
+                next_name,
+                str(next_description).strip()[:1000],
+                str(next_content).strip(),
+                now,
+                project_id,
+                skill_id,
+            ),
+        )
+        await db.commit()
+
+    if parameters is not None:
+        await enable_skill(project_id, skill_id, parameters)
+
+    skill = next((s for s in await get_project_skills(project_id) if s["id"] == skill_id), None)
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        pass
+    return {"ok": True, "skill": skill}
+
+
+async def delete_custom_skill(project_id: str, skill_id: str) -> dict[str, Any]:
+    """Remove a custom skill definition and any active row. Built-ins cannot be deleted."""
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    if skill_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_readonly",
+            "message": "Built-in skills cannot be deleted; disable them instead",
+        }
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM agent_custom_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.execute(
+            "DELETE FROM agent_project_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.commit()
+    if not cursor.rowcount:
+        return {"ok": False, "error": "not_found", "message": f"Custom skill not found: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        pass
+    return {"ok": True, "skill_id": skill_id, "deleted": True}
 
 
 async def enable_skill(
@@ -303,10 +518,17 @@ async def enable_skill(
 ) -> dict[str, Any]:
     from syte.agent_artifacts import ensure_artifact_tables
 
-    skill = SKILL_REGISTRY.get(skill_id)
-    if not skill:
-        return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
     await ensure_artifact_tables()
+    if skill_id not in SKILL_REGISTRY:
+        async with aiosqlite.connect(settings.resolved_db_path) as db:
+            async with db.execute(
+                "SELECT 1 FROM agent_custom_skills WHERE project_id = ? AND skill_id = ?",
+                (project_id, skill_id),
+            ) as cursor:
+                exists = await cursor.fetchone()
+        if not exists:
+            return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
+
     now = datetime.now(timezone.utc).isoformat()
     clean_parameters = {str(key): str(value) for key, value in (parameters or {}).items()}
     async with aiosqlite.connect(settings.resolved_db_path) as db:
@@ -317,7 +539,16 @@ async def enable_skill(
             (project_id, skill_id, json.dumps(clean_parameters, ensure_ascii=False), now),
         )
         await db.commit()
-    return {"ok": True, "skill": next(s for s in await get_project_skills(project_id) if s["id"] == skill_id)}
+    skill = next((s for s in await get_project_skills(project_id) if s["id"] == skill_id), None)
+    if not skill:
+        return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        pass
+    return {"ok": True, "skill": skill}
 
 
 async def disable_skill(project_id: str, skill_id: str) -> dict[str, Any]:
@@ -332,6 +563,12 @@ async def disable_skill(project_id: str, skill_id: str) -> dict[str, Any]:
         await db.commit()
     if not cursor.rowcount:
         return {"ok": False, "error": "not_found", "message": f"Skill is not active: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        pass
     return {"ok": True, "skill_id": skill_id, "active": False}
 
 
@@ -440,7 +677,11 @@ def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[di
     ]
 
 
-def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
+def write_agent_skills(
+    project_id: str,
+    agent_root: Path,
+    custom_skills: list[dict[str, Any]] | None = None,
+) -> list[Path]:
     """Write skill markdown files and syte-access helper into the agent workspace."""
     skills_dir = agent_root / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
@@ -448,6 +689,17 @@ def write_agent_skills(project_id: str, agent_root: Path) -> list[Path]:
     for name, content in SKILL_FILES.items():
         path = skills_dir / name
         path.write_text(content.strip() + "\n")
+        written.append(path)
+
+    for skill in custom_skills or []:
+        skill_id = str(skill.get("id") or "").strip()
+        content = str(skill.get("content") or "").strip()
+        if not skill_id or not content:
+            continue
+        path = skills_dir / f"{skill_id}.md"
+        title = str(skill.get("name") or skill_id).strip()
+        body = content if content.lstrip().startswith("#") else f"# {title}\n\n{content}"
+        path.write_text(body.strip() + "\n")
         written.append(path)
 
     bin_dir = agent_root / "bin"

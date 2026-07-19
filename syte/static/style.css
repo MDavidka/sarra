@@ -1932,6 +1932,35 @@ code {
   padding-top: 0.1rem;
 }
 
+.debug-chat-resource-form-skill {
+  grid-template-columns: 1fr 1fr;
+}
+
+.debug-chat-resource-form-skill textarea {
+  grid-column: 1 / -1;
+  min-width: 0;
+  resize: vertical;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #d4d4d8;
+  border-radius: 7px;
+  background: #fff;
+  color: #27272a;
+  font: 0.68rem var(--font);
+  line-height: 1.4;
+}
+
+.debug-chat-resource-form-skill .debug-chat-resource-action {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.debug-chat-resource-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .debug-chat-resource-form input {
   min-width: 0;
   padding: 0.45rem 0.55rem;
