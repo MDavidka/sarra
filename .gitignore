@@ -12,4 +12,3 @@ build/
 # Data (local dev)
 .syte-data/
 /var/
-.venv/
