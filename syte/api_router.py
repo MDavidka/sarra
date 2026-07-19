@@ -111,6 +111,9 @@ class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
     model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    thinking_level: int | None = Field(
+        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+    )
 
 
 class AgentChangeRequest(BaseModel):
@@ -118,6 +121,9 @@ class AgentChangeRequest(BaseModel):
     message: str = Field(..., description="Change request from sycord.com user")
     model_profile: str | None = Field(None, description="Model profile alias (syra-nano/base/havy)")
     model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
+    thinking_level: int | None = Field(
+        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+    )
 
 
 class AgentQuestionAnswerBody(BaseModel):
@@ -727,6 +733,7 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
         body.uuid,
         body.message,
         model_profile=body.model_profile,
+        thinking_level=body.thinking_level,
         source="api",
     )
     if not result.get("ok"):
@@ -741,6 +748,7 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         body.uuid,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="sycord",
         background=True,
     )

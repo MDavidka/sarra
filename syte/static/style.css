@@ -1973,6 +1973,29 @@ code {
   color: var(--text-dim);
 }
 
+.debug-chat-think-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  min-width: 11rem;
+}
+
+.debug-chat-think {
+  width: 5.5rem;
+  accent-color: var(--accent, #2563eb);
+  cursor: pointer;
+}
+
+.debug-chat-think-value {
+  min-width: 3.6rem;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
 .debug-chat-reconnect {
   --sl-input-height-small: 30px;
   --sl-color-neutral-600: #2563eb;

@@ -62,10 +62,18 @@ def validate_design(project_id: str) -> dict:
     tsx_files = list(app.rglob("*.tsx"))[:50]
     all_tsx = "\n".join(_read_text(f) for f in tsx_files)
 
+    # Named theme / CSS variable tokens present (soft: pass if radius + primary exist)
+    theme_ok = "--radius" in globals_css and ("--primary" in globals_css or "--background" in globals_css)
+    checks.append({
+        "item": PREFLIGHT_CHECKLIST[0],
+        "ok": theme_ok,
+        "detail": "Theme CSS variables present" if theme_ok else "Apply a named theme (minimal|bold|corporate|vibrant|dark-tech)",
+    })
+
     # --font-sans
     font_ok = "--font-sans" in globals_css and ("font-family" in globals_css or "font-sans" in globals_css)
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[0],
+        "item": PREFLIGHT_CHECKLIST[1],
         "ok": font_ok,
         "detail": "Found --font-sans in globals.css" if font_ok else "Missing --font-sans in globals.css",
     })
@@ -77,7 +85,7 @@ def validate_design(project_id: str) -> dict:
         bg_vals = re.findall(r"--background:\s*([^;]+)", globals_css)
         card_bg_ok = bool(card_vals and bg_vals and card_vals[0].strip() != bg_vals[0].strip())
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[1],
+        "item": PREFLIGHT_CHECKLIST[2],
         "ok": card_bg_ok,
         "detail": "card and background differ" if card_bg_ok else "Set distinct --card and --background",
     })
@@ -85,7 +93,7 @@ def validate_design(project_id: str) -> dict:
     # shadcn preset (tailwind + components/ui)
     shadcn_ok = bool(ui_dir and ui_dir.exists()) and ("tailwindcss" in deps or (app / "tailwind.config.ts").exists() or (app / "tailwind.config.js").exists())
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[2],
+        "item": PREFLIGHT_CHECKLIST[3],
         "ok": shadcn_ok,
         "detail": "components/ui + tailwind present" if shadcn_ok else "Add shadcn/ui (components/ui) and Tailwind",
     })
@@ -95,7 +103,7 @@ def validate_design(project_id: str) -> dict:
     circle_icon_bad = bool(re.search(r"rounded-full.*lucide|bg-primary.*h-\d.*w-\d.*flex.*items-center", all_tsx, re.I))
     icon_ok = lucide_ok and not circle_icon_bad
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[4],
+        "item": PREFLIGHT_CHECKLIST[5],
         "ok": icon_ok,
         "detail": "lucide-react used" if icon_ok else "Use lucide-react; avoid icons in colored circles",
     })
@@ -103,7 +111,7 @@ def validate_design(project_id: str) -> dict:
     # hero gradient
     gradient_ok = bool(re.search(r"radial-gradient|gradient", all_tsx + globals_css, re.I))
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[5],
+        "item": PREFLIGHT_CHECKLIST[6],
         "ok": gradient_ok,
         "detail": "Gradient found" if gradient_ok else "Add hero gradient (radial-gradient with primary/0.25)",
     })
@@ -111,7 +119,7 @@ def validate_design(project_id: str) -> dict:
     # dark mode
     dark_ok = bool(re.search(r"ThemeProvider|dark:|useTheme|mode-toggle|DarkMode", all_tsx + globals_css, re.I))
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[8],
+        "item": PREFLIGHT_CHECKLIST[9],
         "ok": dark_ok,
         "detail": "Dark mode toggle/provider found" if dark_ok else "Add dark mode toggle (next-themes or similar)",
     })
@@ -119,7 +127,7 @@ def validate_design(project_id: str) -> dict:
     # --radius
     radius_ok = "--radius" in globals_css or "rounded-lg" in all_tsx
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[7],
+        "item": PREFLIGHT_CHECKLIST[8],
         "ok": radius_ok,
         "detail": "--radius token or rounded-lg used" if radius_ok else "Use --radius token consistently",
     })
@@ -128,7 +136,7 @@ def validate_design(project_id: str) -> dict:
     img_tags = re.findall(r"<img[^>]*>", all_tsx, re.I)
     img_ok = not img_tags or all("alt=" in t for t in img_tags)
     checks.append({
-        "item": PREFLIGHT_CHECKLIST[6],
+        "item": PREFLIGHT_CHECKLIST[7],
         "ok": img_ok,
         "detail": "All img tags have alt" if img_ok else "Add alt to every img",
     })

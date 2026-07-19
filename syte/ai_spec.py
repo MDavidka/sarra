@@ -2,6 +2,7 @@
 
 from syte import __version__
 from syte.design_contract import build_design_contract_spec, build_system_prompt
+from syte.thinking_levels import thinking_levels_spec
 
 
 def build_ai_spec(base_url: str = "") -> dict:
@@ -139,8 +140,8 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
-            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
-            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
+            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "thinking_level": "optional 1-5"}},
+            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional", "thinking_level": "optional 1-5"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Local SQLite activity snapshot (incremental with since_id; optional session=last|N)"},
             {"method": "GET", "path": "/api/agent_sessions?uuid=", "auth": True, "description": "List durable Turso agent-session UUIDs for a project (newest first)"},
             {"method": "GET", "path": "/api/agent_session/{session_id}?since_id=0", "auth": True, "description": "Fetch a durable agent activity session (metadata + events) from Turso by UUID"},
@@ -171,6 +172,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
             },
+            "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
                 "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek API keys, and "
                 "turso_database_url / turso_auth_token for durable session storage"
@@ -181,7 +183,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             },
             "async_change_request": {
                 "description": "Default for sycord.com and POST /api/agent_change — non-blocking",
-                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?}",
+                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?, thinking_level?}",
                 "immediate_response": {
                     "ok": True,
                     "request_id": "req_abc123def456",

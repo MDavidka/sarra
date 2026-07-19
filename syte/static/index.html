@@ -375,6 +375,11 @@
                         <option value="syra-havy">havy</option>
                       </select>
                     </label>
+                    <label class="debug-chat-think-label" for="debug-chat-think">
+                      <span>Think</span>
+                      <input type="range" id="debug-chat-think" class="debug-chat-think" min="1" max="5" step="1" value="3" aria-label="Thinking depth from Instant to Max" />
+                      <span class="debug-chat-think-value" id="debug-chat-think-value">Balanced</span>
+                    </label>
                   </div>
                   <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
                     <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>

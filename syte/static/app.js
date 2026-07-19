@@ -1281,6 +1281,41 @@ async function getDebugChatProfile() {
   return select?.value || select?.getAttribute('value') || 'syra-base';
 }
 
+const DEBUG_CHAT_THINK_LABELS = {
+  1: 'Instant',
+  2: 'Fast',
+  3: 'Balanced',
+  4: 'Deep',
+  5: 'Max',
+};
+
+function getDebugChatThinkingLevel() {
+  const slider = document.getElementById('debug-chat-think');
+  const raw = Number(slider?.value || localStorage.getItem('syte.debugChat.thinkingLevel') || 3);
+  if (!Number.isFinite(raw)) return 3;
+  return Math.min(5, Math.max(1, Math.round(raw)));
+}
+
+function syncDebugChatThinkLabel() {
+  const slider = document.getElementById('debug-chat-think');
+  const label = document.getElementById('debug-chat-think-value');
+  if (!slider || !label) return;
+  const level = getDebugChatThinkingLevel();
+  slider.value = String(level);
+  label.textContent = DEBUG_CHAT_THINK_LABELS[level] || 'Balanced';
+  localStorage.setItem('syte.debugChat.thinkingLevel', String(level));
+}
+
+function initDebugChatThinkSlider() {
+  const slider = document.getElementById('debug-chat-think');
+  if (!slider || slider.dataset.bound === '1') return;
+  slider.dataset.bound = '1';
+  const saved = localStorage.getItem('syte.debugChat.thinkingLevel');
+  if (saved) slider.value = saved;
+  syncDebugChatThinkLabel();
+  slider.addEventListener('input', syncDebugChatThinkLabel);
+}
+
 function warmProjectAgent(projectId) {
   if (!projectId) return;
   void api(`/projects/${projectId}/agent/warm`, { method: 'POST' })
@@ -1302,6 +1337,7 @@ function warmProjectAgent(projectId) {
 
 async function openDebugChatTab() {
   if (!activeServiceId) return;
+  initDebugChatThinkSlider();
   const projectId = activeServiceId;
   warmProjectAgent(projectId);
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
@@ -1358,6 +1394,7 @@ async function sendDebugChatMessage() {
   setDebugChatTyping(true);
 
   const profile = await getDebugChatProfile();
+  const thinkingLevel = getDebugChatThinkingLevel();
   const sentMessage = message;
   if (input) {
     input.value = '';
@@ -1368,7 +1405,11 @@ async function sendDebugChatMessage() {
   try {
     const res = await api(`/projects/${activeServiceId}/agent/chat`, {
       method: 'POST',
-      body: JSON.stringify({ message: sentMessage, model_profile: profile }),
+      body: JSON.stringify({
+        message: sentMessage,
+        model_profile: profile,
+        thinking_level: thinkingLevel,
+      }),
     });
     chatOk = !!res.ok;
     if (!res.ok) {
@@ -3200,3 +3241,5 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('resize', () => {
   if (!window.matchMedia('(max-width: 768px)').matches) closeDrawer();
 });
+
+initDebugChatThinkSlider();
