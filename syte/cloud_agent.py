@@ -293,7 +293,6 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
 
 async def _build_syte_instruction(project_id: str, *, force_refresh: bool = False) -> str:
     from syte.agent_skills import (
-        SKILL_REGISTRY,
         build_agent_rules,
         get_project_skills,
         read_access_config,
@@ -311,10 +310,11 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
     rules = [item for item in build_agent_rules(project_id, access) if item.get("rule")]
     rule_lines = "\n".join(f"- {item['name']}: {item['rule']}" for item in rules)
     project_skills = await get_project_skills(project_id)
+    active_skills_list = [skill for skill in project_skills if skill.get("active")]
     active_skill_blocks = [
-        SKILL_REGISTRY[skill["id"]]["content"].strip()
-        for skill in project_skills
-        if skill.get("active") and skill.get("id") in SKILL_REGISTRY
+        str(skill.get("content") or "").strip()
+        for skill in active_skills_list
+        if str(skill.get("content") or "").strip()
     ]
     active_skills = "\n\n".join(active_skill_blocks)
     active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
@@ -325,7 +325,11 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
     if not force_refresh and cache_key in _instruction_cache:
         return _instruction_cache[cache_key]
 
-    write_agent_skills(project_id, root)
+    write_agent_skills(
+        project_id,
+        root,
+        custom_skills=[skill for skill in project_skills if skill.get("custom")],
+    )
     instruction = (
         "You are Syte's cloud coding agent running persistently on the project's VM. "
         "Work only in this Syte project and optimize for correct, fast, reliable delivery. "

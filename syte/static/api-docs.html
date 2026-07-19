@@ -1769,22 +1769,26 @@
                 <span class="method get">GET</span>
                 <span class="endpoint-path">/agent_skills?uuid=</span>
               </div>
-              <div class="endpoint-name">Skills — list / enable / disable / edit parameters</div>
+              <div class="endpoint-name">Skills — list / add / enable / disable / edit</div>
             </div>
             <div class="endpoint-body">
               <div class="field-desc">
-                Built-in skill catalog with per-project active state.
-                Enable or edit string parameters with <code>POST /agent_skills_enable</code>;
-                disable with <code>POST /agent_skills_disable</code>.
+                Built-in skill catalog plus custom skills you add for the project.
+                Add with <code>POST /agent_skills_add</code>;
+                enable or edit string parameters with <code>POST /agent_skills_enable</code>;
+                edit custom content with <code>POST /agent_skills_update</code>;
+                disable with <code>POST /agent_skills_disable</code>;
+                delete custom with <code>POST /agent_skills_delete</code>.
                 Built-in ids: <code>website-editing</code>, <code>workspace-search</code>,
                 <code>preview-access</code>, <code>service-management</code>,
                 <code>nextjs-app-router</code>, <code>cli-tools</code>.
                 GUI mirrors: <code>/api/projects/{uuid}/agent/skills</code>.
                 See also <code>docs/api-agent.md</code>.
               </div>
-              <pre>{"ok":true,"skills":[{"id":"website-editing","name":"Website editing","active":false,"parameters":{}}]}</pre>
+              <pre>{"ok":true,"skills":[{"id":"website-editing","name":"Website editing","active":false,"parameters":{},"builtin":true},{"id":"brand-voice","name":"Brand voice","active":true,"custom":true,"content":"…"}]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","name":"Brand voice","content":"Prefer short sentences.","description":"optional","enable":true}</pre>
               <pre>{"uuid":"my-site-a1b2c3","skill_id":"website-editing","parameters":{"theme":"bold"}}</pre>
-              <pre>{"uuid":"my-site-a1b2c3","skill_id":"website-editing"}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","skill_id":"brand-voice"}</pre>
             </div>
           </div>
 

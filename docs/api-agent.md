@@ -97,26 +97,43 @@ Disconnect (disable) a provider without removing its registration.
 
 ## Skills
 
-Per-project skill catalog. Built-in skills inject guidance into the agent system
-instruction when active. Enable/disable from the chat Skills panel or API; re-enable
-with `parameters` to edit stored string parameters.
+Per-project skill catalog: built-in skills plus custom skills you add. Active skills inject
+guidance into the agent system instruction. Manage from the chat Skills panel or API.
 
 | Action | Method | Path |
 |--------|--------|------|
 | List | `GET` | `/api/projects/{project_id}/agent/skills` |
+| Add (custom) | `POST` | `/api/projects/{project_id}/agent/skills` |
 | Enable / edit parameters | `POST` | `/api/projects/{project_id}/agent/skills/{skill_id}/enable` |
+| Edit custom skill | `PUT` | `/api/projects/{project_id}/agent/skills/{skill_id}` |
 | Disable | `DELETE` | `/api/projects/{project_id}/agent/skills/{skill_id}` |
+| Delete custom skill | `DELETE` | `/api/projects/{project_id}/agent/skills/{skill_id}?purge=1` |
 
 Built-in skill ids: `website-editing`, `workspace-search`, `preview-access`,
 `service-management`, `nextjs-app-router`, `cli-tools`.
 
 ### GET `/api/projects/{project_id}/agent/skills`
 
-List the built-in skill catalog and each skill's active state / parameters for the project.
+List built-in and custom skills with active state / parameters. Custom entries include
+`custom: true` and `content`.
+
+### POST `/api/projects/{project_id}/agent/skills`
+
+Add a custom skill. Defaults to enabling it immediately (`enable: true`).
+
+```json
+{
+  "name": "Brand voice",
+  "description": "Keep copy terse and product-led",
+  "content": "Prefer short sentences. Never invent feature claims.",
+  "enable": true,
+  "parameters": {}
+}
+```
 
 ### POST `/api/projects/{project_id}/agent/skills/{skill_id}/enable`
 
-Enable a skill. Sending `parameters` upserts string key/value settings (edit).
+Enable a built-in or custom skill. Sending `parameters` upserts string key/value settings.
 
 ```json
 {
@@ -126,9 +143,25 @@ Enable a skill. Sending `parameters` upserts string key/value settings (edit).
 }
 ```
 
+### PUT `/api/projects/{project_id}/agent/skills/{skill_id}`
+
+Edit a custom skill's `name`, `description`, `content`, and/or `parameters`.
+Built-in skills cannot be edited this way (use enable with parameters).
+
+```json
+{
+  "content": "Updated guidance for the agent.",
+  "description": "Revised description"
+}
+```
+
 ### DELETE `/api/projects/{project_id}/agent/skills/{skill_id}`
 
-Disable a project skill (removes the active row; catalog entry remains available to re-enable).
+Disable a project skill (removes the active row; catalog entry remains).
+
+### DELETE `/api/projects/{project_id}/agent/skills/{skill_id}?purge=1`
+
+Delete a custom skill definition entirely (also clears activation). Built-ins cannot be purged.
 
 ## Token API mirrors
 
@@ -154,11 +187,28 @@ Update: `{ "uuid", "addon", "name?", "command?", "args?", "env?", "description?"
 | Action | Endpoint |
 |--------|----------|
 | List | `GET /api/agent_skills?uuid=` |
-| Enable / edit | `POST /api/agent_skills_enable` |
+| Add | `POST /api/agent_skills_add` |
+| Enable / edit params | `POST /api/agent_skills_enable` |
+| Edit custom | `POST /api/agent_skills_update` |
 | Disable | `POST /api/agent_skills_disable` |
+| Delete custom | `POST /api/agent_skills_delete` |
+
+```json
+{
+  "uuid": "my-site-a1b2c3",
+  "name": "Brand voice",
+  "content": "Prefer short sentences.",
+  "description": "optional",
+  "enable": true
+}
+```
 
 ```json
 { "uuid": "my-site-a1b2c3", "skill_id": "website-editing", "parameters": { "theme": "bold" } }
+```
+
+```json
+{ "uuid": "my-site-a1b2c3", "skill_id": "brand-voice", "content": "Updated guidance" }
 ```
 
 ```json

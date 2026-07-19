@@ -947,6 +947,22 @@ class AgentSkillEnableRequest(BaseModel):
     parameters: dict[str, str] = Field(default_factory=dict)
 
 
+class AgentSkillAddRequest(BaseModel):
+    name: str
+    content: str
+    description: str = ""
+    parameters: dict[str, str] = Field(default_factory=dict)
+    enable: bool = True
+    skill_id: str | None = None
+
+
+class AgentSkillUpdateRequest(BaseModel):
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    parameters: dict[str, str] | None = None
+
+
 @app.get("/api/projects/{project_id}/agent/service")
 async def api_agent_service_capabilities(project_id: str):
     from syte.agent_service import list_service_capabilities
@@ -1242,6 +1258,48 @@ async def api_agent_skills_list(project_id: str):
     return {"ok": True, "project_id": project_id, "skills": await get_project_skills(project_id)}
 
 
+@app.post("/api/projects/{project_id}/agent/skills")
+async def api_agent_skill_add(project_id: str, body: AgentSkillAddRequest):
+    from syte.agent_skills import add_custom_skill
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await add_custom_skill(
+        project_id,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+        enable=body.enable,
+        skill_id=body.skill_id,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "Failed to add skill")
+    return result
+
+
+@app.put("/api/projects/{project_id}/agent/skills/{skill_id}")
+async def api_agent_skill_update(project_id: str, skill_id: str, body: AgentSkillUpdateRequest):
+    from syte.agent_skills import update_custom_skill
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await update_custom_skill(
+        project_id,
+        skill_id,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+    )
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "not_found" else 400
+        raise HTTPException(status, result.get("message") or "Failed")
+    return result
+
+
 @app.post("/api/projects/{project_id}/agent/skills/{skill_id}/enable")
 async def api_agent_skill_enable(project_id: str, skill_id: str, body: AgentSkillEnableRequest):
     from syte.agent_skills import enable_skill
@@ -1256,13 +1314,16 @@ async def api_agent_skill_enable(project_id: str, skill_id: str, body: AgentSkil
 
 
 @app.delete("/api/projects/{project_id}/agent/skills/{skill_id}")
-async def api_agent_skill_disable(project_id: str, skill_id: str):
-    from syte.agent_skills import disable_skill
+async def api_agent_skill_disable(project_id: str, skill_id: str, purge: bool = False):
+    from syte.agent_skills import delete_custom_skill, disable_skill
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    result = await disable_skill(project_id, skill_id)
+    if purge:
+        result = await delete_custom_skill(project_id, skill_id)
+    else:
+        result = await disable_skill(project_id, skill_id)
     if not result.get("ok"):
         raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
     return result
