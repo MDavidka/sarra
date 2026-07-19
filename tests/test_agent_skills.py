@@ -103,6 +103,42 @@ async def test_project_skills_can_be_enabled_and_disabled(tmp_data_dir: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_api_router_skills_enable_and_disable(tmp_data_dir: Path) -> None:
+    from syte import api_router
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "skill-api-proj",
+        "name": "Skill API",
+        "port": 3014,
+        "start_command": "",
+    })
+
+    listed = await api_router.api_agent_skills_list(uuid="skill-api-proj", _token={})
+    assert listed["ok"] is True
+    assert any(skill["id"] == "cli-tools" for skill in listed["skills"])
+
+    enabled = await api_router.api_agent_skills_enable(
+        api_router.AgentSkillEnableBody(
+            uuid="skill-api-proj",
+            skill_id="cli-tools",
+            parameters={"mode": "strict"},
+        ),
+        _token={},
+    )
+    assert enabled["ok"] is True
+    assert enabled["skill"]["active"] is True
+    assert enabled["skill"]["parameters"] == {"mode": "strict"}
+
+    disabled = await api_router.api_agent_skills_disable(
+        api_router.AgentSkillDisableBody(uuid="skill-api-proj", skill_id="cli-tools"),
+        _token={},
+    )
+    assert disabled == {"ok": True, "skill_id": "cli-tools", "active": False}
+
+
+@pytest.mark.asyncio
 async def test_preview_access_status_and_logs(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import syte.preview_manager as pm
 

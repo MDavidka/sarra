@@ -154,6 +154,33 @@ class AgentMcpRegisterBody(BaseModel):
     transport: str = "stdio"
 
 
+class AgentMcpUpdateBody(BaseModel):
+    uuid: str
+    addon: str
+    name: str | None = None
+    command: str | None = None
+    description: str | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    transport: str | None = None
+
+
+class AgentMcpDisconnectBody(BaseModel):
+    uuid: str
+    addon: str
+
+
+class AgentSkillEnableBody(BaseModel):
+    uuid: str
+    skill_id: str
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentSkillDisableBody(BaseModel):
+    uuid: str
+    skill_id: str
+
+
 def _http_error(status: int, error: str, message: str):
     raise HTTPException(status, detail={"error": error, "message": message})
 
@@ -617,6 +644,108 @@ async def api_agent_mcp_call(
     if not project:
         _http_error(404, "not_found", "Project not found")
     return await call_mcp_addon(body.uuid, body.addon, body.tool, body.arguments)
+
+
+@router.post("/agent_mcp_update")
+async def api_agent_mcp_update(
+    body: AgentMcpUpdateBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import update_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await update_mcp_addon(
+        body.uuid,
+        body.addon,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+        transport=body.transport,
+    )
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "mcp_update_failed",
+            result.get("message") or "Failed to update MCP addon",
+        )
+    return result
+
+
+@router.post("/agent_mcp_disconnect")
+async def api_agent_mcp_disconnect(
+    body: AgentMcpDisconnectBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import disconnect_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await disconnect_mcp_addon(body.uuid, body.addon)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "mcp_disconnect_failed",
+            result.get("message") or "Failed to disconnect MCP addon",
+        )
+    return result
+
+
+@router.get("/agent_skills")
+async def api_agent_skills_list(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import get_project_skills
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "skills": await get_project_skills(uuid)}
+
+
+@router.post("/agent_skills_enable")
+async def api_agent_skills_enable(
+    body: AgentSkillEnableBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import enable_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await enable_skill(body.uuid, body.skill_id, body.parameters)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_enable_failed",
+            result.get("message") or "Failed to enable skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_disable")
+async def api_agent_skills_disable(
+    body: AgentSkillDisableBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import disable_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await disable_skill(body.uuid, body.skill_id)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_disable_failed",
+            result.get("message") or "Failed to disable skill",
+        )
+    return result
 
 
 @router.get("/agent_turso_sync")

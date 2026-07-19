@@ -116,6 +116,52 @@ async def test_mcp_builtin_connect_and_call(tmp_data_dir: Path, monkeypatch: pyt
 
 
 @pytest.mark.asyncio
+async def test_mcp_register_update_and_disconnect(tmp_data_dir: Path) -> None:
+    from syte.agent_artifacts import (
+        connect_mcp_addon,
+        disconnect_mcp_addon,
+        list_mcp_addons,
+        register_mcp_addon,
+        update_mcp_addon,
+    )
+
+    project = await _project("mcp-edit-proj")
+    registered = await register_mcp_addon(
+        project["id"],
+        name="playwright",
+        command="npx",
+        args=["playwright-mcp"],
+        description="initial",
+    )
+    assert registered["name"] == "playwright"
+    assert registered["status"] == "available"
+
+    updated = await update_mcp_addon(
+        project["id"],
+        registered["id"],
+        args=["-y", "@playwright/mcp@latest"],
+        description="updated",
+    )
+    assert updated["ok"] is True
+    assert updated["args"] == ["-y", "@playwright/mcp@latest"]
+    assert updated["description"] == "updated"
+
+    builtin_edit = await update_mcp_addon(project["id"], "syte", command="echo")
+    assert builtin_edit["ok"] is False
+    assert builtin_edit["error"] == "builtin_readonly"
+
+    connected = await connect_mcp_addon(project["id"], registered["id"])
+    assert connected["ok"] is True
+    disconnected = await disconnect_mcp_addon(project["id"], registered["id"])
+    assert disconnected["ok"] is True
+    assert disconnected["status"] == "available"
+    listed = await list_mcp_addons(project["id"])
+    custom = next(a for a in listed if a["id"] == registered["id"])
+    assert custom["status"] == "available"
+    assert custom["description"] == "updated"
+
+
+@pytest.mark.asyncio
 async def test_mark_session_stopped(tmp_data_dir: Path) -> None:
     from syte.agent_artifacts import list_session_stops, mark_session_stopped
 

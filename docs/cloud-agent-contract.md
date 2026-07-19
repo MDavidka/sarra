@@ -78,6 +78,29 @@ Tailwind tokens).
 close the Turso session with status `stopped` (stop) or `cancelled` (interrupt/cancel). List
 stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
 
+### MCP connections and skills
+
+MCP providers and skills are managed per project from the agent chat resource panel
+(**add / enable / disable / edit**) and the same operations are available directly via
+API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
+[`docs/api-agent.md`](api-agent.md).
+
+**MCP**
+
+- Built-in `syte` addon tools: `syte_service` → project service actions,
+  `syte_access` → preview access actions.
+- Register custom stdio providers, connect/disconnect them, call tools, and edit
+  non-builtin registrations.
+- Agent tools: `list_mcp_addons` / `connect_mcp` / `call_mcp`.
+
+**Skills**
+
+- Built-in catalog: `website-editing`, `workspace-search`, `preview-access`,
+  `service-management`, `nextjs-app-router`, `cli-tools`.
+- Active skills are injected under `## Active Skills` in the system instruction.
+- Enable stores optional string `parameters` (re-enable upserts / edits them);
+  disable removes the project activation row.
+
 ### Artifact APIs
 
 | Resource | List | Notes |
@@ -85,12 +108,13 @@ stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
 | Screenshots | `GET /api/agent_screenshots?uuid=` | PNG at `/api/projects/{uuid}/agent/screenshots/{id}?variant=thumb\|full` |
 | Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
 | Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
-| MCP addons | `GET /api/agent_mcp?uuid=` | `POST /api/agent_mcp_connect` / `agent_mcp_call` |
+| Skills | `GET /api/agent_skills?uuid=` | Enable: `POST /api/agent_skills_enable`; disable: `POST /api/agent_skills_disable` |
+| MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` |
 | Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 
 The system instruction is generated for Syte and includes project access rules,
-workspace location, design contract (for websites), verification requirements, and
-credential handling.
+enabled skills, workspace location, design contract (for websites), verification
+requirements, and credential handling.
 
 ## Activity API
 
