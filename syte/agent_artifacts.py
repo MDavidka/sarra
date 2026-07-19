@@ -106,9 +106,19 @@ CREATE TABLE IF NOT EXISTS agent_session_stops (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_session_stops_project
 ON agent_session_stops(project_id, stopped_at);
+
+CREATE TABLE IF NOT EXISTS agent_project_skills (
+    project_id TEXT NOT NULL,
+    skill_id TEXT NOT NULL,
+    parameters TEXT NOT NULL DEFAULT '{}',
+    enabled_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, skill_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_project_skills_project
+ON agent_project_skills(project_id, enabled_at);
 """
 
-_SCHEMA_EPOCH = 1
+_SCHEMA_EPOCH = 2
 _ensured_paths: dict[str, int] = {}
 
 # In-process waiters for interactive questions (question_id -> Future[answer]).

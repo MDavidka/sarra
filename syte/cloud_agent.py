@@ -292,7 +292,13 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
 
 
 async def _build_syte_instruction(project_id: str, *, force_refresh: bool = False) -> str:
-    from syte.agent_skills import build_agent_rules, read_access_config, write_agent_skills
+    from syte.agent_skills import (
+        SKILL_REGISTRY,
+        build_agent_rules,
+        get_project_skills,
+        read_access_config,
+        write_agent_skills,
+    )
     from syte.design_contract import (
         DESIGN_CONTRACT_MARKDOWN,
         DESIGN_CONTRACT_VERSION,
@@ -304,8 +310,16 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
     access = await read_access_config(project_id, root)
     rules = [item for item in build_agent_rules(project_id, access) if item.get("rule")]
     rule_lines = "\n".join(f"- {item['name']}: {item['rule']}" for item in rules)
+    project_skills = await get_project_skills(project_id)
+    active_skill_blocks = [
+        SKILL_REGISTRY[skill["id"]]["content"].strip()
+        for skill in project_skills
+        if skill.get("active") and skill.get("id") in SKILL_REGISTRY
+    ]
+    active_skills = "\n\n".join(active_skill_blocks)
+    active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
     rules_hash = hashlib.sha256(
-        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{workspace_path(project_id)}".encode()
+        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n{workspace_path(project_id)}".encode()
     ).hexdigest()[:16]
     cache_key = (project_id, AGENT_INSTRUCTION_VERSION, rules_hash)
     if not force_refresh and cache_key in _instruction_cache:
@@ -348,6 +362,7 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
         "shadcn/ui component catalog (import only these — never invent names):\n"
         f"{shadcn_catalog_json()}\n\n"
         f"Syte workspace rules:\n{rule_lines}\n\n"
+        f"{active_skills_block}\n\n"
         f"Project workspace root: {workspace_path(project_id)}\n"
         f"Application source: {workspace_path(project_id) / 'app'}\n"
         f"Agent tools and durable data: {root}"

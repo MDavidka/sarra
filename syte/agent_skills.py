@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import os
 import stat
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import aiosqlite
 
 from syte.config import settings
 
@@ -129,6 +132,53 @@ Do not bypass these helpers with raw systemctl, docker, or undocumented curl sho
 """,
 }
 
+# The catalog is deliberately derived from the markdown that is written into
+# each agent workspace.  This keeps CLI access and prompt/API access in sync.
+SKILL_REGISTRY: dict[str, dict[str, Any]] = {
+    "website-editing": {
+        "id": "website-editing",
+        "name": "Website editing",
+        "description": "Focused, preview-verified changes for live websites.",
+        "content": SKILL_FILES["website-editing.md"],
+        "priority": 10,
+    },
+    "workspace-search": {
+        "id": "workspace-search",
+        "name": "Workspace search",
+        "description": "Search before editing and use the workspace tools safely.",
+        "content": SKILL_FILES["workspace-search.md"],
+        "priority": 20,
+    },
+    "preview-access": {
+        "id": "preview-access",
+        "name": "Preview access",
+        "description": "Use the Syte preview helper to inspect pages and logs.",
+        "content": SKILL_FILES["preview-access.md"],
+        "priority": 30,
+    },
+    "service-management": {
+        "id": "service-management",
+        "name": "Service management",
+        "description": "Manage preview and verification commands through Syte helpers.",
+        "content": SKILL_FILES["service-management.md"],
+        "priority": 40,
+    },
+    "nextjs-app-router": {
+        "id": "nextjs-app-router",
+        "name": "Next.js App Router",
+        "description": "Avoid common App Router paths and configuration mistakes.",
+        "content": SKILL_FILES["nextjs-app-router.md"],
+        "priority": 50,
+    },
+    "cli-tools": {
+        "id": "cli-tools",
+        "name": "Syte CLI tools",
+        "description": "Use the supported Syte service and access helpers.",
+        "content": SKILL_FILES["cli-tools.md"],
+        "priority": 60,
+    },
+}
+
 ACCESS_SCRIPT = """#!/usr/bin/env bash
 set -euo pipefail
 PROJECT_ID="${SYTE_PROJECT_ID:?SYTE_PROJECT_ID not set}"
@@ -208,6 +258,81 @@ def default_access_config() -> dict[str, Any]:
             "screenshot",
         ],
     }
+
+
+async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
+    """Return the catalog with the project's enabled state and parameters."""
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT skill_id, parameters, enabled_at FROM agent_project_skills "
+            "WHERE project_id = ?",
+            (project_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    active: dict[str, tuple[dict[str, str], str]] = {}
+    for skill_id, raw_parameters, enabled_at in rows:
+        try:
+            parameters = json.loads(raw_parameters or "{}")
+        except json.JSONDecodeError:
+            parameters = {}
+        active[skill_id] = (parameters if isinstance(parameters, dict) else {}, enabled_at)
+
+    skills: list[dict[str, Any]] = []
+    for skill in sorted(SKILL_REGISTRY.values(), key=lambda item: item["priority"]):
+        parameters, enabled_at = active.get(skill["id"], ({}, None))
+        skills.append({
+            "id": skill["id"],
+            "name": skill["name"],
+            "description": skill["description"],
+            "priority": skill["priority"],
+            "parameters": parameters,
+            "active": skill["id"] in active,
+            "enabled_at": enabled_at,
+        })
+    return skills
+
+
+async def enable_skill(
+    project_id: str,
+    skill_id: str,
+    parameters: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    skill = SKILL_REGISTRY.get(skill_id)
+    if not skill:
+        return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
+    await ensure_artifact_tables()
+    now = datetime.now(timezone.utc).isoformat()
+    clean_parameters = {str(key): str(value) for key, value in (parameters or {}).items()}
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO agent_project_skills (project_id, skill_id, parameters, enabled_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(project_id, skill_id) DO UPDATE SET "
+            "parameters = excluded.parameters, enabled_at = excluded.enabled_at",
+            (project_id, skill_id, json.dumps(clean_parameters, ensure_ascii=False), now),
+        )
+        await db.commit()
+    return {"ok": True, "skill": next(s for s in await get_project_skills(project_id) if s["id"] == skill_id)}
+
+
+async def disable_skill(project_id: str, skill_id: str) -> dict[str, Any]:
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM agent_project_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.commit()
+    if not cursor.rowcount:
+        return {"ok": False, "error": "not_found", "message": f"Skill is not active: {skill_id}"}
+    return {"ok": True, "skill_id": skill_id, "active": False}
 
 
 async def read_access_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
