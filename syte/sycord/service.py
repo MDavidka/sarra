@@ -282,6 +282,7 @@ async def agent_change(
     message: str,
     *,
     model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     wait: bool = False,
 ) -> dict:
     from syte.cloud_agent import communicate_with_agent
@@ -293,6 +294,7 @@ async def agent_change(
         project_id,
         message,
         model_profile=model_profile,
+        thinking_level=thinking_level,
         source="sycord",
         background=not wait,
     )

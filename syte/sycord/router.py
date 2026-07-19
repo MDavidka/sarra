@@ -40,6 +40,9 @@ class AgentChangeBody(BaseModel):
     message: str = Field(..., description="User change request for the workspace agent")
     model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
     model_name: str | None = Field(None, description="Alias for model_profile")
+    thinking_level: int | None = Field(
+        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth"
+    )
     wait: bool = Field(False, description="If true, block until agent completes (legacy sync mode)")
 
 
@@ -238,6 +241,7 @@ async def api_agent_change(body: AgentChangeBody, _token: dict = Depends(verify_
         body.uuid,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         wait=body.wait,
     )
     if not result.get("ok"):

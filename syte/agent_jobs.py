@@ -38,6 +38,7 @@ async def submit_agent_request(
     message: str,
     *,
     model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api",
     auto_start: bool = True,
 ) -> dict[str, Any]:
@@ -69,6 +70,7 @@ async def submit_agent_request(
         payload={
             "message": message,
             "model_profile": model_profile,
+            "thinking_level": thinking_level,
             "request_id": request_id,
             "session": session_number,
             "message_index": 1,
@@ -97,6 +99,7 @@ async def submit_agent_request(
             request_id,
             message,
             model_profile=model_profile,
+            thinking_level=thinking_level,
             source=source,
             auto_start=auto_start,
             session_number=session_number,
@@ -112,6 +115,7 @@ async def submit_agent_request(
         "turso_session_id": turso_session_id,
         "status": "accepted",
         "project_id": project_id,
+        "thinking_level": thinking_level,
         "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
 
@@ -124,6 +128,7 @@ async def _run_job(
     model_profile: str | None,
     source: str,
     auto_start: bool,
+    thinking_level: int | str | None = None,
     session_number: int | None = None,
     message_index_start: int = 0,
     turso_session_id: str | None = None,
@@ -137,6 +142,7 @@ async def _run_job(
                 project_id,
                 message,
                 model_profile=model_profile,
+                thinking_level=thinking_level,
                 source=source,
                 auto_start=auto_start,
                 emit_request_started=False,

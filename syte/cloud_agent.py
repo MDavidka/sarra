@@ -9,10 +9,12 @@ port allocation, or WebSocket transport is required.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,7 @@ from syte.cloud_agent_store import (
 from syte.config import settings
 from syte.database import get_project, get_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.thinking_levels import deepseek_thinking_payload, resolve_thinking_config
 from syte.turso_store import close_session as close_turso_session
 from syte.turso_store import open_session as open_turso_session
 from syte.turso_store import record_message as record_turso_message
@@ -44,7 +47,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 6
+AGENT_INSTRUCTION_VERSION = 7
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -55,6 +58,41 @@ MAX_VISION_IMAGE_BYTES = 700_000
 logger = logging.getLogger(__name__)
 _lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _active_turns: dict[str, asyncio.Task[Any]] = {}
+_provider_client: httpx.AsyncClient | None = None
+_instruction_cache: dict[tuple[str, int, str], str] = {}
+
+TokenEmitter = Callable[[str], Awaitable[None]]
+
+
+def _get_provider_client() -> httpx.AsyncClient:
+    """Shared HTTP/2 client so TLS + connections are reused across provider calls."""
+    global _provider_client
+    if _provider_client is None or _provider_client.is_closed:
+        timeout = httpx.Timeout(PROVIDER_TIMEOUT_S, connect=15.0)
+        limits = httpx.Limits(max_connections=32, max_keepalive_connections=16)
+        try:
+            _provider_client = httpx.AsyncClient(timeout=timeout, limits=limits, http2=True)
+        except Exception:
+            # http2 extras missing — fall back to HTTP/1.1 keepalives.
+            _provider_client = httpx.AsyncClient(timeout=timeout, limits=limits, http2=False)
+    return _provider_client
+
+
+async def close_provider_client() -> None:
+    """Close the shared provider client (tests / shutdown)."""
+    global _provider_client
+    if _provider_client is not None and not _provider_client.is_closed:
+        await _provider_client.aclose()
+    _provider_client = None
+
+
+def invalidate_instruction_cache(project_id: str | None = None) -> None:
+    """Drop cached system instructions (one project or all)."""
+    if project_id is None:
+        _instruction_cache.clear()
+        return
+    for key in [k for k in _instruction_cache if k[0] == project_id]:
+        del _instruction_cache[key]
 
 
 def _now() -> str:
@@ -253,19 +291,28 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(path.read_text(errors="replace").splitlines()[-max(1, lines):])
 
 
-async def _build_syte_instruction(project_id: str) -> str:
+async def _build_syte_instruction(project_id: str, *, force_refresh: bool = False) -> str:
     from syte.agent_skills import build_agent_rules, read_access_config, write_agent_skills
-    from syte.design_contract import DESIGN_CONTRACT_MARKDOWN
+    from syte.design_contract import (
+        DESIGN_CONTRACT_MARKDOWN,
+        DESIGN_CONTRACT_VERSION,
+        shadcn_catalog_json,
+        themes_prompt_block,
+    )
 
     root = agent_root(project_id)
     access = await read_access_config(project_id, root)
+    rules = [item for item in build_agent_rules(project_id, access) if item.get("rule")]
+    rule_lines = "\n".join(f"- {item['name']}: {item['rule']}" for item in rules)
+    rules_hash = hashlib.sha256(
+        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{workspace_path(project_id)}".encode()
+    ).hexdigest()[:16]
+    cache_key = (project_id, AGENT_INSTRUCTION_VERSION, rules_hash)
+    if not force_refresh and cache_key in _instruction_cache:
+        return _instruction_cache[cache_key]
+
     write_agent_skills(project_id, root)
-    rule_lines = "\n".join(
-        f"- {item['name']}: {item['rule']}"
-        for item in build_agent_rules(project_id, access)
-        if item.get("rule")
-    )
-    return (
+    instruction = (
         "You are Syte's cloud coding agent running persistently on the project's VM. "
         "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
         "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
@@ -275,7 +322,7 @@ async def _build_syte_instruction(project_id: str) -> str:
         "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website. "
         "Match the stack to the request and existing files. Only when the work is a website / web UI "
         "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
-        "shadcn/ui components under components/ui/*, Lucide icons, Inter via next/font, Tailwind tokens, "
+        "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
         "and a complete styled home page. Never ship a bare unstyled web scaffold.\n\n"
         "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
         "(desktop + phone screenshots of a route — inspect images with vision); ask_question "
@@ -297,11 +344,19 @@ async def _build_syte_instruction(project_id: str) -> str:
         "preview_start before judging the result.\n\n"
         "Website / web UI design contract (mandatory when building websites):\n"
         f"{DESIGN_CONTRACT_MARKDOWN}\n\n"
+        f"{themes_prompt_block()}\n\n"
+        "shadcn/ui component catalog (import only these — never invent names):\n"
+        f"{shadcn_catalog_json()}\n\n"
         f"Syte workspace rules:\n{rule_lines}\n\n"
         f"Project workspace root: {workspace_path(project_id)}\n"
         f"Application source: {workspace_path(project_id) / 'app'}\n"
         f"Agent tools and durable data: {root}"
     )
+    # Drop older hashes for this project so the cache stays bounded.
+    invalidate_instruction_cache(project_id)
+    _instruction_cache[cache_key] = instruction
+    return instruction
+
 
 
 async def write_agent_config(project: dict[str, Any]) -> Path:
@@ -322,7 +377,7 @@ async def write_agent_config(project: dict[str, Any]) -> Path:
         "provider": model["provider"],
         "workspace_path": str(workspace_path(project["id"]) / "app"),
         "transport": "direct-provider",
-        "streaming": False,
+        "streaming": True,
     }
     path = agent_config_path(project["id"])
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -995,36 +1050,141 @@ async def _tool_request_env(
     }
 
 
+def _merge_stream_tool_calls(
+    acc: dict[int, dict[str, Any]], deltas: list[dict[str, Any]] | None
+) -> None:
+    """Accumulate OpenAI-style streamed tool_call deltas by index."""
+    if not deltas:
+        return
+    for delta in deltas:
+        try:
+            index = int(delta.get("index", 0))
+        except (TypeError, ValueError):
+            index = 0
+        slot = acc.setdefault(
+            index,
+            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+        )
+        if delta.get("id"):
+            slot["id"] = str(delta["id"])
+        if delta.get("type"):
+            slot["type"] = str(delta["type"])
+        fn = delta.get("function") or {}
+        if fn.get("name"):
+            slot["function"]["name"] = str(fn["name"])
+        if fn.get("arguments"):
+            slot["function"]["arguments"] = str(slot["function"].get("arguments") or "") + str(
+                fn["arguments"]
+            )
+
+
+async def _parse_sse_completion(
+    response: httpx.Response,
+    *,
+    on_token: TokenEmitter | None = None,
+) -> dict[str, Any]:
+    """Parse an OpenAI-compatible SSE chat.completion.chunk stream into one message."""
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_acc: dict[int, dict[str, Any]] = {}
+    finish_reason: str | None = None
+
+    async for line in response.aiter_lines():
+        if not line:
+            continue
+        if line.startswith(":"):
+            continue
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        delta = choice.get("delta") or {}
+        if not isinstance(delta, dict):
+            delta = {}
+        piece = delta.get("content")
+        if piece:
+            text = str(piece)
+            content_parts.append(text)
+            if on_token:
+                await on_token(text)
+        reason_piece = delta.get("reasoning_content") or delta.get("reasoning")
+        if reason_piece:
+            reasoning_parts.append(str(reason_piece))
+        _merge_stream_tool_calls(tool_acc, delta.get("tool_calls"))
+        if choice.get("finish_reason"):
+            finish_reason = str(choice["finish_reason"])
+
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts),
+    }
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
+    if tool_acc:
+        message["tool_calls"] = [tool_acc[i] for i in sorted(tool_acc)]
+    if finish_reason:
+        message["_finish_reason"] = finish_reason
+    return message
+
+
 async def _provider_completion(
     model: dict[str, str],
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
+    temperature: float = 0.2,
+    thinking_config: dict[str, Any] | None = None,
+    stream: bool = False,
+    on_token: TokenEmitter | None = None,
 ) -> dict[str, Any]:
     from syte.cloud_agent_store import sanitize_provider_messages
 
-    payload = {
+    use_tools = TOOLS if tools is None else tools
+    payload: dict[str, Any] = {
         "model": model["model"],
         "messages": sanitize_provider_messages(list(messages)),
-        "tools": tools or TOOLS,
-        "tool_choice": "auto",
-        "stream": False,
-        "temperature": 0.1,
+        "temperature": float(temperature),
+        "stream": bool(stream and on_token is not None),
     }
+    if use_tools:
+        payload["tools"] = use_tools
+        payload["tool_choice"] = "auto"
     # DeepSeek thinking mode requires reasoning_content round-trips after tool
-    # calls. Explicitly disable thinking for the non-reasoning syra-base model
-    # so multi-turn tool loops stay OpenAI-compatible without that field.
+    # calls. Enable only when the thinking slider (or explicit config) asks for it.
     if "deepseek.com" in (model.get("api_base") or ""):
-        payload["thinking"] = {"type": "disabled"}
+        cfg = thinking_config or {"thinking_enabled": False}
+        payload["thinking"] = deepseek_thinking_payload(cfg)
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
+    url = model["api_base"].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
+    client = _get_provider_client()
     for attempt in range(3):
         try:
-            timeout = httpx.Timeout(PROVIDER_TIMEOUT_S, connect=15.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    model["api_base"].rstrip("/") + "/chat/completions", headers=headers, json=payload
-                )
+            if payload["stream"]:
+                async with client.stream("POST", url, headers=headers, json=payload) as response:
+                    if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
+                        await response.aread()
+                        await asyncio.sleep(1.5 * (2 ** attempt))
+                        continue
+                    if response.status_code >= 400:
+                        detail = (await response.aread()).decode(errors="replace").strip()[:800]
+                        raise RuntimeError(
+                            f"Client error '{response.status_code} {response.reason_phrase}' "
+                            f"for url '{response.request.url}'"
+                            + (f": {detail}" if detail else "")
+                        )
+                    return await _parse_sse_completion(response, on_token=on_token)
+
+            response = await client.post(url, headers=headers, json=payload)
             if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
                 await asyncio.sleep(1.5 * (2 ** attempt))
                 continue
@@ -1047,6 +1207,11 @@ async def _provider_completion(
                 continue
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
+            # Streaming failures fall back once to a non-stream request.
+            if payload.get("stream") and attempt < 2:
+                payload["stream"] = False
+                await asyncio.sleep(0.2)
+                continue
             break
     raise RuntimeError(error)
 
@@ -1102,23 +1267,32 @@ async def _run_subagent(
 
 async def communicate_with_agent(
     project_id: str, message: str, *, model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, background: bool = False,
 ) -> dict[str, Any]:
     if background:
         from syte.agent_jobs import submit_agent_request
-        return await submit_agent_request(project_id, message, model_profile=model_profile,
-                                          source=source, auto_start=auto_start)
+        return await submit_agent_request(
+            project_id,
+            message,
+            model_profile=model_profile,
+            thinking_level=thinking_level,
+            source=source,
+            auto_start=auto_start,
+        )
     from syte.agent_jobs import new_request_id, project_agent_lock
     request_id = new_request_id()
     async with project_agent_lock(project_id):
         return await _communicate_with_agent_impl(
-            project_id, message, model_profile=model_profile, source=source,
+            project_id, message, model_profile=model_profile,
+            thinking_level=thinking_level, source=source,
             auto_start=auto_start, request_id=request_id,
         )
 
 
 async def _communicate_with_agent_impl(
     project_id: str, message: str, *, model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, emit_request_started: bool = True,
     request_id: str | None = None,
     session_number: int | None = None,
@@ -1129,12 +1303,27 @@ async def _communicate_with_agent_impl(
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found", "request_id": request_id}
-    if model_profile:
+    # Explicit model_profile still persists; thinking_level never does.
+    if model_profile and thinking_level is None:
         try:
             await update_agent_settings(project_id, model_profile=model_profile, include_status=False)
         except ValueError as exc:
             return {"ok": False, "error": "invalid_model_profile", "message": str(exc), "request_id": request_id}
     project = await get_project(project_id) or project
+    try:
+        gen = resolve_thinking_config(
+            thinking_level,
+            fallback_profile=model_profile or project.get("agent_model_profile"),
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": "invalid_thinking_level", "message": str(exc), "request_id": request_id}
+
+    turn_profile = gen["model_profile"]
+    # When the slider overrides the profile, resolve keys for that profile without
+    # writing agent_model_profile on the project row.
+    if gen.get("override_profile") and turn_profile != project.get("agent_model_profile"):
+        project = {**project, "agent_model_profile": turn_profile}
+
     if auto_start and project.get("agent_status") != "running":
         ok, start_message, _ = await start_agent(project_id)
         if not ok:
@@ -1186,7 +1375,15 @@ async def _communicate_with_agent_impl(
             role="user",
             title="Request",
             detail=message[:4000],
-            payload=_mark_payload(status="d", kind="user", base={"session_started": True}),
+            payload=_mark_payload(
+                status="d",
+                kind="user",
+                base={
+                    "session_started": True,
+                    "thinking_level": gen.get("thinking_level"),
+                    "temperature": gen.get("temperature"),
+                },
+            ),
             source=source,
             turso_session_id=turso_session_id,
         )
@@ -1199,11 +1396,25 @@ async def _communicate_with_agent_impl(
         "processing",
         title="Processing",
         detail="Cloud agent accepted the durable request",
-        payload=_mark_payload(status="g", kind="status"),
+        payload=_mark_payload(
+            status="g",
+            kind="status",
+            base={
+                "thinking_level": gen.get("thinking_level"),
+                "thinking_label": gen.get("label"),
+                "max_tool_steps": gen.get("max_tool_steps"),
+            },
+        ),
         source=source,
         turso_session_id=turso_session_id,
     )
     instruction = await _build_syte_instruction(project_id)
+    if gen.get("mandatory_plan"):
+        instruction = (
+            instruction
+            + "\n\nThinking mode: Deep. Before the first tool call, call update_plan with a "
+            "concrete ordered plan for this request."
+        )
     # Only the latest session — prior sessions stay in the activity stream for
     # clients, but are not re-sent to the provider on every turn.
     messages = [{"role": "system", "content": instruction}, *(await conversation_messages(
@@ -1238,20 +1449,56 @@ async def _communicate_with_agent_impl(
             turso_session_id=turso_session_id,
         )
 
+    async def _emit_token(delta: str) -> None:
+        if not delta:
+            return
+        await record_agent_event(
+            project_id,
+            "token_delta",
+            role="assistant",
+            title="Stream",
+            detail=delta[:2000],
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "delta": delta,
+                "mark_kind": "stream",
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+
     tool_context: dict[str, Any] = {
         "request_id": request_id,
         "session_number": session_number,
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
+        "thinking_level": gen.get("thinking_level"),
     }
+
+    max_tool_steps = int(gen.get("max_tool_steps") or 48)
+    temperature = float(gen.get("temperature") or 0.2)
+    want_stream = bool(gen.get("stream"))
 
     try:
         for step in itertools.count():
-            assistant = await _provider_completion(model, messages)
+            allow_tools = step < max_tool_steps
+            assistant = await _provider_completion(
+                model,
+                messages,
+                tools=TOOLS if allow_tools else [],
+                temperature=temperature,
+                thinking_config=gen,
+                stream=want_stream,
+                on_token=_emit_token if want_stream else None,
+            )
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = tool_calls if isinstance(tool_calls, list) else []
+            # Cap: ignore tool calls past the thinking-level budget.
+            if not allow_tools:
+                stored_calls = []
             await _persist_message(
                 project_id,
                 request_id,
@@ -1319,6 +1566,7 @@ async def _communicate_with_agent_impl(
                         "session": session_number,
                         "turso_session_id": turso_session_id,
                         "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
+                        "thinking_level": gen.get("thinking_level"),
                         "model": model["model"], "provider": model["provider"], "message": reply,
                         "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
             for call in stored_calls:

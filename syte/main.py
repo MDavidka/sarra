@@ -886,6 +886,7 @@ async def api_get_agent_session(session_id: str, since_id: int = 0):
 class AgentChatRequest(BaseModel):
     message: str
     model_profile: str | None = None
+    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
 
 
 class AgentTestRequest(BaseModel):
@@ -1224,6 +1225,7 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool
             project_id,
             body.message.strip(),
             model_profile=body.model_profile,
+            thinking_level=body.thinking_level,
             source="gui",
             background=not wait,
         )

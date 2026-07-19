@@ -27,12 +27,14 @@ class InternalAgentChangeRequest(BaseModel):
     message: str = Field(..., description="User change request from sycord.com")
     model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
     model_name: str | None = Field(None, description="Alias used by sycord.com")
+    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
 
 
 class InternalAgentCommunicateRequest(BaseModel):
     message: str
     model_profile: str | None = None
     model_name: str | None = None
+    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
 
 
 class InternalQuestionAnswerRequest(BaseModel):
@@ -389,6 +391,7 @@ async def internal_agent_communicate(
         project_id,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="internal",
     )
     if not result.get("ok"):
@@ -409,6 +412,7 @@ async def internal_agent_change(
         project_id,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="sycord",
         background=True,
     )
