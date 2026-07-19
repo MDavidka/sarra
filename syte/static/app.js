@@ -35,6 +35,7 @@ let debugChatConnectionState = 'disconnected';
 let debugChatTerminalRequestIds = new Set();
 let debugChatIdleStatus = 'Agent ready';
 let debugChatActivityLabel = '';
+let debugChatResourceMode = '';
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -1314,6 +1315,142 @@ function initDebugChatThinkSlider() {
   if (saved) slider.value = saved;
   syncDebugChatThinkLabel();
   slider.addEventListener('input', syncDebugChatThinkLabel);
+}
+
+function setDebugChatResourceButtons(mode) {
+  const mcp = document.getElementById('debug-chat-mcp');
+  const skills = document.getElementById('debug-chat-skills');
+  if (mcp) mcp.setAttribute('aria-expanded', mode === 'mcp' ? 'true' : 'false');
+  if (skills) skills.setAttribute('aria-expanded', mode === 'skills' ? 'true' : 'false');
+}
+
+function closeDebugChatResources() {
+  debugChatResourceMode = '';
+  document.getElementById('debug-chat-resources')?.classList.add('hidden');
+  setDebugChatResourceButtons('');
+}
+
+function renderDebugChatResources(mode, data) {
+  const body = document.getElementById('debug-chat-resources-body');
+  const title = document.getElementById('debug-chat-resources-title');
+  const subtitle = document.getElementById('debug-chat-resources-subtitle');
+  if (!body || !title || !subtitle) return;
+  if (mode === 'mcp') {
+    const addons = data.addons || [];
+    title.textContent = 'MCP connections';
+    subtitle.textContent = 'Give the agent tools for previews, files, and external services.';
+    const connected = addons.filter(addon => addon.status === 'connected').length;
+    const count = document.getElementById('debug-chat-mcp-count');
+    if (count) count.textContent = String(connected);
+    body.innerHTML = addons.length ? addons.map(addon => {
+      const isConnected = addon.status === 'connected';
+      const toolNames = (addon.tools || []).map(tool => tool.name).filter(Boolean).slice(0, 4);
+      return `<div class="debug-chat-resource-card">
+        <div class="debug-chat-resource-main">
+          <div class="debug-chat-resource-name"><i data-lucide="plug"></i>${esc(addon.name)} <span class="debug-chat-resource-status ${isConnected ? 'connected' : ''}">${isConnected ? 'Connected' : 'Available'}</span></div>
+          <div class="debug-chat-resource-description">${esc(addon.description || 'MCP tool provider')}</div>
+          ${toolNames.length ? `<div class="debug-chat-resource-meta">${esc(toolNames.join(' · '))}${(addon.tools || []).length > 4 ? ' · …' : ''}</div>` : ''}
+        </div>
+        <button type="button" class="debug-chat-resource-action" onclick="${isConnected ? `disconnectDebugChatMcp('${esc(addon.id)}')` : `connectDebugChatMcp('${esc(addon.id)}')`}">${isConnected ? 'Disconnect' : 'Connect'}</button>
+      </div>`;
+    }).join('') : '<div class="debug-chat-resource-empty">No MCP providers registered for this project.</div>';
+    body.insertAdjacentHTML('beforeend', `<div class="debug-chat-resource-form">
+      <input id="debug-chat-mcp-name" placeholder="Provider name" aria-label="MCP provider name">
+      <input id="debug-chat-mcp-command" placeholder="Command, e.g. npx" aria-label="MCP command">
+      <button type="button" class="debug-chat-resource-action" onclick="registerDebugChatMcp()">Add</button>
+    </div>`);
+  } else {
+    const skills = data.skills || [];
+    title.textContent = 'Agent skills';
+    subtitle.textContent = 'Enable focused guidance without changing the project files.';
+    const active = skills.filter(skill => skill.active).length;
+    const count = document.getElementById('debug-chat-skills-count');
+    if (count) count.textContent = String(active);
+    body.innerHTML = skills.length ? skills.map(skill => `<div class="debug-chat-resource-card">
+      <div class="debug-chat-resource-main">
+        <div class="debug-chat-resource-name"><i data-lucide="sparkles"></i>${esc(skill.name)} <span class="debug-chat-resource-status ${skill.active ? 'active' : ''}">${skill.active ? 'Active' : 'Off'}</span></div>
+        <div class="debug-chat-resource-description">${esc(skill.description)}</div>
+      </div>
+      <button type="button" class="debug-chat-resource-action" onclick="${skill.active ? `disableDebugChatSkill('${esc(skill.id)}')` : `enableDebugChatSkill('${esc(skill.id)}')`}">${skill.active ? 'Disable' : 'Enable'}</button>
+    </div>`).join('') : '<div class="debug-chat-resource-empty">No skills are available.</div>';
+  }
+  refreshIcons();
+}
+
+async function openDebugChatResources(mode) {
+  if (!activeServiceId) return;
+  if (debugChatResourceMode === mode) {
+    closeDebugChatResources();
+    return;
+  }
+  debugChatResourceMode = mode;
+  const panel = document.getElementById('debug-chat-resources');
+  const body = document.getElementById('debug-chat-resources-body');
+  if (!panel || !body) return;
+  setDebugChatResourceButtons(mode);
+  panel.classList.remove('hidden');
+  body.innerHTML = '<div class="debug-chat-resource-loading">Loading…</div>';
+  try {
+    const data = await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/${mode}`);
+    if (debugChatResourceMode === mode) renderDebugChatResources(mode, data);
+  } catch (error) {
+    body.innerHTML = `<div class="debug-chat-resource-empty">Could not load ${mode}: ${esc(normalizeFetchError(error.message))}</div>`;
+  }
+}
+
+async function refreshDebugChatResources(mode = debugChatResourceMode) {
+  if (!mode || !activeServiceId) return;
+  debugChatResourceMode = '';
+  await openDebugChatResources(mode);
+}
+
+async function connectDebugChatMcp(addonId) {
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/mcp/connect`, {
+      method: 'POST', body: JSON.stringify({ addon: addonId }),
+    });
+    toast('MCP connected.');
+    await refreshDebugChatResources('mcp');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function disconnectDebugChatMcp(addonId) {
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/mcp/${encodeURIComponent(addonId)}`, { method: 'DELETE' });
+    toast('MCP disconnected.');
+    await refreshDebugChatResources('mcp');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function registerDebugChatMcp() {
+  const name = document.getElementById('debug-chat-mcp-name')?.value?.trim();
+  const command = document.getElementById('debug-chat-mcp-command')?.value?.trim();
+  if (!name || !command) { toast('Enter an MCP name and command.'); return; }
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/mcp`, {
+      method: 'POST', body: JSON.stringify({ name, command }),
+    });
+    toast('MCP provider registered.');
+    await refreshDebugChatResources('mcp');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function enableDebugChatSkill(skillId) {
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/skills/${encodeURIComponent(skillId)}/enable`, {
+      method: 'POST', body: JSON.stringify({ parameters: {} }),
+    });
+    toast('Skill enabled for this project.');
+    await refreshDebugChatResources('skills');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
+}
+
+async function disableDebugChatSkill(skillId) {
+  try {
+    await api(`/projects/${encodeURIComponent(activeServiceId)}/agent/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' });
+    toast('Skill disabled for this project.');
+    await refreshDebugChatResources('skills');
+  } catch (error) { toast(normalizeFetchError(error.message)); }
 }
 
 function warmProjectAgent(projectId) {
@@ -3126,6 +3263,10 @@ document.querySelectorAll('.context-option').forEach(btn => {
 });
 
 document.addEventListener('click', () => toggleContextMenu(false));
+
+document.getElementById('debug-chat-mcp')?.addEventListener('click', () => openDebugChatResources('mcp'));
+document.getElementById('debug-chat-skills')?.addEventListener('click', () => openDebugChatResources('skills'));
+document.getElementById('debug-chat-resources-close')?.addEventListener('click', closeDebugChatResources);
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;

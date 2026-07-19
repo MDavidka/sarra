@@ -365,7 +365,15 @@
                   <div class="debug-chat-header">
                     <div>
                       <h2>Agent chat</h2>
-                      <p>Describe what you want changed.</p>
+                      <p>Describe what you want changed. The agent can use the tools you enable.</p>
+                    </div>
+                    <div class="debug-chat-header-actions" aria-label="Agent resources">
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-mcp" aria-controls="debug-chat-resources" aria-expanded="false">
+                        <i data-lucide="plug-zap"></i><span>MCP</span><b id="debug-chat-mcp-count">0</b>
+                      </button>
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-skills" aria-controls="debug-chat-resources" aria-expanded="false">
+                        <i data-lucide="sparkles"></i><span>Skills</span><b id="debug-chat-skills-count">0</b>
+                      </button>
                     </div>
                     <label class="debug-chat-profile-label" for="debug-chat-profile">
                       <span>Model</span>
@@ -380,6 +388,16 @@
                       <input type="range" id="debug-chat-think" class="debug-chat-think" min="1" max="5" step="1" value="3" aria-label="Thinking depth from Instant to Max" />
                       <span class="debug-chat-think-value" id="debug-chat-think-value">Balanced</span>
                     </label>
+                  </div>
+                  <div class="debug-chat-resources hidden" id="debug-chat-resources" aria-live="polite">
+                    <div class="debug-chat-resources-head">
+                      <div>
+                        <strong id="debug-chat-resources-title">Agent resources</strong>
+                        <span id="debug-chat-resources-subtitle">Connect tools and tune the agent's behavior.</span>
+                      </div>
+                      <button type="button" class="debug-chat-resource-close" id="debug-chat-resources-close" aria-label="Close agent resources">×</button>
+                    </div>
+                    <div class="debug-chat-resources-body" id="debug-chat-resources-body"></div>
                   </div>
                   <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
                     <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>

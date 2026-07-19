@@ -934,6 +934,10 @@ class AgentMcpCallRequest(BaseModel):
     arguments: dict = Field(default_factory=dict)
 
 
+class AgentSkillEnableRequest(BaseModel):
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
 @app.get("/api/projects/{project_id}/agent/service")
 async def api_agent_service_capabilities(project_id: str):
     from syte.agent_service import list_service_capabilities
@@ -1181,6 +1185,55 @@ async def api_agent_mcp_call(project_id: str, body: AgentMcpCallRequest):
     if not project:
         raise HTTPException(404, "Project not found")
     return await call_mcp_addon(project_id, body.addon, body.tool, body.arguments)
+
+
+@app.delete("/api/projects/{project_id}/agent/mcp/{addon_id}")
+async def api_agent_mcp_disconnect(project_id: str, addon_id: str):
+    from syte.agent_artifacts import disconnect_mcp_addon
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await disconnect_mcp_addon(project_id, addon_id)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    return result
+
+
+@app.get("/api/projects/{project_id}/agent/skills")
+async def api_agent_skills_list(project_id: str):
+    from syte.agent_skills import get_project_skills
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "project_id": project_id, "skills": await get_project_skills(project_id)}
+
+
+@app.post("/api/projects/{project_id}/agent/skills/{skill_id}/enable")
+async def api_agent_skill_enable(project_id: str, skill_id: str, body: AgentSkillEnableRequest):
+    from syte.agent_skills import enable_skill
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await enable_skill(project_id, skill_id, body.parameters)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    return result
+
+
+@app.delete("/api/projects/{project_id}/agent/skills/{skill_id}")
+async def api_agent_skill_disable(project_id: str, skill_id: str):
+    from syte.agent_skills import disable_skill
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await disable_skill(project_id, skill_id)
+    if not result.get("ok"):
+        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
+    return result
 
 
 @app.get("/api/agent_dashboard")

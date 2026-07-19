@@ -72,6 +72,37 @@ async def test_write_and_read_access_config(tmp_data_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_project_skills_can_be_enabled_and_disabled(tmp_data_dir: Path) -> None:
+    from syte.agent_skills import disable_skill, enable_skill, get_project_skills
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({
+        "id": "skill-state-proj",
+        "name": "Skill state",
+        "port": 3013,
+        "start_command": "",
+    })
+
+    skills = await get_project_skills("skill-state-proj")
+    assert len(skills) >= 3
+    assert not next(skill for skill in skills if skill["id"] == "website-editing")["active"]
+
+    enabled = await enable_skill("skill-state-proj", "website-editing", {"tone": "bold"})
+    assert enabled["ok"] is True
+    assert enabled["skill"]["active"] is True
+    assert enabled["skill"]["parameters"] == {"tone": "bold"}
+
+    from syte.cloud_agent import _build_syte_instruction
+
+    instruction = await _build_syte_instruction("skill-state-proj", force_refresh=True)
+    assert "## Active Skills\n# Website editing" in instruction
+
+    disabled = await disable_skill("skill-state-proj", "website-editing")
+    assert disabled == {"ok": True, "skill_id": "website-editing", "active": False}
+
+
+@pytest.mark.asyncio
 async def test_preview_access_status_and_logs(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import syte.preview_manager as pm
 
