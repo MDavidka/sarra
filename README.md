@@ -105,6 +105,13 @@ chmod +x scripts/*.sh
 | `PUT` | `/api/settings` | Save server settings |
 | `GET` | `/api/projects/{id}/logs` | View logs |
 
+### Agent MCP & skills
+
+Per-project MCP providers and skills can be **added, enabled, disabled, and edited**
+from the agent chat UI or directly via API (session routes under
+`/api/projects/{id}/agent/mcp` and `/agent/skills`, plus token mirrors
+`/api/agent_mcp*` and `/api/agent_skills*`). See [`docs/api-agent.md`](docs/api-agent.md).
+
 ## Configuration
 
 Environment variables (prefix `SYTE_`):

@@ -924,6 +924,15 @@ class AgentMcpRegisterRequest(BaseModel):
     transport: str = "stdio"
 
 
+class AgentMcpUpdateRequest(BaseModel):
+    name: str | None = None
+    command: str | None = None
+    description: str | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    transport: str | None = None
+
+
 class AgentMcpConnectRequest(BaseModel):
     addon: str
 
@@ -1185,6 +1194,29 @@ async def api_agent_mcp_call(project_id: str, body: AgentMcpCallRequest):
     if not project:
         raise HTTPException(404, "Project not found")
     return await call_mcp_addon(project_id, body.addon, body.tool, body.arguments)
+
+
+@app.put("/api/projects/{project_id}/agent/mcp/{addon_id}")
+async def api_agent_mcp_update(project_id: str, addon_id: str, body: AgentMcpUpdateRequest):
+    from syte.agent_artifacts import update_mcp_addon
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await update_mcp_addon(
+        project_id,
+        addon_id,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+        transport=body.transport,
+    )
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "not_found" else 400
+        raise HTTPException(status, result.get("message") or "Failed")
+    return result
 
 
 @app.delete("/api/projects/{project_id}/agent/mcp/{addon_id}")

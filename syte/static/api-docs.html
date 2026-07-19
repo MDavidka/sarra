@@ -1743,11 +1743,48 @@
                 <span class="method get">GET</span>
                 <span class="endpoint-path">/agent_mcp?uuid=</span>
               </div>
-              <div class="endpoint-name">MCP addons</div>
+              <div class="endpoint-name">MCP addons — list / add / enable / disable / edit</div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Built-in <code>syte</code> addon plus any registered custom MCP servers. Connect/call: <code>POST /agent_mcp_connect</code>, <code>POST /agent_mcp_call</code>, register with <code>POST /agent_mcp_register</code>. The agent also has <code>list_mcp_addons</code> / <code>connect_mcp</code> / <code>call_mcp</code> tools and <code>env_get</code>/<code>env_set</code>/<code>request_env</code> for project env access.</div>
+              <div class="field-desc">
+                Built-in <code>syte</code> addon plus any registered custom MCP servers.
+                Manage via API (same actions as the agent chat MCP panel):
+                <code>POST /agent_mcp_register</code> (add),
+                <code>POST /agent_mcp_connect</code> (enable),
+                <code>POST /agent_mcp_call</code>,
+                <code>POST /agent_mcp_update</code> (edit non-builtin),
+                <code>POST /agent_mcp_disconnect</code> (disable without deleting registration).
+                GUI mirrors: <code>/api/projects/{uuid}/agent/mcp</code>.
+                Agent tools: <code>list_mcp_addons</code> / <code>connect_mcp</code> / <code>call_mcp</code>.
+              </div>
               <pre>{"ok":true,"addons":[{"id":"…:syte","name":"syte","status":"available","tools":[],"builtin":true}]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","name":"playwright","command":"npx","args":["playwright-mcp"]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","addon":"playwright","command":"npx","args":["-y","@playwright/mcp@latest"]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-skills">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_skills?uuid=</span>
+              </div>
+              <div class="endpoint-name">Skills — list / enable / disable / edit parameters</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">
+                Built-in skill catalog with per-project active state.
+                Enable or edit string parameters with <code>POST /agent_skills_enable</code>;
+                disable with <code>POST /agent_skills_disable</code>.
+                Built-in ids: <code>website-editing</code>, <code>workspace-search</code>,
+                <code>preview-access</code>, <code>service-management</code>,
+                <code>nextjs-app-router</code>, <code>cli-tools</code>.
+                GUI mirrors: <code>/api/projects/{uuid}/agent/skills</code>.
+                See also <code>docs/api-agent.md</code>.
+              </div>
+              <pre>{"ok":true,"skills":[{"id":"website-editing","name":"Website editing","active":false,"parameters":{}}]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","skill_id":"website-editing","parameters":{"theme":"bold"}}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","skill_id":"website-editing"}</pre>
             </div>
           </div>
 

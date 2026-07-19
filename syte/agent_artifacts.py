@@ -840,6 +840,88 @@ async def register_mcp_addon(
     }
 
 
+async def update_mcp_addon(
+    project_id: str,
+    addon_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    command: str | None = None,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    transport: str | None = None,
+) -> dict[str, Any]:
+    """Edit a registered custom MCP addon. Builtin ``syte`` cannot be changed."""
+    addons = await list_mcp_addons(project_id)
+    addon = next((a for a in addons if a["id"] == addon_id or a["name"] == addon_id), None)
+    if not addon:
+        return {"ok": False, "error": "not_found", "message": f"MCP addon not found: {addon_id}"}
+    if addon.get("builtin") or addon.get("name") == "syte":
+        return {
+            "ok": False,
+            "error": "builtin_readonly",
+            "message": "Built-in syte MCP addon cannot be edited",
+        }
+
+    next_name = (name if name is not None else addon["name"] or "").strip()[:120]
+    next_description = description if description is not None else addon.get("description") or ""
+    next_command = command if command is not None else addon.get("command") or ""
+    next_args = list(args) if args is not None else list(addon.get("args") or [])
+    next_env = dict(env) if env is not None else dict(addon.get("env") or {})
+    next_transport = transport if transport is not None else addon.get("transport") or "stdio"
+    if not next_name:
+        return {"ok": False, "error": "invalid_name", "message": "MCP addon name is required"}
+    if not next_command:
+        return {"ok": False, "error": "invalid_command", "message": "MCP addon command is required"}
+
+    now = _now()
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "UPDATE agent_mcp_addons SET name = ?, description = ?, transport = ?, "
+            "command = ?, args = ?, env = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+            (
+                next_name,
+                str(next_description)[:1000],
+                next_transport or "stdio",
+                next_command,
+                json.dumps(next_args, ensure_ascii=False),
+                json.dumps(next_env, ensure_ascii=False),
+                now,
+                addon["id"],
+                project_id,
+            ),
+        )
+        await db.commit()
+
+    runtime = _connected_mcp.get((project_id, addon["id"]))
+    if runtime and runtime.get("addon"):
+        runtime["addon"] = {
+            **runtime["addon"],
+            "name": next_name,
+            "description": next_description,
+            "transport": next_transport,
+            "command": next_command,
+            "args": next_args,
+            "env": next_env,
+            "updated_at": now,
+        }
+
+    return {
+        "ok": True,
+        "id": addon["id"],
+        "project_id": project_id,
+        "name": next_name,
+        "description": next_description,
+        "transport": next_transport,
+        "command": next_command,
+        "args": next_args,
+        "env": next_env,
+        "status": addon.get("status") or "available",
+        "updated_at": now,
+    }
+
+
 async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
     """Mark an MCP addon connected and expose its tool catalog to the agent.
 
