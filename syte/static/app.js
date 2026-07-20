@@ -509,9 +509,22 @@ function flushDebugChatStreamBuffers() {
   scrollDebugChatToBottom();
 }
 
+function coerceDebugChatText(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch (_) {
+    return String(value);
+  }
+}
+
 function queueDebugChatStreamDelta(requestId, delta, snapshot) {
   const rid = requestId || 'pending';
-  const next = snapshot || ((debugChatStreamBuffers.get(rid) || '') + (delta || ''));
+  const snap = coerceDebugChatText(snapshot);
+  const piece = coerceDebugChatText(delta);
+  const next = snap || ((debugChatStreamBuffers.get(rid) || '') + piece);
   debugChatStreamBuffers.set(rid, next);
   if (!debugChatStreamFlushFrame) {
     debugChatStreamFlushFrame = requestAnimationFrame(flushDebugChatStreamBuffers);
@@ -526,7 +539,7 @@ function finalizeDebugChatStream(requestId, finalText = '') {
   }
   const bufferedText = debugChatStreamBuffers.get(rid) || '';
   debugChatStreamBuffers.delete(rid);
-  const text = finalText || bufferedText;
+  const text = coerceDebugChatText(finalText) || bufferedText;
   let bubble = document.getElementById(`debug-chat-stream-${rid}`);
   const bodyEl = bubble?.querySelector('.debug-chat-bubble-body')
     || (text ? ensureStreamingAssistantBubble(rid) : null);
@@ -737,14 +750,27 @@ function mountDebugChatQuestionWidget(container, event) {
   container.appendChild(form);
 }
 
+function debugChatDetailText(event) {
+  const candidates = [
+    event?.detail,
+    event?.payload?.content,
+    event?.payload?.reply,
+  ];
+  for (const raw of candidates) {
+    const text = coerceDebugChatText(raw);
+    if (text) return text;
+  }
+  return '';
+}
+
 function appendDebugChatBubble(event) {
   const messagesEl = getDebugChatMessagesEl();
   if (!messagesEl || !event) return;
 
   const role = debugChatRoleForEvent(event);
-  let detail = event.detail || event.payload?.content || event.payload?.reply || '';
+  let detail = debugChatDetailText(event);
   const errorPresentation = role === 'error' ? debugChatErrorPresentation(event) : null;
-  if (errorPresentation) detail = errorPresentation.detail;
+  if (errorPresentation) detail = String(errorPresentation.detail || detail || '');
   const actionTitle = debugChatActionTitle(event);
 
   hideDebugChatEmpty();
@@ -864,7 +890,9 @@ function appendDebugChatBubble(event) {
 
   if (role === 'error') addDebugChatErrorActions(bubble, event, errorPresentation);
   messagesEl.appendChild(bubble);
-  refreshIcons();
+  // Full-document Lucide passes during history replay are extremely expensive
+  // (hundreds of createIcons scans) and have caused mobile tab freezes/"Script error".
+  if (!debugChatReplayingHistory) refreshIcons(bubble);
   scrollDebugChatToBottom();
 }
 
@@ -874,7 +902,9 @@ function shouldSkipDebugChatEvent(event) {
   }
   if (event.event_type === 'token_delta') return true;
   if (event.event_type === 'message_snapshot') {
-    finalizeDebugChatStream(event.payload?.request_id, event.payload?.content || event.detail);
+    if (!debugChatReplayingHistory) {
+      finalizeDebugChatStream(event.payload?.request_id, event.payload?.content || event.detail);
+    }
     if (event.id != null) {
       debugChatRenderedIds.add(event.id);
       debugChatSinceId = Math.max(debugChatSinceId, event.id);
@@ -882,12 +912,14 @@ function shouldSkipDebugChatEvent(event) {
     return true;
   }
   if (event.event_type === 'request_completed') {
-    finalizeDebugChatStream(event.payload?.request_id, event.payload?.reply || event.detail);
+    if (!debugChatReplayingHistory) {
+      finalizeDebugChatStream(event.payload?.request_id, event.payload?.reply || event.detail);
+    }
     const messagesEl = getDebugChatMessagesEl();
     const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
     const last = assistants?.[assistants.length - 1];
     const body = last?.querySelector('.debug-chat-bubble-body')?.textContent || '';
-    const detail = event.detail || event.payload?.reply || '';
+    const detail = debugChatDetailText(event);
     if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
       if (event.id != null) {
         debugChatRenderedIds.add(event.id);
@@ -901,7 +933,7 @@ function shouldSkipDebugChatEvent(event) {
     const streamBubble = rid ? document.getElementById(`debug-chat-stream-${rid}`) : null;
     if (streamBubble) {
       const body = streamBubble.querySelector('.debug-chat-bubble-body')?.textContent || '';
-      const detail = event.detail || event.payload?.content || '';
+      const detail = debugChatDetailText(event);
       if (body && detail && (body === detail || body.includes(detail) || detail.includes(body))) {
         if (event.id != null) {
           debugChatRenderedIds.add(event.id);
@@ -980,28 +1012,26 @@ function handleDebugChatActivity(event) {
     const isActiveRequest = !debugChatActiveRequestId
       || (Boolean(eventRequestId) && eventRequestId === debugChatActiveRequestId);
     const finalText = event.event_type === 'request_completed'
-      ? (event.payload?.reply || event.detail || '')
+      ? debugChatDetailText(event)
       : '';
-    if (debugChatReplayingHistory || isActiveRequest) {
+    // During history replay, bubbles are rendered via appendDebugChatBubble —
+    // don't create streaming "Agent" placeholders (avoids duplicate/[object Object] artifacts).
+    if (!debugChatReplayingHistory && isActiveRequest) {
       finalizeDebugChatStream(requestId, finalText);
-    }
-    if (!debugChatReplayingHistory) {
-      if (isActiveRequest) {
-        const wasStopping = debugChatStopping;
-        setDebugChatTyping(false);
-        clearDebugChatRequestWatchdog();
-        setDebugChatBusy(false);
-        debugChatActiveRequestId = '';
-        setDebugChatActivity(
-          event.event_type === 'request_completed'
-            ? 'Response ready'
-            : (wasStopping ? 'Response stopped' : 'Response failed'),
-          '',
-          event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
-        );
-        dismissDebugChatActivitySoon();
-        void updateDebugChatAgentStatus();
-      }
+      const wasStopping = debugChatStopping;
+      setDebugChatTyping(false);
+      clearDebugChatRequestWatchdog();
+      setDebugChatBusy(false);
+      debugChatActiveRequestId = '';
+      setDebugChatActivity(
+        event.event_type === 'request_completed'
+          ? 'Response ready'
+          : (wasStopping ? 'Response stopped' : 'Response failed'),
+        '',
+        event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
+      );
+      dismissDebugChatActivitySoon();
+      void updateDebugChatAgentStatus();
     }
   }
   if (event.event_type === 'agent_started' && !debugChatReplayingHistory) {
@@ -1036,7 +1066,7 @@ function handleDebugChatActivity(event) {
     'file_created', 'file_modified', 'file_deleted', 'file_changed',
     'service_action', 'request_completed',
   ];
-  if (refreshTypes.includes(event.event_type)) {
+  if (!debugChatReplayingHistory && refreshTypes.includes(event.event_type)) {
     onDebugChatWorkspaceChange();
   }
 }
@@ -1104,6 +1134,7 @@ async function loadDebugChatHistory(projectId) {
     debugChatReplayingHistory = false;
     finalizeAllDebugChatStreams();
     setDebugChatTyping(false);
+    refreshIcons(getDebugChatMessagesEl() || undefined);
     if (!debugChatActiveRequestId && !debugChatSendInFlight) {
       setDebugChatBusy(false);
     } else {
@@ -1175,7 +1206,7 @@ function startAgentActivityStream(projectId) {
   void pollAgentActivityOnce(projectId);
 
   try {
-    const url = `${API}/projects/${projectId}/agent/activity/stream?session=last`;
+    const url = `${API}/projects/${projectId}/agent/activity/stream?session=last&since_id=${encodeURIComponent(debugChatSinceId || 0)}`;
     agentActivityEventSource = new EventSource(url);
     agentActivityEventSource.onopen = () => setDebugChatConnectionState('connected');
     bindAgentActivityEventSource(agentActivityEventSource);
@@ -1421,7 +1452,13 @@ const DEBUG_CHAT_THINK_LABELS = {
 
 function getDebugChatThinkingLevel() {
   const slider = document.getElementById('debug-chat-think');
-  const raw = Number(slider?.value || localStorage.getItem('syte.debugChat.thinkingLevel') || 3);
+  let saved = '';
+  try {
+    saved = localStorage.getItem('syte.debugChat.thinkingLevel') || '';
+  } catch (_) {
+    saved = '';
+  }
+  const raw = Number(slider?.value || saved || 3);
   if (!Number.isFinite(raw)) return 3;
   return Math.min(5, Math.max(1, Math.round(raw)));
 }
@@ -1433,15 +1470,23 @@ function syncDebugChatThinkLabel() {
   const level = getDebugChatThinkingLevel();
   slider.value = String(level);
   label.textContent = DEBUG_CHAT_THINK_LABELS[level] || 'Balanced';
-  localStorage.setItem('syte.debugChat.thinkingLevel', String(level));
+  try {
+    localStorage.setItem('syte.debugChat.thinkingLevel', String(level));
+  } catch (_) {
+    /* private mode / blocked storage */
+  }
 }
 
 function initDebugChatThinkSlider() {
   const slider = document.getElementById('debug-chat-think');
   if (!slider || slider.dataset.bound === '1') return;
   slider.dataset.bound = '1';
-  const saved = localStorage.getItem('syte.debugChat.thinkingLevel');
-  if (saved) slider.value = saved;
+  try {
+    const saved = localStorage.getItem('syte.debugChat.thinkingLevel');
+    if (saved) slider.value = saved;
+  } catch (_) {
+    /* private mode / blocked storage */
+  }
   syncDebugChatThinkLabel();
   slider.addEventListener('input', syncDebugChatThinkLabel);
 }
@@ -1642,7 +1687,11 @@ function warmProjectAgent(projectId) {
 
 async function openDebugChatTab() {
   if (!activeServiceId) return;
-  initDebugChatThinkSlider();
+  try {
+    initDebugChatThinkSlider();
+  } catch (err) {
+    console.warn('[Syte][chat] think slider init failed:', err);
+  }
   const projectId = activeServiceId;
   warmProjectAgent(projectId);
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
@@ -1999,8 +2048,16 @@ function closeDrawer() {
   document.body.classList.remove('drawer-open');
 }
 
-function refreshIcons() {
-  if (window.lucide) lucide.createIcons();
+function refreshIcons(_root) {
+  // Lucide used to load from a cross-origin CDN (@latest). Throws there were
+  // masked by the browser as the useless message "Script error.". Keep the
+  // call resilient even with the vendored same-origin build.
+  try {
+    if (!window.lucide || typeof lucide.createIcons !== 'function') return;
+    lucide.createIcons();
+  } catch (err) {
+    console.warn('[Syte] lucide.createIcons failed:', err);
+  }
 }
 
 function updateSidebarNav(viewName) {
@@ -2128,9 +2185,15 @@ async function api(path, opts = {}) {
 
 function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
+  if (!el) return;
+  const text = msg == null ? '' : String(msg);
+  // Cross-origin script failures are reported as the useless "Script error."
+  // Prefer a clear recovery hint over that blank message.
+  el.textContent = /^script error\.?$/i.test(text.trim())
+    ? 'A UI script failed while opening chat. Reload the page, then try Agent chat again.'
+    : text;
   el.classList.remove('hidden');
-  setTimeout(() => el.classList.add('hidden'), 3000);
+  setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
 function parseEnv(text) {
@@ -2422,7 +2485,10 @@ function switchSvcTab(tab) {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
   if (tab === 'debug-chat') {
-    openDebugChatTab();
+    void openDebugChatTab().catch((err) => {
+      console.error('[Syte][chat] Failed to open agent chat:', err);
+      toast(normalizeFetchError(err?.message) || 'Could not open agent chat');
+    });
   } else if (prevTab === 'debug-chat') {
     stopAgentActivityStream();
   }
@@ -3419,6 +3485,18 @@ appContext = getContext();
 applyContext();
 startStatsPoll();
 refreshIcons();
+
+// Surface real errors instead of the blank cross-origin "Script error." toast/dialog.
+window.addEventListener('error', (event) => {
+  const msg = String(event?.message || event?.error?.message || '');
+  if (!msg) return;
+  if (/^script error\.?$/i.test(msg.trim())) {
+    console.error('[Syte] Cross-origin script error (often CDN/lucide). Details are masked by the browser.', event);
+  }
+});
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Syte] Unhandled promise rejection:', event?.reason);
+});
 
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
