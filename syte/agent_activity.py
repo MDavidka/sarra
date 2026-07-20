@@ -86,6 +86,44 @@ async def ensure_agent_events_table() -> None:
     _table_ensured_paths.add(db_path)
 
 
+def _payload_session_number(payload: Any) -> int | None:
+    """Return a numeric session mark from an event payload, or None if absent/invalid."""
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("session")
+    if raw is None or raw == "":
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_event_payload(payload: Any) -> Any:
+    """Drop oversized inline screenshot blobs before returning events to clients.
+
+    Historical rows may still contain ``chat_image_base64`` (~90KB/shot). Serving
+    those on chat-open (history + SSE backlog) can freeze or crash the browser tab.
+    Clients already fall back to ``thumb_url`` / ``image_url``.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    shots = payload.get("screenshots")
+    if not isinstance(shots, list):
+        return payload
+    cleaned_shots = []
+    changed = False
+    for shot in shots:
+        if isinstance(shot, dict) and "chat_image_base64" in shot:
+            cleaned_shots.append({k: v for k, v in shot.items() if k != "chat_image_base64"})
+            changed = True
+        else:
+            cleaned_shots.append(shot)
+    if not changed:
+        return payload
+    return {**payload, "screenshots": cleaned_shots}
+
+
 def _event_row_to_dict(row: tuple) -> dict[str, Any]:
     payload_raw = row[6] or "{}"
     try:
@@ -99,7 +137,7 @@ def _event_row_to_dict(row: tuple) -> dict[str, Any]:
         "role": row[3],
         "title": row[4],
         "detail": row[5],
-        "payload": payload,
+        "payload": _sanitize_event_payload(payload),
         "source": row[7],
         "created_at": row[8],
     }
@@ -127,7 +165,10 @@ async def record_agent_event(
     Turso not being configured) never blocks or fails the local write.
     """
     await ensure_agent_events_table()
-    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    clean_payload = _sanitize_event_payload(payload or {})
+    if not isinstance(clean_payload, dict):
+        clean_payload = payload or {}
+    payload_json = json.dumps(clean_payload, ensure_ascii=False)
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         from syte.sqlite_utils import configure_sqlite
@@ -158,7 +199,7 @@ async def record_agent_event(
         "role": role,
         "title": title,
         "detail": detail,
-        "payload": payload or {},
+        "payload": clean_payload,
         "source": source,
         "created_at": now,
     }
@@ -184,7 +225,7 @@ async def record_agent_event(
                 role=role,
                 title=title,
                 detail=detail,
-                payload=payload,
+                payload=clean_payload,
                 source=source,
             )
         except Exception:
@@ -253,11 +294,16 @@ async def list_agent_events(
             rows = await cur.fetchall()
     events = [_event_row_to_dict(row) for row in rows]
     if session_filter is not None:
-        events = [
-            event
-            for event in events
-            if int((event.get("payload") or {}).get("session") or 0) == session_filter
-        ][:limit]
+        filtered: list[dict[str, Any]] = []
+        for event in events:
+            session_num = _payload_session_number(event.get("payload"))
+            if session_num is None:
+                continue
+            if session_num == session_filter:
+                filtered.append(event)
+            if len(filtered) >= limit:
+                break
+        events = filtered
     return events
 
 

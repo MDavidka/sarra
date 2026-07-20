@@ -2280,7 +2280,6 @@ async def _communicate_with_agent_impl(
                                         "height": s.get("height"),
                                         "image_url": s.get("image_url"),
                                         "thumb_url": s.get("thumb_url"),
-                                        "chat_image_base64": s.get("chat_image_base64") or "",
                                         "ok": s.get("ok"),
                                     }
                                     for s in chat_shots

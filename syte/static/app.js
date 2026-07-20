@@ -1125,6 +1125,48 @@ async function pollAgentActivityOnce(projectId) {
   }
 }
 
+// SSE frames are emitted as `event: {event_type}` (see agent_activity.py /
+// docs/agent-streaming-api.md). EventSource.onmessage only receives the default
+// `message` type, so we must also bind listeners for every activity event name.
+const DEBUG_CHAT_SSE_EVENT_TYPES = [
+  'user_message', 'assistant_message', 'thinking', 'tool_call', 'command_run',
+  'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
+  'request_started', 'request_completed', 'request_failed', 'token_delta',
+  'message_snapshot', 'tool_call_started', 'tool_call_finished', 'tool_error',
+  'file_changed', 'command_output', 'agent_started', 'agent_stopped', 'status',
+  'processing', 'service_action', 'screenshot', 'question', 'question_answered',
+  'session_stopped', 'plan', 'message',
+];
+
+function handleAgentActivitySseFrame(evt) {
+  try {
+    const event = JSON.parse(evt.data || '{}');
+    if (event && event.event_type) {
+      applyDebugChatActivityEvent(event);
+    }
+  } catch (_) {
+    /* ignore malformed frames */
+  }
+}
+
+function bindAgentActivityEventSource(es) {
+  es.onmessage = handleAgentActivitySseFrame;
+  for (const type of DEBUG_CHAT_SSE_EVENT_TYPES) {
+    es.addEventListener(type, handleAgentActivitySseFrame);
+  }
+}
+
+function startAgentActivityPollFallback(projectId) {
+  if (agentActivityPollTimer) return;
+  agentActivityPollTimer = setInterval(() => {
+    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+      stopAgentActivityStream();
+      return;
+    }
+    void pollAgentActivityOnce(projectId);
+  }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
+}
+
 function startAgentActivityStream(projectId) {
   stopAgentActivityStream();
   setDebugChatConnectionState('connecting');
@@ -1136,16 +1178,7 @@ function startAgentActivityStream(projectId) {
     const url = `${API}/projects/${projectId}/agent/activity/stream?session=last`;
     agentActivityEventSource = new EventSource(url);
     agentActivityEventSource.onopen = () => setDebugChatConnectionState('connected');
-    agentActivityEventSource.onmessage = (evt) => {
-      try {
-        const event = JSON.parse(evt.data || '{}');
-        if (event && event.event_type) {
-          applyDebugChatActivityEvent(event);
-        }
-      } catch (_) {
-        /* ignore malformed frames */
-      }
-    };
+    bindAgentActivityEventSource(agentActivityEventSource);
     agentActivityEventSource.onerror = () => {
       setDebugChatConnectionState('reconnecting');
       if (agentActivityEventSource) {
@@ -1153,24 +1186,10 @@ function startAgentActivityStream(projectId) {
         agentActivityEventSource = null;
       }
       // Fall back to polling if SSE drops.
-      if (!agentActivityPollTimer) {
-        agentActivityPollTimer = setInterval(() => {
-          if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
-            stopAgentActivityStream();
-            return;
-          }
-          void pollAgentActivityOnce(projectId);
-        }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
-      }
+      startAgentActivityPollFallback(projectId);
     };
   } catch (_) {
-    agentActivityPollTimer = setInterval(() => {
-      if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
-        stopAgentActivityStream();
-        return;
-      }
-      void pollAgentActivityOnce(projectId);
-    }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
+    startAgentActivityPollFallback(projectId);
   }
   startDebugChatBrainPoll(projectId);
 }

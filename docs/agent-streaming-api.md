@@ -36,6 +36,11 @@ The `data` payload is always a full activity event:
 Clients should prefer `event_type` + `payload` for parsing. Heartbeats are sent as
 SSE comments: `: heartbeat`.
 
+> **Browser `EventSource` note:** `EventSource.onmessage` only receives frames with
+> no `event:` field (or `event: message`). Named frames such as `event: token_delta`
+> require `addEventListener("token_delta", …)` (or an equivalent per-type listener).
+> The Syte GUI binds listeners for every activity event type.
+
 ## Event Types
 
 ### `token_delta`
