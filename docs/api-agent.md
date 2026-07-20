@@ -8,25 +8,37 @@ and the HTML docs at `/api/`.
 MCP providers and skills can be **listed, added, enabled, disabled, and edited** from the
 agent chat resource panel or directly via these APIs.
 
+For SSE event schemas, ordering guarantees, and reconnection, see
+[Agent Streaming API](./agent-streaming-api.md).
+
 ## Chat
 
 ### POST `/api/projects/{project_id}/agent/chat`
 
 Start an agent turn. `thinking_level` accepts `1` (Instant) through `5` (Max).
+Temperature / top_p apply to all providers; native thinking budgets apply when supported.
 
 ```json
 {
   "message": "Review the landing page spacing",
   "model_profile": "syra-base",
-  "thinking_level": 3
+  "thinking_level": 3,
+  "improve_from_screenshot": false,
+  "visual_analysis_id": null
 }
 ```
+
+Optional visual feedback fields:
+
+- `improve_from_screenshot` — attach the latest visual analysis as primary critique
+- `visual_analysis_id` — attach a specific analysis id
 
 ## MCP connections
 
 Manage Model Context Protocol providers per project. The built-in `syte` addon maps to
-project `service` / `access` helpers. Custom stdio providers can be registered and
-connected from the GUI or API.
+project `service` / `access` helpers. The built-in `web_search` addon searches the web
+(Tavily/Brave when configured, otherwise DuckDuckGo Instant Answer). Custom stdio
+providers can be registered and connected from the GUI or API.
 
 | Action | Method | Path |
 |--------|--------|------|

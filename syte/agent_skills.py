@@ -130,6 +130,32 @@ syte-access fetch
 
 Do not bypass these helpers with raw systemctl, docker, or undocumented curl shortcuts.
 """,
+    "web-search.md": """# Web Search
+
+Use the `web_search` tool when you need current information outside the workspace:
+
+- User asks for "latest", "current", or "recent" information
+- User requests "find images", "get illustrations", or "look up products"
+- Task requires real-world data, docs, or examples not in the repo
+
+Examples:
+- "Find current Next.js best practices" → `web_search` query `"Next.js 2026 best practices"`
+- "Get hero image ideas for an AI startup" → search then incorporate results into copy/assets
+
+Always cite search result URLs in your reply when you use them.
+""",
+    "preview-verification.md": """# Preview Verification (Next.js projects)
+
+After editing `app/` UI files, always:
+
+1. Run `service` action `preview_start` if preview is stopped
+2. Wait briefly for compile (~10s) when needed
+3. Call `screenshot_preview` with `route:"/"` and `viewports:["desktop"]` (and phone when layout matters)
+4. If the screenshot or logs show errors, read preview logs and fix compile issues
+5. Repeat until the screenshot shows a functional UI
+
+Never mark work done if preview is not rendering correctly.
+""",
 }
 
 # The catalog is deliberately derived from the markdown that is written into
@@ -140,6 +166,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Website editing",
         "description": "Focused, preview-verified changes for live websites.",
         "content": SKILL_FILES["website-editing.md"],
+        "keywords": ["website", "landing", "page", "ui", "redesign", "hero", "navbar"],
         "priority": 10,
     },
     "workspace-search": {
@@ -147,6 +174,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Workspace search",
         "description": "Search before editing and use the workspace tools safely.",
         "content": SKILL_FILES["workspace-search.md"],
+        "keywords": ["find file", "search codebase", "where is", "grep"],
         "priority": 20,
     },
     "preview-access": {
@@ -154,6 +182,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Preview access",
         "description": "Use the Syte preview helper to inspect pages and logs.",
         "content": SKILL_FILES["preview-access.md"],
+        "keywords": ["preview", "screenshot", "fetch page", "dev server"],
         "priority": 30,
     },
     "service-management": {
@@ -161,6 +190,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Service management",
         "description": "Manage preview and verification commands through Syte helpers.",
         "content": SKILL_FILES["service-management.md"],
+        "keywords": ["preview_start", "preview_stop", "restart preview", "logs"],
         "priority": 40,
     },
     "nextjs-app-router": {
@@ -168,6 +198,7 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Next.js App Router",
         "description": "Avoid common App Router paths and configuration mistakes.",
         "content": SKILL_FILES["nextjs-app-router.md"],
+        "keywords": ["next.js", "nextjs", "app router", "page.tsx", "layout.tsx"],
         "priority": 50,
     },
     "cli-tools": {
@@ -175,7 +206,25 @@ SKILL_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Syte CLI tools",
         "description": "Use the supported Syte service and access helpers.",
         "content": SKILL_FILES["cli-tools.md"],
+        "keywords": ["syte-service", "syte-access", "cli"],
         "priority": 60,
+    },
+    "web-search": {
+        "id": "web-search",
+        "name": "Web Search",
+        "description": "Search the web for current information, docs, and image ideas.",
+        "content": SKILL_FILES["web-search.md"],
+        "keywords": ["search", "find online", "look up", "latest", "current", "images", "illustrations"],
+        "priority": 70,
+    },
+    "preview-verification": {
+        "id": "preview-verification",
+        "name": "Preview Verification",
+        "description": "Keep looping until Next.js preview renders correctly.",
+        "content": SKILL_FILES["preview-verification.md"],
+        "keywords": ["verify preview", "broken preview", "compile error", "screenshot"],
+        "priority": 80,
+        "auto_for_nextjs": True,
     },
 }
 
@@ -295,23 +344,34 @@ async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
             "name": skill["name"],
             "description": skill["description"],
             "content": skill["content"],
+            "keywords": list(skill.get("keywords") or []),
             "priority": skill["priority"],
             "parameters": parameters,
             "active": skill["id"] in active,
             "enabled_at": enabled_at,
             "builtin": True,
             "custom": False,
+            "auto_for_nextjs": bool(skill.get("auto_for_nextjs")),
         })
 
     for row in custom_rows:
         record_id, skill_id, name, description, content, created_at, updated_at = row
         parameters, enabled_at = active.get(skill_id, ({}, None))
+        # Custom skills may store keywords in parameters.keywords (JSON list or CSV).
+        raw_kw = parameters.get("keywords") if isinstance(parameters, dict) else None
+        if isinstance(raw_kw, list):
+            keywords = [str(k) for k in raw_kw if str(k).strip()]
+        elif isinstance(raw_kw, str) and raw_kw.strip():
+            keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
+        else:
+            keywords = []
         skills.append({
             "id": skill_id,
             "record_id": record_id,
             "name": name,
             "description": description,
             "content": content,
+            "keywords": keywords,
             "priority": 1000,
             "parameters": parameters,
             "active": skill_id in active,
@@ -322,6 +382,47 @@ async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
             "updated_at": updated_at,
         })
     return skills
+
+
+async def match_active_skills(
+    project_id: str,
+    user_message: str,
+    *,
+    is_nextjs: bool = False,
+) -> list[dict[str, Any]]:
+    """Return skills whose keywords appear in the message (or auto-enable for Next.js)."""
+    skills = await get_project_skills(project_id)
+    msg_lower = (user_message or "").lower()
+    matched: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for skill in skills:
+        # Built-ins are always available for keyword matching; custom must be active.
+        if skill.get("custom") and not skill.get("active"):
+            continue
+        skill_id = str(skill.get("id") or "")
+        if not skill_id or skill_id in seen:
+            continue
+        keywords = [str(k).lower() for k in (skill.get("keywords") or []) if str(k).strip()]
+        hit = bool(keywords) and any(k in msg_lower for k in keywords)
+        auto = bool(is_nextjs and skill.get("auto_for_nextjs"))
+        if hit or auto:
+            matched.append(skill)
+            seen.add(skill_id)
+    return matched
+
+
+def skill_hint_block(skills: list[dict[str, Any]]) -> str:
+    """Format matched skills as a temporary system hint."""
+    if not skills:
+        return ""
+    blocks = [
+        str(skill.get("content") or "").strip()
+        for skill in skills
+        if str(skill.get("content") or "").strip()
+    ]
+    if not blocks:
+        return ""
+    return "## Relevant skills for this request:\n" + "\n\n".join(blocks)
 
 
 def _slugify_skill_id(name: str) -> str:

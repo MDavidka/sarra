@@ -1,0 +1,197 @@
+# Syte Agent Streaming API
+
+## Overview
+
+Syte's cloud agent emits real-time events via Server-Sent Events (SSE) at:
+
+- `GET /api/projects/{id}/agent/activity/stream` (session auth)
+- `GET /sycord/projects/{project_id}/activity` (token auth)
+- Polling mirror: `GET /api/projects/{id}/agent/activity?since_id=N`
+- Durable Turso sessions: `GET /api/agent_session/{turso_session_id}?since_id=N`
+
+SSE frames are emitted as:
+
+```
+id: {event_id}
+event: {event_type}
+data: {JSON event object}
+```
+
+The `data` payload is always a full activity event:
+
+```json
+{
+  "id": 42,
+  "project_id": "proj_abc",
+  "event_type": "token_delta",
+  "role": "assistant",
+  "title": "Stream",
+  "detail": "…",
+  "payload": { "...": "event-specific fields" },
+  "source": "api",
+  "created_at": "2026-07-20T14:30:00+00:00"
+}
+```
+
+Clients should prefer `event_type` + `payload` for parsing. Heartbeats are sent as
+SSE comments: `: heartbeat`.
+
+## Event Types
+
+### `token_delta`
+
+Streamed LLM output tokens.
+
+**payload:**
+
+```json
+{
+  "request_id": "req-…",
+  "session": 42,
+  "delta": "partial text",
+  "mark_kind": "stream"
+}
+```
+
+### `tool_call_started` / `tool_call_finished`
+
+Agent invokes a tool / tool returns.
+
+**payload (started):**
+
+```json
+{
+  "request_id": "req-…",
+  "session": 42,
+  "message_index": 3,
+  "mark": "S42003(g)",
+  "tool": "write_file",
+  "arguments": { "path": "app/app/page.tsx", "content": "…" },
+  "phase": "started"
+}
+```
+
+**payload (finished):** includes `phase: "finished"`, `ok`, and a truncated `result`.
+
+### `question`
+
+Agent asks the user an interactive question (blocking until answered).
+
+**payload:**
+
+```json
+{
+  "question_id": "q_abc123",
+  "question_type": "choice",
+  "options": ["Blue", "Green", "Purple"],
+  "min_value": null,
+  "max_value": null,
+  "step_value": null,
+  "default_value": null,
+  "status": "pending",
+  "session": 42,
+  "request_id": "req-…"
+}
+```
+
+Answer via `POST /api/projects/{id}/agent/questions/{question_id}/answer` with
+`{"answer": "Blue"}` (or the matching Sycord / token-API answer endpoint).
+
+### `thinking` (plan)
+
+Agent publishes or updates an execution plan (`update_plan` tool or extracted thinking).
+
+**payload:**
+
+```json
+{
+  "plan_id": "plan_xyz",
+  "steps": ["Step 1: …", "Step 2: …"],
+  "session": 42,
+  "request_id": "req-…"
+}
+```
+
+### `screenshot`
+
+Agent captured a preview screenshot (optionally with visual analysis ids).
+
+**payload:**
+
+```json
+{
+  "route": "/",
+  "url": "https://preview.example/",
+  "screenshots": [
+    {
+      "id": "screenshot_123",
+      "viewport": "desktop",
+      "width": 1280,
+      "height": 800,
+      "image_url": "/api/projects/{id}/agent/screenshots/screenshot_123",
+      "thumb_url": "/api/projects/{id}/agent/screenshots/screenshot_123?variant=thumb",
+      "ok": true
+    }
+  ],
+  "session": 42,
+  "request_id": "req-…"
+}
+```
+
+Related visual analyses are available at
+`GET /api/projects/{id}/agent/visual_analyses`.
+
+### `request_started` / `request_completed` / `request_failed`
+
+Turn lifecycle markers. `request_completed` is the normal successful end of a turn.
+
+### `session_stopped`
+
+Session ended (completed, interrupted, or errored). Always treat this as terminal
+for the turn when present.
+
+**payload:**
+
+```json
+{
+  "reason": "completed",
+  "stopped_at": "2026-07-20T14:30:00+00:00",
+  "session": 42,
+  "turso_session_id": "ts_abc",
+  "request_id": "req-…"
+}
+```
+
+### `tool_error`
+
+Structured tool failure for observability (does not replace `tool_call_finished`).
+
+**payload:**
+
+```json
+{
+  "tool": "run_command",
+  "error_type": "timeout",
+  "retryable": true,
+  "session": 42,
+  "request_id": "req-…"
+}
+```
+
+## Event Ordering Guarantees
+
+- `token_delta` events arrive in-order within a single assistant message
+- `tool_call_started` → `tool_call_finished` pairs are sequential per tool call
+- `question` is blocking; the agent waits until answered (or times out)
+- `request_completed`, `request_failed`, or `session_stopped` ends the turn
+
+## Reconnection
+
+SSE / poll clients should:
+
+1. Track the last seen event `id` (and optionally `payload.session`)
+2. On disconnect, reconnect with `?since_id={last_id}`
+3. The server replays events after that id, then continues live
+
+Optional: `session=last` or `session={N}` filters to the latest / specific numbered
+chat session.

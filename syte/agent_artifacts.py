@@ -738,6 +738,21 @@ BUILTIN_MCP_ADDONS: list[dict[str, Any]] = [
         "args": [],
         "builtin": True,
     },
+    {
+        "id": "web_search",
+        "name": "web_search",
+        "description": "Built-in web search (Tavily/Brave when configured, else DuckDuckGo Instant Answer).",
+        "transport": "api",
+        "command": "",
+        "args": [],
+        "builtin": True,
+        "tools": [
+            {
+                "name": "web_search",
+                "description": "Search the web for current information, news, docs, or image ideas.",
+            }
+        ],
+    },
 ]
 
 
@@ -746,13 +761,18 @@ async def ensure_builtin_mcp_addons(project_id: str) -> None:
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         for addon in BUILTIN_MCP_ADDONS:
+            tools_json = json.dumps(addon.get("tools") or [], ensure_ascii=False)
             await db.execute(
                 "INSERT INTO agent_mcp_addons "
                 "(id, project_id, name, description, transport, command, args, env, "
                 "status, tools_json, connected_at, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'available', '[]', NULL, ?, ?) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'available', ?, NULL, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET "
-                "description = excluded.description, updated_at = excluded.updated_at",
+                "description = excluded.description, "
+                "tools_json = CASE "
+                "  WHEN agent_mcp_addons.status = 'connected' THEN agent_mcp_addons.tools_json "
+                "  ELSE excluded.tools_json END, "
+                "updated_at = excluded.updated_at",
                 (
                     f"{project_id}:{addon['id']}",
                     project_id,
@@ -761,6 +781,7 @@ async def ensure_builtin_mcp_addons(project_id: str) -> None:
                     addon["transport"],
                     addon["command"],
                     json.dumps(addon.get("args") or []),
+                    tools_json,
                     now,
                     now,
                 ),
@@ -954,6 +975,13 @@ async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
             {"name": "syte_service", "description": "Control preview/service/logs"},
             {"name": "syte_access", "description": "Fetch preview HTML/logs/screenshot"},
         ]
+    elif addon["name"] == "web_search":
+        tools = [
+            {
+                "name": "web_search",
+                "description": "Search the web for current information, news, docs, or image ideas.",
+            }
+        ]
     else:
         tools = [
             {
@@ -1054,6 +1082,21 @@ async def call_mcp_addon(
             "message": f"Unknown syte MCP tool: {tool}",
             "available": ["syte_service", "syte_access"],
         }
+
+    if addon["name"] == "web_search":
+        from syte.web_search import web_search as do_web_search
+
+        if tool not in {"web_search", "search"}:
+            return {
+                "ok": False,
+                "error": "unknown_tool",
+                "message": f"Unknown web_search MCP tool: {tool}",
+                "available": ["web_search"],
+            }
+        return await do_web_search(
+            str(args.get("query") or args.get("q") or ""),
+            max_results=int(args.get("max_results") or 5),
+        )
 
     return {
         "ok": False,

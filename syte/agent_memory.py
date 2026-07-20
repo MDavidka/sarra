@@ -349,7 +349,7 @@ async def maybe_summarize_session(
     session_number: int,
     *,
     turso_session_id: str | None = None,
-    min_messages: int = 20,
+    min_messages: int = 4,
 ) -> dict[str, Any] | None:
     """Create a local extractive summary when a session has enough messages.
 

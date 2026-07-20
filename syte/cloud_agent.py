@@ -38,7 +38,12 @@ from syte.cloud_agent_store import (
 from syte.config import settings
 from syte.database import get_project, get_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
-from syte.thinking_levels import deepseek_thinking_payload, resolve_thinking_config
+from syte.thinking_levels import (
+    apply_prompt_cache_markers,
+    build_model_thinking_params,
+    deepseek_thinking_payload,
+    resolve_thinking_config,
+)
 from syte.turso_store import close_session as close_turso_session
 from syte.turso_store import open_session as open_turso_session
 from syte.turso_store import record_message as record_turso_message
@@ -47,7 +52,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 8
+AGENT_INSTRUCTION_VERSION = 9
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -59,9 +64,20 @@ logger = logging.getLogger(__name__)
 _lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _active_turns: dict[str, asyncio.Task[Any]] = {}
 _provider_client: httpx.AsyncClient | None = None
+# Cache only the static (cache-stable) instruction prefix — never session memory.
 _instruction_cache: dict[tuple[str, int, str], str] = {}
+_background_subagents: dict[str, asyncio.Task[Any]] = {}
 
 TokenEmitter = Callable[[str], Awaitable[None]]
+
+_UI_PATH_MARKERS = (
+    "components/",
+    "page.tsx",
+    "page.jsx",
+    "layout.tsx",
+    "layout.jsx",
+    "globals.css",
+)
 
 
 def _get_provider_client() -> httpx.AsyncClient:
@@ -291,19 +307,140 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(path.read_text(errors="replace").splitlines()[-max(1, lines):])
 
 
-async def _build_syte_instruction(project_id: str, *, force_refresh: bool = False) -> str:
+def _project_metadata_block(project: dict[str, Any] | None) -> str:
+    """Stable project facts from Mongo/SQLite metadata — never requires a file scan."""
+    project = project or {}
+    name = project.get("name") or project.get("id") or "unknown"
+    domain = project.get("domain") or project.get("preview_domain") or "not set"
+    deploy = project.get("deploy_type") or "shell"
+    status = project.get("status") or "unknown"
+    return (
+        "## Project metadata (never re-scan for this)\n"
+        f"Name: {name}\n"
+        f"Domain: {domain}\n"
+        f"Deploy type: {deploy}\n"
+        f"Service status: {status}\n"
+    )
+
+
+def _read_syterules(project_id: str) -> str:
+    """Load optional `.syterules` from workspace root or app/."""
+    root = workspace_path(project_id)
+    for candidate in (root / ".syterules", root / "app" / ".syterules"):
+        try:
+            if candidate.is_file():
+                text = candidate.read_text(encoding="utf-8", errors="replace").strip()
+                if text:
+                    return f"## Project-specific rules (.syterules):\n{text}"
+        except OSError:
+            continue
+    return ""
+
+
+def _website_enforcement_block(*, is_website: bool) -> str:
+    if is_website:
+        return (
+            "## MANDATORY for this project: Next.js + shadcn/ui\n"
+            "This is a Next.js website project. You MUST:\n"
+            "- Use Next.js App Router (routes in app/app/)\n"
+            "- Import shadcn/ui components from @/components/ui/*\n"
+            "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
+            "- Never ship bare unstyled HTML scaffolds\n"
+            "- Follow the Design Contract below strictly\n"
+        )
+    return (
+        "## Project type: general code\n"
+        "This is not detected as a Next.js website project. Match the stack to the existing "
+        "files and user request. Only apply the Design Contract if the user explicitly asks "
+        "for a website / web UI.\n"
+    )
+
+
+def _build_static_instruction(
+    project_id: str,
+    *,
+    rule_lines: str,
+    active_skills_block: str,
+    project_meta: str,
+    website_enforcement: str,
+    syterules: str,
+) -> str:
+    """Build the cacheable instruction prefix (design contract, tools, skills, rules)."""
+    from syte.design_contract import (
+        DESIGN_CONTRACT_MARKDOWN,
+        shadcn_catalog_json,
+        themes_prompt_block,
+    )
+
+    root = agent_root(project_id)
+    parts = [
+        "You are Syte's cloud coding agent running persistently on the project's VM. "
+        "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
+        "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
+        "and run the smallest useful verification after edits. Never expose credentials. "
+        "Do not discuss or configure unrelated model providers.\n",
+        website_enforcement,
+        project_meta,
+        "You build ANY kind of code the user asks for — libraries, CLIs, APIs, scripts, backends, "
+        "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website "
+        "unless this project's enforcement block says otherwise. "
+        "Match the stack to the request and existing files. Only when the work is a website / web UI "
+        "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
+        "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
+        "and a complete styled home page. Never ship a bare unstyled web scaffold.\n",
+        "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
+        "(desktop + phone screenshots of a route — inspect images with vision); ask_question "
+        "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
+        "(project env vars — request_env asks the user when a secret/value is missing); "
+        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
+        "semantic_search (meaning-based workspace lookup); service (preview status/start/stop/"
+        "logs); delegate_task for bounded sub-work (set background:true to run async).\n",
+        "Use update_plan for multi-step work so the plan is visible in chat and saved. Use ask_question "
+        "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
+        "screenshot_preview after UI changes and check BOTH phone and desktop layouts. Continue using "
+        "tools until the request is actually complete; the user can interrupt a long turn.\n",
+        "Never deploy, start, stop, update, or build the production service for testing, and never run "
+        "production build commands such as npm run build or next build. Prefer the isolated preview for "
+        "visual checks and workspace commands for lint/tests.\n",
+        "Paths: write_file paths are relative to the workspace root; application source lives in app/. "
+        "For Next.js App Router, routes live under app/app/ (e.g. app/app/login/page.tsx). write_file "
+        "overwrites the whole file — always send the complete body. After batches of writes, verify with "
+        "list_files/read_file. Preview caching: after fixing a compile error, preview_stop then "
+        "preview_start before judging the result.\n",
+        "Website / web UI design contract (mandatory when building websites):\n"
+        f"{DESIGN_CONTRACT_MARKDOWN}\n",
+        f"{themes_prompt_block()}\n",
+        "shadcn/ui component catalog (import only these — never invent names):\n"
+        f"{shadcn_catalog_json()}\n",
+        f"Syte workspace rules:\n{rule_lines}\n",
+        f"{active_skills_block}\n",
+        f"Project workspace root: {workspace_path(project_id)}\n"
+        f"Application source: {workspace_path(project_id) / 'app'}\n"
+        f"Agent tools and durable data: {root}",
+    ]
+    if syterules:
+        parts.append(syterules)
+    return "\n".join(parts)
+
+
+async def _build_syte_instruction(
+    project_id: str,
+    *,
+    force_refresh: bool = False,
+) -> str:
+    """Assemble full system instruction with fresh dynamic memory every call.
+
+    Static portions (design contract, tool docs, skills, rules) are cached.
+    Session memory + design profile are never cached so summaries reach the LLM.
+    """
     from syte.agent_skills import (
         build_agent_rules,
         get_project_skills,
         read_access_config,
         write_agent_skills,
     )
-    from syte.design_contract import (
-        DESIGN_CONTRACT_MARKDOWN,
-        DESIGN_CONTRACT_VERSION,
-        shadcn_catalog_json,
-        themes_prompt_block,
-    )
+    from syte.design_contract import DESIGN_CONTRACT_VERSION
+    from syte.nextjs_layout import is_nextjs_repo
 
     root = agent_root(project_id)
     access = await read_access_config(project_id, root)
@@ -318,18 +455,39 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
     ]
     active_skills = "\n\n".join(active_skill_blocks)
     active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
+    syterules = _read_syterules(project_id)
+    project = await get_project(project_id)
+    app_root = workspace_path(project_id) / "app"
+    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
+    project_meta = _project_metadata_block(project)
+    website_enforcement = _website_enforcement_block(is_website=is_website)
+
     rules_hash = hashlib.sha256(
-        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n{workspace_path(project_id)}".encode()
+        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n"
+        f"{website_enforcement}\n{project_meta}\n{syterules}\n{workspace_path(project_id)}".encode()
     ).hexdigest()[:16]
     cache_key = (project_id, AGENT_INSTRUCTION_VERSION, rules_hash)
     if not force_refresh and cache_key in _instruction_cache:
-        return _instruction_cache[cache_key]
+        static = _instruction_cache[cache_key]
+    else:
+        write_agent_skills(
+            project_id,
+            root,
+            custom_skills=[skill for skill in project_skills if skill.get("custom")],
+        )
+        static = _build_static_instruction(
+            project_id,
+            rule_lines=rule_lines,
+            active_skills_block=active_skills_block,
+            project_meta=project_meta,
+            website_enforcement=website_enforcement,
+            syterules=syterules,
+        )
+        # Drop older hashes for this project so the cache stays bounded.
+        invalidate_instruction_cache(project_id)
+        _instruction_cache[cache_key] = static
 
-    write_agent_skills(
-        project_id,
-        root,
-        custom_skills=[skill for skill in project_skills if skill.get("custom")],
-    )
+    # Session-dynamic blocks — always fresh, never cached with static prefix.
     from syte.agent_memory import (
         design_profile_prompt_block,
         get_design_profile,
@@ -343,55 +501,7 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
     active_files = list((meta or {}).get("active_files") or [])
     memory_block = memory_context_block(summary, active_files)
     design_block = design_profile_prompt_block(await get_design_profile(project_id))
-
-    instruction = (
-        "You are Syte's cloud coding agent running persistently on the project's VM. "
-        "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
-        "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
-        "and run the smallest useful verification after edits. Never expose credentials. "
-        "Do not discuss or configure unrelated model providers.\n\n"
-        "You build ANY kind of code the user asks for — libraries, CLIs, APIs, scripts, backends, "
-        "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website. "
-        "Match the stack to the request and existing files. Only when the work is a website / web UI "
-        "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
-        "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
-        "and a complete styled home page. Never ship a bare unstyled web scaffold.\n\n"
-        "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
-        "(desktop + phone screenshots of a route — inspect images with vision); ask_question "
-        "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
-        "(project env vars — request_env asks the user when a secret/value is missing); "
-        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); service (preview status/start/stop/"
-        "logs); delegate_task for bounded sub-work.\n\n"
-        "Use update_plan for multi-step work so the plan is visible in chat and saved. Use ask_question "
-        "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
-        "screenshot_preview after UI changes and check BOTH phone and desktop layouts. Continue using "
-        "tools until the request is actually complete; the user can interrupt a long turn.\n\n"
-        "Never deploy, start, stop, update, or build the production service for testing, and never run "
-        "production build commands such as npm run build or next build. Prefer the isolated preview for "
-        "visual checks and workspace commands for lint/tests.\n\n"
-        "Paths: write_file paths are relative to the workspace root; application source lives in app/. "
-        "For Next.js App Router, routes live under app/app/ (e.g. app/app/login/page.tsx). write_file "
-        "overwrites the whole file — always send the complete body. After batches of writes, verify with "
-        "list_files/read_file. Preview caching: after fixing a compile error, preview_stop then "
-        "preview_start before judging the result.\n\n"
-        "Website / web UI design contract (mandatory when building websites):\n"
-        f"{DESIGN_CONTRACT_MARKDOWN}\n\n"
-        f"{themes_prompt_block()}\n\n"
-        "shadcn/ui component catalog (import only these — never invent names):\n"
-        f"{shadcn_catalog_json()}\n\n"
-        f"{design_block}\n\n"
-        f"{memory_block}\n\n"
-        f"Syte workspace rules:\n{rule_lines}\n\n"
-        f"{active_skills_block}\n\n"
-        f"Project workspace root: {workspace_path(project_id)}\n"
-        f"Application source: {workspace_path(project_id) / 'app'}\n"
-        f"Agent tools and durable data: {root}"
-    )
-    # Drop older hashes for this project so the cache stays bounded.
-    invalidate_instruction_cache(project_id)
-    _instruction_cache[cache_key] = instruction
-    return instruction
-
+    return f"{static}\n\n{design_block}\n\n{memory_block}"
 
 
 async def write_agent_config(project: dict[str, Any]) -> Path:
@@ -627,7 +737,9 @@ async def get_agent_status(
             "screenshot_preview", "vision_screenshots", "interactive_questions",
             "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
             "shadcn_websites", "agent_memory", "visual_analyses", "design_profiles",
-            "workspace_index", "activity_sse", "model_routing",
+            "workspace_index", "activity_sse", "model_routing", "web_search",
+            "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
+            "preview_health", "planner_executor", "syterules", "background_subagents",
         ],
     }
 
@@ -713,8 +825,27 @@ TOOLS: list[dict[str, Any]] = [
          "tool": {"type": "string"},
          "arguments": {"type": "object"},
      }, "required": ["addon", "tool"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "delegate_task", "description": "Delegate one bounded independent research, review, or implementation task to a subagent sharing this workspace.",
-     "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "web_search", "description": (
+        "Search the web for current information, docs, product/image ideas, or news. "
+        "Prefer this over guessing when the user asks for latest/current facts."),
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string"},
+         "max_results": {"type": "integer"},
+     }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "semantic_search", "description": (
+        "Search the workspace index by meaning/tags (not exact keywords only). "
+        "Use before full-workspace crawls when looking for related components or pages."),
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string"},
+         "limit": {"type": "integer"},
+     }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "delegate_task", "description": (
+        "Delegate one bounded independent research, review, or implementation task to a "
+        "subagent sharing this workspace. Set background:true to run asynchronously."),
+     "parameters": {"type": "object", "properties": {
+         "task": {"type": "string"},
+         "background": {"type": "boolean"},
+     }, "required": ["task"], "additionalProperties": False}}},
 ]
 
 SUBAGENT_TOOLS = [
@@ -750,10 +881,14 @@ async def _execute_tool(
             await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
             return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
         if name == "write_file":
-            ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
+            path = str(args["path"])
+            ok, message = await write_file(project_id, path, str(args["content"]))
             await _track_touched_file(
-                project_id, str(args["path"]), ctx, content=str(args.get("content") or ""),
+                project_id, path, ctx, content=str(args.get("content") or ""),
             )
+            path_l = path.lower()
+            if any(marker in path_l for marker in _UI_PATH_MARKERS):
+                ctx["_ui_edit_detected"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
             ok, message = await delete_file(project_id, str(args["path"]))
@@ -774,7 +909,9 @@ async def _execute_tool(
         if name == "update_plan":
             return await _tool_update_plan(project_id, args, ctx)
         if name == "screenshot_preview":
-            return await _tool_screenshot_preview(project_id, args, ctx)
+            result = await _tool_screenshot_preview(project_id, args, ctx)
+            ctx["_screenshot_captured"] = True
+            return result
         if name == "ask_question":
             return await _tool_ask_question(project_id, args, ctx)
         if name == "env_get":
@@ -800,14 +937,87 @@ async def _execute_tool(
                 str(args.get("tool") or ""),
                 args.get("arguments") if isinstance(args.get("arguments"), dict) else {},
             )
+        if name == "web_search":
+            from syte.web_search import web_search as do_web_search
+
+            return await do_web_search(
+                str(args.get("query") or ""),
+                max_results=int(args.get("max_results") or 5),
+            )
+        if name == "semantic_search":
+            from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
+
+            query = str(args.get("query") or "").strip()
+            tags = prompt_tags_from_message(query)
+            hits = await lookup_workspace_paths(
+                project_id,
+                tags=tags or None,
+                query=query,
+                limit=max(1, min(int(args.get("limit") or 20), 50)),
+            )
+            return {"ok": True, "query": query, "tags": tags, "results": hits}
         if name == "delegate_task":
             task = str(args.get("task") or "").strip()
             if not task:
                 return {"ok": False, "error": "empty_task", "message": "Provide a delegated task."}
             if not model:
                 return {"ok": False, "error": "model_unavailable", "message": "Subagent model is unavailable."}
+            if args.get("background"):
+                import uuid as uuid_mod
+
+                task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
+                bg_task = asyncio.create_task(_run_subagent(project_id, task, model))
+                _background_subagents[task_id] = bg_task
+
+                def _cleanup(done: asyncio.Task[Any], *, key: str = task_id) -> None:
+                    _background_subagents.pop(key, None)
+
+                bg_task.add_done_callback(_cleanup)
+                return {
+                    "ok": True,
+                    "task_id": task_id,
+                    "status": "running",
+                    "message": "Background subagent started",
+                    "task": task,
+                }
             return await _run_subagent(project_id, task, model)
+
+        # Auto-connect MCP addons that expose this unknown tool name.
+        from syte.agent_artifacts import call_mcp_addon, connect_mcp_addon, list_mcp_addons
+
+        addons = await list_mcp_addons(project_id)
+        for addon in addons:
+            tool_names = [
+                str(t.get("name") or "")
+                for t in (addon.get("tools") or [])
+                if isinstance(t, dict)
+            ]
+            if name not in tool_names and name not in {
+                "syte_service", "syte_access", "web_search",
+            }:
+                continue
+            if addon.get("status") != "connected":
+                connected = await connect_mcp_addon(project_id, addon["id"])
+                if not connected.get("ok"):
+                    continue
+            return await call_mcp_addon(project_id, addon["id"], name, args if isinstance(args, dict) else {})
+
         return {"ok": False, "error": "unknown_tool", "message": name}
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "error": "file_not_found",
+            "message": str(exc) or "File not found",
+            "hint": "List files first or check the path",
+        }
+    except TimeoutError as exc:
+        return {
+            "ok": False,
+            "error": "timeout",
+            "message": str(exc) or "Timed out",
+            "hint": "Try with a shorter timeout or simpler command",
+            "retryable": True,
+        }
     except Exception as exc:
         return {
             "ok": False,
@@ -1235,23 +1445,53 @@ async def _provider_completion(
     stream: bool = False,
     on_token: TokenEmitter | None = None,
 ) -> dict[str, Any]:
+    from syte.agent_errors import (
+        ProviderError,
+        check_circuit_breaker,
+        record_circuit_failure,
+        record_circuit_success,
+    )
     from syte.cloud_agent_store import sanitize_provider_messages
 
+    check_circuit_breaker(model.get("provider") or "", model.get("model") or "")
+
+    cfg = dict(thinking_config or {})
+    if "temperature" not in cfg or cfg.get("temperature") is None:
+        cfg["temperature"] = temperature
+    thinking_params = build_model_thinking_params(
+        cfg,
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
     use_tools = TOOLS if tools is None else tools
+    cached_messages = apply_prompt_cache_markers(
+        sanitize_provider_messages(list(messages)),
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
     payload: dict[str, Any] = {
         "model": model["model"],
-        "messages": sanitize_provider_messages(list(messages)),
-        "temperature": float(temperature),
+        "messages": cached_messages,
+        "temperature": float(thinking_params.get("temperature", temperature)),
+        "top_p": float(thinking_params.get("top_p", 0.95)),
         "stream": bool(stream and on_token is not None),
     }
     if use_tools:
         payload["tools"] = use_tools
         payload["tool_choice"] = "auto"
-    # DeepSeek thinking mode requires reasoning_content round-trips after tool
-    # calls. Enable only when the thinking slider (or explicit config) asks for it.
-    if "deepseek.com" in (model.get("api_base") or ""):
+    if "thinking" in thinking_params:
+        payload["thinking"] = thinking_params["thinking"]
+    elif "deepseek.com" in (model.get("api_base") or ""):
+        # Explicit disable for DeepSeek when slider omitted / thinking off.
         cfg = thinking_config or {"thinking_enabled": False}
         payload["thinking"] = deepseek_thinking_payload(cfg)
+    if thinking_params.get("cache_prompt"):
+        payload["cache_prompt"] = True
+    if thinking_params.get("reasoning_effort"):
+        payload["reasoning_effort"] = thinking_params["reasoning_effort"]
+
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
     url = model["api_base"].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
@@ -1271,7 +1511,9 @@ async def _provider_completion(
                             f"for url '{response.request.url}'"
                             + (f": {detail}" if detail else "")
                         )
-                    return await _parse_sse_completion(response, on_token=on_token)
+                    message = await _parse_sse_completion(response, on_token=on_token)
+                    record_circuit_success(model.get("provider") or "", model.get("model") or "")
+                    return message
 
             response = await client.post(url, headers=headers, json=payload)
             if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
@@ -1288,7 +1530,10 @@ async def _provider_completion(
             choices = data.get("choices") or []
             if not choices or not isinstance(choices[0].get("message"), dict):
                 raise RuntimeError("Provider returned no assistant message")
+            record_circuit_success(model.get("provider") or "", model.get("model") or "")
             return choices[0]["message"]
+        except ProviderError:
+            raise
         except httpx.HTTPError as exc:
             error = str(exc)
             if attempt < 2:
@@ -1302,6 +1547,7 @@ async def _provider_completion(
                 await asyncio.sleep(0.2)
                 continue
             break
+    record_circuit_failure(model.get("provider") or "", model.get("model") or "")
     raise RuntimeError(error)
 
 
@@ -1535,6 +1781,10 @@ async def _communicate_with_agent_impl(
 
     # Prefer indexed files referenced in the prompt over a full workspace crawl.
     from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
+    from syte.nextjs_layout import is_nextjs_repo
+
+    app_root = workspace_path(project_id) / "app"
+    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
 
     tags = prompt_tags_from_message(message)
     if tags:
@@ -1547,6 +1797,14 @@ async def _communicate_with_agent_impl(
                     for item in hinted
                 )
             )
+
+    # Keyword-matched skills (and Next.js auto skills) as a temporary system hint.
+    from syte.agent_skills import match_active_skills, skill_hint_block
+
+    matched_skills = await match_active_skills(project_id, message, is_nextjs=is_website)
+    skill_hint = skill_hint_block(matched_skills)
+    if skill_hint:
+        instruction += "\n\n" + skill_hint
 
     # Visual feedback loop: attach structured screenshot analysis as primary critique source.
     analysis_payload = None
@@ -1564,6 +1822,54 @@ async def _communicate_with_agent_impl(
         )
         if analysis_payload:
             instruction += "\n\n" + visual_feedback_prompt(analysis_payload)
+
+    # Complex multi-page site builds: publish a planner decomposition before execution.
+    from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
+
+    if is_website and is_complex_site_request(message) and not improve_from_screenshot:
+        plan = await plan_complex_site(
+            project_id,
+            message,
+            provider_completion=_provider_completion,
+            model=model,
+        )
+        if plan.get("ok") and plan.get("subtasks"):
+            ordered = order_subtasks(list(plan["subtasks"]))
+            from syte.agent_artifacts import save_plan
+
+            plan_steps = [str(item.get("task") or "") for item in ordered if item.get("task")]
+            if plan_steps:
+                plan_row = await save_plan(
+                    project_id,
+                    plan_steps,
+                    note=f"planner:{plan.get('planner') or 'llm'}",
+                    request_id=request_id,
+                    session_number=session_number,
+                    turso_session_id=turso_session_id,
+                )
+                await record_agent_event(
+                    project_id,
+                    "thinking",
+                    role="assistant",
+                    title="Site plan",
+                    detail="\n".join(f"{i}. {s}" for i, s in enumerate(plan_steps, 1))[:4000],
+                    payload=_mark_payload(
+                        status="d",
+                        kind="plan",
+                        base={"plan_id": (plan_row or {}).get("id"), "steps": plan_steps},
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                instruction += (
+                    "\n\n## Planner decomposition (execute in order, respecting deps)\n"
+                    + "\n".join(
+                        f"{i}. {item.get('task')} "
+                        f"(files: {', '.join(item.get('files') or []) or 'n/a'}; "
+                        f"deps: {', '.join(item.get('deps') or []) or 'none'})"
+                        for i, item in enumerate(ordered, 1)
+                    )
+                )
 
     # Only the latest session — prior sessions stay in the activity stream for
     # clients, but are not re-sent to the provider on every turn.
@@ -1714,6 +2020,111 @@ async def _communicate_with_agent_impl(
                     turso_session_id=turso_session_id,
                 )
             if not stored_calls:
+                # Auto-screenshot after UI edits when the agent forgot to capture one.
+                if (
+                    tool_context.get("_ui_edit_detected")
+                    and not tool_context.get("_screenshot_captured")
+                    and is_website
+                ):
+                    try:
+                        shot = await _execute_tool(
+                            project_id,
+                            "screenshot_preview",
+                            {"route": "/", "viewports": ["desktop"]},
+                            model=model,
+                            context=tool_context,
+                        )
+                        chat_shots = shot.pop("_chat_screenshots", None) if isinstance(shot, dict) else None
+                        if chat_shots:
+                            await record_agent_event(
+                                project_id,
+                                "screenshot",
+                                role="assistant",
+                                title="Screenshot / (auto)",
+                                detail=str(shot.get("message") or "Auto screenshot after UI edits")[:1000],
+                                payload=_mark_payload(
+                                    status="d",
+                                    kind="screenshot",
+                                    base={
+                                        "route": "/",
+                                        "auto": True,
+                                        "screenshots": [
+                                            {
+                                                "id": s.get("id"),
+                                                "viewport": s.get("viewport"),
+                                                "image_url": s.get("image_url"),
+                                                "thumb_url": s.get("thumb_url"),
+                                                "ok": s.get("ok"),
+                                            }
+                                            for s in chat_shots
+                                        ],
+                                    },
+                                ),
+                                source=source,
+                                turso_session_id=turso_session_id,
+                            )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "auto screenshot after UI edits failed", exc_info=True
+                        )
+
+                # Preview health check for Next.js projects.
+                if is_website:
+                    try:
+                        from syte.preview_health import wait_for_preview_ready
+
+                        ok_preview, preview_url, _status = await wait_for_preview_ready(
+                            project_id, max_wait_s=45, poll_s=2.5,
+                        )
+                        if not ok_preview:
+                            await record_agent_event(
+                                project_id,
+                                "status",
+                                title="Preview did not start",
+                                detail=(
+                                    "Agent completed work but preview is not reachable. "
+                                    "Check logs or run service preview_start."
+                                ),
+                                payload=_mark_payload(
+                                    status="g",
+                                    kind="status",
+                                    base={"preview_unreachable": True, "preview_url": preview_url},
+                                ),
+                                source=source,
+                                turso_session_id=turso_session_id,
+                            )
+                        elif not tool_context.get("_screenshot_captured"):
+                            await _execute_tool(
+                                project_id,
+                                "screenshot_preview",
+                                {"route": "/", "viewports": ["desktop"]},
+                                model=model,
+                                context=tool_context,
+                            )
+                        # Soft validation: warn when no App Router routes exist.
+                        routes_dir = workspace_path(project_id) / "app" / "app"
+                        if not routes_dir.exists() or not any(routes_dir.rglob("page.tsx")):
+                            await record_agent_event(
+                                project_id,
+                                "status",
+                                title="No app/app/ routes found",
+                                detail=(
+                                    "Agent may have created routes in the wrong location. "
+                                    "Expected app/app/page.tsx"
+                                ),
+                                payload=_mark_payload(
+                                    status="g",
+                                    kind="status",
+                                    base={"no_routes_detected": True},
+                                ),
+                                source=source,
+                                turso_session_id=turso_session_id,
+                            )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "preview health check failed", exc_info=True
+                        )
+
                 reply = content.strip() or "Completed."
                 await record_agent_event(
                     project_id, "request_completed", role="assistant", title="Completed",
@@ -1722,6 +2133,23 @@ async def _communicate_with_agent_impl(
                         status="d",
                         kind="message",
                         base={"reply": reply},
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                await record_agent_event(
+                    project_id,
+                    "session_stopped",
+                    title="Session stopped",
+                    detail="completed",
+                    payload=_mark_payload(
+                        status="d",
+                        kind="status",
+                        base={
+                            "reason": "completed",
+                            "stopped_at": _now(),
+                            "turso_session_id": turso_session_id,
+                        },
                     ),
                     source=source,
                     turso_session_id=turso_session_id,
@@ -1744,7 +2172,7 @@ async def _communicate_with_agent_impl(
                         project_id,
                         session_number,
                         turso_session_id=turso_session_id,
-                        min_messages=12,
+                        min_messages=4,
                     )
                     await emit_webhook(
                         EVENT_AGENT_SESSION_COMPLETED,
@@ -1793,6 +2221,24 @@ async def _communicate_with_agent_impl(
                 result = await _execute_tool(
                     project_id, name, args, model=model, context=tool_context,
                 )
+                if isinstance(result, dict) and not result.get("ok", True):
+                    await record_agent_event(
+                        project_id,
+                        "tool_error",
+                        title=f"Tool {name} failed",
+                        detail=str(result.get("message") or result.get("error") or "")[:2000],
+                        payload=_mark_payload(
+                            status="g",
+                            kind="tool",
+                            base={
+                                "tool": name,
+                                "error_type": result.get("error") or "tool_failed",
+                                "retryable": bool(result.get("retryable")),
+                            },
+                        ),
+                        source=source,
+                        turso_session_id=turso_session_id,
+                    )
                 chat_shots = result.pop("_chat_screenshots", None)
                 vision_parts = result.pop("_vision_parts", None)
                 if name == "update_plan" and result.get("ok"):
@@ -1945,6 +2391,23 @@ async def _communicate_with_agent_impl(
                     "stopped_at": stop["stopped_at"],
                     "reason": "cancelled",
                     "stop_id": stop["id"],
+                },
+            ),
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+        await record_agent_event(
+            project_id,
+            "session_stopped",
+            title="Session stopped",
+            detail="interrupted",
+            payload=_mark_payload(
+                status="d",
+                kind="status",
+                base={
+                    "reason": "interrupted",
+                    "stopped_at": stop["stopped_at"],
+                    "turso_session_id": turso_session_id,
                 },
             ),
             source=source,
