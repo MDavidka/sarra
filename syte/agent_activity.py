@@ -47,6 +47,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "message_snapshot",
     "tool_call_started",
     "tool_call_finished",
+    "tool_error",
     "file_changed",
     "command_output",
     "agent_started",
@@ -58,6 +59,8 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "screenshot",
     "question",
     "question_answered",
+    "session_stopped",
+    "plan",
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
@@ -293,7 +296,12 @@ async def activity_sse_generator(
     last_id = since_id
     for event in backlog:
         last_id = max(last_id, int(event.get("id") or 0))
-        yield f"id: {event['id']}\ndata: {_json.dumps(event, ensure_ascii=False)}\n\n"
+        event_name = str(event.get("event_type") or "message")
+        yield (
+            f"id: {event['id']}\n"
+            f"event: {event_name}\n"
+            f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+        )
 
     queue = subscribe_agent_activity(project_id)
     try:
@@ -318,7 +326,12 @@ async def activity_sse_generator(
                     except (TypeError, ValueError):
                         continue
             last_id = int(event.get("id") or 0)
-            yield f"id: {event['id']}\ndata: {_json.dumps(event, ensure_ascii=False)}\n\n"
+            event_name = str(event.get("event_type") or "message")
+            yield (
+                f"id: {event['id']}\n"
+                f"event: {event_name}\n"
+                f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+            )
     finally:
         unsubscribe_agent_activity(project_id, queue)
 

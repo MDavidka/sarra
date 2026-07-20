@@ -51,3 +51,11 @@ def test_thinking_levels_spec_shape() -> None:
     assert spec["parameter"] == "thinking_level"
     assert spec["range"] == [1, 5]
     assert "3" in spec["levels"]
+    assert "top_p" in spec["levels"]["3"]
+    assert "reasoning_effort" in spec["levels"]["3"]
+
+
+def test_resolve_includes_top_p() -> None:
+    cfg = resolve_thinking_config(2)
+    assert cfg["top_p"] == 0.90
+    assert cfg["reasoning_effort"] == "low"

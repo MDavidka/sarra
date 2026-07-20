@@ -2,8 +2,8 @@
 
 ``thinking_level`` is independent of the project's persistent ``model_profile``.
 When provided on ``agent_change`` / ``agent_communicate`` / GUI chat, it selects
-temperature, optional DeepSeek thinking budget, tool-step cap, and (optionally)
-which Syra profile to use for that turn only.
+temperature, top_p, optional native thinking budgets, tool-step cap, and
+(optionally) which Syra profile to use for that turn only.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "label": "Instant",
         "model_profile": "syra-nano",
         "temperature": 0.1,
+        "top_p": 0.85,
+        "reasoning_effort": "low",
         "thinking_enabled": False,
         "thinking_budget_tokens": 0,
         "max_tool_steps": 3,
@@ -31,6 +33,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "label": "Fast",
         "model_profile": "syra-nano",
         "temperature": 0.2,
+        "top_p": 0.90,
+        "reasoning_effort": "low",
         "thinking_enabled": False,
         "thinking_budget_tokens": 0,
         "max_tool_steps": 8,
@@ -42,6 +46,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "label": "Balanced",
         "model_profile": "syra-base",
         "temperature": 0.2,
+        "top_p": 0.95,
+        "reasoning_effort": "medium",
         "thinking_enabled": True,
         "thinking_budget_tokens": 1024,
         "max_tool_steps": 24,
@@ -53,6 +59,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "label": "Deep",
         "model_profile": "syra-base",
         "temperature": 0.3,
+        "top_p": 0.98,
+        "reasoning_effort": "high",
         "thinking_enabled": True,
         "thinking_budget_tokens": 4096,
         "max_tool_steps": 40,
@@ -64,6 +72,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "label": "Max",
         "model_profile": "syra-havy",
         "temperature": 0.4,
+        "top_p": 1.0,
+        "reasoning_effort": "high",
         "thinking_enabled": True,
         "thinking_budget_tokens": 8192,
         "max_tool_steps": 60,
@@ -99,7 +109,7 @@ def resolve_thinking_config(
     """Build the per-request generation config.
 
     When ``thinking_level`` is omitted, keep the project's profile and use
-    conservative defaults (temperature 0.2, streaming on, no DeepSeek thinking).
+    conservative defaults (temperature 0.2, streaming on, no native thinking).
     """
     level = normalize_thinking_level(thinking_level)
     if level is None:
@@ -109,6 +119,8 @@ def resolve_thinking_config(
             "label": "Default",
             "model_profile": profile,
             "temperature": 0.2,
+            "top_p": 0.95,
+            "reasoning_effort": "medium",
             "thinking_enabled": False,
             "thinking_budget_tokens": 0,
             "max_tool_steps": 48,
@@ -134,6 +146,96 @@ def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def build_model_thinking_params(
+    thinking_config: dict[str, Any] | None,
+    *,
+    provider: str = "",
+    model: str = "",
+    api_base: str = "",
+) -> dict[str, Any]:
+    """Map a thinking config to provider-specific inference params.
+
+    Always returns temperature + top_p. Native thinking payloads are attached
+    when the provider/model supports them (DeepSeek, Anthropic Claude).
+    """
+    cfg = thinking_config or {}
+    params: dict[str, Any] = {
+        "temperature": float(cfg.get("temperature") if cfg.get("temperature") is not None else 0.2),
+        "top_p": float(cfg.get("top_p") if cfg.get("top_p") is not None else 0.95),
+    }
+
+    provider_l = (provider or "").lower()
+    model_l = (model or "").lower()
+    api_l = (api_base or "").lower()
+    budget = int(cfg.get("thinking_budget_tokens") or 0)
+    enabled = bool(cfg.get("thinking_enabled"))
+
+    is_deepseek = "deepseek.com" in api_l or "deepseek" in provider_l or "deepseek" in model_l
+    is_anthropic = "anthropic" in provider_l or "claude" in model_l
+    is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
+
+    if is_deepseek:
+        params["thinking"] = deepseek_thinking_payload(cfg)
+        params["cache_prompt"] = True
+
+    if is_anthropic and enabled and budget > 0:
+        params["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": max(1024, budget),
+        }
+
+    # Only attach OpenAI reasoning_effort for models known to accept it.
+    if is_openai_reasoning and enabled:
+        effort = str(cfg.get("reasoning_effort") or "").strip()
+        if effort:
+            params["reasoning_effort"] = effort
+
+    return params
+
+
+def apply_prompt_cache_markers(
+    messages: list[dict[str, Any]],
+    *,
+    provider: str = "",
+    model: str = "",
+    api_base: str = "",
+) -> list[dict[str, Any]]:
+    """Annotate the system prompt for provider-native prompt caching when supported.
+
+    OpenAI-compatible Syra endpoints (DeepSeek / Gemini) rely on stable system-first
+    prefixes + DeepSeek ``cache_prompt``. Anthropic-native cache_control content
+    blocks are only applied when the provider/model is actually Anthropic/Claude.
+    """
+    if not messages:
+        return messages
+    provider_l = (provider or "").lower()
+    model_l = (model or "").lower()
+    out = [dict(m) for m in messages]
+    system = out[0]
+    if system.get("role") != "system":
+        return out
+
+    if "anthropic" in provider_l or "claude" in model_l:
+        content = system.get("content")
+        if isinstance(content, str):
+            system["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif isinstance(content, list) and content:
+            first = dict(content[0]) if isinstance(content[0], dict) else {"type": "text", "text": str(content[0])}
+            first["cache_control"] = {"type": "ephemeral"}
+            system["content"] = [first, *content[1:]]
+        out[0] = system
+
+    # DeepSeek / Gemini / OpenAI: keep plain string system content (cache via prefix + cache_prompt).
+    _ = api_base
+    return out
+
+
 def thinking_levels_spec() -> dict[str, Any]:
     """Public API/docs description of the slider."""
     return {
@@ -145,6 +247,8 @@ def thinking_levels_spec() -> dict[str, Any]:
                 "label": cfg["label"],
                 "model_profile": cfg["model_profile"],
                 "temperature": cfg["temperature"],
+                "top_p": cfg["top_p"],
+                "reasoning_effort": cfg["reasoning_effort"],
                 "thinking_budget_tokens": cfg["thinking_budget_tokens"],
                 "max_tool_steps": cfg["max_tool_steps"],
             }
@@ -152,6 +256,7 @@ def thinking_levels_spec() -> dict[str, Any]:
         },
         "note": (
             "thinking_level configures the turn only — it does not persist the "
-            "project's model_profile setting."
+            "project's model_profile setting. Temperature/top_p apply to all "
+            "providers; native thinking budgets apply when the provider supports them."
         ),
     }
