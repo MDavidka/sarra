@@ -47,7 +47,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 7
+AGENT_INSTRUCTION_VERSION = 8
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -330,6 +330,20 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
         root,
         custom_skills=[skill for skill in project_skills if skill.get("custom")],
     )
+    from syte.agent_memory import (
+        design_profile_prompt_block,
+        get_design_profile,
+        latest_session_meta,
+        latest_summary,
+        memory_context_block,
+    )
+
+    summary = await latest_summary(project_id)
+    meta = await latest_session_meta(project_id)
+    active_files = list((meta or {}).get("active_files") or [])
+    memory_block = memory_context_block(summary, active_files)
+    design_block = design_profile_prompt_block(await get_design_profile(project_id))
+
     instruction = (
         "You are Syte's cloud coding agent running persistently on the project's VM. "
         "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
@@ -365,6 +379,8 @@ async def _build_syte_instruction(project_id: str, *, force_refresh: bool = Fals
         f"{themes_prompt_block()}\n\n"
         "shadcn/ui component catalog (import only these — never invent names):\n"
         f"{shadcn_catalog_json()}\n\n"
+        f"{design_block}\n\n"
+        f"{memory_block}\n\n"
         f"Syte workspace rules:\n{rule_lines}\n\n"
         f"{active_skills_block}\n\n"
         f"Project workspace root: {workspace_path(project_id)}\n"
@@ -610,7 +626,8 @@ async def get_agent_status(
             "planning", "plan_persistence", "subagents", "visible_thinking",
             "screenshot_preview", "vision_screenshots", "interactive_questions",
             "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
-            "shadcn_websites",
+            "shadcn_websites", "agent_memory", "visual_analyses", "design_profiles",
+            "workspace_index", "activity_sse", "model_routing",
         ],
     }
 
@@ -730,12 +747,17 @@ async def _execute_tool(
             return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
         if name == "read_file":
             ok, content, mime = await read_file(project_id, str(args["path"]))
+            await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
             return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
         if name == "write_file":
             ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
+            await _track_touched_file(
+                project_id, str(args["path"]), ctx, content=str(args.get("content") or ""),
+            )
             return {"ok": ok, "message": message}
         if name == "delete_file":
             ok, message = await delete_file(project_id, str(args["path"]))
+            await _track_touched_file(project_id, str(args["path"]), ctx)
             return {"ok": ok, "message": message}
         if name == "run_command":
             code, output = await execute_command(
@@ -792,6 +814,29 @@ async def _execute_tool(
             "error": "tool_failed",
             "message": str(exc) or type(exc).__name__,
         }
+
+
+async def _track_touched_file(
+    project_id: str,
+    path: str,
+    ctx: dict[str, Any],
+    *,
+    content: str | None = None,
+) -> None:
+    """Record active files + workspace index entry for context packing."""
+    from syte.agent_memory import touch_active_file, upsert_workspace_file
+
+    session_number = int(ctx.get("session_number") or 0)
+    if session_number > 0 and path:
+        try:
+            await touch_active_file(project_id, session_number, path)
+        except Exception:
+            logging.getLogger(__name__).debug("active file track failed", exc_info=True)
+    if path:
+        try:
+            await upsert_workspace_file(project_id, path, content=content)
+        except Exception:
+            logging.getLogger(__name__).debug("workspace index update failed", exc_info=True)
 
 
 async def _tool_update_plan(
@@ -912,6 +957,31 @@ async def _tool_screenshot_preview(
                 "type": "text",
                 "text": f"[{name} {record['width']}x{record['height']}] {route}",
             })
+        # Structured visual analysis (best-effort) for the visual feedback loop.
+        try:
+            from syte.visual_analysis import analyze_and_store
+
+            analysis = await analyze_and_store(
+                project_id,
+                screenshot_id=str(record["id"]),
+                image_base64=str(record.get("image_base64") or ""),
+                viewport=name,
+                width=int(record.get("width") or 0),
+                height=int(record.get("height") or 0),
+                route=route,
+                screenshot_url=entry["image_url"],
+                session_id=ctx.get("turso_session_id"),
+                session_number=int(ctx.get("session_number") or 0),
+                model=ctx.get("model") if isinstance(ctx.get("model"), dict) else None,
+            )
+            entry["visual_analysis_id"] = analysis.get("id")
+            entry["visual_analysis"] = {
+                "id": analysis.get("id"),
+                "issues": (analysis.get("issues") or [])[:8],
+                "suggestions": (analysis.get("suggestions") or [])[:8],
+            }
+        except Exception:
+            logging.getLogger(__name__).debug("visual analysis failed", exc_info=True)
 
     ok_any = any(s.get("ok") for s in shots_out)
     fail_msgs = [
@@ -1288,10 +1358,23 @@ async def communicate_with_agent(
     project_id: str, message: str, *, model_profile: str | None = None,
     thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, background: bool = False,
+    improve_from_screenshot: bool = False,
+    visual_analysis_id: str | None = None,
 ) -> dict[str, Any]:
+    from syte.model_routing import suggest_model_profile
+
+    routing = suggest_model_profile(
+        message,
+        explicit_profile=model_profile,
+        thinking_level=thinking_level,
+        improve_from_screenshot=improve_from_screenshot or bool(visual_analysis_id),
+    )
+    if routing.get("auto_applied") and not model_profile:
+        model_profile = routing["effective_profile"]
+
     if background:
         from syte.agent_jobs import submit_agent_request
-        return await submit_agent_request(
+        result = await submit_agent_request(
             project_id,
             message,
             model_profile=model_profile,
@@ -1299,14 +1382,18 @@ async def communicate_with_agent(
             source=source,
             auto_start=auto_start,
         )
+        return {**result, "model_routing": routing}
     from syte.agent_jobs import new_request_id, project_agent_lock
     request_id = new_request_id()
     async with project_agent_lock(project_id):
-        return await _communicate_with_agent_impl(
+        result = await _communicate_with_agent_impl(
             project_id, message, model_profile=model_profile,
             thinking_level=thinking_level, source=source,
             auto_start=auto_start, request_id=request_id,
+            improve_from_screenshot=improve_from_screenshot,
+            visual_analysis_id=visual_analysis_id,
         )
+        return {**result, "model_routing": routing}
 
 
 async def _communicate_with_agent_impl(
@@ -1317,6 +1404,8 @@ async def _communicate_with_agent_impl(
     session_number: int | None = None,
     message_index_start: int = 0,
     turso_session_id: str | None = None,
+    improve_from_screenshot: bool = False,
+    visual_analysis_id: str | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
@@ -1365,6 +1454,15 @@ async def _communicate_with_agent_impl(
         opened_turso_session = True
         if turso_session_id:
             await set_turso_session_id(project_id, turso_session_id)
+        from syte.agent_memory import upsert_session_meta
+
+        await upsert_session_meta(
+            project_id,
+            session_number,
+            turso_session_id=turso_session_id,
+            status="open",
+            model_profile=model["profile"],
+        )
     else:
         message_index = max(0, int(message_index_start or 0))
 
@@ -1434,11 +1532,60 @@ async def _communicate_with_agent_impl(
             + "\n\nThinking mode: Deep. Before the first tool call, call update_plan with a "
             "concrete ordered plan for this request."
         )
+
+    # Prefer indexed files referenced in the prompt over a full workspace crawl.
+    from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
+
+    tags = prompt_tags_from_message(message)
+    if tags:
+        hinted = await lookup_workspace_paths(project_id, tags=tags, limit=12)
+        if hinted:
+            instruction += (
+                "\n\n## Prompt-matched workspace files (from index)\n"
+                + "\n".join(
+                    f"- {item['path']} [{', '.join(item.get('semantic_tags') or [])}]"
+                    for item in hinted
+                )
+            )
+
+    # Visual feedback loop: attach structured screenshot analysis as primary critique source.
+    analysis_payload = None
+    if visual_analysis_id or improve_from_screenshot:
+        from syte.agent_memory import (
+            get_visual_analysis,
+            latest_visual_analysis,
+            visual_feedback_prompt,
+        )
+
+        analysis_payload = (
+            await get_visual_analysis(visual_analysis_id)
+            if visual_analysis_id
+            else await latest_visual_analysis(project_id)
+        )
+        if analysis_payload:
+            instruction += "\n\n" + visual_feedback_prompt(analysis_payload)
+
     # Only the latest session — prior sessions stay in the activity stream for
     # clients, but are not re-sent to the provider on every turn.
-    messages = [{"role": "system", "content": instruction}, *(await conversation_messages(
+    # When a long-term summary exists and the latest session is thin, prepend it.
+    history = await conversation_messages(
         project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True,
-    ))]
+    )
+    from syte.agent_memory import latest_summary
+
+    prior_summary = await latest_summary(project_id)
+    if prior_summary and prior_summary.get("up_to_session_number", 0) < int(session_number or 0):
+        history = [
+            {
+                "role": "system",
+                "content": (
+                    "Prior session summary (compressed memory):\n"
+                    + str(prior_summary.get("summary_text") or "")[:4000]
+                ),
+            },
+            *history[-10:],
+        ]
+    messages = [{"role": "system", "content": instruction}, *history]
     current = asyncio.current_task()
     if current:
         _active_turns[project_id] = current
@@ -1493,6 +1640,7 @@ async def _communicate_with_agent_impl(
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
+        "model": model,
     }
 
     max_tool_steps = int(gen.get("max_tool_steps") or 48)
@@ -1580,6 +1728,38 @@ async def _communicate_with_agent_impl(
                 )
                 if opened_turso_session:
                     await close_turso_session(turso_session_id, status="completed")
+                # Background memory: summarize long sessions + notify webhooks.
+                try:
+                    from syte.agent_memory import maybe_summarize_session, upsert_session_meta
+                    from syte.webhooks import EVENT_AGENT_SESSION_COMPLETED, emit_webhook
+
+                    await upsert_session_meta(
+                        project_id,
+                        session_number,
+                        turso_session_id=turso_session_id,
+                        status="completed",
+                        model_profile=model["profile"],
+                    )
+                    await maybe_summarize_session(
+                        project_id,
+                        session_number,
+                        turso_session_id=turso_session_id,
+                        min_messages=12,
+                    )
+                    await emit_webhook(
+                        EVENT_AGENT_SESSION_COMPLETED,
+                        {
+                            "project_id": project_id,
+                            "turso_session_id": turso_session_id,
+                            "session_number": session_number,
+                            "request_id": request_id,
+                            "model_profile": model["profile"],
+                        },
+                    )
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "post-turn memory/webhook failed", exc_info=True
+                    )
                 _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
                 return {"ok": True, "uuid": project_id, "request_id": request_id,
                         "session": session_number,
@@ -1587,7 +1767,9 @@ async def _communicate_with_agent_impl(
                         "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
                         "thinking_level": gen.get("thinking_level"),
                         "model": model["model"], "provider": model["provider"], "message": reply,
-                        "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
+                        "reply": reply,
+                        "visual_analysis_id": (analysis_payload or {}).get("id") if analysis_payload else None,
+                        "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
             for call in stored_calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")

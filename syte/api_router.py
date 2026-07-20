@@ -114,6 +114,8 @@ class AgentCommunicateRequest(BaseModel):
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
     )
+    improve_from_screenshot: bool = False
+    visual_analysis_id: str | None = None
 
 
 class AgentChangeRequest(BaseModel):
@@ -124,6 +126,8 @@ class AgentChangeRequest(BaseModel):
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
     )
+    improve_from_screenshot: bool = False
+    visual_analysis_id: str | None = None
 
 
 class AgentQuestionAnswerBody(BaseModel):
@@ -886,26 +890,39 @@ async def api_agent_turso_debug(
 async def api_agent_sessions(
     uuid: str = Query(..., description="Project UUID"),
     limit: int = Query(50, ge=1, le=500),
+    resume: int = Query(0, ge=0, le=1),
     _token: dict = Depends(verify_api_token),
 ):
     """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.agent_memory import project_memory_snapshot
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
+    memory = await project_memory_snapshot(uuid)
+    base = {
+        "ok": True,
+        "uuid": uuid,
+        "memory": memory,
+        "resume_session": memory.get("resume_session"),
+        "open_session": memory.get("open_session"),
+        "last_work": memory.get("last_work"),
+        "active_files": memory.get("active_files") or [],
+        "latest_summary": memory.get("latest_summary"),
+    }
+    if resume:
+        base["resume"] = 1
     if not await turso_configured():
         return {
-            "ok": True,
-            "uuid": uuid,
+            **base,
             "turso_configured": False,
             "sessions": [],
             "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
         }
     sessions = await list_sessions_for_project(uuid, limit=limit)
     return {
-        "ok": True,
-        "uuid": uuid,
+        **base,
         "turso_configured": True,
         "sessions": [
             {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
@@ -963,6 +980,8 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
         model_profile=body.model_profile,
         thinking_level=body.thinking_level,
         source="api",
+        improve_from_screenshot=bool(body.improve_from_screenshot),
+        visual_analysis_id=body.visual_analysis_id,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_communicate_failed", result.get("message") or "Communication failed")
@@ -979,6 +998,8 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         thinking_level=body.thinking_level,
         source="sycord",
         background=True,
+        improve_from_screenshot=bool(body.improve_from_screenshot),
+        visual_analysis_id=body.visual_analysis_id,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")

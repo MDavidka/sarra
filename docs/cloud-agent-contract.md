@@ -115,6 +115,46 @@ API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
 | MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` |
 | Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 
+### Layered memory, visual feedback, and design profiles
+
+Syte keeps a local SQLite memory layer alongside Turso sessions so clients
+(sycord.com) can resume work without re-scanning the whole workspace:
+
+| Store | Purpose |
+|-------|---------|
+| `agent_session_meta` | Per-turn status, `active_files[]`, Turso session id |
+| `agent_summaries` | Compressed “story so far” + key decisions after long sessions |
+| `workspace_index` | Path / hash / semantic tags (`hero`, `navbar`, `colors`, …) |
+| `visual_analyses` | Structured screenshot critiques (layout, issues, suggestions) |
+| `design_profiles` | Persisted tokens + CSS + agent instructions per project |
+
+**Resume:** `GET /api/projects/{id}/agent/sessions?resume=1` (and Sycord
+`/sycord/api/agent_sessions?resume=1`) returns `resume_session`, `last_work`,
+`active_files`, and `latest_summary`.
+
+**Streaming:** Optional SSE at `/api/projects/{id}/agent/activity/stream` (and
+`/sycord/api/agent_activity/stream`) for token-level updates; Turso session
+polling remains the durable source of truth.
+
+**Visual loop:** `screenshot_preview` stores a `visual_analyses` row. Call
+`POST /sycord/api/improve_from_screenshot` (or chat with
+`improve_from_screenshot=true`) to inject that analysis as the primary design
+critique with a “minimal diffs” hint.
+
+**Design system:** `POST /sycord/api/design_profile` with `theme_key` /
+`style_key` (`saas-minimal`, `fintech-dark`, `ai-landing`, …) writes tokens into
+SQLite and `data/design-system/`, then injects them into every turn’s system
+prompt.
+
+**External summary:** `GET /sycord/api/project_summary?uuid=` returns deployment
+URL, design tokens, pages/active files, and last agent summary id. Configure
+`webhook_urls` in system settings to receive `site.deployed` and
+`agent.session.completed` events.
+
+**Model routing:** When `model_profile` and `thinking_level` are omitted, short
+copy tweaks auto-select `syra-nano`; full landing rebuilds / screenshot remakes
+prefer `syra-havy`.
+
 The system instruction is generated for Syte and includes project access rules,
 enabled skills, workspace location, design contract (for websites), verification
 requirements, and credential handling.

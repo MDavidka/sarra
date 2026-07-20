@@ -272,6 +272,57 @@ def unsubscribe_agent_activity(project_id: str, queue: asyncio.Queue[dict[str, A
         del _subscribers[project_id]
 
 
+async def activity_sse_generator(
+    project_id: str,
+    *,
+    since_id: int = 0,
+    session: str | None = None,
+    heartbeat_seconds: float = 15.0,
+):
+    """Yield SSE frames for live agent activity (token deltas, tools, etc.).
+
+    Clients may still poll Turso session documents; this stream is an optional
+    low-latency channel for Cursor-style token streaming in the GUI / sycord.com.
+    """
+    import json as _json
+
+    # Replay recent backlog first so reconnects don't miss early tokens.
+    backlog = await list_agent_events(
+        project_id, since_id=since_id, limit=500, session=session or None,
+    )
+    last_id = since_id
+    for event in backlog:
+        last_id = max(last_id, int(event.get("id") or 0))
+        yield f"id: {event['id']}\ndata: {_json.dumps(event, ensure_ascii=False)}\n\n"
+
+    queue = subscribe_agent_activity(project_id)
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+                continue
+            if int(event.get("id") or 0) <= last_id:
+                continue
+            if session:
+                raw = str(session).strip().lower()
+                payload_session = (event.get("payload") or {}).get("session")
+                if raw == "last":
+                    # Accept all live events for the current turn.
+                    pass
+                else:
+                    try:
+                        if int(payload_session or 0) != int(raw):
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+            last_id = int(event.get("id") or 0)
+            yield f"id: {event['id']}\ndata: {_json.dumps(event, ensure_ascii=False)}\n\n"
+    finally:
+        unsubscribe_agent_activity(project_id, queue)
+
+
 async def record_workspace_activity(
     project_id: str,
     action: str,

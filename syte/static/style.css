@@ -2287,8 +2287,54 @@ code {
 }
 
 .debug-chat-brain.brain-unconfigured {
-  color: #9ca3af;
-  background: transparent;
+  color: #a1a1aa;
+  border-color: #e4e4e7;
+}
+
+.debug-chat-visual {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid #ececef;
+  background: linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
+}
+
+.debug-chat-visual-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.debug-chat-visual-meta strong {
+  font-size: 0.72rem;
+  color: #27272a;
+}
+
+.debug-chat-visual-meta span {
+  font-size: 0.68rem;
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-chat-visual-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.debug-chat-attach-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  color: #52525b;
+  white-space: nowrap;
 }
 
 .debug-chat-messages-wrap {

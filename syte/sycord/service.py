@@ -246,16 +246,21 @@ async def agent_turso_debug(project_id: str) -> dict | None:
 
 async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
     """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.agent_memory import project_memory_snapshot
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     project = await get_project(project_id)
     if not project:
         return None
+    memory = await project_memory_snapshot(project_id)
     if not await turso_configured():
         return {
             "uuid": project_id,
             "turso_configured": False,
             "sessions": [],
+            "memory": memory,
+            "resume_session": memory.get("resume_session"),
+            "open_session": memory.get("open_session"),
             "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
         }
     sessions = await list_sessions_for_project(project_id, limit=limit)
@@ -265,6 +270,56 @@ async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
         "sessions": [
             {**s, "session_url": f"/sycord/api/agent_session/{s['id']}"} for s in sessions
         ],
+        "memory": memory,
+        "resume_session": (
+            {
+                **(memory.get("resume_session") or {}),
+                "session_url": (
+                    f"/sycord/api/agent_session/{(memory.get('resume_session') or {}).get('turso_session_id')}"
+                    if (memory.get("resume_session") or {}).get("turso_session_id")
+                    else None
+                ),
+            }
+            if memory.get("resume_session")
+            else None
+        ),
+        "open_session": memory.get("open_session"),
+        "last_work": memory.get("last_work"),
+        "active_files": memory.get("active_files") or [],
+        "latest_summary": memory.get("latest_summary"),
+    }
+
+
+async def project_summary(project_id: str) -> dict | None:
+    """External-facing read-only project summary for integrations."""
+    from syte.agent_memory import get_design_profile, project_memory_snapshot
+
+    project = await get_project(project_id)
+    if not project:
+        return None
+    memory = await project_memory_snapshot(project_id)
+    profile = await get_design_profile(project_id)
+    domain = normalize_domain(project.get("domain") or "")
+    return {
+        "uuid": project_id,
+        "name": project.get("name"),
+        "domain": domain or None,
+        "url": build_https_url(domain) if domain else None,
+        "stack": project_stack(project),
+        "status": project.get("status"),
+        "deployment": {
+            "status": project.get("status"),
+            "domain": domain or None,
+            "url": build_https_url(domain) if domain else None,
+            "deploy_type": project.get("deploy_type"),
+        },
+        "design_tokens": (profile or {}).get("design_tokens") if profile else None,
+        "design_profile": memory.get("design_profile"),
+        "pages": memory.get("active_files") or [],
+        "latest_summary_id": (memory.get("latest_summary") or {}).get("id"),
+        "latest_summary": memory.get("latest_summary"),
+        "last_agent_summary": memory.get("last_work"),
+        "resume_session": memory.get("resume_session"),
     }
 
 
@@ -284,6 +339,8 @@ async def agent_change(
     model_profile: str | None = None,
     thinking_level: int | str | None = None,
     wait: bool = False,
+    improve_from_screenshot: bool = False,
+    visual_analysis_id: str | None = None,
 ) -> dict:
     from syte.cloud_agent import communicate_with_agent
 
@@ -297,4 +354,6 @@ async def agent_change(
         thinking_level=thinking_level,
         source="sycord",
         background=not wait,
+        improve_from_screenshot=improve_from_screenshot,
+        visual_analysis_id=visual_analysis_id,
     )

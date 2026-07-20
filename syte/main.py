@@ -831,30 +831,74 @@ async def api_agent_activity_public(
 
 
 @app.get("/api/projects/{project_id}/agent/sessions")
-async def api_agent_sessions_public(project_id: str, limit: int = 50):
-    """List durable Turso agent-session UUIDs for a project (newest first)."""
+async def api_agent_sessions_public(
+    project_id: str, limit: int = 50, resume: int = 0,
+):
+    """List durable Turso agent-session UUIDs plus layered memory for resume."""
+    from syte.agent_memory import project_memory_snapshot
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+    memory = await project_memory_snapshot(project_id)
+    base = {
+        "ok": True,
+        "project_id": project_id,
+        "memory": memory,
+        "resume_session": memory.get("resume_session"),
+        "open_session": memory.get("open_session"),
+        "last_work": memory.get("last_work"),
+        "active_files": memory.get("active_files") or [],
+        "latest_summary": memory.get("latest_summary"),
+    }
+    if resume:
+        base["resume"] = 1
     if not await turso_configured():
         return {
-            "ok": True,
-            "project_id": project_id,
+            **base,
             "turso_configured": False,
             "sessions": [],
             "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
         }
     sessions = await list_sessions_for_project(project_id, limit=limit)
     return {
-        "ok": True,
-        "project_id": project_id,
+        **base,
         "turso_configured": True,
         "sessions": [
             {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
         ],
     }
+
+
+@app.get("/api/projects/{project_id}/agent/activity/stream")
+async def api_agent_activity_stream_public(
+    project_id: str, request: Request, since_id: int = 0, session: str | None = None,
+):
+    """SSE stream for live agent activity (complements Turso session polling)."""
+    from syte.agent_activity import activity_sse_generator
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    async def _gen():
+        async for frame in activity_sse_generator(
+            project_id, since_id=since_id, session=session,
+        ):
+            if await request.is_disconnected():
+                break
+            yield frame
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": NO_CACHE,
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/agent_session/{session_id}")
@@ -887,6 +931,13 @@ class AgentChatRequest(BaseModel):
     message: str
     model_profile: str | None = None
     thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    improve_from_screenshot: bool = False
+    visual_analysis_id: str | None = None
+
+
+class DesignProfileRequest(BaseModel):
+    theme_key: str | None = None
+    style_key: str | None = None
 
 
 class AgentTestRequest(BaseModel):
@@ -1374,12 +1425,84 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool
             thinking_level=body.thinking_level,
             source="gui",
             background=not wait,
+            improve_from_screenshot=bool(body.improve_from_screenshot),
+            visual_analysis_id=body.visual_analysis_id,
         )
     except Exception as exc:
         return {"ok": False, "error": "agent_communicate_failed", "message": str(exc)}
     if not result.get("ok"):
         return result
     return result
+
+
+@app.get("/api/projects/{project_id}/agent/visual_analyses")
+async def api_list_visual_analyses_gui(project_id: str, limit: int = 20):
+    from syte.agent_memory import list_visual_analyses
+
+    if not await get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "analyses": await list_visual_analyses(project_id, limit=limit),
+    }
+
+
+@app.post("/api/projects/{project_id}/agent/visual_analyze")
+async def api_visual_analyze_gui(project_id: str, route: str = "/", capture: bool = True):
+    from syte.cloud_agent import _tool_screenshot_preview, selected_model_metadata
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    model = await selected_model_metadata(project)
+    result = await _tool_screenshot_preview(
+        project_id,
+        {"route": route, "viewports": ["desktop", "phone"]},
+        {"session_number": 0, "model": model},
+    )
+    from syte.agent_memory import get_visual_analysis
+
+    analyses = []
+    for shot in result.get("screenshots") or []:
+        aid = shot.get("visual_analysis_id")
+        if aid:
+            row = await get_visual_analysis(str(aid))
+            if row:
+                analyses.append(row)
+    if not analyses and not result.get("ok"):
+        raise HTTPException(400, result.get("message") or "Screenshot capture failed")
+    return {"ok": True, "project_id": project_id, "analyses": analyses, "capture": result}
+
+
+@app.get("/api/projects/{project_id}/agent/design_profile")
+async def api_get_design_profile_gui(project_id: str):
+    from syte.agent_memory import get_design_profile
+    from syte.design_profile import list_style_profiles
+
+    if not await get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "profile": await get_design_profile(project_id),
+        "style_profiles": list_style_profiles(),
+    }
+
+
+@app.post("/api/projects/{project_id}/agent/design_profile")
+async def api_set_design_profile_gui(project_id: str, body: DesignProfileRequest):
+    from syte.design_profile import apply_theme_profile
+
+    if not await get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    profile = await apply_theme_profile(
+        project_id,
+        theme_key=body.theme_key,
+        style_key=body.style_key,
+        source="gui",
+    )
+    return {"ok": True, "project_id": project_id, "profile": profile}
 
 
 @app.get("/api/projects/{project_id}/preview/status")
