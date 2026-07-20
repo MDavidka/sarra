@@ -408,6 +408,20 @@
                       <i data-lucide="brain"></i>
                     </button>
                   </div>
+                  <div class="debug-chat-visual" id="debug-chat-visual" aria-label="Visual feedback">
+                    <div class="debug-chat-visual-meta">
+                      <strong>Visual feedback</strong>
+                      <span id="debug-chat-visual-summary">No screenshot analysis yet</span>
+                    </div>
+                    <div class="debug-chat-visual-actions">
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-reanalyze">Re-analyze</button>
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-improve-ui">Improve UI</button>
+                      <label class="debug-chat-attach-toggle">
+                        <input type="checkbox" id="debug-chat-attach-screenshot" />
+                        Attach last analysis
+                      </label>
+                    </div>
+                  </div>
                   <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
                     <div class="debug-chat-empty" id="debug-chat-empty">
                       <p>What would you like to change?</p>

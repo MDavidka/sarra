@@ -11,6 +11,9 @@ let previewPollTimer = null;
 let lastPreviewFrameSrc = '';
 let previewTabActive = false;
 let agentActivityPollTimer = null;
+let agentActivityEventSource = null;
+let debugChatLatestVisualId = '';
+let debugChatResumeSession = null;
 let agentActivityPollInFlight = false;
 const AGENT_ACTIVITY_POLL_INTERVAL_MS = 2000;
 let debugChatBrainPollTimer = null;
@@ -123,6 +126,10 @@ function stopAgentActivityStream() {
   if (agentActivityPollTimer) {
     clearInterval(agentActivityPollTimer);
     agentActivityPollTimer = null;
+  }
+  if (agentActivityEventSource) {
+    agentActivityEventSource.close();
+    agentActivityEventSource = null;
   }
   agentActivityPollInFlight = false;
   setDebugChatConnectionState('disconnected');
@@ -1105,11 +1112,8 @@ async function loadDebugChatHistory(projectId) {
   }
 }
 
-// Agent activity is no longer streamed live over SSE. Every turn's events are
-// written durably (see syte.turso_store) as they happen and the local
-// snapshot endpoint (/agent/activity) still reflects them immediately, so the
-// debug chat UI polls that endpoint on a short interval instead of holding
-// open an EventSource connection.
+// Prefer SSE for token-level streaming; fall back to short-interval polling of
+// /agent/activity (and Turso session docs) when EventSource is unavailable.
 async function pollAgentActivityOnce(projectId) {
   if (agentActivityPollInFlight) return;
   agentActivityPollInFlight = true;
@@ -1124,15 +1128,121 @@ async function pollAgentActivityOnce(projectId) {
 function startAgentActivityStream(projectId) {
   stopAgentActivityStream();
   setDebugChatConnectionState('connecting');
+  void loadDebugChatVisualFeedback(projectId);
+  void loadDebugChatResumeSession(projectId);
   void pollAgentActivityOnce(projectId);
-  agentActivityPollTimer = setInterval(() => {
-    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
-      stopAgentActivityStream();
+
+  try {
+    const url = `${API}/projects/${projectId}/agent/activity/stream?session=last`;
+    agentActivityEventSource = new EventSource(url);
+    agentActivityEventSource.onopen = () => setDebugChatConnectionState('connected');
+    agentActivityEventSource.onmessage = (evt) => {
+      try {
+        const event = JSON.parse(evt.data || '{}');
+        if (event && event.event_type) {
+          applyDebugChatActivityEvent(event);
+        }
+      } catch (_) {
+        /* ignore malformed frames */
+      }
+    };
+    agentActivityEventSource.onerror = () => {
+      setDebugChatConnectionState('reconnecting');
+      if (agentActivityEventSource) {
+        agentActivityEventSource.close();
+        agentActivityEventSource = null;
+      }
+      // Fall back to polling if SSE drops.
+      if (!agentActivityPollTimer) {
+        agentActivityPollTimer = setInterval(() => {
+          if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+            stopAgentActivityStream();
+            return;
+          }
+          void pollAgentActivityOnce(projectId);
+        }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
+      }
+    };
+  } catch (_) {
+    agentActivityPollTimer = setInterval(() => {
+      if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+        stopAgentActivityStream();
+        return;
+      }
+      void pollAgentActivityOnce(projectId);
+    }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
+  }
+  startDebugChatBrainPoll(projectId);
+}
+
+async function loadDebugChatResumeSession(projectId) {
+  try {
+    const res = await api(`/projects/${projectId}/agent/sessions?resume=1&limit=5`);
+    debugChatResumeSession = res.resume_session || res.open_session || null;
+    if (res.last_work) {
+      const detail = document.querySelector('#debug-chat-activity .debug-chat-activity-detail');
+      if (detail && !debugChatBusy) detail.textContent = res.last_work;
+    }
+  } catch (_) {
+    debugChatResumeSession = null;
+  }
+}
+
+async function loadDebugChatVisualFeedback(projectId) {
+  const summary = document.getElementById('debug-chat-visual-summary');
+  try {
+    const res = await api(`/projects/${projectId}/agent/visual_analyses?limit=1`);
+    const analysis = (res.analyses || [])[0];
+    if (!analysis) {
+      debugChatLatestVisualId = '';
+      if (summary) summary.textContent = 'No screenshot analysis yet';
       return;
     }
-    void pollAgentActivityOnce(projectId);
-  }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
-  startDebugChatBrainPoll(projectId);
+    debugChatLatestVisualId = analysis.id || '';
+    const issues = (analysis.issues || []).length;
+    const suggestions = (analysis.suggestions || []).length;
+    if (summary) {
+      summary.textContent = `${analysis.viewport || 'desktop'} · ${issues} issue(s), ${suggestions} suggestion(s)`;
+    }
+  } catch (_) {
+    if (summary) summary.textContent = 'Visual analysis unavailable';
+  }
+}
+
+async function reanalyzeDebugChatVisual() {
+  if (!activeServiceId) return;
+  const summary = document.getElementById('debug-chat-visual-summary');
+  if (summary) summary.textContent = 'Capturing preview…';
+  try {
+    await api(`/projects/${activeServiceId}/agent/visual_analyze?capture=true&route=/`, { method: 'POST' });
+    await loadDebugChatVisualFeedback(activeServiceId);
+    toast('Screenshot re-analyzed');
+  } catch (e) {
+    if (summary) summary.textContent = e.message || 'Re-analyze failed';
+    toast(e.message || 'Re-analyze failed');
+  }
+}
+
+async function improveDebugChatFromScreenshot() {
+  const input = document.getElementById('debug-chat-input');
+  if (input && !String(input.value || '').trim()) {
+    input.value = 'Improve the UI from the latest screenshot analysis. Fix listed issues with minimal diffs.';
+    input.dispatchEvent(new Event('input'));
+  }
+  const attach = document.getElementById('debug-chat-attach-screenshot');
+  if (attach) attach.checked = true;
+  await sendDebugChatMessage();
+}
+
+function applyDebugChatActivityEvent(event) {
+  // Reuse the same path as history sync for a single live event.
+  if (typeof handleDebugChatActivity === 'function') {
+    handleDebugChatActivity(event);
+    return;
+  }
+  if (typeof appendDebugChatBubble === 'function' && event.event_type) {
+    appendDebugChatBubble(event);
+  }
 }
 
 async function reconnectDebugChatStream() {
@@ -1585,6 +1695,10 @@ async function sendDebugChatMessage() {
         message: sentMessage,
         model_profile: profile,
         thinking_level: thinkingLevel,
+        improve_from_screenshot: Boolean(document.getElementById('debug-chat-attach-screenshot')?.checked),
+        visual_analysis_id: document.getElementById('debug-chat-attach-screenshot')?.checked
+          ? (debugChatLatestVisualId || null)
+          : null,
       }),
     });
     chatOk = !!res.ok;
@@ -3325,6 +3439,8 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
 });
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
+document.getElementById('debug-chat-reanalyze')?.addEventListener('click', () => { void reanalyzeDebugChatVisual(); });
+document.getElementById('debug-chat-improve-ui')?.addEventListener('click', () => { void improveDebugChatFromScreenshot(); });
 document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
 function bindDebugChatComposer() {
   const input = document.getElementById('debug-chat-input');

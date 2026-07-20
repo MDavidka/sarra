@@ -298,6 +298,20 @@ async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
     if not project:
         return None, "Project not found"
     asyncio.create_task(run_deploy_job(project_id))
+    try:
+        from syte.webhooks import EVENT_SITE_DEPLOYED, emit_webhook
+
+        domain = project.get("domain") or ""
+        await emit_webhook(
+            EVENT_SITE_DEPLOYED,
+            {
+                "project_id": project_id,
+                "domain": domain,
+                "status": "deploying",
+            },
+        )
+    except Exception:
+        pass
     return project, (
         f"Deploy issued for {project_id}. "
         f"Stream logs: GET /api/projects/{project_id}/logs/stream"
