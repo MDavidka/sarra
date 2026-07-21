@@ -103,19 +103,26 @@ def _harden_git_argv(cmd: list[str]) -> tuple[list[str], bool]:
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
+    from syte.output_limits import TRUNCATION_MARKER, read_binary_stream_limited
+
     merged_env = {**os.environ, **(env or {})}
     cmd, is_git = _harden_git_argv(cmd)
     if is_git:
         merged_env["GIT_TERMINAL_PROMPT"] = "0"
-    result = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
         cwd=cwd,
         env=merged_env,
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
-    output = (result.stdout or "") + (result.stderr or "")
-    return result.returncode, output.strip()
+    assert proc.stdout is not None
+    raw, truncated = read_binary_stream_limited(proc.stdout)
+    code = int(proc.wait() or 0)
+    output = raw.decode("utf-8", errors="replace").strip()
+    if truncated and TRUNCATION_MARKER.strip() not in output:
+        output = (output + TRUNCATION_MARKER).strip()
+    return code, output
 
 
 def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bool, str]:

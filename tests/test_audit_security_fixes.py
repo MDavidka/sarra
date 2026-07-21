@@ -112,11 +112,16 @@ def test_git_commands_disable_hooks_and_prompts(tmp_path, monkeypatch) -> None:
 
     subprocess_calls: list[dict] = []
 
-    def fake_subprocess_run(cmd, cwd=None, env=None, capture_output=None, text=None):
-        subprocess_calls.append({"cmd": cmd, "env": env})
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    class FakePopen:
+        def __init__(self, cmd, cwd=None, env=None, stdout=None, stderr=None):
+            subprocess_calls.append({"cmd": cmd, "env": env})
+            self.stdout = __import__("io").BytesIO(b"")
+            self.returncode = 0
 
-    monkeypatch.setattr(workspace_mod.subprocess, "run", fake_subprocess_run)
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(workspace_mod.subprocess, "Popen", FakePopen)
     code, _out = run_cmd(["git", "status"])
 
     assert code == 0
@@ -163,8 +168,25 @@ def test_execute_command_enforces_allowlist_and_allows_npm(tmp_path, monkeypatch
     async def fake_record_workspace_activity(*args, **kwargs):
         return {}
 
+    class FakeStream:
+        def __init__(self, data: bytes):
+            self._data = data
+            self._sent = False
+
+        async def read(self, n: int = -1):
+            if self._sent:
+                return b""
+            self._sent = True
+            return self._data
+
     class FakeProc:
         returncode = 0
+
+        def __init__(self):
+            self.stdout = FakeStream(b"lint ok")
+
+        async def wait(self):
+            return 0
 
         async def communicate(self):
             return b"lint ok", b""
@@ -279,3 +301,30 @@ def test_docker_runtime_resource_args_defaults(monkeypatch) -> None:
     monkeypatch.setattr(config_mod.settings, "docker_cpus", "0")
     monkeypatch.setattr(config_mod.settings, "docker_pids_limit", 0)
     assert _runtime_resource_args() == []
+
+
+def test_output_limits_truncate_and_cap_stream() -> None:
+    from io import StringIO
+
+    from syte.output_limits import (
+        TRUNCATION_MARKER,
+        read_text_stream_limited,
+        truncate_output,
+    )
+
+    assert truncate_output("hello") == "hello"
+    big = "x" * 10_000
+    trimmed = truncate_output(big, max_bytes=100)
+    assert len(trimmed.encode()) <= 100 + len(TRUNCATION_MARKER.encode())
+    assert "truncated" in trimmed
+
+    seen: list[str] = []
+    text, truncated = read_text_stream_limited(
+        StringIO("aaaa\n" * 1000),
+        max_bytes=50,
+        on_line=seen.append,
+    )
+    assert truncated is True
+    assert "truncated" in text
+    assert len(seen) == 1000
+    assert len(text.encode()) <= 50 + len(TRUNCATION_MARKER.encode())

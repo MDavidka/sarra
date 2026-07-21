@@ -522,15 +522,21 @@ async def execute_command(
     merged_env = {**os.environ, **read_env_vars(project.get("env_vars", "{}")), **(env or {})}
 
     try:
+        from syte.output_limits import TRUNCATION_MARKER, read_async_stream_limited
+
         proc = await asyncio.create_subprocess_shell(
             cmd,
             cwd=workdir,
             env=merged_env,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout_b, truncated = await asyncio.wait_for(
+                read_async_stream_limited(proc.stdout),
+                timeout=timeout,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=5)
         except asyncio.TimeoutError:
             proc.kill()
             try:
@@ -539,7 +545,9 @@ async def execute_command(
                 pass
             _append_command_log(project_id, cmd, cwd, 124)
             return 124, f"Command timed out after {timeout}s"
-        out = ((stdout_b or b"") + (stderr_b or b"")).decode("utf-8", errors="replace")
+        out = (stdout_b or b"").decode("utf-8", errors="replace")
+        if truncated and TRUNCATION_MARKER.strip() not in out:
+            out = out + TRUNCATION_MARKER
         code = int(proc.returncode or 0)
         output = out.strip() or "(no output)"
         _append_command_log(project_id, cmd, cwd, code)

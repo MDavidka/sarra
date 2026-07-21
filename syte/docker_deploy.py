@@ -301,7 +301,13 @@ def _append_build_log(project_id: str, label: str, output: str) -> None:
 
 
 def _run_build_streaming(build_cmd: list[str], project_id: str) -> tuple[int, str]:
-    """Run docker build and stream stdout/stderr into build.log in real time."""
+    """Run docker build and stream stdout/stderr into build.log in real time.
+
+    Disk log receives the full stream; the returned string is capped in RAM
+    (see ``MAX_CAPTURED_OUTPUT_BYTES``) so a spammy Dockerfile cannot OOM Syte.
+    """
+    from syte.output_limits import read_text_stream_limited
+
     log_path = _build_log_path(project_id)
     proc = subprocess.Popen(
         build_cmd,
@@ -310,17 +316,18 @@ def _run_build_streaming(build_cmd: list[str], project_id: str) -> tuple[int, st
         text=True,
         bufsize=1,
     )
-    chunks: list[str] = []
     with log_path.open("a") as log_file:
         log_file.write("\n=== docker build ===\n")
         log_file.flush()
         assert proc.stdout is not None
-        for line in proc.stdout:
-            chunks.append(line)
+
+        def _write_line(line: str) -> None:
             log_file.write(line)
             log_file.flush()
+
+        captured, _truncated = read_text_stream_limited(proc.stdout, on_line=_write_line)
     code = proc.wait()
-    return code, "".join(chunks).strip()
+    return code, captured
 
 
 def deploy_docker(
