@@ -1037,6 +1037,155 @@ async def disconnect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]
     return {"ok": True, "id": addon["id"], "status": "available"}
 
 
+# Argument schemas for built-in MCP tools (DAV-146).
+_BUILTIN_MCP_SCHEMAS: dict[str, dict[str, Any]] = {
+    "syte_service": {
+        "required": ["action"],
+        "properties": {
+            "action": {"type": "string", "min_len": 1, "max_len": 64},
+            "command": {"type": "string", "max_len": 4000},
+            "cwd": {"type": "string", "max_len": 500},
+            "lines": {"type": "integer", "min": 1, "max": 2000},
+            "timeout": {"type": "integer", "min": 1, "max": 900},
+        },
+    },
+    "service": {
+        "required": ["action"],
+        "properties": {
+            "action": {"type": "string", "min_len": 1, "max_len": 64},
+            "command": {"type": "string", "max_len": 4000},
+            "cwd": {"type": "string", "max_len": 500},
+            "lines": {"type": "integer", "min": 1, "max": 2000},
+            "timeout": {"type": "integer", "min": 1, "max": 900},
+        },
+    },
+    "syte_access": {
+        "required": ["action"],
+        "properties": {
+            "action": {"type": "string", "min_len": 1, "max_len": 64},
+            "url": {"type": "string", "max_len": 2000},
+            "lines": {"type": "integer", "min": 1, "max": 2000},
+        },
+    },
+    "access": {
+        "required": ["action"],
+        "properties": {
+            "action": {"type": "string", "min_len": 1, "max_len": 64},
+            "url": {"type": "string", "max_len": 2000},
+            "lines": {"type": "integer", "min": 1, "max": 2000},
+        },
+    },
+    "web_search": {
+        "required": [],
+        "properties": {
+            "query": {"type": "string", "min_len": 1, "max_len": 500},
+            "q": {"type": "string", "min_len": 1, "max_len": 500},
+            "max_results": {"type": "integer", "min": 1, "max": 10},
+        },
+        "require_any": [["query", "q"]],
+    },
+    "search": {
+        "required": [],
+        "properties": {
+            "query": {"type": "string", "min_len": 1, "max_len": 500},
+            "q": {"type": "string", "min_len": 1, "max_len": 500},
+            "max_results": {"type": "integer", "min": 1, "max": 10},
+        },
+        "require_any": [["query", "q"]],
+    },
+}
+
+
+def validate_builtin_mcp_arguments(
+    tool: str,
+    arguments: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Validate built-in MCP tool args. Returns an error dict, or None if ok."""
+    schema = _BUILTIN_MCP_SCHEMAS.get(tool)
+    if schema is None:
+        return None
+    args = dict(arguments or {})
+    props = schema.get("properties") or {}
+    # Reject unknown keys (strict schema for builtins).
+    unknown = [k for k in args if k not in props]
+    if unknown:
+        return {
+            "ok": False,
+            "error": "invalid_arguments",
+            "message": f"Unknown argument(s) for {tool}: {', '.join(unknown)}",
+            "allowed": sorted(props.keys()),
+        }
+    for key in schema.get("required") or []:
+        if key not in args or args.get(key) in (None, ""):
+            return {
+                "ok": False,
+                "error": "invalid_arguments",
+                "message": f"Missing required argument '{key}' for {tool}",
+            }
+    for group in schema.get("require_any") or []:
+        if not any(args.get(k) not in (None, "") for k in group):
+            return {
+                "ok": False,
+                "error": "invalid_arguments",
+                "message": f"One of {group} is required for {tool}",
+            }
+    for key, rules in props.items():
+        if key not in args or args[key] is None:
+            continue
+        value = args[key]
+        expected = rules.get("type")
+        if expected == "string" and not isinstance(value, str):
+            return {
+                "ok": False,
+                "error": "invalid_arguments",
+                "message": f"Argument '{key}' must be a string",
+            }
+        if expected == "integer":
+            if isinstance(value, bool) or not isinstance(value, int):
+                try:
+                    value = int(value)
+                    args[key] = value
+                except (TypeError, ValueError):
+                    return {
+                        "ok": False,
+                        "error": "invalid_arguments",
+                        "message": f"Argument '{key}' must be an integer",
+                    }
+            if "min" in rules and value < rules["min"]:
+                return {
+                    "ok": False,
+                    "error": "invalid_arguments",
+                    "message": f"Argument '{key}' must be >= {rules['min']}",
+                }
+            if "max" in rules and value > rules["max"]:
+                return {
+                    "ok": False,
+                    "error": "invalid_arguments",
+                    "message": f"Argument '{key}' must be <= {rules['max']}",
+                }
+        if expected == "string" and isinstance(value, str):
+            if "min_len" in rules and len(value) < rules["min_len"]:
+                return {
+                    "ok": False,
+                    "error": "invalid_arguments",
+                    "message": f"Argument '{key}' is too short",
+                }
+            if "max_len" in rules and len(value) > rules["max_len"]:
+                return {
+                    "ok": False,
+                    "error": "invalid_arguments",
+                    "message": f"Argument '{key}' is too long (max {rules['max_len']})",
+                }
+            enum_vals = rules.get("enum")
+            if enum_vals and value not in enum_vals:
+                return {
+                    "ok": False,
+                    "error": "invalid_arguments",
+                    "message": f"Argument '{key}' must be one of {enum_vals}",
+                }
+    return None
+
+
 async def call_mcp_addon(
     project_id: str,
     addon_id: str,
@@ -1054,6 +1203,19 @@ async def call_mcp_addon(
             return connected
 
     args = dict(arguments or {})
+    if not isinstance(arguments, dict) and arguments is not None:
+        return {
+            "ok": False,
+            "error": "invalid_arguments",
+            "message": "MCP arguments must be a JSON object",
+        }
+
+    # Validate built-in tool schemas before dispatch.
+    if addon["name"] in {"syte", "web_search"}:
+        validation_error = validate_builtin_mcp_arguments(tool, args)
+        if validation_error is not None:
+            return validation_error
+
     if addon["name"] == "syte":
         if tool in {"syte_service", "service"}:
             from syte.agent_service import run_service_action

@@ -48,6 +48,21 @@ def test_build_model_thinking_params_deepseek_thinking_and_cache() -> None:
     assert params["top_p"] == 1.0
 
 
+def test_build_model_thinking_params_fast_level_no_thinking_key() -> None:
+    from syte.thinking_levels import build_model_thinking_params, deepseek_thinking_payload, resolve_thinking_config
+
+    cfg = resolve_thinking_config(2)
+    assert deepseek_thinking_payload(cfg) is None
+    params = build_model_thinking_params(
+        cfg,
+        provider="openai",
+        model="deepseek-chat",
+        api_base="https://api.deepseek.com/v1",
+    )
+    assert "thinking" not in params
+    assert params["cache_prompt"] is True
+
+
 def test_apply_prompt_cache_markers_anthropic_only() -> None:
     from syte.thinking_levels import apply_prompt_cache_markers
 

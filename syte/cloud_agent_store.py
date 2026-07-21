@@ -247,6 +247,59 @@ async def mark_message_synced(message_id: int, *, synced: bool = True) -> None:
         await db.commit()
 
 
+async def list_unsynced_messages(
+    project_id: str,
+    *,
+    session_number: int | None = None,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """Return local messages not yet mirrored to Turso (DAV-145 recovery)."""
+    await ensure_cloud_agent_tables()
+    limit = max(1, min(int(limit or 40), 200))
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        if session_number is None:
+            async with db.execute(
+                "SELECT id, project_id, request_id, session_number, role, content, "
+                "tool_call_id, tool_calls, reasoning_content, created_at "
+                "FROM agent_messages WHERE project_id = ? AND turso_synced = 0 "
+                "ORDER BY id ASC LIMIT ?",
+                (project_id, limit),
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute(
+                "SELECT id, project_id, request_id, session_number, role, content, "
+                "tool_call_id, tool_calls, reasoning_content, created_at "
+                "FROM agent_messages WHERE project_id = ? AND session_number = ? "
+                "AND turso_synced = 0 ORDER BY id ASC LIMIT ?",
+                (project_id, int(session_number), limit),
+            ) as cur:
+                rows = await cur.fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        tool_calls = None
+        raw = row["tool_calls"]
+        if raw:
+            try:
+                tool_calls = json.loads(raw)
+            except json.JSONDecodeError:
+                tool_calls = None
+        out.append({
+            "id": int(row["id"]),
+            "project_id": row["project_id"],
+            "request_id": row["request_id"],
+            "session_number": int(row["session_number"] or 0),
+            "role": row["role"],
+            "content": row["content"] or "",
+            "tool_call_id": row["tool_call_id"],
+            "tool_calls": tool_calls if isinstance(tool_calls, list) else None,
+            "reasoning_content": row["reasoning_content"],
+            "created_at": row["created_at"],
+        })
+    return out
+
+
 async def session_sync_status(project_id: str, session_number: int) -> dict[str, Any]:
     """Aggregate local Turso-sync status for one chat session.
 
@@ -383,7 +436,10 @@ async def conversation_messages(
             except json.JSONDecodeError:
                 pass
         if reasoning_content:
-            message["reasoning_content"] = reasoning_content
+            capped = str(reasoning_content)
+            if len(capped) > 4000:
+                capped = capped[:4000] + "\n… [thinking truncated]"
+            message["reasoning_content"] = capped
         messages.append(message)
     # Drop leading orphans and synthesize any missing tool results so the
     # window is always a valid OpenAI-compatible tool_calls/tool pair sequence.

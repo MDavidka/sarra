@@ -135,10 +135,14 @@ def resolve_thinking_config(
     return config
 
 
-def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any]:
-    """Payload fragment for DeepSeek ``thinking`` when the host is deepseek.com."""
+def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any] | None:
+    """Payload fragment for DeepSeek ``thinking`` when the host is deepseek.com.
+
+    Returns ``None`` when thinking is disabled so callers can omit the field
+    entirely (some gateways reject ``thinking: disabled`` on non-R1 models).
+    """
     if not config.get("thinking_enabled"):
-        return {"type": "disabled"}
+        return None
     budget = int(config.get("thinking_budget_tokens") or 0)
     payload: dict[str, Any] = {"type": "enabled"}
     if budget > 0:
@@ -156,7 +160,8 @@ def build_model_thinking_params(
     """Map a thinking config to provider-specific inference params.
 
     Always returns temperature + top_p. Native thinking payloads are attached
-    when the provider/model supports them (DeepSeek, Anthropic Claude).
+    only when thinking is enabled **and** the provider/model supports them.
+    Instant/Fast (thinking_enabled=False) never injects reasoning keys.
     """
     cfg = thinking_config or {}
     params: dict[str, Any] = {
@@ -174,9 +179,13 @@ def build_model_thinking_params(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
 
+    # DeepSeek prefix cache is safe even without thinking mode.
     if is_deepseek:
-        params["thinking"] = deepseek_thinking_payload(cfg)
         params["cache_prompt"] = True
+        if enabled:
+            thinking = deepseek_thinking_payload(cfg)
+            if thinking is not None:
+                params["thinking"] = thinking
 
     if is_anthropic and enabled and budget > 0:
         params["thinking"] = {
@@ -205,6 +214,9 @@ def apply_prompt_cache_markers(
     OpenAI-compatible Syra endpoints (DeepSeek / Gemini) rely on stable system-first
     prefixes + DeepSeek ``cache_prompt``. Anthropic-native cache_control content
     blocks are only applied when the provider/model is actually Anthropic/Claude.
+
+    If the system message is already a list of content blocks (static/dynamic split
+    with cache_control on the static prefix), leave it unchanged.
     """
     if not messages:
         return messages
@@ -215,8 +227,14 @@ def apply_prompt_cache_markers(
     if system.get("role") != "system":
         return out
 
+    content = system.get("content")
+    if isinstance(content, list):
+        # Already structured (e.g. static + dynamic with cache breakpoint).
+        out[0] = system
+        _ = api_base
+        return out
+
     if "anthropic" in provider_l or "claude" in model_l:
-        content = system.get("content")
         if isinstance(content, str):
             system["content"] = [
                 {
@@ -225,10 +243,6 @@ def apply_prompt_cache_markers(
                     "cache_control": {"type": "ephemeral"},
                 }
             ]
-        elif isinstance(content, list) and content:
-            first = dict(content[0]) if isinstance(content[0], dict) else {"type": "text", "text": str(content[0])}
-            first["cache_control"] = {"type": "ephemeral"}
-            system["content"] = [first, *content[1:]]
         out[0] = system
 
     # DeepSeek / Gemini / OpenAI: keep plain string system content (cache via prefix + cache_prompt).

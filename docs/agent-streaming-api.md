@@ -183,6 +183,21 @@ Structured tool failure for observability (does not replace `tool_call_finished`
 }
 ```
 
+#### Common `error_type` values
+
+| `error_type` | Meaning | Typical `retryable` |
+|--------------|---------|---------------------|
+| `plan_required` | Deep/Max gate: call `update_plan` first | `true` |
+| `invalid_pattern` | `search_code` pattern missing/invalid | `false` |
+| `invalid_path` | Path outside workspace | `false` |
+| `invalid_arguments` | MCP/builtin tool schema validation failed | `false` |
+| `unknown_tool` | MCP tool name not registered | `false` |
+| `not_found` | Addon/project/resource missing | `false` |
+| `timeout` / `search_failed` | Subprocess or network timeout | `true` |
+| `tool_failed` | Generic tool failure (see `message`) | varies |
+| `mcp_dispatch_unsupported` | Custom MCP stdio dispatch disabled | `false` |
+| `builtin_readonly` | Attempted to edit built-in MCP addon | `false` |
+
 ## Event Ordering Guarantees
 
 - `token_delta` events arrive in-order within a single assistant message
@@ -190,13 +205,42 @@ Structured tool failure for observability (does not replace `tool_call_finished`
 - `question` is blocking; the agent waits until answered (or times out)
 - `request_completed`, `request_failed`, or `session_stopped` ends the turn
 
-## Reconnection
+## Reconnection & poll backoff
 
 SSE / poll clients should:
 
 1. Track the last seen event `id` (and optionally `payload.session`)
 2. On disconnect, reconnect with `?since_id={last_id}`
-3. The server replays events after that id, then continues live
+3. The server returns events with `id > since_id` (no wrap / no 410); if `since_id`
+   is ahead of the store, the result set is empty until new events arrive
+4. Polling backoff recommendation: start at **500ms**, double after empty polls up to
+   **5s**, reset to 500ms when new events arrive; keep a long-poll style SSE open when
+   possible instead of busy-polling
+5. Cap concurrent pollers per session to 1 in the BFF to avoid stampeding Turso
 
 Optional: `session=last` or `session={N}` filters to the latest / specific numbered
 chat session.
+
+## Visual analyses
+
+Related visual analyses are available at:
+
+`GET /api/projects/{id}/agent/visual_analyses`
+
+**Response shape (array items):**
+
+```json
+{
+  "id": "va_…",
+  "project_id": "proj_…",
+  "screenshot_id": 123,
+  "score": 0.72,
+  "summary": "Spacing on the hero feels tight…",
+  "issues": [{"severity": "spacing", "detail": "…"}],
+  "suggestions": ["Increase hero padding"],
+  "created_at": "2026-07-20T14:30:00+00:00"
+}
+```
+
+Use `visual_analysis_id` on chat / `agent_change` to attach a specific analysis as
+critique context, or `improve_from_screenshot: true` for the latest analysis.

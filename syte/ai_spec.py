@@ -240,11 +240,14 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "request_started",
                     "processing",
                     "thinking",
+                    "thinking_delta",
+                    "token_delta",
                     "screenshot",
                     "question",
                     "question_answered",
                     "tool_call_started",
                     "tool_call_finished",
+                    "tool_error",
                     "file_created",
                     "file_modified",
                     "file_deleted",
@@ -253,9 +256,61 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "agent_started",
                     "agent_stopped",
                     "agent_restarted",
+                    "session_stopped",
                 ],
+                "activity_sse": {
+                    "endpoint": "GET /api/projects/{uuid}/agent/activity/stream?since_id=0&session=last",
+                    "format": "text/event-stream — each frame is `data: {json}\\n\\n`",
+                    "note": (
+                        "Live activity mirror; disconnect only stops the SSE reader — "
+                        "use POST interrupt/stop to cancel the agent turn (DAV-131)."
+                    ),
+                    "poll_backoff": {
+                        "initial_ms": 500,
+                        "max_ms": 5000,
+                        "strategy": "double after empty polls; reset when events arrive",
+                        "since_id": (
+                            "Returns events with id > since_id. Empty set when caught up; "
+                            "no 410 wrap — clients keep the highest seen id."
+                        ),
+                    },
+                    "payload_marks": {
+                        "g": "in progress / green",
+                        "d": "done / delivered",
+                    },
+                    "tool_error_types": [
+                        "plan_required",
+                        "invalid_arguments",
+                        "invalid_pattern",
+                        "invalid_path",
+                        "unknown_tool",
+                        "not_found",
+                        "timeout",
+                        "search_failed",
+                        "tool_failed",
+                        "mcp_dispatch_unsupported",
+                        "builtin_readonly",
+                    ],
+                    "tools": {
+                        "search_code": (
+                            "Ripgrep-style workspace search (pattern, path?, glob?, max_matches?). "
+                            "Prefer over unbounded list_files / shell grep."
+                        ),
+                        "mandatory_plan_gate": (
+                            "thinking_level 4–5: first tool must be update_plan "
+                            "(error_type=plan_required otherwise)."
+                        ),
+                    },
+                },
+                "visual_analyses": {
+                    "list": "GET /api/projects/{uuid}/agent/visual_analyses",
+                    "fields": [
+                        "id", "project_id", "screenshot_id", "score", "summary",
+                        "issues", "suggestions", "created_at",
+                    ],
+                },
                 "turn_lifecycle": (
-                    "request_started -> processing -> [thinking|question|screenshot] -> "
+                    "request_started -> processing -> [thinking|thinking_delta|token_delta|question|screenshot] -> "
                     "(tool_call_started -> tool_call_finished)* -> "
                     "request_completed|request_failed|agent_stopped; correlate by payload.request_id"
                 ),

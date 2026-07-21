@@ -467,6 +467,21 @@ async def add_custom_skill(
     clean_content = (content or "").strip()
     if not clean_content:
         return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+    if "\x00" in clean_content:
+        return {"ok": False, "error": "invalid_content", "message": "Skill content contains null bytes"}
+    if len(clean_content) > 50_000:
+        return {
+            "ok": False,
+            "error": "invalid_content",
+            "message": "Skill content exceeds 50k characters",
+        }
+    # Soft validation: prefer markdown with at least one heading so bad configs fail early.
+    if not any(line.startswith("#") for line in clean_content.splitlines()[:40]):
+        return {
+            "ok": False,
+            "error": "invalid_content",
+            "message": "Skill content should include a markdown heading (# ...)",
+        }
 
     await ensure_artifact_tables()
     resolved_id = await _unique_custom_skill_id(project_id, skill_id or clean_name)
@@ -553,6 +568,22 @@ async def update_custom_skill(
             return {"ok": False, "error": "invalid_name", "message": "Skill name is required"}
         if not str(next_content).strip():
             return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+        if "\x00" in str(next_content):
+            return {"ok": False, "error": "invalid_content", "message": "Skill content contains null bytes"}
+        if len(str(next_content)) > 50_000:
+            return {
+                "ok": False,
+                "error": "invalid_content",
+                "message": "Skill content exceeds 50k characters",
+            }
+        if content is not None and not any(
+            line.startswith("#") for line in str(next_content).splitlines()[:40]
+        ):
+            return {
+                "ok": False,
+                "error": "invalid_content",
+                "message": "Skill content should include a markdown heading (# ...)",
+            }
 
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
