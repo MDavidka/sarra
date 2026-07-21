@@ -52,7 +52,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 9
+AGENT_INSTRUCTION_VERSION = 10
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -69,6 +69,148 @@ _instruction_cache: dict[tuple[str, int, str], str] = {}
 _background_subagents: dict[str, asyncio.Task[Any]] = {}
 
 TokenEmitter = Callable[[str], Awaitable[None]]
+
+MAX_TOOL_RESULT_CHARS = 16_000
+MAX_REASONING_HISTORY_CHARS = 4_000
+MAX_PROJECT_BRIEF_CHARS = 4_000
+TOOL_TRUNCATION_NOTE = "\n… [truncated for LLM context — re-read a narrower path or ask for a specific section]"
+
+
+def _truncate_for_llm(text: str, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
+    if len(text) <= max_chars:
+        return text
+    keep = max(0, max_chars - len(TOOL_TRUNCATION_NOTE))
+    return text[:keep] + TOOL_TRUNCATION_NOTE
+
+
+def _truncate_tool_payload(result: dict[str, Any], *, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
+    """JSON-encode a tool result, capping size so one tool cannot blow the context window."""
+    public = {k: v for k, v in result.items() if not str(k).startswith("_")}
+    encoded = json.dumps(public, ensure_ascii=False)
+    if len(encoded) <= max_chars:
+        return encoded
+    # Prefer truncating large string fields before chopping JSON mid-token.
+    for key in ("content", "output", "files", "results", "message", "detail", "raw"):
+        value = public.get(key)
+        if isinstance(value, str) and len(value) > 2_000:
+            public[key] = _truncate_for_llm(value, max(2_000, max_chars // 2))
+            public["truncated"] = True
+            encoded = json.dumps(public, ensure_ascii=False)
+            if len(encoded) <= max_chars:
+                return encoded
+        if isinstance(value, list) and len(value) > 80:
+            public[key] = value[:80]
+            public["truncated"] = True
+            public["truncated_count"] = len(value)
+            encoded = json.dumps(public, ensure_ascii=False)
+            if len(encoded) <= max_chars:
+                return encoded
+    return _truncate_for_llm(encoded, max_chars)
+
+
+def _raise_if_cancelled() -> None:
+    """Cooperative cancel checkpoint between provider/tool steps (DAV-131)."""
+    task = asyncio.current_task()
+    if task is not None and task.cancelled():
+        raise asyncio.CancelledError()
+
+
+def _system_message_for_provider(static: str, dynamic: str, model: dict[str, Any]) -> dict[str, Any]:
+    """Build the system message; Anthropic gets a cache breakpoint after the static prefix."""
+    provider = str(model.get("provider") or "").lower()
+    model_name = str(model.get("model") or "").lower()
+    if "anthropic" in provider or "claude" in model_name:
+        return {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": static,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": dynamic},
+            ],
+        }
+    return {"role": "system", "content": f"{static}\n\n{dynamic}"}
+
+
+def _read_project_brief(project_id: str) -> str:
+    """Load durable project brief for system context (DAV-137)."""
+    root = workspace_path(project_id)
+    candidates = (
+        root / ".syte" / "PROJECT_BRIEF.md",
+        root / "PROJECT_BRIEF.md",
+        root / "app" / "PROJECT_BRIEF.md",
+    )
+    for path in candidates:
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="replace").strip()
+                if text:
+                    return text[:MAX_PROJECT_BRIEF_CHARS]
+        except OSError:
+            continue
+    return ""
+
+
+def _seed_project_brief(project_id: str) -> str:
+    """Create a short brief from README / package.json when none exists yet."""
+    root = workspace_path(project_id)
+    brief_dir = root / ".syte"
+    brief_path = brief_dir / "PROJECT_BRIEF.md"
+    if brief_path.is_file():
+        return _read_project_brief(project_id)
+
+    parts: list[str] = ["# Project brief", ""]
+    pkg = root / "app" / "package.json"
+    if not pkg.is_file():
+        pkg = root / "package.json"
+    if pkg.is_file():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            name = data.get("name") or project_id
+            desc = data.get("description") or ""
+            deps = sorted({*(data.get("dependencies") or {}), *(data.get("devDependencies") or {})})
+            parts.append(f"Name: {name}")
+            if desc:
+                parts.append(f"Description: {desc}")
+            if deps:
+                parts.append("Stack hints: " + ", ".join(deps[:24]))
+            parts.append("")
+        except (OSError, json.JSONDecodeError):
+            pass
+    for readme in (root / "app" / "README.md", root / "README.md"):
+        try:
+            if readme.is_file():
+                excerpt = readme.read_text(encoding="utf-8", errors="replace").strip()[:1500]
+                if excerpt:
+                    parts.append("## README excerpt")
+                    parts.append(excerpt)
+                    break
+        except OSError:
+            continue
+    if len(parts) <= 2:
+        parts.append(
+            f"Workspace project `{project_id}`. Update this file as the durable product/stack brief."
+        )
+    text = "\n".join(parts).strip()[:MAX_PROJECT_BRIEF_CHARS]
+    try:
+        brief_dir.mkdir(parents=True, exist_ok=True)
+        brief_path.write_text(text + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return text
+
+
+def _project_brief_block(project_id: str) -> str:
+    brief = _read_project_brief(project_id) or _seed_project_brief(project_id)
+    if not brief:
+        return ""
+    return (
+        "## Project brief (durable context — prefer this over re-discovering the stack)\n"
+        f"{brief}\n"
+    )
+
 
 _UI_PATH_MARKERS = (
     "components/",
@@ -395,7 +537,8 @@ def _build_static_instruction(
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
         "semantic_search (meaning-based workspace lookup); service (preview status/start/stop/"
         "logs); delegate_task for bounded sub-work (set background:true to run async).\n",
-        "Use update_plan for multi-step work so the plan is visible in chat and saved. Use ask_question "
+        "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
+        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. Use ask_question "
         "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
         "screenshot_preview after UI changes and check BOTH phone and desktop layouts. Continue using "
         "tools until the request is actually complete; the user can interrupt a long turn.\n",
@@ -423,15 +566,15 @@ def _build_static_instruction(
     return "\n".join(parts)
 
 
-async def _build_syte_instruction(
+async def _build_syte_instruction_parts(
     project_id: str,
     *,
     force_refresh: bool = False,
-) -> str:
-    """Assemble full system instruction with fresh dynamic memory every call.
+) -> tuple[str, str]:
+    """Return ``(static_prefix, dynamic_suffix)`` for prompt-cache-friendly assembly.
 
-    Static portions (design contract, tool docs, skills, rules) are cached.
-    Session memory + design profile are never cached so summaries reach the LLM.
+    Static portions (design contract, tool docs, skills, rules, project brief) are
+    cached. Session memory + design profile stay dynamic so summaries reach the LLM.
     """
     from syte.agent_skills import (
         build_agent_rules,
@@ -452,6 +595,8 @@ async def _build_syte_instruction(
         str(skill.get("content") or "").strip()
         for skill in active_skills_list
         if str(skill.get("content") or "").strip()
+        and "\x00" not in str(skill.get("content") or "")
+        and len(str(skill.get("content") or "")) <= 50_000
     ]
     active_skills = "\n\n".join(active_skill_blocks)
     active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
@@ -461,10 +606,12 @@ async def _build_syte_instruction(
     is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
     project_meta = _project_metadata_block(project)
     website_enforcement = _website_enforcement_block(is_website=is_website)
+    project_brief = _project_brief_block(project_id)
 
     rules_hash = hashlib.sha256(
         f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n"
-        f"{website_enforcement}\n{project_meta}\n{syterules}\n{workspace_path(project_id)}".encode()
+        f"{website_enforcement}\n{project_meta}\n{syterules}\n{project_brief}\n"
+        f"{workspace_path(project_id)}".encode()
     ).hexdigest()[:16]
     cache_key = (project_id, AGENT_INSTRUCTION_VERSION, rules_hash)
     if not force_refresh and cache_key in _instruction_cache:
@@ -483,11 +630,12 @@ async def _build_syte_instruction(
             website_enforcement=website_enforcement,
             syterules=syterules,
         )
+        if project_brief:
+            static = f"{static}\n\n{project_brief}"
         # Drop older hashes for this project so the cache stays bounded.
         invalidate_instruction_cache(project_id)
         _instruction_cache[cache_key] = static
 
-    # Session-dynamic blocks — always fresh, never cached with static prefix.
     from syte.agent_memory import (
         design_profile_prompt_block,
         get_design_profile,
@@ -501,7 +649,20 @@ async def _build_syte_instruction(
     active_files = list((meta or {}).get("active_files") or [])
     memory_block = memory_context_block(summary, active_files)
     design_block = design_profile_prompt_block(await get_design_profile(project_id))
-    return f"{static}\n\n{design_block}\n\n{memory_block}"
+    dynamic = f"{design_block}\n\n{memory_block}".strip()
+    return static, dynamic
+
+
+async def _build_syte_instruction(
+    project_id: str,
+    *,
+    force_refresh: bool = False,
+) -> str:
+    """Assemble full system instruction with fresh dynamic memory every call."""
+    static, dynamic = await _build_syte_instruction_parts(
+        project_id, force_refresh=force_refresh,
+    )
+    return f"{static}\n\n{dynamic}" if dynamic else static
 
 
 async def write_agent_config(project: dict[str, Any]) -> Path:
@@ -550,6 +711,15 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
             project_id,
             {"agent_status": "running", "agent_last_started_at": _now(), "agent_last_error": ""},
         )
+        # Warm the workspace file index once at start — not on every chat turn (DAV-128).
+        try:
+            from syte.agent_memory import lookup_workspace_paths, scan_workspace_index
+
+            existing = await lookup_workspace_paths(project_id, limit=1)
+            if not existing:
+                await scan_workspace_index(project_id)
+        except Exception:
+            logger.exception("workspace index warm failed for %s", project_id)
         _write_log(project_id, "cloud runtime ready")
         await record_agent_event(
             project_id,
@@ -875,15 +1045,23 @@ async def _execute_tool(
     ctx = context or {}
     try:
         if name == "list_files":
-            return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
+            files = await list_workspace_files(project_id, str(args.get("path") or "app"))
+            if len(files) > 200:
+                return {
+                    "ok": True,
+                    "files": files[:200],
+                    "truncated": True,
+                    "truncated_count": len(files),
+                    "note": "Listing truncated to 200 entries — narrow the path.",
+                }
+            return {"ok": True, "files": files}
         if name == "read_file":
             ok, content, mime = await read_file(project_id, str(args["path"]))
             await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
             text = content if isinstance(content, str) else "Binary file"
             # Cap tool payload so a single large file cannot blow the LLM context.
-            max_chars = 16_000
-            if isinstance(text, str) and len(text) > max_chars:
-                text = text[:max_chars] + "\n… [truncated for LLM context]"
+            if isinstance(text, str) and len(text) > MAX_TOOL_RESULT_CHARS:
+                text = _truncate_for_llm(text, MAX_TOOL_RESULT_CHARS)
             return {"ok": ok, "content": text, "mime": mime}
         if name == "write_file":
             path = str(args["path"])
@@ -904,7 +1082,7 @@ async def _execute_tool(
                 project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
                 timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
             )
-            return {"ok": code == 0, "exit_code": code, "output": output[-16000:]}
+            return {"ok": code == 0, "exit_code": code, "output": _truncate_for_llm(output, MAX_TOOL_RESULT_CHARS)}
         if name == "service":
             return await run_service_action(
                 project_id, str(args["action"]), command=args.get("command"),
@@ -1386,6 +1564,7 @@ async def _parse_sse_completion(
     response: httpx.Response,
     *,
     on_token: TokenEmitter | None = None,
+    on_reasoning: TokenEmitter | None = None,
 ) -> dict[str, Any]:
     """Parse an OpenAI-compatible SSE chat.completion.chunk stream into one message."""
     content_parts: list[str] = []
@@ -1422,7 +1601,10 @@ async def _parse_sse_completion(
                 await on_token(text)
         reason_piece = delta.get("reasoning_content") or delta.get("reasoning")
         if reason_piece:
-            reasoning_parts.append(str(reason_piece))
+            text = str(reason_piece)
+            reasoning_parts.append(text)
+            if on_reasoning:
+                await on_reasoning(text)
         _merge_stream_tool_calls(tool_acc, delta.get("tool_calls"))
         if choice.get("finish_reason"):
             finish_reason = str(choice["finish_reason"])
@@ -1449,6 +1631,7 @@ async def _provider_completion(
     thinking_config: dict[str, Any] | None = None,
     stream: bool = False,
     on_token: TokenEmitter | None = None,
+    on_reasoning: TokenEmitter | None = None,
 ) -> dict[str, Any]:
     from syte.agent_errors import (
         ProviderError,
@@ -1481,7 +1664,7 @@ async def _provider_completion(
         "messages": cached_messages,
         "temperature": float(thinking_params.get("temperature", temperature)),
         "top_p": float(thinking_params.get("top_p", 0.95)),
-        "stream": bool(stream and on_token is not None),
+        "stream": bool(stream and (on_token is not None or on_reasoning is not None)),
     }
     if use_tools:
         payload["tools"] = use_tools
@@ -1516,7 +1699,9 @@ async def _provider_completion(
                             f"for url '{response.request.url}'"
                             + (f": {detail}" if detail else "")
                         )
-                    message = await _parse_sse_completion(response, on_token=on_token)
+                    message = await _parse_sse_completion(
+                        response, on_token=on_token, on_reasoning=on_reasoning,
+                    )
                     record_circuit_success(model.get("provider") or "", model.get("model") or "")
                     return message
 
@@ -1583,6 +1768,7 @@ async def _run_subagent(
         if not stored_calls:
             return {"ok": True, "task": task, "result": content.strip() or "Task completed."}
         for call in stored_calls:
+            _raise_if_cancelled()
             function = call.get("function") or {}
             name = str(function.get("name") or "")
             try:
@@ -1596,7 +1782,7 @@ async def _run_subagent(
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                "content": json.dumps(public, ensure_ascii=False),
+                "content": _truncate_tool_payload(public),
             })
     return {
         "ok": False,
@@ -1778,11 +1964,11 @@ async def _communicate_with_agent_impl(
         source=source,
         turso_session_id=turso_session_id,
     )
-    instruction = await _build_syte_instruction(project_id)
+    static_instruction, dynamic_instruction = await _build_syte_instruction_parts(project_id)
+    turn_hints: list[str] = []
     if gen.get("mandatory_plan"):
-        instruction = (
-            instruction
-            + "\n\nThinking mode: Deep. Before the first tool call, call update_plan with a "
+        turn_hints.append(
+            "Thinking mode: Deep. Before the first tool call, call update_plan with a "
             "concrete ordered plan for this request."
         )
 
@@ -1797,8 +1983,8 @@ async def _communicate_with_agent_impl(
     if tags:
         hinted = await lookup_workspace_paths(project_id, tags=tags, limit=12)
         if hinted:
-            instruction += (
-                "\n\n## Prompt-matched workspace files (from index)\n"
+            turn_hints.append(
+                "## Prompt-matched workspace files (from index)\n"
                 + "\n".join(
                     f"- {item['path']} [{', '.join(item.get('semantic_tags') or [])}]"
                     for item in hinted
@@ -1811,7 +1997,7 @@ async def _communicate_with_agent_impl(
     matched_skills = await match_active_skills(project_id, message, is_nextjs=is_website)
     skill_hint = skill_hint_block(matched_skills)
     if skill_hint:
-        instruction += "\n\n" + skill_hint
+        turn_hints.append(skill_hint)
 
     # Visual feedback loop: attach structured screenshot analysis as primary critique source.
     analysis_payload = None
@@ -1828,7 +2014,7 @@ async def _communicate_with_agent_impl(
             else await latest_visual_analysis(project_id)
         )
         if analysis_payload:
-            instruction += "\n\n" + visual_feedback_prompt(analysis_payload)
+            turn_hints.append(visual_feedback_prompt(analysis_payload))
 
     # Complex multi-page site builds: publish a planner decomposition before execution.
     from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
@@ -1868,8 +2054,8 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-                instruction += (
-                    "\n\n## Planner decomposition (execute in order, respecting deps)\n"
+                turn_hints.append(
+                    "## Planner decomposition (execute in order, respecting deps)\n"
                     + "\n".join(
                         f"{i}. {item.get('task')} "
                         f"(files: {', '.join(item.get('files') or []) or 'n/a'}; "
@@ -1877,6 +2063,10 @@ async def _communicate_with_agent_impl(
                         for i, item in enumerate(ordered, 1)
                     )
                 )
+
+    dynamic_instruction = "\n\n".join(
+        part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()
+    )
 
     # Only the latest session — prior sessions stay in the activity stream for
     # clients, but are not re-sent to the provider on every turn.
@@ -1898,7 +2088,7 @@ async def _communicate_with_agent_impl(
             },
             *history[-10:],
         ]
-    messages = [{"role": "system", "content": instruction}, *history]
+    messages = [_system_message_for_provider(static_instruction, dynamic_instruction, model), *history]
     current = asyncio.current_task()
     if current:
         _active_turns[project_id] = current
@@ -1947,6 +2137,25 @@ async def _communicate_with_agent_impl(
             turso_session_id=turso_session_id,
         )
 
+    async def _emit_thinking(delta: str) -> None:
+        if not delta:
+            return
+        await record_agent_event(
+            project_id,
+            "thinking_delta",
+            role="assistant",
+            title="Thinking",
+            detail=delta[:2000],
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "delta": delta,
+                "mark_kind": "thinking",
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+
     tool_context: dict[str, Any] = {
         "request_id": request_id,
         "session_number": session_number,
@@ -1962,6 +2171,7 @@ async def _communicate_with_agent_impl(
 
     try:
         for step in itertools.count():
+            _raise_if_cancelled()
             allow_tools = step < max_tool_steps
             assistant = await _provider_completion(
                 model,
@@ -1971,9 +2181,12 @@ async def _communicate_with_agent_impl(
                 thinking_config=gen,
                 stream=want_stream,
                 on_token=_emit_token if want_stream else None,
+                on_reasoning=_emit_thinking if want_stream else None,
             )
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
+            if isinstance(reasoning, str) and len(reasoning) > MAX_REASONING_HISTORY_CHARS:
+                reasoning = reasoning[:MAX_REASONING_HISTORY_CHARS] + "\n… [thinking truncated]"
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = tool_calls if isinstance(tool_calls, list) else []
             # Cap: ignore tool calls past the thinking-level budget.
@@ -1995,7 +2208,8 @@ async def _communicate_with_agent_impl(
             if stored_calls:
                 next_assistant["tool_calls"] = stored_calls
             messages.append(next_assistant)
-            visible_thought = str(reasoning or content).strip()
+            # Prefer provider reasoning for thinking events — do not mix answer text in (DAV-136).
+            visible_thought = str(reasoning or "").strip()
             if stored_calls and visible_thought:
                 # Persist thinking text as a plan-shaped artifact when it looks like steps.
                 from syte.agent_artifacts import save_plan
@@ -2206,6 +2420,7 @@ async def _communicate_with_agent_impl(
                         "visual_analysis_id": (analysis_payload or {}).get("id") if analysis_payload else None,
                         "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
             for call in stored_calls:
+                _raise_if_cancelled()
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
                 try:
@@ -2315,13 +2530,15 @@ async def _communicate_with_agent_impl(
                         turso_session_id=turso_session_id,
                     )
                 public_result = {k: v for k, v in result.items() if not str(k).startswith("_")}
-                encoded = json.dumps(public_result, ensure_ascii=False)
+                encoded = _truncate_tool_payload(public_result)
                 await _persist_message(
                     project_id, request_id, "tool", encoded,
                     session_number=session_number, turso_session_id=turso_session_id,
                     tool_call_id=call_id,
                 )
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
+                _raise_if_cancelled()
+                await asyncio.sleep(0)
                 # Inject vision parts when the active provider can consume image_url parts.
                 supports_vision = "deepseek.com" not in (model.get("api_base") or "")
                 if vision_parts and supports_vision:

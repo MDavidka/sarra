@@ -205,6 +205,9 @@ def apply_prompt_cache_markers(
     OpenAI-compatible Syra endpoints (DeepSeek / Gemini) rely on stable system-first
     prefixes + DeepSeek ``cache_prompt``. Anthropic-native cache_control content
     blocks are only applied when the provider/model is actually Anthropic/Claude.
+
+    If the system message is already a list of content blocks (static/dynamic split
+    with cache_control on the static prefix), leave it unchanged.
     """
     if not messages:
         return messages
@@ -215,8 +218,14 @@ def apply_prompt_cache_markers(
     if system.get("role") != "system":
         return out
 
+    content = system.get("content")
+    if isinstance(content, list):
+        # Already structured (e.g. static + dynamic with cache breakpoint).
+        out[0] = system
+        _ = api_base
+        return out
+
     if "anthropic" in provider_l or "claude" in model_l:
-        content = system.get("content")
         if isinstance(content, str):
             system["content"] = [
                 {
@@ -225,10 +234,6 @@ def apply_prompt_cache_markers(
                     "cache_control": {"type": "ephemeral"},
                 }
             ]
-        elif isinstance(content, list) and content:
-            first = dict(content[0]) if isinstance(content[0], dict) else {"type": "text", "text": str(content[0])}
-            first["cache_control"] = {"type": "ephemeral"}
-            system["content"] = [first, *content[1:]]
         out[0] = system
 
     # DeepSeek / Gemini / OpenAI: keep plain string system content (cache via prefix + cache_prompt).

@@ -383,7 +383,10 @@ async def conversation_messages(
             except json.JSONDecodeError:
                 pass
         if reasoning_content:
-            message["reasoning_content"] = reasoning_content
+            capped = str(reasoning_content)
+            if len(capped) > 4000:
+                capped = capped[:4000] + "\n… [thinking truncated]"
+            message["reasoning_content"] = capped
         messages.append(message)
     # Drop leading orphans and synthesize any missing tool results so the
     # window is always a valid OpenAI-compatible tool_calls/tool pair sequence.

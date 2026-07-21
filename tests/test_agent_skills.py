@@ -126,7 +126,7 @@ async def test_custom_skills_can_be_added_edited_and_deleted(tmp_data_dir: Path)
         "custom-skill-proj",
         name="Brand voice",
         description="Product copy rules",
-        content="Prefer short sentences. Never invent feature claims.",
+        content="# Brand voice\n\nPrefer short sentences. Never invent feature claims.",
         enable=True,
     )
     assert added["ok"] is True
@@ -141,10 +141,10 @@ async def test_custom_skills_can_be_added_edited_and_deleted(tmp_data_dir: Path)
     updated = await update_custom_skill(
         "custom-skill-proj",
         "brand-voice",
-        content="Use warm, confident product language.",
+        content="# Brand voice\n\nUse warm, confident product language.",
     )
     assert updated["ok"] is True
-    assert updated["skill"]["content"] == "Use warm, confident product language."
+    assert updated["skill"]["content"] == "# Brand voice\n\nUse warm, confident product language."
 
     instruction = await _build_syte_instruction("custom-skill-proj", force_refresh=True)
     assert "warm, confident" in instruction
@@ -214,7 +214,7 @@ async def test_api_router_skills_add_and_delete(tmp_data_dir: Path) -> None:
         api_router.AgentSkillAddBody(
             uuid="skill-add-api",
             name="QA checklist",
-            content="Always verify preview on phone and desktop.",
+            content="# QA checklist\n\nAlways verify preview on phone and desktop.",
             description="Verification habit",
             enable=True,
         ),
