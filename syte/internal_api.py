@@ -361,6 +361,8 @@ async def internal_agent_sessions(
 async def internal_get_agent_session(
     session_id: str,
     since_id: int = 0,
+    uuid: str | None = None,
+    project_id: str | None = None,
     _auth: dict = Depends(verify_internal_service_request),
 ):
     """Server-to-server Turso access route — fetch a durable agent session by UUID.
@@ -368,6 +370,8 @@ async def internal_get_agent_session(
     Replaces the old ``/agent/activity/stream`` SSE mirror. sycord.com now
     fetches the session document produced while the agent worked instead of
     holding open a streaming connection.
+    Internal service tokens are host-global; pass ``uuid`` or ``project_id`` to
+    additionally verify the session belongs to that project.
     """
     from syte.turso_store import get_session, turso_configured
 
@@ -380,6 +384,9 @@ async def internal_get_agent_session(
     session = await get_session(session_id, since_id=since_id)
     if not session:
         raise HTTPException(404, "Agent session not found")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
+        raise HTTPException(403, "Agent session does not belong to the requested project")
     return {"ok": True, **session}
 
 

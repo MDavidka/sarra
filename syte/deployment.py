@@ -139,7 +139,7 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
 
     if git_url:
         log("Cloning/updating git repository…")
-        ok, msg = clone_or_pull(project_id, git_url, branch)
+        ok, msg = await asyncio.to_thread(clone_or_pull, project_id, git_url, branch)
         log(msg)
         if not ok:
             await update_project(project_id, {"status": "stopped"})
@@ -388,7 +388,7 @@ async def deploy_service(
 
     if git_url:
         messages.append("Cloning git repository…")
-        ok, msg = clone_or_pull(project_id, git_url, branch)
+        ok, msg = await asyncio.to_thread(clone_or_pull, project_id, git_url, branch)
         messages.append(msg)
         if not ok:
             return project, "\n".join(messages)
@@ -420,7 +420,8 @@ async def deploy_service(
         messages.append("No start command configured.")
         return project, "\n".join(messages)
 
-    ok, msg = process_manager.start_project(
+    ok, msg = await asyncio.to_thread(
+        process_manager.start_project,
         project_id,
         port,
         project["start_command"],
@@ -452,10 +453,15 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
     was_running = process_manager.is_running(project_id, deploy_type)
 
     if was_running:
-        _, stop_msg = process_manager.stop_project(project_id, deploy_type)
+        _, stop_msg = await asyncio.to_thread(process_manager.stop_project, project_id, deploy_type)
         messages.append(stop_msg)
 
-    ok, msg = clone_or_pull(project_id, project.get("git_url"), project.get("branch", "main"))
+    ok, msg = await asyncio.to_thread(
+        clone_or_pull,
+        project_id,
+        project.get("git_url"),
+        project.get("branch", "main"),
+    )
     messages.append(msg)
     if not ok:
         return project, "\n".join(messages)
@@ -473,14 +479,16 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
 
     if was_running:
         if deploy_type == "docker":
-            ok, msg = process_manager.restart_docker_project(
+            ok, msg = await asyncio.to_thread(
+                process_manager.restart_docker_project,
                 project_id,
                 project["port"],
                 project["env_vars"],
                 project.get("dockerfile_path"),
             )
         else:
-            ok, msg = process_manager.start_project(
+            ok, msg = await asyncio.to_thread(
+                process_manager.start_project,
                 project_id,
                 project["port"],
                 project["start_command"],
@@ -501,7 +509,11 @@ async def stop_service(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found."
-    ok, msg = process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
+    ok, msg = await asyncio.to_thread(
+        process_manager.stop_project,
+        project_id,
+        project.get("deploy_type", "shell"),
+    )
     await update_project(project_id, {"status": "stopped"})
     await apply_proxy_config()
     return await get_project(project_id), msg
@@ -512,7 +524,8 @@ async def start_service(project_id: str) -> tuple[dict | None, str]:
     if not project:
         return None, "Project not found."
     project = await _ensure_deploy_info(project)
-    ok, msg = process_manager.start_project(
+    ok, msg = await asyncio.to_thread(
+        process_manager.start_project,
         project_id,
         project["port"],
         project["start_command"],
@@ -537,7 +550,7 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
 
     await stop_preview_async(project_id)
     await stop_agent(project_id)
-    process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
+    await asyncio.to_thread(process_manager.stop_project, project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()
     return True, f"Service '{project['name']}' removed. Workspace data retained on disk."

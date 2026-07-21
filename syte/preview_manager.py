@@ -32,6 +32,7 @@ PREVIEW_NODE_MEMORY_MB = 4096
 PREVIEW_THREADPOOL_SIZE = 16
 PREVIEW_NICE_LEVEL = -5
 PID_DIR = settings.data_dir / "pids"
+_preview_port_lock = asyncio.Lock()
 
 
 def preview_pid_file(project_id: str) -> Path:
@@ -71,11 +72,12 @@ def configure_preview_process() -> None:
 
 
 async def next_preview_port() -> int:
-    projects = await list_projects()
-    used = {p.get("preview_port") for p in projects if p.get("preview_port")}
-    for port in range(PREVIEW_PORT_START, PREVIEW_PORT_END + 1):
-        if port not in used:
-            return port
+    async with _preview_port_lock:
+        projects = await list_projects()
+        used = {p.get("preview_port") for p in projects if p.get("preview_port")}
+        for port in range(PREVIEW_PORT_START, PREVIEW_PORT_END + 1):
+            if port not in used and not _port_listening(port):
+                return port
     raise RuntimeError("No preview ports available (4000-4999 exhausted)")
 
 

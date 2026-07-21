@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
@@ -26,7 +26,11 @@ CREATE TABLE IF NOT EXISTS agent_events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_events_project_id ON agent_events(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_agent_events_project_created_at ON agent_events(project_id, created_at);
 """
+
+AGENT_EVENTS_MAX_PER_PROJECT = 5000
+AGENT_EVENTS_MAX_AGE_DAYS = 14
 
 # Cursor-like event kinds exposed to clients.
 ACTIVITY_EVENT_TYPES = frozenset({
@@ -84,6 +88,26 @@ async def ensure_agent_events_table() -> None:
         await db.executescript(EVENTS_SCHEMA)
         await db.commit()
     _table_ensured_paths.add(db_path)
+
+
+async def _prune_agent_events(project_id: str) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=AGENT_EVENTS_MAX_AGE_DAYS)).isoformat()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+        await db.execute(
+            "DELETE FROM agent_events WHERE project_id = ? AND created_at < ?",
+            (project_id, cutoff),
+        )
+        await db.execute(
+            "DELETE FROM agent_events WHERE project_id = ? AND id NOT IN ("
+            "SELECT id FROM agent_events WHERE project_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?"
+            ")",
+            (project_id, project_id, AGENT_EVENTS_MAX_PER_PROJECT),
+        )
+        await db.commit()
 
 
 def _payload_session_number(payload: Any) -> int | None:
@@ -191,6 +215,13 @@ async def record_agent_event(
         )
         await db.commit()
         event_id = int(cursor.lastrowid)
+
+    try:
+        await _prune_agent_events(project_id)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to prune agent events for project %s", project_id
+        )
 
     event = {
         "id": event_id,

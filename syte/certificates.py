@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -110,11 +111,11 @@ async def apply_cloudflare_integration() -> list[str]:
     if not token:
         return []
     messages: list[str] = []
-    ok, msg = ensure_caddy_cloudflare_plugin()
+    ok, msg = await asyncio.to_thread(ensure_caddy_cloudflare_plugin)
     messages.append(msg if ok else f"Cloudflare plugin: {msg}")
     env_path = await _write_caddy_env()
     if env_path:
-        ok, msg = ensure_caddy_systemd_env(env_path)
+        ok, msg = await asyncio.to_thread(ensure_caddy_systemd_env, env_path)
         messages.append(msg if ok else f"Systemd env: {msg}")
     return messages
 
@@ -254,7 +255,7 @@ async def apply_proxy_config() -> tuple[bool, str]:
             "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
         )
 
-    code, out = _run(["caddy", "validate", "--config", str(written)])
+    code, out = await asyncio.to_thread(_run, ["caddy", "validate", "--config", str(written)])
     if code != 0:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
@@ -263,12 +264,12 @@ async def apply_proxy_config() -> tuple[bool, str]:
         ["systemctl", "restart", "caddy"],
         ["caddy", "reload", "--config", str(written)],
     ):
-        code, out = _run(cmd)
+        code, out = await asyncio.to_thread(_run, cmd)
         if code == 0:
-            ensure_caddy()
+            await asyncio.to_thread(ensure_caddy)
             return True, "Proxy configuration applied (production + preview SSL)." + extra
 
-    ensure_caddy()
+    await asyncio.to_thread(ensure_caddy)
     return True, (
         f"Caddy config saved to {written}. "
         "Run: sudo systemctl restart caddy" + extra

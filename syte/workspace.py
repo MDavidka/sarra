@@ -8,6 +8,13 @@ from pathlib import Path
 
 from syte.config import settings
 
+_GIT_SAFE_CONFIG = [
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "protocol.file.allow=never",
+]
+
 # Project IDs are used as filesystem path segments — keep them UUID/slug-safe.
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 
@@ -82,8 +89,24 @@ def command_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def git_cmd(*args: str) -> list[str]:
+    """Build a git argv with repository-controlled hooks/protocols disabled."""
+    return ["git", *_GIT_SAFE_CONFIG, *args]
+
+
+def _harden_git_argv(cmd: list[str]) -> tuple[list[str], bool]:
+    if not cmd or Path(cmd[0]).name != "git":
+        return cmd, False
+    if cmd[1:1 + len(_GIT_SAFE_CONFIG)] == _GIT_SAFE_CONFIG:
+        return cmd, True
+    return [cmd[0], *_GIT_SAFE_CONFIG, *cmd[1:]], True
+
+
 def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
     merged_env = {**os.environ, **(env or {})}
+    cmd, is_git = _harden_git_argv(cmd)
+    if is_git:
+        merged_env["GIT_TERMINAL_PROMPT"] = "0"
     result = subprocess.run(
         cmd,
         cwd=cwd,
@@ -104,25 +127,25 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bo
         return True, "Workspace ready (no git repository configured)."
 
     if (repo_dir / ".git").exists():
-        code, out = run_cmd(["git", "fetch", "origin"], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir)
         if code != 0:
             return False, out
-        code, out = run_cmd(["git", "checkout", branch], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
         if code != 0:
             return False, out
-        code, out = run_cmd(["git", "pull", "origin", branch], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("pull", "origin", branch), cwd=repo_dir)
         return code == 0, out or "Repository updated."
 
     if repo_dir.exists():
         shutil.rmtree(repo_dir)
 
     code, out = run_cmd(
-        ["git", "clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir)]
+        git_cmd("clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir))
     )
     if code != 0:
-        code, out = run_cmd(["git", "clone", git_url, str(repo_dir)])
+        code, out = run_cmd(git_cmd("clone", git_url, str(repo_dir)))
         if code == 0:
-            run_cmd(["git", "checkout", branch], cwd=repo_dir)
+            run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
     return code == 0, out or "Repository cloned."
 
 

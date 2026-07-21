@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 from syte.caddy_routes import collect_project_routes, render_route_handle
 from syte.domain_utils import is_safe_caddy_hostname, sanitize_caddy_label
 from syte.preview_access import _is_allowed_url
 from syte.preview_domains import preview_frame_ancestors_csp
-from syte.workspace import assert_safe_project_id, workspace_path
-from syte.workspace_api import _is_blocked
+from syte.upload_limits import MAX_UPLOAD_BYTES
+from syte.workspace import assert_safe_project_id, clone_or_pull, run_cmd, workspace_path
+from syte.workspace_api import _allowlist_violation, _is_blocked
 
 
 def test_project_id_rejects_path_traversal(tmp_path, monkeypatch) -> None:
@@ -85,3 +89,125 @@ def test_execute_command_blocks_pipe_to_shell() -> None:
     assert _is_blocked("rm -rf /")
     assert _is_blocked("npm run lint") is None
     assert _is_blocked("python3 scripts/check.py") is None
+
+
+def test_git_commands_disable_hooks_and_prompts(tmp_path, monkeypatch) -> None:
+    from syte import config as config_mod
+    from syte import workspace as workspace_mod
+
+    monkeypatch.setattr(config_mod.settings, "workspaces_dir", tmp_path)
+    calls: list[dict] = []
+
+    def fake_run_cmd(cmd, cwd=None, env=None):
+        calls.append({"cmd": cmd, "cwd": cwd, "env": env})
+        return 0, "ok"
+
+    monkeypatch.setattr(workspace_mod, "run_cmd", fake_run_cmd)
+    ok, _msg = clone_or_pull("proj", "https://example.test/repo.git", "main")
+
+    assert ok is True
+    clone_cmd = calls[0]["cmd"]
+    assert clone_cmd[:5] == ["git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never"]
+    assert "clone" in clone_cmd
+
+    subprocess_calls: list[dict] = []
+
+    def fake_subprocess_run(cmd, cwd=None, env=None, capture_output=None, text=None):
+        subprocess_calls.append({"cmd": cmd, "env": env})
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(workspace_mod.subprocess, "run", fake_subprocess_run)
+    code, _out = run_cmd(["git", "status"])
+
+    assert code == 0
+    assert subprocess_calls[0]["cmd"][:5] == [
+        "git",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "protocol.file.allow=never",
+    ]
+    assert subprocess_calls[0]["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_upload_file_rejects_oversized(monkeypatch) -> None:
+    from syte import workspace_api
+
+    monkeypatch.setattr(workspace_api, "MAX_UPLOAD_BYTES", 4)
+
+    ok, message = asyncio.run(workspace_api.upload_file("proj", "app/big.bin", b"12345"))
+
+    assert ok is False
+    assert "Upload too large" in message
+    assert MAX_UPLOAD_BYTES == 32 * 1024 * 1024
+
+
+def test_command_allowlist_rejects_shells_and_allows_common_tools() -> None:
+    assert _allowlist_violation("bash -c 'echo pwned'") == "bash"
+    assert _allowlist_violation("/tmp/evil-tool --version") == "evil-tool"
+    assert _allowlist_violation("npm run lint") is None
+    assert _allowlist_violation("VAR=value python3 scripts/check.py") is None
+    assert _allowlist_violation("mkdir -p dist && npx vitest") is None
+
+
+def test_execute_command_enforces_allowlist_and_allows_npm(tmp_path, monkeypatch) -> None:
+    from syte import config as config_mod
+    from syte import workspace_api
+
+    monkeypatch.setattr(config_mod.settings, "workspaces_dir", tmp_path)
+    (tmp_path / "proj" / "app").mkdir(parents=True)
+
+    async def fake_get_project(project_id: str):
+        return {"id": project_id, "env_vars": "{}"}
+
+    async def fake_record_workspace_activity(*args, **kwargs):
+        return {}
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"lint ok", b""
+
+        def kill(self):
+            pass
+
+    async def fake_create_subprocess_shell(cmd, **kwargs):
+        assert cmd == "npm run lint"
+        return FakeProc()
+
+    monkeypatch.setattr(workspace_api, "get_project", fake_get_project)
+    monkeypatch.setattr(workspace_api.asyncio, "create_subprocess_shell", fake_create_subprocess_shell)
+    import syte.agent_activity as agent_activity
+
+    monkeypatch.setattr(agent_activity, "record_workspace_activity", fake_record_workspace_activity)
+
+    blocked_code, blocked_output = asyncio.run(
+        workspace_api.execute_command("proj", "bash -c 'echo pwned'")
+    )
+    allowed_code, allowed_output = asyncio.run(
+        workspace_api.execute_command("proj", "npm run lint")
+    )
+
+    assert blocked_code == 1
+    assert "unsupported binary" in blocked_output
+    assert allowed_code == 0
+    assert allowed_output == "lint ok"
+
+
+def test_next_preview_port_skips_listening_ports(monkeypatch) -> None:
+    from syte import preview_manager
+
+    async def fake_list_projects():
+        return []
+
+    monkeypatch.setattr(preview_manager, "list_projects", fake_list_projects)
+    monkeypatch.setattr(
+        preview_manager,
+        "_port_listening",
+        lambda port: port == preview_manager.PREVIEW_PORT_START,
+    )
+
+    port = asyncio.run(preview_manager.next_preview_port())
+
+    assert port == preview_manager.PREVIEW_PORT_START + 1
