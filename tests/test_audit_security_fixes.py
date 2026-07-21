@@ -262,3 +262,20 @@ def test_workspace_list_fetches_in_parallel(monkeypatch) -> None:
 
     assert [row["uuid"] for row in result] == ["a", "b", "c"]
     assert set(started) == {"a", "b", "c"}
+
+
+def test_docker_runtime_resource_args_defaults(monkeypatch) -> None:
+    from syte import config as config_mod
+    from syte.docker_deploy import _runtime_resource_args
+
+    monkeypatch.setattr(config_mod.settings, "docker_memory", "1g")
+    monkeypatch.setattr(config_mod.settings, "docker_cpus", "1.0")
+    monkeypatch.setattr(config_mod.settings, "docker_pids_limit", 256)
+
+    args = _runtime_resource_args()
+    assert args == ["--memory", "1g", "--cpus", "1.0", "--pids-limit", "256"]
+
+    monkeypatch.setattr(config_mod.settings, "docker_memory", "none")
+    monkeypatch.setattr(config_mod.settings, "docker_cpus", "0")
+    monkeypatch.setattr(config_mod.settings, "docker_pids_limit", 0)
+    assert _runtime_resource_args() == []

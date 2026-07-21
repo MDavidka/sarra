@@ -19,6 +19,25 @@ from syte.workspace import read_env_vars, run_cmd, workspace_path
 DOCKERFILE_NAMES = ("Dockerfile", "dockerfile", "Dockerfile.prod", "Dockerfile.production")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+_UNLIMITED = frozenset({"", "0", "none", "unlimited", "off"})
+
+
+def _runtime_resource_args() -> list[str]:
+    """Default CPU/memory/pids caps for production containers (DAV-126)."""
+    from syte.config import settings
+
+    args: list[str] = []
+    memory = str(getattr(settings, "docker_memory", "1g") or "").strip()
+    cpus = str(getattr(settings, "docker_cpus", "1.0") or "").strip()
+    pids = int(getattr(settings, "docker_pids_limit", 256) or 0)
+    if memory.lower() not in _UNLIMITED:
+        args.extend(["--memory", memory])
+    if cpus.lower() not in _UNLIMITED:
+        args.extend(["--cpus", cpus])
+    if pids > 0:
+        args.extend(["--pids-limit", str(pids)])
+    return args
+
 
 def find_dockerfile(project_id: str) -> Path | None:
     """Search cloned repo for a Dockerfile (root first, then subdirs)."""
@@ -371,6 +390,7 @@ def deploy_docker(
         "docker", "run", "-d",
         "--name", container,
         "--restart", "unless-stopped",
+        *_runtime_resource_args(),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
         *_runtime_env_args(repo, container_port, env_vars_raw),
