@@ -33,6 +33,29 @@ def project_agent_lock(project_id: str) -> asyncio.Lock:
     return _project_locks[project_id]
 
 
+def _normalize_idempotency_key(key: str | None) -> str | None:
+    raw = (key or "").strip()
+    if not raw:
+        return None
+    # Keep filesystem/DB-safe; clients may send UUIDs or opaque tokens.
+    cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in "-_")
+    if not cleaned or len(cleaned) > 128:
+        return None
+    return f"idem_{cleaned}"
+
+
+async def cancel_agent_job(project_id: str) -> tuple[bool, str]:
+    """Cancel the in-flight agent job for a project (if any)."""
+    from syte.cloud_agent import interrupt_agent
+
+    ok, message = await interrupt_agent(project_id)
+    task = _running.get(project_id)
+    if task and not task.done():
+        task.cancel()
+        return True, "Agent job cancellation requested."
+    return ok, message
+
+
 async def submit_agent_request(
     project_id: str,
     message: str,
@@ -41,17 +64,50 @@ async def submit_agent_request(
     thinking_level: int | str | None = None,
     source: str = "api",
     auto_start: bool = True,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """Admit a durable agent request and return immediately."""
-    request_id = new_request_id()
-    await enqueue_request(
-        request_id,
-        project_id,
-        message,
-        model_profile=model_profile,
-        source=source,
-        auto_start=auto_start,
-    )
+    """Admit a durable agent request and return immediately.
+
+    When ``idempotency_key`` is provided, a repeated submit with the same key
+    returns the existing request instead of queuing a duplicate job.
+    """
+    from syte.cloud_agent_store import get_request
+
+    request_id = _normalize_idempotency_key(idempotency_key) or new_request_id()
+    existing = await get_request(request_id)
+    if existing:
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "status": existing.get("status") or "accepted",
+            "project_id": project_id,
+            "idempotent_replay": True,
+            "thinking_level": thinking_level,
+        }
+
+    try:
+        await enqueue_request(
+            request_id,
+            project_id,
+            message,
+            model_profile=model_profile,
+            source=source,
+            auto_start=auto_start,
+        )
+    except Exception:
+        # Race: another request with the same idempotency key just inserted.
+        existing = await get_request(request_id)
+        if existing:
+            return {
+                "ok": True,
+                "request_id": request_id,
+                "status": existing.get("status") or "accepted",
+                "project_id": project_id,
+                "idempotent_replay": True,
+                "thinking_level": thinking_level,
+            }
+        raise
+
     # Session opens when the user message is admitted so a durable Turso
     # session (see syte.turso_store) exists from the very first event, before
     # the worker starts tools.

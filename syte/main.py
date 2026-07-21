@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from syte import __version__
@@ -29,6 +30,7 @@ from syte import api_router
 from syte import internal_api
 from syte import workspace_api
 from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
+from syte.rate_limit import RateLimitMiddleware
 import logging
 
 from syte import supervisor
@@ -85,6 +87,27 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/openapi", redoc_url=None)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://sycord.com",
+        "https://www.sycord.com",
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8787",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8787",
+    ],
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)?sycord\.com$|^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(api_router.router, prefix="/api")
 app.include_router(internal_api.router, prefix="/api/internal")
@@ -902,7 +925,12 @@ async def api_agent_activity_stream_public(
 
 
 @app.get("/api/agent_session/{session_id}")
-async def api_get_agent_session(session_id: str, since_id: int = 0):
+async def api_get_agent_session(
+    session_id: str,
+    since_id: int = 0,
+    uuid: str | None = None,
+    project_id: str | None = None,
+):
     """Fetch a durable agent activity session by UUID from Turso.
 
     This is the Turso access route that replaces the old activity SSE stream.
@@ -912,6 +940,8 @@ async def api_get_agent_session(session_id: str, since_id: int = 0):
     route by that ``id`` instead of opening a streaming connection. Pass
     ``since_id`` to fetch only events recorded after a previously-seen event
     id (useful for polling a session that is still ``open``).
+    Tokens/cookies are host-global in this single-tenant service; pass ``uuid``
+    or ``project_id`` to additionally verify project ownership.
     """
     from syte.turso_store import get_session, turso_configured
 
@@ -924,6 +954,9 @@ async def api_get_agent_session(session_id: str, since_id: int = 0):
     session = await get_session(session_id, since_id=since_id)
     if not session:
         raise HTTPException(404, "Agent session not found")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
+        raise HTTPException(403, "Agent session does not belong to the requested project")
     return {"ok": True, **session}
 
 

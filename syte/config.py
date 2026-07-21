@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     agent_port_end: int = 5999
     public_ip: str = ""
     admin_email: str = "admin@localhost"
+    # Per-container caps for production docker run (DoS / noisy-neighbor guard).
+    # Set any value to "0" / "none" / "unlimited" to disable that limit.
+    docker_memory: str = "1g"
+    docker_cpus: str = "1.0"
+    docker_pids_limit: int = 256
 
     @property
     def resolved_workspaces_dir(self) -> Path:

@@ -14,7 +14,8 @@ def test_preview_iframe_header_lines_strip_blocking_headers() -> None:
     assert "-Permissions-Policy" in lines
     assert "-Cross-Origin-Opener-Policy" in lines
     assert "Cross-Origin-Resource-Policy cross-origin" in lines
-    assert "Access-Control-Allow-Origin *" in lines
+    assert "Access-Control-Allow-Origin https://sycord.com" in lines
+    assert "Access-Control-Allow-Origin *" not in lines
     assert csp in lines
 
 
@@ -41,9 +42,10 @@ def test_probe_https_available_rejects_bad_tls(monkeypatch: pytest.MonkeyPatch) 
         raise OSError("TLS handshake failed")
 
     monkeypatch.setattr("urllib.request.urlopen", fail_open)
-    from syte.preview_iframe import probe_https_available
+    from syte import preview_iframe as pi
 
-    assert probe_https_available("https://preview.example.com") is False
+    pi._PROBE_CACHE.clear()
+    assert pi.probe_https_available("https://preview.example.com") is False
 
 
 def test_probe_https_available_accepts_ok_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,9 +59,10 @@ def test_probe_https_available_accepts_ok_response(monkeypatch: pytest.MonkeyPat
             return False
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *_a, **_k: FakeResponse())
-    from syte.preview_iframe import probe_https_available
+    from syte import preview_iframe as pi
 
-    assert probe_https_available("https://preview.example.com") is True
+    pi._PROBE_CACHE.clear()
+    assert pi.probe_https_available("https://preview.example.com") is True
 
 
 def test_iframe_checklist_detects_blocking_headers() -> None:

@@ -10,6 +10,8 @@ from syte.sycord import service
 from syte.sycord.scaffold import STACKS
 from syte.sycord.integration_guide import build_backend_integration
 from syte.sycord.spec import build_sycord_spec
+from syte.upload_limits import UPLOAD_CHUNK_BYTES
+from syte import workspace_api
 from syte.workspace import workspace_path
 
 router = APIRouter(tags=["Sycord API"])
@@ -241,12 +243,21 @@ async def api_agent_turso_debug(
 async def api_agent_session(
     session_id: str,
     since_id: int = Query(0, ge=0),
+    uuid: str | None = None,
+    project_id: str | None = None,
     _token: dict = Depends(verify_api_token),
 ):
-    """Turso access route — fetch a durable agent activity session by UUID."""
+    """Turso access route — fetch a durable agent activity session by UUID.
+
+    API tokens are host-global in this single-tenant service; pass ``uuid`` or
+    ``project_id`` to additionally verify the session belongs to that project.
+    """
     payload = await service.agent_session(session_id, since_id=since_id)
     if not payload:
         _err(404, "not_found", "Agent session not found (or Turso is not configured)")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(payload.get("project_id") or "") != expected_project_id:
+        _err(403, "forbidden", "Agent session does not belong to the requested project")
     return {"ok": True, **payload}
 
 
@@ -490,11 +501,22 @@ async def api_upload(
     _token: dict = Depends(verify_api_token),
 ):
     """Upload a file into the project workspace (multipart)."""
-    content = await file.read()
-    ok, message = await service.upload_file(uuid, path, content)
+    async def chunks():
+        while True:
+            chunk = await file.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            yield chunk
+
+    try:
+        ok, message, written = await workspace_api.upload_file_stream(uuid, path, chunks())
+    except workspace_api.UploadTooLargeError as exc:
+        _err(413, "upload_too_large", str(exc))
+    except ValueError as exc:
+        _err(400, "invalid_path", str(exc))
     if not ok:
         _err(400, "upload_failed", message)
-    return {"ok": True, "uuid": uuid, "path": path, "bytes": len(content), "message": message}
+    return {"ok": True, "uuid": uuid, "path": path, "bytes": written, "message": message}
 
 
 @router.post("/domain")

@@ -879,7 +879,12 @@ async def _execute_tool(
         if name == "read_file":
             ok, content, mime = await read_file(project_id, str(args["path"]))
             await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
-            return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
+            text = content if isinstance(content, str) else "Binary file"
+            # Cap tool payload so a single large file cannot blow the LLM context.
+            max_chars = 16_000
+            if isinstance(text, str) and len(text) > max_chars:
+                text = text[:max_chars] + "\n… [truncated for LLM context]"
+            return {"ok": ok, "content": text, "mime": mime}
         if name == "write_file":
             path = str(args["path"])
             ok, message = await write_file(project_id, path, str(args["content"]))
@@ -1606,6 +1611,7 @@ async def communicate_with_agent(
     source: str = "api", auto_start: bool = True, background: bool = False,
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     from syte.model_routing import suggest_model_profile
 
@@ -1627,6 +1633,7 @@ async def communicate_with_agent(
             thinking_level=thinking_level,
             source=source,
             auto_start=auto_start,
+            idempotency_key=idempotency_key,
         )
         return {**result, "model_routing": routing}
     from syte.agent_jobs import new_request_id, project_agent_lock

@@ -6,7 +6,11 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 
-from syte.domain_utils import normalize_domain
+from syte.domain_utils import (
+    is_safe_caddy_hostname,
+    normalize_domain,
+    sanitize_caddy_label,
+)
 
 
 def host_zone(hostname: str) -> str:
@@ -36,15 +40,15 @@ def collect_project_routes(
     production: list[CaddyRoute] = []
     preview: list[CaddyRoute] = []
     for project in projects:
-        name = project.get("name") or project.get("id", "project")
+        name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
         domain = normalize_domain(project.get("domain") or "")
         port = project.get("port")
-        if domain and port:
+        if domain and port and is_safe_caddy_hostname(domain):
             production.append(CaddyRoute(domain, int(port), name, "production"))
 
         preview_domain = normalize_domain(project.get("preview_domain") or "")
         preview_port = project.get("preview_port")
-        if preview_domain and preview_port:
+        if preview_domain and preview_port and is_safe_caddy_hostname(preview_domain):
             preview.append(CaddyRoute(preview_domain, int(preview_port), name, "preview"))
     return production, preview
 
@@ -59,7 +63,23 @@ def routes_by_zone(routes: list[CaddyRoute]) -> dict[str, list[CaddyRoute]]:
 from syte.preview_iframe import PREVIEW_STRIP_HEADERS
 
 
-def preview_iframe_header_lines(frame_csp: str, indent: str = "        ") -> list[str]:
+def preview_cors_origin(gui_domain: str = "") -> str:
+    """Single allowed CORS origin for preview fetches (never '*')."""
+    gui = normalize_domain(gui_domain or "")
+    if gui:
+        return f"https://{gui}"
+    return "https://sycord.com"
+
+
+def preview_iframe_header_lines(
+    frame_csp: str,
+    indent: str = "        ",
+    *,
+    cors_origin: str | None = None,
+) -> list[str]:
+    origin = cors_origin or preview_cors_origin()
+    # Caddyfile strings cannot embed raw quotes/newlines.
+    origin = origin.replace('"', "").replace("\n", "").replace("\r", "") or "https://sycord.com"
     lines = [f"{indent}header {{"]
     for name in PREVIEW_STRIP_HEADERS:
         if name == "Content-Security-Policy":
@@ -67,7 +87,7 @@ def preview_iframe_header_lines(frame_csp: str, indent: str = "        ") -> lis
         lines.append(f"{indent}    -{name}")
     lines.extend([
         f"{indent}    Cross-Origin-Resource-Policy cross-origin",
-        f"{indent}    Access-Control-Allow-Origin *",
+        f"{indent}    Access-Control-Allow-Origin {origin}",
         f'{indent}    Content-Security-Policy "{frame_csp}"',
         f"{indent}}}",
     ])
@@ -88,16 +108,27 @@ def reverse_proxy_lines(
     return lines
 
 
-def render_route_handle(route: CaddyRoute, *, frame_csp: str, indent: str = "    ") -> list[str]:
+def render_route_handle(
+    route: CaddyRoute,
+    *,
+    frame_csp: str,
+    indent: str = "    ",
+    cors_origin: str | None = None,
+) -> list[str]:
     matcher = caddy_matcher_name(route.hostname)
     is_preview = route.kind == "preview"
+    label = sanitize_caddy_label(route.label)
     lines = [
         f"{indent}@{matcher} host {route.hostname}",
         f"{indent}handle @{matcher} {{",
-        f"{indent}    # {route.label} ({route.kind})",
+        f"{indent}    # {label} ({route.kind})",
     ]
     if is_preview:
-        lines.extend(preview_iframe_header_lines(frame_csp, f"{indent}    "))
+        lines.extend(
+            preview_iframe_header_lines(
+                frame_csp, f"{indent}    ", cors_origin=cors_origin
+            )
+        )
     lines.extend(
         reverse_proxy_lines(
             route.port,
@@ -109,14 +140,22 @@ def render_route_handle(route: CaddyRoute, *, frame_csp: str, indent: str = "   
     return lines
 
 
-def render_host_block(route: CaddyRoute, *, frame_csp: str) -> list[str]:
+def render_host_block(
+    route: CaddyRoute,
+    *,
+    frame_csp: str,
+    cors_origin: str | None = None,
+) -> list[str]:
     is_preview = route.kind == "preview"
+    label = sanitize_caddy_label(route.label)
     lines = [
-        f"# {route.label} — {route.kind}",
+        f"# {label} — {route.kind}",
         f"{route.hostname} {{",
     ]
     if is_preview:
-        lines.extend(preview_iframe_header_lines(frame_csp, "    "))
+        lines.extend(
+            preview_iframe_header_lines(frame_csp, "    ", cors_origin=cors_origin)
+        )
     lines.extend(
         reverse_proxy_lines(route.port, strip_frame_headers=is_preview, indent="    ")
     )
@@ -131,6 +170,7 @@ def render_wildcard_zone(
     *,
     frame_csp: str,
     dns_tls: bool,
+    cors_origin: str | None = None,
 ) -> list[str]:
     lines = [f"# Wildcard zone *.{zone} — auto SSL", f"*.{zone} {{"]
     if dns_tls:
@@ -140,7 +180,11 @@ def render_wildcard_zone(
             "    }",
         ])
     for route in routes:
-        lines.extend(render_route_handle(route, frame_csp=frame_csp, indent="    "))
+        lines.extend(
+            render_route_handle(
+                route, frame_csp=frame_csp, indent="    ", cors_origin=cors_origin
+            )
+        )
     lines.extend(["}", ""])
     return lines
 
@@ -151,8 +195,11 @@ def render_apex_hosts(
     """Exact apex hosts (e.g. sycord.com) — not covered by *.sycord.com cert."""
     lines: list[str] = []
     for hostname, port, label in hostnames:
+        if not is_safe_caddy_hostname(hostname):
+            continue
+        safe_label = sanitize_caddy_label(label)
         lines.extend([
-            f"# {label} — apex",
+            f"# {safe_label} — apex",
             f"{hostname} {{",
             f"    reverse_proxy 127.0.0.1:{port}",
             "}",
@@ -166,6 +213,7 @@ def render_all_service_routes(
     *,
     frame_csp: str,
     use_wildcard_tls: bool,
+    cors_origin: str | None = None,
 ) -> list[str]:
     """Emit Caddy blocks for production + preview (grouped wildcard TLS when enabled)."""
     production, preview = collect_project_routes(projects)
@@ -176,7 +224,9 @@ def render_all_service_routes(
     if not use_wildcard_tls:
         lines: list[str] = []
         for route in all_routes:
-            lines.extend(render_host_block(route, frame_csp=frame_csp))
+            lines.extend(
+                render_host_block(route, frame_csp=frame_csp, cors_origin=cors_origin)
+            )
         return lines
 
     lines: list[str] = []
@@ -197,6 +247,7 @@ def render_all_service_routes(
                     sub_routes,
                     frame_csp=frame_csp,
                     dns_tls=True,
+                    cors_origin=cors_origin,
                 )
             )
     return lines

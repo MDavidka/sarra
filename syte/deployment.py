@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+from collections import defaultdict
 from pathlib import Path
 
 from syte import process_manager
@@ -10,6 +11,7 @@ from syte.runtime import ensure_runtime_for_command
 from syte.preview_domains import resolve_production_domain
 from syte.workspace import (
     append_deploy_log,
+    assert_safe_project_id,
     begin_deploy_log_session,
     clone_or_pull,
     detect_start_command,
@@ -17,6 +19,9 @@ from syte.workspace import (
     slugify,
     write_env_file,
 )
+
+_deploy_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+_deploy_running: dict[str, asyncio.Task] = {}
 
 
 async def _ensure_production_domain(project_id: str) -> None:
@@ -109,6 +114,12 @@ async def _ensure_deploy_info(project: dict) -> dict:
 
 async def run_deploy_job(project_id: str, start_command: str | None = None) -> str:
     """Execute deploy steps for an existing project (async, streamable logs)."""
+    async with _deploy_locks[project_id]:
+        return await _run_deploy_job_unlocked(project_id, start_command)
+
+
+async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = None) -> str:
+    """Execute deploy steps for an existing project (async, streamable logs)."""
     project = await get_project(project_id)
     if not project:
         return "Project not found"
@@ -128,7 +139,7 @@ async def run_deploy_job(project_id: str, start_command: str | None = None) -> s
 
     if git_url:
         log("Cloning/updating git repository…")
-        ok, msg = clone_or_pull(project_id, git_url, branch)
+        ok, msg = await asyncio.to_thread(clone_or_pull, project_id, git_url, branch)
         log(msg)
         if not ok:
             await update_project(project_id, {"status": "stopped"})
@@ -202,7 +213,10 @@ async def create_project_record(
 
     projects = await list_projects()
     if project_uuid:
-        project_id = project_uuid
+        try:
+            project_id = assert_safe_project_id(project_uuid)
+        except ValueError as exc:
+            return None, str(exc)
     else:
         project_id = slugify(name) + "-" + uuid.uuid4().hex[:6]
 
@@ -297,7 +311,20 @@ async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found"
-    asyncio.create_task(run_deploy_job(project_id))
+    existing = _deploy_running.get(project_id)
+    if existing and not existing.done():
+        return project, (
+            f"Deploy already in progress for {project_id}. "
+            f"Stream logs: GET /api/projects/{project_id}/logs/stream"
+        )
+    task = asyncio.create_task(run_deploy_job(project_id))
+    _deploy_running[project_id] = task
+
+    def _clear(done: asyncio.Task) -> None:
+        if _deploy_running.get(project_id) is done:
+            _deploy_running.pop(project_id, None)
+
+    task.add_done_callback(_clear)
     try:
         from syte.webhooks import EVENT_SITE_DEPLOYED, emit_webhook
 
@@ -316,6 +343,15 @@ async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
         f"Deploy issued for {project_id}. "
         f"Stream logs: GET /api/projects/{project_id}/logs/stream"
     )
+
+
+async def cancel_deploy(project_id: str) -> tuple[bool, str]:
+    """Cancel an in-flight background deploy task for the project, if any."""
+    task = _deploy_running.get(project_id)
+    if not task or task.done():
+        return False, "No deploy in progress."
+    task.cancel()
+    return True, "Deploy cancellation requested."
 
 
 async def deploy_service(
@@ -352,7 +388,7 @@ async def deploy_service(
 
     if git_url:
         messages.append("Cloning git repository…")
-        ok, msg = clone_or_pull(project_id, git_url, branch)
+        ok, msg = await asyncio.to_thread(clone_or_pull, project_id, git_url, branch)
         messages.append(msg)
         if not ok:
             return project, "\n".join(messages)
@@ -384,7 +420,8 @@ async def deploy_service(
         messages.append("No start command configured.")
         return project, "\n".join(messages)
 
-    ok, msg = process_manager.start_project(
+    ok, msg = await asyncio.to_thread(
+        process_manager.start_project,
         project_id,
         port,
         project["start_command"],
@@ -416,10 +453,15 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
     was_running = process_manager.is_running(project_id, deploy_type)
 
     if was_running:
-        _, stop_msg = process_manager.stop_project(project_id, deploy_type)
+        _, stop_msg = await asyncio.to_thread(process_manager.stop_project, project_id, deploy_type)
         messages.append(stop_msg)
 
-    ok, msg = clone_or_pull(project_id, project.get("git_url"), project.get("branch", "main"))
+    ok, msg = await asyncio.to_thread(
+        clone_or_pull,
+        project_id,
+        project.get("git_url"),
+        project.get("branch", "main"),
+    )
     messages.append(msg)
     if not ok:
         return project, "\n".join(messages)
@@ -437,14 +479,16 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
 
     if was_running:
         if deploy_type == "docker":
-            ok, msg = process_manager.restart_docker_project(
+            ok, msg = await asyncio.to_thread(
+                process_manager.restart_docker_project,
                 project_id,
                 project["port"],
                 project["env_vars"],
                 project.get("dockerfile_path"),
             )
         else:
-            ok, msg = process_manager.start_project(
+            ok, msg = await asyncio.to_thread(
+                process_manager.start_project,
                 project_id,
                 project["port"],
                 project["start_command"],
@@ -465,7 +509,11 @@ async def stop_service(project_id: str) -> tuple[dict | None, str]:
     project = await get_project(project_id)
     if not project:
         return None, "Project not found."
-    ok, msg = process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
+    ok, msg = await asyncio.to_thread(
+        process_manager.stop_project,
+        project_id,
+        project.get("deploy_type", "shell"),
+    )
     await update_project(project_id, {"status": "stopped"})
     await apply_proxy_config()
     return await get_project(project_id), msg
@@ -476,7 +524,8 @@ async def start_service(project_id: str) -> tuple[dict | None, str]:
     if not project:
         return None, "Project not found."
     project = await _ensure_deploy_info(project)
-    ok, msg = process_manager.start_project(
+    ok, msg = await asyncio.to_thread(
+        process_manager.start_project,
         project_id,
         project["port"],
         project["start_command"],
@@ -501,7 +550,7 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
 
     await stop_preview_async(project_id)
     await stop_agent(project_id)
-    process_manager.stop_project(project_id, project.get("deploy_type", "shell"))
+    await asyncio.to_thread(process_manager.stop_project, project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()
     return True, f"Service '{project['name']}' removed. Workspace data retained on disk."

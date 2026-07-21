@@ -8,14 +8,39 @@ from pathlib import Path
 
 from syte.config import settings
 
+_GIT_SAFE_CONFIG = [
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "protocol.file.allow=never",
+]
+
+# Project IDs are used as filesystem path segments — keep them UUID/slug-safe.
+_PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
+
 
 def slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug or "project"
 
 
+def assert_safe_project_id(project_id: str) -> str:
+    """Reject path-traversal and otherwise unsafe project_id values."""
+    value = (project_id or "").strip()
+    if not value or not _PROJECT_ID_RE.match(value):
+        raise ValueError("Invalid project_id — must be alphanumeric with ._- only")
+    if ".." in value or "/" in value or "\\" in value:
+        raise ValueError("Invalid project_id — path traversal denied")
+    return value
+
+
 def workspace_path(project_id: str) -> Path:
-    return settings.resolved_workspaces_dir / project_id
+    safe_id = assert_safe_project_id(project_id)
+    base = settings.resolved_workspaces_dir.resolve()
+    path = (base / safe_id).resolve()
+    if path != base and base not in path.parents:
+        raise ValueError("Invalid project_id — path traversal denied")
+    return path
 
 
 def ensure_workspace(project_id: str) -> Path:
@@ -64,17 +89,40 @@ def command_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def git_cmd(*args: str) -> list[str]:
+    """Build a git argv with repository-controlled hooks/protocols disabled."""
+    return ["git", *_GIT_SAFE_CONFIG, *args]
+
+
+def _harden_git_argv(cmd: list[str]) -> tuple[list[str], bool]:
+    if not cmd or Path(cmd[0]).name != "git":
+        return cmd, False
+    if cmd[1:1 + len(_GIT_SAFE_CONFIG)] == _GIT_SAFE_CONFIG:
+        return cmd, True
+    return [cmd[0], *_GIT_SAFE_CONFIG, *cmd[1:]], True
+
+
 def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> tuple[int, str]:
+    from syte.output_limits import TRUNCATION_MARKER, read_binary_stream_limited
+
     merged_env = {**os.environ, **(env or {})}
-    result = subprocess.run(
+    cmd, is_git = _harden_git_argv(cmd)
+    if is_git:
+        merged_env["GIT_TERMINAL_PROMPT"] = "0"
+    proc = subprocess.Popen(
         cmd,
         cwd=cwd,
         env=merged_env,
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
-    output = (result.stdout or "") + (result.stderr or "")
-    return result.returncode, output.strip()
+    assert proc.stdout is not None
+    raw, truncated = read_binary_stream_limited(proc.stdout)
+    code = int(proc.wait() or 0)
+    output = raw.decode("utf-8", errors="replace").strip()
+    if truncated and TRUNCATION_MARKER.strip() not in output:
+        output = (output + TRUNCATION_MARKER).strip()
+    return code, output
 
 
 def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bool, str]:
@@ -86,25 +134,25 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bo
         return True, "Workspace ready (no git repository configured)."
 
     if (repo_dir / ".git").exists():
-        code, out = run_cmd(["git", "fetch", "origin"], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir)
         if code != 0:
             return False, out
-        code, out = run_cmd(["git", "checkout", branch], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
         if code != 0:
             return False, out
-        code, out = run_cmd(["git", "pull", "origin", branch], cwd=repo_dir)
+        code, out = run_cmd(git_cmd("pull", "origin", branch), cwd=repo_dir)
         return code == 0, out or "Repository updated."
 
     if repo_dir.exists():
         shutil.rmtree(repo_dir)
 
     code, out = run_cmd(
-        ["git", "clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir)]
+        git_cmd("clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir))
     )
     if code != 0:
-        code, out = run_cmd(["git", "clone", git_url, str(repo_dir)])
+        code, out = run_cmd(git_cmd("clone", git_url, str(repo_dir)))
         if code == 0:
-            run_cmd(["git", "checkout", branch], cwd=repo_dir)
+            run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
     return code == 0, out or "Repository cloned."
 
 

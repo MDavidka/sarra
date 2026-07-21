@@ -22,6 +22,7 @@ from syte.certificates import apply_proxy_config
 from syte.config import settings
 from syte.database import get_project, get_setting
 from syte.domain_utils import build_direct_url, normalize_domain
+from syte.upload_limits import UPLOAD_CHUNK_BYTES
 from syte import workspace_api
 
 router = APIRouter(tags=["Syte API"])
@@ -128,6 +129,9 @@ class AgentChangeRequest(BaseModel):
     )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
+    idempotency_key: str | None = Field(
+        None, description="Optional client key — retries return the same request_id"
+    )
 
 
 class AgentQuestionAnswerBody(BaseModel):
@@ -339,14 +343,22 @@ async def api_upload_file(
     file: UploadFile = File(...),
     _token: dict = Depends(verify_api_token),
 ):
-    content = await file.read()
+    async def chunks():
+        while True:
+            chunk = await file.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            yield chunk
+
     try:
-        ok, message = await workspace_api.upload_file(uuid, path, content)
+        ok, message, written = await workspace_api.upload_file_stream(uuid, path, chunks())
+    except workspace_api.UploadTooLargeError as exc:
+        _http_error(413, "upload_too_large", str(exc))
     except ValueError as exc:
         _http_error(400, "invalid_path", str(exc))
     if not ok:
         _http_error(400, "upload_failed", message)
-    return {"ok": True, "message": message, "path": path, "bytes": len(content)}
+    return {"ok": True, "message": message, "path": path, "bytes": written}
 
 
 @router.post("/set_env")
@@ -440,11 +452,26 @@ async def api_agent_interrupt(body: UuidRequest, request: Request, _token: dict 
     project = await get_project(body.uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    ok, message = await interrupt_agent(body.uuid)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
     if not ok:
         _http_error(400, "agent_interrupt_failed", message)
     meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
     return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_cancel")
+async def api_agent_cancel(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    """Cancel the active agent job/turn without submitting a new message."""
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": ok, "uuid": body.uuid, "message": message, **meta}
 
 
 @router.post("/agent_restart")
@@ -934,6 +961,8 @@ async def api_agent_sessions(
 async def api_get_agent_session(
     session_id: str,
     since_id: int = Query(0, ge=0),
+    uuid: str | None = None,
+    project_id: str | None = None,
     _token: dict = Depends(verify_api_token),
 ):
     """Turso access route — fetch a durable agent activity session by UUID.
@@ -941,6 +970,8 @@ async def api_get_agent_session(
     This replaces the old activity SSE stream. Asking the agent something
     still happens over ``agent_communicate``/``agent_change`` (which return
     this session's id); poll this route by that id to see what happened.
+    API tokens are host-global in this single-tenant service; pass ``uuid`` or
+    ``project_id`` to additionally verify the session belongs to that project.
     """
     from syte.turso_store import get_session, turso_configured
 
@@ -954,6 +985,9 @@ async def api_get_agent_session(
     session = await get_session(session_id, since_id=since_id)
     if not session:
         _http_error(404, "not_found", "Agent session not found")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
+        _http_error(403, "forbidden", "Agent session does not belong to the requested project")
     return {"ok": True, **session}
 
 
@@ -1000,6 +1034,7 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         background=True,
         improve_from_screenshot=bool(body.improve_from_screenshot),
         visual_analysis_id=body.visual_analysis_id,
+        idempotency_key=body.idempotency_key,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
@@ -1042,6 +1077,15 @@ async def api_issue_deploy(body: UuidRequest, _token: dict = Depends(verify_api_
         "description": "Git pull (if git_url) + docker build (npm run build inside Dockerfile) + container restart",
         "stream_url": f"/api/projects/{project['id']}/logs/stream?live=1",
     }
+
+
+@router.post("/deploy_cancel")
+async def api_deploy_cancel(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok, message = await deployment.cancel_deploy(body.uuid)
+    return {"ok": ok, "uuid": body.uuid, "message": message}
 
 
 @router.post("/start_service")

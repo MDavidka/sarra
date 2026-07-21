@@ -391,6 +391,18 @@ async def conversation_messages(
     return sanitize_provider_messages(messages)
 
 
+async def get_request(request_id: str) -> dict[str, Any] | None:
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM cloud_agent_requests WHERE request_id = ?",
+            (request_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
 async def enqueue_request(
     request_id: str,
     project_id: str,
