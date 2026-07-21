@@ -349,12 +349,13 @@ async def maybe_summarize_session(
     session_number: int,
     *,
     turso_session_id: str | None = None,
-    min_messages: int = 4,
+    min_messages: int = 2,
 ) -> dict[str, Any] | None:
     """Create a local extractive summary when a session has enough messages.
 
     Uses local text extraction (no extra LLM call) so summarization is always
     available offline. Later turns inject this as long-term memory.
+    Default ``min_messages=2`` so even short sessions leave a cross-session trail.
     """
     from syte.cloud_agent_store import conversation_messages
 
@@ -435,24 +436,46 @@ async def maybe_summarize_session(
 
 
 def memory_context_block(project_id_summary: dict[str, Any] | None, active_files: list[str]) -> str:
-    """Build a compact system-prompt addon from the latest summary + active files."""
+    """Build a compact system-prompt addon from the latest summary + ranked active files.
+
+    Active files are MRU-ranked and capped so repeated LLM rounds stay token-cheap
+    while still preferring recently edited paths over full workspace crawls.
+    """
     parts: list[str] = ["## Project memory (do not re-scan the whole workspace)"]
     if project_id_summary:
-        parts.append(project_id_summary.get("summary_text") or "")
+        summary_text = str(project_id_summary.get("summary_text") or "").strip()
+        if summary_text:
+            # Cap summary size in the dynamic system block (full text may still
+            # be injected as a history system message on thin sessions).
+            parts.append(summary_text[:3500])
         decisions = project_id_summary.get("key_decisions") or []
         if decisions:
-            parts.append("Key decisions:\n- " + "\n- ".join(str(d) for d in decisions[:10]))
-        tech = project_id_summary.get("technical_state") or ""
+            parts.append("Key decisions:\n- " + "\n- ".join(str(d) for d in decisions[:8]))
+        tech = str(project_id_summary.get("technical_state") or "").strip()
         if tech:
-            parts.append(tech)
+            parts.append(tech[:1200])
     if active_files:
+        # Most-recently-touched first (MRU ranking) — prefer these over workspace crawls.
+        ranked = list(reversed(active_files[-24:]))
+        # De-dupe while preserving MRU order.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for path in ranked:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(key)
+            if len(unique) >= 12:
+                break
         parts.append(
-            "Prefer these recently touched files before listing the workspace:\n- "
-            + "\n- ".join(active_files[-15:])
+            "Prefer these recently touched files (ranked, newest first) before listing the workspace:\n- "
+            + "\n- ".join(unique)
         )
     parts.append(
         "Only re-scan the full workspace if git HEAD changed externally or the user "
-        "explicitly asks for a full resync."
+        "explicitly asks for a full resync. Cross-session summaries above are authoritative. "
+        "Use search_code for symbol/text lookup instead of listing thousands of files."
     )
     return "\n\n".join(p for p in parts if p)
 

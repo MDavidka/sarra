@@ -383,7 +383,7 @@ async def test_provider_does_not_retry_http_400(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_provider_omits_deepseek_thinking_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import cloud_agent
     from syte.cloud_agent import _provider_completion, close_provider_client
 
@@ -410,7 +410,9 @@ async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPat
         {"model": "deepseek-chat", "api_key": "key", "api_base": "https://api.deepseek.com/v1"},
         [{"role": "user", "content": "hello"}],
     )
-    assert captured["json"]["thinking"] == {"type": "disabled"}
+    # Instant / default: omit thinking entirely (gateways reject thinking:disabled).
+    assert "thinking" not in captured["json"]
+    assert captured["json"].get("cache_prompt") is True
     assert captured["json"]["temperature"] == 0.2
     await close_provider_client()
 

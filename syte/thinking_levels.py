@@ -135,10 +135,14 @@ def resolve_thinking_config(
     return config
 
 
-def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any]:
-    """Payload fragment for DeepSeek ``thinking`` when the host is deepseek.com."""
+def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any] | None:
+    """Payload fragment for DeepSeek ``thinking`` when the host is deepseek.com.
+
+    Returns ``None`` when thinking is disabled so callers can omit the field
+    entirely (some gateways reject ``thinking: disabled`` on non-R1 models).
+    """
     if not config.get("thinking_enabled"):
-        return {"type": "disabled"}
+        return None
     budget = int(config.get("thinking_budget_tokens") or 0)
     payload: dict[str, Any] = {"type": "enabled"}
     if budget > 0:
@@ -156,7 +160,8 @@ def build_model_thinking_params(
     """Map a thinking config to provider-specific inference params.
 
     Always returns temperature + top_p. Native thinking payloads are attached
-    when the provider/model supports them (DeepSeek, Anthropic Claude).
+    only when thinking is enabled **and** the provider/model supports them.
+    Instant/Fast (thinking_enabled=False) never injects reasoning keys.
     """
     cfg = thinking_config or {}
     params: dict[str, Any] = {
@@ -174,9 +179,13 @@ def build_model_thinking_params(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
 
+    # DeepSeek prefix cache is safe even without thinking mode.
     if is_deepseek:
-        params["thinking"] = deepseek_thinking_payload(cfg)
         params["cache_prompt"] = True
+        if enabled:
+            thinking = deepseek_thinking_payload(cfg)
+            if thinking is not None:
+                params["thinking"] = thinking
 
     if is_anthropic and enabled and budget > 0:
         params["thinking"] = {

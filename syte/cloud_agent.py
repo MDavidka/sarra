@@ -41,7 +41,6 @@ from syte.domain_utils import build_direct_url, build_https_url, normalize_domai
 from syte.thinking_levels import (
     apply_prompt_cache_markers,
     build_model_thinking_params,
-    deepseek_thinking_payload,
     resolve_thinking_config,
 )
 from syte.turso_store import close_session as close_turso_session
@@ -257,6 +256,67 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _mirror_message_to_turso(
+    *,
+    turso_session_id: str,
+    project_id: str,
+    local_id: int,
+    role: str,
+    content: str,
+    session_number: int,
+    request_id: str,
+    tool_call_id: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    reasoning_content: str | None = None,
+    retries: int = 3,
+) -> bool:
+    """Mirror one local message to Turso with short retries (DAV-145)."""
+    delays = (0.15, 0.4, 0.9)
+    last_exc: Exception | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            saved = await record_turso_message(
+                turso_session_id,
+                project_id,
+                role,
+                content,
+                session_number=session_number,
+                local_message_id=local_id,
+                request_id=request_id,
+                tool_call_id=tool_call_id,
+                tool_calls=tool_calls,
+                reasoning_content=reasoning_content,
+            )
+            if saved:
+                await mark_message_synced(local_id, synced=True)
+                return True
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Turso mirror attempt %s failed for message %s (session %s): %s",
+                attempt + 1,
+                local_id,
+                turso_session_id,
+                exc,
+            )
+        if attempt < len(delays):
+            await asyncio.sleep(delays[attempt])
+    if last_exc is not None:
+        logger.error(
+            "Failed to mirror agent message %s to Turso session %s after retries",
+            local_id,
+            turso_session_id,
+            exc_info=last_exc,
+        )
+    else:
+        logger.error(
+            "Failed to mirror agent message %s to Turso session %s (no row returned)",
+            local_id,
+            turso_session_id,
+        )
+    return False
+
+
 async def _persist_message(
     project_id: str,
     request_id: str,
@@ -298,29 +358,54 @@ async def _persist_message(
         reasoning_content=reasoning_content,
     )
     if turso_session_id:
-        try:
-            saved = await record_turso_message(
-                turso_session_id,
-                project_id,
-                role,
-                content,
-                session_number=session_number,
-                local_message_id=local_id,
-                request_id=request_id,
-                tool_call_id=tool_call_id,
-                tool_calls=tool_calls,
-                reasoning_content=reasoning_content,
-            )
-        except Exception:
-            saved = None
-            logger.exception(
-                "Failed to mirror agent message %s to Turso session %s",
-                local_id,
-                turso_session_id,
-            )
-        if saved:
-            await mark_message_synced(local_id, synced=True)
+        await _mirror_message_to_turso(
+            turso_session_id=turso_session_id,
+            project_id=project_id,
+            local_id=local_id,
+            role=role,
+            content=content,
+            session_number=session_number,
+            request_id=request_id,
+            tool_call_id=tool_call_id,
+            tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
+        )
     return local_id
+
+
+async def _resync_unsynced_messages(
+    project_id: str,
+    *,
+    session_number: int,
+    turso_session_id: str | None,
+    limit: int = 40,
+) -> int:
+    """Retry Turso mirror for local rows left ``turso_synced=0`` (DAV-145)."""
+    if not turso_session_id:
+        return 0
+    from syte.cloud_agent_store import list_unsynced_messages
+
+    pending = await list_unsynced_messages(
+        project_id, session_number=session_number, limit=limit,
+    )
+    synced = 0
+    for row in pending:
+        ok = await _mirror_message_to_turso(
+            turso_session_id=turso_session_id,
+            project_id=project_id,
+            local_id=int(row["id"]),
+            role=str(row.get("role") or "assistant"),
+            content=str(row.get("content") or ""),
+            session_number=int(row.get("session_number") or session_number),
+            request_id=str(row.get("request_id") or ""),
+            tool_call_id=row.get("tool_call_id"),
+            tool_calls=row.get("tool_calls") if isinstance(row.get("tool_calls"), list) else None,
+            reasoning_content=row.get("reasoning_content"),
+            retries=2,
+        )
+        if ok:
+            synced += 1
+    return synced
 
 
 def agent_root(project_id: str) -> Path:
@@ -1009,6 +1094,17 @@ TOOLS: list[dict[str, Any]] = [
          "query": {"type": "string"},
          "limit": {"type": "integer"},
      }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "search_code", "description": (
+        "Ripgrep-style search across the project workspace for an exact/regex pattern. "
+        "Prefer this over `run_command grep/rg` or listing thousands of files. "
+        "Returns matching file paths with line snippets (capped)."),
+     "parameters": {"type": "object", "properties": {
+         "pattern": {"type": "string", "description": "Regex or literal search pattern"},
+         "path": {"type": "string", "description": "Optional subdirectory relative to workspace (default app/)"},
+         "glob": {"type": "string", "description": "Optional file glob, e.g. '*.tsx'"},
+         "max_matches": {"type": "integer", "description": "Max matches to return (default 40, max 80)"},
+         "case_insensitive": {"type": "boolean"},
+     }, "required": ["pattern"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "delegate_task", "description": (
         "Delegate one bounded independent research, review, or implementation task to a "
         "subagent sharing this workspace. Set background:true to run asynchronously."),
@@ -1044,6 +1140,21 @@ async def _execute_tool(
 
     ctx = context or {}
     try:
+        # Hard planner gate (DAV-154): Deep/Max must call update_plan before other tools.
+        if (
+            ctx.get("mandatory_plan")
+            and not ctx.get("plan_submitted")
+            and name not in {"update_plan", "ask_question"}
+        ):
+            return {
+                "ok": False,
+                "error": "plan_required",
+                "retryable": True,
+                "message": (
+                    "Thinking level requires a plan first. Call update_plan with an "
+                    "ordered list of concrete steps, then continue with other tools."
+                ),
+            }
         if name == "list_files":
             files = await list_workspace_files(project_id, str(args.get("path") or "app"))
             if len(files) > 200:
@@ -1052,7 +1163,7 @@ async def _execute_tool(
                     "files": files[:200],
                     "truncated": True,
                     "truncated_count": len(files),
-                    "note": "Listing truncated to 200 entries — narrow the path.",
+                    "note": "Listing truncated to 200 entries — narrow the path or use search_code.",
                 }
             return {"ok": True, "files": files}
         if name == "read_file":
@@ -1090,7 +1201,10 @@ async def _execute_tool(
                 timeout=int(args.get("timeout") or 300), source="agent",
             )
         if name == "update_plan":
-            return await _tool_update_plan(project_id, args, ctx)
+            result = await _tool_update_plan(project_id, args, ctx)
+            if result.get("ok"):
+                ctx["plan_submitted"] = True
+            return result
         if name == "screenshot_preview":
             result = await _tool_screenshot_preview(project_id, args, ctx)
             ctx["_screenshot_captured"] = True
@@ -1139,6 +1253,8 @@ async def _execute_tool(
                 limit=max(1, min(int(args.get("limit") or 20), 50)),
             )
             return {"ok": True, "query": query, "tags": tags, "results": hits}
+        if name == "search_code":
+            return await _tool_search_code(project_id, args)
         if name == "delegate_task":
             task = str(args.get("task") or "").strip()
             if not task:
@@ -1207,6 +1323,136 @@ async def _execute_tool(
             "error": "tool_failed",
             "message": str(exc) or type(exc).__name__,
         }
+
+
+async def _tool_search_code(project_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Ripgrep (or Python fallback) search capped for LLM context (DAV-150)."""
+    import shutil
+
+    pattern = str(args.get("pattern") or "").strip()
+    if not pattern:
+        return {"ok": False, "error": "invalid_pattern", "message": "pattern is required"}
+    if len(pattern) > 400:
+        return {"ok": False, "error": "invalid_pattern", "message": "pattern too long (max 400)"}
+
+    rel = str(args.get("path") or "app").strip().lstrip("/") or "app"
+    try:
+        root = _resolve_search_root(project_id, rel)
+    except ValueError as exc:
+        return {"ok": False, "error": "invalid_path", "message": str(exc)}
+
+    max_matches = max(1, min(int(args.get("max_matches") or 40), 80))
+    glob_pat = str(args.get("glob") or "").strip() or None
+    case_insensitive = bool(args.get("case_insensitive"))
+    skip_dirs = {".git", "node_modules", ".next", "dist", "build", "__pycache__", ".turbo", "coverage"}
+
+    matches: list[dict[str, Any]] = []
+    rg = shutil.which("rg")
+    if rg:
+        cmd = [
+            rg, "--line-number", "--no-heading", "--color", "never",
+            "--max-count", str(max_matches),
+            "--glob", "!node_modules/**", "--glob", "!.git/**", "--glob", "!.next/**",
+        ]
+        if case_insensitive:
+            cmd.append("-i")
+        if glob_pat:
+            cmd.extend(["--glob", glob_pat])
+        cmd.extend(["--", pattern, str(root)])
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except (OSError, asyncio.TimeoutError) as exc:
+            return {"ok": False, "error": "search_failed", "message": str(exc), "retryable": True}
+        text = (stdout_b or b"").decode("utf-8", errors="replace")
+        for line in text.splitlines():
+            if len(matches) >= max_matches:
+                break
+            # path:line:content
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                continue
+            path_s, line_s, snippet = parts[0], parts[1], parts[2]
+            try:
+                rel_path = str(Path(path_s).resolve().relative_to(workspace_path(project_id)))
+            except ValueError:
+                rel_path = path_s
+            matches.append({
+                "path": rel_path.replace("\\", "/"),
+                "line": int(line_s) if line_s.isdigit() else line_s,
+                "snippet": snippet[:240],
+            })
+        return {
+            "ok": True,
+            "pattern": pattern,
+            "path": rel,
+            "match_count": len(matches),
+            "matches": matches,
+            "truncated": len(matches) >= max_matches,
+            "engine": "rg",
+            "stderr": (stderr_b or b"").decode("utf-8", errors="replace")[:500] or None,
+        }
+
+    # Fallback: bounded Python walk when rg is unavailable.
+    import re as _re
+
+    try:
+        regex = _re.compile(pattern, _re.I if case_insensitive else 0)
+    except _re.error as exc:
+        return {"ok": False, "error": "invalid_pattern", "message": f"Bad regex: {exc}"}
+
+    for path in root.rglob("*"):
+        if len(matches) >= max_matches:
+            break
+        if not path.is_file():
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if glob_pat and not path.match(glob_pat):
+            continue
+        if path.suffix.lower() not in {
+            ".ts", ".tsx", ".js", ".jsx", ".py", ".css", ".scss", ".md", ".json",
+            ".html", ".yml", ".yaml", ".toml", ".go", ".rs", ".java",
+        }:
+            continue
+        try:
+            if path.stat().st_size > 400_000:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for idx, line in enumerate(text.splitlines(), 1):
+            if regex.search(line):
+                try:
+                    rel_path = str(path.resolve().relative_to(workspace_path(project_id)))
+                except ValueError:
+                    rel_path = str(path)
+                matches.append({
+                    "path": rel_path.replace("\\", "/"),
+                    "line": idx,
+                    "snippet": line[:240],
+                })
+                if len(matches) >= max_matches:
+                    break
+    return {
+        "ok": True,
+        "pattern": pattern,
+        "path": rel,
+        "match_count": len(matches),
+        "matches": matches,
+        "truncated": len(matches) >= max_matches,
+        "engine": "python",
+    }
+
+
+def _resolve_search_root(project_id: str, rel: str) -> Path:
+    from syte.workspace_api import _resolve_workspace_path
+
+    return _resolve_workspace_path(project_id, rel)
 
 
 async def _track_touched_file(
@@ -1671,10 +1917,6 @@ async def _provider_completion(
         payload["tool_choice"] = "auto"
     if "thinking" in thinking_params:
         payload["thinking"] = thinking_params["thinking"]
-    elif "deepseek.com" in (model.get("api_base") or ""):
-        # Explicit disable for DeepSeek when slider omitted / thinking off.
-        cfg = thinking_config or {"thinking_enabled": False}
-        payload["thinking"] = deepseek_thinking_payload(cfg)
     if thinking_params.get("cache_prompt"):
         payload["cache_prompt"] = True
     if thinking_params.get("reasoning_effort"):
@@ -1966,10 +2208,12 @@ async def _communicate_with_agent_impl(
     )
     static_instruction, dynamic_instruction = await _build_syte_instruction_parts(project_id)
     turn_hints: list[str] = []
+    plan_already_seeded = False
     if gen.get("mandatory_plan"):
         turn_hints.append(
-            "Thinking mode: Deep. Before the first tool call, call update_plan with a "
-            "concrete ordered plan for this request."
+            "Thinking mode: Deep/Max (hard gate). Your FIRST tool call MUST be "
+            "update_plan with a concrete ordered plan. Other tools are rejected until "
+            "the plan is submitted. After planning, execute the steps."
         )
 
     # Prefer indexed files referenced in the prompt over a full workspace crawl.
@@ -2063,6 +2307,7 @@ async def _communicate_with_agent_impl(
                         for i, item in enumerate(ordered, 1)
                     )
                 )
+                plan_already_seeded = True
 
     dynamic_instruction = "\n\n".join(
         part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()
@@ -2077,16 +2322,37 @@ async def _communicate_with_agent_impl(
     from syte.agent_memory import latest_summary
 
     prior_summary = await latest_summary(project_id)
-    if prior_summary and prior_summary.get("up_to_session_number", 0) < int(session_number or 0):
+    # Always inject the latest cross-session summary when the live history is thin
+    # (new session, or fewer than 6 user/assistant turns) so context survives restarts.
+    live_ua = [
+        m for m in history
+        if m.get("role") in {"user", "assistant"} and str(m.get("content") or "").strip()
+    ]
+    if prior_summary and (
+        prior_summary.get("up_to_session_number", 0) < int(session_number or 0)
+        or len(live_ua) < 6
+    ):
+        decisions = prior_summary.get("key_decisions") or []
+        decision_block = ""
+        if decisions:
+            decision_block = "\nKey decisions:\n- " + "\n- ".join(
+                str(d) for d in decisions[:8]
+            )
         history = [
             {
                 "role": "system",
                 "content": (
-                    "Prior session summary (compressed memory):\n"
-                    + str(prior_summary.get("summary_text") or "")[:4000]
+                    "Cross-session memory (authoritative; do not re-discover):\n"
+                    + str(prior_summary.get("summary_text") or "")[:4500]
+                    + decision_block
+                    + (
+                        f"\nTechnical state:\n{prior_summary.get('technical_state')}"
+                        if prior_summary.get("technical_state")
+                        else ""
+                    )
                 ),
             },
-            *history[-10:],
+            *history[-12:],
         ]
     messages = [_system_message_for_provider(static_instruction, dynamic_instruction, model), *history]
     current = asyncio.current_task()
@@ -2162,6 +2428,8 @@ async def _communicate_with_agent_impl(
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
+        "mandatory_plan": bool(gen.get("mandatory_plan")),
+        "plan_submitted": bool(plan_already_seeded),
         "model": model,
     }
 
@@ -2393,8 +2661,18 @@ async def _communicate_with_agent_impl(
                         project_id,
                         session_number,
                         turso_session_id=turso_session_id,
-                        min_messages=4,
+                        min_messages=2,
                     )
+                    try:
+                        await _resync_unsynced_messages(
+                            project_id,
+                            session_number=session_number,
+                            turso_session_id=turso_session_id,
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "turso resync at turn end failed", exc_info=True
+                        )
                     await emit_webhook(
                         EVENT_AGENT_SESSION_COMPLETED,
                         {

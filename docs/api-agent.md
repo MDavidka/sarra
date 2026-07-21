@@ -16,7 +16,13 @@ For SSE event schemas, ordering guarantees, and reconnection, see
 ### POST `/api/projects/{project_id}/agent/chat`
 
 Start an agent turn. `thinking_level` accepts `1` (Instant) through `5` (Max).
-Temperature / top_p apply to all providers; native thinking budgets apply when supported.
+Temperature / top_p apply to all providers; native thinking budgets apply **only**
+when the selected model/provider supports them (Instant/Fast never send
+`thinking` / `reasoning_effort`). Deep/Max (`thinking_level` 4–5) enforce a hard
+plan gate: the first tool must be `update_plan` (or a site planner seed).
+
+Built-in agent tools include `search_code` (ripgrep / Python fallback) for
+workspace text search — prefer it over unbounded `list_files` / shell grep.
 
 ```json
 {
@@ -32,6 +38,9 @@ Optional visual feedback fields:
 
 - `improve_from_screenshot` — attach the latest visual analysis as primary critique
 - `visual_analysis_id` — attach a specific analysis id
+
+Streaming event schemas, `tool_error` codes, poll backoff, and visual analysis
+response shapes: [Agent Streaming API](./agent-streaming-api.md).
 
 ## MCP connections
 
@@ -193,6 +202,10 @@ Authenticate with `X-API-Key: syte_…` or `Authorization: Bearer syte_…`.
 Register body: `{ "uuid", "name", "command", "args?", "env?", "description?", "transport?" }`  
 Connect / disconnect / call: `{ "uuid", "addon", … }`  
 Update: `{ "uuid", "addon", "name?", "command?", "args?", "env?", "description?", "transport?" }`
+
+Built-in MCP tools (`syte` / `web_search`) validate arguments before dispatch.
+Invalid shapes return `{ "ok": false, "error": "invalid_arguments", "message": "…" }`
+without executing the underlying action.
 
 ### Skills
 
