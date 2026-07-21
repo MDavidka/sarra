@@ -69,13 +69,29 @@ FORBIDDEN_BUILD_PATTERNS = (
 
 
 def _resolve_workspace_path(project_id: str, rel_path: str = "") -> Path:
+    """Resolve ``rel_path`` under the project workspace; reject traversal escapes.
+
+    Uses ``Path.resolve()`` then ``relative_to(base)`` so symlink targets that
+    leave the workspace are denied. Absolute inputs and null bytes are rejected
+    before join.
+    """
     base = workspace_path(project_id).resolve()
     if not base.exists():
         base = ensure_workspace(project_id).resolve()
-    rel = (rel_path or "").strip().lstrip("/")
-    target = (base / rel).resolve() if rel else base
-    if target != base and base not in target.parents:
-        raise ValueError("Path traversal denied — path must stay inside workspace")
+    rel = (rel_path or "").strip().replace("\\", "/")
+    if "\x00" in rel:
+        raise ValueError("Path traversal denied — null byte in path")
+    if re.match(r"^[A-Za-z]:", rel) or rel.startswith("//"):
+        raise ValueError("Path traversal denied — absolute paths not allowed")
+    rel = rel.lstrip("/")
+    parts = [part for part in rel.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise ValueError("Path traversal denied — '..' segments not allowed")
+    target = base.joinpath(*parts).resolve() if parts else base
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("Path traversal denied — path must stay inside workspace") from exc
     return target
 
 
@@ -84,6 +100,13 @@ def _is_blocked(command: str) -> str | None:
     for pattern in BLOCKED_PATTERNS:
         if pattern in lower:
             return pattern
+    # Block shell expansion / substitution that can hide disallowed binaries.
+    if "`" in command:
+        return "backtick command substitution"
+    if "$(" in command or "${" in command:
+        return "shell command/parameter substitution"
+    if "<(" in command or ">(" in command:
+        return "process substitution"
     return None
 
 
@@ -192,13 +215,24 @@ async def workspace_get(project_id: str) -> dict | None:
     }
 
 
-async def workspace_list() -> list[dict]:
-    result = []
-    for p in await list_projects():
-        detail = await workspace_get(p["id"])
-        if detail:
-            result.append(detail)
-    return result
+async def workspace_list(*, concurrency: int = 10) -> list[dict]:
+    """Load workspace details for all projects with bounded parallelism.
+
+    ``workspace_get`` does per-project I/O (preview/agent/SSL). Gathering with a
+    semaphore avoids the sequential N+1 stall without opening unbounded sockets.
+    """
+    projects = await list_projects()
+    if not projects:
+        return []
+    limit = max(1, int(concurrency))
+    sem = asyncio.Semaphore(limit)
+
+    async def _one(project_id: str) -> dict | None:
+        async with sem:
+            return await workspace_get(project_id)
+
+    details = await asyncio.gather(*(_one(p["id"]) for p in projects))
+    return [detail for detail in details if detail]
 
 
 async def list_workspace_files(project_id: str, subpath: str = "") -> list[dict]:

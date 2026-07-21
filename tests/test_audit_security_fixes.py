@@ -211,3 +211,54 @@ def test_next_preview_port_skips_listening_ports(monkeypatch) -> None:
     port = asyncio.run(preview_manager.next_preview_port())
 
     assert port == preview_manager.PREVIEW_PORT_START + 1
+
+
+def test_resolve_workspace_path_rejects_traversal(tmp_path, monkeypatch) -> None:
+    from syte import config as config_mod
+    from syte import workspace_api
+
+    monkeypatch.setattr(config_mod.settings, "workspaces_dir", tmp_path)
+    (tmp_path / "proj" / "app").mkdir(parents=True)
+
+    ok = workspace_api._resolve_workspace_path("proj", "app/src")
+    assert ok == (tmp_path / "proj" / "app" / "src").resolve()
+
+    with pytest.raises(ValueError, match="Path traversal denied"):
+        workspace_api._resolve_workspace_path("proj", "../etc/passwd")
+    with pytest.raises(ValueError, match="Path traversal denied"):
+        workspace_api._resolve_workspace_path("proj", "app/../../outside")
+    with pytest.raises(ValueError, match="Path traversal denied"):
+        workspace_api._resolve_workspace_path("proj", "app/\x00evil")
+
+
+def test_execute_command_blocks_shell_substitution() -> None:
+    assert _is_blocked("echo $(whoami)")
+    assert _is_blocked("echo `id`")
+    assert _is_blocked("cat <(echo hi)")
+    assert _is_blocked("npm run lint") is None
+
+
+def test_workspace_list_fetches_in_parallel(monkeypatch) -> None:
+    from syte import workspace_api
+
+    started: list[str] = []
+    release = asyncio.Event()
+
+    async def fake_list_projects():
+        return [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+
+    async def fake_workspace_get(project_id: str):
+        started.append(project_id)
+        if len(started) < 3:
+            await release.wait()
+        else:
+            release.set()
+        return {"uuid": project_id}
+
+    monkeypatch.setattr(workspace_api, "list_projects", fake_list_projects)
+    monkeypatch.setattr(workspace_api, "workspace_get", fake_workspace_get)
+
+    result = asyncio.run(workspace_api.workspace_list(concurrency=3))
+
+    assert [row["uuid"] for row in result] == ["a", "b", "c"]
+    assert set(started) == {"a", "b", "c"}
