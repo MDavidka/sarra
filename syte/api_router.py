@@ -128,6 +128,9 @@ class AgentChangeRequest(BaseModel):
     )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
+    idempotency_key: str | None = Field(
+        None, description="Optional client key — retries return the same request_id"
+    )
 
 
 class AgentQuestionAnswerBody(BaseModel):
@@ -440,11 +443,26 @@ async def api_agent_interrupt(body: UuidRequest, request: Request, _token: dict 
     project = await get_project(body.uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    ok, message = await interrupt_agent(body.uuid)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
     if not ok:
         _http_error(400, "agent_interrupt_failed", message)
     meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
     return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_cancel")
+async def api_agent_cancel(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    """Cancel the active agent job/turn without submitting a new message."""
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": ok, "uuid": body.uuid, "message": message, **meta}
 
 
 @router.post("/agent_restart")
@@ -1000,6 +1018,7 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         background=True,
         improve_from_screenshot=bool(body.improve_from_screenshot),
         visual_analysis_id=body.visual_analysis_id,
+        idempotency_key=body.idempotency_key,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
@@ -1042,6 +1061,15 @@ async def api_issue_deploy(body: UuidRequest, _token: dict = Depends(verify_api_
         "description": "Git pull (if git_url) + docker build (npm run build inside Dockerfile) + container restart",
         "stream_url": f"/api/projects/{project['id']}/logs/stream?live=1",
     }
+
+
+@router.post("/deploy_cancel")
+async def api_deploy_cancel(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok, message = await deployment.cancel_deploy(body.uuid)
+    return {"ok": ok, "uuid": body.uuid, "message": message}
 
 
 @router.post("/start_service")

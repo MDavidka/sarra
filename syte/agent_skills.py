@@ -509,7 +509,10 @@ async def add_custom_skill(
 
         invalidate_instruction_cache(project_id)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
     return {"ok": True, "skill": skill}
 
 
@@ -575,7 +578,10 @@ async def update_custom_skill(
 
         invalidate_instruction_cache(project_id)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
     return {"ok": True, "skill": skill}
 
 
@@ -608,7 +614,10 @@ async def delete_custom_skill(project_id: str, skill_id: str) -> dict[str, Any]:
 
         invalidate_instruction_cache(project_id)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
     return {"ok": True, "skill_id": skill_id, "deleted": True}
 
 
@@ -648,7 +657,10 @@ async def enable_skill(
 
         invalidate_instruction_cache(project_id)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
     return {"ok": True, "skill": skill}
 
 
@@ -669,7 +681,10 @@ async def disable_skill(project_id: str, skill_id: str) -> dict[str, Any]:
 
         invalidate_instruction_cache(project_id)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
     return {"ok": True, "skill_id": skill_id, "active": False}
 
 

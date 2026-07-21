@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import shlex
 import signal
 import socket
 import subprocess
@@ -207,12 +208,17 @@ async def ensure_preview_address(project: dict) -> dict:
     return project
 
 
-async def stop_preview_async(project_id: str) -> tuple[bool, str]:
+async def stop_preview_async(
+    project_id: str,
+    *,
+    reload_proxy: bool = True,
+) -> tuple[bool, str]:
     """Stop preview process but keep stable preview_domain for iframe embeds."""
     stop_preview(project_id)
     await update_project(project_id, {"preview_status": "stopped", "preview_started_at": None})
-    from syte.certificates import apply_proxy_config
-    await apply_proxy_config()
+    if reload_proxy:
+        from syte.certificates import apply_proxy_config
+        await apply_proxy_config()
     return True, "Preview stopped."
 
 
@@ -249,18 +255,18 @@ async def preview_iframe_status(project: dict) -> dict:
     from syte.preview_iframe import (
         build_iframe_checklist,
         expected_frame_csp,
-        probe_preview_headers,
+        probe_preview_headers_async,
     )
 
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
-    embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
-    frame_csp = expected_frame_csp(gui_domain, allow_any=embed_mode != "restricted")
+    embed_mode = (await get_setting("preview_embed_mode", "restricted")).strip().lower()
+    frame_csp = expected_frame_csp(gui_domain, allow_any=embed_mode == "any")
 
     live_headers = None
     urls = build_preview_urls(project)
     probe_url = urls.get("preview_fetch_url") or urls.get("preview_domain_url")
     if project.get("preview_status") == "running" and probe_url:
-        live_headers = probe_preview_headers(probe_url)
+        live_headers = await probe_preview_headers_async(probe_url)
 
     checklist = build_iframe_checklist(project, frame_csp=frame_csp, live_headers=live_headers)
     if urls.get("preview_domain_url") and not urls.get("preview_tls_ok"):
@@ -346,11 +352,22 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
 
     env = preview_process_env(project, int(preview_port))
 
+    # Prefer argv list (shell=False) so shell metacharacters cannot inject commands.
+    # Preview templates are Syte-built (npx/npm/next); avoid shell=True.
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        await update_project(project_id, {"preview_status": "stopped"})
+        return False, f"Invalid preview command: {exc}", {}
+    if not argv:
+        await update_project(project_id, {"preview_status": "stopped"})
+        return False, "Empty preview command", {}
+
     log_file = open(log_path, "a")
     proc = subprocess.Popen(
-        command,
+        argv,
         cwd=repo,
-        shell=True,
+        shell=False,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
@@ -463,22 +480,36 @@ def _preview_runtime_elapsed(project: dict) -> float | None:
 
 
 async def expire_stale_previews() -> None:
-    """Stop previews that exceeded max runtime (5 min) or lost their process."""
+    """Stop previews that exceeded max runtime or lost their process.
+
+    Batches Caddy reloads: stop many previews, then apply_proxy_config once.
+    """
     projects = await list_projects()
+    stopped_any = False
+    logger = __import__("logging").getLogger("syte.preview")
     for project in projects:
         project_id = project["id"]
         if project.get("preview_status") not in ("running", "starting"):
             continue
         elapsed = _preview_runtime_elapsed(project)
+        should_stop = False
         if elapsed is not None and elapsed > PREVIEW_MAX_RUNTIME_SEC:
-            logger = __import__("logging").getLogger("syte.preview")
-            logger.info("Stopping preview for %s — max runtime %ss reached", project_id, PREVIEW_MAX_RUNTIME_SEC)
-            await stop_preview_async(project_id)
-            continue
-        if not is_preview_running(project_id):
+            logger.info(
+                "Stopping preview for %s — max runtime %ss reached",
+                project_id,
+                PREVIEW_MAX_RUNTIME_SEC,
+            )
+            should_stop = True
+        elif not is_preview_running(project_id):
             port = project.get("preview_port")
             if port and _port_listening(int(port)):
                 continue
             if project.get("preview_status") == "starting" and not _preview_start_grace_elapsed(project):
                 continue
-            await stop_preview_async(project_id)
+            should_stop = True
+        if should_stop:
+            await stop_preview_async(project_id, reload_proxy=False)
+            stopped_any = True
+    if stopped_any:
+        from syte.certificates import apply_proxy_config
+        await apply_proxy_config()

@@ -1,4 +1,5 @@
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -120,10 +121,22 @@ def start_project(
     log_path = ws / "app.log"
     log_file = open(log_path, "a")
 
+    # Prefer shell=False argv when the command has no shell metacharacters.
+    shell_meta = set("|&;<>`$(){}[]*?!\n")
+    use_shell = any(ch in start_command for ch in shell_meta)
+    if use_shell:
+        popen_args: str | list[str] = start_command
+    else:
+        try:
+            popen_args = shlex.split(start_command)
+        except ValueError:
+            popen_args = start_command
+            use_shell = True
+
     proc = subprocess.Popen(
-        start_command,
+        popen_args,
         cwd=repo,
-        shell=True,
+        shell=use_shell,
         env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,

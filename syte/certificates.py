@@ -151,11 +151,15 @@ async def _use_wildcard_tls() -> bool:
 
 
 async def async_generate_caddyfile() -> str:
+    from syte.caddy_routes import preview_cors_origin
+
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
-    embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
-    frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode != "restricted")
+    # Default restricted: only sycord.com + GUI domain may embed previews.
+    embed_mode = (await get_setting("preview_embed_mode", "restricted")).strip().lower()
+    frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode == "any")
+    cors_origin = preview_cors_origin(gui_domain)
     use_wildcard_tls = await _use_wildcard_tls()
 
     lines = [
@@ -208,6 +212,7 @@ async def async_generate_caddyfile() -> str:
             projects,
             frame_csp=frame_csp,
             use_wildcard_tls=use_wildcard_tls,
+            cors_origin=cors_origin,
         )
     )
 
@@ -222,16 +227,20 @@ async def apply_proxy_config() -> tuple[bool, str]:
     fallback = settings.data_dir / "Caddyfile"
     env_path = await _write_caddy_env()
 
+    written = None
+    write_errors: list[str] = []
     for target in (config_path, fallback):
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(config)
             written = target
             break
-        except PermissionError:
+        except OSError as exc:
+            write_errors.append(f"{target}: {exc}")
             continue
-    else:
-        return False, "Could not write Caddy configuration (permission denied)."
+    if written is None:
+        detail = "; ".join(write_errors) or "permission denied"
+        return False, f"Could not write Caddy configuration ({detail})."
 
     extra = ""
     if env_path:

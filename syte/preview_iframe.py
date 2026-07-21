@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -20,8 +21,11 @@ PREVIEW_STRIP_HEADERS = (
     "Content-Security-Policy",
 )
 
+_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+_PROBE_CACHE_TTL_SEC = 30.0
 
-def expected_frame_csp(gui_domain: str = "", *, allow_any: bool = True) -> str:
+
+def expected_frame_csp(gui_domain: str = "", *, allow_any: bool = False) -> str:
     return preview_frame_ancestors_csp(gui_domain, allow_any=allow_any)
 
 
@@ -126,24 +130,42 @@ def build_iframe_checklist(
     }
 
 
-def probe_https_available(url: str, timeout: float = 4.0) -> bool:
-    """True when HTTPS URL responds (TLS + HTTP). Used before advertising preview_domain_url."""
+def probe_https_available(url: str, timeout: float = 2.0) -> bool:
+    """True when HTTPS URL responds (TLS + HTTP). Used before advertising preview_domain_url.
+
+    Results are cached briefly so sync callers (``build_preview_urls``) do not
+    repeatedly block the event loop for the full probe timeout.
+    """
     if not url or not url.startswith("https://"):
         return False
+    now = time.monotonic()
+    cached = _PROBE_CACHE.get(url)
+    if cached and (now - cached[0]) < _PROBE_CACHE_TTL_SEC:
+        return cached[1]
+    ok = False
     try:
         request = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return 200 <= response.status < 500
+            ok = 200 <= response.status < 500
     except (urllib.error.URLError, TimeoutError, OSError):
         try:
             request = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                return 200 <= response.status < 500
+                ok = 200 <= response.status < 500
         except (urllib.error.URLError, TimeoutError, OSError):
-            return False
+            ok = False
+    _PROBE_CACHE[url] = (now, ok)
+    return ok
 
 
-def probe_preview_headers(url: str, timeout: float = 5.0) -> dict[str, str] | None:
+async def probe_https_available_async(url: str, timeout: float = 2.0) -> bool:
+    """Async wrapper — runs the sync probe off the event loop."""
+    import asyncio
+
+    return await asyncio.to_thread(probe_https_available, url, timeout)
+
+
+def probe_preview_headers(url: str, timeout: float = 3.0) -> dict[str, str] | None:
     """HEAD request to preview URL; returns response headers or None on failure."""
     if not url:
         return None
@@ -158,3 +180,9 @@ def probe_preview_headers(url: str, timeout: float = 5.0) -> dict[str, str] | No
                 return {k: v for k, v in response.headers.items()}
         except (urllib.error.URLError, TimeoutError, OSError):
             return None
+
+
+async def probe_preview_headers_async(url: str, timeout: float = 3.0) -> dict[str, str] | None:
+    import asyncio
+
+    return await asyncio.to_thread(probe_preview_headers, url, timeout)

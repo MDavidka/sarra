@@ -8,14 +8,32 @@ from pathlib import Path
 
 from syte.config import settings
 
+# Project IDs are used as filesystem path segments — keep them UUID/slug-safe.
+_PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
+
 
 def slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug or "project"
 
 
+def assert_safe_project_id(project_id: str) -> str:
+    """Reject path-traversal and otherwise unsafe project_id values."""
+    value = (project_id or "").strip()
+    if not value or not _PROJECT_ID_RE.match(value):
+        raise ValueError("Invalid project_id — must be alphanumeric with ._- only")
+    if ".." in value or "/" in value or "\\" in value:
+        raise ValueError("Invalid project_id — path traversal denied")
+    return value
+
+
 def workspace_path(project_id: str) -> Path:
-    return settings.resolved_workspaces_dir / project_id
+    safe_id = assert_safe_project_id(project_id)
+    base = settings.resolved_workspaces_dir.resolve()
+    path = (base / safe_id).resolve()
+    if path != base and base not in path.parents:
+        raise ValueError("Invalid project_id — path traversal denied")
+    return path
 
 
 def ensure_workspace(project_id: str) -> Path:

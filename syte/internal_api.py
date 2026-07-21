@@ -28,6 +28,9 @@ class InternalAgentChangeRequest(BaseModel):
     model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
     model_name: str | None = Field(None, description="Alias used by sycord.com")
     thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    idempotency_key: str | None = Field(
+        None, description="Optional client key — retries return the same request_id"
+    )
 
 
 class InternalAgentCommunicateRequest(BaseModel):
@@ -116,11 +119,31 @@ async def internal_agent_interrupt(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     await _require_project(project_id)
-    ok, message = await interrupt_agent(project_id)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(project_id)
     if not ok:
         raise HTTPException(400, message)
     return {
         "ok": True,
+        "message": message,
+        **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
+    }
+
+
+@router.post("/projects/{project_id}/agent/cancel")
+async def internal_agent_cancel(
+    project_id: str,
+    request: Request,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Explicit cancel alias — stops the active agent turn/job without a new message."""
+    await _require_project(project_id)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(project_id)
+    return {
+        "ok": ok,
         "message": message,
         **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
     }
@@ -415,6 +438,7 @@ async def internal_agent_change(
         thinking_level=body.thinking_level,
         source="sycord",
         background=True,
+        idempotency_key=body.idempotency_key,
     )
     if not result.get("ok"):
         raise HTTPException(400, detail=result)

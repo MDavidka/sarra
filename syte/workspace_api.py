@@ -13,7 +13,8 @@ from syte.domain_utils import build_direct_url, build_https_url, normalize_domai
 from syte.project_enrich import enrich_ssl
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path, write_env_file
 
-# Block only catastrophic host-wide commands; arbitrary project commands are allowed.
+# Block catastrophic host-wide commands. Prefer Docker deploy for isolation;
+# this blocklist is defense-in-depth only and is not a complete sandbox.
 BLOCKED_PATTERNS = (
     "rm -rf /",
     "rm -rf /*",
@@ -24,7 +25,18 @@ BLOCKED_PATTERNS = (
     "wget http",
     "curl http | sh",
     "curl http | bash",
+    "| sh",
+    "| bash",
+    "|sh",
+    "|bash",
+    "| /bin/sh",
+    "| /bin/bash",
+    "/dev/tcp/",
+    "nc -e",
+    "ncat -e",
 )
+
+MAX_COMMAND_LENGTH = 8_000
 
 # Production bundles belong to the deployment workflow, never agent preview testing.
 FORBIDDEN_BUILD_PATTERNS = (
@@ -329,13 +341,22 @@ async def execute_command(
     *,
     source: str = "api",
 ) -> tuple[int, str]:
-    """Run any custom shell command inside the workspace (sandboxed to workspace dir)."""
+    """Run a shell command inside the workspace (cwd sandboxed to workspace dir).
+
+    Uses ``asyncio.create_subprocess_shell`` so long-running commands do not
+    exhaust the default thread-pool executor (see DAV-36). Commands remain
+    workspace-scoped; full process isolation requires Docker deploy.
+    """
     project = await get_project(project_id)
     if not project:
         return 1, "Project not found"
     cmd = command.strip()
     if not cmd:
         return 1, "Empty command"
+    if "\x00" in cmd:
+        return 1, "Command blocked (null byte)"
+    if len(cmd) > MAX_COMMAND_LENGTH:
+        return 1, f"Command too long (max {MAX_COMMAND_LENGTH} chars)"
     blocked = _is_blocked(cmd)
     if blocked:
         return 1, f"Command blocked (host safety): {blocked}"
@@ -349,27 +370,36 @@ async def execute_command(
             "For testing, use: npm run lint"
         )
 
-    workdir = _resolve_workspace_path(project_id, cwd)
+    try:
+        workdir = _resolve_workspace_path(project_id, cwd)
+    except ValueError as exc:
+        return 1, str(exc)
     if not workdir.is_dir():
         return 1, f"Working directory not found: {cwd}"
 
     merged_env = {**os.environ, **read_env_vars(project.get("env_vars", "{}")), **(env or {})}
 
-    def _run() -> tuple[int, str]:
-        result = subprocess.run(
+    try:
+        proc = await asyncio.create_subprocess_shell(
             cmd,
-            shell=True,
             cwd=workdir,
             env=merged_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        out = (result.stdout or "") + (result.stderr or "")
-        return result.returncode, out.strip() or "(no output)"
-
-    try:
-        code, output = await asyncio.to_thread(_run)
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await proc.communicate()
+            except Exception:
+                pass
+            _append_command_log(project_id, cmd, cwd, 124)
+            return 124, f"Command timed out after {timeout}s"
+        out = ((stdout_b or b"") + (stderr_b or b"")).decode("utf-8", errors="replace")
+        code = int(proc.returncode or 0)
+        output = out.strip() or "(no output)"
         _append_command_log(project_id, cmd, cwd, code)
         from syte.agent_activity import record_workspace_activity
 
@@ -381,9 +411,9 @@ async def execute_command(
             detail=output[:500] if output else "",
         )
         return code, output
-    except subprocess.TimeoutExpired:
-        _append_command_log(project_id, cmd, cwd, 124)
-        return 124, f"Command timed out after {timeout}s"
+    except OSError as exc:
+        _append_command_log(project_id, cmd, cwd, 1)
+        return 1, f"Failed to start command: {exc}"
 
 
 async def execute_commands(
