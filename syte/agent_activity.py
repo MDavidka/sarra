@@ -32,11 +32,16 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_project_created_at ON agent_events(p
 AGENT_EVENTS_MAX_PER_PROJECT = 5000
 AGENT_EVENTS_MAX_AGE_DAYS = 14
 
+# High-frequency stream chunks — must not await Turso or prune on the hot path.
+HOT_STREAM_EVENT_TYPES = frozenset({"token_delta", "thinking_delta"})
+_HOT_PRUNE_EVERY = 250
+
 # Cursor-like event kinds exposed to clients.
 ACTIVITY_EVENT_TYPES = frozenset({
     "user_message",
     "assistant_message",
     "thinking",
+    "thinking_delta",
     "tool_call",
     "command_run",
     "file_created",
@@ -68,6 +73,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
+_hot_event_counts: dict[str, int] = defaultdict(int)
 
 
 def _now() -> str:
@@ -167,6 +173,19 @@ def _event_row_to_dict(row: tuple) -> dict[str, Any]:
     }
 
 
+def _notify_subscribers(project_id: str, event: dict[str, Any]) -> None:
+    """Fan out to SSE queues without awaiting I/O (low-latency token path)."""
+    for queue in list(_subscribers.get(project_id, [])):
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+                queue.put_nowait(event)
+            except asyncio.QueueEmpty:
+                pass
+
+
 async def record_agent_event(
     project_id: str,
     event_type: str,
@@ -178,17 +197,17 @@ async def record_agent_event(
     source: str = "agent",
     turso_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Persist an activity event locally and mirror it to the durable Turso session.
+    """Persist an activity event locally and optionally mirror it to Turso.
 
     Local persistence (the ``agent_events`` SQLite table below) remains the
-    fast, always-available store used by internal status/debug endpoints. When
-    ``turso_session_id`` is supplied (the caller's current durable agent
-    session UUID — see :mod:`syte.turso_store`), the same event is additionally
-    written to Turso so clients can fetch the whole session by UUID instead of
-    streaming it live. Turso writes are best-effort: any failure (including
-    Turso not being configured) never blocks or fails the local write.
+    fast, always-available store used by internal status/debug endpoints and
+    the live SSE channel. When ``turso_session_id`` is supplied, non-stream
+    events are also written to Turso so clients can fetch the whole session by
+    UUID. High-frequency ``token_delta`` / ``thinking_delta`` chunks skip Turso
+    and skip per-event prune so streaming cadence is not gated on remote I/O.
     """
     await ensure_agent_events_table()
+    is_hot = event_type in HOT_STREAM_EVENT_TYPES
     clean_payload = _sanitize_event_payload(payload or {})
     if not isinstance(clean_payload, dict):
         clean_payload = payload or {}
@@ -216,13 +235,6 @@ async def record_agent_event(
         await db.commit()
         event_id = int(cursor.lastrowid)
 
-    try:
-        await _prune_agent_events(project_id)
-    except Exception:
-        logging.getLogger(__name__).exception(
-            "Failed to prune agent events for project %s", project_id
-        )
-
     event = {
         "id": event_id,
         "project_id": project_id,
@@ -235,17 +247,24 @@ async def record_agent_event(
         "created_at": now,
     }
 
-    for queue in list(_subscribers.get(project_id, [])):
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            try:
-                queue.get_nowait()
-                queue.put_nowait(event)
-            except asyncio.QueueEmpty:
-                pass
+    # Notify live SSE subscribers before any prune / Turso work.
+    _notify_subscribers(project_id, event)
 
-    if turso_session_id:
+    should_prune = not is_hot
+    if is_hot:
+        _hot_event_counts[project_id] += 1
+        if _hot_event_counts[project_id] % _HOT_PRUNE_EVERY == 0:
+            should_prune = True
+    if should_prune:
+        try:
+            await _prune_agent_events(project_id)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to prune agent events for project %s", project_id
+            )
+
+    # Stream chunks are ephemeral for Turso; final assistant/tool events carry content.
+    if turso_session_id and not is_hot:
         from syte.turso_store import record_event as record_turso_event
 
         try:
