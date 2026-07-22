@@ -52,10 +52,13 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 11
+AGENT_INSTRUCTION_VERSION = 12
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
+# Wall-clock cap for an entire subagent loop (LLM rounds + tools). Prevents
+# worker leaks when a single step hangs forever despite the step limit (DAV-202).
+SUBAGENT_TIMEOUT_S = 600.0
 QUESTION_WAIT_TIMEOUT_S = 1800.0
 # Cap inline vision payloads so provider requests stay bounded.
 MAX_VISION_IMAGE_BYTES = 700_000
@@ -66,6 +69,7 @@ _active_turns: dict[str, asyncio.Task[Any]] = {}
 _provider_client: httpx.AsyncClient | None = None
 # Cache only the static (cache-stable) instruction prefix — never session memory.
 _instruction_cache: dict[tuple[str, int, str], str] = {}
+# Background subagent tasks keyed by ``{project_id}:{task_id}``.
 _background_subagents: dict[str, asyncio.Task[Any]] = {}
 # Fire-and-forget work that must not block turn completion (index, preview).
 _bg_tasks: set[asyncio.Task[Any]] = set()
@@ -77,6 +81,20 @@ def _track_bg_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return task
+
+
+def cancel_background_subagents(project_id: str) -> int:
+    """Cancel in-flight background subagents for a project (DAV-198)."""
+    cancelled = 0
+    prefix = f"{project_id}:"
+    for key, task in list(_background_subagents.items()):
+        if not key.startswith(prefix):
+            continue
+        _background_subagents.pop(key, None)
+        if task and not task.done():
+            task.cancel()
+            cancelled += 1
+    return cancelled
 
 
 def _track_turso_mirror_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
@@ -691,17 +709,18 @@ def _build_static_instruction(
         "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
         "and a complete styled home page. Never ship a bare unstyled web scaffold.\n",
         "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
-        "(desktop + phone screenshots of a route — inspect images with vision); ask_question "
+        "(desktop + phone screenshots of a route — inspect images with vision); inspect_preview "
+        "(limited browser: fetch HTML/text of a preview route, optional screenshot); ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
-        "semantic_search (meaning-based workspace lookup); service (preview status/start/stop/"
-        "logs); delegate_task for bounded sub-work (set background:true to run async).\n",
+        "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
+        "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
         "request that needs 3+ distinct steps, call update_plan BEFORE other tools. Use ask_question "
         "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
-        "screenshot_preview after UI changes and check BOTH phone and desktop layouts. Continue using "
-        "tools until the request is actually complete; the user can interrupt a long turn.\n",
+        "screenshot_preview or inspect_preview after UI changes and check BOTH phone and desktop layouts. "
+        "Continue using tools until the request is actually complete; the user can interrupt a long turn.\n",
         "Never deploy, start, stop, update, or build the production service for testing, and never run "
         "production build commands such as npm run build or next build. Prefer the isolated preview for "
         "visual checks and workspace commands for lint/tests.\n",
@@ -987,6 +1006,7 @@ async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
 async def stop_agent(project_id: str) -> tuple[bool, str]:
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
+    cancel_background_subagents(project_id)
     task = _active_turns.get(project_id)
     if task and not task.done():
         task.cancel()
@@ -1035,6 +1055,7 @@ async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
 async def interrupt_agent(project_id: str) -> tuple[bool, str]:
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
+    cancel_background_subagents(project_id)
     task = _active_turns.get(project_id)
     if task and not task.done():
         # Drop the busy marker immediately so status APIs stop reporting
@@ -1168,12 +1189,13 @@ async def get_agent_status(
             "turso_session_storage", "turso_message_persistence", "last_session_history",
             "terminal", "file_editor", "preview_control", "skills", "provider_retries",
             "planning", "plan_persistence", "subagents", "visible_thinking",
-            "screenshot_preview", "vision_screenshots", "interactive_questions",
+            "screenshot_preview", "inspect_preview", "vision_screenshots", "interactive_questions",
             "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
             "shadcn_websites", "agent_memory", "visual_analyses", "design_profiles",
             "workspace_index", "activity_sse", "model_routing", "web_search",
             "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
             "preview_health", "planner_executor", "syterules", "background_subagents",
+            "subagent_timeout", "workspace_shell_boundary",
         ],
     }
 
@@ -1221,6 +1243,15 @@ TOOLS: list[dict[str, Any]] = [
          "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
          "url": {"type": "string", "description": "Optional full URL override (must be an allowed preview URL)"},
          "viewports": {"type": "array", "items": {"type": "string", "enum": ["desktop", "phone"]}, "description": "Defaults to both desktop and phone"},
+     }, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "inspect_preview", "description": (
+        "Limited browser for the project preview: fetch HTML/text of a route (and optionally take a "
+        "screenshot). URLs must be the project preview or an allowlisted custom URL — no open web browsing. "
+        "Use this to read what the running app actually renders (e.g. /login) instead of guessing from source."),
+     "parameters": {"type": "object", "properties": {
+         "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
+         "url": {"type": "string", "description": "Optional full URL override (must be allowlisted)"},
+         "include_screenshot": {"type": "boolean", "description": "Also capture a desktop screenshot (default false)"},
      }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "ask_question", "description": (
         "Ask the user an interactive question and wait for their answer. Types: answer (free text), "
@@ -1368,11 +1399,22 @@ async def _execute_tool(
             await _track_touched_file(project_id, str(args["path"]), ctx)
             return {"ok": ok, "message": message}
         if name == "run_command":
+            timeout_s = max(1, min(int(args.get("timeout") or 300), 900))
             code, output = await execute_command(
                 project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
-                timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
+                timeout=timeout_s, source="agent",
             )
-            return {"ok": code == 0, "exit_code": code, "output": _truncate_for_llm(output, MAX_TOOL_RESULT_CHARS)}
+            truncated = _truncate_for_llm(output, MAX_TOOL_RESULT_CHARS)
+            if code == 124:
+                return {
+                    "ok": False,
+                    "exit_code": 124,
+                    "error": "timeout",
+                    "retryable": True,
+                    "message": f"Command timed out after {timeout_s}s",
+                    "output": truncated,
+                }
+            return {"ok": code == 0, "exit_code": code, "output": truncated}
         if name == "service":
             return await run_service_action(
                 project_id, str(args["action"]), command=args.get("command"),
@@ -1388,6 +1430,8 @@ async def _execute_tool(
             result = await _tool_screenshot_preview(project_id, args, ctx)
             ctx["_screenshot_captured"] = True
             return result
+        if name == "inspect_preview":
+            return await _tool_inspect_preview(project_id, args, ctx)
         if name == "ask_question":
             return await _tool_ask_question(project_id, args, ctx)
         if name == "env_get":
@@ -1444,10 +1488,11 @@ async def _execute_tool(
                 import uuid as uuid_mod
 
                 task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
+                bg_key = f"{project_id}:{task_id}"
                 bg_task = asyncio.create_task(_run_subagent(project_id, task, model))
-                _background_subagents[task_id] = bg_task
+                _background_subagents[bg_key] = bg_task
 
-                def _cleanup(done: asyncio.Task[Any], *, key: str = task_id) -> None:
+                def _cleanup(done: asyncio.Task[Any], *, key: str = bg_key) -> None:
                     _background_subagents.pop(key, None)
 
                 bg_task.add_done_callback(_cleanup)
@@ -1457,6 +1502,7 @@ async def _execute_tool(
                     "status": "running",
                     "message": "Background subagent started",
                     "task": task,
+                    "timeout_s": SUBAGENT_TIMEOUT_S,
                 }
             return await _run_subagent(project_id, task, model)
 
@@ -1488,7 +1534,7 @@ async def _execute_tool(
             "message": str(exc) or "File not found",
             "hint": "List files first or check the path",
         }
-    except TimeoutError as exc:
+    except (TimeoutError, asyncio.TimeoutError) as exc:
         return {
             "ok": False,
             "error": "timeout",
@@ -1496,11 +1542,16 @@ async def _execute_tool(
             "hint": "Try with a shorter timeout or simpler command",
             "retryable": True,
         }
+    except asyncio.CancelledError:
+        # Propagate cancel so interrupt/stop can unwind the turn; the tool loop
+        # records a cancelled tool result when appropriate.
+        raise
     except Exception as exc:
         return {
             "ok": False,
             "error": "tool_failed",
             "message": str(exc) or type(exc).__name__,
+            "retryable": False,
         }
 
 
@@ -1842,6 +1893,69 @@ async def _tool_screenshot_preview(
     }
 
 
+async def _tool_inspect_preview(
+    project_id: str, args: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any]:
+    """Limited browser: fetch preview HTML/text (+ optional screenshot) within allowlist (DAV-203)."""
+    from syte.preview_access import run_access_action
+    from urllib.parse import urljoin
+
+    route = str(args.get("route") or "/").strip() or "/"
+    if not route.startswith("/"):
+        route = "/" + route
+    explicit_url = str(args.get("url") or "").strip()
+    include_shot = bool(args.get("include_screenshot"))
+
+    status = await run_access_action(project_id, "status")
+    base = str(status.get("preview_url") or status.get("preview_direct_url") or "")
+    target = explicit_url or (urljoin(base.rstrip("/") + "/", route.lstrip("/")) if base else "")
+    if not target and base:
+        target = base.rstrip("/") + route
+    if not target:
+        return {
+            "ok": False,
+            "error": "no_preview",
+            "message": "Preview URL unavailable — call service preview_start first.",
+        }
+
+    fetched = await run_access_action(project_id, "fetch", url=target)
+    result: dict[str, Any] = {
+        "ok": bool(fetched.get("ok")),
+        "action": "inspect_preview",
+        "route": route,
+        "url": fetched.get("url") or target,
+        "status_code": fetched.get("status_code"),
+        "content_type": fetched.get("content_type"),
+        "content": fetched.get("content") or fetched.get("message"),
+        "message": (
+            f"Fetched preview {route} (HTTP {fetched.get('status_code')})"
+            if fetched.get("ok")
+            else str(fetched.get("message") or fetched.get("error") or "Fetch failed")
+        ),
+    }
+    if fetched.get("error"):
+        result["error"] = fetched.get("error")
+
+    if include_shot:
+        shot = await _tool_screenshot_preview(
+            project_id,
+            {"route": route, "url": target, "viewports": ["desktop"]},
+            ctx,
+        )
+        result["screenshot"] = {
+            k: v for k, v in shot.items() if not str(k).startswith("_")
+        }
+        if shot.get("_chat_screenshots"):
+            result["_chat_screenshots"] = shot["_chat_screenshots"]
+        if shot.get("_vision_parts"):
+            result["_vision_parts"] = shot["_vision_parts"]
+        if shot.get("ok"):
+            ctx["_screenshot_captured"] = True
+            result["ok"] = True
+            result["message"] = f"{result['message']}; desktop screenshot attached"
+    return result
+
+
 async def _tool_ask_question(
     project_id: str, args: dict[str, Any], ctx: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2177,6 +2291,35 @@ async def _run_subagent(
     project_id: str, task: str, model: dict[str, str]
 ) -> dict[str, Any]:
     """Run a bounded secondary tool loop and return its findings to the parent."""
+    try:
+        return await asyncio.wait_for(
+            _run_subagent_loop(project_id, task, model),
+            timeout=SUBAGENT_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        return {
+            "ok": False,
+            "error": "subagent_timeout",
+            "retryable": True,
+            "message": (
+                f"Subagent timed out after {int(SUBAGENT_TIMEOUT_S)}s "
+                f"(step limit {MAX_SUBAGENT_STEPS}). Narrow the task or raise tool timeouts carefully."
+            ),
+            "task": task,
+            "timeout_s": SUBAGENT_TIMEOUT_S,
+        }
+    except asyncio.CancelledError:
+        return {
+            "ok": False,
+            "error": "subagent_cancelled",
+            "message": "Subagent cancelled",
+            "task": task,
+        }
+
+
+async def _run_subagent_loop(
+    project_id: str, task: str, model: dict[str, str]
+) -> dict[str, Any]:
     instruction = (
         "You are a focused Syte subagent sharing the parent's project workspace. Complete only the "
         "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
@@ -2209,7 +2352,27 @@ async def _run_subagent(
                     args = {}
             except json.JSONDecodeError:
                 args = {}
-            result = await _execute_tool(project_id, name, args, model=model, context={})
+            try:
+                result = await _execute_tool(project_id, name, args, model=model, context={})
+            except asyncio.CancelledError:
+                result = {
+                    "ok": False,
+                    "error": "cancelled",
+                    "message": f"Tool {name} cancelled",
+                }
+                public = result
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": str(call.get("id") or f"subagent-{step}"),
+                    "content": _truncate_tool_payload(public),
+                })
+                raise
+            except Exception as exc:
+                result = {
+                    "ok": False,
+                    "error": "tool_failed",
+                    "message": str(exc) or type(exc).__name__,
+                }
             public = {k: v for k, v in result.items() if not str(k).startswith("_")}
             messages.append({
                 "role": "tool",
@@ -2905,9 +3068,45 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-                result = await _execute_tool(
-                    project_id, name, args, model=model, context=tool_context,
-                )
+                try:
+                    result = await _execute_tool(
+                        project_id, name, args, model=model, context=tool_context,
+                    )
+                except asyncio.CancelledError:
+                    # Always leave a tool result so the conversation stays valid (DAV-195).
+                    result = {
+                        "ok": False,
+                        "error": "cancelled",
+                        "message": f"Tool {name} cancelled",
+                    }
+                    encoded = _truncate_tool_payload(result)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": encoded,
+                    })
+                    try:
+                        await _persist_message(
+                            project_id,
+                            request_id,
+                            "tool",
+                            encoded,
+                            session_number=session_number,
+                            turso_session_id=turso_session_id,
+                            tool_call_id=call_id,
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "persist cancelled tool result failed", exc_info=True
+                        )
+                    raise
+                except Exception as exc:
+                    result = {
+                        "ok": False,
+                        "error": "tool_failed",
+                        "message": str(exc) or type(exc).__name__,
+                        "retryable": False,
+                    }
                 if isinstance(result, dict) and not result.get("ok", True):
                     await record_agent_event(
                         project_id,
@@ -2946,7 +3145,7 @@ async def _communicate_with_agent_impl(
                         source=source,
                         turso_session_id=turso_session_id,
                     )
-                if name == "screenshot_preview" and chat_shots:
+                if name in {"screenshot_preview", "inspect_preview"} and chat_shots:
                     await record_agent_event(
                         project_id,
                         "screenshot",
@@ -3132,11 +3331,75 @@ async def _communicate_with_agent_impl(
 
 
 async def test_agent(project_id: str, *, source: str = "api", model_profile: str | None = None) -> dict[str, Any]:
-    result = await communicate_with_agent(
-        project_id, "Reply with exactly the word 'ok' and nothing else.",
-        source=source, model_profile=model_profile,
-    )
-    passed = bool(result.get("ok") and "ok" in str(result.get("reply") or "").lower())
-    return {**result, "ok": passed, "message": "Syte cloud agent test passed" if passed
-            else result.get("message", "Agent did not return expected reply"),
-            "checks": {"cloud_runtime": True, "backend": passed, "communicate": passed}}
+    """Provider connectivity probe that does not mutate project conversation/files (DAV-201).
+
+    Runs a single no-tools completion against the selected model. Does not call
+    ``communicate_with_agent``, so activity events, session history, and workspace
+    files stay untouched.
+    """
+    project = await get_project(project_id)
+    if not project:
+        return {
+            "ok": False,
+            "error": "not_found",
+            "message": "Project not found",
+            "checks": {"cloud_runtime": False, "backend": False, "communicate": False},
+        }
+    try:
+        if model_profile:
+            profile = model_profile.strip() or "syra-base"
+            if profile not in PROFILE_PROVIDERS:
+                raise ValueError(f"Unknown model profile: {profile}")
+            project = {**project, "agent_model_profile": profile}
+        model = await selected_model_metadata(project)
+        if not (model.get("api_key") or "").strip():
+            raise RuntimeError(f"No API key configured for profile {model.get('profile')}")
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "model_unavailable",
+            "message": str(exc) or "Model unavailable",
+            "checks": {"cloud_runtime": True, "backend": False, "communicate": False},
+            "isolated": True,
+            "source": source,
+        }
+    try:
+        assistant = await _provider_completion(
+            model,
+            [
+                {"role": "system", "content": "Reply with exactly the word ok and nothing else."},
+                {"role": "user", "content": "ping"},
+            ],
+            tools=None,
+        )
+        reply = str(assistant.get("content") or "").strip()
+        passed = "ok" in reply.lower()
+        return {
+            "ok": passed,
+            "reply": reply,
+            "message": (
+                "Syte cloud agent test passed"
+                if passed
+                else "Agent did not return expected reply"
+            ),
+            "model_profile": model.get("profile"),
+            "model": model.get("model"),
+            "provider": model.get("provider"),
+            "isolated": True,
+            "source": source,
+            "checks": {
+                "cloud_runtime": True,
+                "backend": passed,
+                "communicate": passed,
+                "isolated_probe": True,
+            },
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "provider_failed",
+            "message": str(exc) or "Provider probe failed",
+            "isolated": True,
+            "source": source,
+            "checks": {"cloud_runtime": True, "backend": False, "communicate": False},
+        }

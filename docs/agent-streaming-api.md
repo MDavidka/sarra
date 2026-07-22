@@ -181,6 +181,26 @@ Related visual analyses are available at
 
 Turn lifecycle markers. `request_completed` is the normal successful end of a turn.
 
+### `agent_stopped`
+
+Turn or session was stopped/interrupted (user cancel, stop API, or cooperative
+cancel). Prefer treating this as terminal for the current turn. Closely related
+to `session_stopped`; clients should handle **both**.
+
+**payload:**
+
+```json
+{
+  "stopped_at": "2026-07-20T14:30:00+00:00",
+  "reason": "interrupted",
+  "session": 42,
+  "turso_session_id": "ts_abc",
+  "stop_id": 7
+}
+```
+
+`reason` values include `stopped`, `interrupted`, `cancelled`, and `completed`.
+
 ### `session_stopped`
 
 Session ended (completed, interrupted, or errored). Always treat this as terminal
@@ -226,6 +246,8 @@ Structured tool failure for observability (does not replace `tool_call_finished`
 | `not_found` | Addon/project/resource missing | `false` |
 | `timeout` / `search_failed` | Subprocess or network timeout | `true` |
 | `tool_failed` | Generic tool failure (see `message`) | varies |
+| `cancelled` | Tool aborted by interrupt/stop | `false` |
+| `subagent_timeout` | Subagent wall-clock timeout | `true` |
 | `mcp_dispatch_unsupported` | Custom MCP stdio dispatch disabled | `false` |
 | `builtin_readonly` | Attempted to edit built-in MCP addon | `false` |
 
@@ -255,9 +277,18 @@ SSE / poll clients should:
    **5s**, reset to 500ms when new events arrive; keep a long-poll style SSE open when
    possible instead of busy-polling
 7. Cap concurrent pollers per session to 1 in the BFF to avoid stampeding Turso
+8. **Never poll with `since_id=0` after the first snapshot** — that re-downloads the
+   full recent backlog on every tick and is the main cause of growing payload size
 
 Optional: `session=last` or `session={N}` filters to the latest / specific numbered
 chat session.
+
+### Status fields vs busy
+
+- `agent_busy` / in-memory turn marker: true only while a turn task is active
+- `agent_status=running`: runtime is ready (not the same as busy). Interrupt clears
+  busy immediately but leaves `running` so the next message can start without
+  `start_agent` again. Use `agent_busy` (or SSE `agent_stopped`) for UI spinners.
 
 ### Minimal incremental poll example
 

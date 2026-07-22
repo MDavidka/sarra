@@ -167,6 +167,85 @@ def _is_forbidden_build(command: str) -> str | None:
     return None
 
 
+# Interpreters that can open arbitrary host paths via inline code.
+_INLINE_CODE_FLAGS: dict[str, frozenset[str]] = {
+    "python": frozenset({"-c"}),
+    "python3": frozenset({"-c"}),
+    "node": frozenset({"-e", "-p", "--eval", "--print"}),
+    "perl": frozenset({"-e", "-E"}),
+    "ruby": frozenset({"-e"}),
+    "php": frozenset({"-r"}),
+    "lua": frozenset({"-e"}),
+}
+
+
+def _shell_path_violation(project_id: str, command: str, *, cwd: str = "app") -> str | None:
+    """Reject shell args that resolve outside the project workspace (DAV-199).
+
+    Cwd sandbox alone does not stop ``cat /etc/passwd`` or ``ls ../other-tenant``.
+    Absolute paths, ``~``, and ``..`` segments are resolved against the workspace
+    and denied when they escape. Inline interpreter ``-c``/``-e`` flags are also
+    blocked for agent shell because they bypass path tokenization.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        tokens = command.split()
+    if not tokens:
+        return None
+
+    base = workspace_path(project_id).resolve()
+    try:
+        workdir = _resolve_workspace_path(project_id, cwd)
+    except ValueError as exc:
+        return str(exc)
+
+    # Drop leading env assignments so the primary binary is visible.
+    idx = 0
+    while idx < len(tokens) and _is_env_assignment(tokens[idx]):
+        idx += 1
+    if idx >= len(tokens):
+        return None
+    binary = Path(tokens[idx]).name
+    inline_flags = _INLINE_CODE_FLAGS.get(binary)
+    if inline_flags:
+        for tok in tokens[idx + 1 :]:
+            if tok in inline_flags:
+                return (
+                    f"inline code via {binary} {tok} is blocked in agent shell — "
+                    "use workspace file tools or a script inside the project"
+                )
+
+    path_like = re.compile(r"^(?:~|/|\.\.(?:/|$)|[^|=]*\.\.(?:/|$))")
+    for tok in tokens[idx + 1 :]:
+        if not tok or tok.startswith("-"):
+            continue
+        if tok in {"|", "&&", "||", ";", "&"}:
+            continue
+        # Skip simple values that are clearly not filesystem paths.
+        if "=" in tok and not tok.startswith("~") and not tok.startswith("/") and ".." not in tok:
+            continue
+        if not path_like.match(tok) and ".." not in tok and not tok.startswith("/"):
+            # Relative path without .. — still resolve under workdir for safety
+            # when it looks like a path (has / or ends with known suffix).
+            if "/" not in tok and not tok.startswith("."):
+                continue
+        try:
+            if tok.startswith("~"):
+                candidate = Path(tok).expanduser().resolve()
+            elif tok.startswith("/"):
+                candidate = Path(tok).resolve()
+            else:
+                candidate = (workdir / tok).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return f"unsafe path argument: {tok}"
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            return f"path outside workspace: {tok}"
+    return None
+
+
 def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int) -> None:
     log_path = workspace_path(project_id) / "commands.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -511,6 +590,12 @@ async def execute_command(
             "that runs git pull + docker build (npm run build inside Dockerfile) + restart. "
             "For testing, use: npm run lint"
         )
+
+    # Agent / MCP shells must stay inside the tenant workspace (cwd alone is not enough).
+    if source in ("agent", "mcp"):
+        path_blocked = _shell_path_violation(project_id, cmd, cwd=cwd)
+        if path_blocked:
+            return 1, f"Command blocked (workspace boundary): {path_blocked}"
 
     try:
         workdir = _resolve_workspace_path(project_id, cwd)
