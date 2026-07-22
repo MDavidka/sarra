@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
+
+# Cap planner LLM wait so complex-site turns do not stall TTFT.
+PLANNER_TIMEOUT_S = 2.5
 
 _COMPLEX_MARKERS = (
     "build a site",
@@ -92,8 +96,13 @@ async def plan_complex_site(
     *,
     provider_completion,
     model: dict[str, str],
+    timeout_s: float = PLANNER_TIMEOUT_S,
 ) -> dict[str, Any]:
-    """Use a cheap planner call to decompose a site build into subtasks."""
+    """Use a cheap planner call to decompose a site build into subtasks.
+
+    Falls back to :func:`fallback_site_plan` on timeout, parse failure, or errors
+    so the main streamed turn is not blocked for a full extra LLM round-trip.
+    """
     planner_prompt = (
         "You are a website architect. Break this request into 5-10 concrete subtasks. "
         "For each subtask, specify: task (string), files (array of paths), deps (array of "
@@ -101,11 +110,14 @@ async def plan_complex_site(
         f"User request: {user_message}"
     )
     try:
-        resp = await provider_completion(
-            model,
-            [{"role": "user", "content": planner_prompt}],
-            tools=[],
-            temperature=0.2,
+        resp = await asyncio.wait_for(
+            provider_completion(
+                model,
+                [{"role": "user", "content": planner_prompt}],
+                tools=[],
+                temperature=0.2,
+            ),
+            timeout=max(0.5, float(timeout_s)),
         )
         content = str((resp or {}).get("content") or "")
         subtasks = _extract_json_array(content)
@@ -118,6 +130,12 @@ async def plan_complex_site(
                 "raw": content[:2000],
             }
         return {"ok": True, "subtasks": subtasks, "planner": "llm", "raw": content[:2000]}
+    except asyncio.TimeoutError:
+        return {
+            "ok": True,
+            "subtasks": fallback_site_plan(user_message),
+            "planner": "fallback_timeout",
+        }
     except Exception as exc:
         return {
             "ok": True,

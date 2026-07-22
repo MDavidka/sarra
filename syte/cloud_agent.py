@@ -66,6 +66,36 @@ _provider_client: httpx.AsyncClient | None = None
 # Cache only the static (cache-stable) instruction prefix — never session memory.
 _instruction_cache: dict[tuple[str, int, str], str] = {}
 _background_subagents: dict[str, asyncio.Task[Any]] = {}
+# Fire-and-forget work that must not block turn completion (index, preview).
+_bg_tasks: set[asyncio.Task[Any]] = set()
+# Turso message mirrors — drained briefly before end-of-turn resync.
+_turso_mirror_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _track_bg_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+def _track_turso_mirror_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+    _turso_mirror_tasks.add(task)
+    task.add_done_callback(_turso_mirror_tasks.discard)
+    return task
+
+
+async def _drain_turso_mirrors(*, timeout_s: float = 5.0) -> None:
+    """Let fire-and-forget Turso mirrors settle before end-of-turn resync."""
+    pending = [task for task in list(_turso_mirror_tasks) if not task.done()]
+    if not pending:
+        return
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*pending, return_exceptions=True),
+            timeout=max(0.1, float(timeout_s)),
+        )
+    except asyncio.TimeoutError:
+        pass
 
 TokenEmitter = Callable[[str], Awaitable[None]]
 
@@ -329,23 +359,14 @@ async def _persist_message(
     tool_calls: list[dict[str, Any]] | None = None,
     reasoning_content: str | None = None,
 ) -> int:
-    """Append one message locally, then mirror it to Turso in real time.
+    """Append one message locally, then mirror it to Turso without blocking TTFT.
 
-    Every message the cloud agent produces (user / assistant / tool) is
-    written to the local durable store first (never fails the turn), and —
-    when a durable Turso session is open for this turn (``turso_session_id``
-    set, i.e. Turso is configured) — immediately mirrored into the shared
-    ``agent_message`` Turso table (see :mod:`syte.turso_store`). This is what
-    makes message persistence "live" for sessions started directly from the
-    API (see :mod:`syte.agent_jobs`): the Turso session is opened before the
-    first message is even admitted, so each subsequent message — including
-    every assistant reply and tool result while the turn is still running —
-    is synced to Turso as soon as it is produced, not just at the end.
-
-    The local row is flagged ``turso_synced`` only after a successful Turso
-    write, so :func:`syte.cloud_agent_store.session_sync_status` can report
-    an accurate green/red "all messages saved" status for the GUI's brain
-    indicator even if a particular write failed or Turso is unreachable.
+    Every message the cloud agent produces (user / assistant / tool) is written
+    to the local durable store first (never fails the turn). When a durable Turso
+    session is open, the mirror runs as a background task so streaming / first
+    token is not gated on remote round-trips or retries. Rows stay
+    ``turso_synced=0`` until the mirror succeeds; :func:`_resync_unsynced_messages`
+    at turn end retries any leftovers for the brain indicator.
     """
     local_id = await append_message(
         project_id,
@@ -358,17 +379,21 @@ async def _persist_message(
         reasoning_content=reasoning_content,
     )
     if turso_session_id:
-        await _mirror_message_to_turso(
-            turso_session_id=turso_session_id,
-            project_id=project_id,
-            local_id=local_id,
-            role=role,
-            content=content,
-            session_number=session_number,
-            request_id=request_id,
-            tool_call_id=tool_call_id,
-            tool_calls=tool_calls,
-            reasoning_content=reasoning_content,
+        _track_turso_mirror_task(
+            asyncio.create_task(
+                _mirror_message_to_turso(
+                    turso_session_id=turso_session_id,
+                    project_id=project_id,
+                    local_id=local_id,
+                    role=role,
+                    content=content,
+                    session_number=session_number,
+                    request_id=request_id,
+                    tool_call_id=tool_call_id,
+                    tool_calls=tool_calls,
+                    reasoning_content=reasoning_content,
+                )
+            )
         )
     return local_id
 
@@ -452,12 +477,13 @@ async def bridge_settings() -> dict[str, Any]:
     ).strip() or "syra-base"
     if default_profile not in PROFILE_PROVIDERS:
         default_profile = "syra-base"
+    api_keys = await asyncio.gather(*[profile_api_key(name) for name in PROFILE_ORDER])
     profiles: dict[str, dict[str, str]] = {}
-    for name in PROFILE_ORDER:
+    for name, api_key in zip(PROFILE_ORDER, api_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
         profiles[name] = {
             **spec,
-            "api_key": await profile_api_key(name),
+            "api_key": api_key,
         }
     active = profiles[default_profile]
     return {
@@ -796,15 +822,11 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
             project_id,
             {"agent_status": "running", "agent_last_started_at": _now(), "agent_last_error": ""},
         )
-        # Warm the workspace file index once at start — not on every chat turn (DAV-128).
+        # Warm the workspace file index in the background — never block TTFT (DAV-128).
         try:
-            from syte.agent_memory import lookup_workspace_paths, scan_workspace_index
-
-            existing = await lookup_workspace_paths(project_id, limit=1)
-            if not existing:
-                await scan_workspace_index(project_id)
+            _track_bg_task(asyncio.create_task(_warm_workspace_index(project_id)))
         except Exception:
-            logger.exception("workspace index warm failed for %s", project_id)
+            logger.exception("workspace index warm schedule failed for %s", project_id)
         _write_log(project_id, "cloud runtime ready")
         await record_agent_event(
             project_id,
@@ -816,6 +838,90 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
         )
         status = await get_agent_status(project_id, check_backend=False)
         return True, "Syte cloud agent is ready.", status
+
+
+async def _warm_workspace_index(project_id: str) -> None:
+    """Scan workspace into the index when empty — runs off the chat hot path."""
+    try:
+        from syte.agent_memory import lookup_workspace_paths, scan_workspace_index
+
+        existing = await lookup_workspace_paths(project_id, limit=1)
+        if not existing:
+            await scan_workspace_index(project_id)
+    except Exception:
+        logger.exception("workspace index warm failed for %s", project_id)
+
+
+async def _post_turn_preview_checks(
+    project_id: str,
+    *,
+    model: dict[str, str],
+    tool_context: dict[str, Any],
+    source: str,
+    turso_session_id: str | None,
+    request_id: str,
+    session_number: int,
+) -> None:
+    """Preview readiness + soft route validation after the turn already completed."""
+    def _payload(kind: str, base: dict[str, Any] | None = None) -> dict[str, Any]:
+        out = {
+            "request_id": request_id,
+            "session": session_number,
+            "mark_kind": kind,
+            "async_post_turn": True,
+        }
+        if base:
+            out.update(base)
+        return out
+
+    try:
+        from syte.preview_health import wait_for_preview_ready
+
+        ok_preview, preview_url, _status = await wait_for_preview_ready(
+            project_id, max_wait_s=8, poll_s=1.5,
+        )
+        if not ok_preview:
+            await record_agent_event(
+                project_id,
+                "status",
+                title="Preview did not start",
+                detail=(
+                    "Agent completed work but preview is not reachable. "
+                    "Check logs or run service preview_start."
+                ),
+                payload=_payload(
+                    "status",
+                    {"preview_unreachable": True, "preview_url": preview_url},
+                ),
+                source=source,
+                turso_session_id=turso_session_id,
+            )
+        elif not tool_context.get("_screenshot_captured"):
+            await _execute_tool(
+                project_id,
+                "screenshot_preview",
+                {"route": "/", "viewports": ["desktop"]},
+                model=model,
+                context=tool_context,
+            )
+        routes_dir = workspace_path(project_id) / "app" / "app"
+        if not routes_dir.exists() or not await asyncio.to_thread(
+            lambda: any(routes_dir.rglob("page.tsx"))
+        ):
+            await record_agent_event(
+                project_id,
+                "status",
+                title="No app/app/ routes found",
+                detail=(
+                    "Agent may have created routes in the wrong location. "
+                    "Expected app/app/page.tsx"
+                ),
+                payload=_payload("status", {"no_routes_detected": True}),
+                source=source,
+                turso_session_id=turso_session_id,
+            )
+    except Exception:
+        logger.debug("preview health check failed", exc_info=True)
 
 
 async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
@@ -2206,7 +2312,37 @@ async def _communicate_with_agent_impl(
         source=source,
         turso_session_id=turso_session_id,
     )
-    static_instruction, dynamic_instruction = await _build_syte_instruction_parts(project_id)
+
+    # Prefer indexed files referenced in the prompt over a full workspace crawl.
+    from syte.agent_memory import latest_summary, lookup_workspace_paths, prompt_tags_from_message
+    from syte.agent_skills import match_active_skills, skill_hint_block
+    from syte.nextjs_layout import is_nextjs_repo
+
+    app_root = workspace_path(project_id) / "app"
+    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
+    tags = prompt_tags_from_message(message)
+
+    # Overlap independent reads so first provider byte is not gated on serial I/O.
+    instruction_task = asyncio.create_task(_build_syte_instruction_parts(project_id))
+    history_task = asyncio.create_task(
+        conversation_messages(project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True)
+    )
+    summary_task = asyncio.create_task(latest_summary(project_id))
+    skills_task = asyncio.create_task(
+        match_active_skills(project_id, message, is_nextjs=is_website)
+    )
+    lookup_task = (
+        asyncio.create_task(lookup_workspace_paths(project_id, tags=tags, limit=12))
+        if tags
+        else None
+    )
+
+    static_instruction, dynamic_instruction = await instruction_task
+    history = await history_task
+    prior_summary = await summary_task
+    matched_skills = await skills_task
+    hinted = await lookup_task if lookup_task is not None else []
+
     turn_hints: list[str] = []
     plan_already_seeded = False
     if gen.get("mandatory_plan"):
@@ -2216,29 +2352,15 @@ async def _communicate_with_agent_impl(
             "the plan is submitted. After planning, execute the steps."
         )
 
-    # Prefer indexed files referenced in the prompt over a full workspace crawl.
-    from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
-    from syte.nextjs_layout import is_nextjs_repo
-
-    app_root = workspace_path(project_id) / "app"
-    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
-
-    tags = prompt_tags_from_message(message)
-    if tags:
-        hinted = await lookup_workspace_paths(project_id, tags=tags, limit=12)
-        if hinted:
-            turn_hints.append(
-                "## Prompt-matched workspace files (from index)\n"
-                + "\n".join(
-                    f"- {item['path']} [{', '.join(item.get('semantic_tags') or [])}]"
-                    for item in hinted
-                )
+    if hinted:
+        turn_hints.append(
+            "## Prompt-matched workspace files (from index)\n"
+            + "\n".join(
+                f"- {item['path']} [{', '.join(item.get('semantic_tags') or [])}]"
+                for item in hinted
             )
+        )
 
-    # Keyword-matched skills (and Next.js auto skills) as a temporary system hint.
-    from syte.agent_skills import match_active_skills, skill_hint_block
-
-    matched_skills = await match_active_skills(project_id, message, is_nextjs=is_website)
     skill_hint = skill_hint_block(matched_skills)
     if skill_hint:
         turn_hints.append(skill_hint)
@@ -2313,15 +2435,6 @@ async def _communicate_with_agent_impl(
         part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()
     )
 
-    # Only the latest session — prior sessions stay in the activity stream for
-    # clients, but are not re-sent to the provider on every turn.
-    # When a long-term summary exists and the latest session is thin, prepend it.
-    history = await conversation_messages(
-        project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True,
-    )
-    from syte.agent_memory import latest_summary
-
-    prior_summary = await latest_summary(project_id)
     # Always inject the latest cross-session summary when the live history is thin
     # (new session, or fewer than 6 user/assistant turns) so context survives restarts.
     live_ua = [
@@ -2557,62 +2670,22 @@ async def _communicate_with_agent_impl(
                             "auto screenshot after UI edits failed", exc_info=True
                         )
 
-                # Preview health check for Next.js projects.
+                # Preview health / missing-route checks run in the background so
+                # "Completed" is not blocked for up to ~45s after the model finishes.
                 if is_website:
-                    try:
-                        from syte.preview_health import wait_for_preview_ready
-
-                        ok_preview, preview_url, _status = await wait_for_preview_ready(
-                            project_id, max_wait_s=45, poll_s=2.5,
-                        )
-                        if not ok_preview:
-                            await record_agent_event(
+                    _track_bg_task(
+                        asyncio.create_task(
+                            _post_turn_preview_checks(
                                 project_id,
-                                "status",
-                                title="Preview did not start",
-                                detail=(
-                                    "Agent completed work but preview is not reachable. "
-                                    "Check logs or run service preview_start."
-                                ),
-                                payload=_mark_payload(
-                                    status="g",
-                                    kind="status",
-                                    base={"preview_unreachable": True, "preview_url": preview_url},
-                                ),
-                                source=source,
-                                turso_session_id=turso_session_id,
-                            )
-                        elif not tool_context.get("_screenshot_captured"):
-                            await _execute_tool(
-                                project_id,
-                                "screenshot_preview",
-                                {"route": "/", "viewports": ["desktop"]},
                                 model=model,
-                                context=tool_context,
-                            )
-                        # Soft validation: warn when no App Router routes exist.
-                        routes_dir = workspace_path(project_id) / "app" / "app"
-                        if not routes_dir.exists() or not any(routes_dir.rglob("page.tsx")):
-                            await record_agent_event(
-                                project_id,
-                                "status",
-                                title="No app/app/ routes found",
-                                detail=(
-                                    "Agent may have created routes in the wrong location. "
-                                    "Expected app/app/page.tsx"
-                                ),
-                                payload=_mark_payload(
-                                    status="g",
-                                    kind="status",
-                                    base={"no_routes_detected": True},
-                                ),
+                                tool_context=tool_context,
                                 source=source,
                                 turso_session_id=turso_session_id,
+                                request_id=request_id,
+                                session_number=session_number,
                             )
-                    except Exception:
-                        logging.getLogger(__name__).debug(
-                            "preview health check failed", exc_info=True
                         )
+                    )
 
                 reply = content.strip() or "Completed."
                 await record_agent_event(
@@ -2664,6 +2737,7 @@ async def _communicate_with_agent_impl(
                         min_messages=2,
                     )
                     try:
+                        await _drain_turso_mirrors(timeout_s=5.0)
                         await _resync_unsynced_messages(
                             project_id,
                             session_number=session_number,
