@@ -72,7 +72,14 @@ and structured tools. Available tools:
 The agent builds **any** kind of code (libraries, CLIs, APIs, scripts, backends, data jobs,
 etc.). It must **not** assume every request is a website. When the work *is* a website / web UI,
 it must follow the Sycord Design Contract (shadcn/ui under `components/ui/*`, Lucide, Inter,
-Tailwind tokens). **Do not** use HeroUI, NextUI, Chakra, MUI, or Ant Design.
+Tailwind tokens). The contract exposes a pinned catalog of 57 individual shadcn components and
+patterns; shadcn Blocks and application-level direct Radix imports are rejected. Radix primitives
+must stay behind local `components/ui/*` wrappers. **Do not** use HeroUI, NextUI, Chakra, MUI, or
+Ant Design.
+
+For a new website or substantive redesign, the runtime enforces a clarification-or-plan gate.
+When the brief lacks a material design choice, the agent asks one batched question before planning.
+Otherwise it plans first. File inspection and edits remain blocked until that sequence completes.
 
 ### Session stop markers
 

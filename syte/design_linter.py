@@ -59,8 +59,15 @@ def validate_design(project_id: str) -> dict:
     if not ui_dir.exists():
         ui_dir = next(app.rglob("components/ui"), None)
 
-    tsx_files = list(app.rglob("*.tsx"))[:50]
-    all_tsx = "\n".join(_read_text(f) for f in tsx_files)
+    tsx_files = list(app.rglob("*.tsx"))[:100]
+    tsx_sources = [(path, _read_text(path)) for path in tsx_files]
+    all_tsx = "\n".join(source for _, source in tsx_sources)
+    application_sources = [
+        (path, source)
+        for path, source in tsx_sources
+        if not ui_dir or ui_dir not in path.parents
+    ]
+    all_application_tsx = "\n".join(source for _, source in application_sources)
 
     # Named theme / CSS variable tokens present (soft: pass if radius + primary exist)
     theme_ok = "--radius" in globals_css and ("--primary" in globals_css or "--background" in globals_css)
@@ -125,6 +132,62 @@ def validate_design(project_id: str) -> dict:
         "detail": detail,
     })
 
+    # Primitive discipline: page/template Blocks are intentionally excluded,
+    # and direct Radix imports belong behind local components/ui wrappers.
+    block_pattern = re.compile(
+        r"(?:from\s+['\"][^'\"]*(?:/blocks?/|components/blocks)|registry[^'\"]*/block)",
+        re.I,
+    )
+    direct_radix_pattern = re.compile(
+        r"from\s+['\"](?:@radix-ui/|radix-ui['\"])",
+        re.I,
+    )
+    block_files = sorted({
+        str(path.relative_to(app))
+        for path, source in tsx_sources
+        if block_pattern.search(source) or "blocks" in {part.lower() for part in path.parts}
+    })
+    radix_files = [
+        str(path.relative_to(app))
+        for path, source in application_sources
+        if direct_radix_pattern.search(source)
+    ]
+    primitive_ok = not block_files and not radix_files
+    primitive_details: list[str] = []
+    if block_files:
+        primitive_details.append("remove shadcn Block/template imports: " + ", ".join(block_files[:5]))
+    if radix_files:
+        primitive_details.append("move direct Radix use behind components/ui wrappers: " + ", ".join(radix_files[:5]))
+    checks.append({
+        "item": PREFLIGHT_CHECKLIST[11],
+        "ok": primitive_ok,
+        "detail": "; ".join(primitive_details) if primitive_details else "Individual shadcn primitives; Radix stays behind components/ui",
+    })
+
+    # Application code should consume shadcn controls instead of recreating
+    # their behavior. Raw controls remain valid inside components/ui wrappers.
+    raw_controls = sorted(set(re.findall(
+        r"<(button|input|select|textarea)\b",
+        all_application_tsx,
+        re.I,
+    )))
+    if re.search(
+        r"<(?:div|span)\b[^>]*(?:role\s*=\s*['\"]button['\"]|onClick\s*=)",
+        all_application_tsx,
+        re.I,
+    ):
+        raw_controls.append("clickable div/span")
+    raw_controls_ok = not raw_controls
+    checks.append({
+        "item": PREFLIGHT_CHECKLIST[12],
+        "ok": raw_controls_ok,
+        "detail": (
+            "Application controls use components/ui"
+            if raw_controls_ok
+            else "Replace raw application controls with shadcn components: " + ", ".join(raw_controls)
+        ),
+    })
+
     # lucide-react
     lucide_ok = "lucide-react" in deps or "lucide-react" in all_tsx
     circle_icon_bad = bool(re.search(r"rounded-full.*lucide|bg-primary.*h-\d.*w-\d.*flex.*items-center", all_tsx, re.I))
@@ -133,14 +196,6 @@ def validate_design(project_id: str) -> dict:
         "item": PREFLIGHT_CHECKLIST[5],
         "ok": icon_ok,
         "detail": "lucide-react used" if icon_ok else "Use lucide-react; avoid icons in colored circles",
-    })
-
-    # hero gradient
-    gradient_ok = bool(re.search(r"radial-gradient|gradient", all_tsx + globals_css, re.I))
-    checks.append({
-        "item": PREFLIGHT_CHECKLIST[6],
-        "ok": gradient_ok,
-        "detail": "Gradient found" if gradient_ok else "Add hero gradient (radial-gradient with primary/0.25)",
     })
 
     # dark mode

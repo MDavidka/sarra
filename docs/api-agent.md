@@ -20,7 +20,9 @@ Start an agent turn. `thinking_level` accepts `1` (Instant) through `5` (Max).
 Temperature / top_p apply to all providers; native thinking budgets apply **only**
 when the selected model/provider supports them (Instant/Fast never send
 `thinking` / `reasoning_effort`). Deep/Max (`thinking_level` 4–5) enforce a hard
-plan gate: the first tool must be `update_plan` (or a site planner seed).
+plan gate: Deep/Max starts with `update_plan` (or a site planner seed). Substantive website work
+uses a stricter clarification-or-plan gate: `ask_question` first when a material design choice is
+missing, then `update_plan`; otherwise planning starts immediately before inspection or edits.
 
 Built-in agent tools include `search_code` (ripgrep / Python fallback) for
 workspace text search — prefer it over unbounded `list_files` / shell grep.

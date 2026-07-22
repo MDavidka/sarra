@@ -52,7 +52,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 13
+AGENT_INSTRUCTION_VERSION = 14
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -664,6 +664,8 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "This is a Next.js website project. You MUST:\n"
             "- Use Next.js App Router (routes in app/app/ — double app/ is correct)\n"
             "- Import shadcn/ui components from @/components/ui/* only\n"
+            "- Compose pages from the 57 cataloged components; never use shadcn Blocks or block templates\n"
+            "- Keep direct Radix imports inside components/ui wrappers; preserve keyboard/focus/ARIA behavior\n"
             "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
             "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
             "- Never ship bare unstyled HTML scaffolds\n"
@@ -727,8 +729,11 @@ def _build_static_instruction(
         "(e.g. writing app/page.tsx when the App Router file is app/app/page.tsx). Edit the file that "
         "actually renders the feature, then verify on disk with read_file.\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
-        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. Use ask_question "
-        "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
+        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. For a new website "
+        "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
+        "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
+        "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
+        "Use ask_question whenever you need a preference, secret, numeric setting, or choice. Use "
         "screenshot_preview or inspect_preview after UI changes and check BOTH phone and desktop layouts. "
         "After website edits, ALWAYS call inspect_preview with include_console=true (default) to confirm "
         "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
@@ -1386,17 +1391,39 @@ async def _execute_tool(
 
     ctx = context or {}
     try:
-        # Hard planner gate (DAV-154): Deep/Max must call update_plan before other tools.
+        if (
+            ctx.get("question_required")
+            and not ctx.get("question_answered")
+            and name != "ask_question"
+        ):
+            return {
+                "ok": False,
+                "error": "question_required",
+                "retryable": True,
+                "message": (
+                    "This new website brief is missing a material visual direction. "
+                    "Call ask_question once with a concise theme/design choice before planning."
+                ),
+            }
+        # Hard planner gate: Deep/Max and substantive website work must plan
+        # before inspection or mutation. A user question is the only allowed
+        # pre-plan action so clarification can genuinely happen first.
         if (
             ctx.get("mandatory_plan")
             and not ctx.get("plan_submitted")
             and name not in {"update_plan", "ask_question"}
         ):
+            website_gate = ctx.get("plan_gate_reason") == "website"
             return {
                 "ok": False,
                 "error": "plan_required",
                 "retryable": True,
                 "message": (
+                    "Website workflow requires clarification-or-plan first. Call ask_question "
+                    "if a material design decision is missing; otherwise call update_plan with "
+                    "an ordered, design-specific implementation plan."
+                    if website_gate
+                    else
                     "Thinking level requires a plan first. Call update_plan with an "
                     "ordered list of concrete steps, then continue with other tools."
                 ),
@@ -1469,7 +1496,10 @@ async def _execute_tool(
         if name == "inspect_preview":
             return await _tool_inspect_preview(project_id, args, ctx)
         if name == "ask_question":
-            return await _tool_ask_question(project_id, args, ctx)
+            result = await _tool_ask_question(project_id, args, ctx)
+            if result.get("ok"):
+                ctx["question_answered"] = True
+            return result
         if name == "env_get":
             return await _tool_env_get(project_id, args)
         if name == "env_set":
@@ -2664,9 +2694,18 @@ async def _communicate_with_agent_impl(
     from syte.agent_memory import latest_summary, lookup_workspace_paths, prompt_tags_from_message
     from syte.agent_skills import match_active_skills, skill_hint_block
     from syte.nextjs_layout import is_nextjs_repo
+    from syte.site_planner import (
+        is_substantive_site_request,
+        is_website_request,
+        site_request_needs_clarification,
+    )
 
     app_root = workspace_path(project_id) / "app"
     is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
+    website_work = is_website or is_website_request(message)
+    site_plan_required = is_substantive_site_request(message)
+    site_needs_clarification = site_request_needs_clarification(message)
+    site_question_required = bool(site_plan_required and site_needs_clarification and not is_website)
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
@@ -2676,7 +2715,7 @@ async def _communicate_with_agent_impl(
     )
     summary_task = asyncio.create_task(latest_summary(project_id))
     skills_task = asyncio.create_task(
-        match_active_skills(project_id, message, is_nextjs=is_website)
+        match_active_skills(project_id, message, is_nextjs=website_work)
     )
     lookup_task = (
         asyncio.create_task(lookup_workspace_paths(project_id, tags=tags, limit=12))
@@ -2692,7 +2731,23 @@ async def _communicate_with_agent_impl(
 
     turn_hints: list[str] = []
     plan_already_seeded = False
-    if gen.get("mandatory_plan"):
+    if site_plan_required:
+        turn_hints.append(
+            "Substantive website workflow (hard gate): before any file/tool inspection, decide "
+            "whether one batched clarification is materially needed. If yes, your FIRST tool call "
+            "must be ask_question. If the brief is already sufficient, your FIRST tool call must be "
+            "update_plan. After ask_question returns an answer, call update_plan before any other "
+            "tool. The plan must address information architecture, visual direction, content/assets, "
+            "individual shadcn component mapping (no Blocks), responsive behavior, accessibility and "
+            "interaction states, plus desktop/phone verification. Spend the needed reasoning effort "
+            "on how the site should look and work before implementation."
+        )
+        if site_needs_clarification:
+            turn_hints.append(
+                "The request appears to omit a visual direction for a new site. Ask one concise "
+                "choice question using the named themes unless existing context supplies that choice."
+            )
+    elif gen.get("mandatory_plan"):
         turn_hints.append(
             "Thinking mode: Deep/Max (hard gate). Your FIRST tool call MUST be "
             "update_plan with a concrete ordered plan. Other tools are rejected until "
@@ -2732,7 +2787,12 @@ async def _communicate_with_agent_impl(
     # Complex multi-page site builds: publish a planner decomposition before execution.
     from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
 
-    if is_website and is_complex_site_request(message) and not improve_from_screenshot:
+    if (
+        website_work
+        and is_complex_site_request(message)
+        and not site_needs_clarification
+        and not improve_from_screenshot
+    ):
         plan = await plan_complex_site(
             project_id,
             message,
@@ -2888,7 +2948,10 @@ async def _communicate_with_agent_impl(
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
-        "mandatory_plan": bool(gen.get("mandatory_plan")),
+        "mandatory_plan": bool(gen.get("mandatory_plan") or site_plan_required),
+        "plan_gate_reason": "website" if site_plan_required else "thinking",
+        "question_required": site_question_required,
+        "question_answered": False,
         "plan_submitted": bool(plan_already_seeded),
         "model": model,
     }

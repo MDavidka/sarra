@@ -108,6 +108,40 @@ def test_design_linter_fails_on_heroui(tmp_path: Path, monkeypatch: pytest.Monke
     assert matched, result["checks"]
 
 
+def test_design_linter_rejects_blocks_raw_controls_and_direct_radix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import config as config_mod
+    from syte.design_linter import validate_design
+
+    monkeypatch.setattr(config_mod.settings, "workspaces_dir", tmp_path)
+    app = tmp_path / "proj" / "app"
+    (app / "components" / "ui").mkdir(parents=True)
+    (app / "app").mkdir(parents=True)
+    (app / "package.json").write_text(
+        '{"dependencies":{"tailwindcss":"3.4.0","next":"15.0.0","lucide-react":"1.0.0"}}',
+        encoding="utf-8",
+    )
+    (app / "app" / "globals.css").write_text(
+        ":root { --radius: .5rem; --primary: 0 0% 0%; --background: 0 0% 100%; --card: 0 0% 98%; --font-sans: Inter; }\n"
+        "body { font-family: var(--font-sans); }\n",
+        encoding="utf-8",
+    )
+    (app / "app" / "page.tsx").write_text(
+        'import { Dialog } from "@radix-ui/react-dialog";\n'
+        'import Hero from "@/components/blocks/hero";\n'
+        'export default function Page(){return <button><Hero/><Dialog/></button>}\n',
+        encoding="utf-8",
+    )
+    (app / "tailwind.config.js").write_text("module.exports = { content: [] }", encoding="utf-8")
+
+    result = validate_design("proj")
+    failures = "\n".join(c["detail"] for c in result["checks"] if not c["ok"])
+    assert "Block" in failures
+    assert "Radix" in failures
+    assert "raw application controls" in failures
+
+
 def test_workspace_map_block_lists_real_paths() -> None:
     from syte.agent_memory import workspace_map_block
 
@@ -128,6 +162,9 @@ def test_website_enforcement_bans_heroui() -> None:
     text = _website_enforcement_block(is_website=True)
     assert "shadcn" in text.lower()
     assert "heroui" in text.lower()
+    assert "57" in text
+    assert "blocks" in text.lower()
+    assert "radix" in text.lower()
     assert "inspect_preview" in text.lower()
 
 

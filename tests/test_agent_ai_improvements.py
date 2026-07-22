@@ -134,6 +134,41 @@ async def test_plan_gate_rejects_tools_until_update_plan() -> None:
 
 
 @pytest.mark.asyncio
+async def test_website_plan_gate_allows_question_but_blocks_inspection() -> None:
+    from syte.cloud_agent import _execute_tool
+
+    ctx = {
+        "mandatory_plan": True,
+        "plan_submitted": False,
+        "plan_gate_reason": "website",
+        "question_required": True,
+        "question_answered": False,
+    }
+    blocked = await _execute_tool("proj", "list_files", {"path": "app"}, context=ctx)
+    assert blocked["error"] == "question_required"
+
+    # Planning is also blocked until the question has been answered.
+    plan = await _execute_tool(
+        "proj",
+        "update_plan",
+        {"steps": ["Plan the site"]},
+        context=ctx,
+    )
+    assert plan.get("error") == "question_required"
+
+    # Once ask_question has returned successfully, update_plan becomes the
+    # required next phase. Simulate the answer without entering the blocking UI path.
+    ctx["question_answered"] = True
+    empty_plan = await _execute_tool(
+        "proj",
+        "update_plan",
+        {"steps": []},
+        context=ctx,
+    )
+    assert empty_plan.get("error") == "empty_plan"
+
+
+@pytest.mark.asyncio
 async def test_search_code_python_fallback(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import cloud_agent
     from syte.config import settings
