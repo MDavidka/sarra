@@ -116,7 +116,7 @@ async def test_mcp_builtin_connect_and_call(tmp_data_dir: Path, monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_mcp_register_update_and_disconnect(tmp_data_dir: Path) -> None:
+async def test_mcp_register_update_and_disconnect(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte.agent_artifacts import (
         connect_mcp_addon,
         disconnect_mcp_addon,
@@ -124,6 +124,14 @@ async def test_mcp_register_update_and_disconnect(tmp_data_dir: Path) -> None:
         register_mcp_addon,
         update_mcp_addon,
     )
+
+    async def fake_discover(**_kwargs):
+        return {
+            "ok": True,
+            "tools": [{"name": "browser_navigate", "description": "Navigate", "inputSchema": {}}],
+        }
+
+    monkeypatch.setattr("syte.agent_artifacts.discover_mcp_stdio_tools", fake_discover)
 
     project = await _project("mcp-edit-proj")
     registered = await register_mcp_addon(
@@ -152,6 +160,8 @@ async def test_mcp_register_update_and_disconnect(tmp_data_dir: Path) -> None:
 
     connected = await connect_mcp_addon(project["id"], registered["id"])
     assert connected["ok"] is True
+    assert connected.get("boot_validated") is True
+    assert any(t["name"] == "browser_navigate" for t in connected["tools"])
     disconnected = await disconnect_mcp_addon(project["id"], registered["id"])
     assert disconnected["ok"] is True
     assert disconnected["status"] == "available"

@@ -386,8 +386,10 @@ async def activity_sse_generator(
     import json as _json
 
     # Replay recent backlog first so reconnects don't miss early tokens.
+    # Incremental reconnects (since_id > 0) only need a small delta window.
+    backlog_limit = 100 if int(since_id or 0) > 0 else 200
     backlog = await list_agent_events(
-        project_id, since_id=since_id, limit=500, session=session or None,
+        project_id, since_id=since_id, limit=backlog_limit, session=session or None,
     )
     last_id = since_id
     for event in backlog:
@@ -407,6 +409,16 @@ async def activity_sse_generator(
             except asyncio.TimeoutError:
                 yield ": heartbeat\n\n"
                 continue
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Surface unexpected stream failures so clients do not hang on a
+                # silent dead connection (DAV-180).
+                yield (
+                    "event: error\n"
+                    f"data: {_json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+                )
+                break
             if int(event.get("id") or 0) <= last_id:
                 continue
             if session:
@@ -428,6 +440,13 @@ async def activity_sse_generator(
                 f"event: {event_name}\n"
                 f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
             )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        yield (
+            "event: error\n"
+            f"data: {_json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+        )
     finally:
         unsubscribe_agent_activity(project_id, queue)
 
