@@ -208,6 +208,7 @@ async def list_access_capabilities(project_id: str) -> dict[str, Any]:
             {"action": "read", "description": "Alias for fetch"},
             {"action": "logs", "description": "Read preview dev-server log"},
             {"action": "screenshot", "description": "Capture preview screenshot (desktop + phone when chromium available)"},
+            {"action": "console", "description": "Open preview in Chromium DevTools and capture console/page errors + load status"},
         ],
         "viewports": {
             "desktop": {"width": 1280, "height": 800},
@@ -226,6 +227,7 @@ async def run_access_action(
     *,
     url: str | None = None,
     lines: int = 200,
+    include_screenshot: bool = False,
 ) -> dict[str, Any]:
     project, ctx = await _preview_context(project_id)
     if not project:
@@ -337,6 +339,36 @@ async def run_access_action(
             **desktop,
             "viewports": public,
         }
+
+    if act in {"console", "devtools", "browser_logs"}:
+        target = (url or "").strip() or preview_url
+        if not target:
+            return {"ok": False, "error": "no_url", "message": "No preview URL for console inspect"}
+        if not _is_allowed_url(target, preview_url, custom_urls):
+            return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for console inspect"}
+        browser = find_headless_browser()
+        if not browser:
+            return {
+                "ok": False,
+                "error": "no_browser",
+                "action": "console",
+                "url": target,
+                "message": browser_install_hint(),
+            }
+        from syte.cdp_client import inspect_url_with_devtools
+
+        inspected = await asyncio.to_thread(
+            inspect_url_with_devtools,
+            target,
+            browser=browser,
+            width=1280,
+            height=800,
+            include_screenshot=bool(include_screenshot),
+        )
+        # Avoid huge binary payloads on the access API unless caller wants them.
+        public = {k: v for k, v in inspected.items() if k != "png_bytes"}
+        public["action"] = "console"
+        return public
 
     return {"ok": False, "error": "unknown_action", "message": f"Unknown action: {action}"}
 

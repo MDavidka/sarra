@@ -13,14 +13,18 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class RateLimitMiddleware:
-    """Sliding-window limiter for single-process Syte deployments."""
+    """Sliding-window limiter for single-process Syte deployments.
+
+    Agent polling / SSE / GUI hit many ``/api/...`` routes per minute, so API
+    traffic uses the elevated budget. Anonymous HTML page traffic stays lower.
+    """
 
     def __init__(
         self,
         app: ASGIApp,
         *,
-        requests_per_minute: int = 60,
-        elevated_requests_per_minute: int = 600,
+        requests_per_minute: int = 180,
+        elevated_requests_per_minute: int = 2400,
         window_seconds: float = 60.0,
     ) -> None:
         self.app = app
@@ -40,9 +44,12 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Elevate all API + static/OpenAPI traffic. Previously only exact "/api"
+        # was elevated, so /api/projects/... agent polling hit the tiny budget.
         limit = (
             self.elevated_requests_per_minute
-            if path.startswith(("/openapi", "/static")) or path in {"/api", "/api/"}
+            if path.startswith(("/openapi", "/static", "/api/", "/sycord/"))
+            or path in {"/api", "/sycord", "/sycord/"}
             else self.requests_per_minute
         )
         allowed, retry_after = await self._allow(self._client_key(scope), limit)

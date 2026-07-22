@@ -981,6 +981,7 @@ class AgentAccessRequest(BaseModel):
     action: str
     url: str | None = None
     lines: int | None = None
+    include_screenshot: bool | None = None
 
 
 class AgentAccessConfigRequest(BaseModel):
@@ -1139,6 +1140,7 @@ async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
         body.action,
         url=body.url,
         lines=body.lines or 200,
+        include_screenshot=bool(body.include_screenshot),
     )
     if result.get("ok"):
         await record_agent_event(

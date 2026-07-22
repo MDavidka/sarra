@@ -208,6 +208,19 @@ async def test_inspect_preview_tool_fetches_allowlisted_url(
                 "content_type": "text/html",
                 "content": "<html>login</html>",
             }
+        if action == "console":
+            return {
+                "ok": True,
+                "load_ok": True,
+                "title": "Login",
+                "ready_state": "complete",
+                "console_logs": [],
+                "page_errors": [],
+                "network_failures": [],
+                "console_error_count": 0,
+                "page_error_count": 0,
+                "message": "Preview loaded (complete)",
+            }
         return {"ok": False, "error": "unexpected"}
 
     monkeypatch.setattr("syte.preview_access.run_access_action", fake_access)
@@ -219,6 +232,8 @@ async def test_inspect_preview_tool_fetches_allowlisted_url(
     assert result["ok"] is True
     assert result["action"] == "inspect_preview"
     assert "login" in str(result.get("content") or "")
+    assert result.get("load_ok") is True
+    assert result.get("console_error_count") == 0
 
 
 @pytest.mark.asyncio

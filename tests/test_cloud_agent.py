@@ -705,7 +705,7 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     async def fake_provider(model, messages, **kwargs):
         calls["n"] += 1
         calls["last_kwargs"] = kwargs
-        # Always try to call a tool — level 1 should cap after 3 tool rounds.
+        # Always try to call a tool — Instant should stop after its tool-step budget.
         if kwargs.get("tools"):
             return {
                 "role": "assistant",
@@ -730,8 +730,8 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     assert result["ok"] is True
     assert result["thinking_level"] == 1
     assert result["model_profile"] == "syra-nano"
-    # 3 tool-enabled rounds + 1 final no-tools round
-    assert calls["n"] == 4
+    # Instant budget (10 tool-enabled rounds) + 1 final no-tools round
+    assert calls["n"] == 11
     assert calls["last_kwargs"].get("tools") == []
     refreshed = await get_project(project["id"])
     # thinking_level must not persist syra-nano onto the project

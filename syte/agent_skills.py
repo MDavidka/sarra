@@ -19,22 +19,30 @@ SKILL_FILES: dict[str, str] = {
 You are editing a live website project in the Syte workspace.
 
 - Application source lives under `app/` (relative to the agent cwd).
+- Stack for websites: **Next.js App Router + shadcn/ui + Tailwind + Lucide** — never HeroUI/NextUI/Chakra/MUI.
 - Make focused, minimal changes that match the existing stack and style.
 - Prefer editing existing files over creating new ones unless necessary.
+- Before writing, locate the exact file with `semantic_search` / `search_code` / `list_files`.
+  Routes live under `app/app/` (e.g. `app/app/page.tsx`, `app/app/login/page.tsx`).
+  Components live under `app/components/` (shadcn under `app/components/ui/`).
 - After file changes, mention whether preview hot-reload should pick them up.
 - Do not run production builds (`npm run build`, `next build`) — use preview instead.
 - For site creation or redesign, deliver a complete styled home page that uses the
   project's existing design system and verify it in preview at desktop and mobile sizes.
+- After UI edits: `inspect_preview` (browser console + load check) then `screenshot_preview`.
+  Fix any console/page errors before marking work done.
 """,
     "workspace-search.md": """# Workspace search
 
 Use built-in tools to explore the codebase before editing:
 
-- **Search** filenames and content with grep/ripgrep (`rg`, `grep -r`).
+- **semantic_search** for meaning/tags (hero, navbar, page, layout, colors).
+- **search_code** (ripgrep) for exact symbols/strings.
 - **Read** files before rewriting them.
-- **List** directories with `ls` when unsure of structure.
+- **List** directories with `list_files` when unsure of structure.
 
 Always search first when the user asks to find or change something across the site.
+Never invent a path — update the file that already renders the feature.
 """,
     "preview-access.md": """# Preview access (Syte)
 
@@ -47,11 +55,14 @@ syte-access fetch [url]     # fetch HTML/text (defaults to preview URL)
 syte-access read [url]      # alias for fetch — read page content
 syte-access logs [lines]    # tail preview dev-server log (default 200 lines)
 syte-access screenshot      # capture preview screenshot when available
+syte-access console         # Chromium DevTools: load check + browser console/page errors
 ```
 
+Prefer the agent tools `inspect_preview` (console by default) and `screenshot_preview` over raw curl.
 Custom URLs saved in project access config can be fetched with `syte-access fetch <url>`.
 
-Use preview access to verify visual changes, read rendered HTML, and inspect dev-server logs.
+Use preview access to verify visual changes, read rendered HTML, inspect browser console errors,
+and read preview/dev-server logs. Never finish UI work with unresolved console errors.
 """,
     "service-management.md": """# Service management (Syte)
 
@@ -90,6 +101,11 @@ The Next.js project root is the workspace `app/` folder (where `package.json` li
 Writing `app/login/page.tsx` puts the file at the project root, **outside** the router dir —
 Next.js ignores it and the route silently never appears. Always nest routes under `app/app/`.
 
+## UI kit
+
+Use **shadcn/ui** only (`@/components/ui/*`). Do not install or import HeroUI, NextUI, Chakra, MUI,
+or Ant Design.
+
 ## App Router rules (avoid common failures)
 
 - **No `_document.tsx` / `_app.tsx`** — those are Pages Router files and are ignored by the App
@@ -110,6 +126,7 @@ Next.js ignores it and the route silently never appears. Always nest routes unde
 - Production builds (`npm run build`, `next build`) are blocked. Verify with the dev preview and
   `npm run lint`. If the preview previously 500'd, `preview_stop` then `preview_start` to clear the
   cached failed compilation before judging the result.
+- Call `inspect_preview` after UI changes to confirm the page loads and the browser console is clean.
 """,
     "cli-tools.md": """# Syte CLI tools (required)
 
@@ -118,7 +135,7 @@ Use the **`syte-service`** and **`syte-access`** helpers on PATH for all Syte op
 | Helper | Use for |
 |--------|---------|
 | `syte-service` | start/stop/deploy/preview/run/logs |
-| `syte-access` | preview URL fetch, screenshot, preview logs |
+| `syte-access` | preview URL fetch, screenshot, preview logs, browser console |
 
 Examples:
 
@@ -126,6 +143,7 @@ Examples:
 syte-service preview_start
 syte-access status
 syte-access fetch
+syte-access console
 ```
 
 Do not bypass these helpers with raw systemctl, docker, or undocumented curl shortcuts.
@@ -150,11 +168,12 @@ After editing `app/` UI files, always:
 
 1. Run `service` action `preview_start` if preview is stopped
 2. Wait briefly for compile (~10s) when needed
-3. Call `screenshot_preview` with `route:"/"` and `viewports:["desktop"]` (and phone when layout matters)
-4. If the screenshot or logs show errors, read preview logs and fix compile issues
-5. Repeat until the screenshot shows a functional UI
+3. Call `inspect_preview` with `route:"/"` (browser DevTools console + load check — default on)
+4. Call `screenshot_preview` with `route:"/"` and `viewports:["desktop"]` (and phone when layout matters)
+5. If DevTools reports console/page errors, or the screenshot/logs show issues, read preview logs and fix them
+6. Repeat until the page loads cleanly with no console errors and a functional UI
 
-Never mark work done if preview is not rendering correctly.
+Never mark work done if preview is not rendering correctly or the browser console has errors.
 """,
 }
 
@@ -239,7 +258,7 @@ import json, os
 action = os.environ.get("ACTION", "status")
 arg = os.environ.get("ARG", "")
 body = {"action": action}
-if action in ("fetch", "read") and arg:
+if action in ("fetch", "read", "console", "devtools") and arg:
     body["url"] = arg
 if action == "logs":
     try:
@@ -305,6 +324,7 @@ def default_access_config() -> dict[str, Any]:
             "read",
             "logs",
             "screenshot",
+            "console",
         ],
     }
 

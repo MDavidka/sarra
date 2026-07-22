@@ -1,6 +1,6 @@
 """Sycord Design Contract — mandatory rules for AI-generated Next.js sites."""
 
-DESIGN_CONTRACT_VERSION = "1.1"
+DESIGN_CONTRACT_VERSION = "1.2"
 
 # Named visual themes the agent should offer via ask_question(choice) when
 # scaffolding a new website. Each theme maps to Tailwind CSS variables + fonts.
@@ -127,6 +127,10 @@ DESIGN_CONTRACT_MARKDOWN = """# Sycord Design Contract
 - Do not invent a one-off palette when a named theme fits.
 
 ## 1. Framework & Component Rules
+- Stack is **Next.js (App Router) + shadcn/ui + Tailwind + Lucide** only for websites.
+- **FORBIDDEN UI kits (never install or import):** HeroUI, NextUI, Chakra UI, MUI / Material UI,
+  Ant Design, Mantine, DaisyUI component packs, Bootstrap React. If they appear in package.json,
+  remove them and migrate to shadcn/ui under `components/ui/*`.
 - Always use **shadcn/ui** components (Button, Card, Badge, Input, etc.) — never raw unstyled div buttons.
 - Import only components from the catalog (see JSON reference). Never invent component names.
 - Always use **Lucide React** (`lucide-react`) for icons. Never emoji, never inline hand-drawn SVG icons.
@@ -249,7 +253,7 @@ def build_design_contract_spec() -> dict:
         "themes": DESIGN_THEMES,
         "shadcn_components": SHADCN_COMPONENT_CATALOG,
         "rules": {
-            "components": "shadcn/ui only; Lucide icons; no icon-in-circle pattern; use catalog imports",
+            "components": "shadcn/ui only (never HeroUI/NextUI/Chakra/MUI/Ant); Lucide icons; no icon-in-circle; catalog imports only",
             "fonts": "Theme pairing or Inter via next/font/google; CSS var --font-sans on body",
             "colors": "Named theme or shadcn preset base + one accent; card != background; dark mode required",
             "imagery": "real images; hero gradient below hero section",

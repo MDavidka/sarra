@@ -52,7 +52,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 12
+AGENT_INSTRUCTION_VERSION = 13
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -660,19 +660,22 @@ def _read_syterules(project_id: str) -> str:
 def _website_enforcement_block(*, is_website: bool) -> str:
     if is_website:
         return (
-            "## MANDATORY for this project: Next.js + shadcn/ui\n"
+            "## MANDATORY for this project: Next.js + shadcn/ui (NOT HeroUI)\n"
             "This is a Next.js website project. You MUST:\n"
-            "- Use Next.js App Router (routes in app/app/)\n"
-            "- Import shadcn/ui components from @/components/ui/*\n"
+            "- Use Next.js App Router (routes in app/app/ — double app/ is correct)\n"
+            "- Import shadcn/ui components from @/components/ui/* only\n"
             "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
+            "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
             "- Never ship bare unstyled HTML scaffolds\n"
+            "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
+            "- After UI changes: preview_start → inspect_preview (console) → screenshot_preview; fix any load/console errors\n"
             "- Follow the Design Contract below strictly\n"
         )
     return (
         "## Project type: general code\n"
         "This is not detected as a Next.js website project. Match the stack to the existing "
         "files and user request. Only apply the Design Contract if the user explicitly asks "
-        "for a website / web UI.\n"
+        "for a website / web UI. When building a website, use Next.js + shadcn/ui — never HeroUI.\n"
     )
 
 
@@ -707,20 +710,30 @@ def _build_static_instruction(
         "Match the stack to the request and existing files. Only when the work is a website / web UI "
         "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
         "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
-        "and a complete styled home page. Never ship a bare unstyled web scaffold.\n",
+        "and a complete styled home page. Never ship a bare unstyled web scaffold. "
+        "Do NOT use HeroUI/NextUI/Chakra/MUI/Ant Design for websites.\n",
         "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
         "(desktop + phone screenshots of a route — inspect images with vision); inspect_preview "
-        "(limited browser: fetch HTML/text of a preview route, optional screenshot); ask_question "
+        "(limited browser: fetch HTML/text, capture browser DevTools console/page errors, optional screenshot); "
+        "ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
         "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n",
+        "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
+        "semantic_search and/or search_code (or list_files on app/app and app/components). Prefer recently "
+        "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates "
+        "(e.g. writing app/page.tsx when the App Router file is app/app/page.tsx). Edit the file that "
+        "actually renders the feature, then verify on disk with read_file.\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
         "request that needs 3+ distinct steps, call update_plan BEFORE other tools. Use ask_question "
         "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
         "screenshot_preview or inspect_preview after UI changes and check BOTH phone and desktop layouts. "
-        "Continue using tools until the request is actually complete; the user can interrupt a long turn.\n",
+        "After website edits, ALWAYS call inspect_preview with include_console=true (default) to confirm "
+        "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
+        "fix them before finishing. Continue using tools until the request is actually complete; "
+        "the user can interrupt a long turn.\n",
         "Never deploy, start, stop, update, or build the production service for testing, and never run "
         "production build commands such as npm run build or next build. Prefer the isolated preview for "
         "visual checks and workspace commands for lint/tests.\n",
@@ -825,7 +838,9 @@ async def _build_syte_instruction_parts(
         get_design_profile,
         latest_session_meta,
         latest_summary,
+        lookup_workspace_paths,
         memory_context_block,
+        workspace_map_block,
     )
 
     summary = await latest_summary(project_id)
@@ -833,7 +848,26 @@ async def _build_syte_instruction_parts(
     active_files = list((meta or {}).get("active_files") or [])
     memory_block = memory_context_block(summary, active_files)
     design_block = design_profile_prompt_block(await get_design_profile(project_id))
-    dynamic = f"{design_block}\n\n{memory_block}".strip()
+    # Prefer layout/page/component index hits so the model edits real files.
+    index_hits = await lookup_workspace_paths(
+        project_id,
+        tags=["page", "layout", "navbar", "hero", "colors"],
+        limit=20,
+    )
+    if len(index_hits) < 8:
+        more = await lookup_workspace_paths(project_id, limit=20)
+        seen = {str(item.get("path")) for item in index_hits}
+        for item in more:
+            path = str(item.get("path") or "")
+            if path and path not in seen:
+                index_hits.append(item)
+                seen.add(path)
+            if len(index_hits) >= 20:
+                break
+    map_block = workspace_map_block(index_hits, limit=20)
+    dynamic = "\n\n".join(
+        part for part in (design_block, memory_block, map_block) if part and str(part).strip()
+    ).strip()
     return static, dynamic
 
 
@@ -1245,13 +1279,15 @@ TOOLS: list[dict[str, Any]] = [
          "viewports": {"type": "array", "items": {"type": "string", "enum": ["desktop", "phone"]}, "description": "Defaults to both desktop and phone"},
      }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "inspect_preview", "description": (
-        "Limited browser for the project preview: fetch HTML/text of a route (and optionally take a "
-        "screenshot). URLs must be the project preview or an allowlisted custom URL — no open web browsing. "
-        "Use this to read what the running app actually renders (e.g. /login) instead of guessing from source."),
+        "Limited browser for the project preview: fetch HTML/text of a route, read Chromium DevTools "
+        "console/page errors (default), and optionally take a screenshot. Confirms the site actually "
+        "loads in a real browser. URLs must be the project preview or an allowlisted custom URL — no "
+        "open web browsing. Use after UI edits to catch console errors and failed loads before finishing."),
      "parameters": {"type": "object", "properties": {
          "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
          "url": {"type": "string", "description": "Optional full URL override (must be allowlisted)"},
          "include_screenshot": {"type": "boolean", "description": "Also capture a desktop screenshot (default false)"},
+         "include_console": {"type": "boolean", "description": "Capture browser DevTools console + page errors (default true)"},
      }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "ask_question", "description": (
         "Ask the user an interactive question and wait for their answer. Types: answer (free text), "
@@ -1896,7 +1932,7 @@ async def _tool_screenshot_preview(
 async def _tool_inspect_preview(
     project_id: str, args: dict[str, Any], ctx: dict[str, Any]
 ) -> dict[str, Any]:
-    """Limited browser: fetch preview HTML/text (+ optional screenshot) within allowlist (DAV-203)."""
+    """Limited browser: fetch preview HTML/text + DevTools console (+ optional screenshot)."""
     from syte.preview_access import run_access_action
     from urllib.parse import urljoin
 
@@ -1905,6 +1941,8 @@ async def _tool_inspect_preview(
         route = "/" + route
     explicit_url = str(args.get("url") or "").strip()
     include_shot = bool(args.get("include_screenshot"))
+    # Default ON — agents must see browser console / load failures.
+    include_console = True if "include_console" not in args else bool(args.get("include_console"))
 
     status = await run_access_action(project_id, "status")
     base = str(status.get("preview_url") or status.get("preview_direct_url") or "")
@@ -1936,6 +1974,38 @@ async def _tool_inspect_preview(
     if fetched.get("error"):
         result["error"] = fetched.get("error")
 
+    if include_console:
+        console = await run_access_action(
+            project_id,
+            "console",
+            url=target,
+            include_screenshot=False,
+        )
+        result["devtools"] = {
+            k: v
+            for k, v in console.items()
+            if k not in {"png_bytes", "image_base64"}
+        }
+        result["load_ok"] = bool(console.get("load_ok"))
+        result["console_logs"] = console.get("console_logs") or []
+        result["page_errors"] = console.get("page_errors") or []
+        result["network_failures"] = console.get("network_failures") or []
+        result["console_error_count"] = int(console.get("console_error_count") or 0)
+        result["page_error_count"] = int(console.get("page_error_count") or 0)
+        result["title"] = console.get("title") or ""
+        result["ready_state"] = console.get("ready_state") or ""
+        if not console.get("ok"):
+            result["ok"] = False
+            result["message"] = (
+                f"{result['message']}; DevTools: {console.get('message') or 'console issues'}"
+            )
+        else:
+            result["message"] = (
+                f"{result['message']}; browser load_ok={bool(console.get('load_ok'))}, "
+                f"console_errors={result['console_error_count']}, "
+                f"page_errors={result['page_error_count']}"
+            )
+
     if include_shot:
         shot = await _tool_screenshot_preview(
             project_id,
@@ -1951,7 +2021,8 @@ async def _tool_inspect_preview(
             result["_vision_parts"] = shot["_vision_parts"]
         if shot.get("ok"):
             ctx["_screenshot_captured"] = True
-            result["ok"] = True
+            if result.get("ok") is not False:
+                result["ok"] = True
             result["message"] = f"{result['message']}; desktop screenshot attached"
     return result
 

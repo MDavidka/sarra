@@ -56,6 +56,9 @@ and structured tools. Available tools:
   text metadata + URLs only). Requires a headless Chromium/Chrome on the Syte host
   (`chromium-browser` / `chromium` / `google-chrome`, installed by `scripts/install.sh`, or
   override with `SYTE_CHROMIUM_PATH`).
+- `inspect_preview` — fetch preview HTML/text and (by default) open the route in Chromium
+  DevTools to collect **browser console logs, page exceptions, network failures, and load
+  status**. Use after UI edits to confirm the site actually loads with a clean console.
 - `ask_question` — interactive mid-turn questions (`answer` / `input` / `slider` / `choice` /
   `multi_choice`); blocks until answered via API/GUI or times out
 - `env_get` / `env_set` / `request_env` — project env access; `request_env` asks the user for
@@ -69,7 +72,7 @@ and structured tools. Available tools:
 The agent builds **any** kind of code (libraries, CLIs, APIs, scripts, backends, data jobs,
 etc.). It must **not** assume every request is a website. When the work *is* a website / web UI,
 it must follow the Sycord Design Contract (shadcn/ui under `components/ui/*`, Lucide, Inter,
-Tailwind tokens).
+Tailwind tokens). **Do not** use HeroUI, NextUI, Chakra, MUI, or Ant Design.
 
 ### Session stop markers
 

@@ -92,10 +92,37 @@ def validate_design(project_id: str) -> dict:
 
     # shadcn preset (tailwind + components/ui)
     shadcn_ok = bool(ui_dir and ui_dir.exists()) and ("tailwindcss" in deps or (app / "tailwind.config.ts").exists() or (app / "tailwind.config.js").exists())
+    forbidden_ui = sorted(
+        name for name in (
+            "@heroui/react",
+            "@heroui/system",
+            "@nextui-org/react",
+            "@chakra-ui/react",
+            "@mui/material",
+            "antd",
+            "@mantine/core",
+        )
+        if name in deps
+    )
+    if forbidden_ui:
+        shadcn_ok = False
+    heroui_import = bool(re.search(
+        r"""from\s+['"]@heroui/|from\s+['"]@nextui-org/|from\s+['"]@chakra-ui/|from\s+['"]@mui/""",
+        all_tsx,
+    ))
+    if heroui_import:
+        shadcn_ok = False
+    detail = "components/ui + tailwind present"
+    if forbidden_ui:
+        detail = f"Remove forbidden UI kits: {', '.join(forbidden_ui)}; use shadcn/ui only"
+    elif heroui_import:
+        detail = "Remove HeroUI/NextUI/Chakra/MUI imports; use @/components/ui/* (shadcn)"
+    elif not shadcn_ok:
+        detail = "Add shadcn/ui (components/ui) and Tailwind"
     checks.append({
         "item": PREFLIGHT_CHECKLIST[3],
         "ok": shadcn_ok,
-        "detail": "components/ui + tailwind present" if shadcn_ok else "Add shadcn/ui (components/ui) and Tailwind",
+        "detail": detail,
     })
 
     # lucide-react
