@@ -96,7 +96,11 @@ async def test_project_skills_can_be_enabled_and_disabled(tmp_data_dir: Path) ->
     from syte.cloud_agent import _build_syte_instruction
 
     instruction = await _build_syte_instruction("skill-state-proj", force_refresh=True)
-    assert "## Active Skills\n# Website editing" in instruction
+    assert "## Active Skills" in instruction
+    assert "Website editing" in instruction
+    assert "# Website editing" in instruction
+    assert "HeroUI" in instruction or "heroui" in instruction.lower()
+    assert "shadcn" in instruction.lower()
 
     disabled = await disable_skill("skill-state-proj", "website-editing")
     assert disabled == {"ok": True, "skill_id": "website-editing", "active": False}

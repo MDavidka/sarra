@@ -32,7 +32,7 @@ def test_resolve_default_keeps_fallback_profile() -> None:
 def test_resolve_level_maps_profile_and_budget() -> None:
     instant = resolve_thinking_config(1)
     assert instant["model_profile"] == "syra-nano"
-    assert instant["max_tool_steps"] == 3
+    assert instant["max_tool_steps"] == 10
     assert instant["override_profile"] is True
 
     deep = resolve_thinking_config(4)

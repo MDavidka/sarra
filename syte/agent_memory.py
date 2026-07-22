@@ -119,6 +119,8 @@ _TAG_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("colors", re.compile(r"design-tokens", re.I)),
     ("page", re.compile(r"page\.(tsx?|jsx?)$", re.I)),
     ("component", re.compile(r"components?/", re.I)),
+    ("ui", re.compile(r"components/ui/", re.I)),
+    ("form", re.compile(r"(form|login|signup|contact)", re.I)),
     ("config", re.compile(r"(tailwind|next|tsconfig|package)\.", re.I)),
 ]
 
@@ -480,9 +482,31 @@ def memory_context_block(project_id_summary: dict[str, Any] | None, active_files
     parts.append(
         "Only re-scan the full workspace if git HEAD changed externally or the user "
         "explicitly asks for a full resync. Cross-session summaries above are authoritative. "
-        "Use search_code for symbol/text lookup instead of listing thousands of files."
+        "Use semantic_search / search_code to find the exact file to edit — never invent paths "
+        "or create duplicate pages outside app/app/."
     )
     return "\n\n".join(p for p in parts if p)
+
+
+def workspace_map_block(indexed_paths: list[dict[str, Any]], *, limit: int = 24) -> str:
+    """Compact path map for the dynamic instruction so the agent targets real files."""
+    if not indexed_paths:
+        return ""
+    lines: list[str] = []
+    for item in indexed_paths[:limit]:
+        path = str(item.get("path") or "").strip()
+        if not path:
+            continue
+        tags = [str(t) for t in (item.get("semantic_tags") or []) if t][:4]
+        suffix = f" [{', '.join(tags)}]" if tags else ""
+        lines.append(f"- {path}{suffix}")
+    if not lines:
+        return ""
+    return (
+        "## Indexed workspace files (edit these real paths — do not invent alternatives)\n"
+        + "\n".join(lines)
+        + "\nUse semantic_search/search_code if the file you need is not listed."
+    )
 
 
 # ---------------------------------------------------------------------------

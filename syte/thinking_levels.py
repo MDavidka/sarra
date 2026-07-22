@@ -24,7 +24,8 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "reasoning_effort": "low",
         "thinking_enabled": False,
         "thinking_budget_tokens": 0,
-        "max_tool_steps": 3,
+        # Instant still needs room to locate files + edit + verify preview.
+        "max_tool_steps": 10,
         "stream": True,
         "mandatory_plan": False,
         "reflection": False,
@@ -37,7 +38,7 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "reasoning_effort": "low",
         "thinking_enabled": False,
         "thinking_budget_tokens": 0,
-        "max_tool_steps": 8,
+        "max_tool_steps": 18,
         "stream": True,
         "mandatory_plan": False,
         "reflection": False,
