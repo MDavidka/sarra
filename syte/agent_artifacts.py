@@ -957,6 +957,54 @@ async def update_mcp_addon(
     }
 
 
+_ALLOWED_JSON_SCHEMA_TYPES = frozenset({
+    "object", "string", "number", "integer", "boolean", "array", "null",
+})
+
+
+def validate_mcp_tool_schema(tool: dict[str, Any]) -> str | None:
+    """Return an error string if an MCP tool schema is unsafe for LLM providers (DAV-196).
+
+    Drops tools with non-object inputSchema, invalid property types, or malformed
+    ``required`` lists so a bad addon cannot crash the whole agent turn with a
+    provider 400.
+    """
+    name = tool.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return "missing tool name"
+    schema = tool.get("inputSchema")
+    if schema is None:
+        return None
+    if not isinstance(schema, dict):
+        return "inputSchema must be an object"
+    schema_type = schema.get("type")
+    if schema_type is not None and schema_type != "object":
+        return "inputSchema.type must be 'object'"
+    props = schema.get("properties")
+    if props is not None and not isinstance(props, dict):
+        return "inputSchema.properties must be an object"
+    if isinstance(props, dict):
+        for key, prop in props.items():
+            if not isinstance(prop, dict):
+                return f"property '{key}' must be an object schema"
+            prop_type = prop.get("type")
+            if prop_type is None:
+                continue
+            types = prop_type if isinstance(prop_type, list) else [prop_type]
+            for t in types:
+                if t not in _ALLOWED_JSON_SCHEMA_TYPES:
+                    return f"property '{key}' has unsupported type '{t}'"
+    required = schema.get("required")
+    if required is not None:
+        if not isinstance(required, list) or not all(isinstance(x, str) for x in required):
+            return "inputSchema.required must be an array of strings"
+        if isinstance(props, dict):
+            missing = [r for r in required if r not in props]
+            if missing:
+                return f"required keys missing from properties: {', '.join(missing)}"
+    return None
+
+
 async def discover_mcp_stdio_tools(
     *,
     command: str,
@@ -1067,8 +1115,21 @@ async def discover_mcp_stdio_tools(
             }
         tools_raw = ((listed.get("result") or {}).get("tools") or [])
         tools: list[dict[str, Any]] = []
+        rejected: list[dict[str, str]] = []
         for item in tools_raw:
             if not isinstance(item, dict) or not item.get("name"):
+                continue
+            schema_error = validate_mcp_tool_schema(item)
+            if schema_error:
+                rejected.append({
+                    "name": str(item.get("name") or ""),
+                    "error": schema_error,
+                })
+                logger.warning(
+                    "Dropping MCP tool with invalid schema (%s): %s",
+                    item.get("name"),
+                    schema_error,
+                )
                 continue
             tools.append({
                 "name": str(item.get("name")),
@@ -1079,10 +1140,19 @@ async def discover_mcp_stdio_tools(
             return {
                 "ok": False,
                 "error": "no_tools",
-                "message": "MCP server returned an empty tools/list",
+                "message": (
+                    "MCP server returned no valid tools"
+                    + (f" (rejected: {len(rejected)})" if rejected else " (empty tools/list)")
+                ),
                 "tools": [],
+                "rejected_tools": rejected,
             }
-        return {"ok": True, "tools": tools, "serverInfo": (init.get("result") or {}).get("serverInfo")}
+        return {
+            "ok": True,
+            "tools": tools,
+            "rejected_tools": rejected,
+            "serverInfo": (init.get("result") or {}).get("serverInfo"),
+        }
     except asyncio.TimeoutError:
         return {
             "ok": False,

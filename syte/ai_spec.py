@@ -214,7 +214,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             ],
             "tools": [
                 "list_files", "read_file", "write_file", "delete_file", "run_command", "service",
-                "update_plan", "screenshot_preview", "ask_question", "env_get", "env_set",
+                "update_plan", "screenshot_preview", "inspect_preview", "ask_question", "env_get", "env_set",
                 "request_env", "list_mcp_addons", "connect_mcp", "call_mcp", "delegate_task",
             ],
             "code_policy": {

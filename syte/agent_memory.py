@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,6 +20,10 @@ import aiosqlite
 from syte.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Short TTL cache for hot-path workspace index lookups (DAV-193).
+_LOOKUP_CACHE_TTL_S = 30.0
+_lookup_cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]]]] = {}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_summaries (
@@ -526,6 +531,7 @@ async def upsert_workspace_file(
             (project_id, path, digest, now, json.dumps(tags), size, now),
         )
         await db.commit()
+    invalidate_workspace_lookup_cache(project_id)
     return {
         "project_id": project_id,
         "path": path,
@@ -546,6 +552,14 @@ async def lookup_workspace_paths(
     """Find indexed files by semantic tag and/or substring query."""
     await ensure_memory_tables()
     limit = max(1, min(limit, 200))
+    tag_key = tuple(sorted({t.lower() for t in (tags or []) if t}))
+    q = (query or "").strip().lower()
+    cache_key = (project_id, tag_key, q, limit)
+    cached = _lookup_cache.get(cache_key)
+    now = time.monotonic()
+    if cached and (now - cached[0]) < _LOOKUP_CACHE_TTL_S:
+        return [dict(item) for item in cached[1]]
+
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -555,8 +569,7 @@ async def lookup_workspace_paths(
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
 
-    wanted = {t.lower() for t in (tags or []) if t}
-    q = (query or "").strip().lower()
+    wanted = set(tag_key)
     out: list[dict[str, Any]] = []
     for row in rows:
         try:
@@ -582,16 +595,53 @@ async def lookup_workspace_paths(
         })
         if len(out) >= limit:
             break
-    return out
+    _lookup_cache[cache_key] = (now, out)
+    # Bound cache size for long-running hosts.
+    if len(_lookup_cache) > 256:
+        for old_key in list(_lookup_cache.keys())[:64]:
+            _lookup_cache.pop(old_key, None)
+    return [dict(item) for item in out]
 
 
-async def scan_workspace_index(project_id: str, *, max_files: int = 400) -> dict[str, Any]:
+def invalidate_workspace_lookup_cache(project_id: str | None = None) -> None:
+    """Drop lookup cache entries (all projects, or one)."""
+    if project_id is None:
+        _lookup_cache.clear()
+        return
+    for key in list(_lookup_cache):
+        if key and key[0] == project_id:
+            _lookup_cache.pop(key, None)
+
+
+async def scan_workspace_index(
+    project_id: str, *, max_files: int = 400, force: bool = False
+) -> dict[str, Any]:
     """Walk the project app/ tree and refresh the lightweight index."""
     from syte.workspace import workspace_path
 
     root = workspace_path(project_id) / "app"
     if not root.exists():
         return {"ok": False, "indexed": 0, "message": "app/ missing"}
+
+    # Skip full rglob when the index is already warm (DAV-193).
+    if not force:
+        await ensure_memory_tables()
+        async with aiosqlite.connect(settings.resolved_db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM workspace_index WHERE project_id = ?",
+                (project_id,),
+            ) as cur:
+                row = await cur.fetchone()
+                existing = int(row[0] if row else 0)
+        if existing >= min(50, max_files):
+            return {
+                "ok": True,
+                "indexed": 0,
+                "skipped": True,
+                "existing": existing,
+                "message": "workspace index already warm",
+            }
+
     indexed = 0
     skip_dirs = {".git", "node_modules", ".next", "dist", "build", "__pycache__", ".turbo"}
     for path in root.rglob("*"):
@@ -613,6 +663,7 @@ async def scan_workspace_index(project_id: str, *, max_files: int = 400) -> dict
             indexed += 1
         except OSError:
             continue
+    invalidate_workspace_lookup_cache(project_id)
     return {"ok": True, "indexed": indexed}
 
 
