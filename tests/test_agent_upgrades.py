@@ -97,12 +97,25 @@ def test_circuit_breaker_opens_after_failures() -> None:
 
 
 def test_site_planner_detection_and_order() -> None:
-    from syte.site_planner import is_complex_site_request, order_subtasks
+    from syte.site_planner import (
+        is_complex_site_request,
+        is_substantive_site_request,
+        is_website_request,
+        order_subtasks,
+        site_request_needs_clarification,
+    )
 
     assert is_complex_site_request(
         "Please build a website with a landing page, pricing, and about pages for our AI startup"
     )
     assert not is_complex_site_request("fix the button")
+    assert is_website_request("Create a landing page for a bakery")
+    assert is_substantive_site_request("Create a landing page for a bakery")
+    assert site_request_needs_clarification("Create a landing page for a bakery")
+    assert not site_request_needs_clarification(
+        "Create a bold dark-tech landing page for a bakery with menu and contact sections"
+    )
+    assert not is_substantive_site_request("Fix the button label")
 
     ordered = order_subtasks([
         {"task": "B", "deps": ["A"], "files": []},

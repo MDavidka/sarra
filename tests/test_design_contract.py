@@ -21,17 +21,26 @@ def test_five_named_themes() -> None:
 
 def test_shadcn_catalog_has_core_imports() -> None:
     names = {item["name"] for item in SHADCN_COMPONENT_CATALOG}
+    assert len(SHADCN_COMPONENT_CATALOG) == 57
+    assert len(names) == 57
     assert {"Button", "Card", "Input", "Dialog", "Tabs"} <= names
+    assert {"Alert", "ButtonGroup", "Chart", "DataTable", "Sidebar", "Sonner", "Typography"} <= names
     catalog = shadcn_catalog_json()
     assert "@/components/ui/button" in catalog
 
 
 def test_spec_and_system_prompt_include_themes() -> None:
-    assert DESIGN_CONTRACT_VERSION.startswith("1.")
+    assert DESIGN_CONTRACT_VERSION.startswith("2.")
     spec = build_design_contract_spec()
     assert "themes" in spec
-    assert len(spec["shadcn_components"]) >= 10
+    assert len(spec["shadcn_components"]) == 57
+    assert "website_builder_baseline" in spec["design_references"]
     prompt = build_system_prompt()
     assert "dark-tech" in prompt
+    assert "shadcn Blocks" in prompt
+    assert "anti-slop" in prompt.lower()
+    assert "Radix" in prompt
+    assert "webprompts.github.io/blob/gh-pages/v0.md" in prompt
+    assert "www.w3.org/TR/WCAG22" in prompt
     assert "ask_question" in themes_prompt_block() or "choice" in themes_prompt_block().lower()
     assert "Button" in prompt

@@ -24,12 +24,100 @@ _COMPLEX_MARKERS = (
     "marketing site",
 )
 
+_SITE_SURFACES = (
+    "website",
+    "web site",
+    "landing page",
+    "homepage",
+    "home page",
+    "marketing page",
+    "dashboard",
+    "web app",
+    "web ui",
+    "login page",
+    "signup page",
+    "pricing page",
+    "hero section",
+    "navbar",
+)
+
+_SUBSTANTIVE_ACTIONS = (
+    "build",
+    "create",
+    "design",
+    "redesign",
+    "rework",
+    "revamp",
+    "scaffold",
+    "implement",
+    "make a",
+    "add a page",
+    "add a section",
+)
+
+_VISUAL_DIRECTION_SIGNALS = (
+    "minimal",
+    "bold",
+    "corporate",
+    "vibrant",
+    "dark-tech",
+    "dark tech",
+    "editorial",
+    "brutalist",
+    "luxury",
+    "playful",
+    "professional",
+    "monochrome",
+    "color palette",
+    "brand guide",
+    "design system",
+    "match this",
+    "reference",
+    "screenshot",
+    "figma",
+    "http://",
+    "https://",
+)
+
 
 def is_complex_site_request(user_message: str) -> bool:
     text = (user_message or "").lower()
     if len(text.split()) < 12:
         return False
     return any(marker in text for marker in _COMPLEX_MARKERS)
+
+
+def is_website_request(user_message: str) -> bool:
+    """Return whether the request itself clearly concerns a browser UI."""
+    text = " ".join((user_message or "").lower().split())
+    return any(surface in text for surface in _SITE_SURFACES)
+
+
+def is_substantive_site_request(user_message: str) -> bool:
+    """Identify site work that deserves clarification/plan gating.
+
+    Tiny edits such as changing one button label should stay fast. New pages,
+    sections, full builds, and redesigns need an explicit design plan first.
+    """
+    text = " ".join((user_message or "").lower().split())
+    if is_complex_site_request(text):
+        return True
+    return is_website_request(text) and any(action in text for action in _SUBSTANTIVE_ACTIONS)
+
+
+def site_request_needs_clarification(user_message: str) -> bool:
+    """Conservatively detect when auto-planning would jump ahead of a design choice.
+
+    The main agent still makes the final judgment and can ask about audience,
+    content, pages, or behavior. This guard primarily prevents the background
+    planner from running before an obviously missing visual direction is chosen.
+    """
+    text = " ".join((user_message or "").lower().split())
+    if not is_substantive_site_request(text):
+        return False
+    has_direction = any(signal in text for signal in _VISUAL_DIRECTION_SIGNALS)
+    is_new_build = any(action in text for action in ("build", "create", "scaffold", "make a"))
+    return is_new_build and not has_direction
 
 
 def _extract_json_array(text: str) -> list[dict[str, Any]] | None:
@@ -73,24 +161,44 @@ def fallback_site_plan(user_message: str) -> list[dict[str, Any]]:
     intent_note = intent or "the user request"
     return [
         {
-            "task": "Scaffold Next.js App Router layout, globals.css, and design tokens",
-            "files": ["app/app/layout.tsx", "app/app/globals.css", "app/app/page.tsx"],
+            "task": "Define the audience, content hierarchy, routes, and visual direction",
+            "files": [],
             "deps": [],
         },
         {
-            "task": f"Build the primary home / landing page sections for: {intent_note}",
+            "task": "Audit the existing workspace, assets, design tokens, and component inventory",
+            "files": ["app/app", "app/components", "app/public"],
+            "deps": ["Define the audience, content hierarchy, routes, and visual direction"],
+        },
+        {
+            "task": "Scaffold or refine the App Router shell, globals.css, fonts, and design tokens",
+            "files": ["app/app/layout.tsx", "app/app/globals.css", "app/app/page.tsx"],
+            "deps": ["Audit the existing workspace, assets, design tokens, and component inventory"],
+        },
+        {
+            "task": f"Build a content-specific primary page composition for: {intent_note}",
             "files": ["app/app/page.tsx", "app/components"],
-            "deps": ["Scaffold Next.js App Router layout, globals.css, and design tokens"],
+            "deps": ["Scaffold or refine the App Router shell, globals.css, fonts, and design tokens"],
         },
         {
-            "task": f"Add secondary routes/pages implied by: {intent_note}",
+            "task": "Compose required interactions from individual shadcn/ui components and Radix-backed behavior",
+            "files": ["app/components", "app/components/ui"],
+            "deps": [f"Build a content-specific primary page composition for: {intent_note}"],
+        },
+        {
+            "task": f"Add secondary routes and real content/assets implied by: {intent_note}",
             "files": ["app/app"],
-            "deps": [f"Build the primary home / landing page sections for: {intent_note}"],
+            "deps": ["Compose required interactions from individual shadcn/ui components and Radix-backed behavior"],
         },
         {
-            "task": "Wire shadcn/ui components and verify desktop + mobile preview",
-            "files": ["app/components/ui"],
-            "deps": [f"Add secondary routes/pages implied by: {intent_note}"],
+            "task": "Review accessibility, responsive states, interaction states, and anti-slop design quality",
+            "files": ["app/app", "app/components"],
+            "deps": [f"Add secondary routes and real content/assets implied by: {intent_note}"],
+        },
+        {
+            "task": "Verify lint, clean browser console, and desktop plus phone previews; iterate on visual defects",
+            "files": [],
+            "deps": ["Review accessibility, responsive states, interaction states, and anti-slop design quality"],
         },
     ]
 
@@ -109,9 +217,17 @@ async def plan_complex_site(
     so the main streamed turn is not blocked for a full extra LLM round-trip.
     """
     planner_prompt = (
-        "You are a website architect. Break this request into 5-10 concrete subtasks. "
-        "For each subtask, specify: task (string), files (array of paths), deps (array of "
-        "task names this depends on). Output ONLY a JSON array.\n\n"
+        "You are a senior website architect and product designer. Produce a deliberate, "
+        "implementation-ready plan rather than a generic page-section checklist. Cover: "
+        "audience and conversion goal; information architecture and content hierarchy; "
+        "visual direction and typography; real imagery/assets; mapping interactions to "
+        "individual shadcn/ui components (never shadcn Blocks); responsive behavior; "
+        "Radix/WAI-ARIA accessibility and complete interaction states; and desktop/phone "
+        "preview verification. Reject generic AI-template defaults such as gratuitous "
+        "gradient text, glowing blobs, bento grids, excessive pills, or repetitive card "
+        "rows unless the brief specifically justifies them. Break the work into 7-12 "
+        "concrete subtasks. For each subtask, specify: task (string), files (array of paths), "
+        "deps (array of exact task names this depends on). Output ONLY a JSON array.\n\n"
         f"User request: {user_message}"
     )
     try:
