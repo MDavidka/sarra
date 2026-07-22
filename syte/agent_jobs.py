@@ -44,12 +44,18 @@ def _normalize_idempotency_key(key: str | None) -> str | None:
     return f"idem_{cleaned}"
 
 
+def is_agent_job_running(project_id: str) -> bool:
+    """Return True when a durable agent job task is still in flight."""
+    task = _running.get(project_id)
+    return bool(task and not task.done())
+
+
 async def cancel_agent_job(project_id: str) -> tuple[bool, str]:
     """Cancel the in-flight agent job for a project (if any)."""
     from syte.cloud_agent import interrupt_agent
 
     ok, message = await interrupt_agent(project_id)
-    task = _running.get(project_id)
+    task = _running.pop(project_id, None)
     if task and not task.done():
         task.cancel()
         return True, "Agent job cancellation requested."

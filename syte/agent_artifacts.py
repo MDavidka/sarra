@@ -957,12 +957,169 @@ async def update_mcp_addon(
     }
 
 
+async def discover_mcp_stdio_tools(
+    *,
+    command: str,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    timeout_s: float = 8.0,
+) -> dict[str, Any]:
+    """Boot an MCP stdio server long enough to run initialize + tools/list (DAV-186)."""
+    cmd = (command or "").strip()
+    if not cmd:
+        return {"ok": False, "error": "invalid_command", "message": "MCP command is empty", "tools": []}
+
+    proc_env = {**dict(__import__("os").environ), **dict(env or {})}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            cmd,
+            *[str(a) for a in (args or [])],
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=proc_env,
+        )
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "error": "command_not_found",
+            "message": f"MCP command not found: {cmd}",
+            "tools": [],
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "error": "spawn_failed",
+            "message": f"Failed to start MCP process: {exc}",
+            "tools": [],
+        }
+
+    async def _rpc(method: str, params: dict[str, Any] | None = None, *, req_id: int = 1) -> dict[str, Any]:
+        assert proc.stdin is not None and proc.stdout is not None
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        # Support both Content-Length framed and newline-delimited MCP servers.
+        framed = f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
+        proc.stdin.write(framed)
+        await proc.stdin.drain()
+
+        header = await proc.stdout.readline()
+        if not header:
+            raise RuntimeError("MCP process closed stdout during handshake")
+        if header.startswith(b"Content-Length:"):
+            length = int(header.decode("ascii").split(":", 1)[1].strip())
+            while True:
+                sep = await proc.stdout.read(2)
+                if sep == b"\r\n":
+                    break
+                if not sep:
+                    raise RuntimeError("MCP framing truncated")
+            body = await proc.stdout.readexactly(length)
+            return json.loads(body.decode("utf-8"))
+        line = header.decode("utf-8", errors="replace").strip()
+        while not line:
+            nxt = await proc.stdout.readline()
+            if not nxt:
+                raise RuntimeError("MCP process closed stdout during handshake")
+            line = nxt.decode("utf-8", errors="replace").strip()
+        return json.loads(line)
+
+    try:
+        init = await asyncio.wait_for(
+            _rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "syte", "version": "1.0.0"},
+                },
+                req_id=1,
+            ),
+            timeout=timeout_s,
+        )
+        if init.get("error"):
+            return {
+                "ok": False,
+                "error": "initialize_failed",
+                "message": str(init["error"]),
+                "tools": [],
+            }
+        # Best-effort initialized notification (ignore response/no-response).
+        try:
+            assert proc.stdin is not None
+            note = json.dumps(
+                {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            proc.stdin.write(f"Content-Length: {len(note)}\r\n\r\n".encode("ascii") + note)
+            await proc.stdin.drain()
+        except Exception:
+            pass
+        listed = await asyncio.wait_for(_rpc("tools/list", {}, req_id=2), timeout=timeout_s)
+        if listed.get("error"):
+            return {
+                "ok": False,
+                "error": "tools_list_failed",
+                "message": str(listed["error"]),
+                "tools": [],
+            }
+        tools_raw = ((listed.get("result") or {}).get("tools") or [])
+        tools: list[dict[str, Any]] = []
+        for item in tools_raw:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            tools.append({
+                "name": str(item.get("name")),
+                "description": str(item.get("description") or "")[:1000],
+                "inputSchema": item.get("inputSchema") if isinstance(item.get("inputSchema"), dict) else {},
+            })
+        if not tools:
+            return {
+                "ok": False,
+                "error": "no_tools",
+                "message": "MCP server returned an empty tools/list",
+                "tools": [],
+            }
+        return {"ok": True, "tools": tools, "serverInfo": (init.get("result") or {}).get("serverInfo")}
+    except asyncio.TimeoutError:
+        return {
+            "ok": False,
+            "error": "boot_timeout",
+            "message": f"MCP boot timed out after {timeout_s}s",
+            "tools": [],
+        }
+    except Exception as exc:
+        stderr = ""
+        try:
+            if proc.stderr is not None:
+                stderr = (await asyncio.wait_for(proc.stderr.read(2000), timeout=0.5)).decode(
+                    "utf-8", errors="replace"
+                )
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "error": "boot_failed",
+            "message": str(exc)[:500] + (f" | stderr: {stderr[:300]}" if stderr else ""),
+            "tools": [],
+        }
+    finally:
+        try:
+            if proc.returncode is None:
+                proc.kill()
+            await asyncio.wait_for(proc.wait(), timeout=2)
+        except Exception:
+            pass
+
+
 async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
     """Mark an MCP addon connected and expose its tool catalog to the agent.
 
     Built-in ``syte`` maps to in-process Syte tools (no subprocess required).
-    Custom stdio addons are registered for later ``call_mcp`` dispatch via the
-    project's agent skills MCP binary when present.
+    Custom stdio addons are booted briefly for ``initialize`` + ``tools/list``
+    validation before being marked connected (DAV-186).
     """
     addons = await list_mcp_addons(project_id)
     addon = next((a for a in addons if a["id"] == addon_id or a["name"] == addon_id), None)
@@ -970,6 +1127,7 @@ async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "not_found", "message": f"MCP addon not found: {addon_id}"}
 
     tools: list[dict[str, Any]]
+    boot: dict[str, Any] | None = None
     if addon["name"] == "syte":
         tools = [
             {"name": "syte_service", "description": "Control preview/service/logs"},
@@ -983,12 +1141,32 @@ async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
             }
         ]
     else:
-        tools = [
-            {
-                "name": f"{addon['name']}_tool",
-                "description": f"Invoke tools exposed by MCP addon {addon['name']}",
+        boot = await discover_mcp_stdio_tools(
+            command=str(addon.get("command") or ""),
+            args=list(addon.get("args") or []),
+            env=dict(addon.get("env") or {}),
+        )
+        if not boot.get("ok"):
+            now = _now()
+            await ensure_artifact_tables()
+            async with aiosqlite.connect(settings.resolved_db_path) as db:
+                await db.execute(
+                    "UPDATE agent_mcp_addons SET status = 'error', tools_json = '[]', "
+                    "connected_at = NULL, updated_at = ? WHERE id = ?",
+                    (now, addon["id"]),
+                )
+                await db.commit()
+            _connected_mcp.pop((project_id, addon["id"]), None)
+            return {
+                "ok": False,
+                "error": boot.get("error") or "boot_failed",
+                "message": boot.get("message") or "MCP boot validation failed",
+                "id": addon["id"],
+                "name": addon["name"],
+                "status": "error",
+                "tools": [],
             }
-        ]
+        tools = list(boot.get("tools") or [])
 
     now = _now()
     key = (project_id, addon["id"])
@@ -1013,6 +1191,7 @@ async def connect_mcp_addon(project_id: str, addon_id: str) -> dict[str, Any]:
         "status": "connected",
         "tools": tools,
         "connected_at": now,
+        "boot_validated": boot is not None,
         "message": (
             f"MCP addon '{addon['name']}' connected. Use call_mcp with tool names "
             f"from the tools list."

@@ -7,8 +7,9 @@ import json
 import re
 from typing import Any
 
-# Cap planner LLM wait so complex-site turns do not stall TTFT.
-PLANNER_TIMEOUT_S = 2.5
+# Cap planner LLM wait so complex-site turns do not stall TTFT forever, but
+# allow enough time for a real plan before the static fallback (DAV-184).
+PLANNER_TIMEOUT_S = 12.0
 
 _COMPLEX_MARKERS = (
     "build a site",
@@ -65,7 +66,11 @@ def _extract_json_array(text: str) -> list[dict[str, Any]] | None:
 
 
 def fallback_site_plan(user_message: str) -> list[dict[str, Any]]:
-    """Deterministic plan when the planner model returns non-JSON."""
+    """Deterministic plan when the planner model returns non-JSON / times out."""
+    intent = " ".join((user_message or "").strip().split())
+    if len(intent) > 180:
+        intent = intent[:177] + "…"
+    intent_note = intent or "the user request"
     return [
         {
             "task": "Scaffold Next.js App Router layout, globals.css, and design tokens",
@@ -73,19 +78,19 @@ def fallback_site_plan(user_message: str) -> list[dict[str, Any]]:
             "deps": [],
         },
         {
-            "task": "Build the primary home / landing page sections from the user request",
+            "task": f"Build the primary home / landing page sections for: {intent_note}",
             "files": ["app/app/page.tsx", "app/components"],
             "deps": ["Scaffold Next.js App Router layout, globals.css, and design tokens"],
         },
         {
-            "task": "Add secondary routes/pages implied by the request",
+            "task": f"Add secondary routes/pages implied by: {intent_note}",
             "files": ["app/app"],
-            "deps": ["Build the primary home / landing page sections from the user request"],
+            "deps": [f"Build the primary home / landing page sections for: {intent_note}"],
         },
         {
             "task": "Wire shadcn/ui components and verify desktop + mobile preview",
             "files": ["app/components/ui"],
-            "deps": ["Add secondary routes/pages implied by the request"],
+            "deps": [f"Add secondary routes/pages implied by: {intent_note}"],
         },
     ]
 

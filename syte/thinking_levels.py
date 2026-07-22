@@ -150,6 +150,22 @@ def deepseek_thinking_payload(config: dict[str, Any]) -> dict[str, Any] | None:
     return payload
 
 
+def model_supports_native_thinking(
+    *,
+    provider: str = "",
+    model: str = "",
+    api_base: str = "",
+) -> bool:
+    """Return True when the provider/model accepts native thinking payloads."""
+    provider_l = (provider or "").lower()
+    model_l = (model or "").lower()
+    api_l = (api_base or "").lower()
+    is_deepseek = "deepseek.com" in api_l or "deepseek" in provider_l or "deepseek" in model_l
+    is_anthropic = "anthropic" in provider_l or "claude" in model_l
+    is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
+    return bool(is_deepseek or is_anthropic or is_openai_reasoning)
+
+
 def build_model_thinking_params(
     thinking_config: dict[str, Any] | None,
     *,
@@ -162,6 +178,11 @@ def build_model_thinking_params(
     Always returns temperature + top_p. Native thinking payloads are attached
     only when thinking is enabled **and** the provider/model supports them.
     Instant/Fast (thinking_enabled=False) never injects reasoning keys.
+
+    Extra metadata keys (stripped before provider payload assembly):
+    - ``thinking_requested``: user/config asked for thinking
+    - ``thinking_supported``: provider/model can accept thinking params
+    - ``thinking_applied``: a native thinking key was attached
     """
     cfg = thinking_config or {}
     params: dict[str, Any] = {
@@ -174,6 +195,12 @@ def build_model_thinking_params(
     api_l = (api_base or "").lower()
     budget = int(cfg.get("thinking_budget_tokens") or 0)
     enabled = bool(cfg.get("thinking_enabled"))
+    supported = model_supports_native_thinking(
+        provider=provider, model=model, api_base=api_base,
+    )
+    params["thinking_requested"] = enabled
+    params["thinking_supported"] = supported
+    params["thinking_applied"] = False
 
     is_deepseek = "deepseek.com" in api_l or "deepseek" in provider_l or "deepseek" in model_l
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
@@ -186,18 +213,21 @@ def build_model_thinking_params(
             thinking = deepseek_thinking_payload(cfg)
             if thinking is not None:
                 params["thinking"] = thinking
+                params["thinking_applied"] = True
 
     if is_anthropic and enabled and budget > 0:
         params["thinking"] = {
             "type": "enabled",
             "budget_tokens": max(1024, budget),
         }
+        params["thinking_applied"] = True
 
     # Only attach OpenAI reasoning_effort for models known to accept it.
     if is_openai_reasoning and enabled:
         effort = str(cfg.get("reasoning_effort") or "").strip()
         if effort:
             params["reasoning_effort"] = effort
+            params["thinking_applied"] = True
 
     return params
 

@@ -537,6 +537,15 @@ async def execute_command(
                 timeout=timeout,
             )
             await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.CancelledError:
+            # Propagate cancel promptly so pause/interrupt does not leave a
+            # subprocess running after the agent turn is aborted (DAV-180).
+            proc.kill()
+            try:
+                await proc.communicate()
+            except Exception:
+                pass
+            raise
         except asyncio.TimeoutError:
             proc.kill()
             try:

@@ -13,6 +13,7 @@ import hashlib
 import itertools
 import json
 import logging
+import random
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -51,7 +52,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 10
+AGENT_INSTRUCTION_VERSION = 11
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
@@ -102,7 +103,12 @@ TokenEmitter = Callable[[str], Awaitable[None]]
 MAX_TOOL_RESULT_CHARS = 16_000
 MAX_REASONING_HISTORY_CHARS = 4_000
 MAX_PROJECT_BRIEF_CHARS = 4_000
+MAX_STATIC_SKILL_CHARS = 4_000
 TOOL_TRUNCATION_NOTE = "\n… [truncated for LLM context — re-read a narrower path or ask for a specific section]"
+
+# mtime-backed cache so hot instruction builds avoid repeated sync disk reads.
+_project_brief_cache: dict[str, tuple[float, str]] = {}
+_syterules_cache: dict[str, tuple[float, str]] = {}
 
 
 def _truncate_for_llm(text: str, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
@@ -164,22 +170,41 @@ def _system_message_for_provider(static: str, dynamic: str, model: dict[str, Any
 
 
 def _read_project_brief(project_id: str) -> str:
-    """Load durable project brief for system context (DAV-137)."""
+    """Load durable project brief for system context (DAV-137 / DAV-179)."""
     root = workspace_path(project_id)
     candidates = (
         root / ".syte" / "PROJECT_BRIEF.md",
         root / "PROJECT_BRIEF.md",
         root / "app" / "PROJECT_BRIEF.md",
     )
+    newest_key = (0.0, 0)
+    newest_path: Path | None = None
     for path in candidates:
         try:
             if path.is_file():
-                text = path.read_text(encoding="utf-8", errors="replace").strip()
-                if text:
-                    return text[:MAX_PROJECT_BRIEF_CHARS]
+                st = path.stat()
+                key = (st.st_mtime, int(st.st_size))
+                if key >= newest_key:
+                    newest_key = key
+                    newest_path = path
         except OSError:
             continue
-    return ""
+    if newest_path is None:
+        _project_brief_cache.pop(project_id, None)
+        return ""
+    cached = _project_brief_cache.get(project_id)
+    if cached and cached[0] == newest_key:
+        return cached[1]
+    try:
+        text = newest_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if not text:
+        _project_brief_cache.pop(project_id, None)
+        return ""
+    clipped = text[:MAX_PROJECT_BRIEF_CHARS]
+    _project_brief_cache[project_id] = (newest_key, clipped)
+    return clipped
 
 
 def _seed_project_brief(project_id: str) -> str:
@@ -277,9 +302,13 @@ def invalidate_instruction_cache(project_id: str | None = None) -> None:
     """Drop cached system instructions (one project or all)."""
     if project_id is None:
         _instruction_cache.clear()
+        _project_brief_cache.clear()
+        _syterules_cache.clear()
         return
     for key in [k for k in _instruction_cache if k[0] == project_id]:
         del _instruction_cache[key]
+    _project_brief_cache.pop(project_id, None)
+    _syterules_cache.pop(project_id, None)
 
 
 def _now() -> str:
@@ -579,15 +608,35 @@ def _project_metadata_block(project: dict[str, Any] | None) -> str:
 def _read_syterules(project_id: str) -> str:
     """Load optional `.syterules` from workspace root or app/."""
     root = workspace_path(project_id)
-    for candidate in (root / ".syterules", root / "app" / ".syterules"):
+    candidates = (root / ".syterules", root / "app" / ".syterules")
+    newest_key = (0.0, 0)
+    newest_path: Path | None = None
+    for candidate in candidates:
         try:
             if candidate.is_file():
-                text = candidate.read_text(encoding="utf-8", errors="replace").strip()
-                if text:
-                    return f"## Project-specific rules (.syterules):\n{text}"
+                st = candidate.stat()
+                key = (st.st_mtime, int(st.st_size))
+                if key >= newest_key:
+                    newest_key = key
+                    newest_path = candidate
         except OSError:
             continue
-    return ""
+    if newest_path is None:
+        _syterules_cache.pop(project_id, None)
+        return ""
+    cached = _syterules_cache.get(project_id)
+    if cached and cached[0] == newest_key:
+        return cached[1]
+    try:
+        text = newest_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if not text:
+        _syterules_cache.pop(project_id, None)
+        return ""
+    block = f"## Project-specific rules (.syterules):\n{text}"
+    _syterules_cache[project_id] = (newest_key, block)
+    return block
 
 
 def _website_enforcement_block(*, is_website: bool) -> str:
@@ -702,14 +751,19 @@ async def _build_syte_instruction_parts(
     rule_lines = "\n".join(f"- {item['name']}: {item['rule']}" for item in rules)
     project_skills = await get_project_skills(project_id)
     active_skills_list = [skill for skill in project_skills if skill.get("active")]
-    active_skill_blocks = [
-        str(skill.get("content") or "").strip()
-        for skill in active_skills_list
-        if str(skill.get("content") or "").strip()
-        and "\x00" not in str(skill.get("content") or "")
-        and len(str(skill.get("content") or "")) <= 50_000
-    ]
-    active_skills = "\n\n".join(active_skill_blocks)
+    # Keep skill bodies short in the static/cacheable prefix; large skill text
+    # busts Anthropic prefix cache and bloats every turn (DAV-182).
+    skill_snippets: list[str] = []
+    for skill in active_skills_list:
+        raw = str(skill.get("content") or "").strip()
+        if not raw or "\x00" in raw:
+            continue
+        name = str(skill.get("name") or skill.get("id") or "skill").strip()
+        body = raw if len(raw) <= MAX_STATIC_SKILL_CHARS else (
+            raw[: MAX_STATIC_SKILL_CHARS - len(TOOL_TRUNCATION_NOTE)] + TOOL_TRUNCATION_NOTE
+        )
+        skill_snippets.append(f"### Skill: {name}\n{body}")
+    active_skills = "\n\n".join(skill_snippets)
     active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
     syterules = _read_syterules(project_id)
     project = await get_project(project_id)
@@ -983,6 +1037,10 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
 
     task = _active_turns.get(project_id)
     if task and not task.done():
+        # Drop the busy marker immediately so status APIs stop reporting
+        # "processing" / stuck running while cooperative cancel finishes (DAV-180).
+        if _active_turns.get(project_id) is task:
+            _active_turns.pop(project_id, None)
         task.cancel()
         session_number = await current_session_number(project_id)
         turso_session_id = await current_turso_session_id(project_id)
@@ -1012,6 +1070,9 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
         if turso_session_id:
             await close_turso_session(turso_session_id, status="cancelled")
         return True, "Active cloud-agent turn interrupted."
+    # Ensure a stale completed task cannot keep the busy indicator stuck.
+    if _active_turns.get(project_id) is task:
+        _active_turns.pop(project_id, None)
     return True, "No active cloud-agent turn."
 
 async def turso_message_sync_status(project_id: str) -> dict[str, Any]:
@@ -1065,14 +1126,26 @@ async def get_agent_status(
         else build_direct_url(settings.resolved_public_ip, settings.port)
     )
     agent_status_value = project.get("agent_status") or "stopped"
-    active = bool(_active_turns.get(project_id) and not _active_turns[project_id].done())
+    turn_task = _active_turns.get(project_id)
+    active = bool(turn_task and not turn_task.done())
+    # Also treat the durable job runner as busy so cancel/pause cannot leave a
+    # stale "processing" indicator when the turn task was already cleared.
+    try:
+        from syte.agent_jobs import is_agent_job_running
+
+        job_running = is_agent_job_running(project_id)
+    except Exception:
+        job_running = False
+    busy = active or job_running
     turso_sync = await turso_message_sync_status(project_id)
     return {
         "agent_runtime": CLOUD_RUNTIME,
         "agent_runtime_type": "cloud",
-        "agent_status": "processing" if active else agent_status_value,
+        "agent_status": "processing" if busy else agent_status_value,
         "agent_turso_sync": turso_sync,
+        # Runtime readiness (started) vs in-flight turn (busy).
         "agent_running": agent_status_value != "stopped",
+        "agent_busy": busy,
         "agent_healthy": agent_status_value == "running" and bool(model["api_key"]),
         "agent_warming": False,
         "agent_port": None,
@@ -1634,32 +1707,34 @@ async def _tool_screenshot_preview(
             "message": "Preview URL unavailable — call service preview_start first.",
         }
 
-    raw = await capture_preview_screenshots(target, viewports=tuple(viewport_names))
-    # Capture a small thumb from desktop (or first ok viewport) for chat inline.
-    thumb_source = None
-    for name in ("desktop", "phone"):
-        if (raw.get(name) or {}).get("ok") and (raw.get(name) or {}).get("png_bytes"):
-            thumb_source = raw[name]["png_bytes"]
-            break
-    thumb_shot = None
-    if thumb_source is not None:
-        from syte.preview_access import _capture_screenshot
-
-        # Re-capture at thumb size for a compact chat preview.
-        thumb_shot = await _capture_screenshot(target, width=480, height=300, viewport="thumb")
+    raw = await capture_preview_screenshots(
+        target, viewports=tuple([*viewport_names, "thumb"])
+    )
+    # Prefer the parallel thumb capture; fall back to first ok viewport bytes.
+    thumb_shot = raw.get("thumb") if (raw.get("thumb") or {}).get("ok") else None
+    if thumb_shot is None:
+        for name in ("desktop", "phone"):
+            if (raw.get(name) or {}).get("ok") and (raw.get(name) or {}).get("png_bytes"):
+                thumb_shot = {
+                    "ok": True,
+                    "png_bytes": raw[name]["png_bytes"],
+                    "width": raw[name].get("width"),
+                    "height": raw[name].get("height"),
+                }
+                break
 
     shots_out: list[dict[str, Any]] = []
     vision_parts: list[dict[str, Any]] = []
-    for name in viewport_names:
+
+    async def _persist_one(name: str) -> dict[str, Any]:
         shot = raw.get(name) or {}
         if not shot.get("ok") or not shot.get("png_bytes"):
-            shots_out.append({
+            return {
                 "viewport": name,
                 "ok": False,
                 "error": shot.get("error"),
                 "message": shot.get("message"),
-            })
-            continue
+            }
         png = shot["png_bytes"]
         thumb_bytes = (thumb_shot or {}).get("png_bytes") if name == "desktop" else None
         record = await save_screenshot_record(
@@ -1679,7 +1754,7 @@ async def _tool_screenshot_preview(
             thumb_bytes if isinstance(thumb_bytes, (bytes, bytearray)) else png,
             max_bytes=90_000,
         )
-        entry = {
+        return {
             "ok": True,
             "id": record["id"],
             "viewport": name,
@@ -1691,8 +1766,17 @@ async def _tool_screenshot_preview(
             "image_url": f"/api/projects/{project_id}/agent/screenshots/{record['id']}",
             "thumb_url": f"/api/projects/{project_id}/agent/screenshots/{record['id']}?variant=thumb",
             "chat_image_base64": chat_b64,
+            "_png": png,
+            "_record": record,
         }
+
+    persisted = await asyncio.gather(*(_persist_one(name) for name in viewport_names))
+    for name, entry in zip(viewport_names, persisted):
+        png = entry.pop("_png", None)
+        record = entry.pop("_record", None)
         shots_out.append(entry)
+        if not entry.get("ok") or not isinstance(png, (bytes, bytearray)) or not isinstance(record, dict):
+            continue
         if len(png) <= MAX_VISION_IMAGE_BYTES:
             vision_parts.append({
                 "type": "image_url",
@@ -2038,7 +2122,7 @@ async def _provider_completion(
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
                         await response.aread()
-                        await asyncio.sleep(1.5 * (2 ** attempt))
+                        await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                         continue
                     if response.status_code >= 400:
                         detail = (await response.aread()).decode(errors="replace").strip()[:800]
@@ -2055,7 +2139,7 @@ async def _provider_completion(
 
             response = await client.post(url, headers=headers, json=payload)
             if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
-                await asyncio.sleep(1.5 * (2 ** attempt))
+                await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                 continue
             if response.status_code >= 400:
                 detail = (response.text or "").strip()[:800]
@@ -2252,6 +2336,35 @@ async def _communicate_with_agent_impl(
         )
     else:
         message_index = max(0, int(message_index_start or 0))
+
+    thinking_probe = build_model_thinking_params(
+        gen,
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
+    if thinking_probe.get("thinking_requested") and not thinking_probe.get("thinking_supported"):
+        await record_agent_event(
+            project_id,
+            "status",
+            title="Thinking not supported",
+            detail=(
+                f"thinking_level={gen.get('thinking_level')} requested, but model "
+                f"{model.get('model')} / provider {model.get('provider')} does not "
+                "accept native thinking params — slider ignored for this turn."
+            ),
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "thinking_level": gen.get("thinking_level"),
+                "thinking_requested": True,
+                "thinking_supported": False,
+                "model": model.get("model"),
+                "provider": model.get("provider"),
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
 
     def _mark_payload(
         *,

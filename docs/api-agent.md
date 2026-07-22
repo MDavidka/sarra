@@ -8,7 +8,8 @@ and the HTML docs at `/api/`.
 MCP providers and skills can be **listed, added, enabled, disabled, and edited** from the
 agent chat resource panel or directly via these APIs.
 
-For SSE event schemas, ordering guarantees, and reconnection, see
+For SSE event schemas (`token_delta`, `thinking_delta`, tool lifecycle, questions),
+ordering guarantees, `since_id` incremental polling, and reconnection, see
 [Agent Streaming API](./agent-streaming-api.md).
 
 ## Chat
@@ -46,8 +47,10 @@ response shapes: [Agent Streaming API](./agent-streaming-api.md).
 
 Manage Model Context Protocol providers per project. The built-in `syte` addon maps to
 project `service` / `access` helpers. The built-in `web_search` addon searches the web
-(Tavily/Brave when configured, otherwise DuckDuckGo Instant Answer). Custom stdio
-providers can be registered and connected from the GUI or API.
+(Tavily/Brave when configured, otherwise DuckDuckGo Instant Answer). Custom stdio providers can be registered and connected from the GUI or API.
+Connecting a custom addon boots the process briefly (`initialize` + `tools/list`)
+and rejects broken providers with `status: error` instead of advertising placeholder
+tools.
 
 | Action | Method | Path |
 |--------|--------|------|

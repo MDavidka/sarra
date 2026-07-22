@@ -58,6 +58,37 @@ Streamed LLM output tokens.
 }
 ```
 
+`token_delta` (and `thinking_delta`) are **hot stream** events: they are pushed
+live over SSE and skip durable Turso mirroring to keep latency low. Poll
+clients should still use `since_id` for other event types; hot deltas may only
+appear on the live SSE channel.
+
+### `thinking_delta`
+
+Streamed model reasoning / chain-of-thought chunks (when the selected model
+supports native thinking and the turn's `thinking_level` enables it).
+
+**payload:**
+
+```json
+{
+  "request_id": "req-…",
+  "session": 42,
+  "delta": "partial reasoning text",
+  "mark_kind": "thinking"
+}
+```
+
+Notes:
+
+- Bind `addEventListener("thinking_delta", …)` — `EventSource.onmessage` will not
+  receive named frames.
+- History persistence may truncate long reasoning (`… [thinking truncated]`); the
+  live SSE stream still emits the full deltas.
+- If the client requests thinking on a model that does not support it, the
+  backend emits a one-shot `status` event (`Thinking not supported`) and omits
+  native thinking params from the provider payload.
+
 ### `tool_call_started` / `tool_call_finished`
 
 Agent invokes a tool / tool returns.
@@ -210,16 +241,38 @@ Structured tool failure for observability (does not replace `tool_call_finished`
 SSE / poll clients should:
 
 1. Track the last seen event `id` (and optionally `payload.session`)
-2. On disconnect, reconnect with `?since_id={last_id}`
-3. The server returns events with `id > since_id` (no wrap / no 410); if `since_id`
-   is ahead of the store, the result set is empty until new events arrive
-4. Polling backoff recommendation: start at **500ms**, double after empty polls up to
+2. On disconnect, reconnect with `?since_id={last_id}` (and keep `session=last` /
+   `session={N}` if you were filtering)
+3. The server returns events with `id > since_id` only — never a full replay of
+   older rows. Example: after processing id `120`, reconnect with
+   `GET /api/projects/{id}/agent/activity?since_id=120&session=last`
+4. SSE reconnect uses the same rule: `GET …/activity/stream?since_id=120`. When
+   `since_id > 0`, the backlog window is kept small (delta-oriented); cold
+   connects (`since_id=0`) still receive a bounded recent backlog
+5. If `since_id` is ahead of the store, the result set is empty until new events
+   arrive (no wrap / no 410)
+6. Polling backoff recommendation: start at **500ms**, double after empty polls up to
    **5s**, reset to 500ms when new events arrive; keep a long-poll style SSE open when
    possible instead of busy-polling
-5. Cap concurrent pollers per session to 1 in the BFF to avoid stampeding Turso
+7. Cap concurrent pollers per session to 1 in the BFF to avoid stampeding Turso
 
 Optional: `session=last` or `session={N}` filters to the latest / specific numbered
 chat session.
+
+### Minimal incremental poll example
+
+```js
+let sinceId = 0;
+async function pollActivity(projectId) {
+  const url = `/api/projects/${projectId}/agent/activity?since_id=${sinceId}&session=last`;
+  const res = await fetch(url, { credentials: "same-origin" });
+  const data = await res.json();
+  for (const event of data.events || []) {
+    sinceId = Math.max(sinceId, event.id);
+    // handle event.event_type / event.payload
+  }
+}
+```
 
 ## Visual analyses
 
