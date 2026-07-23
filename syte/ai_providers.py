@@ -6,7 +6,8 @@ from typing import TypedDict
 
 VERTED_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
-FORGE_API_BASE = "https://forge-gateway-api.fly.dev/v1"
+# Fireworks OpenAI-compatible inference API (https://app.fireworks.ai/).
+FIREWORKS_API_BASE = "https://api.fireworks.ai/inference/v1"
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
 
@@ -51,10 +52,10 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     },
     "syra-ultra": {
         "profile": "syra-ultra",
-        "label": "Forge",
+        "label": "Fireworks",
         "provider": "openai",
-        "api_base": FORGE_API_BASE,
-        "model": "grok-4.5",
+        "api_base": FIREWORKS_API_BASE,
+        "model": "accounts/fireworks/models/minimax-m3",
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },

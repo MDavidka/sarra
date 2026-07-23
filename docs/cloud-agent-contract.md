@@ -23,7 +23,7 @@ OpenAI-compatible endpoints:
 - `syra-nano`: Gemini Flash
 - `syra-base`: DeepSeek Chat
 - `syra-havy`: Gemini Pro
-- `syra-ultra`: Forge grok-4.5 (`https://forge-gateway-api.fly.dev/v1`)
+- `syra-ultra`: Fireworks MiniMax M3 (`https://api.fireworks.ai/inference/v1`, model `accounts/fireworks/models/minimax-m3`)
 
 Provider keys remain in Syte system settings. They are sent directly to the
 selected provider and are never copied into project runtime files.
