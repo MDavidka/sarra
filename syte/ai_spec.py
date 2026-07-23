@@ -63,12 +63,18 @@ def build_ai_spec(base_url: str = "") -> dict:
             "6. POST /api/stop_preview {uuid} when finished",
         ],
         "preview_api": {
-            "description": "Fast live preview via next dev/vite — HTTPS on wildcard GUI zone",
+            "description": "Fast live preview — auto-detects stack (Next/Vite HMR, CRA, Astro/Nuxt/SvelteKit/Remix, Express, FastAPI/Flask, static HTML) on wildcard GUI zone",
             "domain_format": "preview{random_letter}-{appname}.sycord.site (e.g. previewk-mysite.sycord.site)",
             "domain_rules": {
                 "pattern": "preview{a-z}-{appname-slug}.{gui-zone}",
                 "example": "https://previewk-mysite.sycord.site",
                 "ssl": "Automatic via wildcard *.sycord.site — no per-preview DNS",
+                "auto_detect": (
+                    "On start_preview Syte inspects the workspace and picks a command: "
+                    "package.json dev/start (Next, Vite, CRA, Astro, Nuxt, SvelteKit, Remix, Express), "
+                    "requirements.txt + main.py (uvicorn/Flask), or index.html (python http.server). "
+                    "SYTE_STACK from project_connect is used as a hint when files are sparse."
+                ),
                 "vite_allowed_hosts": "Auto: patches vite.config.* with server.allowedHosts: true on start_preview",
                 "nextjs_origins": "Auto: allowedDevOrigins patched in next.config on start_preview",
                 "iframe_embed": "frame-ancestors restricted to sycord.com + GUI domain (preview_embed_mode=any for *)",
@@ -121,7 +127,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/set_env", "auth": True, "body": {"uuid": "str", "env_vars": {}, "merge": True}},
             {"method": "POST", "path": "/api/create_project", "auth": True, "body": {"name": "str (required)", "uuid": "optional", "git_url": "optional", "git_provider": "optional", "branch": "main", "start_command": "optional", "domain": "optional", "env_vars": {}, "deploy": "bool, default false — prefer issue_deploy"}, "response_includes": "uuid, execute_command.body, issue_deploy.body, design_contract_url"},
             {"method": "POST", "path": "/api/issue_deploy", "auth": True, "body": {"uuid": "str"}, "description": "Git pull + docker build + restart — production deploy"},
-            {"method": "POST", "path": "/api/start_preview", "auth": True, "body": {"uuid": "str"}, "description": "Fast dev preview (next dev/vite, HMR, ~5s)"},
+            {"method": "POST", "path": "/api/start_preview", "auth": True, "body": {"uuid": "str"}, "description": "Fast live preview — auto-detects Next/Vite/CRA/Astro/Nuxt/Express/Python/static HTML"},
             {"method": "POST", "path": "/api/stop_preview", "auth": True, "body": {"uuid": "str"}},
             {"method": "GET", "path": "/api/preview_status?uuid=", "auth": True, "description": "preview_url, preview_ready, preview_running"},
             {"method": "GET", "path": "/api/projects/{uuid}/preview/logs/stream?live=1", "auth": "optional", "description": "SSE preview dev server logs"},
