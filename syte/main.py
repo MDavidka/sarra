@@ -147,6 +147,7 @@ class SettingsRequest(BaseModel):
     agent_syra_nano_api_key: str | None = None
     agent_syra_base_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
+    agent_syra_ultra_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -307,9 +308,11 @@ async def get_settings():
         "agent_syra_nano_model": bridge["syra_nano_model"],
         "agent_syra_base_model": bridge["syra_base_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
+        "agent_syra_ultra_model": bridge["syra_ultra_model"],
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
+        "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
         "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
@@ -441,6 +444,13 @@ async def save_settings(body: SettingsRequest):
             "syra-havy (Verted) API key saved."
             if body.agent_syra_havy_api_key.strip()
             else "syra-havy API key cleared."
+        )
+    if body.agent_syra_ultra_api_key is not None:
+        await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
+        messages.append(
+            "syra-ultra (Forge · grok-4.5) API key saved."
+            if body.agent_syra_ultra_api_key.strip()
+            else "syra-ultra API key cleared."
         )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))

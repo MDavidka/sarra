@@ -40,7 +40,7 @@ class DomainBody(BaseModel):
 class AgentChangeBody(BaseModel):
     uuid: str = Field(..., description="Syte project UUID from project_connect")
     message: str = Field(..., description="User change request for the workspace agent")
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy | syra-ultra")
     model_name: str | None = Field(None, description="Alias for model_profile")
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth"
