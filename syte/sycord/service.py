@@ -253,20 +253,11 @@ async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
     if not project:
         return None
     memory = await project_memory_snapshot(project_id)
-    if not await turso_configured():
-        return {
-            "uuid": project_id,
-            "turso_configured": False,
-            "sessions": [],
-            "memory": memory,
-            "resume_session": memory.get("resume_session"),
-            "open_session": memory.get("open_session"),
-            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
-        }
+    configured = await turso_configured()
     sessions = await list_sessions_for_project(project_id, limit=limit)
-    return {
+    result = {
         "uuid": project_id,
-        "turso_configured": True,
+        "turso_configured": configured,
         "sessions": [
             {**s, "session_url": f"/sycord/api/agent_session/{s['id']}"} for s in sessions
         ],
@@ -288,6 +279,12 @@ async def agent_sessions(project_id: str, *, limit: int = 50) -> dict | None:
         "active_files": memory.get("active_files") or [],
         "latest_summary": memory.get("latest_summary"),
     }
+    if not configured:
+        result["message"] = (
+            "Remote Turso is not configured — sessions are stored locally on this deployer. "
+            "Set turso_database_url in Settings → AI for cross-host durability."
+        )
+    return result
 
 
 async def project_summary(project_id: str) -> dict | None:
@@ -324,11 +321,9 @@ async def project_summary(project_id: str) -> dict | None:
 
 
 async def agent_session(session_id: str, *, since_id: int = 0) -> dict | None:
-    """Fetch one durable Turso agent session by UUID."""
-    from syte.turso_store import get_session, turso_configured
+    """Fetch one durable agent session by UUID (Turso or local fallback)."""
+    from syte.turso_store import get_session
 
-    if not await turso_configured():
-        return None
     return await get_session(session_id, since_id=since_id)
 
 

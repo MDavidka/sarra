@@ -338,23 +338,22 @@ async def internal_agent_sessions(
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     await _require_project(project_id)
-    if not await turso_configured():
-        return {
-            "ok": True,
-            "project_id": project_id,
-            "turso_configured": False,
-            "sessions": [],
-            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
-        }
+    configured = await turso_configured()
     sessions = await list_sessions_for_project(project_id, limit=limit)
-    return {
+    payload = {
         "ok": True,
         "project_id": project_id,
-        "turso_configured": True,
+        "turso_configured": configured,
         "sessions": [
             {**s, "session_url": f"/api/internal/agent_session/{s['id']}"} for s in sessions
         ],
     }
+    if not configured:
+        payload["message"] = (
+            "Remote Turso is not configured — sessions are stored locally on this deployer. "
+            "Set turso_database_url in Settings → AI for cross-host durability."
+        )
+    return payload
 
 
 @router.get("/agent_session/{session_id}")
@@ -373,14 +372,8 @@ async def internal_get_agent_session(
     Internal service tokens are host-global; pass ``uuid`` or ``project_id`` to
     additionally verify the session belongs to that project.
     """
-    from syte.turso_store import get_session, turso_configured
+    from syte.turso_store import get_session
 
-    if not await turso_configured():
-        raise HTTPException(
-            503,
-            "Turso is not configured — set turso_database_url (and turso_auth_token) "
-            "in Settings -> AI tab before fetching agent sessions.",
-        )
     session = await get_session(session_id, since_id=since_id)
     if not session:
         raise HTTPException(404, "Agent session not found")

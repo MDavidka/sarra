@@ -19,7 +19,9 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 async def test_submit_agent_request_returns_immediately(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte.agent_jobs import submit_agent_request
     from syte.database import create_project, init_db
+    from syte.local_session_store import reset_local_session_cache
 
+    reset_local_session_cache()
     await init_db()
     await create_project({
         "id": "job-proj",
@@ -37,8 +39,45 @@ async def test_submit_agent_request_returns_immediately(tmp_data_dir: Path, monk
     assert result["ok"] is True
     assert result["status"] == "accepted"
     assert result["request_id"].startswith("req_")
-    assert "turso_session_id" in result
-    assert "session_url" in result
+    assert result["turso_session_id"]
+    assert result["session_url"]
+    reset_local_session_cache()
+
+
+@pytest.mark.asyncio
+async def test_submit_agent_request_idempotent_replay_includes_turso_session(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Idempotent replays must return turso_session_id (sycord-pages requires it)."""
+    from syte.agent_jobs import submit_agent_request
+    from syte.database import create_project, init_db
+    from syte.local_session_store import reset_local_session_cache
+
+    reset_local_session_cache()
+    await init_db()
+    await create_project({
+        "id": "job-idem",
+        "name": "Idem",
+        "port": 3022,
+        "start_command": "",
+    })
+
+    async def fake_run(*_args, **_kwargs):
+        return {"ok": True, "reply": "done"}
+
+    monkeypatch.setattr("syte.agent_jobs._run_job", fake_run)
+
+    first = await submit_agent_request(
+        "job-idem", "hello", source="test", idempotency_key="client-key-1",
+    )
+    second = await submit_agent_request(
+        "job-idem", "hello", source="test", idempotency_key="client-key-1",
+    )
+    assert first["turso_session_id"]
+    assert second["idempotent_replay"] is True
+    assert second["turso_session_id"] == first["turso_session_id"]
+    assert second["request_id"] == first["request_id"]
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio

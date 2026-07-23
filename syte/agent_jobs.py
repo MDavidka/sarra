@@ -82,14 +82,9 @@ async def submit_agent_request(
     request_id = _normalize_idempotency_key(idempotency_key) or new_request_id()
     existing = await get_request(request_id)
     if existing:
-        return {
-            "ok": True,
-            "request_id": request_id,
-            "status": existing.get("status") or "accepted",
-            "project_id": project_id,
-            "idempotent_replay": True,
-            "thinking_level": thinking_level,
-        }
+        return await _idempotent_replay_payload(
+            existing, project_id=project_id, thinking_level=thinking_level,
+        )
 
     try:
         await enqueue_request(
@@ -104,25 +99,22 @@ async def submit_agent_request(
         # Race: another request with the same idempotency key just inserted.
         existing = await get_request(request_id)
         if existing:
-            return {
-                "ok": True,
-                "request_id": request_id,
-                "status": existing.get("status") or "accepted",
-                "project_id": project_id,
-                "idempotent_replay": True,
-                "thinking_level": thinking_level,
-            }
+            return await _idempotent_replay_payload(
+                existing, project_id=project_id, thinking_level=thinking_level,
+            )
         raise
 
     # Session opens when the user message is admitted so a durable Turso
     # session (see syte.turso_store) exists from the very first event, before
-    # the worker starts tools.
+    # the worker starts tools. Local SQLite fallback guarantees a session id
+    # even when remote Turso is unset (required by sycord-pages).
     session_number = await begin_turn_session(project_id, model_profile)
     turso_session_id = await open_turso_session(
         project_id, session_number=session_number, model_profile=model_profile,
     )
     if turso_session_id:
         await set_turso_session_id(project_id, turso_session_id)
+        await _store_request_turso_session(request_id, turso_session_id)
     await record_agent_event(
         project_id,
         "request_started",
@@ -180,6 +172,48 @@ async def submit_agent_request(
         "thinking_level": thinking_level,
         "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
+
+
+async def _idempotent_replay_payload(
+    existing: dict[str, Any],
+    *,
+    project_id: str,
+    thinking_level: int | str | None,
+) -> dict[str, Any]:
+    """Rebuild the accept payload for a repeated idempotency key.
+
+    Must include ``turso_session_id`` — sycord-pages rejects accepts without it.
+    """
+    request_id = str(existing.get("request_id") or "")
+    turso_session_id = (
+        (existing.get("turso_session_id") or "").strip()
+        or await current_turso_session_id(project_id)
+    )
+    session_number = await current_session_number(project_id)
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "status": existing.get("status") or "accepted",
+        "project_id": project_id,
+        "session": session_number or None,
+        "turso_session_id": turso_session_id or None,
+        "idempotent_replay": True,
+        "thinking_level": thinking_level,
+        "session_url": (
+            f"/api/agent_session/{turso_session_id}" if turso_session_id else None
+        ),
+    }
+
+
+async def _store_request_turso_session(request_id: str, turso_session_id: str) -> None:
+    """Persist the session id on the request row for idempotent replays."""
+    from syte.cloud_agent_store import set_request_turso_session_id
+
+    try:
+        await set_request_turso_session_id(request_id, turso_session_id)
+    except Exception:
+        # Non-fatal — current_turso_session_id still covers most replays.
+        pass
 
 
 async def _run_job(
