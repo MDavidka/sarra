@@ -2333,20 +2333,74 @@ async def _provider_completion(
     url = model["api_base"].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
     client = _get_provider_client()
+
+    def _provider_error_message(status_code: int, reason: str, request_url: str, detail: str) -> str:
+        detail_l = (detail or "").lower()
+        if "no active upstream keys" in detail_l:
+            return (
+                f"Provider has no active upstream keys for {model.get('model') or 'this model'}. "
+                "Check the provider admin console, then retry."
+            )
+        if (
+            status_code in {401, 403}
+            or "invalid or deactivated api key" in detail_l
+            or "api key you provided is invalid" in detail_l
+            or "unauthorized" in detail_l
+        ):
+            label = model.get("label") or model.get("provider") or "provider"
+            profile = model.get("profile") or "selected"
+            hint = ""
+            api_base = str(model.get("api_base") or "").lower()
+            if "fireworks.ai" in api_base or str(label).lower() == "fireworks":
+                hint = " Get a key at https://app.fireworks.ai/."
+            return (
+                f"Invalid API key for {profile} profile ({label}). "
+                f"Update the key in AI provider settings.{hint}"
+            )
+        return (
+            f"Client error '{status_code} {reason}' for url '{request_url}'"
+            + (f": {detail}" if detail else "")
+        )
+
+    def _is_retryable_provider_status(status_code: int, detail: str) -> bool:
+        if status_code not in {408, 429, 500, 502, 503, 504}:
+            return False
+        detail_l = (detail or "").lower()
+        # Permanent gateway/config failures — retrying only burns latency.
+        if any(
+            marker in detail_l
+            for marker in (
+                "no active upstream keys",
+                "invalid or deactivated api key",
+                "invalid api key",
+                "incorrect api key",
+                "api key you provided is invalid",
+            )
+        ):
+            return False
+        return True
+
     for attempt in range(3):
         try:
             if payload["stream"]:
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
-                    if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
-                        await response.aread()
+                    peek = ""
+                    if response.status_code >= 400:
+                        peek = (await response.aread()).decode(errors="replace").strip()[:800]
+                    if _is_retryable_provider_status(response.status_code, peek) and attempt < 2:
+                        if not peek:
+                            await response.aread()
                         await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                         continue
                     if response.status_code >= 400:
-                        detail = (await response.aread()).decode(errors="replace").strip()[:800]
+                        detail = peek or (await response.aread()).decode(errors="replace").strip()[:800]
                         raise RuntimeError(
-                            f"Client error '{response.status_code} {response.reason_phrase}' "
-                            f"for url '{response.request.url}'"
-                            + (f": {detail}" if detail else "")
+                            _provider_error_message(
+                                response.status_code,
+                                response.reason_phrase,
+                                str(response.request.url),
+                                detail,
+                            )
                         )
                     message = await _parse_sse_completion(
                         response, on_token=on_token, on_reasoning=on_reasoning,
@@ -2355,15 +2409,18 @@ async def _provider_completion(
                     return message
 
             response = await client.post(url, headers=headers, json=payload)
-            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
+            detail = (response.text or "").strip()[:800] if response.status_code >= 400 else ""
+            if _is_retryable_provider_status(response.status_code, detail) and attempt < 2:
                 await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                 continue
             if response.status_code >= 400:
-                detail = (response.text or "").strip()[:800]
                 raise RuntimeError(
-                    f"Client error '{response.status_code} {response.reason_phrase}' "
-                    f"for url '{response.request.url}'"
-                    + (f": {detail}" if detail else "")
+                    _provider_error_message(
+                        response.status_code,
+                        response.reason_phrase,
+                        str(response.request.url),
+                        detail,
+                    )
                 )
             data = response.json()
             choices = data.get("choices") or []
@@ -2381,7 +2438,7 @@ async def _provider_completion(
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
             # Streaming failures fall back once to a non-stream request.
-            if payload.get("stream") and attempt < 2:
+            if payload.get("stream") and attempt < 2 and "no active upstream keys" not in error.lower():
                 payload["stream"] = False
                 await asyncio.sleep(0.2)
                 continue
