@@ -542,9 +542,11 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
+        "syra_ultra_model": profiles["syra-ultra"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
+        "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
     }
 
 

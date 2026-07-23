@@ -381,6 +381,7 @@
                         <option value="syra-nano">nano</option>
                         <option value="syra-base" selected>base</option>
                         <option value="syra-havy">havy</option>
+                        <option value="syra-ultra">ultra</option>
                       </select>
                     </label>
                     <label class="debug-chat-think-label" for="debug-chat-think">
@@ -624,6 +625,7 @@
                 <option value="syra-nano">nano</option>
                 <option value="syra-base" selected>base</option>
                 <option value="syra-havy">havy</option>
+                <option value="syra-ultra">ultra</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
                 <i data-lucide="zap"></i>
@@ -658,7 +660,7 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, and <code>SYRA_HAVY_API_KEY</code> on the VM.</p>
+              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, and <code>SYRA_ULTRA_API_KEY</code> on the VM.</p>
 
               <div class="ai-key-card">
                 <div class="ai-key-head">
@@ -699,6 +701,19 @@
                 </div>
               </div>
 
+              <div class="ai-key-card">
+                <div class="ai-key-head">
+                  <strong>syra-ultra</strong>
+                  <span class="ai-key-provider">Forge · grok-4.5</span>
+                </div>
+                <code class="ai-key-url">https://forge-gateway-api.fly.dev/v1</code>
+                <div class="form-group">
+                  <label for="agent-ultra-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-ultra-key" placeholder="Forge API key (fg-…)" autocomplete="off">
+                  <span class="hint" id="agent-ultra-key-hint">Required for ultra profile. Get a key at <a href="https://www.forge-ai.space/#integration" target="_blank" rel="noopener noreferrer">forge-ai.space</a>.</span>
+                </div>
+              </div>
+
               <div class="form-row">
                 <div class="form-group">
                   <label for="agent-default-profile">Default profile</label>
@@ -706,6 +721,7 @@
                     <option value="syra-nano">syra-nano</option>
                     <option value="syra-base">syra-base</option>
                     <option value="syra-havy">syra-havy</option>
+                    <option value="syra-ultra">syra-ultra</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -744,6 +760,7 @@
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
                   <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
+                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Forge key for syra-ultra (grok-4.5)</span></div>
                   <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
                   <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
                   <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>

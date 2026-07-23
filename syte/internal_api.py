@@ -25,7 +25,7 @@ router = APIRouter(tags=["Syte Internal API"])
 
 class InternalAgentChangeRequest(BaseModel):
     message: str = Field(..., description="User change request from sycord.com")
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy | syra-ultra")
     model_name: str | None = Field(None, description="Alias used by sycord.com")
     thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
     idempotency_key: str | None = Field(

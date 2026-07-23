@@ -171,7 +171,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "request_completed",
                 "request_failed",
             ],
-            "model_profiles": ["syra-nano", "syra-base", "syra-havy"],
+            "model_profiles": ["syra-nano", "syra-base", "syra-havy", "syra-ultra"],
             "legacy_sync": "POST agent_change with wait:true for blocking reply",
         },
         "errors": {
@@ -455,7 +455,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                     "body": {
                         "uuid": "string (required)",
                         "message": "string (required)",
-                        "model_profile": "syra-nano | syra-base | syra-havy (optional)",
+                        "model_profile": "syra-nano | syra-base | syra-havy | syra-ultra (optional)",
                         "wait": "bool (default false) — set true for blocking legacy mode",
                     },
                 },

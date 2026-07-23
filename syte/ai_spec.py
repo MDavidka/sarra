@@ -136,7 +136,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
             {"method": "POST", "path": "/api/agent_stop", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_restart", "auth": True, "body": {"uuid": "str"}},
-            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy"}},
+            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy|syra-ultra"}},
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
@@ -181,10 +181,11 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-nano": "Fast — Gemini Flash class",
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
+                "syra-ultra": "Frontier — Forge grok-4.5",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek API keys, and "
+                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek/Forge API keys, and "
                 "turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {

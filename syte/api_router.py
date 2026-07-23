@@ -111,7 +111,7 @@ class AgentSettingsRequest(BaseModel):
 class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy | syra-ultra")
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
     )

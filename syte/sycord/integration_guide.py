@@ -384,7 +384,7 @@ def _step_agent_change(api: str, base: str) -> dict:
                 "model_profile": {
                     "type": "string",
                     "required": False,
-                    "enum": ["syra-nano", "syra-base", "syra-havy"],
+                    "enum": ["syra-nano", "syra-base", "syra-havy", "syra-ultra"],
                 },
                 "wait": {
                     "type": "boolean",
