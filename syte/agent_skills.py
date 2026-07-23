@@ -176,12 +176,12 @@ Examples:
 
 Always cite search result URLs in your reply when you use them.
 """,
-    "preview-verification.md": """# Preview Verification (Next.js projects)
+    "preview-verification.md": """# Preview Verification
 
-After editing `app/` UI files, always:
+After editing app UI or API files, always:
 
-1. Run `service` action `preview_start` if preview is stopped
-2. Wait briefly for compile (~10s) when needed
+1. Run `service` action `preview_start` if preview is stopped (Syte auto-detects Next/Vite/CRA/Astro/Nuxt/Express/Python/static HTML)
+2. Wait briefly for compile/startup (~10s) when needed
 3. Call `inspect_preview` with `route:"/"` (browser DevTools console + load check — default on)
 4. Call `screenshot_preview` with `route:"/"` and `viewports:["desktop"]` (and phone when layout matters)
 5. If DevTools reports console/page errors, or the screenshot/logs show issues, read preview logs and fix them
