@@ -2338,16 +2338,21 @@ async def _provider_completion(
         detail_l = (detail or "").lower()
         if "no active upstream keys" in detail_l:
             return (
-                f"Forge has no active upstream keys for {model.get('model') or 'this model'}. "
-                "Add or enable provider keys in the Forge admin console "
-                "(https://www.forge-ai.space), then retry."
+                f"Provider has no active upstream keys for {model.get('model') or 'this model'}. "
+                "Check the provider admin console, then retry."
             )
-        if status_code in {401, 403} or "invalid or deactivated api key" in detail_l:
+        if (
+            status_code in {401, 403}
+            or "invalid or deactivated api key" in detail_l
+            or "api key you provided is invalid" in detail_l
+            or "unauthorized" in detail_l
+        ):
             label = model.get("label") or model.get("provider") or "provider"
             profile = model.get("profile") or "selected"
             hint = ""
-            if "forge" in str(model.get("api_base") or "").lower() or str(label).lower() == "forge":
-                hint = " Get a key at https://www.forge-ai.space/#integration."
+            api_base = str(model.get("api_base") or "").lower()
+            if "fireworks.ai" in api_base or str(label).lower() == "fireworks":
+                hint = " Get a key at https://app.fireworks.ai/."
             return (
                 f"Invalid API key for {profile} profile ({label}). "
                 f"Update the key in AI provider settings.{hint}"
@@ -2369,6 +2374,7 @@ async def _provider_completion(
                 "invalid or deactivated api key",
                 "invalid api key",
                 "incorrect api key",
+                "api key you provided is invalid",
             )
         ):
             return False
