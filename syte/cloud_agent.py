@@ -2338,16 +2338,19 @@ async def _provider_completion(
         detail_l = (detail or "").lower()
         if "no active upstream keys" in detail_l:
             return (
-                f"Provider {model.get('label') or model.get('provider') or 'API'} has no "
-                f"active upstream keys for {model.get('model') or 'this model'}. "
-                "Use an xAI API key from https://console.x.ai for syra-ultra (grok-4.5), "
-                "or contact the gateway admin."
+                f"Forge has no active upstream keys for {model.get('model') or 'this model'}. "
+                "Add or enable provider keys in the Forge admin console "
+                "(https://www.forge-ai.space), then retry."
             )
         if status_code in {401, 403} or "invalid or deactivated api key" in detail_l:
+            label = model.get("label") or model.get("provider") or "provider"
+            profile = model.get("profile") or "selected"
+            hint = ""
+            if "forge" in str(model.get("api_base") or "").lower() or str(label).lower() == "forge":
+                hint = " Get a key at https://www.forge-ai.space/#integration."
             return (
-                f"Invalid API key for {model.get('profile') or 'selected'} profile "
-                f"({model.get('label') or model.get('provider') or 'provider'}). "
-                "Update the key in AI provider settings."
+                f"Invalid API key for {profile} profile ({label}). "
+                f"Update the key in AI provider settings.{hint}"
             )
         return (
             f"Client error '{status_code} {reason}' for url '{request_url}'"

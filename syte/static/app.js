@@ -3227,7 +3227,7 @@ async function loadSettings() {
       ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
       ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
-      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'xAI ultra key saved', 'xAI API key required (console.x.ai)'],
+      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Forge ultra key saved', 'Forge API key required (forge-ai.space)'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);

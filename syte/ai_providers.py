@@ -6,10 +6,8 @@ from typing import TypedDict
 
 VERTED_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
-# Direct xAI OpenAI-compatible API. The Forge gateway
-# (forge-gateway-api.fly.dev) advertises grok-4.5 but currently returns
-# 503 "No active upstream keys available" when its shared provider pool is empty.
-XAI_API_BASE = "https://api.x.ai/v1"
+# Forge OpenAI-compatible gateway (https://www.forge-ai.space/#integration).
+FORGE_API_BASE = "https://forge-gateway-api.fly.dev/v1"
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
 
@@ -54,9 +52,9 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     },
     "syra-ultra": {
         "profile": "syra-ultra",
-        "label": "xAI",
+        "label": "Forge",
         "provider": "openai",
-        "api_base": XAI_API_BASE,
+        "api_base": FORGE_API_BASE,
         "model": "grok-4.5",
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",

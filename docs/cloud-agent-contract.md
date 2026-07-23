@@ -23,7 +23,7 @@ OpenAI-compatible endpoints:
 - `syra-nano`: Gemini Flash
 - `syra-base`: DeepSeek Chat
 - `syra-havy`: Gemini Pro
-- `syra-ultra`: xAI grok-4.5 (`https://api.x.ai/v1`)
+- `syra-ultra`: Forge grok-4.5 (`https://forge-gateway-api.fly.dev/v1`)
 
 Provider keys remain in Syte system settings. They are sent directly to the
 selected provider and are never copied into project runtime files.

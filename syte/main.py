@@ -448,7 +448,7 @@ async def save_settings(body: SettingsRequest):
     if body.agent_syra_ultra_api_key is not None:
         await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
         messages.append(
-            "syra-ultra (xAI · grok-4.5) API key saved."
+            "syra-ultra (Forge · grok-4.5) API key saved."
             if body.agent_syra_ultra_api_key.strip()
             else "syra-ultra API key cleared."
         )

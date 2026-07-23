@@ -181,11 +181,11 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-nano": "Fast — Gemini Flash class",
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
-                "syra-ultra": "Frontier — xAI grok-4.5",
+                "syra-ultra": "Frontier — Forge grok-4.5",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek/xAI API keys, and "
+                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek/Forge API keys, and "
                 "turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {
