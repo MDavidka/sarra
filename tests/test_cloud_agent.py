@@ -541,12 +541,14 @@ async def test_communicate_writes_durable_turso_session(
 
 
 @pytest.mark.asyncio
-async def test_communicate_without_turso_configured_still_succeeds(
+async def test_communicate_without_turso_configured_still_returns_session_id(
     tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Turso is optional — a turn completes normally when it is not configured."""
+    """Local fallback: a turn still returns turso_session_id when Turso is unset."""
     from syte.cloud_agent import _communicate_with_agent_impl
+    from syte.local_session_store import reset_local_session_cache
 
+    reset_local_session_cache()
     project = await _project("no-turso-proj")
 
     async def fake_provider(*_args, **_kwargs):
@@ -557,7 +559,8 @@ async def test_communicate_without_turso_configured_still_succeeds(
     result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso")
 
     assert result["ok"] is True
-    assert result["turso_session_id"] is None
+    assert result["turso_session_id"]
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio
@@ -620,7 +623,9 @@ async def test_turso_sync_status_without_turso_reports_all_saved(
     """When Turso is not configured, the brain indicator stays green (there
     is nothing unsaved to report) rather than falsely alarming red."""
     from syte.cloud_agent import _communicate_with_agent_impl, turso_message_sync_status
+    from syte.local_session_store import reset_local_session_cache
 
+    reset_local_session_cache()
     project = await _project("no-turso-msgs-proj")
 
     async def fake_provider(*_args, **_kwargs):
@@ -629,11 +634,12 @@ async def test_turso_sync_status_without_turso_reports_all_saved(
     monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
     result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso-msgs")
     assert result["ok"] is True
-    assert result["turso_session_id"] is None
+    assert result["turso_session_id"]
 
     sync = await turso_message_sync_status(project["id"])
     assert sync["turso_configured"] is False
     assert sync["all_saved"] is True
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio

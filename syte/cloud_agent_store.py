@@ -54,7 +54,7 @@ ON cloud_agent_requests(status, created_at);
 
 # Bump when additive column migrations change so long-lived processes re-run
 # ensure after an upgrade (the path cache alone would skip ALTER TABLE).
-_SCHEMA_EPOCH = 4
+_SCHEMA_EPOCH = 5
 _ensured_paths: dict[str, int] = {}
 
 
@@ -101,6 +101,13 @@ async def ensure_cloud_agent_tables() -> None:
             )
         if "turso_session_id" not in session_cols:
             await db.execute("ALTER TABLE agent_sessions ADD COLUMN turso_session_id TEXT")
+
+        async with db.execute("PRAGMA table_info(cloud_agent_requests)") as cur:
+            request_cols = {row[1] for row in await cur.fetchall()}
+        if "turso_session_id" not in request_cols:
+            await db.execute(
+                "ALTER TABLE cloud_agent_requests ADD COLUMN turso_session_id TEXT"
+            )
 
         # Indexes that require migrated columns — must run after ALTER TABLE.
         await db.execute(
@@ -457,6 +464,17 @@ async def get_request(request_id: str) -> dict[str, Any] | None:
         ) as cur:
             row = await cur.fetchone()
             return dict(row) if row else None
+
+
+async def set_request_turso_session_id(request_id: str, turso_session_id: str | None) -> None:
+    """Attach the durable session UUID to a request for idempotent replays."""
+    await ensure_cloud_agent_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "UPDATE cloud_agent_requests SET turso_session_id = ? WHERE request_id = ?",
+            (turso_session_id, request_id),
+        )
+        await db.commit()
 
 
 async def enqueue_request(

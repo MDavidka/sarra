@@ -940,21 +940,21 @@ async def api_agent_sessions(
     }
     if resume:
         base["resume"] = 1
-    if not await turso_configured():
-        return {
-            **base,
-            "turso_configured": False,
-            "sessions": [],
-            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
-        }
+    configured = await turso_configured()
     sessions = await list_sessions_for_project(uuid, limit=limit)
-    return {
+    payload = {
         **base,
-        "turso_configured": True,
+        "turso_configured": configured,
         "sessions": [
             {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
         ],
     }
+    if not configured:
+        payload["message"] = (
+            "Remote Turso is not configured — sessions are stored locally on this deployer. "
+            "Set turso_database_url in Settings → AI for cross-host durability."
+        )
+    return payload
 
 
 @router.get("/agent_session/{session_id}")
@@ -973,15 +973,8 @@ async def api_get_agent_session(
     API tokens are host-global in this single-tenant service; pass ``uuid`` or
     ``project_id`` to additionally verify the session belongs to that project.
     """
-    from syte.turso_store import get_session, turso_configured
+    from syte.turso_store import get_session
 
-    if not await turso_configured():
-        _http_error(
-            503,
-            "turso_not_configured",
-            "Turso is not configured — set turso_database_url (and turso_auth_token) "
-            "in Settings -> AI tab before fetching agent sessions.",
-        )
     session = await get_session(session_id, since_id=since_id)
     if not session:
         _http_error(404, "not_found", "Agent session not found")

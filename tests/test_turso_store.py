@@ -20,6 +20,11 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def turso_local(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Point turso_store at a local libSQL file so tests don't need a live Turso server."""
     from syte import turso_store
+    from syte.local_session_store import reset_local_session_cache
+
+    data_dir = tmp_path / "syte-data"
+    monkeypatch.setattr(settings, "data_dir", data_dir)
+    monkeypatch.setattr(settings, "db_path", data_dir / "syte.db")
 
     db_path = tmp_path / "turso-local.db"
 
@@ -28,26 +33,42 @@ def turso_local(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(turso_store, "turso_settings", fake_settings)
     turso_store.reset_client_cache()
+    reset_local_session_cache()
     yield turso_store
     turso_store.reset_client_cache()
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio
-async def test_turso_not_configured_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_turso_not_configured_still_opens_local_session(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without remote Turso, open_session must still return a pollable local id.
+
+    sycord-pages rejects agent_change accepts that omit turso_session_id.
+    """
     from syte import turso_store
+    from syte.local_session_store import reset_local_session_cache
 
     async def empty_settings():
         return "", ""
 
     monkeypatch.setattr(turso_store, "turso_settings", empty_settings)
     turso_store.reset_client_cache()
+    reset_local_session_cache()
 
     assert await turso_store.turso_configured() is False
     assert await turso_store.get_turso_client() is None
-    assert await turso_store.open_session("proj-1") is None
-    assert await turso_store.record_event("missing-session", "proj-1", "processing") is None
-    assert await turso_store.get_session("missing-session") is None
-    assert await turso_store.list_sessions_for_project("proj-1") == []
+    session_id = await turso_store.open_session("proj-1", session_number=1)
+    assert session_id
+    await turso_store.record_event(session_id, "proj-1", "processing")
+    session = await turso_store.get_session(session_id)
+    assert session is not None
+    assert session["storage"] == "local"
+    assert len(session["events"]) == 1
+    assert await turso_store.list_sessions_for_project("proj-1")
+    turso_store.reset_client_cache()
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio
