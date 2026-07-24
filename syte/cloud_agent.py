@@ -2351,7 +2351,9 @@ async def _provider_completion(
             profile = model.get("profile") or "selected"
             hint = ""
             api_base = str(model.get("api_base") or "").lower()
-            if "fireworks.ai" in api_base or str(label).lower() == "fireworks":
+            if "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
+                hint = " Use an Aliyun MaaS token-plan API key."
+            elif "fireworks.ai" in api_base or str(label).lower() == "fireworks":
                 hint = " Get a key at https://app.fireworks.ai/."
             return (
                 f"Invalid API key for {profile} profile ({label}). "

@@ -23,7 +23,7 @@ OpenAI-compatible endpoints:
 - `syra-nano`: Gemini Flash
 - `syra-base`: DeepSeek Chat
 - `syra-havy`: Gemini Pro
-- `syra-ultra`: Fireworks MiniMax M3 (`https://api.fireworks.ai/inference/v1`, model `accounts/fireworks/models/minimax-m3`)
+- `syra-ultra`: Aliyun GLM-5.2 (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `glm-5.2`)
 
 Provider keys remain in Syte system settings. They are sent directly to the
 selected provider and are never copied into project runtime files.
