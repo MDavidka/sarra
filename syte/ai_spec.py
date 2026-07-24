@@ -187,7 +187,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-nano": "Fast — Gemini Flash class",
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
-                "syra-ultra": "Frontier — Aliyun GLM-5.2",
+                "syra-ultra": "Frontier — Aliyun Qwen3.7-Plus (cost-capped)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
