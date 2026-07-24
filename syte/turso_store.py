@@ -15,10 +15,11 @@ happens over the regular request/response API (``agent_communicate`` /
 ``agent_change`` / the GUI chat endpoint) — only the *activity access* pattern
 moved from a stream to a stored, poll-by-uuid session.
 
-If Turso is not configured, every function here is a no-op (returns ``None``
-or an empty result) so the rest of the agent pipeline keeps working
-unaffected — activity simply is not mirrored anywhere durable beyond the
-existing local SQLite ``agent_events`` table.
+If remote Turso is not configured (or temporarily unreachable), session
+open/event/close still succeed via the local SQLite fallback in
+:mod:`syte.local_session_store`. That guarantees ``agent_change`` can always
+return a pollable ``turso_session_id`` for clients (e.g. sycord-pages) that
+require one. Remote Turso remains preferred when configured.
 
 In addition to the activity/event trail (``agent_session`` /
 ``agent_session_event``), this module also durably persists the raw chat
@@ -334,21 +335,46 @@ async def open_session(
     session_number: int = 0,
     model_profile: str | None = None,
 ) -> str | None:
-    """Create a new durable agent session in Turso and return its UUID."""
-    client = await get_turso_client()
-    if client is None:
-        return None
+    """Create a durable agent session and return its UUID.
+
+    Always opens a local pollable session first so ``agent_change`` can return
+    ``turso_session_id`` even when remote Turso is unset. When Turso is
+    configured the same UUID is also inserted remotely (best-effort).
+    """
+    from syte.local_session_store import open_local_session
+
     session_id = uuid.uuid4().hex
     now = _now()
+    local_ok = False
     try:
-        await client.execute(
-            "INSERT INTO agent_session "
-            "(id, project_id, session_number, model_profile, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'open', ?, ?)",
-            [session_id, project_id, int(session_number or 0), model_profile, now, now],
+        await open_local_session(
+            session_id,
+            project_id,
+            session_number=session_number,
+            model_profile=model_profile,
         )
+        local_ok = True
     except Exception:
-        logger.exception("Failed to open Turso agent session for %s", project_id)
+        logger.exception("Failed to open local agent session for %s", project_id)
+
+    client = await get_turso_client()
+    turso_ok = False
+    if client is not None:
+        try:
+            await client.execute(
+                "INSERT INTO agent_session "
+                "(id, project_id, session_number, model_profile, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'open', ?, ?)",
+                [session_id, project_id, int(session_number or 0), model_profile, now, now],
+            )
+            turso_ok = True
+        except Exception:
+            logger.exception(
+                "Failed to mirror agent session %s to Turso for %s",
+                session_id,
+                project_id,
+            )
+    if not local_ok and not turso_ok:
         return None
     return session_id
 
@@ -362,8 +388,10 @@ async def close_session(session_id: str | None, *, status: str = "completed") ->
     failed close as an operational issue: clients poll ``status != 'open'``
     and a stuck ``open`` session looks like endless generating.
     """
-    if not session_id:
-        return True
+    if not session_id:        return True
+    from syte.local_session_store import close_local_session
+
+    await close_local_session(session_id, status=status)
     client = await get_turso_client()
     if client is None:
         return True
@@ -398,12 +426,30 @@ async def close_open_sessions_for_project(
     status: str = "cancelled",
     exclude_session_id: str | None = None,
 ) -> int:
-    """Close orphaned ``open`` Turso sessions for a project (e.g. after restart)."""
-    client = await get_turso_client()
-    if client is None:
-        return 0
+    """Close orphaned ``open`` Turso/local sessions for a project (e.g. after restart)."""
+    from syte.local_session_store import list_local_sessions_for_project
+
     now = _now()
     terminal = (status or "cancelled").strip() or "cancelled"
+    closed = 0
+    # Close local open sessions first (always available).
+    try:
+        for row in await list_local_sessions_for_project(project_id, limit=500):
+            if row.get("status") != "open":
+                continue
+            sid = row.get("id")
+            if not sid or sid == exclude_session_id:
+                continue
+            from syte.local_session_store import close_local_session
+
+            await close_local_session(sid, status=terminal)
+            closed += 1
+    except Exception:
+        logger.exception("Failed to close open local sessions for project %s", project_id)
+
+    client = await get_turso_client()
+    if client is None:
+        return closed
     try:
         if exclude_session_id:
             rs = await client.execute(
@@ -420,10 +466,10 @@ async def close_open_sessions_for_project(
         rows = getattr(rs, "rows_affected", None)
         if rows is None:
             rows = getattr(rs, "rowsAffected", 0)
-        return int(rows or 0)
+        return closed + int(rows or 0)
     except Exception:
         logger.exception("Failed to close open Turso sessions for project %s", project_id)
-        return 0
+        return closed
 
 
 async def record_event(
@@ -437,12 +483,29 @@ async def record_event(
     payload: dict[str, Any] | None = None,
     source: str = "agent",
 ) -> dict[str, Any] | None:
-    """Append one activity event to a durable Turso session."""
+    """Append one activity event to a durable session (local + Turso)."""
     if not session_id:
         return None
+    from syte.local_session_store import record_local_event
+
+    local_event = None
+    try:
+        local_event = await record_local_event(
+            session_id,
+            project_id,
+            event_type,
+            role=role,
+            title=title,
+            detail=detail,
+            payload=payload,
+            source=source,
+        )
+    except Exception:
+        logger.exception("Failed to record local agent session event for %s", session_id)
+
     client = await get_turso_client()
     if client is None:
-        return None
+        return local_event
     now = _now()
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
     try:
@@ -467,7 +530,7 @@ async def record_event(
         )
     except Exception:
         logger.exception("Failed to record Turso agent session event for %s", session_id)
-        return None
+        return local_event
     return {
         "id": result.last_insert_rowid,
         "session_id": session_id,
@@ -486,38 +549,51 @@ async def list_events(
     session_id: str, *, since_id: int = 0, limit: int = 2000
 ) -> list[dict[str, Any]]:
     client = await get_turso_client()
-    if client is None:
-        return []
+    if client is not None:
+        try:
+            rs = await client.execute(
+                "SELECT id, session_id, project_id, event_type, role, title, detail, "
+                "payload, source, created_at FROM agent_session_event "
+                "WHERE session_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
+                [session_id, since_id, max(1, min(limit, 5000))],
+            )
+            events: list[dict[str, Any]] = []
+            for row in rs.rows:
+                payload_raw = _row_value(row, "payload") or "{}"
+                try:
+                    payload = json.loads(payload_raw)
+                except (json.JSONDecodeError, TypeError):
+                    payload = {}
+                events.append({
+                    "id": _row_value(row, "id"),
+                    "session_id": _row_value(row, "session_id"),
+                    "project_id": _row_value(row, "project_id"),
+                    "event_type": _row_value(row, "event_type"),
+                    "role": _row_value(row, "role"),
+                    "title": _row_value(row, "title"),
+                    "detail": _row_value(row, "detail"),
+                    "payload": payload,
+                    "source": _row_value(row, "source"),
+                    "created_at": _row_value(row, "created_at"),
+                })
+            if events or await _turso_session_exists(client, session_id):
+                return events
+        except Exception:
+            logger.exception("Failed to list Turso agent session events for %s", session_id)
+
+    from syte.local_session_store import list_local_events
+
+    return await list_local_events(session_id, since_id=since_id, limit=limit)
+
+
+async def _turso_session_exists(client: Any, session_id: str) -> bool:
     try:
         rs = await client.execute(
-            "SELECT id, session_id, project_id, event_type, role, title, detail, "
-            "payload, source, created_at FROM agent_session_event "
-            "WHERE session_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
-            [session_id, since_id, max(1, min(limit, 5000))],
+            "SELECT 1 AS n FROM agent_session WHERE id = ? LIMIT 1", [session_id]
         )
+        return bool(rs.rows)
     except Exception:
-        logger.exception("Failed to list Turso agent session events for %s", session_id)
-        return []
-    events: list[dict[str, Any]] = []
-    for row in rs.rows:
-        payload_raw = _row_value(row, "payload") or "{}"
-        try:
-            payload = json.loads(payload_raw)
-        except (json.JSONDecodeError, TypeError):
-            payload = {}
-        events.append({
-            "id": _row_value(row, "id"),
-            "session_id": _row_value(row, "session_id"),
-            "project_id": _row_value(row, "project_id"),
-            "event_type": _row_value(row, "event_type"),
-            "role": _row_value(row, "role"),
-            "title": _row_value(row, "title"),
-            "detail": _row_value(row, "detail"),
-            "payload": payload,
-            "source": _row_value(row, "source"),
-            "created_at": _row_value(row, "created_at"),
-        })
-    return events
+        return False
 
 
 async def record_message(
@@ -725,64 +801,80 @@ async def count_messages(session_id: str) -> int:
 
 
 async def get_session(session_id: str, *, since_id: int = 0) -> dict[str, Any] | None:
-    """Fetch one durable session (metadata + events) by UUID."""
+    """Fetch one durable session (metadata + events) by UUID.
+
+    Prefers remote Turso when the session exists there; otherwise serves the
+    local SQLite fallback so polls keep working without Turso configured.
+    """
     client = await get_turso_client()
-    if client is None:
-        return None
-    try:
-        rs = await client.execute(
-            "SELECT id, project_id, session_number, model_profile, status, "
-            "created_at, updated_at, ended_at FROM agent_session WHERE id = ?",
-            [session_id],
-        )
-    except Exception:
-        logger.exception("Failed to fetch Turso agent session %s", session_id)
-        return None
-    if not rs.rows:
-        return None
-    row = rs.rows[0]
-    session = {
-        "id": _row_value(row, "id"),
-        "project_id": _row_value(row, "project_id"),
-        "session_number": _row_value(row, "session_number"),
-        "model_profile": _row_value(row, "model_profile"),
-        "status": _row_value(row, "status"),
-        "created_at": _row_value(row, "created_at"),
-        "updated_at": _row_value(row, "updated_at"),
-        "ended_at": _row_value(row, "ended_at"),
-    }
-    session["events"] = await list_events(session_id, since_id=since_id)
-    return session
+    if client is not None:
+        try:
+            rs = await client.execute(
+                "SELECT id, project_id, session_number, model_profile, status, "
+                "created_at, updated_at, ended_at FROM agent_session WHERE id = ?",
+                [session_id],
+            )
+            if rs.rows:
+                row = rs.rows[0]
+                session = {
+                    "id": _row_value(row, "id"),
+                    "project_id": _row_value(row, "project_id"),
+                    "session_number": _row_value(row, "session_number"),
+                    "model_profile": _row_value(row, "model_profile"),
+                    "status": _row_value(row, "status"),
+                    "created_at": _row_value(row, "created_at"),
+                    "updated_at": _row_value(row, "updated_at"),
+                    "ended_at": _row_value(row, "ended_at"),
+                    "storage": "turso",
+                }
+                session["events"] = await list_events(session_id, since_id=since_id)
+                return session
+        except Exception:
+            logger.exception("Failed to fetch Turso agent session %s", session_id)
+
+    from syte.local_session_store import get_local_session
+
+    return await get_local_session(session_id, since_id=since_id)
 
 
 async def list_sessions_for_project(
     project_id: str, *, limit: int = 50
 ) -> list[dict[str, Any]]:
+    """List sessions for a project (Turso when available, else local).
+
+    When Turso is configured we prefer its list. If it returns empty (or is
+    unreachable), fall back to local sessions so resume/list still works.
+    """
+    limit = max(1, min(limit, 500))
     client = await get_turso_client()
-    if client is None:
-        return []
-    try:
-        rs = await client.execute(
-            "SELECT id, session_number, model_profile, status, created_at, updated_at, "
-            "ended_at FROM agent_session WHERE project_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            [project_id, max(1, min(limit, 500))],
-        )
-    except Exception:
-        logger.exception("Failed to list Turso agent sessions for %s", project_id)
-        return []
-    return [
-        {
-            "id": _row_value(row, "id"),
-            "session_number": _row_value(row, "session_number"),
-            "model_profile": _row_value(row, "model_profile"),
-            "status": _row_value(row, "status"),
-            "created_at": _row_value(row, "created_at"),
-            "updated_at": _row_value(row, "updated_at"),
-            "ended_at": _row_value(row, "ended_at"),
-        }
-        for row in rs.rows
-    ]
+    if client is not None:
+        try:
+            rs = await client.execute(
+                "SELECT id, session_number, model_profile, status, created_at, updated_at, "
+                "ended_at FROM agent_session WHERE project_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                [project_id, max(1, min(limit, 500))],
+            )
+            if rs.rows:
+                return [
+                    {
+                        "id": _row_value(row, "id"),
+                        "session_number": _row_value(row, "session_number"),
+                        "model_profile": _row_value(row, "model_profile"),
+                        "status": _row_value(row, "status"),
+                        "created_at": _row_value(row, "created_at"),
+                        "updated_at": _row_value(row, "updated_at"),
+                        "ended_at": _row_value(row, "ended_at"),
+                        "storage": "turso",
+                    }
+                    for row in rs.rows
+                ]
+        except Exception:
+            logger.exception("Failed to list Turso agent sessions for %s", project_id)
+
+    from syte.local_session_store import list_local_sessions_for_project
+
+    return await list_local_sessions_for_project(project_id, limit=limit)
 
 
 async def latest_session_id_for_project(project_id: str) -> str | None:

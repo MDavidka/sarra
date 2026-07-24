@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
@@ -26,13 +26,22 @@ CREATE TABLE IF NOT EXISTS agent_events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_events_project_id ON agent_events(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_agent_events_project_created_at ON agent_events(project_id, created_at);
 """
+
+AGENT_EVENTS_MAX_PER_PROJECT = 5000
+AGENT_EVENTS_MAX_AGE_DAYS = 14
+
+# High-frequency stream chunks — must not await Turso or prune on the hot path.
+HOT_STREAM_EVENT_TYPES = frozenset({"token_delta", "thinking_delta"})
+_HOT_PRUNE_EVERY = 250
 
 # Cursor-like event kinds exposed to clients.
 ACTIVITY_EVENT_TYPES = frozenset({
     "user_message",
     "assistant_message",
     "thinking",
+    "thinking_delta",
     "tool_call",
     "command_run",
     "file_created",
@@ -47,6 +56,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "message_snapshot",
     "tool_call_started",
     "tool_call_finished",
+    "tool_error",
     "file_changed",
     "command_output",
     "agent_started",
@@ -58,9 +68,12 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "screenshot",
     "question",
     "question_answered",
+    "session_stopped",
+    "plan",
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
+_hot_event_counts: dict[str, int] = defaultdict(int)
 
 
 def _now() -> str:
@@ -83,6 +96,64 @@ async def ensure_agent_events_table() -> None:
     _table_ensured_paths.add(db_path)
 
 
+async def _prune_agent_events(project_id: str) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=AGENT_EVENTS_MAX_AGE_DAYS)).isoformat()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+        await db.execute(
+            "DELETE FROM agent_events WHERE project_id = ? AND created_at < ?",
+            (project_id, cutoff),
+        )
+        await db.execute(
+            "DELETE FROM agent_events WHERE project_id = ? AND id NOT IN ("
+            "SELECT id FROM agent_events WHERE project_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?"
+            ")",
+            (project_id, project_id, AGENT_EVENTS_MAX_PER_PROJECT),
+        )
+        await db.commit()
+
+
+def _payload_session_number(payload: Any) -> int | None:
+    """Return a numeric session mark from an event payload, or None if absent/invalid."""
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("session")
+    if raw is None or raw == "":
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_event_payload(payload: Any) -> Any:
+    """Drop oversized inline screenshot blobs before returning events to clients.
+
+    Historical rows may still contain ``chat_image_base64`` (~90KB/shot). Serving
+    those on chat-open (history + SSE backlog) can freeze or crash the browser tab.
+    Clients already fall back to ``thumb_url`` / ``image_url``.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    shots = payload.get("screenshots")
+    if not isinstance(shots, list):
+        return payload
+    cleaned_shots = []
+    changed = False
+    for shot in shots:
+        if isinstance(shot, dict) and "chat_image_base64" in shot:
+            cleaned_shots.append({k: v for k, v in shot.items() if k != "chat_image_base64"})
+            changed = True
+        else:
+            cleaned_shots.append(shot)
+    if not changed:
+        return payload
+    return {**payload, "screenshots": cleaned_shots}
+
+
 def _event_row_to_dict(row: tuple) -> dict[str, Any]:
     payload_raw = row[6] or "{}"
     try:
@@ -96,10 +167,23 @@ def _event_row_to_dict(row: tuple) -> dict[str, Any]:
         "role": row[3],
         "title": row[4],
         "detail": row[5],
-        "payload": payload,
+        "payload": _sanitize_event_payload(payload),
         "source": row[7],
         "created_at": row[8],
     }
+
+
+def _notify_subscribers(project_id: str, event: dict[str, Any]) -> None:
+    """Fan out to SSE queues without awaiting I/O (low-latency token path)."""
+    for queue in list(_subscribers.get(project_id, [])):
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+                queue.put_nowait(event)
+            except asyncio.QueueEmpty:
+                pass
 
 
 async def record_agent_event(
@@ -113,18 +197,21 @@ async def record_agent_event(
     source: str = "agent",
     turso_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Persist an activity event locally and mirror it to the durable Turso session.
+    """Persist an activity event locally and optionally mirror it to Turso.
 
     Local persistence (the ``agent_events`` SQLite table below) remains the
-    fast, always-available store used by internal status/debug endpoints. When
-    ``turso_session_id`` is supplied (the caller's current durable agent
-    session UUID — see :mod:`syte.turso_store`), the same event is additionally
-    written to Turso so clients can fetch the whole session by UUID instead of
-    streaming it live. Turso writes are best-effort: any failure (including
-    Turso not being configured) never blocks or fails the local write.
+    fast, always-available store used by internal status/debug endpoints and
+    the live SSE channel. When ``turso_session_id`` is supplied, non-stream
+    events are also written to Turso so clients can fetch the whole session by
+    UUID. High-frequency ``token_delta`` / ``thinking_delta`` chunks skip Turso
+    and skip per-event prune so streaming cadence is not gated on remote I/O.
     """
     await ensure_agent_events_table()
-    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    is_hot = event_type in HOT_STREAM_EVENT_TYPES
+    clean_payload = _sanitize_event_payload(payload or {})
+    if not isinstance(clean_payload, dict):
+        clean_payload = payload or {}
+    payload_json = json.dumps(clean_payload, ensure_ascii=False)
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         from syte.sqlite_utils import configure_sqlite
@@ -155,22 +242,29 @@ async def record_agent_event(
         "role": role,
         "title": title,
         "detail": detail,
-        "payload": payload or {},
+        "payload": clean_payload,
         "source": source,
         "created_at": now,
     }
 
-    for queue in list(_subscribers.get(project_id, [])):
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            try:
-                queue.get_nowait()
-                queue.put_nowait(event)
-            except asyncio.QueueEmpty:
-                pass
+    # Notify live SSE subscribers before any prune / Turso work.
+    _notify_subscribers(project_id, event)
 
-    if turso_session_id:
+    should_prune = not is_hot
+    if is_hot:
+        _hot_event_counts[project_id] += 1
+        if _hot_event_counts[project_id] % _HOT_PRUNE_EVERY == 0:
+            should_prune = True
+    if should_prune:
+        try:
+            await _prune_agent_events(project_id)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to prune agent events for project %s", project_id
+            )
+
+    # Stream chunks are ephemeral for Turso; final assistant/tool events carry content.
+    if turso_session_id and not is_hot:
         from syte.turso_store import record_event as record_turso_event
 
         try:
@@ -181,7 +275,7 @@ async def record_agent_event(
                 role=role,
                 title=title,
                 detail=detail,
-                payload=payload,
+                payload=clean_payload,
                 source=source,
             )
         except Exception:
@@ -250,11 +344,16 @@ async def list_agent_events(
             rows = await cur.fetchall()
     events = [_event_row_to_dict(row) for row in rows]
     if session_filter is not None:
-        events = [
-            event
-            for event in events
-            if int((event.get("payload") or {}).get("session") or 0) == session_filter
-        ][:limit]
+        filtered: list[dict[str, Any]] = []
+        for event in events:
+            session_num = _payload_session_number(event.get("payload"))
+            if session_num is None:
+                continue
+            if session_num == session_filter:
+                filtered.append(event)
+            if len(filtered) >= limit:
+                break
+        events = filtered
     return events
 
 
@@ -270,6 +369,86 @@ def unsubscribe_agent_activity(project_id: str, queue: asyncio.Queue[dict[str, A
         subs.remove(queue)
     if not subs and project_id in _subscribers:
         del _subscribers[project_id]
+
+
+async def activity_sse_generator(
+    project_id: str,
+    *,
+    since_id: int = 0,
+    session: str | None = None,
+    heartbeat_seconds: float = 15.0,
+):
+    """Yield SSE frames for live agent activity (token deltas, tools, etc.).
+
+    Clients may still poll Turso session documents; this stream is an optional
+    low-latency channel for Cursor-style token streaming in the GUI / sycord.com.
+    """
+    import json as _json
+
+    # Replay recent backlog first so reconnects don't miss early tokens.
+    # Incremental reconnects (since_id > 0) only need a small delta window.
+    backlog_limit = 100 if int(since_id or 0) > 0 else 200
+    backlog = await list_agent_events(
+        project_id, since_id=since_id, limit=backlog_limit, session=session or None,
+    )
+    last_id = since_id
+    for event in backlog:
+        last_id = max(last_id, int(event.get("id") or 0))
+        event_name = str(event.get("event_type") or "message")
+        yield (
+            f"id: {event['id']}\n"
+            f"event: {event_name}\n"
+            f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+        )
+
+    queue = subscribe_agent_activity(project_id)
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+                continue
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Surface unexpected stream failures so clients do not hang on a
+                # silent dead connection (DAV-180).
+                yield (
+                    "event: error\n"
+                    f"data: {_json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+                )
+                break
+            if int(event.get("id") or 0) <= last_id:
+                continue
+            if session:
+                raw = str(session).strip().lower()
+                payload_session = (event.get("payload") or {}).get("session")
+                if raw == "last":
+                    # Accept all live events for the current turn.
+                    pass
+                else:
+                    try:
+                        if int(payload_session or 0) != int(raw):
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+            last_id = int(event.get("id") or 0)
+            event_name = str(event.get("event_type") or "message")
+            yield (
+                f"id: {event['id']}\n"
+                f"event: {event_name}\n"
+                f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        yield (
+            "event: error\n"
+            f"data: {_json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+        )
+    finally:
+        unsubscribe_agent_activity(project_id, queue)
 
 
 async def record_workspace_activity(

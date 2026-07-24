@@ -1,4 +1,10 @@
-"""API token authentication."""
+"""API token authentication.
+
+Syte API tokens are **host-global admin credentials** for a single Syte hoster
+instance (multi-project, single-tenant). Any valid token may operate on any
+project UUID on that host. Tenant isolation is expected at the host boundary
+(one Syte install per operator), not via per-token project ACLs.
+"""
 
 import hashlib
 import hmac

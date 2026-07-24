@@ -9,9 +9,14 @@ port allocation, or WebSocket transport is required.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import itertools
 import json
 import logging
+import os
+import random
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,7 +24,12 @@ from typing import Any
 import httpx
 
 from syte.agent_activity import record_agent_event
-from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
+from syte.ai_providers import (
+    DEFAULT_PROFILE,
+    PROFILE_ORDER,
+    PROFILE_PROVIDERS,
+    profile_provider,
+)
 from syte.cloud_agent_store import (
     append_message,
     begin_turn_session,
@@ -33,8 +43,13 @@ from syte.cloud_agent_store import (
     set_turso_session_id,
 )
 from syte.config import settings
-from syte.database import get_project, get_setting, update_project
+from syte.database import get_project, get_setting, set_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
+from syte.thinking_levels import (
+    apply_prompt_cache_markers,
+    build_model_thinking_params,
+    resolve_thinking_config,
+)
 from syte.turso_store import close_session as close_turso_session
 from syte.turso_store import open_session as open_turso_session
 from syte.turso_store import record_message as record_turso_message
@@ -43,13 +58,13 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 7
+AGENT_INSTRUCTION_VERSION = 14
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 MAX_SUBAGENT_STEPS = 12
-# Bound the main agent tool loop so a runaway turn cannot leave Turso
-# status='open' / UI "Working…" forever.
-MAX_AGENT_STEPS = 48
+# Wall-clock cap for an entire subagent loop (LLM rounds + tools). Prevents
+# worker leaks when a single step hangs forever despite the step limit (DAV-202).
+SUBAGENT_TIMEOUT_S = 600.0
 QUESTION_WAIT_TIMEOUT_S = 1800.0
 # Cap inline vision payloads so provider requests stay bounded.
 MAX_VISION_IMAGE_BYTES = 700_000
@@ -57,10 +72,332 @@ MAX_VISION_IMAGE_BYTES = 700_000
 logger = logging.getLogger(__name__)
 _lifecycle_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _active_turns: dict[str, asyncio.Task[Any]] = {}
+_provider_client: httpx.AsyncClient | None = None
+# Cache only the static (cache-stable) instruction prefix — never session memory.
+_instruction_cache: dict[tuple[str, int, str], str] = {}
+# Background subagent tasks keyed by ``{project_id}:{task_id}``.
+_background_subagents: dict[str, asyncio.Task[Any]] = {}
+# Fire-and-forget work that must not block turn completion (index, preview).
+_bg_tasks: set[asyncio.Task[Any]] = set()
+# Turso message mirrors — drained briefly before end-of-turn resync.
+_turso_mirror_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _track_bg_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+def cancel_background_subagents(project_id: str) -> int:
+    """Cancel in-flight background subagents for a project (DAV-198)."""
+    cancelled = 0
+    prefix = f"{project_id}:"
+    for key, task in list(_background_subagents.items()):
+        if not key.startswith(prefix):
+            continue
+        _background_subagents.pop(key, None)
+        if task and not task.done():
+            task.cancel()
+            cancelled += 1
+    return cancelled
+
+
+def _track_turso_mirror_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+    _turso_mirror_tasks.add(task)
+    task.add_done_callback(_turso_mirror_tasks.discard)
+    return task
+
+
+async def _drain_turso_mirrors(*, timeout_s: float = 5.0) -> None:
+    """Let fire-and-forget Turso mirrors settle before end-of-turn resync."""
+    pending = [task for task in list(_turso_mirror_tasks) if not task.done()]
+    if not pending:
+        return
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*pending, return_exceptions=True),
+            timeout=max(0.1, float(timeout_s)),
+        )
+    except asyncio.TimeoutError:
+        pass
+
+TokenEmitter = Callable[[str], Awaitable[None]]
+
+MAX_TOOL_RESULT_CHARS = 16_000
+MAX_REASONING_HISTORY_CHARS = 4_000
+MAX_PROJECT_BRIEF_CHARS = 4_000
+MAX_STATIC_SKILL_CHARS = 4_000
+TOOL_TRUNCATION_NOTE = "\n… [truncated for LLM context — re-read a narrower path or ask for a specific section]"
+
+# mtime-backed cache so hot instruction builds avoid repeated sync disk reads.
+_project_brief_cache: dict[str, tuple[float, str]] = {}
+_syterules_cache: dict[str, tuple[float, str]] = {}
+
+
+def _truncate_for_llm(text: str, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
+    if len(text) <= max_chars:
+        return text
+    keep = max(0, max_chars - len(TOOL_TRUNCATION_NOTE))
+    return text[:keep] + TOOL_TRUNCATION_NOTE
+
+
+def _truncate_tool_payload(result: dict[str, Any], *, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
+    """JSON-encode a tool result, capping size so one tool cannot blow the context window."""
+    public = {k: v for k, v in result.items() if not str(k).startswith("_")}
+    encoded = json.dumps(public, ensure_ascii=False)
+    if len(encoded) <= max_chars:
+        return encoded
+    # Prefer truncating large string fields before chopping JSON mid-token.
+    for key in ("content", "output", "files", "results", "message", "detail", "raw"):
+        value = public.get(key)
+        if isinstance(value, str) and len(value) > 2_000:
+            public[key] = _truncate_for_llm(value, max(2_000, max_chars // 2))
+            public["truncated"] = True
+            encoded = json.dumps(public, ensure_ascii=False)
+            if len(encoded) <= max_chars:
+                return encoded
+        if isinstance(value, list) and len(value) > 80:
+            public[key] = value[:80]
+            public["truncated"] = True
+            public["truncated_count"] = len(value)
+            encoded = json.dumps(public, ensure_ascii=False)
+            if len(encoded) <= max_chars:
+                return encoded
+    return _truncate_for_llm(encoded, max_chars)
+
+
+def _raise_if_cancelled() -> None:
+    """Cooperative cancel checkpoint between provider/tool steps (DAV-131)."""
+    task = asyncio.current_task()
+    if task is not None and task.cancelled():
+        raise asyncio.CancelledError()
+
+
+def _system_message_for_provider(static: str, dynamic: str, model: dict[str, Any]) -> dict[str, Any]:
+    """Build the system message; Anthropic gets a cache breakpoint after the static prefix."""
+    provider = str(model.get("provider") or "").lower()
+    model_name = str(model.get("model") or "").lower()
+    if "anthropic" in provider or "claude" in model_name:
+        return {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": static,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": dynamic},
+            ],
+        }
+    return {"role": "system", "content": f"{static}\n\n{dynamic}"}
+
+
+def _read_project_brief(project_id: str) -> str:
+    """Load durable project brief for system context (DAV-137 / DAV-179)."""
+    root = workspace_path(project_id)
+    candidates = (
+        root / ".syte" / "PROJECT_BRIEF.md",
+        root / "PROJECT_BRIEF.md",
+        root / "app" / "PROJECT_BRIEF.md",
+    )
+    newest_key = (0.0, 0)
+    newest_path: Path | None = None
+    for path in candidates:
+        try:
+            if path.is_file():
+                st = path.stat()
+                key = (st.st_mtime, int(st.st_size))
+                if key >= newest_key:
+                    newest_key = key
+                    newest_path = path
+        except OSError:
+            continue
+    if newest_path is None:
+        _project_brief_cache.pop(project_id, None)
+        return ""
+    cached = _project_brief_cache.get(project_id)
+    if cached and cached[0] == newest_key:
+        return cached[1]
+    try:
+        text = newest_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if not text:
+        _project_brief_cache.pop(project_id, None)
+        return ""
+    clipped = text[:MAX_PROJECT_BRIEF_CHARS]
+    _project_brief_cache[project_id] = (newest_key, clipped)
+    return clipped
+
+
+def _seed_project_brief(project_id: str) -> str:
+    """Create a short brief from README / package.json when none exists yet."""
+    root = workspace_path(project_id)
+    brief_dir = root / ".syte"
+    brief_path = brief_dir / "PROJECT_BRIEF.md"
+    if brief_path.is_file():
+        return _read_project_brief(project_id)
+
+    parts: list[str] = ["# Project brief", ""]
+    pkg = root / "app" / "package.json"
+    if not pkg.is_file():
+        pkg = root / "package.json"
+    if pkg.is_file():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            name = data.get("name") or project_id
+            desc = data.get("description") or ""
+            deps = sorted({*(data.get("dependencies") or {}), *(data.get("devDependencies") or {})})
+            parts.append(f"Name: {name}")
+            if desc:
+                parts.append(f"Description: {desc}")
+            if deps:
+                parts.append("Stack hints: " + ", ".join(deps[:24]))
+            parts.append("")
+        except (OSError, json.JSONDecodeError):
+            pass
+    for readme in (root / "app" / "README.md", root / "README.md"):
+        try:
+            if readme.is_file():
+                excerpt = readme.read_text(encoding="utf-8", errors="replace").strip()[:1500]
+                if excerpt:
+                    parts.append("## README excerpt")
+                    parts.append(excerpt)
+                    break
+        except OSError:
+            continue
+    if len(parts) <= 2:
+        parts.append(
+            f"Workspace project `{project_id}`. Update this file as the durable product/stack brief."
+        )
+    text = "\n".join(parts).strip()[:MAX_PROJECT_BRIEF_CHARS]
+    try:
+        brief_dir.mkdir(parents=True, exist_ok=True)
+        brief_path.write_text(text + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return text
+
+
+def _project_brief_block(project_id: str) -> str:
+    brief = _read_project_brief(project_id) or _seed_project_brief(project_id)
+    if not brief:
+        return ""
+    return (
+        "## Project brief (durable context — prefer this over re-discovering the stack)\n"
+        f"{brief}\n"
+    )
+
+
+_UI_PATH_MARKERS = (
+    "components/",
+    "page.tsx",
+    "page.jsx",
+    "layout.tsx",
+    "layout.jsx",
+    "globals.css",
+)
+
+
+def _get_provider_client() -> httpx.AsyncClient:
+    """Shared HTTP/2 client so TLS + connections are reused across provider calls."""
+    global _provider_client
+    if _provider_client is None or _provider_client.is_closed:
+        timeout = httpx.Timeout(PROVIDER_TIMEOUT_S, connect=15.0)
+        limits = httpx.Limits(max_connections=32, max_keepalive_connections=16)
+        try:
+            _provider_client = httpx.AsyncClient(timeout=timeout, limits=limits, http2=True)
+        except Exception:
+            # http2 extras missing — fall back to HTTP/1.1 keepalives.
+            _provider_client = httpx.AsyncClient(timeout=timeout, limits=limits, http2=False)
+    return _provider_client
+
+
+async def close_provider_client() -> None:
+    """Close the shared provider client (tests / shutdown)."""
+    global _provider_client
+    if _provider_client is not None and not _provider_client.is_closed:
+        await _provider_client.aclose()
+    _provider_client = None
+
+
+def invalidate_instruction_cache(project_id: str | None = None) -> None:
+    """Drop cached system instructions (one project or all)."""
+    if project_id is None:
+        _instruction_cache.clear()
+        _project_brief_cache.clear()
+        _syterules_cache.clear()
+        return
+    for key in [k for k in _instruction_cache if k[0] == project_id]:
+        del _instruction_cache[key]
+    _project_brief_cache.pop(project_id, None)
+    _syterules_cache.pop(project_id, None)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _mirror_message_to_turso(
+    *,
+    turso_session_id: str,
+    project_id: str,
+    local_id: int,
+    role: str,
+    content: str,
+    session_number: int,
+    request_id: str,
+    tool_call_id: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    reasoning_content: str | None = None,
+    retries: int = 3,
+) -> bool:
+    """Mirror one local message to Turso with short retries (DAV-145)."""
+    delays = (0.15, 0.4, 0.9)
+    last_exc: Exception | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            saved = await record_turso_message(
+                turso_session_id,
+                project_id,
+                role,
+                content,
+                session_number=session_number,
+                local_message_id=local_id,
+                request_id=request_id,
+                tool_call_id=tool_call_id,
+                tool_calls=tool_calls,
+                reasoning_content=reasoning_content,
+            )
+            if saved:
+                await mark_message_synced(local_id, synced=True)
+                return True
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Turso mirror attempt %s failed for message %s (session %s): %s",
+                attempt + 1,
+                local_id,
+                turso_session_id,
+                exc,
+            )
+        if attempt < len(delays):
+            await asyncio.sleep(delays[attempt])
+    if last_exc is not None:
+        logger.error(
+            "Failed to mirror agent message %s to Turso session %s after retries",
+            local_id,
+            turso_session_id,
+            exc_info=last_exc,
+        )
+    else:
+        logger.error(
+            "Failed to mirror agent message %s to Turso session %s (no row returned)",
+            local_id,
+            turso_session_id,
+        )
+    return False
 
 
 async def _persist_message(
@@ -75,23 +412,14 @@ async def _persist_message(
     tool_calls: list[dict[str, Any]] | None = None,
     reasoning_content: str | None = None,
 ) -> int:
-    """Append one message locally, then mirror it to Turso in real time.
+    """Append one message locally, then mirror it to Turso without blocking TTFT.
 
-    Every message the cloud agent produces (user / assistant / tool) is
-    written to the local durable store first (never fails the turn), and —
-    when a durable Turso session is open for this turn (``turso_session_id``
-    set, i.e. Turso is configured) — immediately mirrored into the shared
-    ``agent_message`` Turso table (see :mod:`syte.turso_store`). This is what
-    makes message persistence "live" for sessions started directly from the
-    API (see :mod:`syte.agent_jobs`): the Turso session is opened before the
-    first message is even admitted, so each subsequent message — including
-    every assistant reply and tool result while the turn is still running —
-    is synced to Turso as soon as it is produced, not just at the end.
-
-    The local row is flagged ``turso_synced`` only after a successful Turso
-    write, so :func:`syte.cloud_agent_store.session_sync_status` can report
-    an accurate green/red "all messages saved" status for the GUI's brain
-    indicator even if a particular write failed or Turso is unreachable.
+    Every message the cloud agent produces (user / assistant / tool) is written
+    to the local durable store first (never fails the turn). When a durable Turso
+    session is open, the mirror runs as a background task so streaming / first
+    token is not gated on remote round-trips or retries. Rows stay
+    ``turso_synced=0`` until the mirror succeeds; :func:`_resync_unsynced_messages`
+    at turn end retries any leftovers for the brain indicator.
     """
     local_id = await append_message(
         project_id,
@@ -104,29 +432,58 @@ async def _persist_message(
         reasoning_content=reasoning_content,
     )
     if turso_session_id:
-        try:
-            saved = await record_turso_message(
-                turso_session_id,
-                project_id,
-                role,
-                content,
-                session_number=session_number,
-                local_message_id=local_id,
-                request_id=request_id,
-                tool_call_id=tool_call_id,
-                tool_calls=tool_calls,
-                reasoning_content=reasoning_content,
+        _track_turso_mirror_task(
+            asyncio.create_task(
+                _mirror_message_to_turso(
+                    turso_session_id=turso_session_id,
+                    project_id=project_id,
+                    local_id=local_id,
+                    role=role,
+                    content=content,
+                    session_number=session_number,
+                    request_id=request_id,
+                    tool_call_id=tool_call_id,
+                    tool_calls=tool_calls,
+                    reasoning_content=reasoning_content,
+                )
             )
-        except Exception:
-            saved = None
-            logger.exception(
-                "Failed to mirror agent message %s to Turso session %s",
-                local_id,
-                turso_session_id,
-            )
-        if saved:
-            await mark_message_synced(local_id, synced=True)
+        )
     return local_id
+
+
+async def _resync_unsynced_messages(
+    project_id: str,
+    *,
+    session_number: int,
+    turso_session_id: str | None,
+    limit: int = 40,
+) -> int:
+    """Retry Turso mirror for local rows left ``turso_synced=0`` (DAV-145)."""
+    if not turso_session_id:
+        return 0
+    from syte.cloud_agent_store import list_unsynced_messages
+
+    pending = await list_unsynced_messages(
+        project_id, session_number=session_number, limit=limit,
+    )
+    synced = 0
+    for row in pending:
+        ok = await _mirror_message_to_turso(
+            turso_session_id=turso_session_id,
+            project_id=project_id,
+            local_id=int(row["id"]),
+            role=str(row.get("role") or "assistant"),
+            content=str(row.get("content") or ""),
+            session_number=int(row.get("session_number") or session_number),
+            request_id=str(row.get("request_id") or ""),
+            tool_call_id=row.get("tool_call_id"),
+            tool_calls=row.get("tool_calls") if isinstance(row.get("tool_calls"), list) else None,
+            reasoning_content=row.get("reasoning_content"),
+            retries=2,
+        )
+        if ok:
+            synced += 1
+    return synced
 
 
 def agent_root(project_id: str) -> Path:
@@ -163,22 +520,145 @@ def cloud_agent_command() -> str:
 
 
 async def profile_api_key(profile: str) -> str:
+    """Resolve API key for a profile: settings first, then ``secret_env``."""
+    resolved = await resolve_profile_api_key(profile)
+    return str(resolved.get("api_key") or "")
+
+
+def mask_secret(value: str, *, keep: int = 4) -> str:
+    key = (value or "").strip()
+    if not key:
+        return ""
+    if len(key) <= keep * 2:
+        return "••••"
+    return f"{key[:keep]}…{key[-keep:]}"
+
+
+async def resolve_profile_api_key(profile: str) -> dict[str, str]:
+    """Return the effective key plus where it came from (settings | env | none)."""
     spec = profile_provider(profile)
-    return (await get_setting(spec["setting_key"], "")).strip()
+    setting_key = spec["setting_key"]
+    secret_env = spec["secret_env"]
+    from_settings = (await get_setting(setting_key, "")).strip()
+    from_env = (os.environ.get(secret_env) or "").strip()
+    # Legacy shared OpenRouter setting (pre-split ultra key).
+    legacy = ""
+    if profile == "syra-ultra" and not from_settings:
+        legacy = (await get_setting("agent_openrouter_api_key", "")).strip()
+
+    if from_settings:
+        source = "settings"
+        api_key = from_settings
+    elif from_env:
+        source = "env"
+        api_key = from_env
+    elif legacy:
+        source = "settings"
+        api_key = legacy
+    else:
+        source = "none"
+        api_key = ""
+
+    return {
+        "profile": profile,
+        "setting_key": setting_key,
+        "secret_env": secret_env,
+        "api_key": api_key,
+        "source": source,
+        "settings_set": "1" if from_settings or legacy else "",
+        "env_set": "1" if from_env else "",
+        "settings_hint": mask_secret(from_settings or legacy),
+        "env_hint": mask_secret(from_env),
+        "api_key_hint": mask_secret(api_key),
+    }
+
+
+async def migrate_provider_lineup_keys() -> dict[str, Any]:
+    """One-time remap after base/ultra provider swap.
+
+    Previous lineup stored the Aliyun builder key under ``agent_syra_base_api_key``
+    and the OpenRouter thinker key under ``agent_syra_ultra_api_key``. The current
+    lineup uses DeepSeek for base and Aliyun Qwen for ultra — so an Aliyun key
+    left on base produces 401s from DeepSeek for every default-profile turn.
+
+    When not yet migrated: move base→ultra if ultra is empty and the base key
+    does not look like a DeepSeek key, then clear base.
+    """
+    flag = (await get_setting("agent_provider_lineup_v3_migrated", "")).strip()
+    if flag == "1":
+        return {"migrated": False, "reason": "already_done"}
+
+    base_key = (await get_setting("agent_syra_base_api_key", "")).strip()
+    ultra_key = (await get_setting("agent_syra_ultra_api_key", "")).strip()
+    moved = False
+    cleared_base = False
+    looks_like_deepseek = base_key.lower().startswith("sk-")
+    if base_key and not ultra_key and not looks_like_deepseek:
+        await set_setting("agent_syra_ultra_api_key", base_key)
+        await set_setting("agent_syra_base_api_key", "")
+        moved = True
+        cleared_base = True
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    return {
+        "migrated": True,
+        "moved_base_to_ultra": moved,
+        "cleared_base": cleared_base,
+        "note": (
+            "Aliyun key moved from syra-base → syra-ultra. "
+            "Add a DeepSeek API key for syra-base."
+            if moved
+            else "No key remap needed."
+        ),
+    }
+
+
+async def provider_key_status() -> list[dict[str, str | bool]]:
+    """Public/diagnostic view of settings + env keys (values masked)."""
+    await migrate_provider_lineup_keys()
+    rows: list[dict[str, str | bool]] = []
+    for name in PROFILE_ORDER:
+        resolved = await resolve_profile_api_key(name)
+        spec = PROFILE_PROVIDERS[name]
+        rows.append({
+            "profile": name,
+            "display_name": spec.get("display_name") or name,
+            "label": spec["label"],
+            "model": spec["model"],
+            "api_base": spec["api_base"],
+            "setting_key": resolved["setting_key"],
+            "secret_env": resolved["secret_env"],
+            "source": resolved["source"],
+            "api_key_set": bool(resolved["api_key"]),
+            "settings_set": bool(resolved["settings_set"]),
+            "env_set": bool(resolved["env_set"]),
+            "settings_hint": resolved["settings_hint"],
+            "env_hint": resolved["env_hint"],
+            "api_key_hint": resolved["api_key_hint"],
+            "env_value_present": bool(resolved["env_set"]),
+        })
+    return rows
 
 
 async def bridge_settings() -> dict[str, Any]:
+    await migrate_provider_lineup_keys()
     default_profile = (
-        await get_setting("agent_default_model_profile", "syra-base")
-    ).strip() or "syra-base"
+        await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
+    ).strip() or DEFAULT_PROFILE
     if default_profile not in PROFILE_PROVIDERS:
-        default_profile = "syra-base"
-    profiles: dict[str, dict[str, str]] = {}
-    for name in PROFILE_ORDER:
+        default_profile = DEFAULT_PROFILE
+    resolved_keys = await asyncio.gather(*[resolve_profile_api_key(name) for name in PROFILE_ORDER])
+    profiles: dict[str, dict[str, str | int | float]] = {}
+    for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
         profiles[name] = {
             **spec,
-            "api_key": await profile_api_key(name),
+            "api_key": resolved["api_key"],
+            "key_source": resolved["source"],
+            "api_key_hint": resolved["api_key_hint"],
+            "settings_set": bool(resolved["settings_set"]),
+            "env_set": bool(resolved["env_set"]),
+            "settings_hint": resolved["settings_hint"],
+            "env_hint": resolved["env_hint"],
         }
     active = profiles[default_profile]
     return {
@@ -187,27 +667,83 @@ async def bridge_settings() -> dict[str, Any]:
         "api_base": active["api_base"],
         "api_key": active["api_key"],
         "provider": active["provider"],
+        # Legacy keys — selected model handles both thinking and building.
+        "builder_profile": default_profile,
+        "thinker_profile": None,
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
+        "syra_ultra_model": profiles["syra-ultra"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
+        "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
+        "provider_keys": [
+            {
+                "profile": name,
+                "source": profiles[name].get("key_source") or "none",
+                "api_key_set": bool(profiles[name].get("api_key")),
+                "settings_set": bool(profiles[name].get("settings_set")),
+                "env_set": bool(profiles[name].get("env_set")),
+                "secret_env": profiles[name].get("secret_env") or "",
+                "api_key_hint": profiles[name].get("api_key_hint") or "",
+                "settings_hint": profiles[name].get("settings_hint") or "",
+                "env_hint": profiles[name].get("env_hint") or "",
+            }
+            for name in PROFILE_ORDER
+        ],
     }
 
 
-async def selected_model_metadata(project: dict[str, Any]) -> dict[str, str]:
-    bridge = await bridge_settings()
-    profile = str(project.get("agent_model_profile") or bridge["default_profile"])
-    spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
-    return {
-        "profile": profile if profile in PROFILE_PROVIDERS else "syra-base",
+def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any]:
+    resolved = profile if profile in PROFILE_PROVIDERS else DEFAULT_PROFILE
+    spec = bridge["profiles"].get(resolved, bridge["profiles"][DEFAULT_PROFILE])
+    meta: dict[str, Any] = {
+        "profile": resolved,
         "provider": spec["provider"],
-        "provider_label": spec["label"],
+        "label": spec.get("label") or "",
+        "provider_label": spec.get("label") or "",
         "model": spec["model"],
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
+        "role": spec.get("role") or "",
+        "secret_env": spec.get("secret_env") or "",
+        "key_source": spec.get("key_source") or ("settings" if spec.get("api_key") else "none"),
+        "api_key_hint": spec.get("api_key_hint") or mask_secret(str(spec.get("api_key") or "")),
     }
+    for key in ("max_tokens", "max_history_messages", "max_tool_result_chars"):
+        if key in spec and spec[key] is not None:
+            meta[key] = int(spec[key])
+    return meta
+
+
+async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
+    bridge = await bridge_settings()
+    profile = str(project.get("agent_model_profile") or bridge["default_profile"])
+    return _metadata_from_bridge(bridge, profile)
+
+
+async def model_metadata_for_profile(profile: str | None) -> dict[str, Any]:
+    bridge = await bridge_settings()
+    return _metadata_from_bridge(bridge, (profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE)
+
+
+def _model_history_limit(model: dict[str, Any] | None) -> int:
+    if model and model.get("max_history_messages"):
+        return max(8, int(model["max_history_messages"]))
+    return MAX_HISTORY_MESSAGES
+
+
+def _model_tool_result_chars(model: dict[str, Any] | None) -> int:
+    if model and model.get("max_tool_result_chars"):
+        return max(2_000, int(model["max_tool_result_chars"]))
+    return MAX_TOOL_RESULT_CHARS
+
+
+def _model_max_tokens(model: dict[str, Any] | None) -> int | None:
+    if model and model.get("max_tokens"):
+        return max(256, int(model["max_tokens"]))
+    return None
 
 
 async def ensure_agent_runtime(project: dict[str, Any]) -> dict[str, Any]:
@@ -255,74 +791,289 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
     return "\n".join(path.read_text(errors="replace").splitlines()[-max(1, lines):])
 
 
-async def _build_syte_instruction(project_id: str) -> str:
-    from syte.agent_skills import (
-        apply_mcp_connection_settings,
-        build_agent_rules,
-        read_access_config,
-        read_skills_config,
-        write_agent_skills,
+def _project_metadata_block(project: dict[str, Any] | None) -> str:
+    """Stable project facts from Mongo/SQLite metadata — never requires a file scan."""
+    project = project or {}
+    name = project.get("name") or project.get("id") or "unknown"
+    domain = project.get("domain") or project.get("preview_domain") or "not set"
+    deploy = project.get("deploy_type") or "shell"
+    status = project.get("status") or "unknown"
+    return (
+        "## Project metadata (never re-scan for this)\n"
+        f"Name: {name}\n"
+        f"Domain: {domain}\n"
+        f"Deploy type: {deploy}\n"
+        f"Service status: {status}\n"
     )
-    from syte.design_contract import DESIGN_CONTRACT_MARKDOWN
+
+
+def _read_syterules(project_id: str) -> str:
+    """Load optional `.syterules` from workspace root or app/."""
+    root = workspace_path(project_id)
+    candidates = (root / ".syterules", root / "app" / ".syterules")
+    newest_key = (0.0, 0)
+    newest_path: Path | None = None
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                st = candidate.stat()
+                key = (st.st_mtime, int(st.st_size))
+                if key >= newest_key:
+                    newest_key = key
+                    newest_path = candidate
+        except OSError:
+            continue
+    if newest_path is None:
+        _syterules_cache.pop(project_id, None)
+        return ""
+    cached = _syterules_cache.get(project_id)
+    if cached and cached[0] == newest_key:
+        return cached[1]
+    try:
+        text = newest_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if not text:
+        _syterules_cache.pop(project_id, None)
+        return ""
+    block = f"## Project-specific rules (.syterules):\n{text}"
+    _syterules_cache[project_id] = (newest_key, block)
+    return block
+
+
+def _website_enforcement_block(*, is_website: bool) -> str:
+    if is_website:
+        return (
+            "## MANDATORY for this project: Next.js + shadcn/ui (NOT HeroUI)\n"
+            "This is a Next.js website project. You MUST:\n"
+            "- Use Next.js App Router (routes in app/app/ — double app/ is correct)\n"
+            "- Import shadcn/ui components from @/components/ui/* only\n"
+            "- Compose pages from the 57 cataloged components; never use shadcn Blocks or block templates\n"
+            "- Keep direct Radix imports inside components/ui wrappers; preserve keyboard/focus/ARIA behavior\n"
+            "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
+            "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
+            "- Never ship bare unstyled HTML scaffolds\n"
+            "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
+            "- After UI changes: preview_start → inspect_preview (console) → screenshot_preview; fix any load/console errors\n"
+            "- Follow the Design Contract below strictly\n"
+        )
+    return (
+        "## Project type: general code\n"
+        "This is not detected as a Next.js website project. Match the stack to the existing "
+        "files and user request. Only apply the Design Contract if the user explicitly asks "
+        "for a website / web UI. When building a website, use Next.js + shadcn/ui — never HeroUI.\n"
+    )
+
+
+def _build_static_instruction(
+    project_id: str,
+    *,
+    rule_lines: str,
+    active_skills_block: str,
+    project_meta: str,
+    website_enforcement: str,
+    syterules: str,
+) -> str:
+    """Build the cacheable instruction prefix (design contract, tools, skills, rules)."""
+    from syte.design_contract import (
+        DESIGN_CONTRACT_MARKDOWN,
+        shadcn_catalog_json,
+        themes_prompt_block,
+    )
 
     root = agent_root(project_id)
-    access = await read_access_config(project_id, root)
-    skills_config = await read_skills_config(project_id, root)
-    enabled_skills = list(skills_config.get("enabled_skills") or [])
-    mcp_enabled = bool((skills_config.get("mcp") or {}).get("enabled", True))
-    write_agent_skills(
-        project_id,
-        root,
-        enabled_skills=enabled_skills,
-        mcp_enabled=mcp_enabled,
-    )
-    if mcp_enabled:
-        await apply_mcp_connection_settings(project_id, skills_config)
-    rules = build_agent_rules(project_id, access, enabled_skills=enabled_skills)
-    if not mcp_enabled:
-        rules = [item for item in rules if item.get("name") != "MCP project tools"]
-    rule_lines = "\n".join(
-        f"- {item['name']}: {item['rule']}"
-        for item in rules
-        if item.get("rule")
-    )
-    return (
+    parts = [
         "You are Syte's cloud coding agent running persistently on the project's VM. "
         "Work only in this Syte project and optimize for correct, fast, reliable delivery. "
         "Inspect relevant files before edits, use tools instead of guessing, keep changes focused, "
         "and run the smallest useful verification after edits. Never expose credentials. "
-        "Do not discuss or configure unrelated model providers.\n\n"
+        "Do not discuss or configure unrelated model providers.\n",
+        website_enforcement,
+        project_meta,
         "You build ANY kind of code the user asks for — libraries, CLIs, APIs, scripts, backends, "
-        "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website. "
+        "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website "
+        "unless this project's enforcement block says otherwise. "
         "Match the stack to the request and existing files. Only when the work is a website / web UI "
         "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
-        "shadcn/ui components under components/ui/*, Lucide icons, Inter via next/font, Tailwind tokens, "
-        "and a complete styled home page. Never ship a bare unstyled web scaffold.\n\n"
+        "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
+        "and a complete styled home page. Never ship a bare unstyled web scaffold. "
+        "Do NOT use HeroUI/NextUI/Chakra/MUI/Ant Design for websites.\n",
         "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
-        "(desktop + phone screenshots of a route — inspect images with vision); ask_question "
+        "(desktop + phone screenshots of a route — inspect images with vision); inspect_preview "
+        "(limited browser: fetch HTML/text, capture browser DevTools console/page errors, optional screenshot); "
+        "ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
-        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); service (preview status/start/stop/"
-        "logs); delegate_task for bounded sub-work.\n\n"
-        "Use update_plan for multi-step work so the plan is visible in chat and saved. Use ask_question "
-        "whenever you need a preference, secret, numeric setting, or choice before continuing. Use "
-        "screenshot_preview after UI changes and check BOTH phone and desktop layouts. Continue using "
-        "tools until the request is actually complete; the user can interrupt a long turn.\n\n"
+        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
+        "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
+        "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n",
+        "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
+        "semantic_search and/or search_code (or list_files on app/app and app/components). Prefer recently "
+        "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates "
+        "(e.g. writing app/page.tsx when the App Router file is app/app/page.tsx). Edit the file that "
+        "actually renders the feature, then verify on disk with read_file.\n",
+        "Token efficiency: prefer diffs and symbol lookups over dumping whole files or the repo. "
+        "Start with `git diff --stat` / `--name-only` before reading full contents. Honor `.aiignore`. "
+        "Command output is pre-filtered (passing tests / progress noise stripped) — re-run with a "
+        "narrower command if you need a specific line.\n",
+        "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
+        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. For a new website "
+        "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
+        "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
+        "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
+        "Use ask_question whenever you need a preference, secret, numeric setting, or choice. Use "
+        "screenshot_preview or inspect_preview after UI changes and check BOTH phone and desktop layouts. "
+        "After website edits, ALWAYS call inspect_preview with include_console=true (default) to confirm "
+        "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
+        "fix them before finishing. Continue using tools until the request is actually complete; "
+        "the user can interrupt a long turn.\n",
         "Never deploy, start, stop, update, or build the production service for testing, and never run "
         "production build commands such as npm run build or next build. Prefer the isolated preview for "
-        "visual checks and workspace commands for lint/tests.\n\n"
+        "visual checks and workspace commands for lint/tests.\n",
         "Paths: write_file paths are relative to the workspace root; application source lives in app/. "
         "For Next.js App Router, routes live under app/app/ (e.g. app/app/login/page.tsx). write_file "
         "overwrites the whole file — always send the complete body. After batches of writes, verify with "
         "list_files/read_file. Preview caching: after fixing a compile error, preview_stop then "
-        "preview_start before judging the result.\n\n"
+        "preview_start before judging the result.\n",
         "Website / web UI design contract (mandatory when building websites):\n"
-        f"{DESIGN_CONTRACT_MARKDOWN}\n\n"
-        f"Syte workspace rules:\n{rule_lines}\n\n"
+        f"{DESIGN_CONTRACT_MARKDOWN}\n",
+        f"{themes_prompt_block()}\n",
+        "shadcn/ui component catalog (import only these — never invent names):\n"
+        f"{shadcn_catalog_json()}\n",
+        f"Syte workspace rules:\n{rule_lines}\n",
+        f"{active_skills_block}\n",
         f"Project workspace root: {workspace_path(project_id)}\n"
         f"Application source: {workspace_path(project_id) / 'app'}\n"
-        f"Agent tools and durable data: {root}"
+        f"Agent tools and durable data: {root}",
+    ]
+    if syterules:
+        parts.append(syterules)
+    return "\n".join(parts)
+
+
+async def _build_syte_instruction_parts(
+    project_id: str,
+    *,
+    force_refresh: bool = False,
+) -> tuple[str, str]:
+    """Return ``(static_prefix, dynamic_suffix)`` for prompt-cache-friendly assembly.
+
+    Static portions (design contract, tool docs, skills, rules, project brief) are
+    cached. Session memory + design profile stay dynamic so summaries reach the LLM.
+    """
+    from syte.agent_skills import (
+        build_agent_rules,
+        get_project_skills,
+        read_access_config,
+        write_agent_skills,
     )
+    from syte.design_contract import DESIGN_CONTRACT_VERSION
+    from syte.nextjs_layout import is_nextjs_repo
+
+    root = agent_root(project_id)
+    access = await read_access_config(project_id, root)
+    rules = [item for item in build_agent_rules(project_id, access) if item.get("rule")]
+    rule_lines = "\n".join(f"- {item['name']}: {item['rule']}" for item in rules)
+    project_skills = await get_project_skills(project_id)
+    active_skills_list = [skill for skill in project_skills if skill.get("active")]
+    # Keep skill bodies short in the static/cacheable prefix; large skill text
+    # busts Anthropic prefix cache and bloats every turn (DAV-182).
+    skill_snippets: list[str] = []
+    for skill in active_skills_list:
+        raw = str(skill.get("content") or "").strip()
+        if not raw or "\x00" in raw:
+            continue
+        name = str(skill.get("name") or skill.get("id") or "skill").strip()
+        body = raw if len(raw) <= MAX_STATIC_SKILL_CHARS else (
+            raw[: MAX_STATIC_SKILL_CHARS - len(TOOL_TRUNCATION_NOTE)] + TOOL_TRUNCATION_NOTE
+        )
+        skill_snippets.append(f"### Skill: {name}\n{body}")
+    active_skills = "\n\n".join(skill_snippets)
+    active_skills_block = f"## Active Skills\n{active_skills or 'No project skills are enabled.'}"
+    syterules = _read_syterules(project_id)
+    project = await get_project(project_id)
+    app_root = workspace_path(project_id) / "app"
+    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
+    project_meta = _project_metadata_block(project)
+    website_enforcement = _website_enforcement_block(is_website=is_website)
+    project_brief = _project_brief_block(project_id)
+
+    rules_hash = hashlib.sha256(
+        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n"
+        f"{website_enforcement}\n{project_meta}\n{syterules}\n{project_brief}\n"
+        f"{workspace_path(project_id)}".encode()
+    ).hexdigest()[:16]
+    cache_key = (project_id, AGENT_INSTRUCTION_VERSION, rules_hash)
+    if not force_refresh and cache_key in _instruction_cache:
+        static = _instruction_cache[cache_key]
+    else:
+        write_agent_skills(
+            project_id,
+            root,
+            custom_skills=[skill for skill in project_skills if skill.get("custom")],
+        )
+        static = _build_static_instruction(
+            project_id,
+            rule_lines=rule_lines,
+            active_skills_block=active_skills_block,
+            project_meta=project_meta,
+            website_enforcement=website_enforcement,
+            syterules=syterules,
+        )
+        if project_brief:
+            static = f"{static}\n\n{project_brief}"
+        # Drop older hashes for this project so the cache stays bounded.
+        invalidate_instruction_cache(project_id)
+        _instruction_cache[cache_key] = static
+
+    from syte.agent_memory import (
+        design_profile_prompt_block,
+        get_design_profile,
+        latest_session_meta,
+        latest_summary,
+        lookup_workspace_paths,
+        memory_context_block,
+        workspace_map_block,
+    )
+
+    summary = await latest_summary(project_id)
+    meta = await latest_session_meta(project_id)
+    active_files = list((meta or {}).get("active_files") or [])
+    memory_block = memory_context_block(summary, active_files)
+    design_block = design_profile_prompt_block(await get_design_profile(project_id))
+    # Prefer layout/page/component index hits so the model edits real files.
+    index_hits = await lookup_workspace_paths(
+        project_id,
+        tags=["page", "layout", "navbar", "hero", "colors"],
+        limit=20,
+    )
+    if len(index_hits) < 8:
+        more = await lookup_workspace_paths(project_id, limit=20)
+        seen = {str(item.get("path")) for item in index_hits}
+        for item in more:
+            path = str(item.get("path") or "")
+            if path and path not in seen:
+                index_hits.append(item)
+                seen.add(path)
+            if len(index_hits) >= 20:
+                break
+    map_block = workspace_map_block(index_hits, limit=20)
+    dynamic = "\n\n".join(
+        part for part in (design_block, memory_block, map_block) if part and str(part).strip()
+    ).strip()
+    return static, dynamic
+
+
+async def _build_syte_instruction(
+    project_id: str,
+    *,
+    force_refresh: bool = False,
+) -> str:
+    """Assemble full system instruction with fresh dynamic memory every call."""
+    static, dynamic = await _build_syte_instruction_parts(
+        project_id, force_refresh=force_refresh,
+    )
+    return f"{static}\n\n{dynamic}" if dynamic else static
 
 
 async def write_agent_config(project: dict[str, Any]) -> Path:
@@ -343,7 +1094,7 @@ async def write_agent_config(project: dict[str, Any]) -> Path:
         "provider": model["provider"],
         "workspace_path": str(workspace_path(project["id"]) / "app"),
         "transport": "direct-provider",
-        "streaming": False,
+        "streaming": True,
     }
     path = agent_config_path(project["id"])
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -371,6 +1122,11 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
             project_id,
             {"agent_status": "running", "agent_last_started_at": _now(), "agent_last_error": ""},
         )
+        # Warm the workspace file index in the background — never block TTFT (DAV-128).
+        try:
+            _track_bg_task(asyncio.create_task(_warm_workspace_index(project_id)))
+        except Exception:
+            logger.exception("workspace index warm schedule failed for %s", project_id)
         _write_log(project_id, "cloud runtime ready")
         await record_agent_event(
             project_id,
@@ -384,6 +1140,90 @@ async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
         return True, "Syte cloud agent is ready.", status
 
 
+async def _warm_workspace_index(project_id: str) -> None:
+    """Scan workspace into the index when empty — runs off the chat hot path."""
+    try:
+        from syte.agent_memory import lookup_workspace_paths, scan_workspace_index
+
+        existing = await lookup_workspace_paths(project_id, limit=1)
+        if not existing:
+            await scan_workspace_index(project_id)
+    except Exception:
+        logger.exception("workspace index warm failed for %s", project_id)
+
+
+async def _post_turn_preview_checks(
+    project_id: str,
+    *,
+    model: dict[str, str],
+    tool_context: dict[str, Any],
+    source: str,
+    turso_session_id: str | None,
+    request_id: str,
+    session_number: int,
+) -> None:
+    """Preview readiness + soft route validation after the turn already completed."""
+    def _payload(kind: str, base: dict[str, Any] | None = None) -> dict[str, Any]:
+        out = {
+            "request_id": request_id,
+            "session": session_number,
+            "mark_kind": kind,
+            "async_post_turn": True,
+        }
+        if base:
+            out.update(base)
+        return out
+
+    try:
+        from syte.preview_health import wait_for_preview_ready
+
+        ok_preview, preview_url, _status = await wait_for_preview_ready(
+            project_id, max_wait_s=8, poll_s=1.5,
+        )
+        if not ok_preview:
+            await record_agent_event(
+                project_id,
+                "status",
+                title="Preview did not start",
+                detail=(
+                    "Agent completed work but preview is not reachable. "
+                    "Check logs or run service preview_start."
+                ),
+                payload=_payload(
+                    "status",
+                    {"preview_unreachable": True, "preview_url": preview_url},
+                ),
+                source=source,
+                turso_session_id=turso_session_id,
+            )
+        elif not tool_context.get("_screenshot_captured"):
+            await _execute_tool(
+                project_id,
+                "screenshot_preview",
+                {"route": "/", "viewports": ["desktop"]},
+                model=model,
+                context=tool_context,
+            )
+        routes_dir = workspace_path(project_id) / "app" / "app"
+        if not routes_dir.exists() or not await asyncio.to_thread(
+            lambda: any(routes_dir.rglob("page.tsx"))
+        ):
+            await record_agent_event(
+                project_id,
+                "status",
+                title="No app/app/ routes found",
+                detail=(
+                    "Agent may have created routes in the wrong location. "
+                    "Expected app/app/page.tsx"
+                ),
+                payload=_payload("status", {"no_routes_detected": True}),
+                source=source,
+                turso_session_id=turso_session_id,
+            )
+    except Exception:
+        logger.debug("preview health check failed", exc_info=True)
+
+
 async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
     ok, message, status = await start_agent(project_id)
     return {"ok": ok, "status": status.get("agent_status", "error"), "message": message,
@@ -393,6 +1233,7 @@ async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
 async def stop_agent(project_id: str) -> tuple[bool, str]:
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
+    cancel_background_subagents(project_id)
     task = _active_turns.get(project_id)
     if task and not task.done():
         task.cancel()
@@ -452,8 +1293,13 @@ async def interrupt_agent(
     """
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
+    cancel_background_subagents(project_id)
     task = _active_turns.get(project_id)
     if task and not task.done():
+        # Drop the busy marker immediately so status APIs stop reporting
+        # "processing" / stuck running while cooperative cancel finishes (DAV-180).
+        if _active_turns.get(project_id) is task:
+            _active_turns.pop(project_id, None)
         task.cancel()
         session_number = await current_session_number(project_id)
         close_id = turso_session_id
@@ -485,6 +1331,9 @@ async def interrupt_agent(
         if close_id:
             await close_turso_session(close_id, status="cancelled")
         return True, "Active cloud-agent turn interrupted."
+    # Ensure a stale completed task cannot keep the busy indicator stuck.
+    if _active_turns.get(project_id) is task:
+        _active_turns.pop(project_id, None)
     # No in-process turn, but still close a known orphaned Turso session so
     # clients never poll an endless status=open / "generating" state.
     if turso_session_id:
@@ -542,14 +1391,26 @@ async def get_agent_status(
         else build_direct_url(settings.resolved_public_ip, settings.port)
     )
     agent_status_value = project.get("agent_status") or "stopped"
-    active = bool(_active_turns.get(project_id) and not _active_turns[project_id].done())
+    turn_task = _active_turns.get(project_id)
+    active = bool(turn_task and not turn_task.done())
+    # Also treat the durable job runner as busy so cancel/pause cannot leave a
+    # stale "processing" indicator when the turn task was already cleared.
+    try:
+        from syte.agent_jobs import is_agent_job_running
+
+        job_running = is_agent_job_running(project_id)
+    except Exception:
+        job_running = False
+    busy = active or job_running
     turso_sync = await turso_message_sync_status(project_id)
     return {
         "agent_runtime": CLOUD_RUNTIME,
         "agent_runtime_type": "cloud",
-        "agent_status": "processing" if active else agent_status_value,
+        "agent_status": "processing" if busy else agent_status_value,
         "agent_turso_sync": turso_sync,
+        # Runtime readiness (started) vs in-flight turn (busy).
         "agent_running": agent_status_value != "stopped",
+        "agent_busy": busy,
         "agent_healthy": agent_status_value == "running" and bool(model["api_key"]),
         "agent_warming": False,
         "agent_port": None,
@@ -570,84 +1431,30 @@ async def get_agent_status(
         "agent_capabilities": [
             "durable_sessions", "restartable_requests", "background_jobs",
             "turso_session_storage", "turso_message_persistence", "last_session_history",
-            "terminal", "file_editor", "preview_control", "skills", "skill_settings",
-            "provider_retries", "planning", "plan_persistence", "subagents", "visible_thinking",
-            "screenshot_preview", "vision_screenshots", "interactive_questions",
-            "env_access", "mcp_addons", "mcp_project_connection", "session_stop_markers",
-            "any_code_type", "shadcn_websites",
+            "terminal", "file_editor", "preview_control", "skills", "provider_retries",
+            "planning", "plan_persistence", "subagents", "visible_thinking",
+            "screenshot_preview", "inspect_preview", "vision_screenshots", "interactive_questions",
+            "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
+            "shadcn_websites", "agent_memory", "visual_analyses", "design_profiles",
+            "workspace_index", "activity_sse", "model_routing", "web_search",
+            "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
+            "preview_health", "planner_executor", "syterules", "background_subagents",
+            "subagent_timeout", "workspace_shell_boundary",
         ],
-        **(await _agent_skills_status_fields(project_id)),
     }
 
 
-async def _agent_skills_status_fields(project_id: str) -> dict[str, Any]:
-    """Attach skills + MCP connection summary to agent status responses."""
-    try:
-        from syte.agent_artifacts import list_mcp_addons
-        from syte.agent_skills import (
-            available_skills,
-            mcp_server_config,
-            read_skills_config,
-        )
-
-        root = agent_root(project_id)
-        skills_config = await read_skills_config(project_id, root)
-        mcp_cfg = skills_config.get("mcp") or {}
-        addons = await list_mcp_addons(project_id) if mcp_cfg.get("enabled", True) else []
-        return {
-            "agent_skills": {
-                "available": available_skills(),
-                "enabled_skills": skills_config.get("enabled_skills") or [],
-                "mcp": mcp_cfg,
-            },
-            "agent_mcp": {
-                "enabled": bool(mcp_cfg.get("enabled", True)),
-                "server": mcp_server_config(project_id, root),
-                "addons": addons,
-                "documentation": "/api/#agent-mcp",
-            },
-        }
-    except Exception:
-        return {
-            "agent_skills": {"available": [], "enabled_skills": [], "mcp": {}},
-            "agent_mcp": {"enabled": False, "server": None, "addons": [], "documentation": "/api/#agent-mcp"},
-        }
-
-
 async def update_agent_settings(
-    project_id: str,
-    *,
-    model_profile: str | None = None,
-    enabled_skills: list[str] | None = None,
-    mcp: dict[str, Any] | None = None,
-    include_status: bool = True,
+    project_id: str, *, model_profile: str | None = None, include_status: bool = True
 ) -> dict[str, Any]:
-    from syte.agent_skills import read_skills_config, write_agent_skills, write_skills_config
-
     if model_profile is not None:
         profile = model_profile.strip() or "syra-base"
         if profile not in PROFILE_PROVIDERS:
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
-    if enabled_skills is not None or mcp is not None:
-        root = agent_root(project_id)
-        current = await read_skills_config(project_id, root)
-        patch: dict[str, Any] = {}
-        if enabled_skills is not None:
-            patch["enabled_skills"] = enabled_skills
-        if mcp is not None:
-            patch["mcp"] = {**(current.get("mcp") or {}), **mcp}
-        await write_skills_config(project_id, {**current, **patch}, root)
-        refreshed = await read_skills_config(project_id, root)
-        write_agent_skills(
-            project_id,
-            root,
-            enabled_skills=list(refreshed.get("enabled_skills") or []),
-            mcp_enabled=bool((refreshed.get("mcp") or {}).get("enabled", True)),
-        )
-    project = await get_project(project_id)
-    if project and (model_profile is not None or enabled_skills is not None or mcp is not None):
-        await write_agent_config(project)
+        project = await get_project(project_id)
+        if project:
+            await write_agent_config(project)
     return await get_agent_status(project_id) if include_status else (await get_project(project_id) or {})
 
 
@@ -680,6 +1487,17 @@ TOOLS: list[dict[str, Any]] = [
          "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
          "url": {"type": "string", "description": "Optional full URL override (must be an allowed preview URL)"},
          "viewports": {"type": "array", "items": {"type": "string", "enum": ["desktop", "phone"]}, "description": "Defaults to both desktop and phone"},
+     }, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "inspect_preview", "description": (
+        "Limited browser for the project preview: fetch HTML/text of a route, read Chromium DevTools "
+        "console/page errors (default), and optionally take a screenshot. Confirms the site actually "
+        "loads in a real browser. URLs must be the project preview or an allowlisted custom URL — no "
+        "open web browsing. Use after UI edits to catch console errors and failed loads before finishing."),
+     "parameters": {"type": "object", "properties": {
+         "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
+         "url": {"type": "string", "description": "Optional full URL override (must be allowlisted)"},
+         "include_screenshot": {"type": "boolean", "description": "Also capture a desktop screenshot (default false)"},
+         "include_console": {"type": "boolean", "description": "Capture browser DevTools console + page errors (default true)"},
      }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "ask_question", "description": (
         "Ask the user an interactive question and wait for their answer. Types: answer (free text), "
@@ -718,8 +1536,38 @@ TOOLS: list[dict[str, Any]] = [
          "tool": {"type": "string"},
          "arguments": {"type": "object"},
      }, "required": ["addon", "tool"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "delegate_task", "description": "Delegate one bounded independent research, review, or implementation task to a subagent sharing this workspace.",
-     "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "web_search", "description": (
+        "Search the web for current information, docs, product/image ideas, or news. "
+        "Prefer this over guessing when the user asks for latest/current facts."),
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string"},
+         "max_results": {"type": "integer"},
+     }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "semantic_search", "description": (
+        "Search the workspace index by meaning/tags (not exact keywords only). "
+        "Use before full-workspace crawls when looking for related components or pages."),
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string"},
+         "limit": {"type": "integer"},
+     }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "search_code", "description": (
+        "Ripgrep-style search across the project workspace for an exact/regex pattern. "
+        "Prefer this over `run_command grep/rg` or listing thousands of files. "
+        "Returns matching file paths with line snippets (capped)."),
+     "parameters": {"type": "object", "properties": {
+         "pattern": {"type": "string", "description": "Regex or literal search pattern"},
+         "path": {"type": "string", "description": "Optional subdirectory relative to workspace (default app/)"},
+         "glob": {"type": "string", "description": "Optional file glob, e.g. '*.tsx'"},
+         "max_matches": {"type": "integer", "description": "Max matches to return (default 40, max 80)"},
+         "case_insensitive": {"type": "boolean"},
+     }, "required": ["pattern"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "delegate_task", "description": (
+        "Delegate one bounded independent research, review, or implementation task to a "
+        "subagent sharing this workspace. Set background:true to run asynchronously."),
+     "parameters": {"type": "object", "properties": {
+         "task": {"type": "string"},
+         "background": {"type": "boolean"},
+     }, "required": ["task"], "additionalProperties": False}}},
 ]
 
 SUBAGENT_TOOLS = [
@@ -733,7 +1581,7 @@ async def _execute_tool(
     name: str,
     args: dict[str, Any],
     *,
-    model: dict[str, str] | None = None,
+    model: dict[str, Any] | None = None,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run a tool and always return a JSON-serializable result.
@@ -747,24 +1595,114 @@ async def _execute_tool(
     from syte.workspace_api import delete_file, execute_command, list_workspace_files, read_file, write_file
 
     ctx = context or {}
+    tool_chars = int(ctx.get("max_tool_result_chars") or _model_tool_result_chars(model))
     try:
+        if (
+            ctx.get("question_required")
+            and not ctx.get("question_answered")
+            and name != "ask_question"
+        ):
+            return {
+                "ok": False,
+                "error": "question_required",
+                "retryable": True,
+                "message": (
+                    "This new website brief is missing a material visual direction. "
+                    "Call ask_question once with a concise theme/design choice before planning."
+                ),
+            }
+        # Hard planner gate: Deep/Max and substantive website work must plan
+        # before inspection or mutation. A user question is the only allowed
+        # pre-plan action so clarification can genuinely happen first.
+        if (
+            ctx.get("mandatory_plan")
+            and not ctx.get("plan_submitted")
+            and name not in {"update_plan", "ask_question"}
+        ):
+            website_gate = ctx.get("plan_gate_reason") == "website"
+            return {
+                "ok": False,
+                "error": "plan_required",
+                "retryable": True,
+                "message": (
+                    "Website workflow requires clarification-or-plan first. Call ask_question "
+                    "if a material design decision is missing; otherwise call update_plan with "
+                    "an ordered, design-specific implementation plan."
+                    if website_gate
+                    else
+                    "Thinking level requires a plan first. Call update_plan with an "
+                    "ordered list of concrete steps, then continue with other tools."
+                ),
+            }
         if name == "list_files":
-            return {"ok": True, "files": await list_workspace_files(project_id, str(args.get("path") or "app"))}
+            from syte.token_efficiency import load_aiignore_patterns, path_is_ignored
+
+            files = await list_workspace_files(project_id, str(args.get("path") or "app"))
+            patterns = load_aiignore_patterns(
+                workspace_path(project_id),
+                workspace_path(project_id) / "app",
+            )
+            filtered = [
+                f for f in files
+                if not path_is_ignored(str(f.get("path") or f.get("name") or ""), patterns)
+            ]
+            if len(filtered) > 200:
+                return {
+                    "ok": True,
+                    "files": filtered[:200],
+                    "truncated": True,
+                    "truncated_count": len(filtered),
+                    "ignored_filtered": len(files) - len(filtered),
+                    "note": "Listing truncated to 200 entries — narrow the path or use search_code.",
+                }
+            return {
+                "ok": True,
+                "files": filtered,
+                "ignored_filtered": len(files) - len(filtered),
+            }
         if name == "read_file":
             ok, content, mime = await read_file(project_id, str(args["path"]))
-            return {"ok": ok, "content": content if isinstance(content, str) else "Binary file", "mime": mime}
+            await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
+            text = content if isinstance(content, str) else "Binary file"
+            # Cap tool payload so a single large file cannot blow the LLM context.
+            if isinstance(text, str) and len(text) > tool_chars:
+                text = _truncate_for_llm(text, tool_chars)
+            return {"ok": ok, "content": text, "mime": mime}
         if name == "write_file":
-            ok, message = await write_file(project_id, str(args["path"]), str(args["content"]))
+            path = str(args["path"])
+            ok, message = await write_file(project_id, path, str(args["content"]))
+            await _track_touched_file(
+                project_id, path, ctx, content=str(args.get("content") or ""),
+            )
+            path_l = path.lower()
+            if any(marker in path_l for marker in _UI_PATH_MARKERS):
+                ctx["_ui_edit_detected"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
             ok, message = await delete_file(project_id, str(args["path"]))
+            await _track_touched_file(project_id, str(args["path"]), ctx)
             return {"ok": ok, "message": message}
         if name == "run_command":
+            from syte.token_efficiency import filter_cli_output
+
+            timeout_s = max(1, min(int(args.get("timeout") or 300), 900))
+            command = str(args["command"])
             code, output = await execute_command(
-                project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
-                timeout=max(1, min(int(args.get("timeout") or 300), 900)), source="agent",
+                project_id, command, cwd=str(args.get("cwd") or "app"),
+                timeout=timeout_s, source="agent",
             )
-            return {"ok": code == 0, "exit_code": code, "output": output[-16000:]}
+            filtered = filter_cli_output(command, output, max_chars=tool_chars)
+            truncated = _truncate_for_llm(filtered, tool_chars)
+            if code == 124:
+                return {
+                    "ok": False,
+                    "exit_code": 124,
+                    "error": "timeout",
+                    "retryable": True,
+                    "message": f"Command timed out after {timeout_s}s",
+                    "output": truncated,
+                }
+            return {"ok": code == 0, "exit_code": code, "output": truncated}
         if name == "service":
             return await run_service_action(
                 project_id, str(args["action"]), command=args.get("command"),
@@ -772,11 +1710,21 @@ async def _execute_tool(
                 timeout=int(args.get("timeout") or 300), source="agent",
             )
         if name == "update_plan":
-            return await _tool_update_plan(project_id, args, ctx)
+            result = await _tool_update_plan(project_id, args, ctx)
+            if result.get("ok"):
+                ctx["plan_submitted"] = True
+            return result
         if name == "screenshot_preview":
-            return await _tool_screenshot_preview(project_id, args, ctx)
+            result = await _tool_screenshot_preview(project_id, args, ctx)
+            ctx["_screenshot_captured"] = True
+            return result
+        if name == "inspect_preview":
+            return await _tool_inspect_preview(project_id, args, ctx)
         if name == "ask_question":
-            return await _tool_ask_question(project_id, args, ctx)
+            result = await _tool_ask_question(project_id, args, ctx)
+            if result.get("ok"):
+                ctx["question_answered"] = True
+            return result
         if name == "env_get":
             return await _tool_env_get(project_id, args)
         if name == "env_set":
@@ -800,20 +1748,270 @@ async def _execute_tool(
                 str(args.get("tool") or ""),
                 args.get("arguments") if isinstance(args.get("arguments"), dict) else {},
             )
+        if name == "web_search":
+            from syte.web_search import web_search as do_web_search
+
+            return await do_web_search(
+                str(args.get("query") or ""),
+                max_results=int(args.get("max_results") or 5),
+            )
+        if name == "semantic_search":
+            from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
+
+            query = str(args.get("query") or "").strip()
+            tags = prompt_tags_from_message(query)
+            hits = await lookup_workspace_paths(
+                project_id,
+                tags=tags or None,
+                query=query,
+                limit=max(1, min(int(args.get("limit") or 20), 50)),
+            )
+            return {"ok": True, "query": query, "tags": tags, "results": hits}
+        if name == "search_code":
+            return await _tool_search_code(project_id, args)
         if name == "delegate_task":
             task = str(args.get("task") or "").strip()
             if not task:
                 return {"ok": False, "error": "empty_task", "message": "Provide a delegated task."}
             if not model:
                 return {"ok": False, "error": "model_unavailable", "message": "Subagent model is unavailable."}
+            if args.get("background"):
+                import uuid as uuid_mod
+
+                task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
+                bg_key = f"{project_id}:{task_id}"
+                bg_task = asyncio.create_task(_run_subagent(project_id, task, model))
+                _background_subagents[bg_key] = bg_task
+
+                def _cleanup(done: asyncio.Task[Any], *, key: str = bg_key) -> None:
+                    _background_subagents.pop(key, None)
+
+                bg_task.add_done_callback(_cleanup)
+                return {
+                    "ok": True,
+                    "task_id": task_id,
+                    "status": "running",
+                    "message": "Background subagent started",
+                    "task": task,
+                    "timeout_s": SUBAGENT_TIMEOUT_S,
+                }
             return await _run_subagent(project_id, task, model)
+
+        # Auto-connect MCP addons that expose this unknown tool name.
+        from syte.agent_artifacts import call_mcp_addon, connect_mcp_addon, list_mcp_addons
+
+        addons = await list_mcp_addons(project_id)
+        for addon in addons:
+            tool_names = [
+                str(t.get("name") or "")
+                for t in (addon.get("tools") or [])
+                if isinstance(t, dict)
+            ]
+            if name not in tool_names and name not in {
+                "syte_service", "syte_access", "web_search",
+            }:
+                continue
+            if addon.get("status") != "connected":
+                connected = await connect_mcp_addon(project_id, addon["id"])
+                if not connected.get("ok"):
+                    continue
+            return await call_mcp_addon(project_id, addon["id"], name, args if isinstance(args, dict) else {})
+
         return {"ok": False, "error": "unknown_tool", "message": name}
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "error": "file_not_found",
+            "message": str(exc) or "File not found",
+            "hint": "List files first or check the path",
+        }
+    except (TimeoutError, asyncio.TimeoutError) as exc:
+        return {
+            "ok": False,
+            "error": "timeout",
+            "message": str(exc) or "Timed out",
+            "hint": "Try with a shorter timeout or simpler command",
+            "retryable": True,
+        }
+    except asyncio.CancelledError:
+        # Propagate cancel so interrupt/stop can unwind the turn; the tool loop
+        # records a cancelled tool result when appropriate.
+        raise
     except Exception as exc:
         return {
             "ok": False,
             "error": "tool_failed",
             "message": str(exc) or type(exc).__name__,
+            "retryable": False,
         }
+
+
+async def _tool_search_code(project_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Ripgrep (or Python fallback) search capped for LLM context (DAV-150)."""
+    import shutil
+
+    pattern = str(args.get("pattern") or "").strip()
+    if not pattern:
+        return {"ok": False, "error": "invalid_pattern", "message": "pattern is required"}
+    if len(pattern) > 400:
+        return {"ok": False, "error": "invalid_pattern", "message": "pattern too long (max 400)"}
+
+    rel = str(args.get("path") or "app").strip().lstrip("/") or "app"
+    try:
+        root = _resolve_search_root(project_id, rel)
+    except ValueError as exc:
+        return {"ok": False, "error": "invalid_path", "message": str(exc)}
+
+    max_matches = max(1, min(int(args.get("max_matches") or 40), 80))
+    glob_pat = str(args.get("glob") or "").strip() or None
+    case_insensitive = bool(args.get("case_insensitive"))
+    skip_dirs = {".git", "node_modules", ".next", "dist", "build", "__pycache__", ".turbo", "coverage"}
+    from syte.token_efficiency import load_aiignore_patterns, path_is_ignored
+
+    aiignore = load_aiignore_patterns(
+        workspace_path(project_id),
+        workspace_path(project_id) / "app",
+    )
+
+    matches: list[dict[str, Any]] = []
+    rg = shutil.which("rg")
+    if rg:
+        cmd = [
+            rg, "--line-number", "--no-heading", "--color", "never",
+            "--max-count", str(max_matches),
+            "--glob", "!node_modules/**", "--glob", "!.git/**", "--glob", "!.next/**",
+        ]
+        if case_insensitive:
+            cmd.append("-i")
+        if glob_pat:
+            cmd.extend(["--glob", glob_pat])
+        cmd.extend(["--", pattern, str(root)])
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except (OSError, asyncio.TimeoutError) as exc:
+            return {"ok": False, "error": "search_failed", "message": str(exc), "retryable": True}
+        text = (stdout_b or b"").decode("utf-8", errors="replace")
+        for line in text.splitlines():
+            if len(matches) >= max_matches:
+                break
+            # path:line:content
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                continue
+            path_s, line_s, snippet = parts[0], parts[1], parts[2]
+            try:
+                rel_path = str(Path(path_s).resolve().relative_to(workspace_path(project_id)))
+            except ValueError:
+                rel_path = path_s
+            rel_norm = rel_path.replace("\\", "/")
+            if path_is_ignored(rel_norm, aiignore):
+                continue
+            matches.append({
+                "path": rel_norm,
+                "line": int(line_s) if line_s.isdigit() else line_s,
+                "snippet": snippet[:240],
+            })
+        return {
+            "ok": True,
+            "pattern": pattern,
+            "path": rel,
+            "match_count": len(matches),
+            "matches": matches,
+            "truncated": len(matches) >= max_matches,
+            "engine": "rg",
+            "stderr": (stderr_b or b"").decode("utf-8", errors="replace")[:500] or None,
+        }
+
+    # Fallback: bounded Python walk when rg is unavailable.
+    import re as _re
+
+    try:
+        regex = _re.compile(pattern, _re.I if case_insensitive else 0)
+    except _re.error as exc:
+        return {"ok": False, "error": "invalid_pattern", "message": f"Bad regex: {exc}"}
+
+    for path in root.rglob("*"):
+        if len(matches) >= max_matches:
+            break
+        if not path.is_file():
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        try:
+            rel_check = str(path.resolve().relative_to(workspace_path(project_id))).replace("\\", "/")
+        except ValueError:
+            rel_check = str(path)
+        if path_is_ignored(rel_check, aiignore):
+            continue
+        if glob_pat and not path.match(glob_pat):
+            continue
+        if path.suffix.lower() not in {
+            ".ts", ".tsx", ".js", ".jsx", ".py", ".css", ".scss", ".md", ".json",
+            ".html", ".yml", ".yaml", ".toml", ".go", ".rs", ".java",
+        }:
+            continue
+        try:
+            if path.stat().st_size > 400_000:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for idx, line in enumerate(text.splitlines(), 1):
+            if regex.search(line):
+                try:
+                    rel_path = str(path.resolve().relative_to(workspace_path(project_id)))
+                except ValueError:
+                    rel_path = str(path)
+                matches.append({
+                    "path": rel_path.replace("\\", "/"),
+                    "line": idx,
+                    "snippet": line[:240],
+                })
+                if len(matches) >= max_matches:
+                    break
+    return {
+        "ok": True,
+        "pattern": pattern,
+        "path": rel,
+        "match_count": len(matches),
+        "matches": matches,
+        "truncated": len(matches) >= max_matches,
+        "engine": "python",
+    }
+
+
+def _resolve_search_root(project_id: str, rel: str) -> Path:
+    from syte.workspace_api import _resolve_workspace_path
+
+    return _resolve_workspace_path(project_id, rel)
+
+
+async def _track_touched_file(
+    project_id: str,
+    path: str,
+    ctx: dict[str, Any],
+    *,
+    content: str | None = None,
+) -> None:
+    """Record active files + workspace index entry for context packing."""
+    from syte.agent_memory import touch_active_file, upsert_workspace_file
+
+    session_number = int(ctx.get("session_number") or 0)
+    if session_number > 0 and path:
+        try:
+            await touch_active_file(project_id, session_number, path)
+        except Exception:
+            logging.getLogger(__name__).debug("active file track failed", exc_info=True)
+    if path:
+        try:
+            await upsert_workspace_file(project_id, path, content=content)
+        except Exception:
+            logging.getLogger(__name__).debug("workspace index update failed", exc_info=True)
 
 
 async def _tool_update_plan(
@@ -866,32 +2064,34 @@ async def _tool_screenshot_preview(
             "message": "Preview URL unavailable — call service preview_start first.",
         }
 
-    raw = await capture_preview_screenshots(target, viewports=tuple(viewport_names))
-    # Capture a small thumb from desktop (or first ok viewport) for chat inline.
-    thumb_source = None
-    for name in ("desktop", "phone"):
-        if (raw.get(name) or {}).get("ok") and (raw.get(name) or {}).get("png_bytes"):
-            thumb_source = raw[name]["png_bytes"]
-            break
-    thumb_shot = None
-    if thumb_source is not None:
-        from syte.preview_access import _capture_screenshot
-
-        # Re-capture at thumb size for a compact chat preview.
-        thumb_shot = await _capture_screenshot(target, width=480, height=300, viewport="thumb")
+    raw = await capture_preview_screenshots(
+        target, viewports=tuple([*viewport_names, "thumb"])
+    )
+    # Prefer the parallel thumb capture; fall back to first ok viewport bytes.
+    thumb_shot = raw.get("thumb") if (raw.get("thumb") or {}).get("ok") else None
+    if thumb_shot is None:
+        for name in ("desktop", "phone"):
+            if (raw.get(name) or {}).get("ok") and (raw.get(name) or {}).get("png_bytes"):
+                thumb_shot = {
+                    "ok": True,
+                    "png_bytes": raw[name]["png_bytes"],
+                    "width": raw[name].get("width"),
+                    "height": raw[name].get("height"),
+                }
+                break
 
     shots_out: list[dict[str, Any]] = []
     vision_parts: list[dict[str, Any]] = []
-    for name in viewport_names:
+
+    async def _persist_one(name: str) -> dict[str, Any]:
         shot = raw.get(name) or {}
         if not shot.get("ok") or not shot.get("png_bytes"):
-            shots_out.append({
+            return {
                 "viewport": name,
                 "ok": False,
                 "error": shot.get("error"),
                 "message": shot.get("message"),
-            })
-            continue
+            }
         png = shot["png_bytes"]
         thumb_bytes = (thumb_shot or {}).get("png_bytes") if name == "desktop" else None
         record = await save_screenshot_record(
@@ -911,7 +2111,7 @@ async def _tool_screenshot_preview(
             thumb_bytes if isinstance(thumb_bytes, (bytes, bytearray)) else png,
             max_bytes=90_000,
         )
-        entry = {
+        return {
             "ok": True,
             "id": record["id"],
             "viewport": name,
@@ -923,8 +2123,17 @@ async def _tool_screenshot_preview(
             "image_url": f"/api/projects/{project_id}/agent/screenshots/{record['id']}",
             "thumb_url": f"/api/projects/{project_id}/agent/screenshots/{record['id']}?variant=thumb",
             "chat_image_base64": chat_b64,
+            "_png": png,
+            "_record": record,
         }
+
+    persisted = await asyncio.gather(*(_persist_one(name) for name in viewport_names))
+    for name, entry in zip(viewport_names, persisted):
+        png = entry.pop("_png", None)
+        record = entry.pop("_record", None)
         shots_out.append(entry)
+        if not entry.get("ok") or not isinstance(png, (bytes, bytearray)) or not isinstance(record, dict):
+            continue
         if len(png) <= MAX_VISION_IMAGE_BYTES:
             vision_parts.append({
                 "type": "image_url",
@@ -934,6 +2143,31 @@ async def _tool_screenshot_preview(
                 "type": "text",
                 "text": f"[{name} {record['width']}x{record['height']}] {route}",
             })
+        # Structured visual analysis (best-effort) for the visual feedback loop.
+        try:
+            from syte.visual_analysis import analyze_and_store
+
+            analysis = await analyze_and_store(
+                project_id,
+                screenshot_id=str(record["id"]),
+                image_base64=str(record.get("image_base64") or ""),
+                viewport=name,
+                width=int(record.get("width") or 0),
+                height=int(record.get("height") or 0),
+                route=route,
+                screenshot_url=entry["image_url"],
+                session_id=ctx.get("turso_session_id"),
+                session_number=int(ctx.get("session_number") or 0),
+                model=ctx.get("model") if isinstance(ctx.get("model"), dict) else None,
+            )
+            entry["visual_analysis_id"] = analysis.get("id")
+            entry["visual_analysis"] = {
+                "id": analysis.get("id"),
+                "issues": (analysis.get("issues") or [])[:8],
+                "suggestions": (analysis.get("suggestions") or [])[:8],
+            }
+        except Exception:
+            logging.getLogger(__name__).debug("visual analysis failed", exc_info=True)
 
     ok_any = any(s.get("ok") for s in shots_out)
     fail_msgs = [
@@ -963,6 +2197,104 @@ async def _tool_screenshot_preview(
             )
         ),
     }
+
+
+async def _tool_inspect_preview(
+    project_id: str, args: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any]:
+    """Limited browser: fetch preview HTML/text + DevTools console (+ optional screenshot)."""
+    from syte.preview_access import run_access_action
+    from urllib.parse import urljoin
+
+    route = str(args.get("route") or "/").strip() or "/"
+    if not route.startswith("/"):
+        route = "/" + route
+    explicit_url = str(args.get("url") or "").strip()
+    include_shot = bool(args.get("include_screenshot"))
+    # Default ON — agents must see browser console / load failures.
+    include_console = True if "include_console" not in args else bool(args.get("include_console"))
+
+    status = await run_access_action(project_id, "status")
+    base = str(status.get("preview_url") or status.get("preview_direct_url") or "")
+    target = explicit_url or (urljoin(base.rstrip("/") + "/", route.lstrip("/")) if base else "")
+    if not target and base:
+        target = base.rstrip("/") + route
+    if not target:
+        return {
+            "ok": False,
+            "error": "no_preview",
+            "message": "Preview URL unavailable — call service preview_start first.",
+        }
+
+    fetched = await run_access_action(project_id, "fetch", url=target)
+    result: dict[str, Any] = {
+        "ok": bool(fetched.get("ok")),
+        "action": "inspect_preview",
+        "route": route,
+        "url": fetched.get("url") or target,
+        "status_code": fetched.get("status_code"),
+        "content_type": fetched.get("content_type"),
+        "content": fetched.get("content") or fetched.get("message"),
+        "message": (
+            f"Fetched preview {route} (HTTP {fetched.get('status_code')})"
+            if fetched.get("ok")
+            else str(fetched.get("message") or fetched.get("error") or "Fetch failed")
+        ),
+    }
+    if fetched.get("error"):
+        result["error"] = fetched.get("error")
+
+    if include_console:
+        console = await run_access_action(
+            project_id,
+            "console",
+            url=target,
+            include_screenshot=False,
+        )
+        result["devtools"] = {
+            k: v
+            for k, v in console.items()
+            if k not in {"png_bytes", "image_base64"}
+        }
+        result["load_ok"] = bool(console.get("load_ok"))
+        result["console_logs"] = console.get("console_logs") or []
+        result["page_errors"] = console.get("page_errors") or []
+        result["network_failures"] = console.get("network_failures") or []
+        result["console_error_count"] = int(console.get("console_error_count") or 0)
+        result["page_error_count"] = int(console.get("page_error_count") or 0)
+        result["title"] = console.get("title") or ""
+        result["ready_state"] = console.get("ready_state") or ""
+        if not console.get("ok"):
+            result["ok"] = False
+            result["message"] = (
+                f"{result['message']}; DevTools: {console.get('message') or 'console issues'}"
+            )
+        else:
+            result["message"] = (
+                f"{result['message']}; browser load_ok={bool(console.get('load_ok'))}, "
+                f"console_errors={result['console_error_count']}, "
+                f"page_errors={result['page_error_count']}"
+            )
+
+    if include_shot:
+        shot = await _tool_screenshot_preview(
+            project_id,
+            {"route": route, "url": target, "viewports": ["desktop"]},
+            ctx,
+        )
+        result["screenshot"] = {
+            k: v for k, v in shot.items() if not str(k).startswith("_")
+        }
+        if shot.get("_chat_screenshots"):
+            result["_chat_screenshots"] = shot["_chat_screenshots"]
+        if shot.get("_vision_parts"):
+            result["_vision_parts"] = shot["_vision_parts"]
+        if shot.get("ok"):
+            ctx["_screenshot_captured"] = True
+            if result.get("ok") is not False:
+                result["ok"] = True
+            result["message"] = f"{result['message']}; desktop screenshot attached"
+    return result
 
 
 async def _tool_ask_question(
@@ -1091,51 +2423,277 @@ async def _tool_request_env(
     }
 
 
+def _merge_stream_tool_calls(
+    acc: dict[int, dict[str, Any]], deltas: list[dict[str, Any]] | None
+) -> None:
+    """Accumulate OpenAI-style streamed tool_call deltas by index."""
+    if not deltas:
+        return
+    for delta in deltas:
+        try:
+            index = int(delta.get("index", 0))
+        except (TypeError, ValueError):
+            index = 0
+        slot = acc.setdefault(
+            index,
+            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+        )
+        if delta.get("id"):
+            slot["id"] = str(delta["id"])
+        if delta.get("type"):
+            slot["type"] = str(delta["type"])
+        fn = delta.get("function") or {}
+        if fn.get("name"):
+            slot["function"]["name"] = str(fn["name"])
+        if fn.get("arguments"):
+            slot["function"]["arguments"] = str(slot["function"].get("arguments") or "") + str(
+                fn["arguments"]
+            )
+
+
+async def _parse_sse_completion(
+    response: httpx.Response,
+    *,
+    on_token: TokenEmitter | None = None,
+    on_reasoning: TokenEmitter | None = None,
+) -> dict[str, Any]:
+    """Parse an OpenAI-compatible SSE chat.completion.chunk stream into one message."""
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_acc: dict[int, dict[str, Any]] = {}
+    finish_reason: str | None = None
+
+    async for line in response.aiter_lines():
+        if not line:
+            continue
+        if line.startswith(":"):
+            continue
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        delta = choice.get("delta") or {}
+        if not isinstance(delta, dict):
+            delta = {}
+        piece = delta.get("content")
+        if piece:
+            text = str(piece)
+            content_parts.append(text)
+            if on_token:
+                await on_token(text)
+        reason_piece = delta.get("reasoning_content") or delta.get("reasoning")
+        if reason_piece:
+            text = str(reason_piece)
+            reasoning_parts.append(text)
+            if on_reasoning:
+                await on_reasoning(text)
+        _merge_stream_tool_calls(tool_acc, delta.get("tool_calls"))
+        if choice.get("finish_reason"):
+            finish_reason = str(choice["finish_reason"])
+
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts),
+    }
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
+    if tool_acc:
+        message["tool_calls"] = [tool_acc[i] for i in sorted(tool_acc)]
+    if finish_reason:
+        message["_finish_reason"] = finish_reason
+    return message
+
+
 async def _provider_completion(
     model: dict[str, str],
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
+    temperature: float = 0.2,
+    thinking_config: dict[str, Any] | None = None,
+    stream: bool = False,
+    on_token: TokenEmitter | None = None,
+    on_reasoning: TokenEmitter | None = None,
 ) -> dict[str, Any]:
+    from syte.agent_errors import (
+        ProviderError,
+        check_circuit_breaker,
+        record_circuit_failure,
+        record_circuit_success,
+    )
     from syte.cloud_agent_store import sanitize_provider_messages
 
-    payload = {
+    check_circuit_breaker(model.get("provider") or "", model.get("model") or "")
+
+    cfg = dict(thinking_config or {})
+    if "temperature" not in cfg or cfg.get("temperature") is None:
+        cfg["temperature"] = temperature
+    thinking_params = build_model_thinking_params(
+        cfg,
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
+    use_tools = TOOLS if tools is None else tools
+    cached_messages = apply_prompt_cache_markers(
+        sanitize_provider_messages(list(messages)),
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
+    payload: dict[str, Any] = {
         "model": model["model"],
-        "messages": sanitize_provider_messages(list(messages)),
-        "tools": tools or TOOLS,
-        "tool_choice": "auto",
-        "stream": False,
-        "temperature": 0.1,
+        "messages": cached_messages,
+        "temperature": float(thinking_params.get("temperature", temperature)),
+        "top_p": float(thinking_params.get("top_p", 0.95)),
+        "stream": bool(stream and (on_token is not None or on_reasoning is not None)),
     }
-    # DeepSeek thinking mode requires reasoning_content round-trips after tool
-    # calls. Explicitly disable thinking for the non-reasoning syra-base model
-    # so multi-turn tool loops stay OpenAI-compatible without that field.
-    if "deepseek.com" in (model.get("api_base") or ""):
-        payload["thinking"] = {"type": "disabled"}
+    max_tokens = _model_max_tokens(model)
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    if use_tools:
+        payload["tools"] = use_tools
+        payload["tool_choice"] = "auto"
+    if "thinking" in thinking_params:
+        payload["thinking"] = thinking_params["thinking"]
+    if thinking_params.get("cache_prompt"):
+        payload["cache_prompt"] = True
+    if thinking_params.get("reasoning_effort"):
+        payload["reasoning_effort"] = thinking_params["reasoning_effort"]
+
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
+    url = model["api_base"].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
+    client = _get_provider_client()
+
+    def _provider_error_message(status_code: int, reason: str, request_url: str, detail: str) -> str:
+        detail_l = (detail or "").lower()
+        if "no active upstream keys" in detail_l:
+            return (
+                f"Provider has no active upstream keys for {model.get('model') or 'this model'}. "
+                "Check the provider admin console, then retry."
+            )
+        if (
+            status_code in {401, 403}
+            or "invalid or deactivated api key" in detail_l
+            or "api key you provided is invalid" in detail_l
+            or "unauthorized" in detail_l
+            or "authentication" in detail_l
+        ):
+            label = (
+                model.get("label")
+                or model.get("provider_label")
+                or model.get("provider")
+                or "provider"
+            )
+            profile = model.get("profile") or "selected"
+            model_name = model.get("model") or "unknown-model"
+            secret_env = model.get("secret_env") or ""
+            key_source = model.get("key_source") or "unknown"
+            key_hint = model.get("api_key_hint") or ""
+            hint = ""
+            api_base = str(model.get("api_base") or "").lower()
+            if "deepseek.com" in api_base or str(label).lower() == "deepseek":
+                hint = (
+                    " syra-base now requires a DeepSeek key "
+                    "(https://platform.deepseek.com/). Old Aliyun keys belong on syra-ultra."
+                )
+            elif "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
+                hint = " Use an Aliyun MaaS token-plan API key for syra-ultra."
+            elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
+                hint = " Use a Google AI Studio / Vertex Gemini API key."
+            source_bits = [f"source={key_source}"]
+            if secret_env:
+                source_bits.append(f"env={secret_env}")
+            if key_hint:
+                source_bits.append(f"key={key_hint}")
+            return (
+                f"Invalid API key for {profile} ({label} · {model_name}). "
+                f"Update the key in AI provider settings "
+                f"[{'; '.join(source_bits)}].{hint}"
+            )
+        return (
+            f"Client error '{status_code} {reason}' for url '{request_url}'"
+            + (f": {detail}" if detail else "")
+        )
+
+    def _is_retryable_provider_status(status_code: int, detail: str) -> bool:
+        if status_code not in {408, 429, 500, 502, 503, 504}:
+            return False
+        detail_l = (detail or "").lower()
+        # Permanent gateway/config failures — retrying only burns latency.
+        if any(
+            marker in detail_l
+            for marker in (
+                "no active upstream keys",
+                "invalid or deactivated api key",
+                "invalid api key",
+                "incorrect api key",
+                "api key you provided is invalid",
+            )
+        ):
+            return False
+        return True
+
     for attempt in range(3):
         try:
-            timeout = httpx.Timeout(PROVIDER_TIMEOUT_S, connect=15.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    model["api_base"].rstrip("/") + "/chat/completions", headers=headers, json=payload
-                )
-            if response.status_code in {408, 429, 500, 502, 503, 504} and attempt < 2:
-                await asyncio.sleep(1.5 * (2 ** attempt))
+            if payload["stream"]:
+                async with client.stream("POST", url, headers=headers, json=payload) as response:
+                    peek = ""
+                    if response.status_code >= 400:
+                        peek = (await response.aread()).decode(errors="replace").strip()[:800]
+                    if _is_retryable_provider_status(response.status_code, peek) and attempt < 2:
+                        if not peek:
+                            await response.aread()
+                        await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
+                        continue
+                    if response.status_code >= 400:
+                        detail = peek or (await response.aread()).decode(errors="replace").strip()[:800]
+                        raise RuntimeError(
+                            _provider_error_message(
+                                response.status_code,
+                                response.reason_phrase,
+                                str(response.request.url),
+                                detail,
+                            )
+                        )
+                    message = await _parse_sse_completion(
+                        response, on_token=on_token, on_reasoning=on_reasoning,
+                    )
+                    record_circuit_success(model.get("provider") or "", model.get("model") or "")
+                    return message
+
+            response = await client.post(url, headers=headers, json=payload)
+            detail = (response.text or "").strip()[:800] if response.status_code >= 400 else ""
+            if _is_retryable_provider_status(response.status_code, detail) and attempt < 2:
+                await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                 continue
             if response.status_code >= 400:
-                detail = (response.text or "").strip()[:800]
                 raise RuntimeError(
-                    f"Client error '{response.status_code} {response.reason_phrase}' "
-                    f"for url '{response.request.url}'"
-                    + (f": {detail}" if detail else "")
+                    _provider_error_message(
+                        response.status_code,
+                        response.reason_phrase,
+                        str(response.request.url),
+                        detail,
+                    )
                 )
             data = response.json()
             choices = data.get("choices") or []
             if not choices or not isinstance(choices[0].get("message"), dict):
                 raise RuntimeError("Provider returned no assistant message")
+            record_circuit_success(model.get("provider") or "", model.get("model") or "")
             return choices[0]["message"]
+        except ProviderError:
+            raise
         except httpx.HTTPError as exc:
             error = str(exc)
             if attempt < 2:
@@ -1143,7 +2701,13 @@ async def _provider_completion(
                 continue
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
+            # Streaming failures fall back once to a non-stream request.
+            if payload.get("stream") and attempt < 2 and "no active upstream keys" not in error.lower():
+                payload["stream"] = False
+                await asyncio.sleep(0.2)
+                continue
             break
+    record_circuit_failure(model.get("provider") or "", model.get("model") or "")
     raise RuntimeError(error)
 
 
@@ -1151,6 +2715,35 @@ async def _run_subagent(
     project_id: str, task: str, model: dict[str, str]
 ) -> dict[str, Any]:
     """Run a bounded secondary tool loop and return its findings to the parent."""
+    try:
+        return await asyncio.wait_for(
+            _run_subagent_loop(project_id, task, model),
+            timeout=SUBAGENT_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        return {
+            "ok": False,
+            "error": "subagent_timeout",
+            "retryable": True,
+            "message": (
+                f"Subagent timed out after {int(SUBAGENT_TIMEOUT_S)}s "
+                f"(step limit {MAX_SUBAGENT_STEPS}). Narrow the task or raise tool timeouts carefully."
+            ),
+            "task": task,
+            "timeout_s": SUBAGENT_TIMEOUT_S,
+        }
+    except asyncio.CancelledError:
+        return {
+            "ok": False,
+            "error": "subagent_cancelled",
+            "message": "Subagent cancelled",
+            "task": task,
+        }
+
+
+async def _run_subagent_loop(
+    project_id: str, task: str, model: dict[str, str]
+) -> dict[str, Any]:
     instruction = (
         "You are a focused Syte subagent sharing the parent's project workspace. Complete only the "
         "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
@@ -1174,6 +2767,7 @@ async def _run_subagent(
         if not stored_calls:
             return {"ok": True, "task": task, "result": content.strip() or "Task completed."}
         for call in stored_calls:
+            _raise_if_cancelled()
             function = call.get("function") or {}
             name = str(function.get("name") or "")
             try:
@@ -1182,12 +2776,42 @@ async def _run_subagent(
                     args = {}
             except json.JSONDecodeError:
                 args = {}
-            result = await _execute_tool(project_id, name, args, model=model, context={})
+            try:
+                result = await _execute_tool(
+                    project_id,
+                    name,
+                    args,
+                    model=model,
+                    context={"max_tool_result_chars": _model_tool_result_chars(model)},
+                )
+            except asyncio.CancelledError:
+                result = {
+                    "ok": False,
+                    "error": "cancelled",
+                    "message": f"Tool {name} cancelled",
+                }
+                public = result
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": str(call.get("id") or f"subagent-{step}"),
+                    "content": _truncate_tool_payload(
+                        public, max_chars=_model_tool_result_chars(model)
+                    ),
+                })
+                raise
+            except Exception as exc:
+                result = {
+                    "ok": False,
+                    "error": "tool_failed",
+                    "message": str(exc) or type(exc).__name__,
+                }
             public = {k: v for k, v in result.items() if not str(k).startswith("_")}
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                "content": json.dumps(public, ensure_ascii=False),
+                "content": _truncate_tool_payload(
+                    public, max_chars=_model_tool_result_chars(model)
+                ),
             })
     return {
         "ok": False,
@@ -1198,46 +2822,104 @@ async def _run_subagent(
 
 async def communicate_with_agent(
     project_id: str, message: str, *, model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, background: bool = False,
+    improve_from_screenshot: bool = False,
+    visual_analysis_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
+    from syte.model_routing import suggest_model_profile
+
+    routing = suggest_model_profile(
+        message,
+        explicit_profile=model_profile,
+        thinking_level=thinking_level,
+        improve_from_screenshot=improve_from_screenshot or bool(visual_analysis_id),
+    )
+    if routing.get("auto_applied") and not model_profile:
+        model_profile = routing["effective_profile"]
+
     if background:
         from syte.agent_jobs import submit_agent_request
-        return await submit_agent_request(project_id, message, model_profile=model_profile,
-                                          source=source, auto_start=auto_start)
+        result = await submit_agent_request(
+            project_id,
+            message,
+            model_profile=model_profile,
+            thinking_level=thinking_level,
+            source=source,
+            auto_start=auto_start,
+            idempotency_key=idempotency_key,
+        )
+        return {**result, "model_routing": routing}
     from syte.agent_jobs import new_request_id, project_agent_lock
     request_id = new_request_id()
     async with project_agent_lock(project_id):
-        return await _communicate_with_agent_impl(
-            project_id, message, model_profile=model_profile, source=source,
+        result = await _communicate_with_agent_impl(
+            project_id, message, model_profile=model_profile,
+            thinking_level=thinking_level, source=source,
             auto_start=auto_start, request_id=request_id,
+            improve_from_screenshot=improve_from_screenshot,
+            visual_analysis_id=visual_analysis_id,
         )
+        return {**result, "model_routing": routing}
 
 
 async def _communicate_with_agent_impl(
     project_id: str, message: str, *, model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, emit_request_started: bool = True,
     request_id: str | None = None,
     session_number: int | None = None,
     message_index_start: int = 0,
     turso_session_id: str | None = None,
+    improve_from_screenshot: bool = False,
+    visual_analysis_id: str | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found", "request_id": request_id}
-    if model_profile:
+    # Explicit model_profile still persists; thinking_level never does.
+    if model_profile and thinking_level is None:
         try:
             await update_agent_settings(project_id, model_profile=model_profile, include_status=False)
         except ValueError as exc:
             return {"ok": False, "error": "invalid_model_profile", "message": str(exc), "request_id": request_id}
     project = await get_project(project_id) or project
+    try:
+        gen = resolve_thinking_config(
+            thinking_level,
+            fallback_profile=model_profile or project.get("agent_model_profile"),
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": "invalid_thinking_level", "message": str(exc), "request_id": request_id}
+
+    turn_profile = gen.get("builder_profile") or gen["model_profile"]
+    # When an explicit model_profile was passed for this turn, resolve keys for
+    # that profile without requiring a separate thinker swap.
+    if turn_profile and turn_profile != project.get("agent_model_profile"):
+        project = {**project, "agent_model_profile": turn_profile}
+
     if auto_start and project.get("agent_status") != "running":
         ok, start_message, _ = await start_agent(project_id)
         if not ok:
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
+    # Selected profile handles both planning and the tool/code loop.
     if not model["api_key"]:
-        return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
+        secret_env = model.get("secret_env") or profile_provider(model.get("profile") or DEFAULT_PROFILE)["secret_env"]
+        return {
+            "ok": False,
+            "error": "api_key_missing",
+            "message": (
+                f"Provider API key is not configured for {model.get('profile') or 'selected'} "
+                f"({model.get('label') or model.get('provider_label') or 'provider'}). "
+                f"Save it in AI provider settings or set process env {secret_env}."
+            ),
+            "request_id": request_id,
+            "profile": model.get("profile"),
+            "secret_env": secret_env,
+        }
 
     # One user message opens one numbered chat session. Every event produced
     # while working the turn is mirrored to a durable Turso session (see
@@ -1253,8 +2935,46 @@ async def _communicate_with_agent_impl(
         opened_turso_session = True
         if turso_session_id:
             await set_turso_session_id(project_id, turso_session_id)
+        from syte.agent_memory import upsert_session_meta
+
+        await upsert_session_meta(
+            project_id,
+            session_number,
+            turso_session_id=turso_session_id,
+            status="open",
+            model_profile=model["profile"],
+        )
     else:
         message_index = max(0, int(message_index_start or 0))
+
+    thinking_probe = build_model_thinking_params(
+        gen,
+        provider=str(model.get("provider") or ""),
+        model=str(model.get("model") or ""),
+        api_base=str(model.get("api_base") or ""),
+    )
+    if thinking_probe.get("thinking_requested") and not thinking_probe.get("thinking_supported"):
+        await record_agent_event(
+            project_id,
+            "status",
+            title="Thinking not supported",
+            detail=(
+                f"thinking_level={gen.get('thinking_level')} requested, but model "
+                f"{model.get('model')} / provider {model.get('provider')} does not "
+                "accept native thinking params — slider ignored for this turn."
+            ),
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "thinking_level": gen.get("thinking_level"),
+                "thinking_requested": True,
+                "thinking_supported": False,
+                "model": model.get("model"),
+                "provider": model.get("provider"),
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
 
     def _mark_payload(
         *,
@@ -1282,7 +3002,15 @@ async def _communicate_with_agent_impl(
             role="user",
             title="Request",
             detail=message[:4000],
-            payload=_mark_payload(status="d", kind="user", base={"session_started": True}),
+            payload=_mark_payload(
+                status="d",
+                kind="user",
+                base={
+                    "session_started": True,
+                    "thinking_level": gen.get("thinking_level"),
+                    "temperature": gen.get("temperature"),
+                },
+            ),
             source=source,
             turso_session_id=turso_session_id,
         )
@@ -1295,16 +3023,213 @@ async def _communicate_with_agent_impl(
         "processing",
         title="Processing",
         detail="Cloud agent accepted the durable request",
-        payload=_mark_payload(status="g", kind="status"),
+        payload=_mark_payload(
+            status="g",
+            kind="status",
+            base={
+                "thinking_level": gen.get("thinking_level"),
+                "thinking_label": gen.get("label"),
+                "max_tool_steps": gen.get("max_tool_steps"),
+            },
+        ),
         source=source,
         turso_session_id=turso_session_id,
     )
-    instruction = await _build_syte_instruction(project_id)
-    # Only the latest session — prior sessions stay in the activity stream for
-    # clients, but are not re-sent to the provider on every turn.
-    messages = [{"role": "system", "content": instruction}, *(await conversation_messages(
-        project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True,
-    ))]
+
+    # Prefer indexed files referenced in the prompt over a full workspace crawl.
+    from syte.agent_memory import latest_summary, lookup_workspace_paths, prompt_tags_from_message
+    from syte.agent_skills import match_active_skills, skill_hint_block
+    from syte.nextjs_layout import is_nextjs_repo
+    from syte.site_planner import (
+        is_substantive_site_request,
+        is_website_request,
+        site_request_needs_clarification,
+    )
+
+    app_root = workspace_path(project_id) / "app"
+    is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
+    website_work = is_website or is_website_request(message)
+    site_plan_required = is_substantive_site_request(message)
+    site_needs_clarification = site_request_needs_clarification(message)
+    site_question_required = bool(site_plan_required and site_needs_clarification and not is_website)
+    tags = prompt_tags_from_message(message)
+
+    # Overlap independent reads so first provider byte is not gated on serial I/O.
+    history_limit = _model_history_limit(model)
+    tool_result_chars = _model_tool_result_chars(model)
+    instruction_task = asyncio.create_task(_build_syte_instruction_parts(project_id))
+    history_task = asyncio.create_task(
+        conversation_messages(project_id, limit=history_limit, last_session_only=True)
+    )
+    summary_task = asyncio.create_task(latest_summary(project_id))
+    skills_task = asyncio.create_task(
+        match_active_skills(project_id, message, is_nextjs=website_work)
+    )
+    lookup_task = (
+        asyncio.create_task(lookup_workspace_paths(project_id, tags=tags, limit=12))
+        if tags
+        else None
+    )
+
+    static_instruction, dynamic_instruction = await instruction_task
+    history = await history_task
+    prior_summary = await summary_task
+    matched_skills = await skills_task
+    hinted = await lookup_task if lookup_task is not None else []
+
+    turn_hints: list[str] = []
+    plan_already_seeded = False
+    if site_plan_required:
+        turn_hints.append(
+            "Substantive website workflow (hard gate): before any file/tool inspection, decide "
+            "whether one batched clarification is materially needed. If yes, your FIRST tool call "
+            "must be ask_question. If the brief is already sufficient, your FIRST tool call must be "
+            "update_plan. After ask_question returns an answer, call update_plan before any other "
+            "tool. The plan must address information architecture, visual direction, content/assets, "
+            "individual shadcn component mapping (no Blocks), responsive behavior, accessibility and "
+            "interaction states, plus desktop/phone verification. Spend the needed reasoning effort "
+            "on how the site should look and work before implementation."
+        )
+        if site_needs_clarification:
+            turn_hints.append(
+                "The request appears to omit a visual direction for a new site. Ask one concise "
+                "choice question using the named themes unless existing context supplies that choice."
+            )
+    elif gen.get("mandatory_plan"):
+        turn_hints.append(
+            "Thinking mode: Deep/Max (hard gate). Your FIRST tool call MUST be "
+            "update_plan with a concrete ordered plan. Other tools are rejected until "
+            "the plan is submitted. After planning, execute the steps."
+        )
+
+    if hinted:
+        turn_hints.append(
+            "## Prompt-matched workspace files (from index)\n"
+            + "\n".join(
+                f"- {item['path']} [{', '.join(item.get('semantic_tags') or [])}]"
+                for item in hinted
+            )
+        )
+
+    skill_hint = skill_hint_block(matched_skills)
+    if skill_hint:
+        turn_hints.append(skill_hint)
+
+    # Visual feedback loop: attach structured screenshot analysis as primary critique source.
+    analysis_payload = None
+    if visual_analysis_id or improve_from_screenshot:
+        from syte.agent_memory import (
+            get_visual_analysis,
+            latest_visual_analysis,
+            visual_feedback_prompt,
+        )
+
+        analysis_payload = (
+            await get_visual_analysis(visual_analysis_id)
+            if visual_analysis_id
+            else await latest_visual_analysis(project_id)
+        )
+        if analysis_payload:
+            turn_hints.append(visual_feedback_prompt(analysis_payload))
+
+    # Seed .aiignore so lockfiles / build artifacts never enter listings.
+    from syte.token_efficiency import ensure_workspace_aiignore
+
+    ensure_workspace_aiignore(workspace_path(project_id) / "app")
+
+    # Complex multi-page site builds: publish a planner decomposition before execution.
+    # The selected model plans and builds — no separate thinker.
+    from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
+
+    planner_model = model
+    if (
+        website_work
+        and is_complex_site_request(message)
+        and not site_needs_clarification
+        and not improve_from_screenshot
+    ):
+        plan = await plan_complex_site(
+            project_id,
+            message,
+            provider_completion=_provider_completion,
+            model=planner_model,
+        )
+        if plan.get("ok") and plan.get("subtasks"):
+            ordered = order_subtasks(list(plan["subtasks"]))
+            from syte.agent_artifacts import save_plan
+
+            plan_steps = [str(item.get("task") or "") for item in ordered if item.get("task")]
+            if plan_steps:
+                plan_row = await save_plan(
+                    project_id,
+                    plan_steps,
+                    note=f"planner:{plan.get('planner') or 'llm'}",
+                    request_id=request_id,
+                    session_number=session_number,
+                    turso_session_id=turso_session_id,
+                )
+                await record_agent_event(
+                    project_id,
+                    "thinking",
+                    role="assistant",
+                    title="Site plan",
+                    detail="\n".join(f"{i}. {s}" for i, s in enumerate(plan_steps, 1))[:4000],
+                    payload=_mark_payload(
+                        status="d",
+                        kind="plan",
+                        base={"plan_id": (plan_row or {}).get("id"), "steps": plan_steps},
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                turn_hints.append(
+                    "## Planner decomposition (execute in order, respecting deps)\n"
+                    + "\n".join(
+                        f"{i}. {item.get('task')} "
+                        f"(files: {', '.join(item.get('files') or []) or 'n/a'}; "
+                        f"deps: {', '.join(item.get('deps') or []) or 'none'})"
+                        for i, item in enumerate(ordered, 1)
+                    )
+                )
+                plan_already_seeded = True
+
+    dynamic_instruction = "\n\n".join(
+        part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()
+    )
+
+    # Always inject the latest cross-session summary when the live history is thin
+    # (new session, or fewer than 6 user/assistant turns) so context survives restarts.
+    live_ua = [
+        m for m in history
+        if m.get("role") in {"user", "assistant"} and str(m.get("content") or "").strip()
+    ]
+    if prior_summary and (
+        prior_summary.get("up_to_session_number", 0) < int(session_number or 0)
+        or len(live_ua) < 6
+    ):
+        decisions = prior_summary.get("key_decisions") or []
+        decision_block = ""
+        if decisions:
+            decision_block = "\nKey decisions:\n- " + "\n- ".join(
+                str(d) for d in decisions[:8]
+            )
+        history = [
+            {
+                "role": "system",
+                "content": (
+                    "Cross-session memory (authoritative; do not re-discover):\n"
+                    + str(prior_summary.get("summary_text") or "")[:4500]
+                    + decision_block
+                    + (
+                        f"\nTechnical state:\n{prior_summary.get('technical_state')}"
+                        if prior_summary.get("technical_state")
+                        else ""
+                    )
+                ),
+            },
+            *history[-12:],
+        ]
+    messages = [_system_message_for_provider(static_instruction, dynamic_instruction, model), *history]
     current = asyncio.current_task()
     if current:
         _active_turns[project_id] = current
@@ -1334,23 +3259,86 @@ async def _communicate_with_agent_impl(
             turso_session_id=turso_session_id,
         )
 
+    async def _emit_token(delta: str) -> None:
+        if not delta:
+            return
+        await record_agent_event(
+            project_id,
+            "token_delta",
+            role="assistant",
+            title="Stream",
+            detail=delta[:2000],
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "delta": delta,
+                "mark_kind": "stream",
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+
+    async def _emit_thinking(delta: str) -> None:
+        if not delta:
+            return
+        await record_agent_event(
+            project_id,
+            "thinking_delta",
+            role="assistant",
+            title="Thinking",
+            detail=delta[:2000],
+            payload={
+                "request_id": request_id,
+                "session": session_number,
+                "delta": delta,
+                "mark_kind": "thinking",
+            },
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+
     tool_context: dict[str, Any] = {
         "request_id": request_id,
         "session_number": session_number,
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
+        "thinking_level": gen.get("thinking_level"),
+        "mandatory_plan": bool(gen.get("mandatory_plan") or site_plan_required),
+        "plan_gate_reason": "website" if site_plan_required else "thinking",
+        "question_required": site_question_required,
+        "question_answered": False,
+        "plan_submitted": bool(plan_already_seeded),
+        "model": model,
+        "max_tool_result_chars": tool_result_chars,
     }
 
-    # Who opened the Turso session owns closing it (sync path). Async jobs
-    # pass a pre-opened session and close it in agent_jobs._run_job finally.
-    terminal_status: str | None = None
+    max_tool_steps = int(gen.get("max_tool_steps") or 48)
+    temperature = float(gen.get("temperature") or 0.2)
+    want_stream = bool(gen.get("stream"))
+
     try:
-        for step in range(MAX_AGENT_STEPS):
-            assistant = await _provider_completion(model, messages)
+        for step in itertools.count():
+            _raise_if_cancelled()
+            allow_tools = step < max_tool_steps
+            assistant = await _provider_completion(
+                model,
+                messages,
+                tools=TOOLS if allow_tools else [],
+                temperature=temperature,
+                thinking_config=gen,
+                stream=want_stream,
+                on_token=_emit_token if want_stream else None,
+                on_reasoning=_emit_thinking if want_stream else None,
+            )
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
+            if isinstance(reasoning, str) and len(reasoning) > MAX_REASONING_HISTORY_CHARS:
+                reasoning = reasoning[:MAX_REASONING_HISTORY_CHARS] + "\n… [thinking truncated]"
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = tool_calls if isinstance(tool_calls, list) else []
+            # Cap: ignore tool calls past the thinking-level budget.
+            if not allow_tools:
+                stored_calls = []
             await _persist_message(
                 project_id,
                 request_id,
@@ -1367,7 +3355,8 @@ async def _communicate_with_agent_impl(
             if stored_calls:
                 next_assistant["tool_calls"] = stored_calls
             messages.append(next_assistant)
-            visible_thought = str(reasoning or content).strip()
+            # Prefer provider reasoning for thinking events — do not mix answer text in (DAV-136).
+            visible_thought = str(reasoning or "").strip()
             if stored_calls and visible_thought:
                 # Persist thinking text as a plan-shaped artifact when it looks like steps.
                 from syte.agent_artifacts import save_plan
@@ -1399,6 +3388,71 @@ async def _communicate_with_agent_impl(
                     turso_session_id=turso_session_id,
                 )
             if not stored_calls:
+                # Auto-screenshot after UI edits when the agent forgot to capture one.
+                if (
+                    tool_context.get("_ui_edit_detected")
+                    and not tool_context.get("_screenshot_captured")
+                    and is_website
+                ):
+                    try:
+                        shot = await _execute_tool(
+                            project_id,
+                            "screenshot_preview",
+                            {"route": "/", "viewports": ["desktop"]},
+                            model=model,
+                            context=tool_context,
+                        )
+                        chat_shots = shot.pop("_chat_screenshots", None) if isinstance(shot, dict) else None
+                        if chat_shots:
+                            await record_agent_event(
+                                project_id,
+                                "screenshot",
+                                role="assistant",
+                                title="Screenshot / (auto)",
+                                detail=str(shot.get("message") or "Auto screenshot after UI edits")[:1000],
+                                payload=_mark_payload(
+                                    status="d",
+                                    kind="screenshot",
+                                    base={
+                                        "route": "/",
+                                        "auto": True,
+                                        "screenshots": [
+                                            {
+                                                "id": s.get("id"),
+                                                "viewport": s.get("viewport"),
+                                                "image_url": s.get("image_url"),
+                                                "thumb_url": s.get("thumb_url"),
+                                                "ok": s.get("ok"),
+                                            }
+                                            for s in chat_shots
+                                        ],
+                                    },
+                                ),
+                                source=source,
+                                turso_session_id=turso_session_id,
+                            )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "auto screenshot after UI edits failed", exc_info=True
+                        )
+
+                # Preview health / missing-route checks run in the background so
+                # "Completed" is not blocked for up to ~45s after the model finishes.
+                if is_website:
+                    _track_bg_task(
+                        asyncio.create_task(
+                            _post_turn_preview_checks(
+                                project_id,
+                                model=model,
+                                tool_context=tool_context,
+                                source=source,
+                                turso_session_id=turso_session_id,
+                                request_id=request_id,
+                                session_number=session_number,
+                            )
+                        )
+                    )
+
                 reply = content.strip() or "Completed."
                 await record_agent_event(
                     project_id, "request_completed", role="assistant", title="Completed",
@@ -1411,15 +3465,80 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-                terminal_status = "completed"
+                await record_agent_event(
+                    project_id,
+                    "session_stopped",
+                    title="Session stopped",
+                    detail="completed",
+                    payload=_mark_payload(
+                        status="d",
+                        kind="status",
+                        base={
+                            "reason": "completed",
+                            "stopped_at": _now(),
+                            "turso_session_id": turso_session_id,
+                        },
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                if opened_turso_session:
+                    await close_turso_session(turso_session_id, status="completed")
+                # Background memory: summarize long sessions + notify webhooks.
+                try:
+                    from syte.agent_memory import maybe_summarize_session, upsert_session_meta
+                    from syte.webhooks import EVENT_AGENT_SESSION_COMPLETED, emit_webhook
+
+                    await upsert_session_meta(
+                        project_id,
+                        session_number,
+                        turso_session_id=turso_session_id,
+                        status="completed",
+                        model_profile=model["profile"],
+                    )
+                    await maybe_summarize_session(
+                        project_id,
+                        session_number,
+                        turso_session_id=turso_session_id,
+                        min_messages=2,
+                    )
+                    try:
+                        await _drain_turso_mirrors(timeout_s=5.0)
+                        await _resync_unsynced_messages(
+                            project_id,
+                            session_number=session_number,
+                            turso_session_id=turso_session_id,
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "turso resync at turn end failed", exc_info=True
+                        )
+                    await emit_webhook(
+                        EVENT_AGENT_SESSION_COMPLETED,
+                        {
+                            "project_id": project_id,
+                            "turso_session_id": turso_session_id,
+                            "session_number": session_number,
+                            "request_id": request_id,
+                            "model_profile": model["profile"],
+                        },
+                    )
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "post-turn memory/webhook failed", exc_info=True
+                    )
                 _write_log(project_id, f"request {request_id} completed in {step + 1} step(s)")
                 return {"ok": True, "uuid": project_id, "request_id": request_id,
                         "session": session_number,
                         "turso_session_id": turso_session_id,
                         "conversation_id": f"cloud-{project_id}", "model_profile": model["profile"],
+                        "thinking_level": gen.get("thinking_level"),
                         "model": model["model"], "provider": model["provider"], "message": reply,
-                        "reply": reply, "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
+                        "reply": reply,
+                        "visual_analysis_id": (analysis_payload or {}).get("id") if analysis_payload else None,
+                        "state": {"execution_status": "finished", "runtime": CLOUD_RUNTIME}}
             for call in stored_calls:
+                _raise_if_cancelled()
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
                 try:
@@ -1439,9 +3558,63 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-                result = await _execute_tool(
-                    project_id, name, args, model=model, context=tool_context,
-                )
+                try:
+                    result = await _execute_tool(
+                        project_id, name, args, model=model, context=tool_context,
+                    )
+                except asyncio.CancelledError:
+                    # Always leave a tool result so the conversation stays valid (DAV-195).
+                    result = {
+                        "ok": False,
+                        "error": "cancelled",
+                        "message": f"Tool {name} cancelled",
+                    }
+                    encoded = _truncate_tool_payload(result, max_chars=tool_result_chars)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": encoded,
+                    })
+                    try:
+                        await _persist_message(
+                            project_id,
+                            request_id,
+                            "tool",
+                            encoded,
+                            session_number=session_number,
+                            turso_session_id=turso_session_id,
+                            tool_call_id=call_id,
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "persist cancelled tool result failed", exc_info=True
+                        )
+                    raise
+                except Exception as exc:
+                    result = {
+                        "ok": False,
+                        "error": "tool_failed",
+                        "message": str(exc) or type(exc).__name__,
+                        "retryable": False,
+                    }
+                if isinstance(result, dict) and not result.get("ok", True):
+                    await record_agent_event(
+                        project_id,
+                        "tool_error",
+                        title=f"Tool {name} failed",
+                        detail=str(result.get("message") or result.get("error") or "")[:2000],
+                        payload=_mark_payload(
+                            status="g",
+                            kind="tool",
+                            base={
+                                "tool": name,
+                                "error_type": result.get("error") or "tool_failed",
+                                "retryable": bool(result.get("retryable")),
+                            },
+                        ),
+                        source=source,
+                        turso_session_id=turso_session_id,
+                    )
                 chat_shots = result.pop("_chat_screenshots", None)
                 vision_parts = result.pop("_vision_parts", None)
                 if name == "update_plan" and result.get("ok"):
@@ -1462,7 +3635,7 @@ async def _communicate_with_agent_impl(
                         source=source,
                         turso_session_id=turso_session_id,
                     )
-                if name == "screenshot_preview" and chat_shots:
+                if name in {"screenshot_preview", "inspect_preview"} and chat_shots:
                     await record_agent_event(
                         project_id,
                         "screenshot",
@@ -1483,7 +3656,6 @@ async def _communicate_with_agent_impl(
                                         "height": s.get("height"),
                                         "image_url": s.get("image_url"),
                                         "thumb_url": s.get("thumb_url"),
-                                        "chat_image_base64": s.get("chat_image_base64") or "",
                                         "ok": s.get("ok"),
                                     }
                                     for s in chat_shots
@@ -1512,13 +3684,15 @@ async def _communicate_with_agent_impl(
                         turso_session_id=turso_session_id,
                     )
                 public_result = {k: v for k, v in result.items() if not str(k).startswith("_")}
-                encoded = json.dumps(public_result, ensure_ascii=False)
+                encoded = _truncate_tool_payload(public_result, max_chars=tool_result_chars)
                 await _persist_message(
                     project_id, request_id, "tool", encoded,
                     session_number=session_number, turso_session_id=turso_session_id,
                     tool_call_id=call_id,
                 )
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
+                _raise_if_cancelled()
+                await asyncio.sleep(0)
                 # Inject vision parts when the active provider can consume image_url parts.
                 supports_vision = "deepseek.com" not in (model.get("api_base") or "")
                 if vision_parts and supports_vision:
@@ -1571,37 +3745,6 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
-        # Step budget exhausted — end the turn cleanly so the session is not
-        # left open / "generating" indefinitely.
-        error = (
-            f"Agent did not finish within {MAX_AGENT_STEPS} steps. "
-            "Send a more focused follow-up or stop the agent."
-        )
-        _write_log(project_id, f"request {request_id} hit step limit ({MAX_AGENT_STEPS})")
-        await update_project(project_id, {"agent_last_error": error[:4000]})
-        await record_agent_event(
-            project_id, "request_failed", title="Step limit reached", detail=error[:4000],
-            payload=_mark_payload(
-                status="d",
-                kind="error",
-                base={
-                    "error": "agent_step_limit",
-                    "retry_message": message[:4000],
-                    "max_steps": MAX_AGENT_STEPS,
-                },
-            ),
-            source=source,
-            turso_session_id=turso_session_id,
-        )
-        terminal_status = "failed"
-        return {
-            "ok": False,
-            "request_id": request_id,
-            "session": session_number,
-            "turso_session_id": turso_session_id,
-            "error": "agent_step_limit",
-            "message": error,
-        }
     except asyncio.CancelledError:
         from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
@@ -1630,7 +3773,25 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
-        terminal_status = "cancelled"
+        await record_agent_event(
+            project_id,
+            "session_stopped",
+            title="Session stopped",
+            detail="interrupted",
+            payload=_mark_payload(
+                status="d",
+                kind="status",
+                base={
+                    "reason": "interrupted",
+                    "stopped_at": stop["stopped_at"],
+                    "turso_session_id": turso_session_id,
+                },
+            ),
+            source=source,
+            turso_session_id=turso_session_id,
+        )
+        if opened_turso_session:
+            await close_turso_session(turso_session_id, status="cancelled")
         raise
     except Exception as exc:
         error = str(exc) or "Cloud agent request failed"
@@ -1649,23 +3810,86 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
-        terminal_status = "failed"
+        if opened_turso_session:
+            await close_turso_session(turso_session_id, status="failed")
         return {"ok": False, "request_id": request_id, "session": session_number,
                 "turso_session_id": turso_session_id,
                 "error": "cloud_agent_failed", "message": error}
     finally:
-        if opened_turso_session and turso_session_id and terminal_status:
-            await close_turso_session(turso_session_id, status=terminal_status)
         if _active_turns.get(project_id) is current:
             _active_turns.pop(project_id, None)
 
 
 async def test_agent(project_id: str, *, source: str = "api", model_profile: str | None = None) -> dict[str, Any]:
-    result = await communicate_with_agent(
-        project_id, "Reply with exactly the word 'ok' and nothing else.",
-        source=source, model_profile=model_profile,
-    )
-    passed = bool(result.get("ok") and "ok" in str(result.get("reply") or "").lower())
-    return {**result, "ok": passed, "message": "Syte cloud agent test passed" if passed
-            else result.get("message", "Agent did not return expected reply"),
-            "checks": {"cloud_runtime": True, "backend": passed, "communicate": passed}}
+    """Provider connectivity probe that does not mutate project conversation/files (DAV-201).
+
+    Runs a single no-tools completion against the selected model. Does not call
+    ``communicate_with_agent``, so activity events, session history, and workspace
+    files stay untouched.
+    """
+    project = await get_project(project_id)
+    if not project:
+        return {
+            "ok": False,
+            "error": "not_found",
+            "message": "Project not found",
+            "checks": {"cloud_runtime": False, "backend": False, "communicate": False},
+        }
+    try:
+        if model_profile:
+            profile = model_profile.strip() or "syra-base"
+            if profile not in PROFILE_PROVIDERS:
+                raise ValueError(f"Unknown model profile: {profile}")
+            project = {**project, "agent_model_profile": profile}
+        model = await selected_model_metadata(project)
+        if not (model.get("api_key") or "").strip():
+            raise RuntimeError(f"No API key configured for profile {model.get('profile')}")
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "model_unavailable",
+            "message": str(exc) or "Model unavailable",
+            "checks": {"cloud_runtime": True, "backend": False, "communicate": False},
+            "isolated": True,
+            "source": source,
+        }
+    try:
+        assistant = await _provider_completion(
+            model,
+            [
+                {"role": "system", "content": "Reply with exactly the word ok and nothing else."},
+                {"role": "user", "content": "ping"},
+            ],
+            tools=None,
+        )
+        reply = str(assistant.get("content") or "").strip()
+        passed = "ok" in reply.lower()
+        return {
+            "ok": passed,
+            "reply": reply,
+            "message": (
+                "Syte cloud agent test passed"
+                if passed
+                else "Agent did not return expected reply"
+            ),
+            "model_profile": model.get("profile"),
+            "model": model.get("model"),
+            "provider": model.get("provider"),
+            "isolated": True,
+            "source": source,
+            "checks": {
+                "cloud_runtime": True,
+                "backend": passed,
+                "communicate": passed,
+                "isolated_probe": True,
+            },
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "provider_failed",
+            "message": str(exc) or "Provider probe failed",
+            "isolated": True,
+            "source": source,
+            "checks": {"cloud_runtime": True, "backend": False, "communicate": False},
+        }

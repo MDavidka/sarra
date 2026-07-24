@@ -25,14 +25,19 @@ router = APIRouter(tags=["Syte Internal API"])
 
 class InternalAgentChangeRequest(BaseModel):
     message: str = Field(..., description="User change request from sycord.com")
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy | syra-ultra")
     model_name: str | None = Field(None, description="Alias used by sycord.com")
+    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    idempotency_key: str | None = Field(
+        None, description="Optional client key — retries return the same request_id"
+    )
 
 
 class InternalAgentCommunicateRequest(BaseModel):
     message: str
     model_profile: str | None = None
     model_name: str | None = None
+    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
 
 
 class InternalQuestionAnswerRequest(BaseModel):
@@ -114,11 +119,31 @@ async def internal_agent_interrupt(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     await _require_project(project_id)
-    ok, message = await interrupt_agent(project_id)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(project_id)
     if not ok:
         raise HTTPException(400, message)
     return {
         "ok": True,
+        "message": message,
+        **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
+    }
+
+
+@router.post("/projects/{project_id}/agent/cancel")
+async def internal_agent_cancel(
+    project_id: str,
+    request: Request,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    """Explicit cancel alias — stops the active agent turn/job without a new message."""
+    await _require_project(project_id)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(project_id)
+    return {
+        "ok": ok,
         "message": message,
         **(await get_agent_status(project_id, request_base=str(request.base_url).rstrip("/"))),
     }
@@ -313,29 +338,30 @@ async def internal_agent_sessions(
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     await _require_project(project_id)
-    if not await turso_configured():
-        return {
-            "ok": True,
-            "project_id": project_id,
-            "turso_configured": False,
-            "sessions": [],
-            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
-        }
+    configured = await turso_configured()
     sessions = await list_sessions_for_project(project_id, limit=limit)
-    return {
+    payload = {
         "ok": True,
         "project_id": project_id,
-        "turso_configured": True,
+        "turso_configured": configured,
         "sessions": [
             {**s, "session_url": f"/api/internal/agent_session/{s['id']}"} for s in sessions
         ],
     }
+    if not configured:
+        payload["message"] = (
+            "Remote Turso is not configured — sessions are stored locally on this deployer. "
+            "Set turso_database_url in Settings → AI for cross-host durability."
+        )
+    return payload
 
 
 @router.get("/agent_session/{session_id}")
 async def internal_get_agent_session(
     session_id: str,
     since_id: int = 0,
+    uuid: str | None = None,
+    project_id: str | None = None,
     _auth: dict = Depends(verify_internal_service_request),
 ):
     """Server-to-server Turso access route — fetch a durable agent session by UUID.
@@ -343,18 +369,17 @@ async def internal_get_agent_session(
     Replaces the old ``/agent/activity/stream`` SSE mirror. sycord.com now
     fetches the session document produced while the agent worked instead of
     holding open a streaming connection.
+    Internal service tokens are host-global; pass ``uuid`` or ``project_id`` to
+    additionally verify the session belongs to that project.
     """
-    from syte.turso_store import get_session, turso_configured
+    from syte.turso_store import get_session
 
-    if not await turso_configured():
-        raise HTTPException(
-            503,
-            "Turso is not configured — set turso_database_url (and turso_auth_token) "
-            "in Settings -> AI tab before fetching agent sessions.",
-        )
     session = await get_session(session_id, since_id=since_id)
     if not session:
         raise HTTPException(404, "Agent session not found")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
+        raise HTTPException(403, "Agent session does not belong to the requested project")
     return {"ok": True, **session}
 
 
@@ -389,6 +414,7 @@ async def internal_agent_communicate(
         project_id,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="internal",
     )
     if not result.get("ok"):
@@ -409,8 +435,10 @@ async def internal_agent_change(
         project_id,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="sycord",
         background=True,
+        idempotency_key=body.idempotency_key,
     )
     if not result.get("ok"):
         raise HTTPException(400, detail=result)

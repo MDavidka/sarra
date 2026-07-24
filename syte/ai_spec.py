@@ -2,6 +2,7 @@
 
 from syte import __version__
 from syte.design_contract import build_design_contract_spec, build_system_prompt
+from syte.thinking_levels import thinking_levels_spec
 
 
 def build_ai_spec(base_url: str = "") -> dict:
@@ -62,15 +63,21 @@ def build_ai_spec(base_url: str = "") -> dict:
             "6. POST /api/stop_preview {uuid} when finished",
         ],
         "preview_api": {
-            "description": "Fast live preview via next dev/vite — HTTPS on wildcard GUI zone",
+            "description": "Fast live preview — auto-detects stack (Next/Vite HMR, CRA, Astro/Nuxt/SvelteKit/Remix, Express, FastAPI/Flask, static HTML) on wildcard GUI zone",
             "domain_format": "preview{random_letter}-{appname}.sycord.site (e.g. previewk-mysite.sycord.site)",
             "domain_rules": {
                 "pattern": "preview{a-z}-{appname-slug}.{gui-zone}",
                 "example": "https://previewk-mysite.sycord.site",
                 "ssl": "Automatic via wildcard *.sycord.site — no per-preview DNS",
+                "auto_detect": (
+                    "On start_preview Syte inspects the workspace and picks a command: "
+                    "package.json dev/start (Next, Vite, CRA, Astro, Nuxt, SvelteKit, Remix, Express), "
+                    "requirements.txt + main.py (uvicorn/Flask), or index.html (python http.server). "
+                    "SYTE_STACK from project_connect is used as a hint when files are sparse."
+                ),
                 "vite_allowed_hosts": "Auto: patches vite.config.* with server.allowedHosts: true on start_preview",
                 "nextjs_origins": "Auto: allowedDevOrigins patched in next.config on start_preview",
-                "iframe_embed": "frame-ancestors * — preview embeddable in iframes on sycord.com or any website",
+                "iframe_embed": "frame-ancestors restricted to sycord.com + GUI domain (preview_embed_mode=any for *)",
                 "preview_base_domain": "Settings preview_base_domain — separate wildcard zone for preview URLs (default: GUI zone)",
                 "preview_host_pattern": "preview{a-z}-{appname}.{preview_zone}",
                 "not_used": "No preview.app.example.com third-level subdomains",
@@ -120,7 +127,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/set_env", "auth": True, "body": {"uuid": "str", "env_vars": {}, "merge": True}},
             {"method": "POST", "path": "/api/create_project", "auth": True, "body": {"name": "str (required)", "uuid": "optional", "git_url": "optional", "git_provider": "optional", "branch": "main", "start_command": "optional", "domain": "optional", "env_vars": {}, "deploy": "bool, default false — prefer issue_deploy"}, "response_includes": "uuid, execute_command.body, issue_deploy.body, design_contract_url"},
             {"method": "POST", "path": "/api/issue_deploy", "auth": True, "body": {"uuid": "str"}, "description": "Git pull + docker build + restart — production deploy"},
-            {"method": "POST", "path": "/api/start_preview", "auth": True, "body": {"uuid": "str"}, "description": "Fast dev preview (next dev/vite, HMR, ~5s)"},
+            {"method": "POST", "path": "/api/start_preview", "auth": True, "body": {"uuid": "str"}, "description": "Fast live preview — auto-detects Next/Vite/CRA/Astro/Nuxt/Express/Python/static HTML"},
             {"method": "POST", "path": "/api/stop_preview", "auth": True, "body": {"uuid": "str"}},
             {"method": "GET", "path": "/api/preview_status?uuid=", "auth": True, "description": "preview_url, preview_ready, preview_running"},
             {"method": "GET", "path": "/api/projects/{uuid}/preview/logs/stream?live=1", "auth": "optional", "description": "SSE preview dev server logs"},
@@ -135,15 +142,12 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
             {"method": "POST", "path": "/api/agent_stop", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_restart", "auth": True, "body": {"uuid": "str"}},
-            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy", "enabled_skills": ["optional skill ids"], "mcp": {"enabled": True, "auto_connect_builtin": True, "auto_connect_addons": []}}},
-            {"method": "GET", "path": "/api/agent_skills?uuid=", "auth": True, "description": "Per-project skill settings + MCP connection descriptor (mcp_server / addons)"},
-            {"method": "POST", "path": "/api/agent_skills", "auth": True, "body": {"uuid": "str", "enabled_skills": ["cli-tools", "preview-access"], "mcp": {"enabled": True, "auto_connect_builtin": True}}},
-            {"method": "GET", "path": "/api/projects/{uuid}/agent/skills", "auth": False, "description": "GUI mirror of agent skill + MCP settings"},
+            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy|syra-ultra"}},
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
-            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
-            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
+            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "thinking_level": "optional 1-5"}},
+            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional", "thinking_level": "optional 1-5"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
             {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Local SQLite activity snapshot (incremental with since_id; optional session=last|N)"},
             {"method": "GET", "path": "/api/agent_sessions?uuid=", "auth": True, "description": "List durable Turso agent-session UUIDs for a project (newest first)"},
             {"method": "GET", "path": "/api/agent_session/{session_id}?since_id=0", "auth": True, "description": "Fetch a durable agent activity session (metadata + events) from Turso by UUID"},
@@ -153,10 +157,20 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/agent_questions?uuid=&status=", "auth": True, "description": "List interactive agent questions (pending/answered)"},
             {"method": "POST", "path": "/api/agent_answer_question", "auth": True, "body": {"uuid": "str", "question_id": "str", "answer": "str|number|string[]|object"}, "description": "Answer an ask_question / request_env prompt so the agent can continue"},
             {"method": "GET", "path": "/api/agent_stops?uuid=", "auth": True, "description": "List session stop markers (stop/interrupt/cancel) with stopped_at timestamps"},
-            {"method": "GET", "path": "/api/agent_mcp?uuid=", "auth": True, "description": "List MCP addons + mcp_server stdio descriptor; builtin syte maps to /agent/service and /agent/access"},
-            {"method": "POST", "path": "/api/agent_mcp_register", "auth": True, "body": {"uuid": "str", "name": "str", "command": "str", "args": [], "env": {}, "description": "optional"}},
-            {"method": "POST", "path": "/api/agent_mcp_connect", "auth": True, "body": {"uuid": "str", "addon": "str"}},
+            {"method": "GET", "path": "/api/agent_mcp?uuid=", "auth": True, "description": "List available MCP addons (built-in syte + registered); add/enable/disable/edit/call via agent_mcp_*"},
+            {"method": "POST", "path": "/api/agent_mcp_register", "auth": True, "body": {"uuid": "str", "name": "str", "command": "str", "args": [], "env": {}, "description": "optional"}, "description": "Add (register) a custom MCP stdio provider"},
+            {"method": "POST", "path": "/api/agent_mcp_connect", "auth": True, "body": {"uuid": "str", "addon": "str"}, "description": "Enable (connect) an MCP addon"},
             {"method": "POST", "path": "/api/agent_mcp_call", "auth": True, "body": {"uuid": "str", "addon": "str", "tool": "str", "arguments": {}}},
+            {"method": "POST", "path": "/api/agent_mcp_update", "auth": True, "body": {"uuid": "str", "addon": "str", "name": "optional", "command": "optional", "args": [], "env": {}, "description": "optional"}, "description": "Edit a registered (non-builtin) MCP addon"},
+            {"method": "POST", "path": "/api/agent_mcp_disconnect", "auth": True, "body": {"uuid": "str", "addon": "str"}, "description": "Disable (disconnect) an MCP addon without deleting registration"},
+            {"method": "GET", "path": "/api/agent_skills?uuid=", "auth": True, "description": "List built-in + custom skills with active state/parameters for a project"},
+            {"method": "POST", "path": "/api/agent_skills_add", "auth": True, "body": {"uuid": "str", "name": "str", "content": "str", "description": "optional", "enable": True, "parameters": {}}, "description": "Add a custom skill (optionally enable immediately)"},
+            {"method": "POST", "path": "/api/agent_skills_update", "auth": True, "body": {"uuid": "str", "skill_id": "str", "name": "optional", "content": "optional", "description": "optional", "parameters": {}}, "description": "Edit a custom skill definition"},
+            {"method": "POST", "path": "/api/agent_skills_enable", "auth": True, "body": {"uuid": "str", "skill_id": "str", "parameters": {}}, "description": "Enable a skill or edit its string parameters"},
+            {"method": "POST", "path": "/api/agent_skills_disable", "auth": True, "body": {"uuid": "str", "skill_id": "str"}, "description": "Disable a project skill"},
+            {"method": "POST", "path": "/api/agent_skills_delete", "auth": True, "body": {"uuid": "str", "skill_id": "str"}, "description": "Delete a custom skill definition"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/mcp", "auth": False, "description": "GUI mirror — list/add/connect/call/update/disconnect MCP"},
+            {"method": "GET", "path": "/api/projects/{uuid}/agent/skills", "auth": False, "description": "GUI mirror — list/add/enable/disable/edit/delete skills"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
         ],
@@ -170,13 +184,15 @@ def build_ai_spec(base_url: str = "") -> dict:
             ),
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
             "model_profiles": {
-                "syra-nano": "Fast — Gemini Flash class",
-                "syra-base": "Balanced — DeepSeek chat class",
-                "syra-havy": "Capable — Gemini Pro class",
+                "syra-nano": "Fast — Vertex AI Gemini 3.1 Flash Lite",
+                "syra-base": "Default — DeepSeek V4 Flash (think + build)",
+                "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
+                "syra-ultra": "Ultra — Aliyun Qwen 3.6 (qwen3.5-flash)",
             },
+            "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek API keys, and "
-                "turso_database_url / turso_auth_token for durable session storage"
+                "Syte GUI → AI tab — internal secret, per-profile Vertex AI / DeepSeek / Aliyun API keys, "
+                "estimated in/out token prices, and turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",
@@ -184,7 +200,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             },
             "async_change_request": {
                 "description": "Default for sycord.com and POST /api/agent_change — non-blocking",
-                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?}",
+                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?, thinking_level?}",
                 "immediate_response": {
                     "ok": True,
                     "request_id": "req_abc123def456",
@@ -205,7 +221,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             ],
             "tools": [
                 "list_files", "read_file", "write_file", "delete_file", "run_command", "service",
-                "update_plan", "screenshot_preview", "ask_question", "env_get", "env_set",
+                "update_plan", "screenshot_preview", "inspect_preview", "ask_question", "env_get", "env_set",
                 "request_env", "list_mcp_addons", "connect_mcp", "call_mcp", "delegate_task",
             ],
             "code_policy": {
@@ -232,11 +248,14 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "request_started",
                     "processing",
                     "thinking",
+                    "thinking_delta",
+                    "token_delta",
                     "screenshot",
                     "question",
                     "question_answered",
                     "tool_call_started",
                     "tool_call_finished",
+                    "tool_error",
                     "file_created",
                     "file_modified",
                     "file_deleted",
@@ -245,9 +264,61 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "agent_started",
                     "agent_stopped",
                     "agent_restarted",
+                    "session_stopped",
                 ],
+                "activity_sse": {
+                    "endpoint": "GET /api/projects/{uuid}/agent/activity/stream?since_id=0&session=last",
+                    "format": "text/event-stream — each frame is `data: {json}\\n\\n`",
+                    "note": (
+                        "Live activity mirror; disconnect only stops the SSE reader — "
+                        "use POST interrupt/stop to cancel the agent turn (DAV-131)."
+                    ),
+                    "poll_backoff": {
+                        "initial_ms": 500,
+                        "max_ms": 5000,
+                        "strategy": "double after empty polls; reset when events arrive",
+                        "since_id": (
+                            "Returns events with id > since_id. Empty set when caught up; "
+                            "no 410 wrap — clients keep the highest seen id."
+                        ),
+                    },
+                    "payload_marks": {
+                        "g": "in progress / green",
+                        "d": "done / delivered",
+                    },
+                    "tool_error_types": [
+                        "plan_required",
+                        "invalid_arguments",
+                        "invalid_pattern",
+                        "invalid_path",
+                        "unknown_tool",
+                        "not_found",
+                        "timeout",
+                        "search_failed",
+                        "tool_failed",
+                        "mcp_dispatch_unsupported",
+                        "builtin_readonly",
+                    ],
+                    "tools": {
+                        "search_code": (
+                            "Ripgrep-style workspace search (pattern, path?, glob?, max_matches?). "
+                            "Prefer over unbounded list_files / shell grep."
+                        ),
+                        "mandatory_plan_gate": (
+                            "thinking_level 4–5: first tool must be update_plan "
+                            "(error_type=plan_required otherwise)."
+                        ),
+                    },
+                },
+                "visual_analyses": {
+                    "list": "GET /api/projects/{uuid}/agent/visual_analyses",
+                    "fields": [
+                        "id", "project_id", "screenshot_id", "score", "summary",
+                        "issues", "suggestions", "created_at",
+                    ],
+                },
                 "turn_lifecycle": (
-                    "request_started -> processing -> [thinking|question|screenshot] -> "
+                    "request_started -> processing -> [thinking|thinking_delta|token_delta|question|screenshot] -> "
                     "(tool_call_started -> tool_call_finished)* -> "
                     "request_completed|request_failed|agent_stopped; correlate by payload.request_id"
                 ),
@@ -257,7 +328,8 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "screenshots": "GET /api/agent_screenshots?uuid= + image at /api/projects/{uuid}/agent/screenshots/{id}",
                 "questions": "GET /api/agent_questions?uuid= ; answer with POST /api/agent_answer_question",
                 "stops": "GET /api/agent_stops?uuid= — stopped_at markers for stop/interrupt/cancel",
-                "mcp": "GET /api/agent_mcp?uuid= ; connect/call via agent_mcp_connect / agent_mcp_call",
+                "mcp": "GET /api/agent_mcp?uuid= ; register/connect/call/update/disconnect via agent_mcp_* (add/enable/disable/edit)",
+                "skills": "GET /api/agent_skills?uuid= ; add via agent_skills_add ; enable/edit via agent_skills_enable/update ; disable/delete via agent_skills_disable/delete",
             },
             "workflow": [
                 "1. GET /api/agent_status?uuid= — check agent_status, agent_running, sessions_url",

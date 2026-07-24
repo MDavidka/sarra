@@ -19,6 +19,25 @@ from syte.workspace import read_env_vars, run_cmd, workspace_path
 DOCKERFILE_NAMES = ("Dockerfile", "dockerfile", "Dockerfile.prod", "Dockerfile.production")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+_UNLIMITED = frozenset({"", "0", "none", "unlimited", "off"})
+
+
+def _runtime_resource_args() -> list[str]:
+    """Default CPU/memory/pids caps for production containers (DAV-126)."""
+    from syte.config import settings
+
+    args: list[str] = []
+    memory = str(getattr(settings, "docker_memory", "1g") or "").strip()
+    cpus = str(getattr(settings, "docker_cpus", "1.0") or "").strip()
+    pids = int(getattr(settings, "docker_pids_limit", 256) or 0)
+    if memory.lower() not in _UNLIMITED:
+        args.extend(["--memory", memory])
+    if cpus.lower() not in _UNLIMITED:
+        args.extend(["--cpus", cpus])
+    if pids > 0:
+        args.extend(["--pids-limit", str(pids)])
+    return args
+
 
 def find_dockerfile(project_id: str) -> Path | None:
     """Search cloned repo for a Dockerfile (root first, then subdirs)."""
@@ -282,7 +301,13 @@ def _append_build_log(project_id: str, label: str, output: str) -> None:
 
 
 def _run_build_streaming(build_cmd: list[str], project_id: str) -> tuple[int, str]:
-    """Run docker build and stream stdout/stderr into build.log in real time."""
+    """Run docker build and stream stdout/stderr into build.log in real time.
+
+    Disk log receives the full stream; the returned string is capped in RAM
+    (see ``MAX_CAPTURED_OUTPUT_BYTES``) so a spammy Dockerfile cannot OOM Syte.
+    """
+    from syte.output_limits import read_text_stream_limited
+
     log_path = _build_log_path(project_id)
     proc = subprocess.Popen(
         build_cmd,
@@ -291,17 +316,18 @@ def _run_build_streaming(build_cmd: list[str], project_id: str) -> tuple[int, st
         text=True,
         bufsize=1,
     )
-    chunks: list[str] = []
     with log_path.open("a") as log_file:
         log_file.write("\n=== docker build ===\n")
         log_file.flush()
         assert proc.stdout is not None
-        for line in proc.stdout:
-            chunks.append(line)
+
+        def _write_line(line: str) -> None:
             log_file.write(line)
             log_file.flush()
+
+        captured, _truncated = read_text_stream_limited(proc.stdout, on_line=_write_line)
     code = proc.wait()
-    return code, "".join(chunks).strip()
+    return code, captured
 
 
 def deploy_docker(
@@ -371,6 +397,7 @@ def deploy_docker(
         "docker", "run", "-d",
         "--name", container,
         "--restart", "unless-stopped",
+        *_runtime_resource_args(),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
         *_runtime_env_args(repo, container_port, env_vars_raw),

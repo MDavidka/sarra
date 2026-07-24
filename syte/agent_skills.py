@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import os
 import stat
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import aiosqlite
 
 from syte.config import settings
 
@@ -16,22 +19,44 @@ SKILL_FILES: dict[str, str] = {
 You are editing a live website project in the Syte workspace.
 
 - Application source lives under `app/` (relative to the agent cwd).
+- Stack for websites: **Next.js App Router + shadcn/ui + Tailwind + Lucide** — never HeroUI/NextUI/Chakra/MUI.
+- For a new site or substantive redesign, ask one batched clarification before planning when a
+  material brand, audience, content, page, visual-direction, or behavior choice is missing. If the
+  brief is sufficient, start with `update_plan`; after an answer, plan before inspecting files.
+- Build from the 57 cataloged shadcn components as individual primitives/patterns. Select the ones
+  the interface needs; do not use shadcn Blocks, registry block templates, or copied page sections.
+- Use Radix-backed behavior through shadcn. If no wrapper exists, add one under `components/ui/`;
+  application components must not import `@radix-ui/*` directly.
 - Make focused, minimal changes that match the existing stack and style.
 - Prefer editing existing files over creating new ones unless necessary.
+- Before writing, locate the exact file with `semantic_search` / `search_code` / `list_files`.
+  Routes live under `app/app/` (e.g. `app/app/page.tsx`, `app/app/login/page.tsx`).
+  Components live under `app/components/` (shadcn under `app/components/ui/`).
 - After file changes, mention whether preview hot-reload should pick them up.
 - Do not run production builds (`npm run build`, `next build`) — use preview instead.
 - For site creation or redesign, deliver a complete styled home page that uses the
   project's existing design system and verify it in preview at desktop and mobile sizes.
+- Before implementation, reason through information architecture, visual hierarchy, real
+  content/assets, component mapping, responsive states, accessibility, and interaction states.
+- Avoid generic AI-template defaults: gratuitous gradient text/glows, blob backgrounds, bento
+  grids, excessive pills, repetitive card rows, every-section-in-a-card, and unsupported metrics
+  or testimonials. Use content-specific composition and concrete copy.
+- For new builds/redesigns, use `web_search` for relevant current design conventions; use the v0
+  prompt as workflow inspiration and official shadcn, Radix, and WCAG 2.2 docs as authority.
+- After UI edits: `inspect_preview` (browser console + load check) then `screenshot_preview`.
+  Fix any console/page errors before marking work done.
 """,
     "workspace-search.md": """# Workspace search
 
 Use built-in tools to explore the codebase before editing:
 
-- **Search** filenames and content with grep/ripgrep (`rg`, `grep -r`).
+- **semantic_search** for meaning/tags (hero, navbar, page, layout, colors).
+- **search_code** (ripgrep) for exact symbols/strings.
 - **Read** files before rewriting them.
-- **List** directories with `ls` when unsure of structure.
+- **List** directories with `list_files` when unsure of structure.
 
 Always search first when the user asks to find or change something across the site.
+Never invent a path — update the file that already renders the feature.
 """,
     "preview-access.md": """# Preview access (Syte)
 
@@ -44,11 +69,14 @@ syte-access fetch [url]     # fetch HTML/text (defaults to preview URL)
 syte-access read [url]      # alias for fetch — read page content
 syte-access logs [lines]    # tail preview dev-server log (default 200 lines)
 syte-access screenshot      # capture preview screenshot when available
+syte-access console         # Chromium DevTools: load check + browser console/page errors
 ```
 
+Prefer the agent tools `inspect_preview` (console by default) and `screenshot_preview` over raw curl.
 Custom URLs saved in project access config can be fetched with `syte-access fetch <url>`.
 
-Use preview access to verify visual changes, read rendered HTML, and inspect dev-server logs.
+Use preview access to verify visual changes, read rendered HTML, inspect browser console errors,
+and read preview/dev-server logs. Never finish UI work with unresolved console errors.
 """,
     "service-management.md": """# Service management (Syte)
 
@@ -87,6 +115,11 @@ The Next.js project root is the workspace `app/` folder (where `package.json` li
 Writing `app/login/page.tsx` puts the file at the project root, **outside** the router dir —
 Next.js ignores it and the route silently never appears. Always nest routes under `app/app/`.
 
+## UI kit
+
+Use **shadcn/ui** only (`@/components/ui/*`). Do not install or import HeroUI, NextUI, Chakra, MUI,
+or Ant Design.
+
 ## App Router rules (avoid common failures)
 
 - **No `_document.tsx` / `_app.tsx`** — those are Pages Router files and are ignored by the App
@@ -107,6 +140,7 @@ Next.js ignores it and the route silently never appears. Always nest routes unde
 - Production builds (`npm run build`, `next build`) are blocked. Verify with the dev preview and
   `npm run lint`. If the preview previously 500'd, `preview_stop` then `preview_start` to clear the
   cached failed compilation before judging the result.
+- Call `inspect_preview` after UI changes to confirm the page loads and the browser console is clean.
 """,
     "cli-tools.md": """# Syte CLI tools (required)
 
@@ -115,7 +149,7 @@ Use the **`syte-service`** and **`syte-access`** helpers on PATH for all Syte op
 | Helper | Use for |
 |--------|---------|
 | `syte-service` | start/stop/deploy/preview/run/logs |
-| `syte-access` | preview URL fetch, screenshot, preview logs |
+| `syte-access` | preview URL fetch, screenshot, preview logs, browser console |
 
 Examples:
 
@@ -123,10 +157,108 @@ Examples:
 syte-service preview_start
 syte-access status
 syte-access fetch
+syte-access console
 ```
 
 Do not bypass these helpers with raw systemctl, docker, or undocumented curl shortcuts.
 """,
+    "web-search.md": """# Web Search
+
+Use the `web_search` tool when you need current information outside the workspace:
+
+- User asks for "latest", "current", or "recent" information
+- User requests "find images", "get illustrations", or "look up products"
+- Task requires real-world data, docs, or examples not in the repo
+
+Examples:
+- "Find current Next.js best practices" → `web_search` query `"Next.js 2026 best practices"`
+- "Get hero image ideas for an AI startup" → search then incorporate results into copy/assets
+
+Always cite search result URLs in your reply when you use them.
+""",
+    "preview-verification.md": """# Preview Verification
+
+After editing app UI or API files, always:
+
+1. Run `service` action `preview_start` if preview is stopped (Syte auto-detects Next/Vite/CRA/Astro/Nuxt/Express/Python/static HTML)
+2. Wait briefly for compile/startup (~10s) when needed
+3. Call `inspect_preview` with `route:"/"` (browser DevTools console + load check — default on)
+4. Call `screenshot_preview` with `route:"/"` and `viewports:["desktop"]` (and phone when layout matters)
+5. If DevTools reports console/page errors, or the screenshot/logs show issues, read preview logs and fix them
+6. Repeat until the page loads cleanly with no console errors and a functional UI
+
+Never mark work done if preview is not rendering correctly or the browser console has errors.
+""",
+}
+
+# The catalog is deliberately derived from the markdown that is written into
+# each agent workspace.  This keeps CLI access and prompt/API access in sync.
+SKILL_REGISTRY: dict[str, dict[str, Any]] = {
+    "website-editing": {
+        "id": "website-editing",
+        "name": "Website editing",
+        "description": "Focused, preview-verified changes for live websites.",
+        "content": SKILL_FILES["website-editing.md"],
+        "keywords": ["website", "landing", "page", "ui", "redesign", "hero", "navbar"],
+        "priority": 10,
+    },
+    "workspace-search": {
+        "id": "workspace-search",
+        "name": "Workspace search",
+        "description": "Search before editing and use the workspace tools safely.",
+        "content": SKILL_FILES["workspace-search.md"],
+        "keywords": ["find file", "search codebase", "where is", "grep"],
+        "priority": 20,
+    },
+    "preview-access": {
+        "id": "preview-access",
+        "name": "Preview access",
+        "description": "Use the Syte preview helper to inspect pages and logs.",
+        "content": SKILL_FILES["preview-access.md"],
+        "keywords": ["preview", "screenshot", "fetch page", "dev server"],
+        "priority": 30,
+    },
+    "service-management": {
+        "id": "service-management",
+        "name": "Service management",
+        "description": "Manage preview and verification commands through Syte helpers.",
+        "content": SKILL_FILES["service-management.md"],
+        "keywords": ["preview_start", "preview_stop", "restart preview", "logs"],
+        "priority": 40,
+    },
+    "nextjs-app-router": {
+        "id": "nextjs-app-router",
+        "name": "Next.js App Router",
+        "description": "Avoid common App Router paths and configuration mistakes.",
+        "content": SKILL_FILES["nextjs-app-router.md"],
+        "keywords": ["next.js", "nextjs", "app router", "page.tsx", "layout.tsx"],
+        "priority": 50,
+    },
+    "cli-tools": {
+        "id": "cli-tools",
+        "name": "Syte CLI tools",
+        "description": "Use the supported Syte service and access helpers.",
+        "content": SKILL_FILES["cli-tools.md"],
+        "keywords": ["syte-service", "syte-access", "cli"],
+        "priority": 60,
+    },
+    "web-search": {
+        "id": "web-search",
+        "name": "Web Search",
+        "description": "Search the web for current information, docs, and image ideas.",
+        "content": SKILL_FILES["web-search.md"],
+        "keywords": ["search", "find online", "look up", "latest", "current", "images", "illustrations"],
+        "priority": 70,
+    },
+    "preview-verification": {
+        "id": "preview-verification",
+        "name": "Preview Verification",
+        "description": "Keep looping until Next.js preview renders correctly.",
+        "content": SKILL_FILES["preview-verification.md"],
+        "keywords": ["verify preview", "broken preview", "compile error", "screenshot"],
+        "priority": 80,
+        "auto_for_nextjs": True,
+    },
 }
 
 ACCESS_SCRIPT = """#!/usr/bin/env bash
@@ -140,7 +272,7 @@ import json, os
 action = os.environ.get("ACTION", "status")
 arg = os.environ.get("ARG", "")
 body = {"action": action}
-if action in ("fetch", "read") and arg:
+if action in ("fetch", "read", "console", "devtools") and arg:
     body["url"] = arg
 if action == "logs":
     try:
@@ -192,53 +324,8 @@ exec python3 -m syte.mcp_stdio
 """
 
 
-# Skill id → markdown filename (under data/cloud-agent/skills/).
-SKILL_CATALOG: dict[str, dict[str, str]] = {
-    "website-editing": {
-        "file": "website-editing.md",
-        "title": "Website editing",
-        "description": "Focused live-site edits under app/ with preview verification.",
-        "rule_name": "Syte website agent",
-    },
-    "workspace-search": {
-        "file": "workspace-search.md",
-        "title": "Workspace search",
-        "description": "Search/read/list before rewriting files.",
-        "rule_name": "File operations",
-    },
-    "preview-access": {
-        "file": "preview-access.md",
-        "title": "Preview access",
-        "description": "syte-access helpers for preview URL, HTML, logs, screenshots.",
-        "rule_name": "Preview and access tools",
-    },
-    "service-management": {
-        "file": "service-management.md",
-        "title": "Service management",
-        "description": "syte-service for preview/run/logs (no production lifecycle).",
-        "rule_name": "Service management",
-    },
-    "nextjs-app-router": {
-        "file": "nextjs-app-router.md",
-        "title": "Next.js App Router",
-        "description": "Correct app/app/ routes, layout, Tailwind, and tsconfig paths.",
-        "rule_name": "Next.js App Router",
-    },
-    "cli-tools": {
-        "file": "cli-tools.md",
-        "title": "CLI tools",
-        "description": "Require syte-service / syte-access instead of raw systemctl/docker.",
-        "rule_name": "CLI tools (required)",
-    },
-}
-
-
 def agent_access_config_path(project_id: str, agent_root: Path) -> Path:
     return agent_root / "access.json"
-
-
-def agent_skills_config_path(project_id: str, agent_root: Path) -> Path:
-    return agent_root / "skills.json"
 
 
 def default_access_config() -> dict[str, Any]:
@@ -251,32 +338,419 @@ def default_access_config() -> dict[str, Any]:
             "read",
             "logs",
             "screenshot",
+            "console",
         ],
     }
 
 
-def default_skills_config() -> dict[str, Any]:
-    """Per-project skill + MCP connection settings (written to skills.json)."""
-    return {
-        "enabled_skills": list(SKILL_CATALOG.keys()),
-        "mcp": {
-            "enabled": True,
-            "auto_connect_builtin": True,
-            "auto_connect_addons": [],
-        },
-    }
+async def get_project_skills(project_id: str) -> list[dict[str, Any]]:
+    """Return built-in + custom skills with the project's enabled state and parameters."""
+    from syte.agent_artifacts import ensure_artifact_tables
 
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT skill_id, parameters, enabled_at FROM agent_project_skills "
+            "WHERE project_id = ?",
+            (project_id,),
+        ) as cursor:
+            active_rows = await cursor.fetchall()
+        async with db.execute(
+            "SELECT id, skill_id, name, description, content, created_at, updated_at "
+            "FROM agent_custom_skills WHERE project_id = ? ORDER BY name ASC",
+            (project_id,),
+        ) as cursor:
+            custom_rows = await cursor.fetchall()
 
-def available_skills() -> list[dict[str, Any]]:
-    return [
-        {
+    active: dict[str, tuple[dict[str, str], str]] = {}
+    for skill_id, raw_parameters, enabled_at in active_rows:
+        try:
+            parameters = json.loads(raw_parameters or "{}")
+        except json.JSONDecodeError:
+            parameters = {}
+        active[skill_id] = (parameters if isinstance(parameters, dict) else {}, enabled_at)
+
+    skills: list[dict[str, Any]] = []
+    for skill in sorted(SKILL_REGISTRY.values(), key=lambda item: item["priority"]):
+        parameters, enabled_at = active.get(skill["id"], ({}, None))
+        skills.append({
+            "id": skill["id"],
+            "name": skill["name"],
+            "description": skill["description"],
+            "content": skill["content"],
+            "keywords": list(skill.get("keywords") or []),
+            "priority": skill["priority"],
+            "parameters": parameters,
+            "active": skill["id"] in active,
+            "enabled_at": enabled_at,
+            "builtin": True,
+            "custom": False,
+            "auto_for_nextjs": bool(skill.get("auto_for_nextjs")),
+        })
+
+    for row in custom_rows:
+        record_id, skill_id, name, description, content, created_at, updated_at = row
+        parameters, enabled_at = active.get(skill_id, ({}, None))
+        # Custom skills may store keywords in parameters.keywords (JSON list or CSV).
+        raw_kw = parameters.get("keywords") if isinstance(parameters, dict) else None
+        if isinstance(raw_kw, list):
+            keywords = [str(k) for k in raw_kw if str(k).strip()]
+        elif isinstance(raw_kw, str) and raw_kw.strip():
+            keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
+        else:
+            keywords = []
+        skills.append({
             "id": skill_id,
-            "file": meta["file"],
-            "title": meta["title"],
-            "description": meta["description"],
-        }
-        for skill_id, meta in SKILL_CATALOG.items()
+            "record_id": record_id,
+            "name": name,
+            "description": description,
+            "content": content,
+            "keywords": keywords,
+            "priority": 1000,
+            "parameters": parameters,
+            "active": skill_id in active,
+            "enabled_at": enabled_at,
+            "builtin": False,
+            "custom": True,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        })
+    return skills
+
+
+async def match_active_skills(
+    project_id: str,
+    user_message: str,
+    *,
+    is_nextjs: bool = False,
+) -> list[dict[str, Any]]:
+    """Return skills whose keywords appear in the message (or auto-enable for Next.js)."""
+    skills = await get_project_skills(project_id)
+    msg_lower = (user_message or "").lower()
+    matched: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for skill in skills:
+        # Built-ins are always available for keyword matching; custom must be active.
+        if skill.get("custom") and not skill.get("active"):
+            continue
+        skill_id = str(skill.get("id") or "")
+        if not skill_id or skill_id in seen:
+            continue
+        keywords = [str(k).lower() for k in (skill.get("keywords") or []) if str(k).strip()]
+        hit = bool(keywords) and any(k in msg_lower for k in keywords)
+        auto = bool(is_nextjs and skill.get("auto_for_nextjs"))
+        if hit or auto:
+            matched.append(skill)
+            seen.add(skill_id)
+    return matched
+
+
+def skill_hint_block(skills: list[dict[str, Any]]) -> str:
+    """Format matched skills as a temporary system hint."""
+    if not skills:
+        return ""
+    blocks = [
+        str(skill.get("content") or "").strip()
+        for skill in skills
+        if str(skill.get("content") or "").strip()
     ]
+    if not blocks:
+        return ""
+    return "## Relevant skills for this request:\n" + "\n\n".join(blocks)
+
+
+def _slugify_skill_id(name: str) -> str:
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return (slug or "custom-skill")[:80]
+
+
+async def _unique_custom_skill_id(project_id: str, preferred: str) -> str:
+    base = _slugify_skill_id(preferred)
+    if base in SKILL_REGISTRY:
+        base = f"custom-{base}"
+    candidate = base
+    suffix = 2
+    existing = {skill["id"] for skill in await get_project_skills(project_id)}
+    while candidate in existing:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+async def add_custom_skill(
+    project_id: str,
+    *,
+    name: str,
+    description: str = "",
+    content: str = "",
+    parameters: dict[str, str] | None = None,
+    enable: bool = True,
+    skill_id: str | None = None,
+) -> dict[str, Any]:
+    """Add (register) a custom project skill. Optionally enable it immediately."""
+    import uuid as uuid_mod
+
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    clean_name = (name or "").strip()[:120]
+    if not clean_name:
+        return {"ok": False, "error": "invalid_name", "message": "Skill name is required"}
+    clean_description = (description or "").strip()[:1000]
+    clean_content = (content or "").strip()
+    if not clean_content:
+        return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+    if "\x00" in clean_content:
+        return {"ok": False, "error": "invalid_content", "message": "Skill content contains null bytes"}
+    if len(clean_content) > 50_000:
+        return {
+            "ok": False,
+            "error": "invalid_content",
+            "message": "Skill content exceeds 50k characters",
+        }
+    # Soft validation: prefer markdown with at least one heading so bad configs fail early.
+    if not any(line.startswith("#") for line in clean_content.splitlines()[:40]):
+        return {
+            "ok": False,
+            "error": "invalid_content",
+            "message": "Skill content should include a markdown heading (# ...)",
+        }
+
+    await ensure_artifact_tables()
+    resolved_id = await _unique_custom_skill_id(project_id, skill_id or clean_name)
+    if resolved_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_conflict",
+            "message": f"Skill id conflicts with built-in skill: {resolved_id}",
+        }
+
+    now = datetime.now(timezone.utc).isoformat()
+    record_id = f"{project_id}:skill_{uuid_mod.uuid4().hex[:16]}"
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO agent_custom_skills "
+            "(id, project_id, skill_id, name, description, content, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record_id,
+                project_id,
+                resolved_id,
+                clean_name,
+                clean_description,
+                clean_content,
+                now,
+                now,
+            ),
+        )
+        await db.commit()
+
+    if enable:
+        enabled = await enable_skill(project_id, resolved_id, parameters)
+        if not enabled.get("ok"):
+            return enabled
+        skill = enabled["skill"]
+    else:
+        skill = next(s for s in await get_project_skills(project_id) if s["id"] == resolved_id)
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
+    return {"ok": True, "skill": skill}
+
+
+async def update_custom_skill(
+    project_id: str,
+    skill_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    content: str | None = None,
+    parameters: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Edit a custom skill definition. Built-in skills cannot be edited this way."""
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    if skill_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_readonly",
+            "message": "Built-in skills cannot be edited; enable with parameters instead",
+        }
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT id, name, description, content FROM agent_custom_skills "
+            "WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return {"ok": False, "error": "not_found", "message": f"Custom skill not found: {skill_id}"}
+
+        next_name = (name if name is not None else row[1] or "").strip()[:120]
+        next_description = description if description is not None else row[2] or ""
+        next_content = content if content is not None else row[3] or ""
+        if not next_name:
+            return {"ok": False, "error": "invalid_name", "message": "Skill name is required"}
+        if not str(next_content).strip():
+            return {"ok": False, "error": "invalid_content", "message": "Skill content is required"}
+        if "\x00" in str(next_content):
+            return {"ok": False, "error": "invalid_content", "message": "Skill content contains null bytes"}
+        if len(str(next_content)) > 50_000:
+            return {
+                "ok": False,
+                "error": "invalid_content",
+                "message": "Skill content exceeds 50k characters",
+            }
+        if content is not None and not any(
+            line.startswith("#") for line in str(next_content).splitlines()[:40]
+        ):
+            return {
+                "ok": False,
+                "error": "invalid_content",
+                "message": "Skill content should include a markdown heading (# ...)",
+            }
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            "UPDATE agent_custom_skills SET name = ?, description = ?, content = ?, updated_at = ? "
+            "WHERE project_id = ? AND skill_id = ?",
+            (
+                next_name,
+                str(next_description).strip()[:1000],
+                str(next_content).strip(),
+                now,
+                project_id,
+                skill_id,
+            ),
+        )
+        await db.commit()
+
+    if parameters is not None:
+        await enable_skill(project_id, skill_id, parameters)
+
+    skill = next((s for s in await get_project_skills(project_id) if s["id"] == skill_id), None)
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
+    return {"ok": True, "skill": skill}
+
+
+async def delete_custom_skill(project_id: str, skill_id: str) -> dict[str, Any]:
+    """Remove a custom skill definition and any active row. Built-ins cannot be deleted."""
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    if skill_id in SKILL_REGISTRY:
+        return {
+            "ok": False,
+            "error": "builtin_readonly",
+            "message": "Built-in skills cannot be deleted; disable them instead",
+        }
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM agent_custom_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.execute(
+            "DELETE FROM agent_project_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.commit()
+    if not cursor.rowcount:
+        return {"ok": False, "error": "not_found", "message": f"Custom skill not found: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
+    return {"ok": True, "skill_id": skill_id, "deleted": True}
+
+
+async def enable_skill(
+    project_id: str,
+    skill_id: str,
+    parameters: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    await ensure_artifact_tables()
+    if skill_id not in SKILL_REGISTRY:
+        async with aiosqlite.connect(settings.resolved_db_path) as db:
+            async with db.execute(
+                "SELECT 1 FROM agent_custom_skills WHERE project_id = ? AND skill_id = ?",
+                (project_id, skill_id),
+            ) as cursor:
+                exists = await cursor.fetchone()
+        if not exists:
+            return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
+
+    now = datetime.now(timezone.utc).isoformat()
+    clean_parameters = {str(key): str(value) for key, value in (parameters or {}).items()}
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO agent_project_skills (project_id, skill_id, parameters, enabled_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(project_id, skill_id) DO UPDATE SET "
+            "parameters = excluded.parameters, enabled_at = excluded.enabled_at",
+            (project_id, skill_id, json.dumps(clean_parameters, ensure_ascii=False), now),
+        )
+        await db.commit()
+    skill = next((s for s in await get_project_skills(project_id) if s["id"] == skill_id), None)
+    if not skill:
+        return {"ok": False, "error": "not_found", "message": f"Skill not found: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
+    return {"ok": True, "skill": skill}
+
+
+async def disable_skill(project_id: str, skill_id: str) -> dict[str, Any]:
+    from syte.agent_artifacts import ensure_artifact_tables
+
+    await ensure_artifact_tables()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM agent_project_skills WHERE project_id = ? AND skill_id = ?",
+            (project_id, skill_id),
+        )
+        await db.commit()
+    if not cursor.rowcount:
+        return {"ok": False, "error": "not_found", "message": f"Skill is not active: {skill_id}"}
+    try:
+        from syte.cloud_agent import invalidate_instruction_cache
+
+        invalidate_instruction_cache(project_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to invalidate instruction cache for project %s", project_id
+        )
+    return {"ok": True, "skill_id": skill_id, "active": False}
 
 
 async def read_access_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
@@ -312,135 +786,16 @@ async def write_access_config(project_id: str, config: dict[str, Any], agent_roo
     return path
 
 
-def _normalize_enabled_skills(raw: Any) -> list[str]:
-    if not isinstance(raw, list):
-        return list(SKILL_CATALOG.keys())
-    known = set(SKILL_CATALOG.keys())
-    out: list[str] = []
-    for item in raw:
-        skill_id = str(item or "").strip()
-        if skill_id in known and skill_id not in out:
-            out.append(skill_id)
-    return out
-
-
-def _normalize_mcp_config(raw: Any) -> dict[str, Any]:
-    base = default_skills_config()["mcp"]
-    if not isinstance(raw, dict):
-        return base
-    addons_raw = raw.get("auto_connect_addons")
-    addons: list[str] = []
-    if isinstance(addons_raw, list):
-        for item in addons_raw:
-            name = str(item or "").strip()
-            if name and name not in addons:
-                addons.append(name[:120])
-    return {
-        "enabled": bool(raw.get("enabled", True)),
-        "auto_connect_builtin": bool(raw.get("auto_connect_builtin", True)),
-        "auto_connect_addons": addons,
-    }
-
-
-async def read_skills_config(project_id: str, agent_root: Path | None = None) -> dict[str, Any]:
-    from syte.cloud_agent import agent_root as default_root
-
-    root = agent_root or default_root(project_id)
-    path = agent_skills_config_path(project_id, root)
-    payload = default_skills_config()
-    if not path.exists():
-        return payload
-    try:
-        data = json.loads(path.read_text())
-        if not isinstance(data, dict):
-            return payload
-        payload["enabled_skills"] = _normalize_enabled_skills(data.get("enabled_skills"))
-        payload["mcp"] = _normalize_mcp_config(data.get("mcp"))
-        return payload
-    except (json.JSONDecodeError, OSError):
-        return payload
-
-
-async def write_skills_config(
-    project_id: str, config: dict[str, Any], agent_root: Path | None = None
-) -> Path:
-    from syte.cloud_agent import agent_root as default_root
-
-    root = agent_root or default_root(project_id)
-    root.mkdir(parents=True, exist_ok=True)
-    path = agent_skills_config_path(project_id, root)
-    payload = default_skills_config()
-    if "enabled_skills" in config:
-        payload["enabled_skills"] = _normalize_enabled_skills(config.get("enabled_skills"))
-    if "mcp" in config:
-        payload["mcp"] = _normalize_mcp_config(config.get("mcp"))
-    path.write_text(json.dumps(payload, indent=2) + "\n")
-    return path
-
-
-async def apply_mcp_connection_settings(project_id: str, skills_config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Connect project MCP addons according to skills.json mcp settings."""
-    from syte.agent_artifacts import connect_mcp_addon, list_mcp_addons
-
-    root = None
-    try:
-        from syte.cloud_agent import agent_root as default_root
-
-        root = default_root(project_id)
-    except Exception:
-        root = None
-    config = skills_config or await read_skills_config(project_id, root)
-    mcp = _normalize_mcp_config((config or {}).get("mcp"))
-    result: dict[str, Any] = {
-        "enabled": mcp["enabled"],
-        "connected": [],
-        "skipped": [],
-        "server": mcp_server_config(project_id, root) if root is not None else None,
-    }
-    if not mcp["enabled"]:
-        return result
-    addons = await list_mcp_addons(project_id)
-    wanted: list[str] = []
-    if mcp["auto_connect_builtin"]:
-        wanted.append("syte")
-    wanted.extend(mcp["auto_connect_addons"])
-    for name in wanted:
-        addon = next((a for a in addons if a["name"] == name or a["id"] == name), None)
-        if not addon:
-            result["skipped"].append({"addon": name, "reason": "not_found"})
-            continue
-        connected = await connect_mcp_addon(project_id, addon["id"])
-        if connected.get("ok"):
-            result["connected"].append({
-                "id": connected.get("id"),
-                "name": connected.get("name"),
-                "tools": connected.get("tools") or [],
-            })
-        else:
-            result["skipped"].append({
-                "addon": name,
-                "reason": connected.get("error") or "connect_failed",
-            })
-    return result
-
-
-def build_agent_rules(
-    project_id: str,
-    access_config: dict[str, Any],
-    *,
-    enabled_skills: list[str] | None = None,
-) -> list[dict[str, str]]:
+def build_agent_rules(project_id: str, access_config: dict[str, Any]) -> list[dict[str, str]]:
     custom_urls = access_config.get("custom_urls") or []
     custom_block = ""
     if custom_urls:
         urls = "\n".join(f"- {u}" for u in custom_urls)
         custom_block = f"\n\nAdditional URLs you may fetch with `syte-access fetch <url>`:\n{urls}"
 
-    enabled = set(enabled_skills if enabled_skills is not None else SKILL_CATALOG.keys())
-    all_rules: list[dict[str, str]] = [
+    return [
         {
             "name": "Syte website agent",
-            "skill_id": "website-editing",
             "rule": (
                 "You edit websites inside the Syte workspace. Work in the app/ directory, "
                 "match existing conventions, and keep changes small and verifiable. "
@@ -449,7 +804,6 @@ def build_agent_rules(
         },
         {
             "name": "CLI tools (required)",
-            "skill_id": "cli-tools",
             "rule": (
                 "Always use the CLI helpers `syte-service` and `syte-access` on PATH. "
                 "Use syte-service for preview/run/logs. "
@@ -459,7 +813,6 @@ def build_agent_rules(
         },
         {
             "name": "Service management",
-            "skill_id": "service-management",
             "rule": (
                 "To control preview or run verification commands: `syte-service <action>`. "
                 "Examples: syte-service preview_start and syte-service run \"npm run lint\". "
@@ -469,7 +822,6 @@ def build_agent_rules(
         },
         {
             "name": "Preview and access tools",
-            "skill_id": "preview-access",
             "rule": (
                 "Use `syte-access` for preview: status, url, fetch/read page HTML, "
                 "logs (dev server output), and screenshot."
@@ -478,7 +830,6 @@ def build_agent_rules(
         },
         {
             "name": "File operations",
-            "skill_id": "workspace-search",
             "rule": (
                 "When changing the site: read files first, then create/edit/delete as needed. "
                 "Every file change should be intentional and verifiable via preview."
@@ -486,7 +837,6 @@ def build_agent_rules(
         },
         {
             "name": "Home page quality",
-            "skill_id": "website-editing",
             "rule": (
                 "For site creation or redesign work, make the home page complete and styled. "
                 "Integrate existing typography, color, spacing, components, and responsive behavior; "
@@ -495,7 +845,6 @@ def build_agent_rules(
         },
         {
             "name": "Next.js App Router",
-            "skill_id": "nextjs-app-router",
             "rule": (
                 "The Next.js project root is the workspace app/ folder, so App Router routes live under "
                 "app/app/ (e.g. app/app/login/page.tsx), globals.css at app/app/globals.css, and config at "
@@ -506,56 +855,33 @@ def build_agent_rules(
                 "files and verifies size; re-read after writes and treat an empty-file warning as a failure."
             ),
         },
-        {
-            "name": "MCP project tools",
-            "skill_id": "__mcp__",
-            "rule": (
-                "Use list_mcp_addons / connect_mcp / call_mcp for project MCP addons. "
-                "Built-in addon `syte` exposes syte_service and syte_access (same as the CLI helpers). "
-                "Register extra stdio MCP servers via the project MCP APIs when needed."
-            ),
-        },
     ]
-    out: list[dict[str, str]] = []
-    for item in all_rules:
-        skill_id = item.get("skill_id") or ""
-        if skill_id == "__mcp__":
-            # MCP rule is controlled by skills.json mcp.enabled (caller may strip).
-            out.append({"name": item["name"], "rule": item["rule"]})
-            continue
-        if skill_id in enabled:
-            out.append({"name": item["name"], "rule": item["rule"]})
-    return out
 
 
 def write_agent_skills(
     project_id: str,
     agent_root: Path,
-    *,
-    enabled_skills: list[str] | None = None,
-    mcp_enabled: bool = True,
+    custom_skills: list[dict[str, Any]] | None = None,
 ) -> list[Path]:
-    """Write enabled skill markdown files and syte-* helpers into the agent workspace."""
+    """Write skill markdown files and syte-access helper into the agent workspace."""
     skills_dir = agent_root / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    enabled = set(enabled_skills if enabled_skills is not None else SKILL_CATALOG.keys())
-    enabled_files = {
-        SKILL_CATALOG[skill_id]["file"]
-        for skill_id in enabled
-        if skill_id in SKILL_CATALOG
-    }
-
     for name, content in SKILL_FILES.items():
         path = skills_dir / name
-        if name in enabled_files:
-            path.write_text(content.strip() + "\n")
-            written.append(path)
-        elif path.exists():
-            try:
-                path.unlink()
-            except OSError:
-                pass
+        path.write_text(content.strip() + "\n")
+        written.append(path)
+
+    for skill in custom_skills or []:
+        skill_id = str(skill.get("id") or "").strip()
+        content = str(skill.get("content") or "").strip()
+        if not skill_id or not content:
+            continue
+        path = skills_dir / f"{skill_id}.md"
+        title = str(skill.get("name") or skill_id).strip()
+        body = content if content.lstrip().startswith("#") else f"# {title}\n\n{content}"
+        path.write_text(body.strip() + "\n")
+        written.append(path)
 
     bin_dir = agent_root / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -570,50 +896,22 @@ def write_agent_skills(
     written.append(service_path)
 
     mcp_path = bin_dir / "syte-mcp"
-    if mcp_enabled:
-        mcp_path.write_text(MCP_SCRIPT)
-        mcp_path.chmod(mcp_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        written.append(mcp_path)
-    elif mcp_path.exists():
-        try:
-            mcp_path.unlink()
-        except OSError:
-            pass
+    mcp_path.write_text(MCP_SCRIPT)
+    mcp_path.chmod(mcp_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    written.append(mcp_path)
     return written
 
 
-def mcp_server_config(project_id: str, agent_root: Path | None) -> dict[str, Any]:
+def mcp_server_config(project_id: str, agent_root: Path) -> dict[str, Any]:
     """Syte MCP stdio descriptor for integrations that opt into MCP."""
-    bin_cmd = "syte-mcp"
-    if agent_root is not None:
-        bin_cmd = str(agent_root / "bin" / "syte-mcp")
     return {
         "name": "syte-tools",
-        "transport": "stdio",
-        "command": bin_cmd,
+        "command": str(agent_root / "bin" / "syte-mcp"),
         "args": [],
         "env": {
             "SYTE_PROJECT_ID": project_id,
             "SYTE_API_BASE": f"http://127.0.0.1:{settings.port}",
             "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
-        },
-        "tools": [
-            {
-                "name": "syte_service",
-                "description": "Control project preview/service/logs (function → /agent/service)",
-            },
-            {
-                "name": "syte_access",
-                "description": "Preview URL fetch/logs/screenshot (function → /agent/access)",
-            },
-        ],
-        "documentation": "/api/#agent-mcp",
-        "project_routes": {
-            "list": f"/api/projects/{project_id}/agent/mcp",
-            "register": f"/api/projects/{project_id}/agent/mcp",
-            "connect": f"/api/projects/{project_id}/agent/mcp/connect",
-            "call": f"/api/projects/{project_id}/agent/mcp/call",
-            "skills": f"/api/projects/{project_id}/agent/skills",
         },
     }
 

@@ -20,9 +20,18 @@ and restartable work. It does not launch a CLI or HTTP server per project.
 The agent uses only Syte's configured Syra profiles and their existing fixed
 OpenAI-compatible endpoints:
 
-- `syra-nano`: Gemini Flash
-- `syra-base`: DeepSeek Chat
-- `syra-havy`: Gemini Pro
+- `syra-nano`: Gemini Flash (fast / Instant)
+- `syra-base` **(builder)**: Aliyun MaaS `qwen3.5-flash` — code edits and tool loops
+- `syra-havy`: Gemini Pro (vision)
+- `syra-ultra` **(thinker)**: OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` — plans / architecture
+
+Builder and thinker use **different APIs and keys** (`SYRA_BASE_API_KEY` vs
+`SYRA_ULTRA_API_KEY`). Balanced–Max thinking levels call the thinker for a
+batched brief / site plan, then the builder executes tools. Instant/Fast skip
+the thinker entirely.
+
+Token efficiency: tool/CLI output is filtered before it re-enters context; listings
+honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).
 
 Provider keys remain in Syte system settings. They are sent directly to the
 selected provider and are never copied into project runtime files.
@@ -56,6 +65,9 @@ and structured tools. Available tools:
   text metadata + URLs only). Requires a headless Chromium/Chrome on the Syte host
   (`chromium-browser` / `chromium` / `google-chrome`, installed by `scripts/install.sh`, or
   override with `SYTE_CHROMIUM_PATH`).
+- `inspect_preview` — fetch preview HTML/text and (by default) open the route in Chromium
+  DevTools to collect **browser console logs, page exceptions, network failures, and load
+  status**. Use after UI edits to confirm the site actually loads with a clean console.
 - `ask_question` — interactive mid-turn questions (`answer` / `input` / `slider` / `choice` /
   `multi_choice`); blocks until answered via API/GUI or times out
 - `env_get` / `env_set` / `request_env` — project env access; `request_env` asks the user for
@@ -69,7 +81,14 @@ and structured tools. Available tools:
 The agent builds **any** kind of code (libraries, CLIs, APIs, scripts, backends, data jobs,
 etc.). It must **not** assume every request is a website. When the work *is* a website / web UI,
 it must follow the Sycord Design Contract (shadcn/ui under `components/ui/*`, Lucide, Inter,
-Tailwind tokens).
+Tailwind tokens). The contract exposes a pinned catalog of 57 individual shadcn components and
+patterns; shadcn Blocks and application-level direct Radix imports are rejected. Radix primitives
+must stay behind local `components/ui/*` wrappers. **Do not** use HeroUI, NextUI, Chakra, MUI, or
+Ant Design.
+
+For a new website or substantive redesign, the runtime enforces a clarification-or-plan gate.
+When the brief lacks a material design choice, the agent asks one batched question before planning.
+Otherwise it plans first. File inspection and edits remain blocked until that sequence completes.
 
 ### Session stop markers
 
@@ -85,53 +104,31 @@ generation — never rely on the last `mark_status: "g"` event alone. On service
 restart, any leftover `open` sessions for a project are closed as `cancelled`
 before a resumed request opens a new session.
 
-### Skill settings
+### MCP connections and skills
 
-Per-project skill toggles and MCP connection preferences live in
-`workspaces/<uuid>/data/cloud-agent/skills.json` (defaults: all built-in skills
-enabled, builtin `syte` MCP auto-connected):
+MCP providers and skills are managed per project from the agent chat resource panel
+(**add / enable / disable / edit**) and the same operations are available directly via
+API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
+[`docs/api-agent.md`](api-agent.md).
 
-```json
-{
-  "enabled_skills": [
-    "website-editing", "workspace-search", "preview-access",
-    "service-management", "nextjs-app-router", "cli-tools"
-  ],
-  "mcp": {
-    "enabled": true,
-    "auto_connect_builtin": true,
-    "auto_connect_addons": []
-  }
-}
-```
+**MCP**
 
-APIs:
+- Built-in `syte` addon tools: `syte_service` → project service actions,
+  `syte_access` → preview access actions.
+- Register custom stdio providers, connect/disconnect them, call tools, and edit
+  non-builtin registrations.
+- Agent tools: `list_mcp_addons` / `connect_mcp` / `call_mcp`.
 
-- `GET/PUT /api/projects/{uuid}/agent/skills`
-- `GET /api/agent_skills?uuid=` / `POST /api/agent_skills`
-- `POST /api/agent_settings` also accepts optional `enabled_skills` and `mcp`
+**Skills**
 
-Disabled skills are omitted from the system instruction and removed from the
-on-disk `skills/` markdown set. MCP settings control whether the project MCP
-stdio helper (`bin/syte-mcp`) is written and which addons are auto-connected at
-turn start.
-
-### MCP connection (project functions)
-
-Each project exposes a built-in MCP addon named `syte` whose tools map to the
-same project functions as the CLI helpers:
-
-| MCP tool | Project function |
-|----------|------------------|
-| `syte_service` | `POST /api/projects/{uuid}/agent/service` |
-| `syte_access` | `POST /api/projects/{uuid}/agent/access` |
-
-The stdio descriptor (for external MCP clients) is returned from
-`GET /api/agent_skills?uuid=` / `GET /api/agent_mcp?uuid=` as `mcp_server`, and
-from agent status as `agent_mcp.server`. Agent tools
-`list_mcp_addons` / `connect_mcp` / `call_mcp` use the same registry. Register
-extra stdio servers with `POST /api/agent_mcp_register`.
-
+- Built-in catalog: `website-editing`, `workspace-search`, `preview-access`,
+  `service-management`, `nextjs-app-router`, `cli-tools`.
+- Custom skills can be **added** (name + markdown/content guidance), edited, enabled,
+  disabled, or deleted per project.
+- Active skills (built-in and custom) are injected under `## Active Skills` in the
+  system instruction.
+- Enable stores optional string `parameters` (re-enable upserts / edits them);
+  disable removes the project activation row; purge deletes a custom definition.
 ### Artifact APIs
 
 | Resource | List | Notes |
@@ -139,9 +136,48 @@ extra stdio servers with `POST /api/agent_mcp_register`.
 | Screenshots | `GET /api/agent_screenshots?uuid=` | PNG at `/api/projects/{uuid}/agent/screenshots/{id}?variant=thumb\|full` |
 | Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
 | Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
-| Skills / MCP | `GET /api/agent_skills?uuid=` | Enable skills + MCP connection; `GET /api/agent_mcp` lists addons |
-| MCP addons | `GET /api/agent_mcp?uuid=` | `POST /api/agent_mcp_connect` / `agent_mcp_call` |
-| Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
+| Skills | `GET /api/agent_skills?uuid=` | Add: `POST /api/agent_skills_add`; enable: `agent_skills_enable`; update: `agent_skills_update`; disable: `agent_skills_disable`; delete custom: `agent_skills_delete` |
+| MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` || Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
+
+### Layered memory, visual feedback, and design profiles
+
+Syte keeps a local SQLite memory layer alongside Turso sessions so clients
+(sycord.com) can resume work without re-scanning the whole workspace:
+
+| Store | Purpose |
+|-------|---------|
+| `agent_session_meta` | Per-turn status, `active_files[]`, Turso session id |
+| `agent_summaries` | Compressed “story so far” + key decisions after long sessions |
+| `workspace_index` | Path / hash / semantic tags (`hero`, `navbar`, `colors`, …) |
+| `visual_analyses` | Structured screenshot critiques (layout, issues, suggestions) |
+| `design_profiles` | Persisted tokens + CSS + agent instructions per project |
+
+**Resume:** `GET /api/projects/{id}/agent/sessions?resume=1` (and Sycord
+`/sycord/api/agent_sessions?resume=1`) returns `resume_session`, `last_work`,
+`active_files`, and `latest_summary`.
+
+**Streaming:** Optional SSE at `/api/projects/{id}/agent/activity/stream` (and
+`/sycord/api/agent_activity/stream`) for token-level updates; Turso session
+polling remains the durable source of truth.
+
+**Visual loop:** `screenshot_preview` stores a `visual_analyses` row. Call
+`POST /sycord/api/improve_from_screenshot` (or chat with
+`improve_from_screenshot=true`) to inject that analysis as the primary design
+critique with a “minimal diffs” hint.
+
+**Design system:** `POST /sycord/api/design_profile` with `theme_key` /
+`style_key` (`saas-minimal`, `fintech-dark`, `ai-landing`, …) writes tokens into
+SQLite and `data/design-system/`, then injects them into every turn’s system
+prompt.
+
+**External summary:** `GET /sycord/api/project_summary?uuid=` returns deployment
+URL, design tokens, pages/active files, and last agent summary id. Configure
+`webhook_urls` in system settings to receive `site.deployed` and
+`agent.session.completed` events.
+
+**Model routing:** When `model_profile` and `thinking_level` are omitted, short
+copy tweaks auto-select `syra-nano`; full landing rebuilds / screenshot remakes
+prefer `syra-havy`.
 
 The system instruction is generated for Syte and includes project access rules,
 enabled skills, workspace location, design contract (for websites), verification

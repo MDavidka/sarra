@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -110,11 +111,11 @@ async def apply_cloudflare_integration() -> list[str]:
     if not token:
         return []
     messages: list[str] = []
-    ok, msg = ensure_caddy_cloudflare_plugin()
+    ok, msg = await asyncio.to_thread(ensure_caddy_cloudflare_plugin)
     messages.append(msg if ok else f"Cloudflare plugin: {msg}")
     env_path = await _write_caddy_env()
     if env_path:
-        ok, msg = ensure_caddy_systemd_env(env_path)
+        ok, msg = await asyncio.to_thread(ensure_caddy_systemd_env, env_path)
         messages.append(msg if ok else f"Systemd env: {msg}")
     return messages
 
@@ -151,11 +152,15 @@ async def _use_wildcard_tls() -> bool:
 
 
 async def async_generate_caddyfile() -> str:
+    from syte.caddy_routes import preview_cors_origin
+
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     public_ip = settings.resolved_public_ip
     email = settings.admin_email
-    embed_mode = (await get_setting("preview_embed_mode", "any")).strip().lower()
-    frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode != "restricted")
+    # Default restricted: only sycord.com + GUI domain may embed previews.
+    embed_mode = (await get_setting("preview_embed_mode", "restricted")).strip().lower()
+    frame_csp = preview_frame_ancestors_csp(gui_domain, allow_any=embed_mode == "any")
+    cors_origin = preview_cors_origin(gui_domain)
     use_wildcard_tls = await _use_wildcard_tls()
 
     lines = [
@@ -208,6 +213,7 @@ async def async_generate_caddyfile() -> str:
             projects,
             frame_csp=frame_csp,
             use_wildcard_tls=use_wildcard_tls,
+            cors_origin=cors_origin,
         )
     )
 
@@ -222,16 +228,20 @@ async def apply_proxy_config() -> tuple[bool, str]:
     fallback = settings.data_dir / "Caddyfile"
     env_path = await _write_caddy_env()
 
+    written = None
+    write_errors: list[str] = []
     for target in (config_path, fallback):
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(config)
             written = target
             break
-        except PermissionError:
+        except OSError as exc:
+            write_errors.append(f"{target}: {exc}")
             continue
-    else:
-        return False, "Could not write Caddy configuration (permission denied)."
+    if written is None:
+        detail = "; ".join(write_errors) or "permission denied"
+        return False, f"Could not write Caddy configuration ({detail})."
 
     extra = ""
     if env_path:
@@ -245,7 +255,7 @@ async def apply_proxy_config() -> tuple[bool, str]:
             "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
         )
 
-    code, out = _run(["caddy", "validate", "--config", str(written)])
+    code, out = await asyncio.to_thread(_run, ["caddy", "validate", "--config", str(written)])
     if code != 0:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
@@ -254,12 +264,12 @@ async def apply_proxy_config() -> tuple[bool, str]:
         ["systemctl", "restart", "caddy"],
         ["caddy", "reload", "--config", str(written)],
     ):
-        code, out = _run(cmd)
+        code, out = await asyncio.to_thread(_run, cmd)
         if code == 0:
-            ensure_caddy()
+            await asyncio.to_thread(ensure_caddy)
             return True, "Proxy configuration applied (production + preview SSL)." + extra
 
-    ensure_caddy()
+    await asyncio.to_thread(ensure_caddy)
     return True, (
         f"Caddy config saved to {written}. "
         "Run: sudo systemctl restart caddy" + extra

@@ -3,17 +3,20 @@
 import asyncio
 import os
 import re
-import subprocess
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import AsyncIterable
 
 from syte.config import settings
 from syte.database import get_project, list_projects, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
 from syte.project_enrich import enrich_ssl
+from syte.upload_limits import MAX_UPLOAD_BYTES
 from syte.workspace import ensure_workspace, read_env_vars, workspace_path, write_env_file
 
-# Block only catastrophic host-wide commands; arbitrary project commands are allowed.
+# Block catastrophic host-wide commands. Prefer Docker deploy for isolation;
+# this blocklist is defense-in-depth only and is not a complete sandbox.
 BLOCKED_PATTERNS = (
     "rm -rf /",
     "rm -rf /*",
@@ -24,7 +27,35 @@ BLOCKED_PATTERNS = (
     "wget http",
     "curl http | sh",
     "curl http | bash",
+    "| sh",
+    "| bash",
+    "|sh",
+    "|bash",
+    "| /bin/sh",
+    "| /bin/bash",
+    "/dev/tcp/",
+    "nc -e",
+    "ncat -e",
 )
+
+MAX_COMMAND_LENGTH = 8_000
+COMMAND_ALLOWLIST = frozenset({
+    "npm", "npx", "yarn", "pnpm", "bun", "node",
+    "python", "python3", "pip", "pip3", "pipx", "uv", "uvx",
+    "git", "ls", "cat", "mkdir", "rm", "cp", "mv", "touch", "chmod",
+    "echo", "pwd", "which", "head", "tail", "wc", "find", "grep", "rg",
+    "sed", "awk", "curl", "wget", "cargo", "rustc", "go", "make",
+    "tsc", "eslint", "prettier", "vitest", "jest", "pytest", "ruff",
+    "mypy", "black", "isort", "true", "false", "test", "sleep", "sort",
+    "uniq", "tr", "cut", "tee", "diff", "tar", "unzip", "zip", "jq",
+    "env", "printenv", "date", "uname", "basename", "dirname", "realpath",
+    "sha256sum", "openssl", "xargs", "patch", "gzip", "gunzip",
+    "du", "df", "stat", "file", "id", "whoami", "groups", "printf",
+})
+
+
+class UploadTooLargeError(ValueError):
+    """Raised when a streamed upload exceeds MAX_UPLOAD_BYTES."""
 
 # Production bundles belong to the deployment workflow, never agent preview testing.
 FORBIDDEN_BUILD_PATTERNS = (
@@ -38,13 +69,29 @@ FORBIDDEN_BUILD_PATTERNS = (
 
 
 def _resolve_workspace_path(project_id: str, rel_path: str = "") -> Path:
+    """Resolve ``rel_path`` under the project workspace; reject traversal escapes.
+
+    Uses ``Path.resolve()`` then ``relative_to(base)`` so symlink targets that
+    leave the workspace are denied. Absolute inputs and null bytes are rejected
+    before join.
+    """
     base = workspace_path(project_id).resolve()
     if not base.exists():
         base = ensure_workspace(project_id).resolve()
-    rel = (rel_path or "").strip().lstrip("/")
-    target = (base / rel).resolve() if rel else base
-    if target != base and base not in target.parents:
-        raise ValueError("Path traversal denied — path must stay inside workspace")
+    rel = (rel_path or "").strip().replace("\\", "/")
+    if "\x00" in rel:
+        raise ValueError("Path traversal denied — null byte in path")
+    if re.match(r"^[A-Za-z]:", rel) or rel.startswith("//"):
+        raise ValueError("Path traversal denied — absolute paths not allowed")
+    rel = rel.lstrip("/")
+    parts = [part for part in rel.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise ValueError("Path traversal denied — '..' segments not allowed")
+    target = base.joinpath(*parts).resolve() if parts else base
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("Path traversal denied — path must stay inside workspace") from exc
     return target
 
 
@@ -53,6 +100,61 @@ def _is_blocked(command: str) -> str | None:
     for pattern in BLOCKED_PATTERNS:
         if pattern in lower:
             return pattern
+    # Block shell expansion / substitution that can hide disallowed binaries.
+    if "`" in command:
+        return "backtick command substitution"
+    if "$(" in command or "${" in command:
+        return "shell command/parameter substitution"
+    if "<(" in command or ">(" in command:
+        return "process substitution"
+    return None
+
+
+def _is_env_assignment(token: str) -> bool:
+    if "=" not in token or token.startswith("="):
+        return False
+    name = token.split("=", 1)[0]
+    return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name))
+
+
+def _command_segments(command: str) -> list[str]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;")
+    lexer.whitespace_split = True
+    segments: list[list[str]] = [[]]
+    for token in lexer:
+        if token in {";", "&&", "||", "|"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    return [" ".join(segment).strip() for segment in segments if segment]
+
+
+def _primary_binary(segment: str) -> str | None:
+    try:
+        tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        # Let the shell report quoting syntax errors; do not bypass validation.
+        tokens = segment.split()
+    while tokens and _is_env_assignment(tokens[0]):
+        tokens.pop(0)
+    if not tokens:
+        return None
+    return Path(tokens[0]).name
+
+
+def _allowlist_violation(command: str) -> str | None:
+    try:
+        segments = _command_segments(command)
+    except ValueError as exc:
+        return f"invalid shell syntax: {exc}"
+    if not segments:
+        return "empty command"
+    for segment in segments:
+        binary = _primary_binary(segment)
+        if not binary:
+            return "missing command after environment assignment"
+        if binary not in COMMAND_ALLOWLIST:
+            return binary
     return None
 
 
@@ -62,6 +164,85 @@ def _is_forbidden_build(command: str) -> str | None:
     for pattern in FORBIDDEN_BUILD_PATTERNS:
         if re.search(pattern, lower):
             return pattern
+    return None
+
+
+# Interpreters that can open arbitrary host paths via inline code.
+_INLINE_CODE_FLAGS: dict[str, frozenset[str]] = {
+    "python": frozenset({"-c"}),
+    "python3": frozenset({"-c"}),
+    "node": frozenset({"-e", "-p", "--eval", "--print"}),
+    "perl": frozenset({"-e", "-E"}),
+    "ruby": frozenset({"-e"}),
+    "php": frozenset({"-r"}),
+    "lua": frozenset({"-e"}),
+}
+
+
+def _shell_path_violation(project_id: str, command: str, *, cwd: str = "app") -> str | None:
+    """Reject shell args that resolve outside the project workspace (DAV-199).
+
+    Cwd sandbox alone does not stop ``cat /etc/passwd`` or ``ls ../other-tenant``.
+    Absolute paths, ``~``, and ``..`` segments are resolved against the workspace
+    and denied when they escape. Inline interpreter ``-c``/``-e`` flags are also
+    blocked for agent shell because they bypass path tokenization.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        tokens = command.split()
+    if not tokens:
+        return None
+
+    base = workspace_path(project_id).resolve()
+    try:
+        workdir = _resolve_workspace_path(project_id, cwd)
+    except ValueError as exc:
+        return str(exc)
+
+    # Drop leading env assignments so the primary binary is visible.
+    idx = 0
+    while idx < len(tokens) and _is_env_assignment(tokens[idx]):
+        idx += 1
+    if idx >= len(tokens):
+        return None
+    binary = Path(tokens[idx]).name
+    inline_flags = _INLINE_CODE_FLAGS.get(binary)
+    if inline_flags:
+        for tok in tokens[idx + 1 :]:
+            if tok in inline_flags:
+                return (
+                    f"inline code via {binary} {tok} is blocked in agent shell — "
+                    "use workspace file tools or a script inside the project"
+                )
+
+    path_like = re.compile(r"^(?:~|/|\.\.(?:/|$)|[^|=]*\.\.(?:/|$))")
+    for tok in tokens[idx + 1 :]:
+        if not tok or tok.startswith("-"):
+            continue
+        if tok in {"|", "&&", "||", ";", "&"}:
+            continue
+        # Skip simple values that are clearly not filesystem paths.
+        if "=" in tok and not tok.startswith("~") and not tok.startswith("/") and ".." not in tok:
+            continue
+        if not path_like.match(tok) and ".." not in tok and not tok.startswith("/"):
+            # Relative path without .. — still resolve under workdir for safety
+            # when it looks like a path (has / or ends with known suffix).
+            if "/" not in tok and not tok.startswith("."):
+                continue
+        try:
+            if tok.startswith("~"):
+                candidate = Path(tok).expanduser().resolve()
+            elif tok.startswith("/"):
+                candidate = Path(tok).resolve()
+            else:
+                candidate = (workdir / tok).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return f"unsafe path argument: {tok}"
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            return f"path outside workspace: {tok}"
     return None
 
 
@@ -113,13 +294,24 @@ async def workspace_get(project_id: str) -> dict | None:
     }
 
 
-async def workspace_list() -> list[dict]:
-    result = []
-    for p in await list_projects():
-        detail = await workspace_get(p["id"])
-        if detail:
-            result.append(detail)
-    return result
+async def workspace_list(*, concurrency: int = 10) -> list[dict]:
+    """Load workspace details for all projects with bounded parallelism.
+
+    ``workspace_get`` does per-project I/O (preview/agent/SSL). Gathering with a
+    semaphore avoids the sequential N+1 stall without opening unbounded sockets.
+    """
+    projects = await list_projects()
+    if not projects:
+        return []
+    limit = max(1, int(concurrency))
+    sem = asyncio.Semaphore(limit)
+
+    async def _one(project_id: str) -> dict | None:
+        async with sem:
+            return await workspace_get(project_id)
+
+    details = await asyncio.gather(*(_one(p["id"]) for p in projects))
+    return [detail for detail in details if detail]
 
 
 async def list_workspace_files(project_id: str, subpath: str = "") -> list[dict]:
@@ -292,18 +484,56 @@ async def delete_file(project_id: str, file_path: str) -> tuple[bool, str]:
 
 
 async def upload_file(project_id: str, file_path: str, content: bytes) -> tuple[bool, str]:
+    if len(content or b"") > MAX_UPLOAD_BYTES:
+        return False, f"Upload too large ({len(content)} bytes). Max {MAX_UPLOAD_BYTES}."
+
+    async def _single_chunk() -> AsyncIterable[bytes]:
+        yield content or b""
+
+    try:
+        ok, message, _written = await upload_file_stream(project_id, file_path, _single_chunk())
+        return ok, message
+    except UploadTooLargeError as exc:
+        return False, str(exc)
+
+
+async def upload_file_stream(
+    project_id: str,
+    file_path: str,
+    chunks: AsyncIterable[bytes],
+) -> tuple[bool, str, int]:
     project = await get_project(project_id)
     if not project:
-        return False, "Project not found"
+        return False, "Project not found", 0
     target = _resolve_workspace_path(project_id, file_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_dir():
-        return False, "Target path is a directory"
-    target.write_bytes(content)
+        return False, "Target path is a directory", 0
+    tmp = target.with_name(f".{target.name}.syte-upload-tmp")
+    written = 0
+    try:
+        with tmp.open("wb") as f:
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise UploadTooLargeError(
+                        f"Upload too large ({written} bytes). Max {MAX_UPLOAD_BYTES}."
+                    )
+                f.write(chunk)
+        os.replace(tmp, target)
+    except UploadTooLargeError:
+        tmp.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        return False, f"Upload failed for {file_path}: {exc}", written
+
     from syte.agent_activity import record_workspace_activity
 
     await record_workspace_activity(project_id, "upload_file", path=file_path, source="api")
-    return True, f"Uploaded {len(content)} bytes to {file_path}"
+    return True, f"Uploaded {written} bytes to {file_path}", written
 
 
 async def set_env_vars(project_id: str, env_vars: dict[str, str], merge: bool = True) -> tuple[bool, str]:
@@ -329,16 +559,28 @@ async def execute_command(
     *,
     source: str = "api",
 ) -> tuple[int, str]:
-    """Run any custom shell command inside the workspace (sandboxed to workspace dir)."""
+    """Run a shell command inside the workspace (cwd sandboxed to workspace dir).
+
+    Uses ``asyncio.create_subprocess_shell`` so long-running commands do not
+    exhaust the default thread-pool executor (see DAV-36). Commands remain
+    workspace-scoped; full process isolation requires Docker deploy.
+    """
     project = await get_project(project_id)
     if not project:
         return 1, "Project not found"
     cmd = command.strip()
     if not cmd:
         return 1, "Empty command"
+    if "\x00" in cmd:
+        return 1, "Command blocked (null byte)"
+    if len(cmd) > MAX_COMMAND_LENGTH:
+        return 1, f"Command too long (max {MAX_COMMAND_LENGTH} chars)"
     blocked = _is_blocked(cmd)
     if blocked:
         return 1, f"Command blocked (host safety): {blocked}"
+    disallowed = _allowlist_violation(cmd)
+    if disallowed:
+        return 1, f"Command blocked (unsupported binary): {disallowed}"
 
     build_blocked = _is_forbidden_build(cmd) if source not in ("gui", "mcp") else None
     if build_blocked:
@@ -349,27 +591,59 @@ async def execute_command(
             "For testing, use: npm run lint"
         )
 
-    workdir = _resolve_workspace_path(project_id, cwd)
+    # Agent / MCP shells must stay inside the tenant workspace (cwd alone is not enough).
+    if source in ("agent", "mcp"):
+        path_blocked = _shell_path_violation(project_id, cmd, cwd=cwd)
+        if path_blocked:
+            return 1, f"Command blocked (workspace boundary): {path_blocked}"
+
+    try:
+        workdir = _resolve_workspace_path(project_id, cwd)
+    except ValueError as exc:
+        return 1, str(exc)
     if not workdir.is_dir():
         return 1, f"Working directory not found: {cwd}"
 
     merged_env = {**os.environ, **read_env_vars(project.get("env_vars", "{}")), **(env or {})}
 
-    def _run() -> tuple[int, str]:
-        result = subprocess.run(
+    try:
+        from syte.output_limits import TRUNCATION_MARKER, read_async_stream_limited
+
+        proc = await asyncio.create_subprocess_shell(
             cmd,
-            shell=True,
             cwd=workdir,
             env=merged_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
-        out = (result.stdout or "") + (result.stderr or "")
-        return result.returncode, out.strip() or "(no output)"
-
-    try:
-        code, output = await asyncio.to_thread(_run)
+        try:
+            stdout_b, truncated = await asyncio.wait_for(
+                read_async_stream_limited(proc.stdout),
+                timeout=timeout,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.CancelledError:
+            # Propagate cancel promptly so pause/interrupt does not leave a
+            # subprocess running after the agent turn is aborted (DAV-180).
+            proc.kill()
+            try:
+                await proc.communicate()
+            except Exception:
+                pass
+            raise
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await proc.communicate()
+            except Exception:
+                pass
+            _append_command_log(project_id, cmd, cwd, 124)
+            return 124, f"Command timed out after {timeout}s"
+        out = (stdout_b or b"").decode("utf-8", errors="replace")
+        if truncated and TRUNCATION_MARKER.strip() not in out:
+            out = out + TRUNCATION_MARKER
+        code = int(proc.returncode or 0)
+        output = out.strip() or "(no output)"
         _append_command_log(project_id, cmd, cwd, code)
         from syte.agent_activity import record_workspace_activity
 
@@ -381,9 +655,9 @@ async def execute_command(
             detail=output[:500] if output else "",
         )
         return code, output
-    except subprocess.TimeoutExpired:
-        _append_command_log(project_id, cmd, cwd, 124)
-        return 124, f"Command timed out after {timeout}s"
+    except OSError as exc:
+        _append_command_log(project_id, cmd, cwd, 1)
+        return 1, f"Failed to start command: {exc}"
 
 
 async def execute_commands(

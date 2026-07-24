@@ -89,20 +89,91 @@ def browser_install_hint() -> str:
     )
 
 def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
+    """Allow only preview / explicitly configured custom URLs (SSRF-hardened).
+
+    Compares hostname (not raw netloc) and rejects userinfo tricks, non-http(s)
+    schemes, and private/link-local/metadata destinations when resolvable.
+    """
+    import ipaddress
+    import socket
+
     if not url:
         return False
-    allowed = {preview_url}
-    allowed.update(u for u in custom_urls if u)
-    if url in allowed:
-        return True
+
+    def _parse(u: str):
+        p = urlparse((u or "").strip())
+        if p.scheme not in ("http", "https"):
+            return None
+        if p.username or p.password:
+            return None
+        host = (p.hostname or "").lower().rstrip(".")
+        if not host:
+            return None
+        return p, host
+
     try:
-        p = urlparse(url)
-        prev = urlparse(preview_url) if preview_url else None
-        if prev and p.netloc == prev.netloc:
-            return True
+        parsed = _parse(url)
+        if not parsed:
+            return False
+        p, host = parsed
+
+        allowed_hosts: set[str] = set()
+        for candidate in [preview_url, *(custom_urls or [])]:
+            c = _parse(candidate)
+            if c:
+                allowed_hosts.add(c[1])
+
+        # Exact URL match still allowed for configured custom URLs.
+        exact = {u for u in [preview_url, *(custom_urls or [])] if u}
+        if url in exact and host in allowed_hosts:
+            pass  # still subject to private-IP check below
+        elif host not in allowed_hosts:
+            return False
+
+        # Block literal private / link-local / metadata IPs.
+        try:
+            ip = ipaddress.ip_address(host)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                # Allow only if the preview itself is on that host (local preview).
+                prev = _parse(preview_url)
+                if not prev or prev[1] != host:
+                    return False
+        except ValueError:
+            # Hostname — resolve and reject private destinations unless preview host.
+            try:
+                infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == "https" else 80))
+            except OSError:
+                # Explicitly allowlisted host that does not resolve here is still OK
+                # (preview may be DNS-only on the public edge). Private-IP SSRF is
+                # covered when resolution succeeds.
+                return host in allowed_hosts
+            prev = _parse(preview_url)
+            preview_host = prev[1] if prev else ""
+            for info in infos:
+                addr = info[4][0]
+                try:
+                    ip = ipaddress.ip_address(addr)
+                except ValueError:
+                    continue
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_multicast
+                    or ip.is_unspecified
+                ) and host != preview_host:
+                    return False
+        return True
     except Exception:
         return False
-    return False
 
 
 async def _preview_context(project_id: str) -> tuple[dict | None, dict[str, Any]]:
@@ -137,6 +208,7 @@ async def list_access_capabilities(project_id: str) -> dict[str, Any]:
             {"action": "read", "description": "Alias for fetch"},
             {"action": "logs", "description": "Read preview dev-server log"},
             {"action": "screenshot", "description": "Capture preview screenshot (desktop + phone when chromium available)"},
+            {"action": "console", "description": "Open preview in Chromium DevTools and capture console/page errors + load status"},
         ],
         "viewports": {
             "desktop": {"width": 1280, "height": 800},
@@ -155,6 +227,7 @@ async def run_access_action(
     *,
     url: str | None = None,
     lines: int = 200,
+    include_screenshot: bool = False,
 ) -> dict[str, Any]:
     project, ctx = await _preview_context(project_id)
     if not project:
@@ -199,8 +272,26 @@ async def run_access_action(
                 "message": "URL not allowed — use preview URL or add it in Debug Chat access settings",
             }
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            # Do not follow redirects off the allowlist (SSRF via Location).
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
                 response = await client.get(target, headers={"User-Agent": "Syte-Agent-Access/1.0"})
+                # Manually follow a small number of same-host redirects.
+                for _ in range(3):
+                    if response.status_code not in (301, 302, 303, 307, 308):
+                        break
+                    location = response.headers.get("location")
+                    if not location:
+                        break
+                    next_url = str(httpx.URL(target).join(location))
+                    if not _is_allowed_url(next_url, preview_url, custom_urls):
+                        return {
+                            "ok": False,
+                            "error": "url_not_allowed",
+                            "message": "Redirect target not allowed",
+                            "url": next_url,
+                        }
+                    target = next_url
+                    response = await client.get(target, headers={"User-Agent": "Syte-Agent-Access/1.0"})
             content_type = response.headers.get("content-type", "")
             text = response.text
             if len(text) > 120_000:
@@ -248,6 +339,36 @@ async def run_access_action(
             **desktop,
             "viewports": public,
         }
+
+    if act in {"console", "devtools", "browser_logs"}:
+        target = (url or "").strip() or preview_url
+        if not target:
+            return {"ok": False, "error": "no_url", "message": "No preview URL for console inspect"}
+        if not _is_allowed_url(target, preview_url, custom_urls):
+            return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for console inspect"}
+        browser = find_headless_browser()
+        if not browser:
+            return {
+                "ok": False,
+                "error": "no_browser",
+                "action": "console",
+                "url": target,
+                "message": browser_install_hint(),
+            }
+        from syte.cdp_client import inspect_url_with_devtools
+
+        inspected = await asyncio.to_thread(
+            inspect_url_with_devtools,
+            target,
+            browser=browser,
+            width=1280,
+            height=800,
+            include_screenshot=bool(include_screenshot),
+        )
+        # Avoid huge binary payloads on the access API unless caller wants them.
+        public = {k: v for k, v in inspected.items() if k != "png_bytes"}
+        public["action"] = "console"
+        return public
 
     return {"ok": False, "error": "unknown_action", "message": f"Unknown action: {action}"}
 

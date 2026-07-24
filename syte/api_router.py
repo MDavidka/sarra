@@ -22,6 +22,7 @@ from syte.certificates import apply_proxy_config
 from syte.config import settings
 from syte.database import get_project, get_setting
 from syte.domain_utils import build_direct_url, normalize_domain
+from syte.upload_limits import UPLOAD_CHUNK_BYTES
 from syte import workspace_api
 
 router = APIRouter(tags=["Syte API"])
@@ -105,14 +106,17 @@ class CreateProjectRequest(BaseModel):
 class AgentSettingsRequest(BaseModel):
     uuid: str
     model_profile: str | None = None
-    enabled_skills: list[str] | None = None
-    mcp: dict | None = None
 
 
 class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy | syra-ultra")
+    thinking_level: int | None = Field(
+        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+    )
+    improve_from_screenshot: bool = False
+    visual_analysis_id: str | None = None
 
 
 class AgentChangeRequest(BaseModel):
@@ -120,6 +124,14 @@ class AgentChangeRequest(BaseModel):
     message: str = Field(..., description="Change request from sycord.com user")
     model_profile: str | None = Field(None, description="Model profile alias (syra-nano/base/havy)")
     model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
+    thinking_level: int | None = Field(
+        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+    )
+    improve_from_screenshot: bool = False
+    visual_analysis_id: str | None = None
+    idempotency_key: str | None = Field(
+        None, description="Optional client key — retries return the same request_id"
+    )
 
 
 class AgentQuestionAnswerBody(BaseModel):
@@ -148,6 +160,57 @@ class AgentMcpRegisterBody(BaseModel):
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     transport: str = "stdio"
+
+
+class AgentMcpUpdateBody(BaseModel):
+    uuid: str
+    addon: str
+    name: str | None = None
+    command: str | None = None
+    description: str | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    transport: str | None = None
+
+
+class AgentMcpDisconnectBody(BaseModel):
+    uuid: str
+    addon: str
+
+
+class AgentSkillEnableBody(BaseModel):
+    uuid: str
+    skill_id: str
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentSkillDisableBody(BaseModel):
+    uuid: str
+    skill_id: str
+
+
+class AgentSkillAddBody(BaseModel):
+    uuid: str
+    name: str
+    content: str
+    description: str = ""
+    parameters: dict[str, str] = Field(default_factory=dict)
+    enable: bool = True
+    skill_id: str | None = None
+
+
+class AgentSkillUpdateBody(BaseModel):
+    uuid: str
+    skill_id: str
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    parameters: dict[str, str] | None = None
+
+
+class AgentSkillDeleteBody(BaseModel):
+    uuid: str
+    skill_id: str
 
 
 def _http_error(status: int, error: str, message: str):
@@ -280,14 +343,22 @@ async def api_upload_file(
     file: UploadFile = File(...),
     _token: dict = Depends(verify_api_token),
 ):
-    content = await file.read()
+    async def chunks():
+        while True:
+            chunk = await file.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            yield chunk
+
     try:
-        ok, message = await workspace_api.upload_file(uuid, path, content)
+        ok, message, written = await workspace_api.upload_file_stream(uuid, path, chunks())
+    except workspace_api.UploadTooLargeError as exc:
+        _http_error(413, "upload_too_large", str(exc))
     except ValueError as exc:
         _http_error(400, "invalid_path", str(exc))
     if not ok:
         _http_error(400, "upload_failed", message)
-    return {"ok": True, "message": message, "path": path, "bytes": len(content)}
+    return {"ok": True, "message": message, "path": path, "bytes": written}
 
 
 @router.post("/set_env")
@@ -381,11 +452,26 @@ async def api_agent_interrupt(body: UuidRequest, request: Request, _token: dict 
     project = await get_project(body.uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    ok, message = await interrupt_agent(body.uuid)
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
     if not ok:
         _http_error(400, "agent_interrupt_failed", message)
     meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
     return {"ok": True, "uuid": body.uuid, "message": message, **meta}
+
+
+@router.post("/agent_cancel")
+async def api_agent_cancel(body: UuidRequest, request: Request, _token: dict = Depends(verify_api_token)):
+    """Cancel the active agent job/turn without submitting a new message."""
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    from syte.agent_jobs import cancel_agent_job
+
+    ok, message = await cancel_agent_job(body.uuid)
+    meta = await get_agent_status(body.uuid, request_base=str(request.base_url).rstrip("/"))
+    return {"ok": ok, "uuid": body.uuid, "message": message, **meta}
 
 
 @router.post("/agent_restart")
@@ -403,12 +489,7 @@ async def api_agent_settings(body: AgentSettingsRequest, _token: dict = Depends(
     if not project:
         _http_error(404, "not_found", "Project not found")
     try:
-        meta = await update_agent_settings(
-            body.uuid,
-            model_profile=body.model_profile,
-            enabled_skills=body.enabled_skills,
-            mcp=body.mcp,
-        )
+        meta = await update_agent_settings(body.uuid, model_profile=body.model_profile)
     except ValueError as exc:
         _http_error(400, "invalid_settings", str(exc))
     return {"ok": True, "uuid": body.uuid, **meta}
@@ -555,115 +636,17 @@ async def api_agent_stops(
     return {"ok": True, "uuid": uuid, "stops": await list_session_stops(uuid, limit=limit)}
 
 
-@router.get("/agent_skills")
-async def api_agent_skills_get(
-    uuid: str = Query(...),
-    _token: dict = Depends(verify_api_token),
-):
-    from syte.agent_artifacts import list_mcp_addons
-    from syte.agent_skills import (
-        apply_mcp_connection_settings,
-        available_skills,
-        mcp_server_config,
-        read_skills_config,
-    )
-    from syte.cloud_agent import agent_root
-
-    project = await get_project(uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
-    root = agent_root(uuid)
-    config = await read_skills_config(uuid, root)
-    mcp_state = await apply_mcp_connection_settings(uuid, config)
-    return {
-        "ok": True,
-        "uuid": uuid,
-        "available": available_skills(),
-        "enabled_skills": config.get("enabled_skills") or [],
-        "mcp": config.get("mcp") or {},
-        "mcp_connection": mcp_state,
-        "mcp_server": mcp_server_config(uuid, root),
-        "addons": await list_mcp_addons(uuid),
-        "documentation": "/api/#agent-skills",
-    }
-
-
-class AgentSkillsBody(BaseModel):
-    uuid: str
-    enabled_skills: list[str] | None = None
-    mcp: dict | None = None
-
-
-@router.post("/agent_skills")
-async def api_agent_skills_set(
-    body: AgentSkillsBody,
-    _token: dict = Depends(verify_api_token),
-):
-    from syte.agent_skills import (
-        apply_mcp_connection_settings,
-        available_skills,
-        mcp_server_config,
-        read_skills_config,
-        write_agent_skills,
-        write_skills_config,
-    )
-    from syte.cloud_agent import agent_root, write_agent_config
-
-    project = await get_project(body.uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
-    root = agent_root(body.uuid)
-    current = await read_skills_config(body.uuid, root)
-    patch = body.model_dump(exclude_none=True)
-    patch.pop("uuid", None)
-    path = await write_skills_config(body.uuid, {**current, **patch}, root)
-    config = await read_skills_config(body.uuid, root)
-    write_agent_skills(
-        body.uuid,
-        root,
-        enabled_skills=list(config.get("enabled_skills") or []),
-        mcp_enabled=bool((config.get("mcp") or {}).get("enabled", True)),
-    )
-    await write_agent_config(project)
-    mcp_state = await apply_mcp_connection_settings(body.uuid, config)
-    return {
-        "ok": True,
-        "uuid": body.uuid,
-        "path": str(path),
-        "available": available_skills(),
-        "enabled_skills": config.get("enabled_skills") or [],
-        "mcp": config.get("mcp") or {},
-        "mcp_connection": mcp_state,
-        "mcp_server": mcp_server_config(body.uuid, root),
-        "documentation": "/api/#agent-skills",
-    }
-
-
 @router.get("/agent_mcp")
 async def api_agent_mcp_list(
     uuid: str = Query(...),
     _token: dict = Depends(verify_api_token),
 ):
     from syte.agent_artifacts import list_mcp_addons
-    from syte.agent_skills import mcp_server_config
-    from syte.cloud_agent import agent_root
 
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    return {
-        "ok": True,
-        "uuid": uuid,
-        "addons": await list_mcp_addons(uuid),
-        "mcp_server": mcp_server_config(uuid, agent_root(uuid)),
-        "documentation": "/api/#agent-mcp",
-        "project_routes": {
-            "skills": f"/api/projects/{uuid}/agent/skills",
-            "list": f"/api/projects/{uuid}/agent/mcp",
-            "connect": f"/api/projects/{uuid}/agent/mcp/connect",
-            "call": f"/api/projects/{uuid}/agent/mcp/call",
-        },
-    }
+    return {"ok": True, "uuid": uuid, "addons": await list_mcp_addons(uuid)}
 
 
 @router.post("/agent_mcp_register")
@@ -721,6 +704,183 @@ async def api_agent_mcp_call(
     return await call_mcp_addon(body.uuid, body.addon, body.tool, body.arguments)
 
 
+@router.post("/agent_mcp_update")
+async def api_agent_mcp_update(
+    body: AgentMcpUpdateBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import update_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await update_mcp_addon(
+        body.uuid,
+        body.addon,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+        transport=body.transport,
+    )
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "mcp_update_failed",
+            result.get("message") or "Failed to update MCP addon",
+        )
+    return result
+
+
+@router.post("/agent_mcp_disconnect")
+async def api_agent_mcp_disconnect(
+    body: AgentMcpDisconnectBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_artifacts import disconnect_mcp_addon
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await disconnect_mcp_addon(body.uuid, body.addon)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "mcp_disconnect_failed",
+            result.get("message") or "Failed to disconnect MCP addon",
+        )
+    return result
+
+
+@router.get("/agent_skills")
+async def api_agent_skills_list(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import get_project_skills
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {"ok": True, "uuid": uuid, "skills": await get_project_skills(uuid)}
+
+
+@router.post("/agent_skills_add")
+async def api_agent_skills_add(
+    body: AgentSkillAddBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import add_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await add_custom_skill(
+        body.uuid,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+        enable=body.enable,
+        skill_id=body.skill_id,
+    )
+    if not result.get("ok"):
+        _http_error(
+            400,
+            result.get("error") or "skill_add_failed",
+            result.get("message") or "Failed to add skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_update")
+async def api_agent_skills_update(
+    body: AgentSkillUpdateBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import update_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await update_custom_skill(
+        body.uuid,
+        body.skill_id,
+        name=body.name,
+        description=body.description,
+        content=body.content,
+        parameters=body.parameters,
+    )
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_update_failed",
+            result.get("message") or "Failed to update skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_enable")
+async def api_agent_skills_enable(
+    body: AgentSkillEnableBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import enable_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await enable_skill(body.uuid, body.skill_id, body.parameters)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_enable_failed",
+            result.get("message") or "Failed to enable skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_disable")
+async def api_agent_skills_disable(
+    body: AgentSkillDisableBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import disable_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await disable_skill(body.uuid, body.skill_id)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_disable_failed",
+            result.get("message") or "Failed to disable skill",
+        )
+    return result
+
+
+@router.post("/agent_skills_delete")
+async def api_agent_skills_delete(
+    body: AgentSkillDeleteBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.agent_skills import delete_custom_skill
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await delete_custom_skill(body.uuid, body.skill_id)
+    if not result.get("ok"):
+        _http_error(
+            404 if result.get("error") == "not_found" else 400,
+            result.get("error") or "skill_delete_failed",
+            result.get("message") or "Failed to delete skill",
+        )
+    return result
+
+
 @router.get("/agent_turso_sync")
 async def api_agent_turso_sync(
     uuid: str = Query(..., description="Project UUID"),
@@ -760,37 +920,52 @@ async def api_agent_turso_debug(
 async def api_agent_sessions(
     uuid: str = Query(..., description="Project UUID"),
     limit: int = Query(50, ge=1, le=500),
+    resume: int = Query(0, ge=0, le=1),
     _token: dict = Depends(verify_api_token),
 ):
     """List durable Turso agent-session UUIDs for a project (newest first)."""
+    from syte.agent_memory import project_memory_snapshot
     from syte.turso_store import list_sessions_for_project, turso_configured
 
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    if not await turso_configured():
-        return {
-            "ok": True,
-            "uuid": uuid,
-            "turso_configured": False,
-            "sessions": [],
-            "message": "Turso is not configured — set turso_database_url in Settings -> AI tab.",
-        }
-    sessions = await list_sessions_for_project(uuid, limit=limit)
-    return {
+    memory = await project_memory_snapshot(uuid)
+    base = {
         "ok": True,
         "uuid": uuid,
-        "turso_configured": True,
+        "memory": memory,
+        "resume_session": memory.get("resume_session"),
+        "open_session": memory.get("open_session"),
+        "last_work": memory.get("last_work"),
+        "active_files": memory.get("active_files") or [],
+        "latest_summary": memory.get("latest_summary"),
+    }
+    if resume:
+        base["resume"] = 1
+    configured = await turso_configured()
+    sessions = await list_sessions_for_project(uuid, limit=limit)
+    payload = {
+        **base,
+        "turso_configured": configured,
         "sessions": [
             {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
         ],
     }
+    if not configured:
+        payload["message"] = (
+            "Remote Turso is not configured — sessions are stored locally on this deployer. "
+            "Set turso_database_url in Settings → AI for cross-host durability."
+        )
+    return payload
 
 
 @router.get("/agent_session/{session_id}")
 async def api_get_agent_session(
     session_id: str,
     since_id: int = Query(0, ge=0),
+    uuid: str | None = None,
+    project_id: str | None = None,
     _token: dict = Depends(verify_api_token),
 ):
     """Turso access route — fetch a durable agent activity session by UUID.
@@ -798,19 +973,17 @@ async def api_get_agent_session(
     This replaces the old activity SSE stream. Asking the agent something
     still happens over ``agent_communicate``/``agent_change`` (which return
     this session's id); poll this route by that id to see what happened.
+    API tokens are host-global in this single-tenant service; pass ``uuid`` or
+    ``project_id`` to additionally verify the session belongs to that project.
     """
-    from syte.turso_store import get_session, turso_configured
+    from syte.turso_store import get_session
 
-    if not await turso_configured():
-        _http_error(
-            503,
-            "turso_not_configured",
-            "Turso is not configured — set turso_database_url (and turso_auth_token) "
-            "in Settings -> AI tab before fetching agent sessions.",
-        )
     session = await get_session(session_id, since_id=since_id)
     if not session:
         _http_error(404, "not_found", "Agent session not found")
+    expected_project_id = project_id or uuid
+    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
+        _http_error(403, "forbidden", "Agent session does not belong to the requested project")
     return {"ok": True, **session}
 
 
@@ -835,7 +1008,10 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
         body.uuid,
         body.message,
         model_profile=body.model_profile,
+        thinking_level=body.thinking_level,
         source="api",
+        improve_from_screenshot=bool(body.improve_from_screenshot),
+        visual_analysis_id=body.visual_analysis_id,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_communicate_failed", result.get("message") or "Communication failed")
@@ -849,8 +1025,12 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         body.uuid,
         body.message,
         model_profile=profile,
+        thinking_level=body.thinking_level,
         source="sycord",
         background=True,
+        improve_from_screenshot=bool(body.improve_from_screenshot),
+        visual_analysis_id=body.visual_analysis_id,
+        idempotency_key=body.idempotency_key,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
@@ -895,6 +1075,15 @@ async def api_issue_deploy(body: UuidRequest, _token: dict = Depends(verify_api_
     }
 
 
+@router.post("/deploy_cancel")
+async def api_deploy_cancel(body: UuidRequest, _token: dict = Depends(verify_api_token)):
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok, message = await deployment.cancel_deploy(body.uuid)
+    return {"ok": ok, "uuid": body.uuid, "message": message}
+
+
 @router.post("/start_service")
 async def api_start_service(body: UuidRequest, _token: dict = Depends(verify_api_token)):
     project, message = await deployment.start_service(body.uuid)
@@ -922,9 +1111,9 @@ async def api_delete_project(body: UuidRequest, _token: dict = Depends(verify_ap
 @router.post("/start_preview")
 async def api_start_preview(body: UuidRequest, _token: dict = Depends(verify_api_token)):
     """Start fast dev preview (next dev / vite) with HMR — seconds, not minutes."""
-    from syte.preview_manager import start_preview
+    from syte.sycord import service as preview_service
 
-    ok, message, meta = await start_preview(body.uuid)
+    ok, message, meta = await preview_service.preview_start(body.uuid)
     if not ok:
         _http_error(400, "preview_failed", message)
     return {"ok": True, "uuid": body.uuid, "message": message, **meta}
@@ -932,11 +1121,12 @@ async def api_start_preview(body: UuidRequest, _token: dict = Depends(verify_api
 
 @router.post("/stop_preview")
 async def api_stop_preview(body: UuidRequest, _token: dict = Depends(verify_api_token)):
-    from syte.preview_manager import get_preview_status, stop_preview_async
+    from syte.sycord import service as preview_service
 
-    await stop_preview_async(body.uuid)
-    meta, _ = await get_preview_status(body.uuid)
-    return {"ok": True, "uuid": body.uuid, "message": "Preview stopped", **(meta or {})}
+    ok, message, meta = await preview_service.preview_stop(body.uuid)
+    if not ok:
+        _http_error(400, "preview_failed", message)
+    return {"ok": True, "uuid": body.uuid, "message": message, **(meta or {})}
 
 
 @router.get("/preview_status")
@@ -944,9 +1134,9 @@ async def api_preview_status(
     uuid: str = Query(..., description="Project UUID"),
     _token: dict = Depends(verify_api_token),
 ):
-    from syte.preview_manager import get_preview_status
+    from syte.sycord import service as preview_service
 
-    meta, message = await get_preview_status(uuid)
+    meta, message = await preview_service.preview_status(uuid)
     if not meta:
         _http_error(404, "not_found", message)
     return {"ok": True, **meta}

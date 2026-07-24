@@ -57,7 +57,7 @@ def _ensure_vite_preview(repo: Path) -> list[str]:
         path = _write_vite_static_overlay(repo, user_config)
         return [
             f"Wrote {path.name} wrapping {user_config} "
-            "(guaranteed allowedHosts: true + frame-ancestors *)"
+            "(guaranteed allowedHosts: true + restricted frame-ancestors CSP)"
         ]
     return actions or ["No vite.config found; dev command will use --host flags only"]
 
@@ -254,7 +254,7 @@ def _ensure_nextjs_preview(repo: Path, preview_domain: str) -> list[str]:
             if "allowedDevOrigins" in new_text and "allowedDevOrigins" not in text:
                 patches.append(f"allowedDevOrigins for {preview_domain}")
             if "frame-ancestors" in new_text and "frame-ancestors" not in text:
-                patches.append("Content-Security-Policy frame-ancestors *")
+                patches.append("Content-Security-Policy restricted frame-ancestors")
             actions.append(f"Patched {name}: {', '.join(patches) or 'preview config'}")
         return actions
     return actions

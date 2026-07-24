@@ -37,7 +37,7 @@ async def test_runtime_uses_no_project_port_and_writes_cloud_metadata(tmp_data_d
     assert project["agent_runtime"] == CLOUD_RUNTIME
     assert project["agent_port"] is None
     assert config["transport"] == "direct-provider"
-    assert config["streaming"] is False
+    assert config["streaming"] is True
     assert agent_config_path(project["id"]) == path
     assert "API key" not in path.read_text()
 
@@ -59,7 +59,8 @@ async def test_start_is_embedded_and_immediately_ready(tmp_data_dir: Path) -> No
 
 @pytest.mark.asyncio
 async def test_provider_retries_transient_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    from syte.cloud_agent import _provider_completion
+    from syte import cloud_agent
+    from syte.cloud_agent import _provider_completion, close_provider_client
 
     calls = 0
 
@@ -72,11 +73,7 @@ async def test_provider_retries_transient_failure(monkeypatch: pytest.MonkeyPatc
 
     class Client:
         def __init__(self, *args, **kwargs):
-            pass
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *args):
-            return None
+            self.is_closed = False
         async def post(self, *args, **kwargs):
             nonlocal calls
             calls += 1
@@ -84,8 +81,12 @@ async def test_provider_retries_transient_failure(monkeypatch: pytest.MonkeyPatc
                 import httpx
                 raise httpx.ConnectError("temporary")
             return Response()
+        async def aclose(self):
+            self.is_closed = True
 
-    monkeypatch.setattr("syte.cloud_agent.httpx.AsyncClient", Client)
+    await close_provider_client()
+    client = Client()
+    monkeypatch.setattr(cloud_agent, "_get_provider_client", lambda: client)
     monkeypatch.setattr("syte.cloud_agent.asyncio.sleep", lambda *_args: _noop())
     result = await _provider_completion(
         {"model": "deepseek-chat", "api_key": "key", "api_base": "https://provider", "profile": "syra-base"},
@@ -93,6 +94,7 @@ async def test_provider_retries_transient_failure(monkeypatch: pytest.MonkeyPatc
     )
     assert result["content"] == "done"
     assert calls == 2
+    await close_provider_client()
 
 
 async def _noop():
@@ -338,7 +340,8 @@ async def test_execute_tool_returns_error_instead_of_raising(
 
 @pytest.mark.asyncio
 async def test_provider_does_not_retry_http_400(monkeypatch: pytest.MonkeyPatch) -> None:
-    from syte.cloud_agent import _provider_completion
+    from syte import cloud_agent
+    from syte.cloud_agent import _provider_completion, close_provider_client
 
     calls = 0
 
@@ -352,18 +355,16 @@ async def test_provider_does_not_retry_http_400(monkeypatch: pytest.MonkeyPatch)
             return {}
 
     class Client:
-        def __init__(self, *args, **kwargs):
-            pass
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *args):
-            return None
+        is_closed = False
         async def post(self, *args, **kwargs):
             nonlocal calls
             calls += 1
             return Response()
+        async def aclose(self):
+            self.is_closed = True
 
-    monkeypatch.setattr("syte.cloud_agent.httpx.AsyncClient", Client)
+    await close_provider_client()
+    monkeypatch.setattr(cloud_agent, "_get_provider_client", lambda: Client())
     sleeps: list[float] = []
 
     async def fake_sleep(delay: float):
@@ -378,11 +379,13 @@ async def test_provider_does_not_retry_http_400(monkeypatch: pytest.MonkeyPatch)
     assert calls == 1
     assert sleeps == []
     assert "Missing tool result" in str(exc_info.value)
+    await close_provider_client()
 
 
 @pytest.mark.asyncio
-async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
-    from syte.cloud_agent import _provider_completion
+async def test_provider_omits_deepseek_thinking_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import cloud_agent
+    from syte.cloud_agent import _provider_completion, close_provider_client
 
     captured: dict = {}
 
@@ -394,22 +397,112 @@ async def test_provider_disables_deepseek_thinking(monkeypatch: pytest.MonkeyPat
             return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
 
     class Client:
-        def __init__(self, *args, **kwargs):
-            pass
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *args):
-            return None
+        is_closed = False
         async def post(self, url, headers=None, json=None):
             captured["json"] = json
             return Response()
+        async def aclose(self):
+            self.is_closed = True
 
-    monkeypatch.setattr("syte.cloud_agent.httpx.AsyncClient", Client)
+    await close_provider_client()
+    monkeypatch.setattr(cloud_agent, "_get_provider_client", lambda: Client())
     await _provider_completion(
         {"model": "deepseek-chat", "api_key": "key", "api_base": "https://api.deepseek.com/v1"},
         [{"role": "user", "content": "hello"}],
     )
-    assert captured["json"]["thinking"] == {"type": "disabled"}
+    # Instant / default: omit thinking entirely (gateways reject thinking:disabled).
+    assert "thinking" not in captured["json"]
+    assert captured["json"].get("cache_prompt") is True
+    assert captured["json"]["temperature"] == 0.2
+    await close_provider_client()
+
+
+@pytest.mark.asyncio
+async def test_provider_enables_deepseek_thinking_with_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import cloud_agent
+    from syte.cloud_agent import _provider_completion, close_provider_client
+
+    captured: dict = {}
+
+    class Response:
+        status_code = 200
+        def json(self):
+            return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    class Client:
+        is_closed = False
+        async def post(self, url, headers=None, json=None):
+            captured["json"] = json
+            return Response()
+        async def aclose(self):
+            self.is_closed = True
+
+    await close_provider_client()
+    monkeypatch.setattr(cloud_agent, "_get_provider_client", lambda: Client())
+    await _provider_completion(
+        {"model": "deepseek-chat", "api_key": "key", "api_base": "https://api.deepseek.com/v1"},
+        [{"role": "user", "content": "hello"}],
+        temperature=0.3,
+        thinking_config={"thinking_enabled": True, "thinking_budget_tokens": 4096},
+    )
+    assert captured["json"]["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+    assert captured["json"]["temperature"] == 0.3
+    await close_provider_client()
+
+
+@pytest.mark.asyncio
+async def test_provider_streams_sse_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import cloud_agent
+    from syte.cloud_agent import _provider_completion, close_provider_client
+
+    tokens: list[str] = []
+
+    class StreamResponse:
+        status_code = 200
+        reason_phrase = "OK"
+        request = type("Req", (), {"url": "https://provider/chat/completions"})()
+
+        async def aiter_lines(self):
+            chunks = [
+                'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+                'data: {"choices":[{"delta":{"content":"lo"}}]}',
+                "data: [DONE]",
+            ]
+            for line in chunks:
+                yield line
+
+        async def aread(self):
+            return b""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+    class Client:
+        is_closed = False
+
+        def stream(self, *args, **kwargs):
+            return StreamResponse()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    async def on_token(delta: str):
+        tokens.append(delta)
+
+    await close_provider_client()
+    monkeypatch.setattr(cloud_agent, "_get_provider_client", lambda: Client())
+    result = await _provider_completion(
+        {"model": "gemini", "api_key": "key", "api_base": "https://provider"},
+        [{"role": "user", "content": "hi"}],
+        stream=True,
+        on_token=on_token,
+    )
+    assert result["content"] == "Hello"
+    assert tokens == ["Hel", "lo"]
+    await close_provider_client()
 
 
 @pytest.mark.asyncio
@@ -448,12 +541,14 @@ async def test_communicate_writes_durable_turso_session(
 
 
 @pytest.mark.asyncio
-async def test_communicate_without_turso_configured_still_succeeds(
+async def test_communicate_without_turso_configured_still_returns_session_id(
     tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Turso is optional — a turn completes normally when it is not configured."""
+    """Local fallback: a turn still returns turso_session_id when Turso is unset."""
     from syte.cloud_agent import _communicate_with_agent_impl
+    from syte.local_session_store import reset_local_session_cache
 
+    reset_local_session_cache()
     project = await _project("no-turso-proj")
 
     async def fake_provider(*_args, **_kwargs):
@@ -464,7 +559,8 @@ async def test_communicate_without_turso_configured_still_succeeds(
     result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso")
 
     assert result["ok"] is True
-    assert result["turso_session_id"] is None
+    assert result["turso_session_id"]
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio
@@ -527,7 +623,9 @@ async def test_turso_sync_status_without_turso_reports_all_saved(
     """When Turso is not configured, the brain indicator stays green (there
     is nothing unsaved to report) rather than falsely alarming red."""
     from syte.cloud_agent import _communicate_with_agent_impl, turso_message_sync_status
+    from syte.local_session_store import reset_local_session_cache
 
+    reset_local_session_cache()
     project = await _project("no-turso-msgs-proj")
 
     async def fake_provider(*_args, **_kwargs):
@@ -536,11 +634,12 @@ async def test_turso_sync_status_without_turso_reports_all_saved(
     monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
     result = await _communicate_with_agent_impl(project["id"], "hello", request_id="req-no-turso-msgs")
     assert result["ok"] is True
-    assert result["turso_session_id"] is None
+    assert result["turso_session_id"]
 
     sync = await turso_message_sync_status(project["id"])
     assert sync["turso_configured"] is False
     assert sync["all_saved"] is True
+    reset_local_session_cache()
 
 
 @pytest.mark.asyncio
@@ -569,3 +668,78 @@ async def test_update_plan_tool_returns_structured_plan(tmp_data_dir: Path) -> N
     assert result["steps"] == ["Inspect", "Verify"]
     assert result["note"] == ""
     assert result.get("plan_id")
+
+
+@pytest.mark.asyncio
+async def test_instruction_includes_themes_and_shadcn_catalog(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent import _build_syte_instruction, invalidate_instruction_cache
+
+    project = await _project("theme-instr-proj")
+    invalidate_instruction_cache()
+    instruction = await _build_syte_instruction(project["id"])
+    assert "minimal" in instruction
+    assert "dark-tech" in instruction
+    assert "components/ui/button" in instruction
+    assert "Named design themes" in instruction
+
+
+@pytest.mark.asyncio
+async def test_instruction_cache_reuses_compiled_prompt(tmp_data_dir: Path) -> None:
+    from syte import cloud_agent
+    from syte.cloud_agent import _build_syte_instruction, invalidate_instruction_cache
+
+    project = await _project("cache-instr-proj")
+    invalidate_instruction_cache()
+    first = await _build_syte_instruction(project["id"])
+    assert len(cloud_agent._instruction_cache) == 1
+    second = await _build_syte_instruction(project["id"])
+    assert first == second
+    assert len(cloud_agent._instruction_cache) == 1
+
+
+@pytest.mark.asyncio
+async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.cloud_agent import _communicate_with_agent_impl
+    from syte.database import get_project, set_setting
+
+    project = await _project("think-proj")
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_syra_base_api_key", "sk-deepseek-test-key")
+    calls = {"n": 0}
+
+    async def fake_provider(model, messages, **kwargs):
+        calls["n"] += 1
+        calls["last_kwargs"] = kwargs
+        # Always try to call a tool — Instant should stop after its tool-step budget.
+        if kwargs.get("tools"):
+            return {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": f"c{calls['n']}",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": '{"path":"app/README.md"}'},
+                }],
+            }
+        return {"role": "assistant", "content": "Stopped after budget."}
+
+    async def fake_tool(*_args, **_kwargs):
+        return {"ok": True, "content": "x"}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+    monkeypatch.setattr("syte.cloud_agent._execute_tool", fake_tool)
+
+    result = await _communicate_with_agent_impl(
+        project["id"], "go", thinking_level=1, request_id="req-think-1",
+    )
+    assert result["ok"] is True
+    assert result["thinking_level"] == 1
+    assert result["model_profile"] == "syra-base"
+    # Instant budget (10 tool-enabled rounds) + 1 final no-tools round
+    assert calls["n"] == 11
+    assert calls["last_kwargs"].get("tools") == []
+    refreshed = await get_project(project["id"])
+    # thinking_level must not persist a non-default Instant override onto the project
+    assert refreshed.get("agent_model_profile") in {None, "syra-base"}

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js"></script>
 </head>
 <body>
@@ -365,22 +365,45 @@
                   <div class="debug-chat-header">
                     <div>
                       <h2>Agent chat</h2>
-                      <p>Describe what you want changed.</p>
+                      <p>Describe what you want changed. The agent can use the tools you enable.</p>
+                    </div>
+                    <div class="debug-chat-header-actions" aria-label="Agent resources">
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-mcp" aria-controls="debug-chat-resources" aria-expanded="false">
+                        <i data-lucide="plug-zap"></i><span>MCP</span><b id="debug-chat-mcp-count">0</b>
+                      </button>
+                      <button type="button" class="debug-chat-tool-button" id="debug-chat-skills" aria-controls="debug-chat-resources" aria-expanded="false">
+                        <i data-lucide="sparkles"></i><span>Skills</span><b id="debug-chat-skills-count">0</b>
+                      </button>
                     </div>
                     <label class="debug-chat-profile-label" for="debug-chat-profile">
                       <span>Model</span>
                       <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="syra-nano">nano</option>
                         <option value="syra-base" selected>base</option>
-                        <option value="syra-havy">havy</option>
+                        <option value="syra-havy">pro</option>
+                        <option value="syra-ultra">ultra</option>
                       </select>
                     </label>
                   </div>
+                  <div class="debug-chat-resources hidden" id="debug-chat-resources" aria-live="polite">
+                    <div class="debug-chat-resources-head">
+                      <div>
+                        <strong id="debug-chat-resources-title">Agent resources</strong>
+                        <span id="debug-chat-resources-subtitle">Connect tools and tune the agent's behavior.</span>
+                      </div>
+                      <button type="button" class="debug-chat-resource-close" id="debug-chat-resources-close" aria-label="Close agent resources">×</button>
+                    </div>
+                    <div class="debug-chat-resources-body" id="debug-chat-resources-body"></div>
+                  </div>
                   <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
                     <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
+                    <span class="debug-chat-activity-pulse" aria-hidden="true"></span>
                     <span class="debug-chat-activity-icon" aria-hidden="true"><i data-lucide="sparkles"></i></span>
-                    <span class="debug-chat-activity-label">Connecting…</span>
-                    <span class="debug-chat-activity-detail"></span>
+                    <span class="debug-chat-activity-phase">
+                      <span class="debug-chat-activity-label">Connecting…</span>
+                      <span class="debug-chat-activity-detail"></span>
+                    </span>
+                    <span class="debug-chat-activity-model" id="debug-chat-activity-model" hidden></span>
                     <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="All session messages saved to Turso">
                       <i data-lucide="brain"></i>
                     </button>
@@ -567,7 +590,7 @@
                 <ul class="ai-checklist" id="ai-checklist">
                   <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
                   <li data-step="ai_models"><span class="ai-check-box"></span><span>At least one model API key</span></li>
-                  <li data-step="provider"><span class="ai-check-box"></span><span>Verted and DeepSeek keys</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Vertex AI and DeepSeek keys</span></li>
                   <li data-step="cloud_runtime"><span class="ai-check-box"></span><span>Syte cloud runtime ready</span></li>
                 </ul>
                 <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
@@ -586,7 +609,8 @@
               <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
                 <option value="syra-nano">nano</option>
                 <option value="syra-base" selected>base</option>
-                <option value="syra-havy">havy</option>
+                <option value="syra-havy">pro</option>
+                <option value="syra-ultra">ultra</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
                 <i data-lucide="zap"></i>
@@ -621,44 +645,73 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, and <code>SYRA_HAVY_API_KEY</code> on the VM.</p>
+              <p class="hint block">Each model profile thinks and builds. Endpoints and keys are fixed per profile — injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, and <code>SYRA_ULTRA_API_KEY</code>. Prices are estimated USD per 1M tokens.</p>
 
-              <div class="ai-key-card">
+              <div class="ai-key-card" data-profile="syra-nano">
                 <div class="ai-key-head">
                   <strong>syra-nano</strong>
-                  <span class="ai-key-provider">Verted · gemini-2.5-flash</span>
+                  <span class="ai-key-provider">Vertex AI · gemini-3.1-flash-lite</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-nano-price-in">$0.25</b>/1M</span>
+                  <span>out <b id="agent-nano-price-out">$1.50</b>/1M</span>
                 </div>
                 <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
                 <div class="form-group">
                   <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-nano-key" placeholder="Verted API key" autocomplete="off">
+                  <input type="password" id="agent-nano-key" placeholder="Vertex AI / Gemini API key" autocomplete="off">
                   <span class="hint" id="agent-nano-key-hint">Required for nano profile.</span>
                 </div>
               </div>
 
-              <div class="ai-key-card">
+              <div class="ai-key-card" data-profile="syra-base">
                 <div class="ai-key-head">
                   <strong>syra-base</strong>
-                  <span class="ai-key-provider">DeepSeek · deepseek-chat</span>
+                  <span class="ai-key-provider">DeepSeek · deepseek-v4-flash</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-base-price-in">$0.14</b>/1M</span>
+                  <span>out <b id="agent-base-price-out">$0.28</b>/1M</span>
                 </div>
                 <code class="ai-key-url">https://api.deepseek.com/v1</code>
                 <div class="form-group">
                   <label for="agent-base-key">API key <span class="req-mark">*</span></label>
                   <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
-                  <span class="hint" id="agent-base-key-hint">Required for base profile.</span>
+                  <span class="hint" id="agent-base-key-hint">Required for base profile (default).</span>
                 </div>
               </div>
 
-              <div class="ai-key-card">
+              <div class="ai-key-card" data-profile="syra-havy">
                 <div class="ai-key-head">
-                  <strong>syra-havy</strong>
-                  <span class="ai-key-provider">Verted · gemini-2.5-pro</span>
+                  <strong>syra-havy · pro</strong>
+                  <span class="ai-key-provider">Vertex AI · gemini-3.6-flash</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-havy-price-in">$1.50</b>/1M</span>
+                  <span>out <b id="agent-havy-price-out">$7.50</b>/1M</span>
                 </div>
                 <code class="ai-key-url">https://generativelanguage.googleapis.com/v1beta/openai</code>
                 <div class="form-group">
                   <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-havy-key" placeholder="Verted API key" autocomplete="off">
-                  <span class="hint" id="agent-havy-key-hint">Required for havy profile.</span>
+                  <input type="password" id="agent-havy-key" placeholder="Vertex AI / Gemini API key" autocomplete="off">
+                  <span class="hint" id="agent-havy-key-hint">Required for pro profile.</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card" data-profile="syra-ultra">
+                <div class="ai-key-head">
+                  <strong>syra-ultra</strong>
+                  <span class="ai-key-provider">Aliyun · Qwen 3.6 (qwen3.5-flash)</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-ultra-price-in">$0.17</b>/1M</span>
+                  <span>out <b id="agent-ultra-price-out">$1.02</b>/1M</span>
+                </div>
+                <code class="ai-key-url">https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1</code>
+                <div class="form-group">
+                  <label for="agent-ultra-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-ultra-key" placeholder="Aliyun MaaS API key" autocomplete="off">
+                  <span class="hint" id="agent-ultra-key-hint">Required for ultra profile.</span>
                 </div>
               </div>
 
@@ -666,9 +719,10 @@
                 <div class="form-group">
                   <label for="agent-default-profile">Default profile</label>
                   <select id="agent-default-profile">
-                    <option value="syra-nano">syra-nano</option>
-                    <option value="syra-base">syra-base</option>
-                    <option value="syra-havy">syra-havy</option>
+                    <option value="syra-nano">syra-nano · nano</option>
+                    <option value="syra-base">syra-base · base</option>
+                    <option value="syra-havy">syra-havy · pro</option>
+                    <option value="syra-ultra">syra-ultra · ultra</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -701,16 +755,14 @@
                 </div>
               </div>
 
-              <details class="ai-env-details">
-                <summary>Environment variables (auto-injected)</summary>
-                <div class="ai-env-grid">
-                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
-                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
-                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
-                  <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
-                  <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
-                  <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
-                  <div class="ai-env-row"><code>SYTE cloud runtime</code><span>Embedded VM runtime</span></div>
+              <details class="ai-env-details" open>
+                <summary>Provider keys &amp; environment</summary>
+                <p class="hint block">Keys resolve from saved settings first, then process env. Values are masked.</p>
+                <div class="ai-env-grid" id="ai-provider-key-status">
+                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
+                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek · base</span></div>
+                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
+                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
                 </div>
               </details>
 

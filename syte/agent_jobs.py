@@ -34,24 +34,77 @@ def project_agent_lock(project_id: str) -> asyncio.Lock:
     return _project_locks[project_id]
 
 
+def _normalize_idempotency_key(key: str | None) -> str | None:
+    raw = (key or "").strip()
+    if not raw:
+        return None
+    # Keep filesystem/DB-safe; clients may send UUIDs or opaque tokens.
+    cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in "-_")
+    if not cleaned or len(cleaned) > 128:
+        return None
+    return f"idem_{cleaned}"
+
+
+def is_agent_job_running(project_id: str) -> bool:
+    """Return True when a durable agent job task is still in flight."""
+    task = _running.get(project_id)
+    return bool(task and not task.done())
+
+
+async def cancel_agent_job(project_id: str) -> tuple[bool, str]:
+    """Cancel the in-flight agent job for a project (if any)."""
+    from syte.cloud_agent import interrupt_agent
+
+    ok, message = await interrupt_agent(project_id)
+    task = _running.pop(project_id, None)
+    if task and not task.done():
+        task.cancel()
+        return True, "Agent job cancellation requested."
+    return ok, message
+
+
 async def submit_agent_request(
     project_id: str,
     message: str,
     *,
     model_profile: str | None = None,
+    thinking_level: int | str | None = None,
     source: str = "api",
     auto_start: bool = True,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """Admit a durable agent request and return immediately."""
-    request_id = new_request_id()
-    await enqueue_request(
-        request_id,
-        project_id,
-        message,
-        model_profile=model_profile,
-        source=source,
-        auto_start=auto_start,
-    )
+    """Admit a durable agent request and return immediately.
+
+    When ``idempotency_key`` is provided, a repeated submit with the same key
+    returns the existing request instead of queuing a duplicate job.
+    """
+    from syte.cloud_agent_store import get_request
+
+    request_id = _normalize_idempotency_key(idempotency_key) or new_request_id()
+    existing = await get_request(request_id)
+    if existing:
+        return await _idempotent_replay_payload(
+            existing, project_id=project_id, thinking_level=thinking_level,
+        )
+
+    try:
+        await enqueue_request(
+            request_id,
+            project_id,
+            message,
+            model_profile=model_profile,
+            source=source,
+            auto_start=auto_start,
+        )
+    except Exception:
+        # Race: another request with the same idempotency key just inserted.
+        existing = await get_request(request_id)
+        if existing:
+            return await _idempotent_replay_payload(
+                existing, project_id=project_id, thinking_level=thinking_level,
+            )
+        raise
+
     # Capture the previous durable session *before* opening a new one so an
     # interrupt/cancel closes the superseded turn, not the admitted one.
     previous_turso_session_id = await current_turso_session_id(project_id)
@@ -59,13 +112,15 @@ async def submit_agent_request(
 
     # Session opens when the user message is admitted so a durable Turso
     # session (see syte.turso_store) exists from the very first event, before
-    # the worker starts tools.
+    # the worker starts tools. Local SQLite fallback guarantees a session id
+    # even when remote Turso is unset (required by sycord-pages).
     session_number = await begin_turn_session(project_id, model_profile)
     turso_session_id = await open_turso_session(
         project_id, session_number=session_number, model_profile=model_profile,
     )
     if turso_session_id:
         await set_turso_session_id(project_id, turso_session_id)
+        await _store_request_turso_session(request_id, turso_session_id)
     await record_agent_event(
         project_id,
         "request_started",
@@ -75,6 +130,7 @@ async def submit_agent_request(
         payload={
             "message": message,
             "model_profile": model_profile,
+            "thinking_level": thinking_level,
             "request_id": request_id,
             "session": session_number,
             "message_index": 1,
@@ -104,6 +160,7 @@ async def submit_agent_request(
             request_id,
             message,
             model_profile=model_profile,
+            thinking_level=thinking_level,
             source=source,
             auto_start=auto_start,
             session_number=session_number,
@@ -119,8 +176,51 @@ async def submit_agent_request(
         "turso_session_id": turso_session_id,
         "status": "accepted",
         "project_id": project_id,
+        "thinking_level": thinking_level,
         "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
+
+
+async def _idempotent_replay_payload(
+    existing: dict[str, Any],
+    *,
+    project_id: str,
+    thinking_level: int | str | None,
+) -> dict[str, Any]:
+    """Rebuild the accept payload for a repeated idempotency key.
+
+    Must include ``turso_session_id`` — sycord-pages rejects accepts without it.
+    """
+    request_id = str(existing.get("request_id") or "")
+    turso_session_id = (
+        (existing.get("turso_session_id") or "").strip()
+        or await current_turso_session_id(project_id)
+    )
+    session_number = await current_session_number(project_id)
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "status": existing.get("status") or "accepted",
+        "project_id": project_id,
+        "session": session_number or None,
+        "turso_session_id": turso_session_id or None,
+        "idempotent_replay": True,
+        "thinking_level": thinking_level,
+        "session_url": (
+            f"/api/agent_session/{turso_session_id}" if turso_session_id else None
+        ),
+    }
+
+
+async def _store_request_turso_session(request_id: str, turso_session_id: str) -> None:
+    """Persist the session id on the request row for idempotent replays."""
+    from syte.cloud_agent_store import set_request_turso_session_id
+
+    try:
+        await set_request_turso_session_id(request_id, turso_session_id)
+    except Exception:
+        # Non-fatal — current_turso_session_id still covers most replays.
+        pass
 
 
 async def _run_job(
@@ -131,6 +231,7 @@ async def _run_job(
     model_profile: str | None,
     source: str,
     auto_start: bool,
+    thinking_level: int | str | None = None,
     session_number: int | None = None,
     message_index_start: int = 0,
     turso_session_id: str | None = None,
@@ -145,6 +246,7 @@ async def _run_job(
                 project_id,
                 message,
                 model_profile=model_profile,
+                thinking_level=thinking_level,
                 source=source,
                 auto_start=auto_start,
                 emit_request_started=False,
@@ -202,8 +304,8 @@ async def _run_job(
             terminal_status = "failed"
             return {"ok": False, "request_id": request_id, "error": "agent_job_failed", "message": error}
         finally:
-            # Always stamp a terminal Turso status + ended_at so pollers never
-            # stay stuck on status=open / "generating".
+            # Always stamp a terminal status + ended_at so pollers never stay
+            # stuck on status=open / "generating".
             if turso_session_id and terminal_status:
                 await close_turso_session(turso_session_id, status=terminal_status)
 

@@ -172,7 +172,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "request_completed",
                 "request_failed",
             ],
-            "model_profiles": ["syra-nano", "syra-base", "syra-havy"],
+            "model_profiles": ["syra-nano", "syra-base", "syra-havy", "syra-ultra"],
             "legacy_sync": "POST agent_change with wait:true for blocking reply",
         },
         "errors": {
@@ -181,7 +181,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "400_invalid_stack": f"stack must be one of: {', '.join(stacks)}",
             "400_connect_failed": "Duplicate subdomain or validation error",
             "400_upload_failed": "Bad path or project not found",
-            "400_preview_failed": "No dev script in package.json or preview process failed",
+            "400_preview_failed": "No runnable app detected (or preview process failed). Auto-detects Next/Vite/CRA/Astro/Nuxt/Express/Python/static HTML",
             "404_not_found": "uuid does not exist",
         },
         "backend_integration": build_backend_integration(host),
@@ -456,7 +456,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                     "body": {
                         "uuid": "string (required)",
                         "message": "string (required)",
-                        "model_profile": "syra-nano | syra-base | syra-havy (optional)",
+                        "model_profile": "syra-nano | syra-base | syra-havy | syra-ultra (optional)",
                         "wait": "bool (default false) — set true for blocking legacy mode",
                     },
                 },

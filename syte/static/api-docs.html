@@ -1301,7 +1301,7 @@
               </div>
             </div>
             <div class="endpoint-body">
-              <div class="field-desc">Runs Sycord Design Contract linter — shadcn/ui, Inter font, Lucide, dark mode, hero gradient, etc.</div>
+              <div class="field-desc">Runs Sycord Design Contract linter — shadcn/ui primitives, Inter font, Lucide, dark mode, accessibility, and component discipline.</div>
               <pre>{"ok":true,"passed":7,"total":8,"checks":[...]}</pre>
             </div>
           </div>
@@ -1331,8 +1331,8 @@
 
           <div class="note" style="margin:0 0 1.25rem">
             <strong>AI session usage.</strong> One embedded Syte cloud runtime with durable per-project sessions. Use Syte chat and activity endpoints for normal work; <code>agent_proxy_url</code> is reserved for authenticated native conversation calls.
-            Model profiles: <code>syra-nano</code> (fast), <code>syra-base</code> (balanced), <code>syra-havy</code> (capable).
-            Configure Verted + DeepSeek API keys per profile in Syte GUI → <strong>AI</strong>.
+            Model profiles: <code>syra-nano</code> (Vertex AI Gemini 3.1 Flash Lite), <code>syra-base</code> (DeepSeek V4 Flash), <code>syra-havy</code> / pro (Vertex AI Gemini 3.6 Flash), <code>syra-ultra</code> (Aliyun Qwen 3.6 / qwen3.5-flash). Each profile thinks and builds.
+            Configure Vertex AI + DeepSeek + Aliyun API keys per profile in Syte GUI → <strong>AI</strong>.
             Internal sycord.com routes: <code>/api/internal/projects/{uuid}/agent/*</code> with <code>X-Syra-Internal-Secret</code>.
           </div>
 
@@ -1449,41 +1449,10 @@
                 </div>
                 <div class="field">
                   <div class="field-head"><span class="field-name">model_profile<span class="opt">?</span></span><span class="field-type">string</span></div>
-                  <div class="field-desc"><code>syra-nano</code>, <code>syra-base</code>, or <code>syra-havy</code></div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">enabled_skills<span class="opt">?</span></span><span class="field-type">string[]</span></div>
-                  <div class="field-desc">Subset of built-in skill ids to enable for this project. See <a href="#agent-skills">/agent_skills</a>.</div>
-                </div>
-                <div class="field">
-                  <div class="field-head"><span class="field-name">mcp<span class="opt">?</span></span><span class="field-type">object</span></div>
-                  <div class="field-desc"><code>{enabled, auto_connect_builtin, auto_connect_addons[]}</code> — project MCP connection preferences.</div>
+                  <div class="field-desc"><code>syra-nano</code>, <code>syra-base</code>, <code>syra-havy</code>, or <code>syra-ultra</code></div>
                 </div>
               </div>
-              <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy","enabled_skills":["cli-tools","preview-access"],"mcp":{"enabled":true,"auto_connect_builtin":true}}</pre>
-            </div>
-          </div>
-
-          <div class="endpoint" id="agent-skills">
-            <div class="endpoint-header">
-              <div class="endpoint-row">
-                <span class="method get">GET</span>
-                <span class="endpoint-path">/agent_skills?uuid=</span>
-              </div>
-              <div class="endpoint-name">Agent skill settings + MCP connection</div>
-            </div>
-            <div class="endpoint-body">
-              <div class="field-desc">
-                Per-project skill toggles and MCP connection descriptor. Write with
-                <code>POST /agent_skills</code> or <code>PUT /api/projects/{uuid}/agent/skills</code>.
-                Built-in skills: <code>website-editing</code>, <code>workspace-search</code>,
-                <code>preview-access</code>, <code>service-management</code>,
-                <code>nextjs-app-router</code>, <code>cli-tools</code>.
-                Response includes <code>mcp_server</code> (stdio descriptor for external MCP clients)
-                and maps builtin tools <code>syte_service</code> / <code>syte_access</code> to the
-                project <code>/agent/service</code> and <code>/agent/access</code> functions.
-              </div>
-              <pre>{"ok":true,"enabled_skills":["cli-tools","preview-access"],"mcp":{"enabled":true,"auto_connect_builtin":true,"auto_connect_addons":[]},"mcp_server":{"name":"syte-tools","transport":"stdio","tools":[{"name":"syte_service"},{"name":"syte_access"}]}}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","model_profile":"syra-havy"}</pre>
             </div>
           </div>
 
@@ -1774,22 +1743,52 @@
                 <span class="method get">GET</span>
                 <span class="endpoint-path">/agent_mcp?uuid=</span>
               </div>
-              <div class="endpoint-name">MCP addons + project connection</div>
+              <div class="endpoint-name">MCP addons — list / add / enable / disable / edit</div>
             </div>
             <div class="endpoint-body">
               <div class="field-desc">
                 Built-in <code>syte</code> addon plus any registered custom MCP servers.
-                Connect/call: <code>POST /agent_mcp_connect</code>, <code>POST /agent_mcp_call</code>,
-                register with <code>POST /agent_mcp_register</code>.
-                Builtin tools map to project functions:
-                <code>syte_service</code> → <code>/api/projects/{uuid}/agent/service</code>,
-                <code>syte_access</code> → <code>/api/projects/{uuid}/agent/access</code>.
-                Response includes <code>mcp_server</code> (stdio descriptor) and
-                <code>project_routes</code>. Skill/MCP preferences:
-                <a href="#agent-skills">/agent_skills</a>. Agent tools:
-                <code>list_mcp_addons</code> / <code>connect_mcp</code> / <code>call_mcp</code>.
+                Manage via API (same actions as the agent chat MCP panel):
+                <code>POST /agent_mcp_register</code> (add),
+                <code>POST /agent_mcp_connect</code> (enable),
+                <code>POST /agent_mcp_call</code>,
+                <code>POST /agent_mcp_update</code> (edit non-builtin),
+                <code>POST /agent_mcp_disconnect</code> (disable without deleting registration).
+                GUI mirrors: <code>/api/projects/{uuid}/agent/mcp</code>.
+                Agent tools: <code>list_mcp_addons</code> / <code>connect_mcp</code> / <code>call_mcp</code>.
               </div>
-              <pre>{"ok":true,"addons":[{"id":"…:syte","name":"syte","status":"connected","tools":[{"name":"syte_service"},{"name":"syte_access"}],"builtin":true}],"mcp_server":{"name":"syte-tools","transport":"stdio"},"documentation":"/api/#agent-mcp"}</pre>
+              <pre>{"ok":true,"addons":[{"id":"…:syte","name":"syte","status":"available","tools":[],"builtin":true}]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","name":"playwright","command":"npx","args":["playwright-mcp"]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","addon":"playwright","command":"npx","args":["-y","@playwright/mcp@latest"]}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="agent-skills">
+            <div class="endpoint-header">
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_skills?uuid=</span>
+              </div>
+              <div class="endpoint-name">Skills — list / add / enable / disable / edit</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="field-desc">
+                Built-in skill catalog plus custom skills you add for the project.
+                Add with <code>POST /agent_skills_add</code>;
+                enable or edit string parameters with <code>POST /agent_skills_enable</code>;
+                edit custom content with <code>POST /agent_skills_update</code>;
+                disable with <code>POST /agent_skills_disable</code>;
+                delete custom with <code>POST /agent_skills_delete</code>.
+                Built-in ids: <code>website-editing</code>, <code>workspace-search</code>,
+                <code>preview-access</code>, <code>service-management</code>,
+                <code>nextjs-app-router</code>, <code>cli-tools</code>.
+                GUI mirrors: <code>/api/projects/{uuid}/agent/skills</code>.
+                See also <code>docs/api-agent.md</code>.
+              </div>
+              <pre>{"ok":true,"skills":[{"id":"website-editing","name":"Website editing","active":false,"parameters":{},"builtin":true},{"id":"brand-voice","name":"Brand voice","active":true,"custom":true,"content":"…"}]}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","name":"Brand voice","content":"Prefer short sentences.","description":"optional","enable":true}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","skill_id":"website-editing","parameters":{"theme":"bold"}}</pre>
+              <pre>{"uuid":"my-site-a1b2c3","skill_id":"brand-voice"}</pre>
             </div>
           </div>
 

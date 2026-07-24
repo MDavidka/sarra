@@ -140,8 +140,12 @@ def preview_dns_hint(preview_domain: str, base_zone: str = "") -> str:
     )
 
 
-def preview_frame_ancestors_csp(gui_domain: str = "", *, allow_any: bool = True) -> str:
-    """CSP so *.sycord.com previews embed in sycord.com (and any parent when allow_any)."""
+def preview_frame_ancestors_csp(gui_domain: str = "", *, allow_any: bool = False) -> str:
+    """CSP so *.sycord.com previews embed in sycord.com (and any parent when allow_any).
+
+    Default is restricted (no ``*``). Set ``allow_any=True`` / ``preview_embed_mode=any``
+    only when public arbitrary-origin embedding is intentionally required.
+    """
     ancestors = [
         "'self'",
         "https://sycord.com",
