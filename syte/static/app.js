@@ -12,7 +12,6 @@ let lastPreviewFrameSrc = '';
 let previewTabActive = false;
 let agentActivityPollTimer = null;
 let agentActivityEventSource = null;
-let debugChatLatestVisualId = '';
 let debugChatResumeSession = null;
 let agentActivityPollInFlight = false;
 const AGENT_ACTIVITY_POLL_INTERVAL_MS = 2000;
@@ -319,8 +318,9 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
   const labelEl = bar.querySelector('.debug-chat-activity-label');
   const detailEl = bar.querySelector('.debug-chat-activity-detail');
   const iconEl = bar.querySelector('.debug-chat-activity-icon');
+  const modelEl = document.getElementById('debug-chat-activity-model');
   const nextLabel = active && label ? label : debugChatIdleStatus;
-  const isWorking = /planning|working|writing|sending|connecting|reconnecting|stopping/i.test(nextLabel);
+  const isWorking = /planning|working|writing|sending|connecting|reconnecting|stopping|capturing|waiting|reading|editing|running/i.test(nextLabel);
   const nextIcon = icon || (isWorking ? 'loader' : 'sparkles');
   debugChatActivityLabel = nextLabel;
   if (labelEl) labelEl.textContent = nextLabel;
@@ -328,6 +328,25 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
   if (iconEl) {
     iconEl.innerHTML = `<i data-lucide="${esc(active ? nextIcon : 'sparkles')}"></i>`;
     iconEl.classList.toggle('debug-chat-activity-spin', active && nextIcon === 'loader');
+  }
+  bar.classList.toggle('is-active', Boolean(active && isWorking));
+  bar.classList.toggle('is-idle', !(active && isWorking));
+  bar.dataset.phase = String(nextLabel || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/-+$/, '') || 'idle';
+  if (modelEl) {
+    const profile = document.getElementById('debug-chat-profile')?.value || '';
+    const short = ({
+      'syra-nano': 'nano',
+      'syra-base': 'base',
+      'syra-havy': 'pro',
+      'syra-ultra': 'ultra',
+    })[profile] || profile;
+    if (short && active && isWorking) {
+      modelEl.hidden = false;
+      modelEl.textContent = short;
+    } else if (!isWorking) {
+      modelEl.hidden = true;
+      modelEl.textContent = '';
+    }
   }
   refreshIcons();
 }
@@ -986,7 +1005,7 @@ function handleDebugChatActivity(event) {
       setDebugChatTyping(true);
       setDebugChatBusy(true);
       debugChatActiveRequestId = eventRequestId || debugChatActiveRequestId;
-      setDebugChatActivity('Planning…', 'Thinking before taking action');
+      setDebugChatActivity('Planning…', 'Model is thinking through the request');
       if (eventRequestId) {
         armDebugChatRequestWatchdog(activeServiceId, eventRequestId);
       }
@@ -994,7 +1013,7 @@ function handleDebugChatActivity(event) {
   }
   if (event.event_type === 'token_delta') {
     if (!debugChatReplayingHistory && debugChatActivityLabel !== 'Writing…') {
-      setDebugChatActivity('Writing…');
+      setDebugChatActivity('Writing…', 'Streaming response');
     }
     queueDebugChatStreamDelta(
       event.payload?.request_id,
@@ -1042,7 +1061,7 @@ function handleDebugChatActivity(event) {
 
   appendDebugChatBubble(event);
   if (!debugChatReplayingHistory && event.event_type === 'thinking') {
-    setDebugChatActivity('Planning…', String(event.detail || '').replace(/\s+/g, ' ').slice(0, 160));
+    setDebugChatActivity('Planning…', String(event.detail || 'Preparing a plan').replace(/\s+/g, ' ').slice(0, 160));
   }
   if (!debugChatReplayingHistory && event.event_type === 'screenshot') {
     setDebugChatActivity('Capturing…', String(event.detail || 'Preview screenshots').slice(0, 160), 'monitor-smartphone');
@@ -1056,8 +1075,15 @@ function handleDebugChatActivity(event) {
     'tool_call_finished', 'command_output', 'service_action',
   ].includes(event.event_type)) {
     const actionMeta = debugChatActionMeta(event);
+    const phase = event.event_type === 'file_read' || event.event_type === 'file_search'
+      ? 'Reading…'
+      : (event.event_type === 'file_created' || event.event_type === 'file_modified' || event.event_type === 'file_changed')
+        ? 'Editing…'
+        : (event.event_type === 'command_run' || event.event_type === 'command_output')
+          ? 'Running…'
+          : 'Working…';
     setDebugChatActivity(
-      'Working…',
+      phase,
       `${debugChatActionTitle(event)}${event.detail ? ` · ${event.detail}` : ''}`.slice(0, 200),
       event.event_type === 'tool_call_started' ? 'loader' : actionMeta.icon,
     );
@@ -1201,7 +1227,6 @@ function startAgentActivityPollFallback(projectId) {
 function startAgentActivityStream(projectId) {
   stopAgentActivityStream();
   setDebugChatConnectionState('connecting');
-  void loadDebugChatVisualFeedback(projectId);
   void loadDebugChatResumeSession(projectId);
   void pollAgentActivityOnce(projectId);
 
@@ -1236,52 +1261,6 @@ async function loadDebugChatResumeSession(projectId) {
   } catch (_) {
     debugChatResumeSession = null;
   }
-}
-
-async function loadDebugChatVisualFeedback(projectId) {
-  const summary = document.getElementById('debug-chat-visual-summary');
-  try {
-    const res = await api(`/projects/${projectId}/agent/visual_analyses?limit=1`);
-    const analysis = (res.analyses || [])[0];
-    if (!analysis) {
-      debugChatLatestVisualId = '';
-      if (summary) summary.textContent = 'No screenshot analysis yet';
-      return;
-    }
-    debugChatLatestVisualId = analysis.id || '';
-    const issues = (analysis.issues || []).length;
-    const suggestions = (analysis.suggestions || []).length;
-    if (summary) {
-      summary.textContent = `${analysis.viewport || 'desktop'} · ${issues} issue(s), ${suggestions} suggestion(s)`;
-    }
-  } catch (_) {
-    if (summary) summary.textContent = 'Visual analysis unavailable';
-  }
-}
-
-async function reanalyzeDebugChatVisual() {
-  if (!activeServiceId) return;
-  const summary = document.getElementById('debug-chat-visual-summary');
-  if (summary) summary.textContent = 'Capturing preview…';
-  try {
-    await api(`/projects/${activeServiceId}/agent/visual_analyze?capture=true&route=/`, { method: 'POST' });
-    await loadDebugChatVisualFeedback(activeServiceId);
-    toast('Screenshot re-analyzed');
-  } catch (e) {
-    if (summary) summary.textContent = e.message || 'Re-analyze failed';
-    toast(e.message || 'Re-analyze failed');
-  }
-}
-
-async function improveDebugChatFromScreenshot() {
-  const input = document.getElementById('debug-chat-input');
-  if (input && !String(input.value || '').trim()) {
-    input.value = 'Improve the UI from the latest screenshot analysis. Fix listed issues with minimal diffs.';
-    input.dispatchEvent(new Event('input'));
-  }
-  const attach = document.getElementById('debug-chat-attach-screenshot');
-  if (attach) attach.checked = true;
-  await sendDebugChatMessage();
 }
 
 function applyDebugChatActivityEvent(event) {
@@ -1440,55 +1419,6 @@ async function cancelDebugChatRequest() {
 async function getDebugChatProfile() {
   const select = document.getElementById('debug-chat-profile');
   return select?.value || select?.getAttribute('value') || 'syra-base';
-}
-
-const DEBUG_CHAT_THINK_LABELS = {
-  1: 'Instant',
-  2: 'Fast',
-  3: 'Balanced',
-  4: 'Deep',
-  5: 'Max',
-};
-
-function getDebugChatThinkingLevel() {
-  const slider = document.getElementById('debug-chat-think');
-  let saved = '';
-  try {
-    saved = localStorage.getItem('syte.debugChat.thinkingLevel') || '';
-  } catch (_) {
-    saved = '';
-  }
-  const raw = Number(slider?.value || saved || 3);
-  if (!Number.isFinite(raw)) return 3;
-  return Math.min(5, Math.max(1, Math.round(raw)));
-}
-
-function syncDebugChatThinkLabel() {
-  const slider = document.getElementById('debug-chat-think');
-  const label = document.getElementById('debug-chat-think-value');
-  if (!slider || !label) return;
-  const level = getDebugChatThinkingLevel();
-  slider.value = String(level);
-  label.textContent = DEBUG_CHAT_THINK_LABELS[level] || 'Balanced';
-  try {
-    localStorage.setItem('syte.debugChat.thinkingLevel', String(level));
-  } catch (_) {
-    /* private mode / blocked storage */
-  }
-}
-
-function initDebugChatThinkSlider() {
-  const slider = document.getElementById('debug-chat-think');
-  if (!slider || slider.dataset.bound === '1') return;
-  slider.dataset.bound = '1';
-  try {
-    const saved = localStorage.getItem('syte.debugChat.thinkingLevel');
-    if (saved) slider.value = saved;
-  } catch (_) {
-    /* private mode / blocked storage */
-  }
-  syncDebugChatThinkLabel();
-  slider.addEventListener('input', syncDebugChatThinkLabel);
 }
 
 function setDebugChatResourceButtons(mode) {
@@ -1687,11 +1617,6 @@ function warmProjectAgent(projectId) {
 
 async function openDebugChatTab() {
   if (!activeServiceId) return;
-  try {
-    initDebugChatThinkSlider();
-  } catch (err) {
-    console.warn('[Syte][chat] think slider init failed:', err);
-  }
   const projectId = activeServiceId;
   warmProjectAgent(projectId);
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
@@ -1748,7 +1673,6 @@ async function sendDebugChatMessage() {
   setDebugChatTyping(true);
 
   const profile = await getDebugChatProfile();
-  const thinkingLevel = getDebugChatThinkingLevel();
   const sentMessage = message;
   if (input) {
     input.value = '';
@@ -1762,11 +1686,6 @@ async function sendDebugChatMessage() {
       body: JSON.stringify({
         message: sentMessage,
         model_profile: profile,
-        thinking_level: thinkingLevel,
-        improve_from_screenshot: Boolean(document.getElementById('debug-chat-attach-screenshot')?.checked),
-        visual_analysis_id: document.getElementById('debug-chat-attach-screenshot')?.checked
-          ? (debugChatLatestVisualId || null)
-          : null,
       }),
     });
     chatOk = !!res.ok;
@@ -1800,7 +1719,7 @@ async function sendDebugChatMessage() {
       } else {
         debugChatActiveRequestId = res.request_id;
         setDebugChatBusy(true);
-        setDebugChatActivity('Planning…', 'Thinking before taking action');
+        setDebugChatActivity('Working…', `${profile} · thinking and building`);
         armDebugChatRequestWatchdog(activeServiceId, res.request_id);
       }
     } else if (res.reply) {
@@ -2129,6 +2048,35 @@ let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
+}
+
+function applyAiProviderCatalog(providers) {
+  const byProfile = Object.fromEntries(
+    (providers || []).map((row) => [row.profile, row]),
+  );
+  const priceIds = {
+    'syra-nano': ['agent-nano-price-in', 'agent-nano-price-out'],
+    'syra-base': ['agent-base-price-in', 'agent-base-price-out'],
+    'syra-havy': ['agent-havy-price-in', 'agent-havy-price-out'],
+    'syra-ultra': ['agent-ultra-price-in', 'agent-ultra-price-out'],
+  };
+  for (const [profile, [inId, outId]] of Object.entries(priceIds)) {
+    const row = byProfile[profile];
+    if (!row) continue;
+    const inEl = document.getElementById(inId);
+    const outEl = document.getElementById(outId);
+    if (inEl && row.input_price_label) inEl.textContent = row.input_price_label;
+    if (outEl && row.output_price_label) outEl.textContent = row.output_price_label;
+    const card = document.querySelector(`.ai-key-card[data-profile="${profile}"]`);
+    if (card) {
+      const provider = card.querySelector('.ai-key-provider');
+      const url = card.querySelector('.ai-key-url');
+      if (provider && row.label && row.model) {
+        provider.textContent = `${row.label} · ${row.model}`;
+      }
+      if (url && row.api_base) url.textContent = row.api_base;
+    }
+  }
 }
 
 function updateAiApiWarning() {
@@ -3224,10 +3172,10 @@ async function loadSettings() {
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [
-      ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
-      ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'Aliyun builder key saved', 'Aliyun MaaS API key required'],
-      ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
-      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'OpenRouter thinker key saved', 'OpenRouter API key required'],
+      ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Vertex AI nano key saved', 'Vertex AI API key required'],
+      ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
+      ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
+      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved', 'Aliyun MaaS API key required'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
@@ -3237,6 +3185,7 @@ async function loadSettings() {
       }
       if (hint) hint.textContent = saved ? savedText : requiredText;
     });
+    applyAiProviderCatalog(s.ai_providers || []);
     aiApiConfigured = {
       nano: Boolean(s.agent_syra_nano_api_key_set),
       base: Boolean(s.agent_syra_base_api_key_set),
@@ -3258,9 +3207,9 @@ async function loadSettings() {
       const parts = [];
       parts.push(`default: ${defaultProfile}`);
       parts.push(s.agent_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
-      parts.push(s.agent_syra_base_api_key_set ? 'builder key saved' : 'no builder key');
-      parts.push(s.agent_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
-      parts.push(s.agent_syra_ultra_api_key_set ? 'thinker key saved' : 'no thinker key');
+      parts.push(s.agent_syra_base_api_key_set ? 'base key saved' : 'no base key');
+      parts.push(s.agent_syra_havy_api_key_set ? 'pro key saved' : 'no pro key');
+      parts.push(s.agent_syra_ultra_api_key_set ? 'ultra key saved' : 'no ultra key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
       agentRuntimeStatus.textContent = parts.join(' · ');
@@ -3545,9 +3494,18 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
 });
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
-document.getElementById('debug-chat-reanalyze')?.addEventListener('click', () => { void reanalyzeDebugChatVisual(); });
-document.getElementById('debug-chat-improve-ui')?.addEventListener('click', () => { void improveDebugChatFromScreenshot(); });
 document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
+document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
+  if (debugChatBusy) {
+    const modelEl = document.getElementById('debug-chat-activity-model');
+    const profile = document.getElementById('debug-chat-profile')?.value || '';
+    const short = ({ 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra' })[profile] || profile;
+    if (modelEl && short) {
+      modelEl.hidden = false;
+      modelEl.textContent = short;
+    }
+  }
+});
 function bindDebugChatComposer() {
   const input = document.getElementById('debug-chat-input');
   if (!input) return;
@@ -3643,5 +3601,3 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('resize', () => {
   if (!window.matchMedia('(max-width: 768px)').matches) closeDrawer();
 });
-
-initDebugChatThinkSlider();

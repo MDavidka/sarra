@@ -24,10 +24,9 @@ import httpx
 
 from syte.agent_activity import record_agent_event
 from syte.ai_providers import (
-    BUILDER_PROFILE,
+    DEFAULT_PROFILE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
-    THINKER_PROFILE,
     profile_provider,
 )
 from syte.cloud_agent_store import (
@@ -520,13 +519,13 @@ def cloud_agent_command() -> str:
 
 
 async def profile_api_key(profile: str) -> str:
-    """Resolve API key for a profile (each role uses its own provider key)."""
+    """Resolve API key for a profile (each profile uses its own provider key)."""
     spec = profile_provider(profile)
     key = (await get_setting(spec["setting_key"], "")).strip()
     if key:
         return key
-    # Thinker may have been saved under the short-lived shared OpenRouter setting.
-    if profile == THINKER_PROFILE:
+    # Legacy shared OpenRouter setting (pre-split ultra key).
+    if profile == "syra-ultra":
         shared = (await get_setting("agent_openrouter_api_key", "")).strip()
         if shared:
             return shared
@@ -535,12 +534,12 @@ async def profile_api_key(profile: str) -> str:
 
 async def bridge_settings() -> dict[str, Any]:
     default_profile = (
-        await get_setting("agent_default_model_profile", BUILDER_PROFILE)
-    ).strip() or BUILDER_PROFILE
+        await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
+    ).strip() or DEFAULT_PROFILE
     if default_profile not in PROFILE_PROVIDERS:
-        default_profile = BUILDER_PROFILE
+        default_profile = DEFAULT_PROFILE
     api_keys = await asyncio.gather(*[profile_api_key(name) for name in PROFILE_ORDER])
-    profiles: dict[str, dict[str, str]] = {}
+    profiles: dict[str, dict[str, str | int | float]] = {}
     for name, api_key in zip(PROFILE_ORDER, api_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
         profiles[name] = {
@@ -554,8 +553,9 @@ async def bridge_settings() -> dict[str, Any]:
         "api_base": active["api_base"],
         "api_key": active["api_key"],
         "provider": active["provider"],
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": THINKER_PROFILE,
+        # Legacy keys — selected model handles both thinking and building.
+        "builder_profile": default_profile,
+        "thinker_profile": None,
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
@@ -568,8 +568,8 @@ async def bridge_settings() -> dict[str, Any]:
 
 
 def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any]:
-    resolved = profile if profile in PROFILE_PROVIDERS else BUILDER_PROFILE
-    spec = bridge["profiles"].get(resolved, bridge["profiles"][BUILDER_PROFILE])
+    resolved = profile if profile in PROFILE_PROVIDERS else DEFAULT_PROFILE
+    spec = bridge["profiles"].get(resolved, bridge["profiles"][DEFAULT_PROFILE])
     meta: dict[str, Any] = {
         "profile": resolved,
         "provider": spec["provider"],
@@ -593,7 +593,7 @@ async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
 
 async def model_metadata_for_profile(profile: str | None) -> dict[str, Any]:
     bridge = await bridge_settings()
-    return _metadata_from_bridge(bridge, (profile or BUILDER_PROFILE).strip() or BUILDER_PROFILE)
+    return _metadata_from_bridge(bridge, (profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE)
 
 
 def _model_history_limit(model: dict[str, Any] | None) -> int:
@@ -2364,59 +2364,6 @@ async def _parse_sse_completion(
     return message
 
 
-async def _run_thinker_brief(
-    user_message: str,
-    *,
-    thinker_model: dict[str, Any],
-    reflection: bool = False,
-) -> str | None:
-    """One batched thinker call: diagnose + approach + ordered steps.
-
-    Combines explain / suggest / plan into a single round-trip so context is not
-    re-sent three times. Output is injected as a turn hint for the builder loop.
-    """
-    reflect = (
-        " Also note one concrete risk and how the builder should verify the fix."
-        if reflection
-        else ""
-    )
-    prompt = (
-        "You are the architecture/thinker model for a coding agent. In one response, "
-        "cover: (1) brief diagnosis of the issue, (2) the recommended fix approach, "
-        "(3) an ordered checklist of builder steps (files/tools only — no full code). "
-        "Be concise; prefer diffs and symbol names over dumping whole files."
-        f"{reflect}\n\nUser request:\n{user_message}"
-    )
-    try:
-        resp = await asyncio.wait_for(
-            _provider_completion(
-                thinker_model,
-                [{"role": "user", "content": prompt}],
-                tools=[],
-                temperature=0.2,
-                thinking_config={
-                    "thinking_enabled": True,
-                    "thinking_budget_tokens": 2048,
-                    "reasoning_effort": "high",
-                    "temperature": 0.2,
-                    "top_p": 0.95,
-                },
-            ),
-            timeout=45.0,
-        )
-    except Exception:
-        return None
-    content = str((resp or {}).get("content") or "").strip()
-    if not content:
-        return None
-    if len(content) > 6000:
-        content = content[:6000] + "\n… [thinker brief truncated]"
-    return (
-        "## Thinker brief (execute with builder tools; do not re-plan unless blocked)\n"
-        + content
-    )
-
-
 async def _provider_completion(
     model: dict[str, str],
     messages: list[dict[str, Any]],
@@ -2778,10 +2725,9 @@ async def _communicate_with_agent_impl(
         return {"ok": False, "error": "invalid_thinking_level", "message": str(exc), "request_id": request_id}
 
     turn_profile = gen.get("builder_profile") or gen["model_profile"]
-    thinker_profile = gen.get("thinker_profile")
-    # When the slider overrides the profile, resolve keys for that profile without
-    # writing agent_model_profile on the project row.
-    if gen.get("override_profile") and turn_profile != project.get("agent_model_profile"):
+    # When an explicit model_profile was passed for this turn, resolve keys for
+    # that profile without requiring a separate thinker swap.
+    if turn_profile and turn_profile != project.get("agent_model_profile"):
         project = {**project, "agent_model_profile": turn_profile}
 
     if auto_start and project.get("agent_status") != "running":
@@ -2789,26 +2735,7 @@ async def _communicate_with_agent_impl(
         if not ok:
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
-    # Prefer the dedicated builder profile for the tool loop when the slider
-    # selected a builder/thinker split (Aliyun qwen flash vs OpenRouter nemotron).
-    if gen.get("builder_profile") and gen["builder_profile"] != model.get("profile"):
-        builder_meta = await model_metadata_for_profile(str(gen["builder_profile"]))
-        if builder_meta.get("api_key"):
-            model = builder_meta
-
-    thinker_model: dict[str, Any] | None = None
-    if model.get("role") == "think" or model.get("profile") == THINKER_PROFILE:
-        # Never run the tool/code loop on the thinker — swap to builder.
-        if model.get("api_key"):
-            thinker_model = model
-        builder_meta = await model_metadata_for_profile(BUILDER_PROFILE)
-        if builder_meta.get("api_key"):
-            model = builder_meta
-    elif thinker_profile:
-        candidate = await model_metadata_for_profile(str(thinker_profile))
-        if candidate.get("api_key"):
-            thinker_model = candidate
-
+    # Selected profile handles both planning and the tool/code loop.
     if not model["api_key"]:
         return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
 
@@ -3029,10 +2956,10 @@ async def _communicate_with_agent_impl(
     ensure_workspace_aiignore(workspace_path(project_id) / "app")
 
     # Complex multi-page site builds: publish a planner decomposition before execution.
-    # Prefer the dedicated thinker model (nemotron) when thinking is enabled.
+    # The selected model plans and builds — no separate thinker.
     from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
 
-    planner_model = thinker_model or model
+    planner_model = model
     if (
         website_work
         and is_complex_site_request(message)
@@ -3083,34 +3010,6 @@ async def _communicate_with_agent_impl(
                     )
                 )
                 plan_already_seeded = True
-
-    # Batched thinker pass (explain + approach + steps) when thinking is on and
-    # no site planner already seeded a plan — keeps one round-trip instead of three.
-    if thinker_model and gen.get("thinking_enabled") and not plan_already_seeded:
-        brief = await _run_thinker_brief(
-            message,
-            thinker_model=thinker_model,
-            reflection=bool(gen.get("reflection")),
-        )
-        if brief:
-            turn_hints.append(brief)
-            await record_agent_event(
-                project_id,
-                "thinking",
-                role="assistant",
-                title="Thinker brief",
-                detail=brief[:4000],
-                payload=_mark_payload(
-                    status="d",
-                    kind="thinking",
-                    base={
-                        "thinker_profile": thinker_model.get("profile"),
-                        "thinker_model": thinker_model.get("model"),
-                    },
-                ),
-                source=source,
-                turso_session_id=turso_session_id,
-            )
 
     dynamic_instruction = "\n\n".join(
         part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()

@@ -309,8 +309,8 @@ async def get_settings():
         "agent_syra_base_model": bridge["syra_base_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
         "agent_syra_ultra_model": bridge["syra_ultra_model"],
-        "agent_builder_profile": bridge.get("builder_profile") or "syra-base",
-        "agent_thinker_profile": bridge.get("thinker_profile") or "syra-ultra",
+        "agent_builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
+        "agent_thinker_profile": bridge.get("thinker_profile"),
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
@@ -429,28 +429,28 @@ async def save_settings(body: SettingsRequest):
     if body.agent_syra_nano_api_key is not None:
         await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
         messages.append(
-            "syra-nano (Verted) API key saved."
+            "syra-nano (Vertex AI · gemini-3.1-flash-lite) API key saved."
             if body.agent_syra_nano_api_key.strip()
             else "syra-nano API key cleared."
         )
     if body.agent_syra_base_api_key is not None:
         await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
         messages.append(
-            "syra-base builder (Aliyun · qwen3.5-flash) API key saved."
+            "syra-base (DeepSeek · deepseek-v4-flash) API key saved."
             if body.agent_syra_base_api_key.strip()
             else "syra-base API key cleared."
         )
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
         messages.append(
-            "syra-havy (Verted) API key saved."
+            "syra-havy / pro (Vertex AI · gemini-3.6-flash) API key saved."
             if body.agent_syra_havy_api_key.strip()
             else "syra-havy API key cleared."
         )
     if body.agent_syra_ultra_api_key is not None:
         await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
         messages.append(
-            "syra-ultra thinker (OpenRouter · nemotron) API key saved."
+            "syra-ultra (Aliyun · Qwen 3.6 / qwen3.5-flash) API key saved."
             if body.agent_syra_ultra_api_key.strip()
             else "syra-ultra API key cleared."
         )

@@ -184,15 +184,15 @@ def build_ai_spec(base_url: str = "") -> dict:
             ),
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
             "model_profiles": {
-                "syra-nano": "Fast — Gemini Flash class",
-                "syra-base": "Builder — Aliyun Qwen3.5-Flash",
-                "syra-havy": "Capable — Gemini Pro class (vision)",
-                "syra-ultra": "Thinker — OpenRouter Nemotron 3 Ultra (free)",
+                "syra-nano": "Fast — Vertex AI Gemini 3.1 Flash Lite",
+                "syra-base": "Default — DeepSeek V4 Flash (think + build)",
+                "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
+                "syra-ultra": "Ultra — Aliyun Qwen 3.6 (qwen3.5-flash)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Verted/DeepSeek/Aliyun API keys, and "
-                "turso_database_url / turso_auth_token for durable session storage"
+                "Syte GUI → AI tab — internal secret, per-profile Vertex AI / DeepSeek / Aliyun API keys, "
+                "estimated in/out token prices, and turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",
