@@ -660,7 +660,7 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">API endpoints are fixed per model profile. Add one API key for each profile — keys are injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, and <code>SYRA_ULTRA_API_KEY</code> on the VM.</p>
+              <p class="hint block">API endpoints are fixed per model profile. Builder + thinker share one OpenRouter key (<code>OPENROUTER_API_KEY</code>). Verted keys remain separate for nano/havy.</p>
 
               <div class="ai-key-card">
                 <div class="ai-key-head">
@@ -677,14 +677,15 @@
 
               <div class="ai-key-card">
                 <div class="ai-key-head">
-                  <strong>syra-base</strong>
-                  <span class="ai-key-provider">DeepSeek · deepseek-chat</span>
+                  <strong>OpenRouter (builder + thinker)</strong>
+                  <span class="ai-key-provider">syra-base · qwen3.5-flash · build · syra-ultra · nemotron · think</span>
                 </div>
-                <code class="ai-key-url">https://api.deepseek.com/v1</code>
+                <code class="ai-key-url">https://openrouter.ai/api/v1</code>
+                <p class="hint block">Builder writes code with <code>qwen/qwen3.5-flash-02-23</code>. Thinker plans with <code>nvidia/nemotron-3-ultra-550b-a55b:free</code>. One key covers both.</p>
                 <div class="form-group">
-                  <label for="agent-base-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
-                  <span class="hint" id="agent-base-key-hint">Required for base profile.</span>
+                  <label for="agent-openrouter-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-openrouter-key" placeholder="OpenRouter API key" autocomplete="off">
+                  <span class="hint" id="agent-openrouter-key-hint">Required for builder and thinker profiles.</span>
                 </div>
               </div>
 
@@ -697,20 +698,7 @@
                 <div class="form-group">
                   <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
                   <input type="password" id="agent-havy-key" placeholder="Verted API key" autocomplete="off">
-                  <span class="hint" id="agent-havy-key-hint">Required for havy profile.</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card">
-                <div class="ai-key-head">
-                  <strong>syra-ultra</strong>
-                  <span class="ai-key-provider">Aliyun · qwen3.7-plus</span>
-                </div>
-                <code class="ai-key-url">https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1</code>
-                <div class="form-group">
-                  <label for="agent-ultra-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-ultra-key" placeholder="Aliyun MaaS API key" autocomplete="off">
-                  <span class="hint" id="agent-ultra-key-hint">Required for ultra profile. Use an Aliyun MaaS token-plan API key.</span>
+                  <span class="hint" id="agent-havy-key-hint">Required for havy profile (vision).</span>
                 </div>
               </div>
 
@@ -758,9 +746,8 @@
                 <summary>Environment variables (auto-injected)</summary>
                 <div class="ai-env-grid">
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Verted key for syra-nano</span></div>
-                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
+                  <div class="ai-env-row"><code>OPENROUTER_API_KEY</code><span>Shared OpenRouter key for builder (qwen3.5-flash) + thinker (nemotron)</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Verted key for syra-havy</span></div>
-                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun MaaS key for syra-ultra (qwen3.7-plus)</span></div>
                   <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
                   <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
                   <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>

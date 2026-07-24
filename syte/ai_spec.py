@@ -185,9 +185,9 @@ def build_ai_spec(base_url: str = "") -> dict:
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
             "model_profiles": {
                 "syra-nano": "Fast — Gemini Flash class",
-                "syra-base": "Balanced — DeepSeek chat class",
-                "syra-havy": "Capable — Gemini Pro class",
-                "syra-ultra": "Frontier — Aliyun Qwen3.7-Plus (cost-capped)",
+                "syra-base": "Builder — OpenRouter Qwen3.5-Flash",
+                "syra-havy": "Capable — Gemini Pro class (vision)",
+                "syra-ultra": "Thinker — OpenRouter Nemotron 3 Ultra (free)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (

@@ -20,13 +20,17 @@ and restartable work. It does not launch a CLI or HTTP server per project.
 The agent uses only Syte's configured Syra profiles and their existing fixed
 OpenAI-compatible endpoints:
 
-- `syra-nano`: Gemini Flash
-- `syra-base`: DeepSeek Chat
-- `syra-havy`: Gemini Pro
-- `syra-ultra`: Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
+- `syra-nano`: Gemini Flash (fast / Instant)
+- `syra-base` **(builder)**: OpenRouter `qwen/qwen3.5-flash-02-23` — code edits and tool loops
+- `syra-havy`: Gemini Pro (vision)
+- `syra-ultra` **(thinker)**: OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` — plans / architecture
 
-Provider keys remain in Syte system settings. They are sent directly to the
-selected provider and are never copied into project runtime files.
+Builder and thinker share one `OPENROUTER_API_KEY` (`agent_openrouter_api_key`).
+Balanced–Max thinking levels call the thinker for a batched brief / site plan, then
+the builder executes tools. Instant/Fast skip the thinker entirely.
+
+Token efficiency: tool/CLI output is filtered before it re-enters context; listings
+honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).
 
 ## Lifecycle and reliability
 
