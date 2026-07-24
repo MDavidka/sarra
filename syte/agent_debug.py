@@ -79,19 +79,23 @@ async def _http_probe(
 
 
 async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
+    from syte.ai_providers import apply_runtime_api_base
+
     spec = profile_provider(profile)
-    base = spec["api_base"].rstrip("/")
+    base = apply_runtime_api_base(profile, api_key, spec["api_base"]).rstrip("/")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    if "generativelanguage.googleapis.com" in base.lower():
+        headers["x-goog-api-key"] = api_key
     probes: list[dict[str, Any]] = []
 
     if not api_key:
         return {
             "profile": profile,
             "label": spec["label"],
-            "api_base": spec["api_base"],
+            "api_base": base,
             "model": spec["model"],
             "secret_env": spec["secret_env"],
             "api_key_set": False,
@@ -147,11 +151,20 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
             f"This key was rejected by {spec['label']}. "
             f"Ensure it is a {spec['label']} key for profile {profile}."
         )
+        if profile == "syra-ultra":
+            hints.append(
+                "Token Plan keys (sk-sp-) need token-plan.cn-beijing or ap-southeast-1; "
+                "pay-as-you-go sk- keys need dashscope.aliyuncs.com."
+            )
+        if profile == "syra-base" and (api_key or "").lower().startswith("sk-sp-"):
+            hints.append(
+                "This looks like an Aliyun Token Plan key — save it on syra-ultra, not syra-base."
+            )
 
     return {
         "profile": profile,
         "label": spec["label"],
-        "api_base": spec["api_base"],
+        "api_base": base,
         "model": spec["model"],
         "secret_env": spec["secret_env"],
         "api_key_set": True,

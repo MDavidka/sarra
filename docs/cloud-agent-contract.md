@@ -18,17 +18,15 @@ and restartable work. It does not launch a CLI or HTTP server per project.
   — see "Durable message store (Turso)" below
 
 The agent uses only Syte's configured Syra profiles and their existing fixed
-OpenAI-compatible endpoints:
+OpenAI-compatible endpoints. Each profile thinks and builds (no separate thinker):
 
-- `syra-nano`: Gemini Flash (fast / Instant)
-- `syra-base` **(builder)**: Aliyun MaaS `qwen3.5-flash` — code edits and tool loops
-- `syra-havy`: Gemini Pro (vision)
-- `syra-ultra` **(thinker)**: OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` — plans / architecture
+- `syra-nano`: Vertex AI `gemini-3.1-flash-lite` (fast)
+- `syra-base`: DeepSeek `deepseek-v4-flash` (default)
+- `syra-havy` / pro: Vertex AI `gemini-3.6-flash`
+- `syra-ultra`: Aliyun Qwen `qwen3.6-flash` (Token Plan `sk-sp-` → token-plan MaaS; pay-as-you-go `sk-` → DashScope)
 
-Builder and thinker use **different APIs and keys** (`SYRA_BASE_API_KEY` vs
-`SYRA_ULTRA_API_KEY`). Balanced–Max thinking levels call the thinker for a
-batched brief / site plan, then the builder executes tools. Instant/Fast skip
-the thinker entirely.
+Provider keys: `SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, `SYRA_HAVY_API_KEY`,
+`SYRA_ULTRA_API_KEY` (settings first, then process env).
 
 Token efficiency: tool/CLI output is filtered before it re-enters context; listings
 honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).

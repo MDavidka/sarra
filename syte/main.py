@@ -439,31 +439,43 @@ async def save_settings(body: SettingsRequest):
         await set_setting("agent_default_model_profile", profile)
         messages.append(f"Default Syte cloud model profile: {profile}")
     if body.agent_syra_nano_api_key is not None:
-        await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
+        from syte.cloud_agent import sanitize_api_key
+
+        nano_key = sanitize_api_key(body.agent_syra_nano_api_key)
+        await set_setting("agent_syra_nano_api_key", nano_key)
         messages.append(
             "syra-nano (Vertex AI · gemini-3.1-flash-lite) API key saved."
-            if body.agent_syra_nano_api_key.strip()
+            if nano_key
             else "syra-nano API key cleared."
         )
     if body.agent_syra_base_api_key is not None:
-        await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
+        from syte.cloud_agent import sanitize_api_key
+
+        base_key = sanitize_api_key(body.agent_syra_base_api_key)
+        await set_setting("agent_syra_base_api_key", base_key)
         messages.append(
             "syra-base (DeepSeek · deepseek-v4-flash) API key saved."
-            if body.agent_syra_base_api_key.strip()
+            if base_key
             else "syra-base API key cleared."
         )
     if body.agent_syra_havy_api_key is not None:
-        await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
+        from syte.cloud_agent import sanitize_api_key
+
+        havy_key = sanitize_api_key(body.agent_syra_havy_api_key)
+        await set_setting("agent_syra_havy_api_key", havy_key)
         messages.append(
             "syra-havy / pro (Vertex AI · gemini-3.6-flash) API key saved."
-            if body.agent_syra_havy_api_key.strip()
+            if havy_key
             else "syra-havy API key cleared."
         )
     if body.agent_syra_ultra_api_key is not None:
-        await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
+        from syte.cloud_agent import sanitize_api_key
+
+        ultra_key = sanitize_api_key(body.agent_syra_ultra_api_key)
+        await set_setting("agent_syra_ultra_api_key", ultra_key)
         messages.append(
-            "syra-ultra (Aliyun · Qwen 3.6 / qwen3.5-flash) API key saved."
-            if body.agent_syra_ultra_api_key.strip()
+            "syra-ultra (Aliyun · Qwen 3.6 / qwen3.6-flash) API key saved."
+            if ultra_key
             else "syra-ultra API key cleared."
         )
     if body.agent_max_count is not None:

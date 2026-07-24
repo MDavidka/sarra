@@ -68,7 +68,7 @@ async def test_migrate_moves_aliyun_base_key_to_ultra(tmp_data_dir: Path) -> Non
     assert result["moved_base_to_ultra"] is True
     assert await get_setting("agent_syra_base_api_key") == ""
     assert await get_setting("agent_syra_ultra_api_key") == "aliyun-old-builder-key"
-    assert await get_setting("agent_provider_lineup_v3_migrated") == "1"
+    assert await get_setting("agent_provider_lineup_v4_migrated") == "1"
 
     ultra = await resolve_profile_api_key("syra-ultra")
     base = await resolve_profile_api_key("syra-base")
@@ -78,6 +78,28 @@ async def test_migrate_moves_aliyun_base_key_to_ultra(tmp_data_dir: Path) -> Non
     # Idempotent.
     again = await migrate_provider_lineup_keys()
     assert again["migrated"] is False
+
+
+@pytest.mark.asyncio
+async def test_migrate_moves_token_plan_sk_sp_off_base(tmp_data_dir: Path) -> None:
+    """v3 left sk-sp- on base because it starts with sk-; v4 must move it."""
+    from syte.cloud_agent import migrate_provider_lineup_keys, resolve_profile_api_key
+    from syte.database import get_setting, init_db, set_setting
+
+    await init_db()
+    # Simulate a host that already ran v3 migration.
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_syra_base_api_key", "sk-sp-tokenplan-abcwkCg")
+    await set_setting("agent_syra_ultra_api_key", "")
+
+    result = await migrate_provider_lineup_keys()
+    assert result["migrated"] is True
+    assert result["moved_base_to_ultra"] is True
+    assert result["cleared_base"] is True
+    assert await get_setting("agent_syra_base_api_key") == ""
+    assert await get_setting("agent_syra_ultra_api_key") == "sk-sp-tokenplan-abcwkCg"
+    ultra = await resolve_profile_api_key("syra-ultra")
+    assert ultra["api_key"].startswith("sk-sp-")
 
 
 @pytest.mark.asyncio
@@ -93,6 +115,23 @@ async def test_migrate_keeps_deepseek_looking_base_key(tmp_data_dir: Path) -> No
     assert result["moved_base_to_ultra"] is False
     assert await get_setting("agent_syra_base_api_key") == "sk-deepseek-already-set"
     assert await get_setting("agent_syra_ultra_api_key") == ""
+
+
+@pytest.mark.asyncio
+async def test_bridge_resolves_aliyun_base_from_key(tmp_data_dir: Path) -> None:
+    from syte.ai_providers import ALIYUN_DASHSCOPE_API_BASE, ALIYUN_TOKEN_PLAN_BEIJING
+    from syte.cloud_agent import bridge_settings
+    from syte.database import init_db, set_setting
+
+    await init_db()
+    await set_setting("agent_provider_lineup_v4_migrated", "1")
+    await set_setting("agent_syra_ultra_api_key", "sk-sp-beijing-key")
+    bridge = await bridge_settings()
+    assert bridge["profiles"]["syra-ultra"]["api_base"] == ALIYUN_TOKEN_PLAN_BEIJING
+
+    await set_setting("agent_syra_ultra_api_key", "sk-dashscope-payg-key")
+    bridge = await bridge_settings()
+    assert bridge["profiles"]["syra-ultra"]["api_base"] == ALIYUN_DASHSCOPE_API_BASE
 
 
 @pytest.mark.asyncio

@@ -30,9 +30,10 @@ def suggest_model_profile(
 ) -> dict[str, Any]:
     """Return a suggested profile + reason without overriding explicit choices.
 
-    When the caller already set ``model_profile`` or ``thinking_level``, we keep
-    that choice and only annotate the suggestion. Automatic downgrade/upgrade
-    applies only when both are omitted.
+    When the caller already set ``model_profile`` / project profile or
+    ``thinking_level``, we keep that choice and only annotate the suggestion.
+    Automatic apply is disabled — short prompts must not silently switch the
+    selected model (e.g. "hey" → syra-nano while the UI shows ultra).
     """
     text = (message or "").strip()
     suggested = "syra-base"
@@ -51,15 +52,12 @@ def suggest_model_profile(
         suggested = "syra-nano"
         reason = "very short message"
 
-    auto_applied = False
-    effective = explicit_profile
-    if not explicit_profile and thinking_level in (None, ""):
-        effective = suggested
-        auto_applied = True
-
+    explicit = (explicit_profile or "").strip() or None
+    # Suggestions only — never auto-apply. The GUI/API selected profile (or the
+    # project's saved profile) always wins.
     return {
         "suggested_profile": suggested,
-        "effective_profile": effective or suggested,
-        "auto_applied": auto_applied,
+        "effective_profile": explicit or suggested,
+        "auto_applied": False,
         "reason": reason,
     }

@@ -187,7 +187,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-nano": "Fast — Vertex AI Gemini 3.1 Flash Lite",
                 "syra-base": "Default — DeepSeek V4 Flash (think + build)",
                 "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
-                "syra-ultra": "Ultra — Aliyun Qwen 3.6 (qwen3.5-flash)",
+                "syra-ultra": "Ultra — Aliyun Qwen 3.6 (qwen3.6-flash)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
