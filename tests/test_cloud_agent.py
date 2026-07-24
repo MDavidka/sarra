@@ -705,7 +705,7 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     from syte.database import get_project, set_setting
 
     project = await _project("think-proj")
-    await set_setting("agent_syra_nano_api_key", "nano-key")
+    await set_setting("agent_openrouter_api_key", "or-key")
     calls = {"n": 0}
 
     async def fake_provider(model, messages, **kwargs):
@@ -735,10 +735,10 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     )
     assert result["ok"] is True
     assert result["thinking_level"] == 1
-    assert result["model_profile"] == "syra-nano"
+    assert result["model_profile"] == "syra-base"
     # Instant budget (10 tool-enabled rounds) + 1 final no-tools round
     assert calls["n"] == 11
     assert calls["last_kwargs"].get("tools") == []
     refreshed = await get_project(project["id"])
-    # thinking_level must not persist syra-nano onto the project
-    assert refreshed.get("agent_model_profile") != "syra-nano"
+    # thinking_level must not persist a non-default Instant override onto the project
+    assert refreshed.get("agent_model_profile") in {None, "syra-base"}

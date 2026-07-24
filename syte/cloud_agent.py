@@ -23,7 +23,13 @@ from typing import Any
 import httpx
 
 from syte.agent_activity import record_agent_event
-from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
+from syte.ai_providers import (
+    BUILDER_PROFILE,
+    PROFILE_ORDER,
+    PROFILE_PROVIDERS,
+    THINKER_PROFILE,
+    profile_provider,
+)
 from syte.cloud_agent_store import (
     append_message,
     begin_turn_session,
@@ -513,17 +519,36 @@ def cloud_agent_command() -> str:
 
 
 
+_LEGACY_PROFILE_KEY_SETTINGS = {
+    "syra-base": "agent_syra_base_api_key",
+    "syra-ultra": "agent_syra_ultra_api_key",
+}
+
+
 async def profile_api_key(profile: str) -> str:
+    """Resolve API key for a profile, with OpenRouter + legacy fallbacks."""
     spec = profile_provider(profile)
-    return (await get_setting(spec["setting_key"], "")).strip()
+    key = (await get_setting(spec["setting_key"], "")).strip()
+    if key:
+        return key
+    # Shared OpenRouter key may be stored under the canonical setting even when
+    # an older deployment still has per-profile DeepSeek/Aliyun keys.
+    if spec.get("secret_env") == "OPENROUTER_API_KEY":
+        shared = (await get_setting("agent_openrouter_api_key", "")).strip()
+        if shared:
+            return shared
+    legacy = _LEGACY_PROFILE_KEY_SETTINGS.get(profile)
+    if legacy and legacy != spec["setting_key"]:
+        return (await get_setting(legacy, "")).strip()
+    return ""
 
 
 async def bridge_settings() -> dict[str, Any]:
     default_profile = (
-        await get_setting("agent_default_model_profile", "syra-base")
-    ).strip() or "syra-base"
+        await get_setting("agent_default_model_profile", BUILDER_PROFILE)
+    ).strip() or BUILDER_PROFILE
     if default_profile not in PROFILE_PROVIDERS:
-        default_profile = "syra-base"
+        default_profile = BUILDER_PROFILE
     api_keys = await asyncio.gather(*[profile_api_key(name) for name in PROFILE_ORDER])
     profiles: dict[str, dict[str, str]] = {}
     for name, api_key in zip(PROFILE_ORDER, api_keys, strict=True):
@@ -533,12 +558,15 @@ async def bridge_settings() -> dict[str, Any]:
             "api_key": api_key,
         }
     active = profiles[default_profile]
+    openrouter_key = profiles[BUILDER_PROFILE]["api_key"] or profiles[THINKER_PROFILE]["api_key"]
     return {
         "default_profile": default_profile,
         "profiles": profiles,
         "api_base": active["api_base"],
         "api_key": active["api_key"],
         "provider": active["provider"],
+        "builder_profile": BUILDER_PROFILE,
+        "thinker_profile": THINKER_PROFILE,
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
@@ -547,26 +575,37 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
+        "openrouter_api_key": openrouter_key,
     }
 
 
-async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
-    bridge = await bridge_settings()
-    profile = str(project.get("agent_model_profile") or bridge["default_profile"])
-    spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
+def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any]:
+    resolved = profile if profile in PROFILE_PROVIDERS else BUILDER_PROFILE
+    spec = bridge["profiles"].get(resolved, bridge["profiles"][BUILDER_PROFILE])
     meta: dict[str, Any] = {
-        "profile": profile if profile in PROFILE_PROVIDERS else "syra-base",
+        "profile": resolved,
         "provider": spec["provider"],
         "provider_label": spec["label"],
         "model": spec["model"],
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
+        "role": spec.get("role") or "",
     }
-    # Optional per-profile cost caps from ai_providers.PROFILE_PROVIDERS.
     for key in ("max_tokens", "max_history_messages", "max_tool_result_chars"):
         if key in spec and spec[key] is not None:
             meta[key] = int(spec[key])
     return meta
+
+
+async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
+    bridge = await bridge_settings()
+    profile = str(project.get("agent_model_profile") or bridge["default_profile"])
+    return _metadata_from_bridge(bridge, profile)
+
+
+async def model_metadata_for_profile(profile: str | None) -> dict[str, Any]:
+    bridge = await bridge_settings()
+    return _metadata_from_bridge(bridge, (profile or BUILDER_PROFILE).strip() or BUILDER_PROFILE)
 
 
 def _model_history_limit(model: dict[str, Any] | None) -> int:
@@ -1455,16 +1494,31 @@ async def _execute_tool(
                 ),
             }
         if name == "list_files":
+            from syte.token_efficiency import load_aiignore_patterns, path_is_ignored
+
             files = await list_workspace_files(project_id, str(args.get("path") or "app"))
-            if len(files) > 200:
+            patterns = load_aiignore_patterns(
+                workspace_path(project_id),
+                workspace_path(project_id) / "app",
+            )
+            filtered = [
+                f for f in files
+                if not path_is_ignored(str(f.get("path") or f.get("name") or ""), patterns)
+            ]
+            if len(filtered) > 200:
                 return {
                     "ok": True,
-                    "files": files[:200],
+                    "files": filtered[:200],
                     "truncated": True,
-                    "truncated_count": len(files),
+                    "truncated_count": len(filtered),
+                    "ignored_filtered": len(files) - len(filtered),
                     "note": "Listing truncated to 200 entries — narrow the path or use search_code.",
                 }
-            return {"ok": True, "files": files}
+            return {
+                "ok": True,
+                "files": filtered,
+                "ignored_filtered": len(files) - len(filtered),
+            }
         if name == "read_file":
             ok, content, mime = await read_file(project_id, str(args["path"]))
             await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
@@ -1488,12 +1542,16 @@ async def _execute_tool(
             await _track_touched_file(project_id, str(args["path"]), ctx)
             return {"ok": ok, "message": message}
         if name == "run_command":
+            from syte.token_efficiency import filter_cli_output
+
             timeout_s = max(1, min(int(args.get("timeout") or 300), 900))
+            command = str(args["command"])
             code, output = await execute_command(
-                project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
+                project_id, command, cwd=str(args.get("cwd") or "app"),
                 timeout=timeout_s, source="agent",
             )
-            truncated = _truncate_for_llm(output, tool_chars)
+            filtered = filter_cli_output(command, output, max_chars=tool_chars)
+            truncated = _truncate_for_llm(filtered, tool_chars)
             if code == 124:
                 return {
                     "ok": False,
@@ -1667,6 +1725,12 @@ async def _tool_search_code(project_id: str, args: dict[str, Any]) -> dict[str, 
     glob_pat = str(args.get("glob") or "").strip() or None
     case_insensitive = bool(args.get("case_insensitive"))
     skip_dirs = {".git", "node_modules", ".next", "dist", "build", "__pycache__", ".turbo", "coverage"}
+    from syte.token_efficiency import load_aiignore_patterns, path_is_ignored
+
+    aiignore = load_aiignore_patterns(
+        workspace_path(project_id),
+        workspace_path(project_id) / "app",
+    )
 
     matches: list[dict[str, Any]] = []
     rg = shutil.which("rg")
@@ -1703,8 +1767,11 @@ async def _tool_search_code(project_id: str, args: dict[str, Any]) -> dict[str, 
                 rel_path = str(Path(path_s).resolve().relative_to(workspace_path(project_id)))
             except ValueError:
                 rel_path = path_s
+            rel_norm = rel_path.replace("\\", "/")
+            if path_is_ignored(rel_norm, aiignore):
+                continue
             matches.append({
-                "path": rel_path.replace("\\", "/"),
+                "path": rel_norm,
                 "line": int(line_s) if line_s.isdigit() else line_s,
                 "snippet": snippet[:240],
             })
@@ -1733,6 +1800,12 @@ async def _tool_search_code(project_id: str, args: dict[str, Any]) -> dict[str, 
         if not path.is_file():
             continue
         if any(part in skip_dirs for part in path.parts):
+            continue
+        try:
+            rel_check = str(path.resolve().relative_to(workspace_path(project_id))).replace("\\", "/")
+        except ValueError:
+            rel_check = str(path)
+        if path_is_ignored(rel_check, aiignore):
             continue
         if glob_pat and not path.match(glob_pat):
             continue
@@ -2299,6 +2372,59 @@ async def _parse_sse_completion(
     return message
 
 
+async def _run_thinker_brief(
+    user_message: str,
+    *,
+    thinker_model: dict[str, Any],
+    reflection: bool = False,
+) -> str | None:
+    """One batched thinker call: diagnose + approach + ordered steps.
+
+    Combines explain / suggest / plan into a single round-trip so context is not
+    re-sent three times. Output is injected as a turn hint for the builder loop.
+    """
+    reflect = (
+        " Also note one concrete risk and how the builder should verify the fix."
+        if reflection
+        else ""
+    )
+    prompt = (
+        "You are the architecture/thinker model for a coding agent. In one response, "
+        "cover: (1) brief diagnosis of the issue, (2) the recommended fix approach, "
+        "(3) an ordered checklist of builder steps (files/tools only — no full code). "
+        "Be concise; prefer diffs and symbol names over dumping whole files."
+        f"{reflect}\n\nUser request:\n{user_message}"
+    )
+    try:
+        resp = await asyncio.wait_for(
+            _provider_completion(
+                thinker_model,
+                [{"role": "user", "content": prompt}],
+                tools=[],
+                temperature=0.2,
+                thinking_config={
+                    "thinking_enabled": True,
+                    "thinking_budget_tokens": 2048,
+                    "reasoning_effort": "high",
+                    "temperature": 0.2,
+                    "top_p": 0.95,
+                },
+            ),
+            timeout=45.0,
+        )
+    except Exception:
+        return None
+    content = str((resp or {}).get("content") or "").strip()
+    if not content:
+        return None
+    if len(content) > 6000:
+        content = content[:6000] + "\n… [thinker brief truncated]"
+    return (
+        "## Thinker brief (execute with builder tools; do not re-plan unless blocked)\n"
+        + content
+    )
+
+
 async def _provider_completion(
     model: dict[str, str],
     messages: list[dict[str, Any]],
@@ -2659,7 +2785,8 @@ async def _communicate_with_agent_impl(
     except ValueError as exc:
         return {"ok": False, "error": "invalid_thinking_level", "message": str(exc), "request_id": request_id}
 
-    turn_profile = gen["model_profile"]
+    turn_profile = gen.get("builder_profile") or gen["model_profile"]
+    thinker_profile = gen.get("thinker_profile")
     # When the slider overrides the profile, resolve keys for that profile without
     # writing agent_model_profile on the project row.
     if gen.get("override_profile") and turn_profile != project.get("agent_model_profile"):
@@ -2670,6 +2797,26 @@ async def _communicate_with_agent_impl(
         if not ok:
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
+    # Prefer the dedicated builder profile for the tool loop when the slider
+    # selected a builder/thinker split (OpenRouter qwen flash vs nemotron).
+    if gen.get("builder_profile") and gen["builder_profile"] != model.get("profile"):
+        builder_meta = await model_metadata_for_profile(str(gen["builder_profile"]))
+        if builder_meta.get("api_key"):
+            model = builder_meta
+
+    thinker_model: dict[str, Any] | None = None
+    if model.get("role") == "think" or model.get("profile") == THINKER_PROFILE:
+        # Never run the tool/code loop on the thinker — swap to builder.
+        if model.get("api_key"):
+            thinker_model = model
+        builder_meta = await model_metadata_for_profile(BUILDER_PROFILE)
+        if builder_meta.get("api_key"):
+            model = builder_meta
+    elif thinker_profile:
+        candidate = await model_metadata_for_profile(str(thinker_profile))
+        if candidate.get("api_key"):
+            thinker_model = candidate
+
     if not model["api_key"]:
         return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
 
@@ -2884,9 +3031,16 @@ async def _communicate_with_agent_impl(
         if analysis_payload:
             turn_hints.append(visual_feedback_prompt(analysis_payload))
 
+    # Seed .aiignore so lockfiles / build artifacts never enter listings.
+    from syte.token_efficiency import ensure_workspace_aiignore
+
+    ensure_workspace_aiignore(workspace_path(project_id) / "app")
+
     # Complex multi-page site builds: publish a planner decomposition before execution.
+    # Prefer the dedicated thinker model (nemotron) when thinking is enabled.
     from syte.site_planner import is_complex_site_request, order_subtasks, plan_complex_site
 
+    planner_model = thinker_model or model
     if (
         website_work
         and is_complex_site_request(message)
@@ -2897,7 +3051,7 @@ async def _communicate_with_agent_impl(
             project_id,
             message,
             provider_completion=_provider_completion,
-            model=model,
+            model=planner_model,
         )
         if plan.get("ok") and plan.get("subtasks"):
             ordered = order_subtasks(list(plan["subtasks"]))
@@ -2937,6 +3091,34 @@ async def _communicate_with_agent_impl(
                     )
                 )
                 plan_already_seeded = True
+
+    # Batched thinker pass (explain + approach + steps) when thinking is on and
+    # no site planner already seeded a plan — keeps one round-trip instead of three.
+    if thinker_model and gen.get("thinking_enabled") and not plan_already_seeded:
+        brief = await _run_thinker_brief(
+            message,
+            thinker_model=thinker_model,
+            reflection=bool(gen.get("reflection")),
+        )
+        if brief:
+            turn_hints.append(brief)
+            await record_agent_event(
+                project_id,
+                "thinking",
+                role="assistant",
+                title="Thinker brief",
+                detail=brief[:4000],
+                payload=_mark_payload(
+                    status="d",
+                    kind="thinking",
+                    base={
+                        "thinker_profile": thinker_model.get("profile"),
+                        "thinker_model": thinker_model.get("model"),
+                    },
+                ),
+                source=source,
+                turso_session_id=turso_session_id,
+            )
 
     dynamic_instruction = "\n\n".join(
         part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()

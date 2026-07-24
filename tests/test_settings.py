@@ -104,17 +104,17 @@ async def test_agent_settings_use_cloud_namespace(
     res = await save_settings(SettingsRequest(
         agent_default_model_profile="syra-ultra",
         agent_syra_nano_api_key="nano-key",
-        agent_syra_base_api_key="base-key",
+        agent_openrouter_api_key="or-shared-key",
         agent_syra_havy_api_key="havy-key",
-        agent_syra_ultra_api_key="fg-ultra-key",
     ))
 
     assert res["ok"] is True
     assert await get_setting("agent_default_model_profile") == "syra-ultra"
-    assert await get_setting("agent_syra_base_api_key") == "base-key"
-    assert await get_setting("agent_syra_ultra_api_key") == "fg-ultra-key"
+    assert await get_setting("agent_openrouter_api_key") == "or-shared-key"
+    assert await get_setting("agent_syra_base_api_key") == "or-shared-key"
+    assert await get_setting("agent_syra_ultra_api_key") == "or-shared-key"
     assert "Syte cloud" in " ".join(res["messages"])
-    assert any("syra-ultra" in m for m in res["messages"])
+    assert any("OpenRouter" in m or "syra-ultra" in m for m in res["messages"])
 
 @pytest.mark.asyncio
 async def test_legacy_provider_settings_are_migrated_once(tmp_data_dir: Path) -> None:

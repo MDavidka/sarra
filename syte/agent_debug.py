@@ -145,7 +145,8 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     if chat_probe and chat_probe.get("status_code") in (401, 403):
         hints.append(
             f"This key was rejected by {spec['label']}. "
-            f"Ensure it is a {spec['label']} key (DeepSeek keys only work on syra-base)."
+            f"Ensure it is a {spec['label']} key "
+            f"(OpenRouter keys work for syra-base builder and syra-ultra thinker)."
         )
 
     return {
