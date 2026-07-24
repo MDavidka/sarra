@@ -148,7 +148,8 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "project_id": "myapp-a1b2c3",
                 "session_number": 1,
                 "model_profile": "syra-base",
-                "status": "open | completed | failed | cancelled",
+                "status": "open | completed | failed | cancelled | stopped",
+                "ended_at": "ISO timestamp when the turn finished (null while open)",
                 "created_at": "2026-07-15T12:00:00+00:00",
                 "updated_at": "2026-07-15T12:00:04+00:00",
                 "events": [

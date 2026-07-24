@@ -84,16 +84,41 @@ async def test_open_session_record_events_and_fetch(turso_local) -> None:
         session_id, "proj-1", "request_completed", role="assistant",
         detail="Added dark mode", payload={"reply": "Added dark mode"},
     )
-    await turso_local.close_session(session_id, status="completed")
+    closed = await turso_local.close_session(session_id, status="completed")
+    assert closed is True
 
     session = await turso_local.get_session(session_id)
     assert session is not None
     assert session["id"] == session_id
     assert session["project_id"] == "proj-1"
     assert session["status"] == "completed"
+    assert session["ended_at"]
     assert len(session["events"]) == 2
     assert session["events"][0]["event_type"] == "request_started"
     assert session["events"][1]["payload"]["reply"] == "Added dark mode"
+
+
+@pytest.mark.asyncio
+async def test_close_open_sessions_for_project_marks_ended_at(turso_local) -> None:
+    open_a = await turso_local.open_session("proj-orphan", session_number=1)
+    open_b = await turso_local.open_session("proj-orphan", session_number=2)
+    keep = await turso_local.open_session("proj-orphan", session_number=3)
+    assert open_a and open_b and keep
+
+    closed_n = await turso_local.close_open_sessions_for_project(
+        "proj-orphan", status="cancelled", exclude_session_id=keep,
+    )
+    assert closed_n >= 2
+
+    a = await turso_local.get_session(open_a)
+    b = await turso_local.get_session(open_b)
+    k = await turso_local.get_session(keep)
+    assert a["status"] == "cancelled"
+    assert a["ended_at"]
+    assert b["status"] == "cancelled"
+    assert b["ended_at"]
+    assert k["status"] == "open"
+    assert not k.get("ended_at")
 
 
 @pytest.mark.asyncio

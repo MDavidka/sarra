@@ -460,7 +460,8 @@ def _step_agent_session(api: str, base: str) -> dict:
                     {"id": 16, "event_type": "request_completed", "payload": {"reply": "Added ThemeToggle"}},
                 ],
             },
-            "status_values": ["open", "completed", "failed", "cancelled"],
+            "status_values": ["open", "completed", "failed", "cancelled", "stopped"],
+            "ended_at": "ISO timestamp set when status leaves open — poll until status != 'open'",
             "event_types": [
                 "request_started",
                 "processing",

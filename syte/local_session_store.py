@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS local_agent_session (
     model_profile TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    ended_at TEXT
 );
 CREATE TABLE IF NOT EXISTS local_agent_session_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +72,10 @@ async def ensure_local_session_tables() -> None:
 
         await configure_sqlite(db, db_path=path)
         await db.executescript(LOCAL_SCHEMA)
+        async with db.execute("PRAGMA table_info(local_agent_session)") as cur:
+            cols = {row[1] for row in await cur.fetchall()}
+        if "ended_at" not in cols:
+            await db.execute("ALTER TABLE local_agent_session ADD COLUMN ended_at TEXT")
         await db.commit()
     _ensured_paths.add(path)
 
@@ -111,10 +116,11 @@ async def close_local_session(session_id: str | None, *, status: str = "complete
     if not session_id:
         return
     await ensure_local_session_tables()
+    now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
-            "UPDATE local_agent_session SET status = ?, updated_at = ? WHERE id = ?",
-            (status, _now(), session_id),
+            "UPDATE local_agent_session SET status = ?, updated_at = ?, ended_at = ? WHERE id = ?",
+            (status, now, now, session_id),
         )
         await db.commit()
 
@@ -213,7 +219,7 @@ async def get_local_session(session_id: str, *, since_id: int = 0) -> dict[str, 
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT id, project_id, session_number, model_profile, status, "
-            "created_at, updated_at FROM local_agent_session WHERE id = ?",
+            "created_at, updated_at, ended_at FROM local_agent_session WHERE id = ?",
             (session_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -227,6 +233,7 @@ async def get_local_session(session_id: str, *, since_id: int = 0) -> dict[str, 
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "ended_at": row["ended_at"],
         "storage": "local",
         "events": await list_local_events(session_id, since_id=since_id),
     }
@@ -239,8 +246,8 @@ async def list_local_sessions_for_project(
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, session_number, model_profile, status, created_at, updated_at "
-            "FROM local_agent_session WHERE project_id = ? "
+            "SELECT id, session_number, model_profile, status, created_at, updated_at, "
+            "ended_at FROM local_agent_session WHERE project_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
             (project_id, max(1, min(limit, 500))),
         ) as cur:
@@ -253,6 +260,7 @@ async def list_local_sessions_for_project(
             "status": row["status"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "ended_at": row["ended_at"],
             "storage": "local",
         }
         for row in rows

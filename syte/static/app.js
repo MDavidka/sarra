@@ -983,7 +983,9 @@ function shouldSkipDebugChatEvent(event) {
 function handleDebugChatActivity(event) {
   if (!event) return;
   const eventRequestId = event.payload?.request_id || '';
-  const isTerminal = event.event_type === 'request_completed' || event.event_type === 'request_failed';
+  const isTerminal = event.event_type === 'request_completed'
+    || event.event_type === 'request_failed'
+    || event.event_type === 'agent_stopped';
   if (isTerminal && eventRequestId) {
     if (debugChatTerminalRequestIds.has(eventRequestId)) return;
     debugChatTerminalRequestIds.add(eventRequestId);
@@ -1026,7 +1028,11 @@ function handleDebugChatActivity(event) {
     }
     return;
   }
-  if (event.event_type === 'request_completed' || event.event_type === 'request_failed') {
+  if (
+    event.event_type === 'request_completed'
+    || event.event_type === 'request_failed'
+    || event.event_type === 'agent_stopped'
+  ) {
     const requestId = eventRequestId || debugChatActiveRequestId;
     const isActiveRequest = !debugChatActiveRequestId
       || (Boolean(eventRequestId) && eventRequestId === debugChatActiveRequestId);
@@ -1037,7 +1043,7 @@ function handleDebugChatActivity(event) {
     // don't create streaming "Agent" placeholders (avoids duplicate/[object Object] artifacts).
     if (!debugChatReplayingHistory && isActiveRequest) {
       finalizeDebugChatStream(requestId, finalText);
-      const wasStopping = debugChatStopping;
+      const wasStopping = debugChatStopping || event.event_type === 'agent_stopped';
       setDebugChatTyping(false);
       clearDebugChatRequestWatchdog();
       setDebugChatBusy(false);
@@ -1045,7 +1051,9 @@ function handleDebugChatActivity(event) {
       setDebugChatActivity(
         event.event_type === 'request_completed'
           ? 'Response ready'
-          : (wasStopping ? 'Response stopped' : 'Response failed'),
+          : (wasStopping || event.event_type === 'agent_stopped'
+            ? 'Response stopped'
+            : 'Response failed'),
         '',
         event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
       );
@@ -1132,7 +1140,11 @@ async function loadDebugChatHistory(projectId) {
         pendingRequests.set(requestId, event);
       } else if (
         requestId
-        && (event.event_type === 'request_completed' || event.event_type === 'request_failed')
+        && (
+          event.event_type === 'request_completed'
+          || event.event_type === 'request_failed'
+          || event.event_type === 'agent_stopped'
+        )
       ) {
         pendingRequests.delete(requestId);
       }

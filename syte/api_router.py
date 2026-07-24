@@ -488,7 +488,10 @@ async def api_agent_settings(body: AgentSettingsRequest, _token: dict = Depends(
     project = await get_project(body.uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    meta = await update_agent_settings(body.uuid, model_profile=body.model_profile)
+    try:
+        meta = await update_agent_settings(body.uuid, model_profile=body.model_profile)
+    except ValueError as exc:
+        _http_error(400, "invalid_settings", str(exc))
     return {"ok": True, "uuid": body.uuid, **meta}
 
 

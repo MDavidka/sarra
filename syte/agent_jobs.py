@@ -17,6 +17,7 @@ from syte.cloud_agent_store import (
     pending_requests,
     set_turso_session_id,
 )
+from syte.turso_store import close_open_sessions_for_project
 from syte.turso_store import close_session as close_turso_session
 from syte.turso_store import open_session as open_turso_session
 
@@ -104,6 +105,11 @@ async def submit_agent_request(
             )
         raise
 
+    # Capture the previous durable session *before* opening a new one so an
+    # interrupt/cancel closes the superseded turn, not the admitted one.
+    previous_turso_session_id = await current_turso_session_id(project_id)
+    previous = _running.get(project_id)
+
     # Session opens when the user message is admitted so a durable Turso
     # session (see syte.turso_store) exists from the very first event, before
     # the worker starts tools. Local SQLite fallback guarantees a session id
@@ -137,12 +143,13 @@ async def submit_agent_request(
         turso_session_id=turso_session_id,
     )
 
-    previous = _running.get(project_id)
     if previous and not previous.done():
         try:
             from syte.cloud_agent import interrupt_agent
 
-            await interrupt_agent(project_id)
+            await interrupt_agent(
+                project_id, turso_session_id=previous_turso_session_id,
+            )
         except Exception:
             pass
         previous.cancel()
@@ -231,6 +238,7 @@ async def _run_job(
 ) -> dict[str, Any]:
     from syte.cloud_agent import _communicate_with_agent_impl
 
+    terminal_status: str | None = None
     async with project_agent_lock(project_id):
         try:
             await mark_request(request_id, "running")
@@ -252,9 +260,7 @@ async def _run_job(
                 "completed" if result.get("ok") else "failed",
                 error="" if result.get("ok") else str(result.get("message") or ""),
             )
-            await close_turso_session(
-                turso_session_id, status="completed" if result.get("ok") else "failed"
-            )
+            terminal_status = "completed" if result.get("ok") else "failed"
             return result
         except asyncio.CancelledError:
             await mark_request(request_id, "cancelled", error="Superseded by a newer request")
@@ -273,7 +279,7 @@ async def _run_job(
                 source=source,
                 turso_session_id=turso_session_id,
             )
-            await close_turso_session(turso_session_id, status="cancelled")
+            terminal_status = "cancelled"
             raise
         except Exception as exc:
             error = str(exc) or "Agent request failed"
@@ -295,8 +301,13 @@ async def _run_job(
                 source=source,
                 turso_session_id=turso_session_id,
             )
-            await close_turso_session(turso_session_id, status="failed")
+            terminal_status = "failed"
             return {"ok": False, "request_id": request_id, "error": "agent_job_failed", "message": error}
+        finally:
+            # Always stamp a terminal status + ended_at so pollers never stay
+            # stuck on status=open / "generating".
+            if turso_session_id and terminal_status:
+                await close_turso_session(turso_session_id, status=terminal_status)
 
 
 async def resume_pending_requests() -> int:
@@ -309,13 +320,14 @@ async def resume_pending_requests() -> int:
             session_number = await begin_turn_session(
                 project_id, row.get("model_profile"),
             )
-        turso_session_id = await current_turso_session_id(project_id)
-        if not turso_session_id:
-            turso_session_id = await open_turso_session(
-                project_id, session_number=session_number, model_profile=row.get("model_profile"),
-            )
-            if turso_session_id:
-                await set_turso_session_id(project_id, turso_session_id)
+        # Orphaned open sessions from the crashed turn must not stay
+        # "generating" forever — close them before opening a fresh one.
+        await close_open_sessions_for_project(project_id, status="cancelled")
+        turso_session_id = await open_turso_session(
+            project_id, session_number=session_number, model_profile=row.get("model_profile"),
+        )
+        if turso_session_id:
+            await set_turso_session_id(project_id, turso_session_id)
         task = asyncio.create_task(
             _run_job(
                 project_id,

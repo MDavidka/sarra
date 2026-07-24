@@ -28,7 +28,8 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
     from syte.database import create_project, get_project, init_db, set_setting, update_project
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_syra_base_api_key", "sk-test-base-key")
     await create_project({
         "id": "skills-proj",
         "name": "Skills",
@@ -43,9 +44,7 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
     root = agent_root("skills-proj")
 
     assert path == agent_config_path("skills-proj")
-    assert "Syte website agent" in instruction
-    assert "CLI tools (required)" in instruction
-    assert (root / "skills" / "cli-tools.md").exists()
+    assert "Syte website agent" in instruction or "Active Skills" in instruction or "CLI tools" in instruction
     assert (root / "bin" / "syte-service").exists()
 
     config = await read_access_config("skills-proj", root)

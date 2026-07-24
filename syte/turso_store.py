@@ -55,9 +55,13 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         model_profile TEXT,
         status TEXT NOT NULL DEFAULT 'open',
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        ended_at TEXT
     )
     """,
+    # Additive migration for databases created before ended_at existed.
+    # Duplicate-column errors are ignored by the resilient schema init loop.
+    "ALTER TABLE agent_session ADD COLUMN ended_at TEXT",
     """
     CREATE TABLE IF NOT EXISTS agent_session_event (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -240,6 +244,11 @@ async def get_turso_client() -> Any | None:
             try:
                 await client.execute(stmt)
             except Exception as exc:
+                # Additive ALTER COLUMN migrations are expected to fail once the
+                # column already exists (fresh CREATE TABLE already includes it).
+                msg = str(exc).lower()
+                if "duplicate column" in msg or "already exists" in msg:
+                    continue
                 short = stmt.strip().splitlines()[0][:80]
                 failures.append(f"{short}... -> {exc}")
                 logger.warning(
@@ -370,22 +379,97 @@ async def open_session(
     return session_id
 
 
-async def close_session(session_id: str | None, *, status: str = "completed") -> None:
-    if not session_id:
-        return
+async def close_session(session_id: str | None, *, status: str = "completed") -> bool:
+    """Mark a durable Turso session terminal and stamp ``ended_at``.
+
+    Returns ``True`` when the UPDATE succeeds (or Turso is not configured /
+    ``session_id`` is empty — nothing to close). Returns ``False`` only when
+    a write was attempted and failed after retry. Callers should treat a
+    failed close as an operational issue: clients poll ``status != 'open'``
+    and a stuck ``open`` session looks like endless generating.
+    """
+    if not session_id:        return True
     from syte.local_session_store import close_local_session
 
     await close_local_session(session_id, status=status)
     client = await get_turso_client()
     if client is None:
-        return
+        return True
+    now = _now()
+    terminal = (status or "completed").strip() or "completed"
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            await client.execute(
+                "UPDATE agent_session SET status = ?, updated_at = ?, ended_at = ? "
+                "WHERE id = ?",
+                [terminal, now, now, session_id],
+            )
+            return True
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Failed to close Turso agent session %s (attempt %d): %s",
+                session_id,
+                attempt + 1,
+                exc,
+            )
+    logger.exception(
+        "Failed to close Turso agent session %s after retry", session_id, exc_info=last_exc
+    )
+    return False
+
+
+async def close_open_sessions_for_project(
+    project_id: str,
+    *,
+    status: str = "cancelled",
+    exclude_session_id: str | None = None,
+) -> int:
+    """Close orphaned ``open`` Turso/local sessions for a project (e.g. after restart)."""
+    from syte.local_session_store import list_local_sessions_for_project
+
+    now = _now()
+    terminal = (status or "cancelled").strip() or "cancelled"
+    closed = 0
+    # Close local open sessions first (always available).
     try:
-        await client.execute(
-            "UPDATE agent_session SET status = ?, updated_at = ? WHERE id = ?",
-            [status, _now(), session_id],
-        )
+        for row in await list_local_sessions_for_project(project_id, limit=500):
+            if row.get("status") != "open":
+                continue
+            sid = row.get("id")
+            if not sid or sid == exclude_session_id:
+                continue
+            from syte.local_session_store import close_local_session
+
+            await close_local_session(sid, status=terminal)
+            closed += 1
     except Exception:
-        logger.exception("Failed to close Turso agent session %s", session_id)
+        logger.exception("Failed to close open local sessions for project %s", project_id)
+
+    client = await get_turso_client()
+    if client is None:
+        return closed
+    try:
+        if exclude_session_id:
+            rs = await client.execute(
+                "UPDATE agent_session SET status = ?, updated_at = ?, ended_at = ? "
+                "WHERE project_id = ? AND status = 'open' AND id != ?",
+                [terminal, now, now, project_id, exclude_session_id],
+            )
+        else:
+            rs = await client.execute(
+                "UPDATE agent_session SET status = ?, updated_at = ?, ended_at = ? "
+                "WHERE project_id = ? AND status = 'open'",
+                [terminal, now, now, project_id],
+            )
+        rows = getattr(rs, "rows_affected", None)
+        if rows is None:
+            rows = getattr(rs, "rowsAffected", 0)
+        return closed + int(rows or 0)
+    except Exception:
+        logger.exception("Failed to close open Turso sessions for project %s", project_id)
+        return closed
 
 
 async def record_event(
@@ -727,7 +811,7 @@ async def get_session(session_id: str, *, since_id: int = 0) -> dict[str, Any] |
         try:
             rs = await client.execute(
                 "SELECT id, project_id, session_number, model_profile, status, "
-                "created_at, updated_at FROM agent_session WHERE id = ?",
+                "created_at, updated_at, ended_at FROM agent_session WHERE id = ?",
                 [session_id],
             )
             if rs.rows:
@@ -740,6 +824,7 @@ async def get_session(session_id: str, *, since_id: int = 0) -> dict[str, Any] |
                     "status": _row_value(row, "status"),
                     "created_at": _row_value(row, "created_at"),
                     "updated_at": _row_value(row, "updated_at"),
+                    "ended_at": _row_value(row, "ended_at"),
                     "storage": "turso",
                 }
                 session["events"] = await list_events(session_id, since_id=since_id)
@@ -765,9 +850,10 @@ async def list_sessions_for_project(
     if client is not None:
         try:
             rs = await client.execute(
-                "SELECT id, session_number, model_profile, status, created_at, updated_at "
-                "FROM agent_session WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
-                [project_id, limit],
+                "SELECT id, session_number, model_profile, status, created_at, updated_at, "
+                "ended_at FROM agent_session WHERE project_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                [project_id, max(1, min(limit, 500))],
             )
             if rs.rows:
                 return [
@@ -778,6 +864,7 @@ async def list_sessions_for_project(
                         "status": _row_value(row, "status"),
                         "created_at": _row_value(row, "created_at"),
                         "updated_at": _row_value(row, "updated_at"),
+                        "ended_at": _row_value(row, "ended_at"),
                         "storage": "turso",
                     }
                     for row in rs.rows

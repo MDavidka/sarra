@@ -1267,11 +1267,26 @@ async def api_agent_stops_list(project_id: str, limit: int = 50):
 @app.get("/api/projects/{project_id}/agent/mcp")
 async def api_agent_mcp_list(project_id: str):
     from syte.agent_artifacts import list_mcp_addons
+    from syte.agent_skills import mcp_server_config
+    from syte.cloud_agent import agent_root
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "addons": await list_mcp_addons(project_id)}
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "addons": await list_mcp_addons(project_id),
+        "mcp_server": mcp_server_config(project_id, agent_root(project_id)),
+        "documentation": "/api/#agent-mcp",
+        "project_routes": {
+            "skills": f"/api/projects/{project_id}/agent/skills",
+            "service": f"/api/projects/{project_id}/agent/service",
+            "access": f"/api/projects/{project_id}/agent/access",
+            "connect": f"/api/projects/{project_id}/agent/mcp/connect",
+            "call": f"/api/projects/{project_id}/agent/mcp/call",
+        },
+    }
 
 
 @app.post("/api/projects/{project_id}/agent/mcp")

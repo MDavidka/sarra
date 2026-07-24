@@ -97,6 +97,13 @@ Otherwise it plans first. File inspection and edits remain blocked until that se
 close the Turso session with status `stopped` (stop) or `cancelled` (interrupt/cancel). List
 stops with `GET /api/agent_stops?uuid=` or `GET /api/projects/{id}/agent/stops`.
 
+When a turn finishes (success, failure, cancel, stop, or step-limit), Turso
+`agent_session` is updated with a terminal `status` **and** `ended_at`. Clients
+must treat `status != "open"` (or a non-null `ended_at`) as the end of
+generation — never rely on the last `mark_status: "g"` event alone. On service
+restart, any leftover `open` sessions for a project are closed as `cancelled`
+before a resumed request opens a new session.
+
 ### MCP connections and skills
 
 MCP providers and skills are managed per project from the agent chat resource panel
@@ -122,7 +129,6 @@ API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
   system instruction.
 - Enable stores optional string `parameters` (re-enable upserts / edits them);
   disable removes the project activation row; purge deletes a custom definition.
-
 ### Artifact APIs
 
 | Resource | List | Notes |
@@ -131,8 +137,7 @@ API (GUI session routes and token `/api/agent_*` mirrors). Full reference:
 | Plans | `GET /api/agent_plans?uuid=` | Steps + note from `update_plan` / thinking |
 | Questions | `GET /api/agent_questions?uuid=` | Answer: `POST /api/agent_answer_question` |
 | Skills | `GET /api/agent_skills?uuid=` | Add: `POST /api/agent_skills_add`; enable: `agent_skills_enable`; update: `agent_skills_update`; disable: `agent_skills_disable`; delete custom: `agent_skills_delete` |
-| MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` |
-| Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
+| MCP addons | `GET /api/agent_mcp?uuid=` | Register / connect / call / update / disconnect via `agent_mcp_*` || Stops | `GET /api/agent_stops?uuid=` | Includes `stopped_at` |
 
 ### Layered memory, visual feedback, and design profiles
 
@@ -251,11 +256,14 @@ A session document looks like:
 ```
 
 `status` is `open` while the turn is in progress, and `completed`, `failed`,
-`cancelled`, or `stopped` once it finishes. Clients that want to observe an
-in-progress turn poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>`
-on a short interval (a few seconds) until `status != "open"`. When a `question`
-event is pending, answer it (`POST /api/agent_answer_question` or the GUI widget)
-before expecting the turn to complete.
+`cancelled`, or `stopped` once it finishes. Terminal sessions also set
+`ended_at` (ISO timestamp). Clients that want to observe an in-progress turn
+poll `GET /api/agent_session/{id}?since_id=<highest event.id seen>` on a short
+interval (a few seconds) until `status != "open"` (or `ended_at` is set). When a
+`question` event is pending, answer it (`POST /api/agent_answer_question` or the
+GUI widget) before expecting the turn to complete. The main agent tool loop is
+capped (`MAX_AGENT_STEPS`); hitting the cap emits `request_failed` with
+`error: agent_step_limit` and closes the session as `failed`.
 
 ## Durable message store (Turso) — "brain" save status
 

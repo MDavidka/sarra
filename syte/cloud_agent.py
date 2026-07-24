@@ -1279,7 +1279,18 @@ async def restart_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
     return ok, message, status
 
 
-async def interrupt_agent(project_id: str) -> tuple[bool, str]:
+async def interrupt_agent(
+    project_id: str,
+    *,
+    turso_session_id: str | None = None,
+) -> tuple[bool, str]:
+    """Interrupt the active turn and close the superseded Turso session.
+
+    ``turso_session_id`` should be the session belonging to the turn being
+    cancelled. Callers that already opened a *new* session (e.g.
+    ``submit_agent_request``) must pass the previous id explicitly so the
+    new turn is not closed as ``cancelled`` mid-flight.
+    """
     from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
     cancel_background_subagents(project_id)
@@ -1291,14 +1302,16 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
             _active_turns.pop(project_id, None)
         task.cancel()
         session_number = await current_session_number(project_id)
-        turso_session_id = await current_turso_session_id(project_id)
+        close_id = turso_session_id
+        if close_id is None:
+            close_id = await current_turso_session_id(project_id)
         await cancel_pending_questions(project_id)
         stop = await mark_session_stopped(
             project_id,
             reason="interrupted",
             source="api",
             session_number=session_number,
-            turso_session_id=turso_session_id,
+            turso_session_id=close_id,
         )
         await record_agent_event(
             project_id,
@@ -1309,18 +1322,22 @@ async def interrupt_agent(project_id: str) -> tuple[bool, str]:
                 "stopped_at": stop["stopped_at"],
                 "reason": "interrupted",
                 "session": session_number,
-                "turso_session_id": turso_session_id,
+                "turso_session_id": close_id,
                 "stop_id": stop["id"],
             },
             source=CLOUD_RUNTIME,
-            turso_session_id=turso_session_id,
+            turso_session_id=close_id,
         )
-        if turso_session_id:
-            await close_turso_session(turso_session_id, status="cancelled")
+        if close_id:
+            await close_turso_session(close_id, status="cancelled")
         return True, "Active cloud-agent turn interrupted."
     # Ensure a stale completed task cannot keep the busy indicator stuck.
     if _active_turns.get(project_id) is task:
         _active_turns.pop(project_id, None)
+    # No in-process turn, but still close a known orphaned Turso session so
+    # clients never poll an endless status=open / "generating" state.
+    if turso_session_id:
+        await close_turso_session(turso_session_id, status="cancelled")
     return True, "No active cloud-agent turn."
 
 async def turso_message_sync_status(project_id: str) -> dict[str, Any]:

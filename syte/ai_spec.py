@@ -241,8 +241,9 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "sycord_fetch": "GET /sycord/api/agent_session/{session_id}",
                 "internal_list": "GET /api/internal/projects/{uuid}/agent/sessions",
                 "internal_fetch": "GET /api/internal/agent_session/{session_id}",
-                "session_fields": ["id", "project_id", "session_number", "model_profile", "status", "created_at", "updated_at", "events"],
+                "session_fields": ["id", "project_id", "session_number", "model_profile", "status", "created_at", "updated_at", "ended_at", "events"],
                 "session_status_values": ["open", "completed", "failed", "cancelled", "stopped"],
+                "session_end": "Terminal turns set status + ended_at; poll until status != 'open' (do not stay on mark_status g / generating)",
                 "event_types": [
                     "request_started",
                     "processing",
