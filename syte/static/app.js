@@ -1698,6 +1698,8 @@ async function sendDebugChatMessage() {
           error: res.error || 'agent_request_failed',
           message: res.message || formatAgentChatError(res),
           retry_message: sentMessage,
+          model_profile: profile,
+          model_routing: res.model_routing || null,
         },
       });
       toast(formatAgentChatError(res));
@@ -3200,7 +3202,14 @@ async function loadSettings() {
     if (agentDefaultProfile) agentDefaultProfile.value = defaultProfile;
     if (window.customElements?.whenDefined) await customElements.whenDefined('sl-select');
     const debugChatProfile = document.getElementById('debug-chat-profile');
-    if (debugChatProfile) debugChatProfile.value = defaultProfile;
+    if (debugChatProfile) {
+      // Do not clobber a profile the user already picked in Agent chat.
+      const current = debugChatProfile.value;
+      const allowed = ['syra-nano', 'syra-base', 'syra-havy', 'syra-ultra'];
+      if (!current || !allowed.includes(current)) {
+        debugChatProfile.value = defaultProfile;
+      }
+    }
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [

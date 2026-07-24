@@ -158,7 +158,13 @@ def test_model_routing_heuristics() -> None:
 
     nano = suggest_model_profile("change button text to Sign up")
     assert nano["suggested_profile"] == "syra-nano"
-    assert nano["auto_applied"] is True
+    # Suggestions must never auto-apply — that overrode the chat model picker.
+    assert nano["auto_applied"] is False
+
+    short = suggest_model_profile("hey", explicit_profile="syra-ultra")
+    assert short["suggested_profile"] == "syra-nano"
+    assert short["effective_profile"] == "syra-ultra"
+    assert short["auto_applied"] is False
 
     havy = suggest_model_profile("build a new landing page from this screenshot")
     assert havy["suggested_profile"] == "syra-havy"

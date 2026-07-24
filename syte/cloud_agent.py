@@ -534,17 +534,28 @@ def mask_secret(value: str, *, keep: int = 4) -> str:
     return f"{key[:keep]}…{key[-keep:]}"
 
 
+def sanitize_api_key(value: str | None) -> str:
+    """Strip whitespace/quotes that break Bearer auth when pasted into settings."""
+    key = (value or "").strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {"'", '"', "`"}:
+        key = key[1:-1].strip()
+    # Remove accidental "Bearer " paste.
+    if key.lower().startswith("bearer "):
+        key = key[7:].strip()
+    return key
+
+
 async def resolve_profile_api_key(profile: str) -> dict[str, str]:
     """Return the effective key plus where it came from (settings | env | none)."""
     spec = profile_provider(profile)
     setting_key = spec["setting_key"]
     secret_env = spec["secret_env"]
-    from_settings = (await get_setting(setting_key, "")).strip()
-    from_env = (os.environ.get(secret_env) or "").strip()
+    from_settings = sanitize_api_key(await get_setting(setting_key, ""))
+    from_env = sanitize_api_key(os.environ.get(secret_env) or "")
     # Legacy shared OpenRouter setting (pre-split ultra key).
     legacy = ""
     if profile == "syra-ultra" and not from_settings:
-        legacy = (await get_setting("agent_openrouter_api_key", "")).strip()
+        legacy = sanitize_api_key(await get_setting("agent_openrouter_api_key", ""))
 
     if from_settings:
         source = "settings"
@@ -2554,59 +2565,79 @@ async def _provider_completion(
         payload["reasoning_effort"] = thinking_params["reasoning_effort"]
 
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
+    api_base_l = str(model.get("api_base") or "").lower()
+    # Google AI Studio / Gemini OpenAI-compat accepts Bearer; also send x-goog-api-key
+    # for keys/gateways that expect the native Gemini header.
+    if "generativelanguage.googleapis.com" in api_base_l:
+        headers["x-goog-api-key"] = str(model["api_key"])
     url = model["api_base"].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
     client = _get_provider_client()
 
     def _provider_error_message(status_code: int, reason: str, request_url: str, detail: str) -> str:
         detail_l = (detail or "").lower()
+        detail_snip = (detail or "").replace("\n", " ").strip()
+        if len(detail_snip) > 240:
+            detail_snip = detail_snip[:240] + "…"
         if "no active upstream keys" in detail_l:
             return (
                 f"Provider has no active upstream keys for {model.get('model') or 'this model'}. "
                 "Check the provider admin console, then retry."
+                + (f" Provider said: {detail_snip}" if detail_snip else "")
             )
-        if (
+        auth_like = (
             status_code in {401, 403}
             or "invalid or deactivated api key" in detail_l
             or "api key you provided is invalid" in detail_l
-            or "unauthorized" in detail_l
-            or "authentication" in detail_l
-        ):
-            label = (
-                model.get("label")
-                or model.get("provider_label")
-                or model.get("provider")
-                or "provider"
-            )
-            profile = model.get("profile") or "selected"
-            model_name = model.get("model") or "unknown-model"
-            secret_env = model.get("secret_env") or ""
-            key_source = model.get("key_source") or "unknown"
-            key_hint = model.get("api_key_hint") or ""
+            or "incorrect api key" in detail_l
+            or "invalid api key" in detail_l
+        )
+        # Do not treat generic "unauthorized"/"authentication" in model-error
+        # bodies as key failures — those often mean the model id is wrong.
+        label = (
+            model.get("label")
+            or model.get("provider_label")
+            or model.get("provider")
+            or "provider"
+        )
+        profile = model.get("profile") or "selected"
+        model_name = model.get("model") or "unknown-model"
+        secret_env = model.get("secret_env") or ""
+        key_source = model.get("key_source") or "unknown"
+        key_hint = model.get("api_key_hint") or ""
+        source_bits = [f"source={key_source}", f"http={status_code}"]
+        if secret_env:
+            source_bits.append(f"env={secret_env}")
+        if key_hint:
+            source_bits.append(f"key={key_hint}")
+        if auth_like:
             hint = ""
             api_base = str(model.get("api_base") or "").lower()
             if "deepseek.com" in api_base or str(label).lower() == "deepseek":
                 hint = (
-                    " syra-base now requires a DeepSeek key "
-                    "(https://platform.deepseek.com/). Old Aliyun keys belong on syra-ultra."
+                    " syra-base requires a DeepSeek key from https://platform.deepseek.com/ "
+                    "(model deepseek-v4-flash)."
                 )
             elif "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
-                hint = " Use an Aliyun MaaS token-plan API key for syra-ultra."
+                hint = (
+                    " syra-ultra requires an Aliyun MaaS token-plan key for model qwen3.5-flash "
+                    "(OpenRouter keys will fail here)."
+                )
             elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
-                hint = " Use a Google AI Studio / Vertex Gemini API key."
-            source_bits = [f"source={key_source}"]
-            if secret_env:
-                source_bits.append(f"env={secret_env}")
-            if key_hint:
-                source_bits.append(f"key={key_hint}")
+                hint = (
+                    " Use a Google AI Studio API key (usually starts with AIza…). "
+                    "Vertex service-account JSON is not valid as this Bearer key."
+                )
             return (
                 f"Invalid API key for {profile} ({label} · {model_name}). "
-                f"Update the key in AI provider settings "
-                f"[{'; '.join(source_bits)}].{hint}"
+                f"Update the key in AI provider settings [{'; '.join(source_bits)}].{hint}"
+                + (f" Provider said: {detail_snip}" if detail_snip else "")
             )
         return (
-            f"Client error '{status_code} {reason}' for url '{request_url}'"
-            + (f": {detail}" if detail else "")
+            f"Provider error HTTP {status_code} {reason} for {profile} ({label} · {model_name}) "
+            f"at {request_url}"
+            + (f": {detail_snip}" if detail_snip else "")
+            + f" [{'; '.join(source_bits)}]"
         )
 
     def _is_retryable_provider_status(status_code: int, detail: str) -> bool:
@@ -2813,14 +2844,24 @@ async def communicate_with_agent(
 ) -> dict[str, Any]:
     from syte.model_routing import suggest_model_profile
 
+    project = await get_project(project_id)
+    project_profile = (project or {}).get("agent_model_profile") if project else None
+    # Never auto-swap the model for short prompts like "hey" — that silently
+    # overrode the user's selected ultra/base/pro with syra-nano and made it
+    # look like the selected key was wrong.
+    explicit = (model_profile or "").strip() or None
     routing = suggest_model_profile(
         message,
-        explicit_profile=model_profile,
+        explicit_profile=explicit or (str(project_profile).strip() or None),
         thinking_level=thinking_level,
         improve_from_screenshot=improve_from_screenshot or bool(visual_analysis_id),
     )
-    if routing.get("auto_applied") and not model_profile:
-        model_profile = routing["effective_profile"]
+    # Honor explicit request profile, then the project's saved profile.
+    # Suggestions stay in model_routing for diagnostics only.
+    if not explicit and project_profile:
+        model_profile = str(project_profile).strip() or model_profile
+    elif explicit:
+        model_profile = explicit
 
     if background:
         from syte.agent_jobs import submit_agent_request
@@ -2833,7 +2874,7 @@ async def communicate_with_agent(
             auto_start=auto_start,
             idempotency_key=idempotency_key,
         )
-        return {**result, "model_routing": routing}
+        return {**result, "model_routing": {**routing, "auto_applied": False}}
     from syte.agent_jobs import new_request_id, project_agent_lock
     request_id = new_request_id()
     async with project_agent_lock(project_id):
@@ -2844,7 +2885,7 @@ async def communicate_with_agent(
             improve_from_screenshot=improve_from_screenshot,
             visual_analysis_id=visual_analysis_id,
         )
-        return {**result, "model_routing": routing}
+        return {**result, "model_routing": {**routing, "auto_applied": False}}
 
 
 async def _communicate_with_agent_impl(
