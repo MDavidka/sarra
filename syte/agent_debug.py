@@ -79,8 +79,17 @@ async def _http_probe(
 
 
 async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
+    from syte.ai_providers import (
+        aliyun_api_base_for_key,
+        key_mismatch_hint,
+        looks_like_openrouter_key,
+    )
+
     spec = profile_provider(profile)
+    api_key = (api_key or "").strip()
     base = spec["api_base"].rstrip("/")
+    if profile == "syra-ultra" and api_key:
+        base = aliyun_api_base_for_key(api_key).rstrip("/")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -99,6 +108,30 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
             "probes": [],
             "ok": False,
             "error": "API key not saved for this profile",
+        }
+
+    mismatch = key_mismatch_hint(profile, api_key)
+    # OpenRouter keys can never authenticate against Aliyun — fail fast with a
+    # clear message instead of a generic HTTP 401 from token-plan.
+    if profile == "syra-ultra" and looks_like_openrouter_key(api_key):
+        return {
+            "profile": profile,
+            "label": spec["label"],
+            "api_base": base,
+            "model": spec["model"],
+            "secret_env": spec["secret_env"],
+            "api_key_set": True,
+            "api_key_hint": mask_api_key(api_key),
+            "probes": [],
+            "ok": False,
+            "error": (
+                "OpenRouter key (sk-or-…) cannot authenticate against Aliyun. "
+                "Replace with Token Plan sk-sp-… or Model Studio sk-…"
+            ),
+            "hints": [mismatch] if mismatch else [
+                "Paste an Aliyun Token Plan key (sk-sp-…) from the Token Plan console, "
+                "or a Model Studio API key (sk-…) for DashScope pay-as-you-go."
+            ],
         }
 
     probes.append(await _http_probe(
@@ -135,14 +168,25 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
             error = "Provider probes failed"
 
     hints: list[str] = []
+    if mismatch:
+        hints.append(mismatch)
     if spec["label"] in ("Vertex AI", "Verted") and models_probe and models_probe.get("status_code") == 401:
         hints.append(
             "Vertex AI / Gemini often returns HTTP 401 on GET /models even with a valid key — "
             "check chat_completion instead."
         )
+    if (
+        spec["label"] in ("Vertex AI", "Verted")
+        and chat_probe
+        and chat_probe.get("status_code") == 403
+    ):
+        hints.append(
+            "Google returned HTTP 403 — use a Google AI Studio Gemini key (AIza…) with the "
+            "Generative Language API enabled. Unrestricted keys may be blocked."
+        )
     if chat_probe and chat_probe.get("status_code") == 404:
         hints.append(f"Model {spec['model']} not found at provider — name may be outdated.")
-    if chat_probe and chat_probe.get("status_code") in (401, 403):
+    if chat_probe and chat_probe.get("status_code") in (401, 403) and not mismatch:
         hints.append(
             f"This key was rejected by {spec['label']}. "
             f"Ensure it is a {spec['label']} key for profile {profile}."
@@ -151,7 +195,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     return {
         "profile": profile,
         "label": spec["label"],
-        "api_base": spec["api_base"],
+        "api_base": base,
         "model": spec["model"],
         "secret_env": spec["secret_env"],
         "api_key_set": True,
