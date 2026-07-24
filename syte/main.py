@@ -460,10 +460,17 @@ async def save_settings(body: SettingsRequest):
             else "syra-havy API key cleared."
         )
     if body.agent_syra_ultra_api_key is not None:
-        await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
+        ultra_key = body.agent_syra_ultra_api_key.strip()
+        if ultra_key.lower().startswith("sk-or-"):
+            raise HTTPException(
+                400,
+                "syra-ultra no longer accepts OpenRouter keys (sk-or-…). "
+                "Paste an Aliyun Token Plan key (sk-sp-…) or a Model Studio sk- key.",
+            )
+        await set_setting("agent_syra_ultra_api_key", ultra_key)
         messages.append(
             "syra-ultra (Aliyun · Qwen 3.6 / qwen3.5-flash) API key saved."
-            if body.agent_syra_ultra_api_key.strip()
+            if ultra_key
             else "syra-ultra API key cleared."
         )
     if body.agent_max_count is not None:
