@@ -3623,8 +3623,12 @@ body.ai-settings-open { overflow: hidden; }
 .ai-env-details { margin-top: 0.5rem; font-size: 0.82rem; }
 .ai-env-details summary { cursor: pointer; color: #71717a; font-weight: 500; margin-bottom: 0.5rem; }
 .ai-env-grid { display: flex; flex-direction: column; gap: 0.5rem; }
-.ai-env-row { display: grid; grid-template-columns: 140px 1fr; gap: 0.5rem; font-size: 0.78rem; color: #52525b; }
+.ai-env-row { display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem; font-size: 0.78rem; color: #52525b; align-items: start; }
 .ai-env-row code { font-size: 0.72rem; background: #f4f4f5; padding: 0.1rem 0.35rem; border-radius: 4px; }
+.ai-env-row-status { padding: 0.35rem 0; border-bottom: 1px solid #f4f4f5; }
+.ai-env-row-status:last-child { border-bottom: none; }
+.ai-debug-env-row { display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem; font-size: 0.78rem; margin: 0.25rem 0; }
+.ai-debug-env-row code { font-size: 0.72rem; background: #f4f4f5; padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 @media (max-width: 768px) {
   #view-ai.active ~ .content,

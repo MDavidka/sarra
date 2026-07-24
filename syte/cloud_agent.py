@@ -13,6 +13,7 @@ import hashlib
 import itertools
 import json
 import logging
+import os
 import random
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -42,7 +43,7 @@ from syte.cloud_agent_store import (
     set_turso_session_id,
 )
 from syte.config import settings
-from syte.database import get_project, get_setting, update_project
+from syte.database import get_project, get_setting, set_setting, update_project
 from syte.domain_utils import build_direct_url, build_https_url, normalize_domain
 from syte.thinking_levels import (
     apply_prompt_cache_markers,
@@ -519,32 +520,145 @@ def cloud_agent_command() -> str:
 
 
 async def profile_api_key(profile: str) -> str:
-    """Resolve API key for a profile (each profile uses its own provider key)."""
+    """Resolve API key for a profile: settings first, then ``secret_env``."""
+    resolved = await resolve_profile_api_key(profile)
+    return str(resolved.get("api_key") or "")
+
+
+def mask_secret(value: str, *, keep: int = 4) -> str:
+    key = (value or "").strip()
+    if not key:
+        return ""
+    if len(key) <= keep * 2:
+        return "••••"
+    return f"{key[:keep]}…{key[-keep:]}"
+
+
+async def resolve_profile_api_key(profile: str) -> dict[str, str]:
+    """Return the effective key plus where it came from (settings | env | none)."""
     spec = profile_provider(profile)
-    key = (await get_setting(spec["setting_key"], "")).strip()
-    if key:
-        return key
+    setting_key = spec["setting_key"]
+    secret_env = spec["secret_env"]
+    from_settings = (await get_setting(setting_key, "")).strip()
+    from_env = (os.environ.get(secret_env) or "").strip()
     # Legacy shared OpenRouter setting (pre-split ultra key).
-    if profile == "syra-ultra":
-        shared = (await get_setting("agent_openrouter_api_key", "")).strip()
-        if shared:
-            return shared
-    return ""
+    legacy = ""
+    if profile == "syra-ultra" and not from_settings:
+        legacy = (await get_setting("agent_openrouter_api_key", "")).strip()
+
+    if from_settings:
+        source = "settings"
+        api_key = from_settings
+    elif from_env:
+        source = "env"
+        api_key = from_env
+    elif legacy:
+        source = "settings"
+        api_key = legacy
+    else:
+        source = "none"
+        api_key = ""
+
+    return {
+        "profile": profile,
+        "setting_key": setting_key,
+        "secret_env": secret_env,
+        "api_key": api_key,
+        "source": source,
+        "settings_set": "1" if from_settings or legacy else "",
+        "env_set": "1" if from_env else "",
+        "settings_hint": mask_secret(from_settings or legacy),
+        "env_hint": mask_secret(from_env),
+        "api_key_hint": mask_secret(api_key),
+    }
+
+
+async def migrate_provider_lineup_keys() -> dict[str, Any]:
+    """One-time remap after base/ultra provider swap.
+
+    Previous lineup stored the Aliyun builder key under ``agent_syra_base_api_key``
+    and the OpenRouter thinker key under ``agent_syra_ultra_api_key``. The current
+    lineup uses DeepSeek for base and Aliyun Qwen for ultra — so an Aliyun key
+    left on base produces 401s from DeepSeek for every default-profile turn.
+
+    When not yet migrated: move base→ultra if ultra is empty and the base key
+    does not look like a DeepSeek key, then clear base.
+    """
+    flag = (await get_setting("agent_provider_lineup_v3_migrated", "")).strip()
+    if flag == "1":
+        return {"migrated": False, "reason": "already_done"}
+
+    base_key = (await get_setting("agent_syra_base_api_key", "")).strip()
+    ultra_key = (await get_setting("agent_syra_ultra_api_key", "")).strip()
+    moved = False
+    cleared_base = False
+    looks_like_deepseek = base_key.lower().startswith("sk-")
+    if base_key and not ultra_key and not looks_like_deepseek:
+        await set_setting("agent_syra_ultra_api_key", base_key)
+        await set_setting("agent_syra_base_api_key", "")
+        moved = True
+        cleared_base = True
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    return {
+        "migrated": True,
+        "moved_base_to_ultra": moved,
+        "cleared_base": cleared_base,
+        "note": (
+            "Aliyun key moved from syra-base → syra-ultra. "
+            "Add a DeepSeek API key for syra-base."
+            if moved
+            else "No key remap needed."
+        ),
+    }
+
+
+async def provider_key_status() -> list[dict[str, str | bool]]:
+    """Public/diagnostic view of settings + env keys (values masked)."""
+    await migrate_provider_lineup_keys()
+    rows: list[dict[str, str | bool]] = []
+    for name in PROFILE_ORDER:
+        resolved = await resolve_profile_api_key(name)
+        spec = PROFILE_PROVIDERS[name]
+        rows.append({
+            "profile": name,
+            "display_name": spec.get("display_name") or name,
+            "label": spec["label"],
+            "model": spec["model"],
+            "api_base": spec["api_base"],
+            "setting_key": resolved["setting_key"],
+            "secret_env": resolved["secret_env"],
+            "source": resolved["source"],
+            "api_key_set": bool(resolved["api_key"]),
+            "settings_set": bool(resolved["settings_set"]),
+            "env_set": bool(resolved["env_set"]),
+            "settings_hint": resolved["settings_hint"],
+            "env_hint": resolved["env_hint"],
+            "api_key_hint": resolved["api_key_hint"],
+            "env_value_present": bool(resolved["env_set"]),
+        })
+    return rows
 
 
 async def bridge_settings() -> dict[str, Any]:
+    await migrate_provider_lineup_keys()
     default_profile = (
         await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
     ).strip() or DEFAULT_PROFILE
     if default_profile not in PROFILE_PROVIDERS:
         default_profile = DEFAULT_PROFILE
-    api_keys = await asyncio.gather(*[profile_api_key(name) for name in PROFILE_ORDER])
+    resolved_keys = await asyncio.gather(*[resolve_profile_api_key(name) for name in PROFILE_ORDER])
     profiles: dict[str, dict[str, str | int | float]] = {}
-    for name, api_key in zip(PROFILE_ORDER, api_keys, strict=True):
+    for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
         profiles[name] = {
             **spec,
-            "api_key": api_key,
+            "api_key": resolved["api_key"],
+            "key_source": resolved["source"],
+            "api_key_hint": resolved["api_key_hint"],
+            "settings_set": bool(resolved["settings_set"]),
+            "env_set": bool(resolved["env_set"]),
+            "settings_hint": resolved["settings_hint"],
+            "env_hint": resolved["env_hint"],
         }
     active = profiles[default_profile]
     return {
@@ -564,6 +678,20 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
+        "provider_keys": [
+            {
+                "profile": name,
+                "source": profiles[name].get("key_source") or "none",
+                "api_key_set": bool(profiles[name].get("api_key")),
+                "settings_set": bool(profiles[name].get("settings_set")),
+                "env_set": bool(profiles[name].get("env_set")),
+                "secret_env": profiles[name].get("secret_env") or "",
+                "api_key_hint": profiles[name].get("api_key_hint") or "",
+                "settings_hint": profiles[name].get("settings_hint") or "",
+                "env_hint": profiles[name].get("env_hint") or "",
+            }
+            for name in PROFILE_ORDER
+        ],
     }
 
 
@@ -573,11 +701,15 @@ def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any
     meta: dict[str, Any] = {
         "profile": resolved,
         "provider": spec["provider"],
-        "provider_label": spec["label"],
+        "label": spec.get("label") or "",
+        "provider_label": spec.get("label") or "",
         "model": spec["model"],
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
         "role": spec.get("role") or "",
+        "secret_env": spec.get("secret_env") or "",
+        "key_source": spec.get("key_source") or ("settings" if spec.get("api_key") else "none"),
+        "api_key_hint": spec.get("api_key_hint") or mask_secret(str(spec.get("api_key") or "")),
     }
     for key in ("max_tokens", "max_history_messages", "max_tool_result_chars"):
         if key in spec and spec[key] is not None:
@@ -2438,18 +2570,39 @@ async def _provider_completion(
             or "invalid or deactivated api key" in detail_l
             or "api key you provided is invalid" in detail_l
             or "unauthorized" in detail_l
+            or "authentication" in detail_l
         ):
-            label = model.get("label") or model.get("provider") or "provider"
+            label = (
+                model.get("label")
+                or model.get("provider_label")
+                or model.get("provider")
+                or "provider"
+            )
             profile = model.get("profile") or "selected"
+            model_name = model.get("model") or "unknown-model"
+            secret_env = model.get("secret_env") or ""
+            key_source = model.get("key_source") or "unknown"
+            key_hint = model.get("api_key_hint") or ""
             hint = ""
             api_base = str(model.get("api_base") or "").lower()
-            if "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
-                hint = " Use an Aliyun MaaS token-plan API key."
-            elif "fireworks.ai" in api_base or str(label).lower() == "fireworks":
-                hint = " Get a key at https://app.fireworks.ai/."
+            if "deepseek.com" in api_base or str(label).lower() == "deepseek":
+                hint = (
+                    " syra-base now requires a DeepSeek key "
+                    "(https://platform.deepseek.com/). Old Aliyun keys belong on syra-ultra."
+                )
+            elif "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
+                hint = " Use an Aliyun MaaS token-plan API key for syra-ultra."
+            elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
+                hint = " Use a Google AI Studio / Vertex Gemini API key."
+            source_bits = [f"source={key_source}"]
+            if secret_env:
+                source_bits.append(f"env={secret_env}")
+            if key_hint:
+                source_bits.append(f"key={key_hint}")
             return (
-                f"Invalid API key for {profile} profile ({label}). "
-                f"Update the key in AI provider settings.{hint}"
+                f"Invalid API key for {profile} ({label} · {model_name}). "
+                f"Update the key in AI provider settings "
+                f"[{'; '.join(source_bits)}].{hint}"
             )
         return (
             f"Client error '{status_code} {reason}' for url '{request_url}'"
@@ -2737,7 +2890,19 @@ async def _communicate_with_agent_impl(
     model = await selected_model_metadata(project)
     # Selected profile handles both planning and the tool/code loop.
     if not model["api_key"]:
-        return {"ok": False, "error": "api_key_missing", "message": "Provider API key is not configured", "request_id": request_id}
+        secret_env = model.get("secret_env") or profile_provider(model.get("profile") or DEFAULT_PROFILE)["secret_env"]
+        return {
+            "ok": False,
+            "error": "api_key_missing",
+            "message": (
+                f"Provider API key is not configured for {model.get('profile') or 'selected'} "
+                f"({model.get('label') or model.get('provider_label') or 'provider'}). "
+                f"Save it in AI provider settings or set process env {secret_env}."
+            ),
+            "request_id": request_id,
+            "profile": model.get("profile"),
+            "secret_env": secret_env,
+        }
 
     # One user message opens one numbered chat session. Every event produced
     # while working the turn is mirrored to a durable Turso session (see
