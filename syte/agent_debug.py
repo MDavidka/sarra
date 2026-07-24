@@ -146,7 +146,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         hints.append(
             f"This key was rejected by {spec['label']}. "
             f"Ensure it is a {spec['label']} key "
-            f"(OpenRouter keys work for syra-base builder and syra-ultra thinker)."
+            f"(Aliyun keys for syra-base builder; OpenRouter keys for syra-ultra thinker)."
         )
 
     return {

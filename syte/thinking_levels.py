@@ -334,8 +334,8 @@ def thinking_levels_spec() -> dict[str, Any]:
         "note": (
             "thinking_level configures the turn only — it does not persist the "
             "project's model_profile setting. Instant/Fast use the builder "
-            "(qwen3.5-flash) only; Balanced–Max also call the thinker "
-            "(nemotron-3-ultra) for planning. Temperature/top_p apply to all "
+            "(Aliyun qwen3.5-flash) only; Balanced–Max also call the thinker "
+            "(OpenRouter nemotron-3-ultra) for planning. Temperature/top_p apply to all "
             "providers; native thinking budgets apply when the provider supports them."
         ),
     }

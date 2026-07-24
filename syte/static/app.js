@@ -2125,7 +2125,7 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = { nano: false, base: false, openrouter: false, havy: false, ultra: false };
+let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -3001,24 +3001,27 @@ document.getElementById('save-server-btn')?.addEventListener('click', async () =
 document.getElementById('save-ai-settings-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('save-ai-settings-btn');
   const nanoKey = document.getElementById('agent-nano-key')?.value?.trim() || '';
-  const openrouterKey = document.getElementById('agent-openrouter-key')?.value?.trim() || '';
+  const baseKey = document.getElementById('agent-base-key')?.value?.trim() || '';
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
+  const ultraKey = document.getElementById('agent-ultra-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const tursoDatabaseUrl = document.getElementById('turso-database-url')?.value?.trim() || '';
   const tursoAuthToken = document.getElementById('turso-auth-token')?.value?.trim() || '';
   const needNano = !nanoKey && !aiApiConfigured.nano;
-  const needOpenrouter = !openrouterKey && !aiApiConfigured.openrouter && !aiApiConfigured.base;
+  const needBase = !baseKey && !aiApiConfigured.base;
   const needHavy = !havyKey && !aiApiConfigured.havy;
-  if (!nanoKey && !openrouterKey && !havyKey && needNano && needOpenrouter && needHavy) {
+  const needUltra = !ultraKey && !aiApiConfigured.ultra;
+  if (!nanoKey && !baseKey && !havyKey && !ultraKey && needNano && needBase && needHavy && needUltra) {
     return toast('Enter at least one model API key');
   }
   const body = {
     agent_default_model_profile: document.getElementById('agent-default-profile')?.value || 'syra-base',
   };
   if (nanoKey) body.agent_syra_nano_api_key = nanoKey;
-  if (openrouterKey) body.agent_openrouter_api_key = openrouterKey;
+  if (baseKey) body.agent_syra_base_api_key = baseKey;
   if (havyKey) body.agent_syra_havy_api_key = havyKey;
+  if (ultraKey) body.agent_syra_ultra_api_key = ultraKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
@@ -3029,8 +3032,9 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     const res = await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
     toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Provider settings saved');
     if (nanoKey) document.getElementById('agent-nano-key').value = '';
-    if (openrouterKey) document.getElementById('agent-openrouter-key').value = '';
+    if (baseKey) document.getElementById('agent-base-key').value = '';
     if (havyKey) document.getElementById('agent-havy-key').value = '';
+    if (ultraKey) document.getElementById('agent-ultra-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     if (tursoAuthToken) document.getElementById('turso-auth-token').value = '';
     await loadSettings();
@@ -3221,8 +3225,9 @@ async function loadSettings() {
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [
       ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Verted nano key saved', 'Verted API key required'],
-      ['agent-openrouter-key', 'agent-openrouter-key-hint', s.agent_openrouter_api_key_set || s.agent_syra_base_api_key_set, 'OpenRouter key saved (builder + thinker)', 'OpenRouter API key required'],
+      ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'Aliyun builder key saved', 'Aliyun MaaS API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Verted havy key saved', 'Verted API key required'],
+      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'OpenRouter thinker key saved', 'OpenRouter API key required'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
@@ -3234,10 +3239,9 @@ async function loadSettings() {
     });
     aiApiConfigured = {
       nano: Boolean(s.agent_syra_nano_api_key_set),
-      base: Boolean(s.agent_syra_base_api_key_set || s.agent_openrouter_api_key_set),
-      openrouter: Boolean(s.agent_openrouter_api_key_set || s.agent_syra_base_api_key_set),
+      base: Boolean(s.agent_syra_base_api_key_set),
       havy: Boolean(s.agent_syra_havy_api_key_set),
-      ultra: Boolean(s.agent_syra_ultra_api_key_set || s.agent_openrouter_api_key_set),
+      ultra: Boolean(s.agent_syra_ultra_api_key_set),
     };
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
@@ -3254,8 +3258,9 @@ async function loadSettings() {
       const parts = [];
       parts.push(`default: ${defaultProfile}`);
       parts.push(s.agent_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
-      parts.push((s.agent_openrouter_api_key_set || s.agent_syra_base_api_key_set) ? 'openrouter key saved' : 'no openrouter key');
+      parts.push(s.agent_syra_base_api_key_set ? 'builder key saved' : 'no builder key');
       parts.push(s.agent_syra_havy_api_key_set ? 'havy key saved' : 'no havy key');
+      parts.push(s.agent_syra_ultra_api_key_set ? 'thinker key saved' : 'no thinker key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
       agentRuntimeStatus.textContent = parts.join(' · ');

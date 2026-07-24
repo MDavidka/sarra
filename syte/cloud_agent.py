@@ -519,27 +519,17 @@ def cloud_agent_command() -> str:
 
 
 
-_LEGACY_PROFILE_KEY_SETTINGS = {
-    "syra-base": "agent_syra_base_api_key",
-    "syra-ultra": "agent_syra_ultra_api_key",
-}
-
-
 async def profile_api_key(profile: str) -> str:
-    """Resolve API key for a profile, with OpenRouter + legacy fallbacks."""
+    """Resolve API key for a profile (each role uses its own provider key)."""
     spec = profile_provider(profile)
     key = (await get_setting(spec["setting_key"], "")).strip()
     if key:
         return key
-    # Shared OpenRouter key may be stored under the canonical setting even when
-    # an older deployment still has per-profile DeepSeek/Aliyun keys.
-    if spec.get("secret_env") == "OPENROUTER_API_KEY":
+    # Thinker may have been saved under the short-lived shared OpenRouter setting.
+    if profile == THINKER_PROFILE:
         shared = (await get_setting("agent_openrouter_api_key", "")).strip()
         if shared:
             return shared
-    legacy = _LEGACY_PROFILE_KEY_SETTINGS.get(profile)
-    if legacy and legacy != spec["setting_key"]:
-        return (await get_setting(legacy, "")).strip()
     return ""
 
 
@@ -558,7 +548,6 @@ async def bridge_settings() -> dict[str, Any]:
             "api_key": api_key,
         }
     active = profiles[default_profile]
-    openrouter_key = profiles[BUILDER_PROFILE]["api_key"] or profiles[THINKER_PROFILE]["api_key"]
     return {
         "default_profile": default_profile,
         "profiles": profiles,
@@ -575,7 +564,6 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
-        "openrouter_api_key": openrouter_key,
     }
 
 
@@ -792,6 +780,10 @@ def _build_static_instruction(
         "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates "
         "(e.g. writing app/page.tsx when the App Router file is app/app/page.tsx). Edit the file that "
         "actually renders the feature, then verify on disk with read_file.\n",
+        "Token efficiency: prefer diffs and symbol lookups over dumping whole files or the repo. "
+        "Start with `git diff --stat` / `--name-only` before reading full contents. Honor `.aiignore`. "
+        "Command output is pre-filtered (passing tests / progress noise stripped) — re-run with a "
+        "narrower command if you need a specific line.\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
         "request that needs 3+ distinct steps, call update_plan BEFORE other tools. For a new website "
         "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
@@ -2798,7 +2790,7 @@ async def _communicate_with_agent_impl(
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
     # Prefer the dedicated builder profile for the tool loop when the slider
-    # selected a builder/thinker split (OpenRouter qwen flash vs nemotron).
+    # selected a builder/thinker split (Aliyun qwen flash vs OpenRouter nemotron).
     if gen.get("builder_profile") and gen["builder_profile"] != model.get("profile"):
         builder_meta = await model_metadata_for_profile(str(gen["builder_profile"]))
         if builder_meta.get("api_key"):
