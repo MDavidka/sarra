@@ -18,6 +18,8 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 ALIYUN_MAAS_API_BASE = (
     "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
 )
+# Pay-as-you-go DashScope OpenAI-compat (standard ``sk-`` Aliyun keys — not Token Plan).
+ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
@@ -121,6 +123,102 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
 
 def profile_provider(profile: str) -> ProfileProvider:
     return PROFILE_PROVIDERS.get(profile, PROFILE_PROVIDERS[DEFAULT_PROFILE])
+
+
+def looks_like_openrouter_key(api_key: str | None) -> bool:
+    """OpenRouter keys are ``sk-or-…`` (legacy syra-ultra before the Aliyun swap)."""
+    return (api_key or "").strip().lower().startswith("sk-or-")
+
+
+def looks_like_aliyun_token_plan_key(api_key: str | None) -> bool:
+    """Aliyun Token Plan keys must start with ``sk-sp-`` (not interchangeable with ``sk-``)."""
+    return (api_key or "").strip().lower().startswith("sk-sp-")
+
+
+def looks_like_aliyun_payg_key(api_key: str | None) -> bool:
+    """Standard Model Studio / DashScope pay-as-you-go keys (``sk-`` but not ``sk-or-`` / ``sk-sp-``)."""
+    key = (api_key or "").strip().lower()
+    if not key.startswith("sk-"):
+        return False
+    if looks_like_openrouter_key(key) or looks_like_aliyun_token_plan_key(key):
+        return False
+    # DeepSeek keys are also sk-… — treat only keys that are clearly NOT deepseek-shaped
+    # as Aliyun PAYG when they contain aliyun-ish markers, otherwise leave ambiguous.
+    # Prefer explicit Token Plan (sk-sp-) for ultra; PAYG detection is best-effort for routing.
+    return "aliyun" in key or "dashscope" in key
+
+
+def looks_like_deepseek_key(api_key: str | None) -> bool:
+    """DeepSeek platform keys are ``sk-…`` and are not OpenRouter / Aliyun Token Plan."""
+    key = (api_key or "").strip().lower()
+    if not key.startswith("sk-"):
+        return False
+    if looks_like_openrouter_key(key) or looks_like_aliyun_token_plan_key(key):
+        return False
+    return True
+
+
+def aliyun_api_base_for_key(api_key: str | None) -> str:
+    """Pick the Aliyun OpenAI-compat base URL that matches the key billing mode.
+
+    Token Plan (``sk-sp-``) must use the token-plan host; standard ``sk-`` Model Studio
+    keys must use DashScope. Mixing them returns HTTP 401. OpenRouter ``sk-or-`` keys
+    are not Aliyun — callers should reject them before probing.
+    """
+    if looks_like_aliyun_token_plan_key(api_key):
+        return ALIYUN_MAAS_API_BASE
+    key = (api_key or "").strip().lower()
+    if key.startswith("sk-") and not looks_like_openrouter_key(key):
+        # Ambiguous sk- key: prefer DashScope PAYG so a normal Model Studio key works.
+        # Token Plan users must use sk-sp- (documented in the UI / probe hints).
+        return ALIYUN_DASHSCOPE_API_BASE
+    return ALIYUN_MAAS_API_BASE
+
+
+def key_mismatch_hint(profile: str, api_key: str | None) -> str:
+    """Return a short actionable hint when a saved key does not match the profile."""
+    key = (api_key or "").strip()
+    if not key:
+        return ""
+    if profile == "syra-ultra":
+        if looks_like_openrouter_key(key):
+            return (
+                "This looks like an OpenRouter key (sk-or-…). syra-ultra now uses Aliyun: "
+                "paste a Token Plan key starting with sk-sp- from the Aliyun Token Plan console "
+                "(or a standard Model Studio sk- key for DashScope pay-as-you-go)."
+            )
+        if looks_like_aliyun_token_plan_key(key):
+            return ""
+        if key.lower().startswith("sk-"):
+            return (
+                "Using DashScope pay-as-you-go for this sk- key. "
+                "For Token Plan billing, use a key that starts with sk-sp-."
+            )
+        return (
+            "syra-ultra expects an Aliyun key: Token Plan sk-sp-… or Model Studio sk-… "
+            "(not an OpenRouter / DeepSeek / Gemini key)."
+        )
+    if profile == "syra-base":
+        if looks_like_aliyun_token_plan_key(key) or looks_like_openrouter_key(key):
+            return (
+                "This key is not a DeepSeek key. syra-base needs a DeepSeek API key "
+                "(https://platform.deepseek.com/). Put Aliyun Token Plan keys on syra-ultra."
+            )
+        return ""
+    if profile in {"syra-nano", "syra-havy"}:
+        lower = key.lower()
+        if lower.startswith("sk-") or looks_like_openrouter_key(key):
+            return (
+                "This looks like an OpenAI-style key. syra-nano/havy need a Google AI Studio "
+                "Gemini API key (usually starts with AIza…)."
+            )
+        if lower.startswith("aq."):
+            return (
+                "This key prefix (AQ.) is unusual for Google AI Studio. Use an AI Studio "
+                "Gemini API key (AIza…) with API access enabled; unrestricted keys may get HTTP 403."
+            )
+        return ""
+    return ""
 
 
 def builder_profile_name() -> str:

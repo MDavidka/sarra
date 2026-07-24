@@ -3013,7 +3013,12 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   if (nanoKey) body.agent_syra_nano_api_key = nanoKey;
   if (baseKey) body.agent_syra_base_api_key = baseKey;
   if (havyKey) body.agent_syra_havy_api_key = havyKey;
-  if (ultraKey) body.agent_syra_ultra_api_key = ultraKey;
+  if (ultraKey) {
+    if (ultraKey.toLowerCase().startsWith('sk-or-')) {
+      return toast('syra-ultra needs an Aliyun key (sk-sp-… Token Plan or Model Studio sk-…), not OpenRouter sk-or-…');
+    }
+    body.agent_syra_ultra_api_key = ultraKey;
+  }
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
@@ -3219,7 +3224,7 @@ async function loadSettings() {
       ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Vertex AI nano key saved', 'Vertex AI API key required'],
       ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
-      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved', 'Aliyun MaaS API key required'],
+      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
@@ -3370,10 +3375,12 @@ function renderAiDebug(report) {
       </tr>
     `).join('');
     const source = p.source || (p.api_key_set ? 'settings' : 'none');
+    const profileHints = (p.hints || []).map(h => `<div class="ai-debug-hint">${esc(h)}</div>`).join('');
     return `
       <div class="ai-debug-block">
         <strong>${esc(p.profile)}</strong> · ${esc(p.label)} · key: ${p.api_key_set ? esc(p.api_key_hint) : 'missing'}
         <div class="hint">${esc(p.api_base)} · ${esc(p.model)} · source=${esc(source)} · env ${p.env_set ? esc(p.env_hint || 'set') : '—'}</div>
+        ${profileHints}
         <table class="ai-debug-table">
           <thead><tr><th>Probe</th><th>Method</th><th>Result</th><th>HTTP</th><th>Time</th><th>Detail</th></tr></thead>
           <tbody>${probes || '<tr><td colspan="6">No probes — key not available</td></tr>'}</tbody>
