@@ -28,7 +28,10 @@ from syte.ai_providers import (
     DEFAULT_PROFILE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
+    apply_runtime_api_base,
+    looks_like_aliyun_token_plan_key,
     profile_provider,
+    resolve_aliyun_api_bases,
 )
 from syte.cloud_agent_store import (
     append_message,
@@ -585,41 +588,60 @@ async def resolve_profile_api_key(profile: str) -> dict[str, str]:
 
 
 async def migrate_provider_lineup_keys() -> dict[str, Any]:
-    """One-time remap after base/ultra provider swap.
+    """Remap keys after base/ultra provider swap.
 
-    Previous lineup stored the Aliyun builder key under ``agent_syra_base_api_key``
-    and the OpenRouter thinker key under ``agent_syra_ultra_api_key``. The current
-    lineup uses DeepSeek for base and Aliyun Qwen for ultra — so an Aliyun key
-    left on base produces 401s from DeepSeek for every default-profile turn.
+    Previous lineup stored the Aliyun builder key under ``agent_syra_base_api_key``.
+    The current lineup uses DeepSeek for base and Aliyun Qwen for ultra — so an
+    Aliyun key left on base produces 401s from DeepSeek for every default turn.
 
-    When not yet migrated: move base→ultra if ultra is empty and the base key
-    does not look like a DeepSeek key, then clear base.
+    v3 moved only non-``sk-`` keys. That missed Aliyun Token Plan keys
+    (``sk-sp-…``), which also start with ``sk-`` and were left on DeepSeek.
+    v4 always clears ``sk-sp-`` from base (moving to ultra when ultra is empty).
     """
-    flag = (await get_setting("agent_provider_lineup_v3_migrated", "")).strip()
+    flag = (await get_setting("agent_provider_lineup_v4_migrated", "")).strip()
     if flag == "1":
         return {"migrated": False, "reason": "already_done"}
 
-    base_key = (await get_setting("agent_syra_base_api_key", "")).strip()
-    ultra_key = (await get_setting("agent_syra_ultra_api_key", "")).strip()
+    base_key = sanitize_api_key(await get_setting("agent_syra_base_api_key", ""))
+    ultra_key = sanitize_api_key(await get_setting("agent_syra_ultra_api_key", ""))
     moved = False
     cleared_base = False
-    looks_like_deepseek = base_key.lower().startswith("sk-")
-    if base_key and not ultra_key and not looks_like_deepseek:
+    note = "No key remap needed."
+
+    if looks_like_aliyun_token_plan_key(base_key):
+        # Token Plan keys can never authenticate against DeepSeek.
+        if not ultra_key:
+            await set_setting("agent_syra_ultra_api_key", base_key)
+            moved = True
+            note = (
+                "Aliyun Token Plan key (sk-sp-) moved from syra-base → syra-ultra. "
+                "Add a DeepSeek API key for syra-base."
+            )
+        else:
+            note = (
+                "Removed Aliyun Token Plan key (sk-sp-) from syra-base "
+                "(ultra already has a key). Add a DeepSeek key for syra-base."
+            )
+        await set_setting("agent_syra_base_api_key", "")
+        cleared_base = True
+    elif base_key and not ultra_key and not base_key.lower().startswith("sk-"):
+        # Legacy non-sk Aliyun/other builder key left on base.
         await set_setting("agent_syra_ultra_api_key", base_key)
         await set_setting("agent_syra_base_api_key", "")
         moved = True
         cleared_base = True
+        note = (
+            "Aliyun key moved from syra-base → syra-ultra. "
+            "Add a DeepSeek API key for syra-base."
+        )
+
     await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_provider_lineup_v4_migrated", "1")
     return {
         "migrated": True,
         "moved_base_to_ultra": moved,
         "cleared_base": cleared_base,
-        "note": (
-            "Aliyun key moved from syra-base → syra-ultra. "
-            "Add a DeepSeek API key for syra-base."
-            if moved
-            else "No key remap needed."
-        ),
+        "note": note,
     }
 
 
@@ -661,9 +683,11 @@ async def bridge_settings() -> dict[str, Any]:
     profiles: dict[str, dict[str, str | int | float]] = {}
     for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
+        api_key = str(resolved["api_key"] or "")
         profiles[name] = {
             **spec,
-            "api_key": resolved["api_key"],
+            "api_base": apply_runtime_api_base(name, api_key, spec["api_base"]),
+            "api_key": api_key,
             "key_source": resolved["source"],
             "api_key_hint": resolved["api_key_hint"],
             "settings_set": bool(resolved["settings_set"]),
@@ -2567,10 +2591,28 @@ async def _provider_completion(
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
     api_base_l = str(model.get("api_base") or "").lower()
     # Google AI Studio / Gemini OpenAI-compat accepts Bearer; also send x-goog-api-key
-    # for keys/gateways that expect the native Gemini header.
-    if "generativelanguage.googleapis.com" in api_base_l:
+    # for keys/gateways that expect the native Gemini header (including AQ. auth keys).
+    is_gemini = "generativelanguage.googleapis.com" in api_base_l
+    if is_gemini:
         headers["x-goog-api-key"] = str(model["api_key"])
-    url = model["api_base"].rstrip("/") + "/chat/completions"
+    profile_name = str(model.get("profile") or "")
+    api_key_value = str(model.get("api_key") or "")
+    # Fail fast when an Aliyun Token Plan key is parked on DeepSeek base.
+    if profile_name == "syra-base" and looks_like_aliyun_token_plan_key(api_key_value):
+        raise RuntimeError(
+            "Invalid API key for syra-base (DeepSeek · deepseek-v4-flash). "
+            "The saved key looks like an Aliyun Token Plan key (sk-sp-…). "
+            "Move it to syra-ultra and add a DeepSeek key from https://platform.deepseek.com/."
+        )
+    aliyun_bases: list[str] = []
+    if profile_name == "syra-ultra" or "maas.aliyuncs.com" in api_base_l or "dashscope.aliyuncs.com" in api_base_l:
+        aliyun_bases = resolve_aliyun_api_bases(api_key_value)
+        if model.get("api_base"):
+            primary = str(model["api_base"]).rstrip("/")
+            aliyun_bases = [primary] + [b for b in aliyun_bases if b.rstrip("/") != primary]
+    base_candidates = aliyun_bases or [str(model.get("api_base") or "").rstrip("/")]
+    base_index = 0
+    url = base_candidates[base_index].rstrip("/") + "/chat/completions"
     error = "Provider request failed"
     client = _get_provider_client()
 
@@ -2591,6 +2633,8 @@ async def _provider_completion(
             or "api key you provided is invalid" in detail_l
             or "incorrect api key" in detail_l
             or "invalid api key" in detail_l
+            or "invalidapi-key" in detail_l.replace(" ", "")
+            or "invalid api-key" in detail_l
         )
         # Do not treat generic "unauthorized"/"authentication" in model-error
         # bodies as key failures — those often mean the model id is wrong.
@@ -2616,16 +2660,17 @@ async def _provider_completion(
             if "deepseek.com" in api_base or str(label).lower() == "deepseek":
                 hint = (
                     " syra-base requires a DeepSeek key from https://platform.deepseek.com/ "
-                    "(model deepseek-v4-flash)."
+                    "(model deepseek-v4-flash). Aliyun Token Plan keys (sk-sp-) belong on syra-ultra."
                 )
-            elif "maas.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
+            elif "maas.aliyuncs.com" in api_base or "dashscope" in api_base or str(label).lower() == "aliyun":
                 hint = (
-                    " syra-ultra requires an Aliyun MaaS token-plan key for model qwen3.5-flash "
-                    "(OpenRouter keys will fail here)."
+                    " syra-ultra needs a matching Aliyun pair: Token Plan key sk-sp-… with "
+                    "token-plan.cn-beijing (or ap-southeast-1) MaaS, or a pay-as-you-go sk-… "
+                    "key with dashscope.aliyuncs.com. Model: qwen3.6-flash."
                 )
             elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
                 hint = (
-                    " Use a Google AI Studio API key (usually starts with AIza…). "
+                    " Use a Google AI Studio Gemini API key (AIza… or newer AQ.… auth keys). "
                     "Vertex service-account JSON is not valid as this Bearer key."
                 )
             return (
@@ -2658,6 +2703,18 @@ async def _provider_completion(
             return False
         return True
 
+    def _advance_aliyun_base_on_auth(status_code: int, detail: str) -> bool:
+        nonlocal base_index, url
+        detail_l = (detail or "").lower()
+        auth_like = status_code in {401, 403} or "invalid api key" in detail_l or "incorrect api key" in detail_l
+        if not auth_like or base_index + 1 >= len(base_candidates):
+            return False
+        base_index += 1
+        next_base = base_candidates[base_index].rstrip("/")
+        model["api_base"] = next_base
+        url = next_base + "/chat/completions"
+        return True
+
     for attempt in range(3):
         try:
             if payload["stream"]:
@@ -2665,6 +2722,10 @@ async def _provider_completion(
                     peek = ""
                     if response.status_code >= 400:
                         peek = (await response.aread()).decode(errors="replace").strip()[:800]
+                    if _advance_aliyun_base_on_auth(response.status_code, peek):
+                        if not peek:
+                            await response.aread()
+                        continue
                     if _is_retryable_provider_status(response.status_code, peek) and attempt < 2:
                         if not peek:
                             await response.aread()
@@ -2688,6 +2749,8 @@ async def _provider_completion(
 
             response = await client.post(url, headers=headers, json=payload)
             detail = (response.text or "").strip()[:800] if response.status_code >= 400 else ""
+            if _advance_aliyun_base_on_auth(response.status_code, detail):
+                continue
             if _is_retryable_provider_status(response.status_code, detail) and attempt < 2:
                 await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
                 continue

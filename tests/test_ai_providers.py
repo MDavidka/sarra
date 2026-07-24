@@ -1,7 +1,10 @@
 """Tests for fixed Syra provider profiles."""
 
 from syte.ai_providers import (
+    ALIYUN_DASHSCOPE_API_BASE,
     ALIYUN_MAAS_API_BASE,
+    ALIYUN_TOKEN_PLAN_BEIJING,
+    ALIYUN_TOKEN_PLAN_SINGAPORE,
     BASE_MODEL,
     DEEPSEEK_API_BASE,
     DEFAULT_PROFILE,
@@ -11,9 +14,13 @@ from syte.ai_providers import (
     PRO_MODEL,
     ULTRA_MODEL,
     VERTEX_API_BASE,
+    apply_runtime_api_base,
     format_price_per_mtok,
+    looks_like_aliyun_token_plan_key,
     profile_provider,
     provider_catalog,
+    resolve_aliyun_api_base,
+    resolve_aliyun_api_bases,
 )
 
 
@@ -58,14 +65,27 @@ def test_pro_vertex_gemini_36_flash() -> None:
 def test_ultra_aliyun_qwen_flash() -> None:
     ultra = PROFILE_PROVIDERS["syra-ultra"]
     assert ultra["label"] == "Aliyun"
-    assert ultra["api_base"] == ALIYUN_MAAS_API_BASE
-    assert ultra["model"] == ULTRA_MODEL == "qwen3.5-flash"
+    assert ultra["api_base"] == ALIYUN_MAAS_API_BASE == ALIYUN_TOKEN_PLAN_BEIJING
+    assert ultra["model"] == ULTRA_MODEL == "qwen3.6-flash"
     assert ultra["role"] == "ultra"
     assert ultra["input_price_per_mtok"] == 0.17
     assert ultra["output_price_per_mtok"] == 1.02
     assert ultra["setting_key"] == "agent_syra_ultra_api_key"
     # Ultra is a full think+build profile — not a separate thinker endpoint.
     assert ultra["role"] != "think"
+
+
+def test_aliyun_key_selects_matching_api_base() -> None:
+    assert looks_like_aliyun_token_plan_key("sk-sp-abc123")
+    assert resolve_aliyun_api_base("sk-sp-abc123") == ALIYUN_TOKEN_PLAN_BEIJING
+    assert resolve_aliyun_api_bases("sk-sp-abc123") == [
+        ALIYUN_TOKEN_PLAN_BEIJING,
+        ALIYUN_TOKEN_PLAN_SINGAPORE,
+    ]
+    assert resolve_aliyun_api_base("sk-dashscope-payg") == ALIYUN_DASHSCOPE_API_BASE
+    assert apply_runtime_api_base("syra-ultra", "sk-sp-abc") == ALIYUN_TOKEN_PLAN_BEIJING
+    assert apply_runtime_api_base("syra-ultra", "sk-payg") == ALIYUN_DASHSCOPE_API_BASE
+    assert apply_runtime_api_base("syra-base", "sk-deepseek") == DEEPSEEK_API_BASE
 
 
 def test_provider_catalog_includes_prices() -> None:
@@ -77,6 +97,7 @@ def test_provider_catalog_includes_prices() -> None:
     assert by_profile["syra-base"]["model"] == "deepseek-v4-flash"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
+    assert by_profile["syra-ultra"]["model"] == "qwen3.6-flash"
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
 

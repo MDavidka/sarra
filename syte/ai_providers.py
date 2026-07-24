@@ -4,7 +4,7 @@ Each profile is a full think+build model — there is no separate thinker.
 - ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
 - ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
-- ``syra-ultra`` — Aliyun Qwen 3.6 (qwen3.5-flash)
+- ``syra-ultra`` — Aliyun Qwen 3.6 (qwen3.6-flash)
 """
 
 from __future__ import annotations
@@ -15,9 +15,18 @@ VERTEX_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 # Legacy alias kept for imports/migrations.
 VERTED_API_BASE = VERTEX_API_BASE
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-ALIYUN_MAAS_API_BASE = (
+# Token Plan Personal/Team (China) — matches official Model Studio docs.
+ALIYUN_TOKEN_PLAN_BEIJING = (
+    "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+)
+# Token Plan international / Qwen Cloud Team Edition.
+ALIYUN_TOKEN_PLAN_SINGAPORE = (
     "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
 )
+# Pay-as-you-go DashScope (standard ``sk-`` keys, not ``sk-sp-``).
+ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# Default catalog entry — resolved further per key prefix at runtime.
+ALIYUN_MAAS_API_BASE = ALIYUN_TOKEN_PLAN_BEIJING
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
@@ -30,7 +39,47 @@ THINKER_PROFILE = DEFAULT_PROFILE  # deprecated — no separate thinker
 NANO_MODEL = "gemini-3.1-flash-lite"
 BASE_MODEL = "deepseek-v4-flash"
 PRO_MODEL = "gemini-3.6-flash"
-ULTRA_MODEL = "qwen3.5-flash"
+ULTRA_MODEL = "qwen3.6-flash"
+
+
+def looks_like_aliyun_token_plan_key(api_key: str | None) -> bool:
+    """Token Plan keys are ``sk-sp-…`` and only work on token-plan MaaS hosts."""
+    return (api_key or "").strip().lower().startswith("sk-sp-")
+
+
+def looks_like_aliyun_dashscope_key(api_key: str | None) -> bool:
+    """Pay-as-you-go Model Studio keys are ``sk-…`` but not ``sk-sp-…``."""
+    key = (api_key or "").strip().lower()
+    return key.startswith("sk-") and not key.startswith("sk-sp-")
+
+
+def looks_like_deepseek_key(api_key: str | None) -> bool:
+    """DeepSeek platform keys are ``sk-…`` (same shape as DashScope; context decides)."""
+    return looks_like_aliyun_dashscope_key(api_key)
+
+
+def resolve_aliyun_api_bases(api_key: str | None) -> list[str]:
+    """Return Aliyun OpenAI-compatible bases to try for this key, primary first.
+
+    Token Plan ``sk-sp-`` keys must use token-plan hosts (never DashScope).
+    Standard ``sk-`` keys must use DashScope pay-as-you-go.
+    Unknown formats try Token Plan regions then DashScope.
+    """
+    key = (api_key or "").strip()
+    if looks_like_aliyun_token_plan_key(key):
+        return [ALIYUN_TOKEN_PLAN_BEIJING, ALIYUN_TOKEN_PLAN_SINGAPORE]
+    if looks_like_aliyun_dashscope_key(key):
+        return [ALIYUN_DASHSCOPE_API_BASE]
+    return [
+        ALIYUN_TOKEN_PLAN_BEIJING,
+        ALIYUN_TOKEN_PLAN_SINGAPORE,
+        ALIYUN_DASHSCOPE_API_BASE,
+    ]
+
+
+def resolve_aliyun_api_base(api_key: str | None) -> str:
+    """Primary Aliyun API base for a key."""
+    return resolve_aliyun_api_bases(api_key)[0]
 
 # Backward-compat aliases used by older tests/docs.
 BUILDER_MODEL = BASE_MODEL
@@ -117,6 +166,13 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "secret_env": "SYRA_ULTRA_API_KEY",
     },
 }
+
+
+def apply_runtime_api_base(profile: str, api_key: str | None, api_base: str | None = None) -> str:
+    """Override catalog api_base when the key implies a different Aliyun host."""
+    if profile == "syra-ultra":
+        return resolve_aliyun_api_base(api_key)
+    return (api_base or profile_provider(profile)["api_base"]).rstrip("/")
 
 
 def profile_provider(profile: str) -> ProfileProvider:

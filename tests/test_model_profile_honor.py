@@ -27,6 +27,7 @@ async def test_short_message_keeps_selected_ultra_profile(
 
     await init_db()
     await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_provider_lineup_v4_migrated", "1")
     await set_setting("agent_syra_ultra_api_key", "aliyun-ultra-test-key")
     project = await create_project({"id": "keep-ultra", "name": "keep-ultra", "port": 3101, "start_command": ""})
     await update_project(project["id"], {"agent_model_profile": "syra-ultra"})
@@ -58,6 +59,7 @@ async def test_explicit_profile_beats_suggestion(
 
     await init_db()
     await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_provider_lineup_v4_migrated", "1")
     await set_setting("agent_syra_base_api_key", "sk-deepseek-test")
     project = await create_project({"id": "explicit-base", "name": "explicit-base", "port": 3102, "start_command": ""})
 
