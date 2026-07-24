@@ -705,7 +705,8 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     from syte.database import get_project, set_setting
 
     project = await _project("think-proj")
-    await set_setting("agent_syra_base_api_key", "aliyun-builder-key")
+    await set_setting("agent_provider_lineup_v3_migrated", "1")
+    await set_setting("agent_syra_base_api_key", "sk-deepseek-test-key")
     calls = {"n": 0}
 
     async def fake_provider(model, messages, **kwargs):

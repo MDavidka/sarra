@@ -2050,6 +2050,38 @@ function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
 }
 
+function renderProviderKeyStatus(rows) {
+  const el = document.getElementById('ai-provider-key-status');
+  if (!el) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    el.innerHTML = '<div class="hint">No provider key status yet.</div>';
+    return;
+  }
+  el.innerHTML = list.map((row) => {
+    const source = row.source || 'none';
+    const settingsBit = row.settings_set
+      ? `settings ${esc(row.settings_hint || '••••')}`
+      : 'settings —';
+    const envBit = row.env_set
+      ? `env ${esc(row.env_hint || '••••')}`
+      : 'env —';
+    const active = source === 'none'
+      ? 'not set'
+      : `using ${esc(source)}${row.api_key_hint ? ` · ${esc(row.api_key_hint)}` : ''}`;
+    return `
+      <div class="ai-env-row ai-env-row-status">
+        <code>${esc(row.secret_env || '')}</code>
+        <span>
+          <strong>${esc(row.display_name || row.profile || '')}</strong>
+          · ${esc(row.label || '')} · ${esc(row.model || '')}<br>
+          <span class="hint">${settingsBit} · ${envBit} · ${active}</span>
+        </span>
+      </div>
+    `;
+  }).join('');
+}
+
 function applyAiProviderCatalog(providers) {
   const byProfile = Object.fromEntries(
     (providers || []).map((row) => [row.profile, row]),
@@ -3186,6 +3218,7 @@ async function loadSettings() {
       if (hint) hint.textContent = saved ? savedText : requiredText;
     });
     applyAiProviderCatalog(s.ai_providers || []);
+    renderProviderKeyStatus(s.provider_keys || []);
     aiApiConfigured = {
       nano: Boolean(s.agent_syra_nano_api_key_set),
       base: Boolean(s.agent_syra_base_api_key_set),
@@ -3324,17 +3357,25 @@ function renderAiDebug(report) {
         <td>${esc(pr.error || (pr.body_preview || '').slice(0, 120))}</td>
       </tr>
     `).join('');
+    const source = p.source || (p.api_key_set ? 'settings' : 'none');
     return `
       <div class="ai-debug-block">
         <strong>${esc(p.profile)}</strong> · ${esc(p.label)} · key: ${p.api_key_set ? esc(p.api_key_hint) : 'missing'}
-        <div class="hint">${esc(p.api_base)} · ${esc(p.model)}</div>
+        <div class="hint">${esc(p.api_base)} · ${esc(p.model)} · source=${esc(source)} · env ${p.env_set ? esc(p.env_hint || 'set') : '—'}</div>
         <table class="ai-debug-table">
           <thead><tr><th>Probe</th><th>Method</th><th>Result</th><th>HTTP</th><th>Time</th><th>Detail</th></tr></thead>
-          <tbody>${probes || '<tr><td colspan="6">No probes — key not saved</td></tr>'}</tbody>
+          <tbody>${probes || '<tr><td colspan="6">No probes — key not available</td></tr>'}</tbody>
         </table>
       </div>
     `;
   }).join('');
+
+  const envs = (report.provider_envs || report.secrets?.vars_set || []).map((row) => `
+    <div class="ai-debug-env-row">
+      <code>${esc(row.name || '')}</code>
+      <span>${row.set ? `set · ${esc(row.hint || '••••')}${row.used ? ' · in use' : ''}` : 'not set in process env'}</span>
+    </div>
+  `).join('');
 
   const hints = (report.hints || []).map(h => `<div class="ai-debug-hint">${esc(h)}</div>`).join('');
   const agent = report.agent || {};
@@ -3343,6 +3384,10 @@ function renderAiDebug(report) {
   el.innerHTML = `
     <div class="hint">Generated ${esc(report.generated_at || '')} · active profile <strong>${esc(report.active_profile || '')}</strong></div>
     <div class="ai-debug-steps">${steps || '<p class="hint">No steps recorded.</p>'}</div>
+    <div class="ai-debug-block">
+      <strong>Process env (provider keys)</strong>
+      ${envs || '<div class="hint">No provider env status.</div>'}
+    </div>
     ${hints ? `<div class="ai-debug-hints">${hints}</div>` : ''}
     <div><strong>Provider probes (all profiles)</strong>${profiles}</div>
     <div>

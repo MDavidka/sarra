@@ -200,10 +200,13 @@ def inspect_agent_config(project_id: str) -> dict[str, Any]:
 def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
     del project_id
     return {
-        "path": "system_settings",
+        "path": "system_settings + process env",
         "exists": True,
         "vars_set": [],
-        "detail": "Provider keys stay in Syte settings and are not copied into project files.",
+        "detail": (
+            "Provider keys are read from Syte settings first, then process env "
+            "(SYRA_NANO_API_KEY / SYRA_BASE_API_KEY / SYRA_HAVY_API_KEY / SYRA_ULTRA_API_KEY)."
+        ),
     }
 
 
@@ -212,14 +215,26 @@ def build_debug_hints(report: dict[str, Any]) -> list[str]:
     for profile in report.get("profiles") or []:
         hints.extend(profile.get("hints") or [])
         if not profile.get("api_key_set"):
-            hints.append(f"Add API key for {profile['profile']} ({profile['label']}) in AI settings.")
+            env_name = profile.get("secret_env") or "SYRA_*_API_KEY"
+            hints.append(
+                f"Add API key for {profile['profile']} ({profile['label']}) in AI settings "
+                f"or set process env {env_name}."
+            )
+        elif profile.get("source") == "env":
+            hints.append(
+                f"{profile['profile']} is using process env {profile.get('secret_env')} "
+                f"({profile.get('api_key_hint') or '••••'})."
+            )
     agent = report.get("agent") or {}
     if agent.get("agent_last_error"):
         hints.append("The last cloud-agent error is available in the log tail below.")
     active = report.get("active_profile")
     active_row = next((p for p in report.get("profiles") or [] if p["profile"] == active), None)
     if active_row and active_row.get("api_key_set") and not active_row.get("ok"):
-        hints.append(f"Provider probe failed for {active}; verify the configured key and model endpoint.")
+        hints.append(
+            f"Provider probe failed for {active}; verify the configured key and model endpoint "
+            f"(source={active_row.get('source') or 'unknown'})."
+        )
     return list(dict.fromkeys(hints))
 
 
@@ -230,21 +245,33 @@ async def build_ai_debug_report(
     include_logs: bool = True,
     log_lines: int = 80,
 ) -> dict[str, Any]:
+    from syte.cloud_agent import provider_key_status
+
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found"}
 
     bridge = await bridge_settings()
+    key_status = await provider_key_status()
+    key_by_profile = {row["profile"]: row for row in key_status}
     active_profile = (
         model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-base"
     ).strip()
     if model_profile and model_profile != project.get("agent_model_profile"):
         await update_project(project_id, {"agent_model_profile": model_profile})
 
-    profiles = [
-        await probe_profile_provider(name, bridge["profiles"][name]["api_key"])
-        for name in PROFILE_ORDER
-    ]
+    profiles = []
+    for name in PROFILE_ORDER:
+        probe = await probe_profile_provider(name, bridge["profiles"][name]["api_key"])
+        status = key_by_profile.get(name) or {}
+        probe["source"] = status.get("source") or ("settings" if probe.get("api_key_set") else "none")
+        probe["settings_set"] = bool(status.get("settings_set"))
+        probe["env_set"] = bool(status.get("env_set"))
+        probe["settings_hint"] = status.get("settings_hint") or ""
+        probe["env_hint"] = status.get("env_hint") or ""
+        if status.get("api_key_hint"):
+            probe["api_key_hint"] = status["api_key_hint"]
+        profiles.append(probe)
     config_write_error = ""
     try:
         await write_agent_config(await get_project(project_id) or project)
@@ -255,13 +282,28 @@ async def build_ai_debug_report(
     config = inspect_agent_config(project_id)
     runtime = cloud_agent_runtime_info()
     active_probe = next((p for p in profiles if p["profile"] == active_profile), None)
+    secrets = inspect_agent_secrets(project_id)
+    secrets["vars_set"] = [
+        {
+            "name": row["secret_env"],
+            "profile": row["profile"],
+            "set": bool(row["env_set"]),
+            "hint": row["env_hint"] or "",
+            "used": row["source"] == "env",
+        }
+        for row in key_status
+    ]
+    secrets["provider_keys"] = key_status
     steps = [
         {"id": "cloud_runtime", "label": "Syte cloud runtime", "ok": True, "detail": runtime["path"]},
         {"id": "durable_session", "label": "Durable session store", "ok": config.get("exists", False),
          "detail": config.get("runtime") or config_write_error or "not initialized"},
-        {"id": "active_profile_key", "label": f"API key saved ({active_profile})",
+        {"id": "active_profile_key", "label": f"API key available ({active_profile})",
          "ok": bool(active_probe and active_probe.get("api_key_set")),
-         "detail": (active_probe or {}).get("api_key_hint") or "missing"},
+         "detail": (
+             f"{(active_probe or {}).get('source') or 'none'} · "
+             f"{(active_probe or {}).get('api_key_hint') or 'missing'}"
+         )},
         {"id": "provider_reachable", "label": f"Provider probe ({active_profile})",
          "ok": bool(active_probe and active_probe.get("ok")),
          "detail": (active_probe or {}).get("error") or "ok"},
@@ -280,8 +322,10 @@ async def build_ai_debug_report(
         "active_profile": active_profile,
         "cloud_agent_runtime": runtime,
         "profiles": profiles,
+        "provider_keys": key_status,
+        "provider_envs": secrets["vars_set"],
         "config": config,
-        "secrets": inspect_agent_secrets(project_id),
+        "secrets": secrets,
         "agent": status,
         "steps": steps,
         "logs_tail": get_agent_logs(project_id, log_lines) if include_logs else "",

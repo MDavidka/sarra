@@ -281,7 +281,7 @@ async def _gui_url() -> str:
 @app.get("/api/settings")
 async def get_settings():
     from syte.ai_providers import provider_catalog
-    from syte.cloud_agent import bridge_settings
+    from syte.cloud_agent import bridge_settings, provider_key_status
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -291,6 +291,7 @@ async def get_settings():
     preview_zone = await resolve_preview_zone()
     cf_status = await cloudflare_tls_status()
     bridge = await bridge_settings()
+    key_status = await provider_key_status()
     syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
     turso_database_url = (await get_setting("turso_database_url", "")).strip()
     turso_auth_token_set = bool((await get_setting("turso_auth_token", "")).strip())
@@ -316,6 +317,17 @@ async def get_settings():
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
         "ai_providers": provider_catalog(),
+        "provider_keys": key_status,
+        "provider_envs": [
+            {
+                "name": row["secret_env"],
+                "profile": row["profile"],
+                "set": bool(row["env_set"]),
+                "hint": row["env_hint"] or "",
+                "used": row["source"] == "env",
+            }
+            for row in key_status
+        ],
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
         "turso_database_url": turso_database_url,
