@@ -1,10 +1,8 @@
 """Fixed AI provider endpoints for Syra model profiles.
 
-Builder vs thinker roles (OpenRouter):
-- ``syra-base`` — builder (``qwen/qwen3.5-flash-02-23``) for code edits / tool loops
-- ``syra-ultra`` — thinker (``nvidia/nemotron-3-ultra-550b-a55b:free``) for plans / architecture
-
-Both OpenRouter profiles share ``agent_openrouter_api_key`` / ``OPENROUTER_API_KEY``.
+Builder vs thinker use **different APIs** and keys:
+- ``syra-base`` (builder) — Aliyun MaaS ``qwen3.5-flash`` for code edits / tool loops
+- ``syra-ultra`` (thinker) — OpenRouter ``nvidia/nemotron-3-ultra-550b-a55b:free`` for plans
 """
 
 from __future__ import annotations
@@ -13,7 +11,6 @@ from typing import NotRequired, TypedDict
 
 VERTED_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-# Legacy Aliyun MaaS endpoint kept for docs/migrations only.
 ALIYUN_MAAS_API_BASE = (
     "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
 )
@@ -26,8 +23,8 @@ PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
 BUILDER_PROFILE = "syra-base"
 THINKER_PROFILE = "syra-ultra"
 
-OPENROUTER_BUILDER_MODEL = "qwen/qwen3.5-flash-02-23"
-OPENROUTER_THINKER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+BUILDER_MODEL = "qwen3.5-flash"
+THINKER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 
 class ProfileProvider(TypedDict):
@@ -58,18 +55,17 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     },
     "syra-base": {
         "profile": "syra-base",
-        "label": "OpenRouter",
+        "label": "Aliyun",
         "provider": "openai",
-        "api_base": OPENROUTER_API_BASE,
-        "model": OPENROUTER_BUILDER_MODEL,
+        "api_base": ALIYUN_MAAS_API_BASE,
+        "model": BUILDER_MODEL,
         "role": "build",
         # Cheap builder: keep completions + tool dumps bounded.
         "max_tokens": 8192,
         "max_history_messages": 48,
         "max_tool_result_chars": 8000,
-        # Shared OpenRouter key with the thinker profile.
-        "setting_key": "agent_openrouter_api_key",
-        "secret_env": "OPENROUTER_API_KEY",
+        "setting_key": "agent_syra_base_api_key",
+        "secret_env": "SYRA_BASE_API_KEY",
     },
     "syra-havy": {
         "profile": "syra-havy",
@@ -86,14 +82,14 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "label": "OpenRouter",
         "provider": "openai",
         "api_base": OPENROUTER_API_BASE,
-        "model": OPENROUTER_THINKER_MODEL,
+        "model": THINKER_MODEL,
         "role": "think",
         # Thinker plans only — short structured output, not long code dumps.
         "max_tokens": 4096,
         "max_history_messages": 24,
         "max_tool_result_chars": 6000,
-        "setting_key": "agent_openrouter_api_key",
-        "secret_env": "OPENROUTER_API_KEY",
+        "setting_key": "agent_syra_ultra_api_key",
+        "secret_env": "SYRA_ULTRA_API_KEY",
     },
 }
 

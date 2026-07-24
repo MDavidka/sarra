@@ -148,7 +148,6 @@ class SettingsRequest(BaseModel):
     agent_syra_base_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
-    agent_openrouter_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -316,7 +315,6 @@ async def get_settings():
         "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
-        "agent_openrouter_api_key_set": bool(bridge.get("openrouter_api_key")),
         "ai_providers": provider_catalog(),
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
@@ -435,40 +433,26 @@ async def save_settings(body: SettingsRequest):
             if body.agent_syra_nano_api_key.strip()
             else "syra-nano API key cleared."
         )
-    # OpenRouter shared key for builder (syra-base) + thinker (syra-ultra).
-    openrouter_key: str | None = None
-    if body.agent_openrouter_api_key is not None:
-        openrouter_key = body.agent_openrouter_api_key.strip()
-    elif body.agent_syra_base_api_key is not None and body.agent_syra_base_api_key.strip():
-        openrouter_key = body.agent_syra_base_api_key.strip()
-    elif body.agent_syra_ultra_api_key is not None and body.agent_syra_ultra_api_key.strip():
-        openrouter_key = body.agent_syra_ultra_api_key.strip()
-    if openrouter_key is not None:
-        await set_setting("agent_openrouter_api_key", openrouter_key)
-        # Keep legacy keys in sync so older clients still see a key-set flag.
-        await set_setting("agent_syra_base_api_key", openrouter_key)
-        await set_setting("agent_syra_ultra_api_key", openrouter_key)
+    if body.agent_syra_base_api_key is not None:
+        await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
         messages.append(
-            "OpenRouter API key saved for builder (qwen3.5-flash) and thinker (nemotron)."
-            if openrouter_key
-            else "OpenRouter API key cleared."
+            "syra-base builder (Aliyun · qwen3.5-flash) API key saved."
+            if body.agent_syra_base_api_key.strip()
+            else "syra-base API key cleared."
         )
-    elif body.agent_syra_base_api_key is not None and not body.agent_syra_base_api_key.strip():
-        await set_setting("agent_openrouter_api_key", "")
-        await set_setting("agent_syra_base_api_key", "")
-        await set_setting("agent_syra_ultra_api_key", "")
-        messages.append("OpenRouter API key cleared.")
-    elif body.agent_syra_ultra_api_key is not None and not body.agent_syra_ultra_api_key.strip():
-        await set_setting("agent_openrouter_api_key", "")
-        await set_setting("agent_syra_base_api_key", "")
-        await set_setting("agent_syra_ultra_api_key", "")
-        messages.append("OpenRouter API key cleared.")
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
         messages.append(
             "syra-havy (Verted) API key saved."
             if body.agent_syra_havy_api_key.strip()
             else "syra-havy API key cleared."
+        )
+    if body.agent_syra_ultra_api_key is not None:
+        await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
+        messages.append(
+            "syra-ultra thinker (OpenRouter · nemotron) API key saved."
+            if body.agent_syra_ultra_api_key.strip()
+            else "syra-ultra API key cleared."
         )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))

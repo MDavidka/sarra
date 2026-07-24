@@ -21,16 +21,20 @@ The agent uses only Syte's configured Syra profiles and their existing fixed
 OpenAI-compatible endpoints:
 
 - `syra-nano`: Gemini Flash (fast / Instant)
-- `syra-base` **(builder)**: OpenRouter `qwen/qwen3.5-flash-02-23` — code edits and tool loops
+- `syra-base` **(builder)**: Aliyun MaaS `qwen3.5-flash` — code edits and tool loops
 - `syra-havy`: Gemini Pro (vision)
 - `syra-ultra` **(thinker)**: OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` — plans / architecture
 
-Builder and thinker share one `OPENROUTER_API_KEY` (`agent_openrouter_api_key`).
-Balanced–Max thinking levels call the thinker for a batched brief / site plan, then
-the builder executes tools. Instant/Fast skip the thinker entirely.
+Builder and thinker use **different APIs and keys** (`SYRA_BASE_API_KEY` vs
+`SYRA_ULTRA_API_KEY`). Balanced–Max thinking levels call the thinker for a
+batched brief / site plan, then the builder executes tools. Instant/Fast skip
+the thinker entirely.
 
 Token efficiency: tool/CLI output is filtered before it re-enters context; listings
 honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).
+
+Provider keys remain in Syte system settings. They are sent directly to the
+selected provider and are never copied into project runtime files.
 
 ## Lifecycle and reliability
 
