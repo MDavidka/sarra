@@ -469,7 +469,7 @@ async def save_settings(body: SettingsRequest):
             )
         await set_setting("agent_syra_ultra_api_key", ultra_key)
         messages.append(
-            "syra-ultra (Aliyun · Qwen 3.6 / qwen3.5-flash) API key saved."
+            "syra-ultra (Aliyun · qwen3.7-plus) API key saved."
             if ultra_key
             else "syra-ultra API key cleared."
         )

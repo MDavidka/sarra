@@ -4,7 +4,7 @@ Each profile is a full think+build model — there is no separate thinker.
 - ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
 - ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
-- ``syra-ultra`` — Aliyun Qwen 3.6 (qwen3.5-flash)
+- ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ THINKER_PROFILE = DEFAULT_PROFILE  # deprecated — no separate thinker
 NANO_MODEL = "gemini-3.1-flash-lite"
 BASE_MODEL = "deepseek-v4-flash"
 PRO_MODEL = "gemini-3.6-flash"
-ULTRA_MODEL = "qwen3.5-flash"
+ULTRA_MODEL = "qwen3.7-plus"
 
 # Backward-compat aliases used by older tests/docs.
 BUILDER_MODEL = BASE_MODEL
@@ -112,9 +112,10 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "role": "ultra",
         "input_price_per_mtok": 0.17,
         "output_price_per_mtok": 1.02,
-        "max_tokens": 8192,
-        "max_history_messages": 48,
-        "max_tool_result_chars": 8000,
+        # Cost-oriented caps from PR #142: shorter context in + bounded completion out.
+        "max_tokens": 4096,
+        "max_history_messages": 40,
+        "max_tool_result_chars": 6000,
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },

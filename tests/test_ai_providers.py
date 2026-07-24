@@ -55,15 +55,18 @@ def test_pro_vertex_gemini_36_flash() -> None:
     assert pro["output_price_per_mtok"] == 7.50
 
 
-def test_ultra_aliyun_qwen_flash() -> None:
+def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
     ultra = PROFILE_PROVIDERS["syra-ultra"]
     assert ultra["label"] == "Aliyun"
     assert ultra["api_base"] == ALIYUN_MAAS_API_BASE
-    assert ultra["model"] == ULTRA_MODEL == "qwen3.5-flash"
+    assert ultra["model"] == ULTRA_MODEL == "qwen3.7-plus"
     assert ultra["role"] == "ultra"
     assert ultra["input_price_per_mtok"] == 0.17
     assert ultra["output_price_per_mtok"] == 1.02
     assert ultra["setting_key"] == "agent_syra_ultra_api_key"
+    assert ultra["max_tokens"] == 4096
+    assert ultra["max_history_messages"] == 40
+    assert ultra["max_tool_result_chars"] == 6000
     # Ultra is a full think+build profile — not a separate thinker endpoint.
     assert ultra["role"] != "think"
 
