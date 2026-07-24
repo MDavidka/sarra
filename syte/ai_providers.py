@@ -6,8 +6,10 @@ from typing import TypedDict
 
 VERTED_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
-# Fireworks OpenAI-compatible inference API (https://app.fireworks.ai/).
-FIREWORKS_API_BASE = "https://api.fireworks.ai/inference/v1"
+# Aliyun MaaS OpenAI-compatible token-plan endpoint (ap-southeast-1).
+ALIYUN_MAAS_API_BASE = (
+    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+)
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
 
@@ -52,10 +54,10 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     },
     "syra-ultra": {
         "profile": "syra-ultra",
-        "label": "Fireworks",
+        "label": "Aliyun",
         "provider": "openai",
-        "api_base": FIREWORKS_API_BASE,
-        "model": "accounts/fireworks/models/minimax-m3",
+        "api_base": ALIYUN_MAAS_API_BASE,
+        "model": "glm-5.2",
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },
