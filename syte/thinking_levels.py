@@ -1,33 +1,28 @@
-"""Per-request thinking depth (Fast → Deep Think) for Syte cloud agent turns.
+"""Per-request generation depth for Syte cloud agent turns.
 
 ``thinking_level`` is independent of the project's persistent ``model_profile``.
 When provided on ``agent_change`` / ``agent_communicate`` / GUI chat, it selects
-temperature, top_p, optional native thinking budgets, tool-step cap, and which
-Syra profiles to use for that turn.
+temperature, top_p, optional native thinking budgets, and tool-step cap.
 
-Builder vs thinker (OpenRouter split):
-- Builder (``syra-base`` / qwen3.5-flash) runs the tool loop and writes code.
-- Thinker (``syra-ultra`` / nemotron-3-ultra free) handles planning / architecture
-  when ``thinking_enabled`` is true. Instant/Fast skip the thinker entirely.
+The selected model profile handles both planning and building — there is no
+separate thinker model. ``thinking_level`` only tunes generation params.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from syte.ai_providers import BUILDER_PROFILE, THINKER_PROFILE
+from syte.ai_providers import DEFAULT_PROFILE
 
 THINKING_LEVEL_MIN = 1
 THINKING_LEVEL_MAX = 5
 DEFAULT_THINKING_LEVEL = 3
 
-# level → generation settings applied for a single request
+# level → generation settings applied for a single request.
+# model_profile is filled from the caller's selected / fallback profile.
 THINKING_LEVELS: dict[int, dict[str, Any]] = {
     1: {
         "label": "Instant",
-        "model_profile": BUILDER_PROFILE,
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": None,
         "temperature": 0.1,
         "top_p": 0.85,
         "reasoning_effort": "low",
@@ -41,9 +36,6 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
     },
     2: {
         "label": "Fast",
-        "model_profile": BUILDER_PROFILE,
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": None,
         "temperature": 0.2,
         "top_p": 0.90,
         "reasoning_effort": "low",
@@ -56,9 +48,6 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
     },
     3: {
         "label": "Balanced",
-        "model_profile": BUILDER_PROFILE,
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": THINKER_PROFILE,
         "temperature": 0.2,
         "top_p": 0.95,
         "reasoning_effort": "medium",
@@ -71,9 +60,6 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
     },
     4: {
         "label": "Deep",
-        "model_profile": BUILDER_PROFILE,
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": THINKER_PROFILE,
         "temperature": 0.3,
         "top_p": 0.98,
         "reasoning_effort": "high",
@@ -86,9 +72,6 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
     },
     5: {
         "label": "Max",
-        "model_profile": BUILDER_PROFILE,
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": THINKER_PROFILE,
         "temperature": 0.4,
         "top_p": 1.0,
         "reasoning_effort": "high",
@@ -126,12 +109,13 @@ def resolve_thinking_config(
 ) -> dict[str, Any]:
     """Build the per-request generation config.
 
-    When ``thinking_level`` is omitted, keep the project's profile as the builder
-    and use conservative defaults (temperature 0.2, streaming on, no native thinking).
+    When ``thinking_level`` is omitted, keep the project's profile and use
+    conservative defaults (temperature 0.2, streaming on, no native thinking).
+    The selected profile always runs both planning and the tool loop.
     """
+    profile = (fallback_profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
     level = normalize_thinking_level(thinking_level)
     if level is None:
-        profile = (fallback_profile or BUILDER_PROFILE).strip() or BUILDER_PROFILE
         return {
             "thinking_level": None,
             "label": "Default",
@@ -151,7 +135,11 @@ def resolve_thinking_config(
         }
     config = dict(THINKING_LEVELS[level])
     config["thinking_level"] = level
-    config["override_profile"] = True
+    config["model_profile"] = profile
+    config["builder_profile"] = profile
+    # No separate thinker — the selected model plans and builds.
+    config["thinker_profile"] = None
+    config["override_profile"] = False
     return config
 
 
@@ -184,7 +172,16 @@ def model_supports_native_thinking(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
-    return bool(is_deepseek or is_anthropic or is_openai_reasoning or is_nemotron)
+    is_gemini = "gemini" in model_l or "generativelanguage.googleapis.com" in api_l
+    is_qwen = "qwen" in model_l
+    return bool(
+        is_deepseek
+        or is_anthropic
+        or is_openai_reasoning
+        or is_nemotron
+        or is_gemini
+        or is_qwen
+    )
 
 
 def build_model_thinking_params(
@@ -228,6 +225,7 @@ def build_model_thinking_params(
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
     is_openrouter = "openrouter.ai" in api_l
+    is_gemini = "gemini" in model_l or "generativelanguage.googleapis.com" in api_l
 
     # DeepSeek prefix cache is safe even without thinking mode.
     if is_deepseek:
@@ -258,6 +256,13 @@ def build_model_thinking_params(
         params["reasoning_effort"] = effort
         params["thinking_applied"] = True
 
+    # Gemini (Vertex / AI Studio OpenAI-compat): map effort when thinking is on.
+    if is_gemini and enabled:
+        effort = str(cfg.get("reasoning_effort") or "").strip()
+        if effort:
+            params["reasoning_effort"] = effort
+            params["thinking_applied"] = True
+
     return params
 
 
@@ -270,9 +275,9 @@ def apply_prompt_cache_markers(
 ) -> list[dict[str, Any]]:
     """Annotate the system prompt for provider-native prompt caching when supported.
 
-    OpenAI-compatible Syra endpoints (OpenRouter / Gemini) rely on stable system-first
-    prefixes. Anthropic-native cache_control content blocks are only applied when the
-    provider/model is actually Anthropic/Claude.
+    OpenAI-compatible Syra endpoints (DeepSeek / Gemini / Aliyun) rely on stable
+    system-first prefixes. Anthropic-native cache_control content blocks are only
+    applied when the provider/model is actually Anthropic/Claude.
 
     If the system message is already a list of content blocks (static/dynamic split
     with cache_control on the static prefix), leave it unchanged.
@@ -304,25 +309,22 @@ def apply_prompt_cache_markers(
             ]
         out[0] = system
 
-    # OpenRouter / Gemini / OpenAI: keep plain string system content.
+    # DeepSeek / Gemini / Aliyun / OpenAI: keep plain string system content.
     _ = api_base
     return out
 
 
 def thinking_levels_spec() -> dict[str, Any]:
-    """Public API/docs description of the slider."""
+    """Public API/docs description of the (legacy) thinking_level parameter."""
     return {
         "parameter": "thinking_level",
         "range": [THINKING_LEVEL_MIN, THINKING_LEVEL_MAX],
         "default_when_omitted": "project model_profile + temperature 0.2",
-        "builder_profile": BUILDER_PROFILE,
-        "thinker_profile": THINKER_PROFILE,
+        "builder_profile": "selected model_profile",
+        "thinker_profile": None,
         "levels": {
             str(level): {
                 "label": cfg["label"],
-                "model_profile": cfg["model_profile"],
-                "builder_profile": cfg.get("builder_profile"),
-                "thinker_profile": cfg.get("thinker_profile"),
                 "temperature": cfg["temperature"],
                 "top_p": cfg["top_p"],
                 "reasoning_effort": cfg["reasoning_effort"],
@@ -332,10 +334,8 @@ def thinking_levels_spec() -> dict[str, Any]:
             for level, cfg in THINKING_LEVELS.items()
         },
         "note": (
-            "thinking_level configures the turn only — it does not persist the "
-            "project's model_profile setting. Instant/Fast use the builder "
-            "(Aliyun qwen3.5-flash) only; Balanced–Max also call the thinker "
-            "(OpenRouter nemotron-3-ultra) for planning. Temperature/top_p apply to all "
-            "providers; native thinking budgets apply when the provider supports them."
+            "thinking_level only tunes temperature / tool-step caps / native "
+            "thinking budgets for the selected model_profile. There is no "
+            "separate thinker model — the chosen profile plans and builds."
         ),
     }

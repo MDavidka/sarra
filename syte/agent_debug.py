@@ -135,9 +135,9 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
             error = "Provider probes failed"
 
     hints: list[str] = []
-    if spec["label"] == "Verted" and models_probe and models_probe.get("status_code") == 401:
+    if spec["label"] in ("Vertex AI", "Verted") and models_probe and models_probe.get("status_code") == 401:
         hints.append(
-            "Verted (Gemini) often returns HTTP 401 on GET /models even with a valid key — "
+            "Vertex AI / Gemini often returns HTTP 401 on GET /models even with a valid key — "
             "check chat_completion instead."
         )
     if chat_probe and chat_probe.get("status_code") == 404:
@@ -145,8 +145,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     if chat_probe and chat_probe.get("status_code") in (401, 403):
         hints.append(
             f"This key was rejected by {spec['label']}. "
-            f"Ensure it is a {spec['label']} key "
-            f"(Aliyun keys for syra-base builder; OpenRouter keys for syra-ultra thinker)."
+            f"Ensure it is a {spec['label']} key for profile {profile}."
         )
 
     return {

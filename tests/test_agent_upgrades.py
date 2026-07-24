@@ -23,14 +23,15 @@ def test_build_model_thinking_params_applies_temperature_top_p() -> None:
     params = build_model_thinking_params(
         cfg,
         provider="openai",
-        model="gemini-2.5-pro",
+        model="gemini-3.6-flash",
         api_base="https://generativelanguage.googleapis.com/v1beta/openai",
     )
     assert params["temperature"] == 0.3
     assert params["top_p"] == 0.98
-    assert "reasoning_effort" not in params
+    # Gemini 3.x accepts reasoning_effort for native thinking depth.
+    assert params["reasoning_effort"] == "high"
+    assert params["thinking_applied"] is True
     assert "thinking" not in params
-
 
 def test_build_model_thinking_params_deepseek_thinking_and_cache() -> None:
     from syte.thinking_levels import build_model_thinking_params, resolve_thinking_config
