@@ -550,11 +550,11 @@ async def bridge_settings() -> dict[str, Any]:
     }
 
 
-async def selected_model_metadata(project: dict[str, Any]) -> dict[str, str]:
+async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
     bridge = await bridge_settings()
     profile = str(project.get("agent_model_profile") or bridge["default_profile"])
     spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
-    return {
+    meta: dict[str, Any] = {
         "profile": profile if profile in PROFILE_PROVIDERS else "syra-base",
         "provider": spec["provider"],
         "provider_label": spec["label"],
@@ -562,6 +562,29 @@ async def selected_model_metadata(project: dict[str, Any]) -> dict[str, str]:
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
     }
+    # Optional per-profile cost caps from ai_providers.PROFILE_PROVIDERS.
+    for key in ("max_tokens", "max_history_messages", "max_tool_result_chars"):
+        if key in spec and spec[key] is not None:
+            meta[key] = int(spec[key])
+    return meta
+
+
+def _model_history_limit(model: dict[str, Any] | None) -> int:
+    if model and model.get("max_history_messages"):
+        return max(8, int(model["max_history_messages"]))
+    return MAX_HISTORY_MESSAGES
+
+
+def _model_tool_result_chars(model: dict[str, Any] | None) -> int:
+    if model and model.get("max_tool_result_chars"):
+        return max(2_000, int(model["max_tool_result_chars"]))
+    return MAX_TOOL_RESULT_CHARS
+
+
+def _model_max_tokens(model: dict[str, Any] | None) -> int | None:
+    if model and model.get("max_tokens"):
+        return max(256, int(model["max_tokens"]))
+    return None
 
 
 async def ensure_agent_runtime(project: dict[str, Any]) -> dict[str, Any]:
@@ -1378,7 +1401,7 @@ async def _execute_tool(
     name: str,
     args: dict[str, Any],
     *,
-    model: dict[str, str] | None = None,
+    model: dict[str, Any] | None = None,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run a tool and always return a JSON-serializable result.
@@ -1392,6 +1415,7 @@ async def _execute_tool(
     from syte.workspace_api import delete_file, execute_command, list_workspace_files, read_file, write_file
 
     ctx = context or {}
+    tool_chars = int(ctx.get("max_tool_result_chars") or _model_tool_result_chars(model))
     try:
         if (
             ctx.get("question_required")
@@ -1446,8 +1470,8 @@ async def _execute_tool(
             await _track_touched_file(project_id, str(args["path"]), ctx, content=content if isinstance(content, str) else None)
             text = content if isinstance(content, str) else "Binary file"
             # Cap tool payload so a single large file cannot blow the LLM context.
-            if isinstance(text, str) and len(text) > MAX_TOOL_RESULT_CHARS:
-                text = _truncate_for_llm(text, MAX_TOOL_RESULT_CHARS)
+            if isinstance(text, str) and len(text) > tool_chars:
+                text = _truncate_for_llm(text, tool_chars)
             return {"ok": ok, "content": text, "mime": mime}
         if name == "write_file":
             path = str(args["path"])
@@ -1469,7 +1493,7 @@ async def _execute_tool(
                 project_id, str(args["command"]), cwd=str(args.get("cwd") or "app"),
                 timeout=timeout_s, source="agent",
             )
-            truncated = _truncate_for_llm(output, MAX_TOOL_RESULT_CHARS)
+            truncated = _truncate_for_llm(output, tool_chars)
             if code == 124:
                 return {
                     "ok": False,
@@ -2319,6 +2343,9 @@ async def _provider_completion(
         "top_p": float(thinking_params.get("top_p", 0.95)),
         "stream": bool(stream and (on_token is not None or on_reasoning is not None)),
     }
+    max_tokens = _model_max_tokens(model)
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if use_tools:
         payload["tools"] = use_tools
         payload["tool_choice"] = "auto"
@@ -2515,7 +2542,13 @@ async def _run_subagent_loop(
             except json.JSONDecodeError:
                 args = {}
             try:
-                result = await _execute_tool(project_id, name, args, model=model, context={})
+                result = await _execute_tool(
+                    project_id,
+                    name,
+                    args,
+                    model=model,
+                    context={"max_tool_result_chars": _model_tool_result_chars(model)},
+                )
             except asyncio.CancelledError:
                 result = {
                     "ok": False,
@@ -2526,7 +2559,9 @@ async def _run_subagent_loop(
                 messages.append({
                     "role": "tool",
                     "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                    "content": _truncate_tool_payload(public),
+                    "content": _truncate_tool_payload(
+                        public, max_chars=_model_tool_result_chars(model)
+                    ),
                 })
                 raise
             except Exception as exc:
@@ -2539,7 +2574,9 @@ async def _run_subagent_loop(
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                "content": _truncate_tool_payload(public),
+                "content": _truncate_tool_payload(
+                    public, max_chars=_model_tool_result_chars(model)
+                ),
             })
     return {
         "ok": False,
@@ -2770,9 +2807,11 @@ async def _communicate_with_agent_impl(
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
+    history_limit = _model_history_limit(model)
+    tool_result_chars = _model_tool_result_chars(model)
     instruction_task = asyncio.create_task(_build_syte_instruction_parts(project_id))
     history_task = asyncio.create_task(
-        conversation_messages(project_id, limit=MAX_HISTORY_MESSAGES, last_session_only=True)
+        conversation_messages(project_id, limit=history_limit, last_session_only=True)
     )
     summary_task = asyncio.create_task(latest_summary(project_id))
     skills_task = asyncio.create_task(
@@ -3015,6 +3054,7 @@ async def _communicate_with_agent_impl(
         "question_answered": False,
         "plan_submitted": bool(plan_already_seeded),
         "model": model,
+        "max_tool_result_chars": tool_result_chars,
     }
 
     max_tool_steps = int(gen.get("max_tool_steps") or 48)
@@ -3274,7 +3314,7 @@ async def _communicate_with_agent_impl(
                         "error": "cancelled",
                         "message": f"Tool {name} cancelled",
                     }
-                    encoded = _truncate_tool_payload(result)
+                    encoded = _truncate_tool_payload(result, max_chars=tool_result_chars)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": call_id,
@@ -3389,7 +3429,7 @@ async def _communicate_with_agent_impl(
                         turso_session_id=turso_session_id,
                     )
                 public_result = {k: v for k, v in result.items() if not str(k).startswith("_")}
-                encoded = _truncate_tool_payload(public_result)
+                encoded = _truncate_tool_payload(public_result, max_chars=tool_result_chars)
                 await _persist_message(
                     project_id, request_id, "tool", encoded,
                     session_number=session_number, turso_session_id=turso_session_id,

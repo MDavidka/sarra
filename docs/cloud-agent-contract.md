@@ -23,7 +23,7 @@ OpenAI-compatible endpoints:
 - `syra-nano`: Gemini Flash
 - `syra-base`: DeepSeek Chat
 - `syra-havy`: Gemini Pro
-- `syra-ultra`: Aliyun GLM-5.2 (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `glm-5.2`)
+- `syra-ultra`: Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
 
 Provider keys remain in Syte system settings. They are sent directly to the
 selected provider and are never copied into project runtime files.

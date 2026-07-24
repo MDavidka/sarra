@@ -448,7 +448,7 @@ async def save_settings(body: SettingsRequest):
     if body.agent_syra_ultra_api_key is not None:
         await set_setting("agent_syra_ultra_api_key", body.agent_syra_ultra_api_key.strip())
         messages.append(
-            "syra-ultra (Aliyun · glm-5.2) API key saved."
+            "syra-ultra (Aliyun · qwen3.7-plus) API key saved."
             if body.agent_syra_ultra_api_key.strip()
             else "syra-ultra API key cleared."
         )
