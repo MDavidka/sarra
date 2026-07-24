@@ -755,17 +755,14 @@
                 </div>
               </div>
 
-              <details class="ai-env-details">
-                <summary>Environment variables (auto-injected)</summary>
-                <div class="ai-env-grid">
-                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI key for syra-nano</span></div>
-                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek key for syra-base</span></div>
-                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI key for syra-havy (pro)</span></div>
-                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun MaaS key for syra-ultra (Qwen)</span></div>
-                  <div class="ai-env-row"><code>TURSO_DATABASE_URL</code><span>Durable agent-session storage (libSQL)</span></div>
-                  <div class="ai-env-row"><code>TURSO_AUTH_TOKEN</code><span>Auth token for the Turso database</span></div>
-                  <div class="ai-env-row"><code>HOME</code><span>Isolated per workspace UUID</span></div>
-                  <div class="ai-env-row"><code>SYTE cloud runtime</code><span>Embedded VM runtime</span></div>
+              <details class="ai-env-details" open>
+                <summary>Provider keys &amp; environment</summary>
+                <p class="hint block">Keys resolve from saved settings first, then process env. Values are masked.</p>
+                <div class="ai-env-grid" id="ai-provider-key-status">
+                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
+                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek · base</span></div>
+                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
+                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
                 </div>
               </details>
 
