@@ -651,6 +651,7 @@ async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir:
 
     assert "update_plan" in instruction
     assert "delegate_task" in instruction
+    assert "await_subagent" in instruction
     assert "isolated preview" in instruction or "development preview" in instruction
     assert "Never deploy" in instruction
     assert "shadcn" in instruction.lower()

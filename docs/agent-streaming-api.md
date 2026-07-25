@@ -248,6 +248,9 @@ Structured tool failure for observability (does not replace `tool_call_finished`
 | `tool_failed` | Generic tool failure (see `message`) | varies |
 | `cancelled` | Tool aborted by interrupt/stop | `false` |
 | `subagent_timeout` | Subagent wall-clock timeout | `true` |
+| `subagent_queue_full` | Too many background subagents for the project | `true` |
+| `research_readonly` | Mutating tool blocked in research-mode subagent | `true` |
+| `await_timeout` | `await_subagent` timed out; subagent still running | `true` |
 | `mcp_dispatch_unsupported` | Custom MCP stdio dispatch disabled | `false` |
 | `builtin_readonly` | Attempted to edit built-in MCP addon | `false` |
 

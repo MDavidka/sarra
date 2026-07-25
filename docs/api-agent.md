@@ -30,12 +30,15 @@ workspace text search — prefer it over unbounded `list_files` / shell grep.
 ```json
 {
   "message": "Review the landing page spacing",
-  "model_profile": "syra-base",
+  "model_profile": "auto",
   "thinking_level": 3,
   "improve_from_screenshot": false,
   "visual_analysis_id": null
 }
 ```
+
+Omit `model_profile` or set it to `auto` to let Syte pick `syra-nano` /
+`syra-base` / `syra-havy` from the message. Explicit profiles still win.
 
 Optional visual feedback fields:
 

@@ -24,7 +24,8 @@ async def _project(project_id: str) -> dict:
     from syte.database import create_project, get_project, init_db, set_setting
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    # DeepSeek-shaped key so migrate_provider_lineup_keys does not move it off base.
+    await set_setting("agent_syra_base_api_key", "sk-test-deepseek-key-for-agent-tests")
     await create_project({"id": project_id, "name": project_id, "port": 3000, "start_command": ""})
     return (await get_project(project_id)) or {}
 
@@ -95,6 +96,7 @@ async def test_subagent_wall_clock_timeout(monkeypatch: pytest.MonkeyPatch) -> N
     from syte import cloud_agent
 
     monkeypatch.setattr(cloud_agent, "SUBAGENT_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(cloud_agent, "SUBAGENT_RESEARCH_TIMEOUT_S", 0.05)
 
     async def hang(*args, **kwargs):
         await asyncio.sleep(10)
