@@ -940,8 +940,13 @@ async def api_agent_sessions_public(
 async def api_agent_activity_stream_public(
     project_id: str, request: Request, since_id: int = 0, session: str | None = None,
 ):
-    """SSE stream for live agent activity (complements Turso session polling)."""
-    from syte.agent_activity import activity_sse_generator
+    """SSE stream for live agent activity (complements Turso session polling).
+
+    Frames for ``token_delta`` / ``thinking_delta`` are minimal-delta (raw text +
+    tiny header). The response body is gzip/brotli compressed when the client
+    sends ``Accept-Encoding``.
+    """
+    from syte.agent_activity import activity_sse_generator, sse_stream_response
 
     project = await get_project(project_id)
     if not project:
@@ -951,19 +956,9 @@ async def api_agent_activity_stream_public(
         async for frame in activity_sse_generator(
             project_id, since_id=since_id, session=session,
         ):
-            if await request.is_disconnected():
-                break
             yield frame
 
-    return StreamingResponse(
-        _gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": NO_CACHE,
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return sse_stream_response(request, _gen())
 
 
 @app.get("/api/agent_session/{session_id}")

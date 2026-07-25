@@ -5,8 +5,9 @@
 Syte's cloud agent emits real-time events via Server-Sent Events (SSE) at:
 
 - `GET /api/projects/{id}/agent/activity/stream` (session auth)
-- `GET /sycord/projects/{project_id}/activity` (token auth)
-- Polling mirror: `GET /api/projects/{id}/agent/activity?since_id=N`
+- `GET /api/agent_activity/stream?uuid=` (token API — external pages)
+- `GET /sycord/api/agent_activity/stream?uuid=` (Sycord token API)
+- Polling mirror: `GET /api/agent_activity?uuid=&since_id=N` / `GET /api/projects/{id}/agent/activity?since_id=N`
 - Durable Turso sessions: `GET /api/agent_session/{turso_session_id}?since_id=N`
 
 SSE frames are emitted as:
@@ -17,15 +18,45 @@ event: {event_type}
 data: {JSON event object}
 ```
 
-The `data` payload is always a full activity event:
+When the client sends `Accept-Encoding: gzip` (or `br` if Brotli is installed),
+the SSE body is streamed with `Content-Encoding: gzip|br` so token frames stay
+small on the wire.
+
+### Hot path (token / thinking deltas)
+
+`token_delta` and `thinking_delta` use a **minimal-delta** wire shape — only raw
+text + a tiny header. Verbose fields (`project_id`, `role`, `title`, `source`,
+`created_at`, `mark_kind`, …) are stripped on emit and on history replay.
+
+```json
+{
+  "id": 42,
+  "event_type": "token_delta",
+  "detail": "partial text",
+  "payload": {
+    "delta": "partial text",
+    "request_id": "req-…",
+    "session": 42,
+    "agent": "main"
+  }
+}
+```
+
+Deltas are **batched** before one frame: collect **16–32 tokens** or
+**300–500 characters** (≈80 ms idle flush). Hot events **never** mirror to
+Turso; durable content lands in final `assistant_message` / tool / request
+events. Cold (non-hot) events mirror to Turso in the **background** so remote
+DB latency never blocks SSE or TTFT.
+
+Cold (non-hot) events still use the full activity object:
 
 ```json
 {
   "id": 42,
   "project_id": "proj_abc",
-  "event_type": "token_delta",
+  "event_type": "tool_call_started",
   "role": "assistant",
-  "title": "Stream",
+  "title": "write_file",
   "detail": "…",
   "payload": { "...": "event-specific fields" },
   "source": "api",
@@ -35,6 +66,10 @@ The `data` payload is always a full activity event:
 
 Clients should prefer `event_type` + `payload` for parsing. Heartbeats are sent as
 SSE comments: `: heartbeat`.
+
+There is **no** stream event named `running since` / `start`. Runtime readiness
+uses `GET /agent_status` → `agent_last_started_at` / `agent_running`. Turn busy
+is `processing` / `request_started`.
 
 ### Chat lanes: `payload.agent`
 
@@ -60,16 +95,16 @@ time a subagent starts.
 
 ### `token_delta`
 
-Streamed LLM output tokens.
+Streamed LLM output tokens (batched, slim wire).
 
-**payload:**
+**payload (minimal):**
 
 ```json
 {
   "request_id": "req-…",
   "session": 42,
   "delta": "partial text",
-  "mark_kind": "stream"
+  "agent": "main"
 }
 ```
 
@@ -83,14 +118,14 @@ appear on the live SSE channel.
 Streamed model reasoning / chain-of-thought chunks (when the selected model
 supports native thinking and the turn's `thinking_level` enables it).
 
-**payload:**
+**payload (minimal):**
 
 ```json
 {
   "request_id": "req-…",
   "session": 42,
   "delta": "partial reasoning text",
-  "mark_kind": "thinking"
+  "agent": "main"
 }
 ```
 

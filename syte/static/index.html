@@ -76,9 +76,21 @@
               <button type="button" class="nav-sublink" data-view="ai">
                 <i data-lucide="sparkles"></i><span>AI</span>
               </button>
-              <a class="nav-sublink" href="/api/" data-view="api">
-                <i data-lucide="file-code-2"></i><span>API</span>
-              </a>
+              <div class="nav-api-group" id="nav-api-group">
+                <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
+                  <i data-lucide="file-code-2"></i><span>API</span>
+                </a>
+                <div class="nav-api-minitabs" id="nav-api-minitabs" aria-label="API documentation sections">
+                  <a class="nav-api-mini" href="/api/#overview/overview-flow">Overview</a>
+                  <a class="nav-api-mini" href="/api/#auth/auth-token">Auth</a>
+                  <a class="nav-api-mini" href="/api/#agent/agent-status">Agent</a>
+                  <a class="nav-api-mini" href="/api/#stream/stream-connect">Stream</a>
+                  <a class="nav-api-mini" href="/api/#stream/token-delta">token_delta</a>
+                  <a class="nav-api-mini" href="/api/#turso/turso-overview">Turso</a>
+                  <a class="nav-api-mini" href="/api/#agent/agent-change">agent_change</a>
+                  <a class="nav-api-mini" href="/api/#agent/agent-activity-stream">SSE</a>
+                </div>
+              </div>
               <button type="button" class="nav-sublink" data-view="settings">
                 <i data-lucide="settings-2"></i><span>Settings</span>
               </button>

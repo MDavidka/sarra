@@ -270,7 +270,16 @@ def build_ai_spec(base_url: str = "") -> dict:
                 ],
                 "activity_sse": {
                     "endpoint": "GET /api/projects/{uuid}/agent/activity/stream?since_id=0&session=last",
+                    "token_api": "GET /api/agent_activity/stream?uuid={uuid}&since_id=0&session=last",
+                    "sycord": "GET /sycord/api/agent_activity/stream?uuid={uuid}",
                     "format": "text/event-stream — each frame is `data: {json}\\n\\n`",
+                    "compression": "gzip|br when Accept-Encoding allows",
+                    "hot_path": {
+                        "types": ["token_delta", "thinking_delta"],
+                        "shape": "minimal-delta (id, event_type, detail, payload.{delta,request_id,session,agent})",
+                        "batch": "16–32 tokens or 300–500 chars (~80ms idle flush)",
+                        "turso": "skipped — durable content in cold events / messages",
+                    },
                     "note": (
                         "Live activity mirror; disconnect only stops the SSE reader — "
                         "use POST interrupt/stop to cancel the agent turn (DAV-131)."

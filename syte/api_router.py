@@ -538,7 +538,34 @@ async def api_agent_activity(
         "since_id": since_id,
         "session": session or None,
         "sessions_url": f"/api/agent_sessions?uuid={uuid}",
+        "stream_url": f"/api/agent_activity/stream?uuid={uuid}&since_id={since_id}",
     }
+
+
+@router.get("/agent_activity/stream")
+async def api_agent_activity_stream(
+    request: Request,
+    uuid: str = Query(...),
+    since_id: int = Query(0, ge=0),
+    session: str | None = Query(None),
+    _token: dict = Depends(verify_api_token),
+):
+    """Token-API SSE stream for live agent activity (external pages).
+
+    Complements Turso session polling. Hot ``token_delta`` / ``thinking_delta``
+    frames are minimal-delta; response is gzip/brotli when accepted.
+    """
+    from syte.agent_activity import activity_sse_generator, sse_stream_response
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+
+    async def _gen():
+        async for frame in activity_sse_generator(uuid, since_id=since_id, session=session):
+            yield frame
+
+    return sse_stream_response(request, _gen())
 
 
 @router.get("/agent_screenshots")

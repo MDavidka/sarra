@@ -304,10 +304,11 @@ async def api_agent_activity_stream(
     session: str | None = Query(None),
     _token: dict = Depends(verify_api_token),
 ):
-    """Optional SSE activity stream (token deltas + tool events) alongside Turso polling."""
-    from fastapi.responses import StreamingResponse
+    """Optional SSE activity stream (token deltas + tool events) alongside Turso polling.
 
-    from syte.agent_activity import activity_sse_generator
+    Hot frames are minimal-delta; body is gzip/brotli when ``Accept-Encoding`` allows.
+    """
+    from syte.agent_activity import activity_sse_generator, sse_stream_response
 
     project = await get_project(uuid)
     if not project:
@@ -315,19 +316,9 @@ async def api_agent_activity_stream(
 
     async def _gen():
         async for frame in activity_sse_generator(uuid, since_id=since_id, session=session):
-            if await request.is_disconnected():
-                break
             yield frame
 
-    return StreamingResponse(
-        _gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return sse_stream_response(request, _gen())
 
 
 @router.get("/visual_analyses")
