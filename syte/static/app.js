@@ -27,6 +27,8 @@ let debugChatLoadedProjectId = null;
 let debugChatLastUserMessage = '';
 let debugChatStreamBuffers = new Map();
 let debugChatStreamFlushFrame = null;
+let debugChatThinkingBuffers = new Map();
+let debugChatThinkingFlushFrame = null;
 let debugChatActiveRequestId = '';
 let debugChatStopping = false;
 let debugChatActivityDismissTimer = null;
@@ -366,6 +368,11 @@ function clearDebugChatPanel({ resetCursor = false } = {}) {
     debugChatStreamFlushFrame = null;
   }
   debugChatStreamBuffers.clear();
+  if (debugChatThinkingFlushFrame) {
+    cancelAnimationFrame(debugChatThinkingFlushFrame);
+    debugChatThinkingFlushFrame = null;
+  }
+  debugChatThinkingBuffers.clear();
   el.innerHTML = '';
   const empty = document.createElement('div');
   empty.className = 'debug-chat-empty';
@@ -432,6 +439,7 @@ const DEBUG_CHAT_TOOL_META = {
   run_command: { label: 'Run command', icon: 'terminal' },
   service: { label: 'Preview service', icon: 'wrench' },
   update_plan: { label: 'Update plan', icon: 'list-checks' },
+  inspect_preview: { label: 'Inspect preview', icon: 'scan-search' },
   screenshot_preview: { label: 'Screenshot preview', icon: 'monitor-smartphone' },
   ask_question: { label: 'Ask question', icon: 'circle-help' },
   env_get: { label: 'Get env', icon: 'key-round' },
@@ -462,7 +470,8 @@ function debugChatRoleForEvent(event) {
   if (type === 'assistant_message' || type === 'request_completed' || type === 'message_snapshot') return 'assistant';
   if (type === 'token_delta') return 'stream';
   if (type === 'request_failed') return 'error';
-  if (type === 'thinking') return 'thinking';
+  if (type === 'thinking' || type === 'thinking_delta') return 'thinking';
+  if (type === 'usage') return 'usage';
   if (type === 'screenshot') return 'screenshot';
   if (type === 'question') return 'question';
   if (type === 'question_answered') return 'user';
@@ -519,6 +528,67 @@ function ensureStreamingAssistantBubble(requestId) {
   return bubble.querySelector('.debug-chat-bubble-body');
 }
 
+function ensureStreamingThinkingBubble(requestId) {
+  const rid = requestId || 'pending';
+  const messagesEl = getDebugChatMessagesEl();
+  if (!messagesEl) return null;
+  const existing = document.getElementById(`debug-chat-thinking-${rid}`);
+  if (existing) return existing.querySelector('.debug-chat-bubble-body');
+
+  hideDebugChatEmpty();
+  const bubble = document.createElement('div');
+  bubble.className = 'debug-chat-bubble debug-chat-thinking debug-chat-streaming';
+  bubble.id = `debug-chat-thinking-${rid}`;
+  bubble.dataset.requestId = rid;
+  bubble.innerHTML = `
+    <div class="debug-chat-bubble-head">
+      <span>Thinking</span>
+    </div>
+    <div class="debug-chat-bubble-body debug-chat-thinking"></div>
+  `;
+  messagesEl.appendChild(bubble);
+  scrollDebugChatToBottom();
+  return bubble.querySelector('.debug-chat-bubble-body');
+}
+
+function flushDebugChatThinkingBuffers() {
+  debugChatThinkingFlushFrame = null;
+  for (const [rid, text] of debugChatThinkingBuffers.entries()) {
+    const bodyEl = ensureStreamingThinkingBubble(rid);
+    if (bodyEl) bodyEl.textContent = text;
+  }
+  scrollDebugChatToBottom();
+}
+
+function queueDebugChatThinkingDelta(requestId, delta, snapshot) {
+  const rid = requestId || 'pending';
+  const snap = coerceDebugChatText(snapshot);
+  const piece = coerceDebugChatText(delta);
+  const next = snap || ((debugChatThinkingBuffers.get(rid) || '') + piece);
+  debugChatThinkingBuffers.set(rid, next);
+  if (!debugChatThinkingFlushFrame) {
+    debugChatThinkingFlushFrame = requestAnimationFrame(flushDebugChatThinkingBuffers);
+  }
+}
+
+function finalizeDebugChatThinking(requestId, finalText = '') {
+  const rid = requestId || 'pending';
+  if (debugChatThinkingFlushFrame) {
+    cancelAnimationFrame(debugChatThinkingFlushFrame);
+    debugChatThinkingFlushFrame = null;
+  }
+  const bufferedText = debugChatThinkingBuffers.get(rid) || '';
+  debugChatThinkingBuffers.delete(rid);
+  const text = coerceDebugChatText(finalText) || bufferedText;
+  let bubble = document.getElementById(`debug-chat-thinking-${rid}`);
+  const bodyEl = bubble?.querySelector('.debug-chat-bubble-body')
+    || (text ? ensureStreamingThinkingBubble(rid) : null);
+  if (bodyEl && text) bodyEl.textContent = text;
+  bubble = document.getElementById(`debug-chat-thinking-${rid}`);
+  if (bubble) bubble.classList.remove('debug-chat-streaming');
+  scrollDebugChatToBottom();
+}
+
 function flushDebugChatStreamBuffers() {
   debugChatStreamFlushFrame = null;
   for (const [rid, text] of debugChatStreamBuffers.entries()) {
@@ -571,6 +641,9 @@ function finalizeDebugChatStream(requestId, finalText = '') {
 function finalizeAllDebugChatStreams() {
   for (const [requestId, text] of [...debugChatStreamBuffers.entries()]) {
     finalizeDebugChatStream(requestId, text);
+  }
+  for (const [requestId, text] of [...debugChatThinkingBuffers.entries()]) {
+    finalizeDebugChatThinking(requestId, text);
   }
 }
 
@@ -831,9 +904,22 @@ function appendDebugChatBubble(event) {
   } else if (role === 'thinking') {
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
-        <span>${esc(event.title || 'Plan')}</span>
+        <span>${esc(event.title || 'Thinking')}</span>
       </div>
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
+    `;
+  } else if (role === 'usage') {
+    const cost = event.payload?.cost || {};
+    const usage = event.payload?.usage || {};
+    const label = cost.label || detail || 'usage';
+    const bits = [];
+    if (usage.input_tokens) bits.push(`in ${usage.input_tokens}`);
+    if (usage.output_tokens) bits.push(`out ${usage.output_tokens}`);
+    if (usage.thinking_tokens) bits.push(`think ${usage.thinking_tokens}`);
+    bubble.innerHTML = `
+      <div class="debug-chat-system-row debug-chat-usage-row">
+        <span>Cost — ${esc(label)}${bits.length ? ` (${esc(bits.join(' · '))})` : ''}</span>
+      </div>
     `;
   } else if (role === 'screenshot') {
     bubble.innerHTML = `
@@ -920,6 +1006,22 @@ function shouldSkipDebugChatEvent(event) {
     return true;
   }
   if (event.event_type === 'token_delta') return true;
+  if (event.event_type === 'thinking_delta') return true;
+  if (event.event_type === 'thinking') {
+    const rid = event.payload?.request_id || debugChatActiveRequestId || 'pending';
+    const streamBubble = document.getElementById(`debug-chat-thinking-${rid}`);
+    if (streamBubble) {
+      const body = streamBubble.querySelector('.debug-chat-bubble-body');
+      const detail = debugChatDetailText(event);
+      if (body && detail) body.textContent = detail;
+      streamBubble.classList.remove('debug-chat-streaming');
+      if (event.id != null) {
+        debugChatRenderedIds.add(event.id);
+        debugChatSinceId = Math.max(debugChatSinceId, event.id);
+      }
+      return true;
+    }
+  }
   if (event.event_type === 'message_snapshot') {
     if (!debugChatReplayingHistory) {
       finalizeDebugChatStream(event.payload?.request_id, event.payload?.content || event.detail);
@@ -1028,12 +1130,38 @@ function handleDebugChatActivity(event) {
     }
     return;
   }
+  if (event.event_type === 'thinking_delta') {
+    // During history replay, prefer the final `thinking` event so we do not
+    // rebuild one bubble per streamed word.
+    if (!debugChatReplayingHistory) {
+      if (debugChatActivityLabel !== 'Planning…') {
+        setDebugChatActivity('Planning…', 'Model is thinking');
+      }
+      queueDebugChatThinkingDelta(
+        event.payload?.request_id,
+        event.payload?.delta || event.detail,
+        event.payload?.snapshot,
+      );
+    }
+    if (event.id != null) {
+      debugChatRenderedIds.add(event.id);
+      debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    }
+    return;
+  }
+  if (event.event_type === 'thinking' && !debugChatReplayingHistory) {
+    finalizeDebugChatThinking(
+      event.payload?.request_id || debugChatActiveRequestId,
+      event.detail || event.payload?.delta || '',
+    );
+  }
   if (
     event.event_type === 'request_completed'
     || event.event_type === 'request_failed'
     || event.event_type === 'agent_stopped'
   ) {
     const requestId = eventRequestId || debugChatActiveRequestId;
+    finalizeDebugChatThinking(requestId);
     const isActiveRequest = !debugChatActiveRequestId
       || (Boolean(eventRequestId) && eventRequestId === debugChatActiveRequestId);
     const finalText = event.event_type === 'request_completed'
@@ -1198,7 +1326,7 @@ async function pollAgentActivityOnce(projectId) {
 // docs/agent-streaming-api.md). EventSource.onmessage only receives the default
 // `message` type, so we must also bind listeners for every activity event name.
 const DEBUG_CHAT_SSE_EVENT_TYPES = [
-  'user_message', 'assistant_message', 'thinking', 'tool_call', 'command_run',
+  'user_message', 'assistant_message', 'thinking', 'thinking_delta', 'usage', 'tool_call', 'command_run',
   'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
   'request_started', 'request_completed', 'request_failed', 'token_delta',
   'message_snapshot', 'tool_call_started', 'tool_call_finished', 'tool_error',

@@ -42,6 +42,7 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "assistant_message",
     "thinking",
     "thinking_delta",
+    "usage",
     "tool_call",
     "command_run",
     "file_created",

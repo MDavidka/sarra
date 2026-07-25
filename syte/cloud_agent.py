@@ -902,7 +902,8 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
             "- Never ship bare unstyled HTML scaffolds\n"
             "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
-            "- After UI changes: preview_start → inspect_preview (console) → screenshot_preview; fix any load/console errors\n"
+            "- After UI changes: preview_start → inspect_preview (DevTools load/console) first; "
+            "screenshot_preview only when you need visual layout review\n"
             "- Follow the Design Contract below strictly\n"
         )
     return (
@@ -946,15 +947,18 @@ def _build_static_instruction(
         "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
         "and a complete styled home page. Never ship a bare unstyled web scaffold. "
         "Do NOT use HeroUI/NextUI/Chakra/MUI/Ant Design for websites.\n",
-        "Tools: list/read/write/delete files; run_command; update_plan (persisted); screenshot_preview "
-        "(desktop + phone screenshots of a route — inspect images with vision); inspect_preview "
-        "(limited browser: fetch HTML/text, capture browser DevTools console/page errors, optional screenshot); "
+        "Tools: list/read/write/delete files; run_command; update_plan (persisted); inspect_preview "
+        "(preferred: Chromium DevTools — load_ok, console/page errors, network failures, page_summary "
+        "without screenshots); screenshot_preview "
+        "(desktop + phone images when you need visual layout review); "
         "ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
-        "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n",
+        "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n"
+        "Keep `syra/memory.md` current with a short summary, stack, key paths, and conventions. "
+        "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
         "semantic_search and/or search_code (or list_files on app/app and app/components). Prefer recently "
         "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates "
@@ -970,7 +974,8 @@ def _build_static_instruction(
         "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
         "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
         "Use ask_question whenever you need a preference, secret, numeric setting, or choice. Use "
-        "screenshot_preview or inspect_preview after UI changes and check BOTH phone and desktop layouts. "
+        "screenshot_preview only when you need visual layout review across viewports. Use ask_question "
+        "whenever you need a preference, secret, numeric setting, or choice. "
         "After website edits, ALWAYS call inspect_preview with include_console=true (default) to confirm "
         "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
         "fix them before finishing. Continue using tools until the request is actually complete; "
@@ -1083,11 +1088,21 @@ async def _build_syte_instruction_parts(
         memory_context_block,
         workspace_map_block,
     )
+    from syte.project_memory_file import (
+        ensure_project_memory_md,
+        project_memory_md_prompt_block,
+    )
+
+    try:
+        ensure_project_memory_md(project_id)
+    except OSError:
+        pass
 
     summary = await latest_summary(project_id)
     meta = await latest_session_meta(project_id)
     active_files = list((meta or {}).get("active_files") or [])
     memory_block = memory_context_block(summary, active_files)
+    file_memory_block = project_memory_md_prompt_block(project_id)
     design_block = design_profile_prompt_block(await get_design_profile(project_id))
     # Prefer layout/page/component index hits so the model edits real files.
     index_hits = await lookup_workspace_paths(
@@ -1107,7 +1122,9 @@ async def _build_syte_instruction_parts(
                 break
     map_block = workspace_map_block(index_hits, limit=20)
     dynamic = "\n\n".join(
-        part for part in (design_block, memory_block, map_block) if part and str(part).strip()
+        part
+        for part in (file_memory_block, design_block, memory_block, map_block)
+        if part and str(part).strip()
     ).strip()
     return static, dynamic
 
@@ -1537,10 +1554,11 @@ TOOLS: list[dict[str, Any]] = [
          "viewports": {"type": "array", "items": {"type": "string", "enum": ["desktop", "phone"]}, "description": "Defaults to both desktop and phone"},
      }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "inspect_preview", "description": (
-        "Limited browser for the project preview: fetch HTML/text of a route, read Chromium DevTools "
-        "console/page errors (default), and optionally take a screenshot. Confirms the site actually "
-        "loads in a real browser. URLs must be the project preview or an allowlisted custom URL — no "
-        "open web browsing. Use after UI edits to catch console errors and failed loads before finishing."),
+        "Preferred preview health check via real Chromium DevTools (no screenshot needed for "
+        "load/console verification). Fetches the route, returns load_ok, readyState, title, "
+        "console errors, page exceptions, network failures, and a page_summary (body text length, "
+        "h1, visible controls, failed resources). Use this AFTER UI edits to confirm the preview "
+        "actually loads — only add include_screenshot=true when you need visual layout review."),
      "parameters": {"type": "object", "properties": {
          "route": {"type": "string", "description": "Path on the preview origin, e.g. / or /login"},
          "url": {"type": "string", "description": "Optional full URL override (must be allowlisted)"},
@@ -2308,10 +2326,13 @@ async def _tool_inspect_preview(
         result["console_logs"] = console.get("console_logs") or []
         result["page_errors"] = console.get("page_errors") or []
         result["network_failures"] = console.get("network_failures") or []
+        result["page_summary"] = console.get("page_summary") or {}
         result["console_error_count"] = int(console.get("console_error_count") or 0)
         result["page_error_count"] = int(console.get("page_error_count") or 0)
         result["title"] = console.get("title") or ""
         result["ready_state"] = console.get("ready_state") or ""
+        summary = result["page_summary"] if isinstance(result["page_summary"], dict) else {}
+        body_len = int(summary.get("body_text_length") or 0)
         if not console.get("ok"):
             result["ok"] = False
             result["message"] = (
@@ -2321,7 +2342,8 @@ async def _tool_inspect_preview(
             result["message"] = (
                 f"{result['message']}; browser load_ok={bool(console.get('load_ok'))}, "
                 f"console_errors={result['console_error_count']}, "
-                f"page_errors={result['page_error_count']}"
+                f"page_errors={result['page_error_count']}, "
+                f"body_chars={body_len}"
             )
 
     if include_shot:
@@ -2510,6 +2532,12 @@ async def _parse_sse_completion(
     reasoning_parts: list[str] = []
     tool_acc: dict[int, dict[str, Any]] = {}
     finish_reason: str | None = None
+    usage_acc: dict[str, int] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "thinking_tokens": 0,
+    }
 
     async for line in response.aiter_lines():
         if not line:
@@ -2525,6 +2553,17 @@ async def _parse_sse_completion(
             chunk = json.loads(data)
         except json.JSONDecodeError:
             continue
+        usage = chunk.get("usage")
+        if isinstance(usage, dict):
+            usage_acc["input_tokens"] = int(
+                usage.get("prompt_tokens") or usage.get("input_tokens") or usage_acc["input_tokens"]
+            )
+            usage_acc["output_tokens"] = int(
+                usage.get("completion_tokens") or usage.get("output_tokens") or usage_acc["output_tokens"]
+            )
+            usage_acc["total_tokens"] = int(
+                usage.get("total_tokens") or usage_acc["total_tokens"]
+            )
         choices = chunk.get("choices") or []
         if not choices:
             continue
@@ -2558,7 +2597,54 @@ async def _parse_sse_completion(
         message["tool_calls"] = [tool_acc[i] for i in sorted(tool_acc)]
     if finish_reason:
         message["_finish_reason"] = finish_reason
+    if any(usage_acc.values()):
+        message["_usage"] = usage_acc
     return message
+
+
+def _estimate_turn_cost(model: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:
+    """Estimate USD cost for a turn from catalog $/1M prices and token usage."""
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    thinking_tokens = int(usage.get("thinking_tokens") or 0)
+    # Treat thinking tokens as billed output when providers report them separately.
+    billed_output = output_tokens + thinking_tokens
+    total = int(usage.get("total_tokens") or (input_tokens + billed_output))
+    in_price = model.get("input_price_per_mtok")
+    out_price = model.get("output_price_per_mtok")
+    # Bridge metadata may omit prices — fall back to profile catalog.
+    if in_price is None or out_price is None:
+        try:
+            from syte.ai_providers import PROFILE_PROVIDERS
+
+            spec = PROFILE_PROVIDERS.get(str(model.get("profile") or "")) or {}
+            if in_price is None:
+                in_price = spec.get("input_price_per_mtok")
+            if out_price is None:
+                out_price = spec.get("output_price_per_mtok")
+        except Exception:
+            pass
+    cost_usd = None
+    if in_price is not None and out_price is not None and (input_tokens or billed_output):
+        cost_usd = (input_tokens / 1_000_000.0) * float(in_price) + (
+            billed_output / 1_000_000.0
+        ) * float(out_price)
+    if cost_usd is None:
+        label = f"{total} tokens" if total else "usage unavailable"
+    elif cost_usd < 0.01:
+        label = f"${cost_usd:.4f} · {total} tokens"
+    else:
+        label = f"${cost_usd:.3f} · {total} tokens"
+    return {
+        "cost_usd": cost_usd,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "thinking_tokens": thinking_tokens,
+        "total_tokens": total,
+        "label": label,
+        "model": model.get("model"),
+        "profile": model.get("profile"),
+    }
 
 
 async def _provider_completion(
@@ -2780,8 +2866,19 @@ async def _provider_completion(
             choices = data.get("choices") or []
             if not choices or not isinstance(choices[0].get("message"), dict):
                 raise RuntimeError("Provider returned no assistant message")
+            message = dict(choices[0]["message"])
+            usage = data.get("usage")
+            if isinstance(usage, dict):
+                message["_usage"] = {
+                    "input_tokens": int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+                    "output_tokens": int(
+                        usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                    ),
+                    "total_tokens": int(usage.get("total_tokens") or 0),
+                    "thinking_tokens": int(usage.get("reasoning_tokens") or 0),
+                }
             record_circuit_success(model.get("provider") or "", model.get("model") or "")
-            return choices[0]["message"]
+            return message
         except ProviderError:
             raise
         except httpx.HTTPError as exc:
@@ -3405,6 +3502,13 @@ async def _communicate_with_agent_impl(
     max_tool_steps = int(gen.get("max_tool_steps") or 48)
     temperature = float(gen.get("temperature") or 0.2)
     want_stream = bool(gen.get("stream"))
+    turn_usage: dict[str, int] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "thinking_tokens": 0,
+        "total_tokens": 0,
+        "steps": 0,
+    }
 
     try:
         for step in itertools.count():
@@ -3429,6 +3533,13 @@ async def _communicate_with_agent_impl(
             # Cap: ignore tool calls past the thinking-level budget.
             if not allow_tools:
                 stored_calls = []
+            step_usage = assistant.get("_usage") if isinstance(assistant.get("_usage"), dict) else {}
+            if step_usage:
+                turn_usage["input_tokens"] += int(step_usage.get("input_tokens") or 0)
+                turn_usage["output_tokens"] += int(step_usage.get("output_tokens") or 0)
+                turn_usage["thinking_tokens"] += int(step_usage.get("thinking_tokens") or 0)
+                turn_usage["total_tokens"] += int(step_usage.get("total_tokens") or 0)
+                turn_usage["steps"] += 1
             await _persist_message(
                 project_id,
                 request_id,
@@ -3444,6 +3555,10 @@ async def _communicate_with_agent_impl(
                 next_assistant["reasoning_content"] = str(reasoning)
             if stored_calls:
                 next_assistant["tool_calls"] = stored_calls
+            # Preserve exact Vertex parts (thoughtSignature) for the in-turn resume
+            # after tools like ask_question — required by Gemini 3.
+            if isinstance(assistant.get("_vertex_parts"), list):
+                next_assistant["_vertex_parts"] = assistant["_vertex_parts"]
             messages.append(next_assistant)
             # Prefer provider reasoning for thinking events — do not mix answer text in (DAV-136).
             visible_thought = str(reasoning or "").strip()
@@ -3544,17 +3659,40 @@ async def _communicate_with_agent_impl(
                     )
 
                 reply = content.strip() or "Completed."
+                cost_info = _estimate_turn_cost(model, turn_usage)
                 await record_agent_event(
                     project_id, "request_completed", role="assistant", title="Completed",
                     detail=reply[:4000],
                     payload=_mark_payload(
                         status="d",
                         kind="message",
-                        base={"reply": reply},
+                        base={
+                            "reply": reply,
+                            "usage": turn_usage,
+                            "cost": cost_info,
+                        },
                     ),
                     source=source,
                     turso_session_id=turso_session_id,
                 )
+                if cost_info.get("cost_usd") is not None or turn_usage.get("total_tokens"):
+                    await record_agent_event(
+                        project_id,
+                        "usage",
+                        role="system",
+                        title="Cost",
+                        detail=str(cost_info.get("label") or ""),
+                        payload=_mark_payload(
+                            status="d",
+                            kind="usage",
+                            base={
+                                "usage": turn_usage,
+                                "cost": cost_info,
+                            },
+                        ),
+                        source=source,
+                        turso_session_id=turso_session_id,
+                    )
                 await record_agent_event(
                     project_id,
                     "session_stopped",

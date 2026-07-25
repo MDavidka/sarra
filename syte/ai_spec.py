@@ -249,6 +249,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "processing",
                     "thinking",
                     "thinking_delta",
+                    "usage",
                     "token_delta",
                     "screenshot",
                     "question",

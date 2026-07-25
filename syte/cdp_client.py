@@ -338,10 +338,31 @@ def inspect_url_with_devtools(
                 )
                 page_errors.append({"type": "exception", "text": text[:2000]})
 
+        page_summary: dict[str, Any] = {}
         eval_id = call(
             "Runtime.evaluate",
             {
-                "expression": "({title: document.title || '', readyState: document.readyState || '', href: location.href || ''})",
+                "expression": (
+                    "(() => {"
+                    "const body = document.body;"
+                    "const text = (body && (body.innerText || '')) || '';"
+                    "const failed = performance.getEntriesByType('resource')"
+                    ".filter(r => r.transferSize === 0 && r.decodedBodySize === 0 && r.name && !String(r.name).startsWith('data:'))"
+                    ".slice(0, 20).map(r => ({name: String(r.name).slice(0, 300), type: r.initiatorType || ''}));"
+                    "return {"
+                    "title: document.title || '',"
+                    "readyState: document.readyState || '',"
+                    "href: location.href || '',"
+                    "bodyTextLength: text.trim().length,"
+                    "bodyTextSample: text.trim().slice(0, 400),"
+                    "hasNextRoot: !!(document.getElementById('__next') || document.querySelector('[data-reactroot]')),"
+                    "h1: (document.querySelector('h1')?.innerText || '').trim().slice(0, 200),"
+                    "visibleButtons: Array.from(document.querySelectorAll('button,a[href]'))"
+                    ".slice(0, 12).map(el => (el.innerText || el.getAttribute('aria-label') || el.getAttribute('href') || '').trim().slice(0, 80)).filter(Boolean),"
+                    "failedResources: failed,"
+                    "};"
+                    "})()"
+                ),
                 "returnByValue": True,
             },
         )
@@ -355,6 +376,15 @@ def inspect_url_with_devtools(
                 if isinstance(value, dict):
                     title = str(value.get("title") or "")[:300]
                     ready_state = str(value.get("readyState") or "")
+                    page_summary = {
+                        "href": str(value.get("href") or "")[:500],
+                        "body_text_length": int(value.get("bodyTextLength") or 0),
+                        "body_text_sample": str(value.get("bodyTextSample") or "")[:400],
+                        "has_app_root": bool(value.get("hasNextRoot")),
+                        "h1": str(value.get("h1") or "")[:200],
+                        "visible_controls": list(value.get("visibleButtons") or [])[:12],
+                        "failed_resources": list(value.get("failedResources") or [])[:20],
+                    }
                 break
 
         if include_screenshot:
@@ -390,6 +420,8 @@ def inspect_url_with_devtools(
             message += f" — {len(severe)} console error(s), {len(page_errors)} page error(s)"
         if network_failures:
             message += f", {len(network_failures)} network failure(s)"
+        if page_summary.get("body_text_length") == 0 and load_ok:
+            message += ", body text empty (possible blank render)"
 
         result: dict[str, Any] = {
             "ok": ok,
@@ -402,6 +434,7 @@ def inspect_url_with_devtools(
             "network_failures": network_failures,
             "console_error_count": len(severe),
             "page_error_count": len(page_errors),
+            "page_summary": page_summary,
             "message": message,
             "width": width,
             "height": height,

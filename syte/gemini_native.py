@@ -283,6 +283,20 @@ def openai_messages_to_gemini(
             continue
 
         if role == "assistant":
+            # Prefer exact Vertex parts (includes mandatory thoughtSignature).
+            raw_parts = msg.get("_vertex_parts")
+            if isinstance(raw_parts, list) and raw_parts:
+                for call in msg.get("tool_calls") or []:
+                    if not isinstance(call, dict):
+                        continue
+                    call_id = str(call.get("id") or "")
+                    fn = call.get("function") or {}
+                    name = str(fn.get("name") or "")
+                    if call_id and name:
+                        call_names[call_id] = name
+                contents.append({"role": "model", "parts": raw_parts})
+                continue
+
             parts: list[dict[str, Any]] = []
             text = _content_to_text(msg.get("content"))
             if text:
@@ -303,7 +317,11 @@ def openai_messages_to_gemini(
                 if call_id and name:
                     call_names[call_id] = name
                 if name:
-                    parts.append({"functionCall": {"name": name, "args": args}})
+                    part: dict[str, Any] = {"functionCall": {"name": name, "args": args}}
+                    signature = call.get("thought_signature") or call.get("thoughtSignature")
+                    if signature:
+                        part["thoughtSignature"] = str(signature)
+                    parts.append(part)
             if parts:
                 contents.append({"role": "model", "parts": parts})
             continue
@@ -339,36 +357,85 @@ def openai_messages_to_gemini(
 
 
 def gemini_response_to_openai_message(data: dict[str, Any]) -> dict[str, Any]:
-    """Convert a generateContent JSON body into an OpenAI chat message dict."""
+    """Convert a generateContent JSON body into an OpenAI chat message dict.
+
+    Preserves Vertex/Gemini ``thoughtSignature`` on tool calls and returns the
+    original ``parts`` array as ``_vertex_parts`` so multi-turn function calling
+    (e.g. after ``ask_question``) does not drop mandatory thought signatures.
+    """
     candidates = data.get("candidates") or []
     if not candidates or not isinstance(candidates[0], dict):
         raise RuntimeError("Vertex Gemini returned no candidates")
     content = candidates[0].get("content") or {}
     parts = content.get("parts") or []
     text_bits: list[str] = []
+    thought_bits: list[str] = []
     tool_calls: list[dict[str, Any]] = []
     for part in parts:
         if not isinstance(part, dict):
             continue
-        if part.get("text"):
-            text_bits.append(str(part["text"]))
+        text = part.get("text")
+        if text:
+            # Gemini marks internal CoT with thought/thought=true on the part.
+            if part.get("thought") is True or str(part.get("thought") or "").lower() == "true":
+                thought_bits.append(str(text))
+            else:
+                text_bits.append(str(text))
         fc = part.get("functionCall") or part.get("function_call")
         if isinstance(fc, dict) and fc.get("name"):
             args = fc.get("args") if isinstance(fc.get("args"), dict) else {}
-            tool_calls.append({
+            call: dict[str, Any] = {
                 "id": f"call_{uuid.uuid4().hex[:24]}",
                 "type": "function",
                 "function": {
                     "name": str(fc["name"]),
                     "arguments": json.dumps(args, ensure_ascii=False),
                 },
-            })
+            }
+            signature = (
+                part.get("thoughtSignature")
+                or part.get("thought_signature")
+                or fc.get("thoughtSignature")
+                or fc.get("thought_signature")
+            )
+            if signature:
+                call["thought_signature"] = str(signature)
+            tool_calls.append(call)
     message: dict[str, Any] = {
         "role": "assistant",
         "content": "".join(text_bits) if text_bits else (None if tool_calls else ""),
     }
+    if thought_bits:
+        message["reasoning_content"] = "".join(thought_bits)
     if tool_calls:
         message["tool_calls"] = tool_calls
+    # Exact parts for the next Vertex request (critical for Gemini 3 thought signatures).
+    if parts:
+        message["_vertex_parts"] = parts
+    usage = data.get("usageMetadata") or data.get("usage_metadata")
+    if isinstance(usage, dict):
+        message["_usage"] = {
+            "input_tokens": int(
+                usage.get("promptTokenCount")
+                or usage.get("prompt_token_count")
+                or 0
+            ),
+            "output_tokens": int(
+                usage.get("candidatesTokenCount")
+                or usage.get("candidates_token_count")
+                or 0
+            ),
+            "total_tokens": int(
+                usage.get("totalTokenCount")
+                or usage.get("total_token_count")
+                or 0
+            ),
+            "thinking_tokens": int(
+                usage.get("thoughtsTokenCount")
+                or usage.get("thoughts_token_count")
+                or 0
+            ),
+        }
     return message
 
 
