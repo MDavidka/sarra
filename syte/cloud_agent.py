@@ -234,6 +234,12 @@ def _track_turso_mirror_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
 
 async def _drain_turso_mirrors(*, timeout_s: float = 5.0) -> None:
     """Let fire-and-forget Turso mirrors settle before end-of-turn resync."""
+    try:
+        from syte.agent_activity import drain_turso_event_mirrors
+
+        await drain_turso_event_mirrors(timeout_s=min(2.0, float(timeout_s)))
+    except Exception:
+        pass
     pending = [task for task in list(_turso_mirror_tasks) if not task.done()]
     if not pending:
         return
@@ -4900,40 +4906,37 @@ async def _communicate_with_agent_impl(
     async def _emit_token(delta: str) -> None:
         if not delta:
             return
-        await record_agent_event(
+        from syte.agent_activity import get_delta_batcher
+
+        # Minimal-delta hot path: batch 16–32 tokens / 300–500 chars before
+        # one SSE frame so Turso durable writes stay unblocked.
+        batcher = get_delta_batcher(
             project_id,
             "token_delta",
-            role="assistant",
-            title="Stream",
-            detail=delta[:2000],
-            payload={
-                "request_id": request_id,
-                "session": session_number,
-                "delta": delta,
-                "mark_kind": "stream",
-            },
+            request_id=request_id,
+            session=session_number,
             source=source,
-            turso_session_id=turso_session_id,
         )
+        await batcher.push(delta)
 
     async def _emit_thinking(delta: str) -> None:
         if not delta:
             return
-        await record_agent_event(
+        from syte.agent_activity import get_delta_batcher
+
+        batcher = get_delta_batcher(
             project_id,
             "thinking_delta",
-            role="assistant",
-            title="Thinking",
-            detail=delta[:2000],
-            payload={
-                "request_id": request_id,
-                "session": session_number,
-                "delta": delta,
-                "mark_kind": "thinking",
-            },
+            request_id=request_id,
+            session=session_number,
             source=source,
-            turso_session_id=turso_session_id,
         )
+        await batcher.push(delta)
+
+    async def _flush_hot_deltas() -> None:
+        from syte.agent_activity import flush_delta_batchers
+
+        await flush_delta_batchers(project_id, request_id=request_id)
 
     tool_context: dict[str, Any] = {
         "request_id": request_id,
@@ -4991,6 +4994,8 @@ async def _communicate_with_agent_impl(
                 turn_usage["thinking_tokens"] += int(step_usage.get("thinking_tokens") or 0)
                 turn_usage["total_tokens"] += int(step_usage.get("total_tokens") or 0)
                 turn_usage["steps"] += 1
+            # Flush batched token/thinking deltas before durable message/tool events.
+            await _flush_hot_deltas()
             await _persist_message(
                 project_id,
                 request_id,
@@ -5119,6 +5124,7 @@ async def _communicate_with_agent_impl(
 
                 reply = content.strip() or "Completed."
                 cost_info = _estimate_turn_cost(model, turn_usage)
+                await _flush_hot_deltas()
                 await record_agent_event(
                     project_id, "request_completed", role="assistant", title="Completed",
                     detail=reply[:4000],
@@ -5469,6 +5475,7 @@ async def _communicate_with_agent_impl(
     except asyncio.CancelledError:
         from syte.agent_artifacts import cancel_pending_questions, mark_session_stopped
 
+        await _flush_hot_deltas()
         await cancel_pending_questions(project_id)
         stop = await mark_session_stopped(
             project_id,
@@ -5526,6 +5533,7 @@ async def _communicate_with_agent_impl(
     except Exception as exc:
         error = str(exc) or "Cloud agent request failed"
         _write_log(project_id, f"request {request_id} failed: {error}")
+        await _flush_hot_deltas()
         await update_project(project_id, {"agent_last_error": error[:4000]})
         # Structured failure metadata so the UI can render a recoverable banner
         # (e.g. "rate limited, retry in 20s") instead of a dead-end error state.

@@ -205,3 +205,11 @@ FROM agent_subagent_task WHERE session_id = ?;
   cosmetic `agent_session.updated_at` touch fails.
 - Save helpers never raise into the turn: a persistence problem degrades
   observability, it never fails the user's request.
+- **Hot path vs Turso:** `token_delta` / `thinking_delta` are batched
+  (16–32 tokens or 300–500 chars), emitted as minimal-delta SSE frames, and
+  **never** written to Turso. Cold activity events mirror to Turso in a
+  **background task** so a slow remote DB cannot stall streaming or first
+  token. Messages use the same fire-and-forget + end-of-turn resync pattern
+  (`_resync_unsynced_messages`).
+- SSE endpoints negotiate `gzip` / `br` via `Accept-Encoding` so external
+  pages can keep the live feed cheap while Turso remains the durable store.
