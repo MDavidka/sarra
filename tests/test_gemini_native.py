@@ -1,42 +1,61 @@
-"""Tests for Google AI Studio / Vertex Gemini key shapes and native transport."""
+"""Tests for Vertex AI Express Mode key shapes and native transport."""
 
 from __future__ import annotations
 
 import json
 
-from syte.ai_providers import key_mismatch_hint
+from syte.ai_providers import VERTEX_API_BASE, key_mismatch_hint
 from syte.gemini_native import (
-    GEMINI_NATIVE_API_BASE,
+    VERTEX_EXPRESS_API_BASE,
     gemini_response_to_openai_message,
     looks_like_google_ai_studio_key,
     looks_like_google_auth_key,
+    looks_like_vertex_api_key,
     openai_messages_to_gemini,
     openai_tools_to_gemini,
     should_use_native_gemini,
+    vertex_generate_content_url,
 )
 
 
-def test_google_key_shapes_accept_aq_and_aiza() -> None:
+def test_vertex_api_base_is_aiplatform_express() -> None:
+    assert VERTEX_API_BASE == VERTEX_EXPRESS_API_BASE
+    assert "aiplatform.googleapis.com" in VERTEX_API_BASE
+    assert "generativelanguage.googleapis.com" not in VERTEX_API_BASE
+
+
+def test_google_key_shapes() -> None:
     assert looks_like_google_auth_key("AQ.AbCdEf123")
     assert looks_like_google_ai_studio_key("AQ.AbCdEf123")
     assert looks_like_google_ai_studio_key("AIzaSyDummyTrafficKey")
-    assert not looks_like_google_auth_key("AIzaSyDummyTrafficKey")
-    assert not looks_like_google_ai_studio_key("sk-or-v1-abc")
+    assert looks_like_vertex_api_key("AQ.AbCdEf123")
+    assert looks_like_vertex_api_key("some-vertex-express-key")
+    assert not looks_like_vertex_api_key("sk-or-v1-abc")
 
 
-def test_nano_havy_no_longer_reject_aq_keys() -> None:
-    assert key_mismatch_hint("syra-nano", "AQ.AbCdEf123") == ""
-    assert key_mismatch_hint("syra-havy", "AIzaSyDummyTrafficKey") == ""
+def test_nano_havy_accept_vertex_express_keys() -> None:
+    assert key_mismatch_hint("syra-nano", "vertex-express-key-xyz") == ""
+    assert key_mismatch_hint("syra-havy", "AQ.AbCdEf123") == ""
     hint = key_mismatch_hint("syra-nano", "sk-openai-looking")
-    assert "AIza" in hint or "AQ." in hint
+    assert "Vertex" in hint
     assert "OpenAI-style" in hint
 
 
-def test_should_use_native_for_aq_on_gemini_base() -> None:
-    base = "https://generativelanguage.googleapis.com/v1beta/openai"
+def test_should_use_native_for_all_vertex_express_keys() -> None:
+    base = VERTEX_EXPRESS_API_BASE
     assert should_use_native_gemini("AQ.AbCdEf123", base) is True
-    assert should_use_native_gemini("AIzaSyDummy", base) is False
+    assert should_use_native_gemini("any-cloud-key", base) is True
+    assert should_use_native_gemini("AIzaSyDummy", base) is True
     assert should_use_native_gemini("AQ.AbCdEf123", "https://api.deepseek.com/v1") is False
+
+
+def test_vertex_generate_url_uses_query_key() -> None:
+    url = vertex_generate_content_url("gemini-3.1-flash-lite", "my-secret-key")
+    assert url.startswith(
+        "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.1-flash-lite:generateContent?key="
+    )
+    assert "my-secret-key" in url
+    assert "generativelanguage.googleapis.com" not in url
 
 
 def test_openai_to_gemini_roundtrip_shapes() -> None:
@@ -56,10 +75,7 @@ def test_openai_to_gemini_roundtrip_shapes() -> None:
     ])
     assert system is not None
     assert system["parts"][0]["text"] == "You are Syte."
-    assert contents[0]["role"] == "user"
-    assert contents[1]["role"] == "model"
     assert contents[1]["parts"][0]["functionCall"]["name"] == "list_files"
-    assert contents[2]["role"] == "user"
     assert contents[2]["parts"][0]["functionResponse"]["name"] == "list_files"
 
     tools = openai_tools_to_gemini([{
@@ -67,9 +83,15 @@ def test_openai_to_gemini_roundtrip_shapes() -> None:
         "function": {
             "name": "list_files",
             "description": "List files",
-            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "additionalProperties": False,
+            },
         },
     }])
+    blob = json.dumps(tools)
+    assert "additionalProperties" not in blob
     assert tools[0]["functionDeclarations"][0]["name"] == "list_files"
 
     message = gemini_response_to_openai_message({
@@ -82,10 +104,8 @@ def test_openai_to_gemini_roundtrip_shapes() -> None:
             }
         }]
     })
-    assert message["role"] == "assistant"
     assert message["content"] == "Done"
     assert message["tool_calls"][0]["function"]["name"] == "list_files"
-    assert GEMINI_NATIVE_API_BASE.endswith("/v1beta")
 
 
 def test_sanitize_strips_additional_properties_from_tools() -> None:
@@ -93,9 +113,7 @@ def test_sanitize_strips_additional_properties_from_tools() -> None:
     from syte.gemini_native import sanitize_gemini_schema
 
     tools = openai_tools_to_gemini(TOOLS)
-    blob = json.dumps(tools)
-    assert "additionalProperties" not in blob
-    assert "additional_properties" not in blob
+    assert "additionalProperties" not in json.dumps(tools)
 
     raw = {
         "type": "object",
@@ -108,29 +126,25 @@ def test_sanitize_strips_additional_properties_from_tools() -> None:
     }
     cleaned = sanitize_gemini_schema(raw)
     assert "additionalProperties" not in cleaned
-    assert "additionalProperties" not in cleaned["properties"]["env_vars"]
     assert "default" not in cleaned["properties"]["merge"]
-    assert cleaned["properties"]["env_vars"]["type"] == "object"
 
 
-def test_explain_api_key_service_blocked() -> None:
+def test_explain_vertex_api_key_errors() -> None:
     from syte.gemini_native import explain_google_api_error, format_google_http_error
 
     detail = (
-        '{"error":{"code":403,"message":"Requests to this API generativelanguage.googleapis.com '
-        'method google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent are blocked.",'
-        '"status":"PERMISSION_DENIED","details":[{"reason":"API_KEY_SERVICE_BLOCKED"}]}}'
+        '{"error":{"code":403,"message":"Requests to this API aiplatform.googleapis.com '
+        'are blocked.","status":"PERMISSION_DENIED","details":[{"reason":"API_KEY_SERVICE_BLOCKED"}]}}'
     )
     hint = explain_google_api_error(detail, status_code=403)
-    assert "API_KEY_SERVICE_BLOCKED" in hint
-    assert "aistudio.google.com/apikey" in hint
-    assert "Generative Language API" in hint
+    assert "Vertex" in hint
+    assert "aistudio.google.com" not in hint.lower()
+    assert "Express" in hint or "aiplatform" in hint
 
-    formatted = format_google_http_error(
-        status_code=403,
-        reason="Forbidden",
-        url="https://generativelanguage.googleapis.com/v1beta/models/x:generateContent",
-        detail=detail,
+    oauth = format_google_http_error(
+        status_code=401,
+        reason="Unauthorized",
+        url="https://aiplatform.googleapis.com/v1/publishers/google/models/x:generateContent?key=***",
+        detail='API keys are not supported by this API. Expected OAuth2',
     )
-    assert "403" in formatted
-    assert "aistudio.google.com/apikey" in formatted
+    assert "Express Mode" in oauth

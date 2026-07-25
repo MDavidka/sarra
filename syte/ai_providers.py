@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from typing import NotRequired, TypedDict
 
-VERTEX_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+VERTEX_API_BASE = "https://aiplatform.googleapis.com/v1"
 # Legacy alias kept for imports/migrations.
 VERTED_API_BASE = VERTEX_API_BASE
+# AI Studio OpenAI-compat (no longer used by nano/havy — kept for reference/tests).
+AI_STUDIO_OPENAI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 ALIYUN_MAAS_API_BASE = (
     "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
@@ -224,16 +226,12 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
         lower = key.lower()
         if lower.startswith("sk-") or looks_like_openrouter_key(key):
             return (
-                "This looks like an OpenAI-style key. syra-nano/havy need a Google AI Studio "
-                "Gemini key (AQ.… Auth key from AI Studio, or a legacy AIza… key)."
+                "This looks like an OpenAI-style key. syra-nano/havy need a Google Cloud "
+                "Vertex AI Express Mode API key from Cloud Console → Credentials "
+                "(not a DeepSeek/Aliyun/OpenRouter sk- key)."
             )
-        if looks_like_google_ai_studio_key(key):
-            # AQ.… Auth keys and legacy AIza… traffic keys are both valid.
-            return ""
-        return (
-            "syra-nano/havy expect a Google AI Studio / Vertex Express Gemini key "
-            "(AI Studio now issues AQ.… Auth keys; older keys start with AIza…)."
-        )
+        # Express Mode keys have varied prefixes — accept any non-sk key.
+        return ""
     return ""
 
 

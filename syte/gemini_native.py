@@ -1,14 +1,15 @@
-"""Native Gemini API transport for Google AI Studio / Vertex Express keys.
+"""Vertex AI Express Mode transport for Syra nano/havy Gemini profiles.
 
-Google AI Studio now issues Auth keys that start with ``AQ.`` instead of the
-legacy ``AIza…`` traffic keys. Those ``AQ.`` keys work on the native Gemini
-REST API (``x-goog-api-key``) but currently fail on the OpenAI-compatible
-``/v1beta/openai`` endpoint when sent as ``Authorization: Bearer``.
+Syte's nano/havy profiles use **Google Cloud Vertex AI Express Mode**, not
+Google AI Studio (``generativelanguage.googleapis.com``).
 
-Syte labels nano/havy as "Vertex AI" but talks to
-``generativelanguage.googleapis.com``. This module routes ``AQ.`` keys through
-native ``generateContent`` and returns OpenAI-shaped assistant messages so the
-existing agent loop does not need a second tool protocol.
+Express Mode authenticates with an API key on:
+
+``https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent?key=…``
+
+OpenAI-compatible Vertex endpoints require OAuth access tokens and do not accept
+Express Mode API keys, so this module always uses native ``generateContent`` and
+returns OpenAI-shaped assistant messages for the existing agent loop.
 """
 
 from __future__ import annotations
@@ -16,53 +17,191 @@ from __future__ import annotations
 import json
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
-GEMINI_NATIVE_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+# Vertex AI Express Mode (Google Cloud) — not AI Studio.
+VERTEX_EXPRESS_API_BASE = "https://aiplatform.googleapis.com/v1"
+# Backward-compatible aliases used by older imports/tests.
+GEMINI_NATIVE_API_BASE = VERTEX_EXPRESS_API_BASE
+AI_STUDIO_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
 def looks_like_google_auth_key(api_key: str | None) -> bool:
-    """New Google AI Studio Auth keys (``AQ.…``)."""
+    """Google Auth keys (``AQ.…``) — common for AI Studio; Express keys vary."""
     return (api_key or "").strip().lower().startswith("aq.")
 
 
 def looks_like_google_ai_studio_key(api_key: str | None) -> bool:
-    """Legacy ``AIza…`` traffic keys or new ``AQ.…`` auth keys."""
+    """Legacy ``AIza…`` traffic keys or ``AQ.…`` auth keys (AI Studio shapes)."""
     key = (api_key or "").strip()
     lower = key.lower()
     return lower.startswith("aiza") or lower.startswith("aq.")
 
 
+def looks_like_vertex_api_key(api_key: str | None) -> bool:
+    """Heuristic: not an OpenAI/DeepSeek/Aliyun ``sk-`` key."""
+    key = (api_key or "").strip()
+    if not key:
+        return False
+    lower = key.lower()
+    if lower.startswith("sk-"):
+        return False
+    return True
+
+
 def uses_gemini_openai_compat(api_base: str | None) -> bool:
     base = (api_base or "").lower()
-    return "generativelanguage.googleapis.com" in base and "/openai" in base
+    return "/openai" in base and (
+        "generativelanguage.googleapis.com" in base or "aiplatform.googleapis.com" in base
+    )
 
 
-def should_use_native_gemini(api_key: str | None, api_base: str | None = None) -> bool:
-    """Prefer native Gemini when the key is an Auth key (``AQ.``).
+def is_vertex_express_base(api_base: str | None) -> bool:
+    base = (api_base or "").lower()
+    return "aiplatform.googleapis.com" in base
 
-    Legacy ``AIza…`` keys keep using the OpenAI-compat Bearer path. When an
-    ``api_base`` is provided, only switch for Gemini / Vertex-shaped hosts so
-    accidental AQ.-looking keys on other providers are left alone.
-    """
-    if not looks_like_google_auth_key(api_key):
-        return False
-    if not api_base:
-        return True
+
+def is_google_gemini_base(api_base: str | None) -> bool:
     base = (api_base or "").lower()
     return (
-        "generativelanguage.googleapis.com" in base
-        or "aiplatform.googleapis.com" in base
+        "aiplatform.googleapis.com" in base
+        or "generativelanguage.googleapis.com" in base
         or "vertex" in base
     )
 
 
-def google_auth_headers(api_key: str) -> dict[str, str]:
-    return {
-        "x-goog-api-key": (api_key or "").strip(),
-        "Content-Type": "application/json",
-    }
+def should_use_native_gemini(api_key: str | None, api_base: str | None = None) -> bool:
+    """Vertex Express always uses native generateContent (API key via query).
+
+    Also keep the AQ. → native path if a legacy AI Studio base is configured.
+    """
+    if is_vertex_express_base(api_base):
+        return bool((api_key or "").strip())
+    if not api_base:
+        return bool((api_key or "").strip())
+    if looks_like_google_auth_key(api_key) and is_google_gemini_base(api_base):
+        return True
+    return False
+
+
+def normalize_vertex_model_id(model: str) -> str:
+    model_id = (model or "").strip()
+    for prefix in (
+        "publishers/google/models/",
+        "models/",
+        "google/",
+    ):
+        if model_id.startswith(prefix):
+            model_id = model_id[len(prefix) :]
+    return model_id
+
+
+def vertex_generate_content_url(model: str, api_key: str) -> str:
+    model_id = normalize_vertex_model_id(model)
+    path = f"publishers/google/models/{model_id}:generateContent"
+    return f"{VERTEX_EXPRESS_API_BASE}/{path}?key={quote((api_key or '').strip(), safe='')}"
+
+
+def vertex_model_get_url(model: str, api_key: str) -> str:
+    model_id = normalize_vertex_model_id(model)
+    path = f"publishers/google/models/{model_id}"
+    return f"{VERTEX_EXPRESS_API_BASE}/{path}?key={quote((api_key or '').strip(), safe='')}"
+
+
+def google_auth_headers(api_key: str | None = None) -> dict[str, str]:
+    """Headers for Vertex Express. Key is normally passed as ``?key=`` on the URL."""
+    del api_key
+    return {"Content-Type": "application/json"}
+
+
+# JSON Schema keys Gemini/Vertex FunctionDeclaration.parameters Schema rejects.
+_GEMINI_SCHEMA_DROP = frozenset({
+    "additionalProperties",
+    "additional_properties",
+    "$schema",
+    "$id",
+    "$defs",
+    "definitions",
+    "examples",
+    "default",
+    "const",
+    "oneOf",
+    "allOf",
+    "anyOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentRequired",
+    "dependentSchemas",
+    "patternProperties",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+    "prefixItems",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "uniqueItems",
+    "contentEncoding",
+    "contentMediaType",
+})
+
+
+def sanitize_gemini_schema(schema: Any) -> Any:
+    """Strip JSON Schema features Vertex function-calling Schema rejects."""
+    if isinstance(schema, list):
+        return [sanitize_gemini_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _GEMINI_SCHEMA_DROP:
+            continue
+        if key in {"properties", "defs"} and isinstance(value, dict):
+            out[key] = {
+                str(prop): sanitize_gemini_schema(prop_schema)
+                for prop, prop_schema in value.items()
+            }
+            continue
+        if key == "items":
+            out[key] = sanitize_gemini_schema(value)
+            continue
+        if isinstance(value, (dict, list)):
+            out[key] = sanitize_gemini_schema(value)
+            continue
+        out[key] = value
+    return out
+
+
+def openai_tools_to_gemini(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    if not tools:
+        return []
+    declarations: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function") if tool.get("type") == "function" else tool.get("function") or tool
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        entry: dict[str, Any] = {
+            "name": name,
+            "description": str(fn.get("description") or ""),
+        }
+        params = fn.get("parameters")
+        if isinstance(params, dict):
+            cleaned = sanitize_gemini_schema(params)
+            if isinstance(cleaned, dict):
+                if "type" not in cleaned:
+                    cleaned = {**cleaned, "type": "object"}
+                entry["parameters"] = cleaned
+        declarations.append(entry)
+    if not declarations:
+        return []
+    return [{"functionDeclarations": declarations}]
 
 
 def _content_to_text(content: Any) -> str:
@@ -125,107 +264,12 @@ def _content_to_parts(content: Any) -> list[dict[str, Any]]:
     return parts or [{"text": ""}]
 
 
-# JSON Schema keys Gemini's FunctionDeclaration.parameters Schema rejects.
-_GEMINI_SCHEMA_DROP = frozenset({
-    "additionalProperties",
-    "additional_properties",
-    "$schema",
-    "$id",
-    "$defs",
-    "definitions",
-    "examples",
-    "default",
-    "const",
-    "oneOf",
-    "allOf",
-    "anyOf",
-    "not",
-    "if",
-    "then",
-    "else",
-    "dependentRequired",
-    "dependentSchemas",
-    "patternProperties",
-    "unevaluatedProperties",
-    "unevaluatedItems",
-    "prefixItems",
-    "exclusiveMinimum",
-    "exclusiveMaximum",
-    "uniqueItems",
-    "contentEncoding",
-    "contentMediaType",
-})
-
-
-def sanitize_gemini_schema(schema: Any) -> Any:
-    """Strip JSON Schema features Gemini's function-calling Schema rejects.
-
-    OpenAI-style tool parameters often include ``additionalProperties: false``
-    (and nested ``additionalProperties`` maps). Gemini returns HTTP 400
-    ``Unknown name "additionalProperties"`` for those fields.
-    """
-    if isinstance(schema, list):
-        return [sanitize_gemini_schema(item) for item in schema]
-    if not isinstance(schema, dict):
-        return schema
-    out: dict[str, Any] = {}
-    for key, value in schema.items():
-        if key in _GEMINI_SCHEMA_DROP:
-            continue
-        if key in {"properties", "defs"} and isinstance(value, dict):
-            out[key] = {
-                str(prop): sanitize_gemini_schema(prop_schema)
-                for prop, prop_schema in value.items()
-            }
-            continue
-        if key == "items":
-            out[key] = sanitize_gemini_schema(value)
-            continue
-        if isinstance(value, (dict, list)):
-            out[key] = sanitize_gemini_schema(value)
-            continue
-        out[key] = value
-    return out
-
-
-def openai_tools_to_gemini(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    if not tools:
-        return []
-    declarations: list[dict[str, Any]] = []
-    for tool in tools:
-        if not isinstance(tool, dict):
-            continue
-        fn = tool.get("function") if tool.get("type") == "function" else tool.get("function") or tool
-        if not isinstance(fn, dict):
-            continue
-        name = str(fn.get("name") or "").strip()
-        if not name:
-            continue
-        entry: dict[str, Any] = {
-            "name": name,
-            "description": str(fn.get("description") or ""),
-        }
-        params = fn.get("parameters")
-        if isinstance(params, dict):
-            cleaned = sanitize_gemini_schema(params)
-            if isinstance(cleaned, dict):
-                # Gemini expects an object schema; ensure type is present.
-                if "type" not in cleaned:
-                    cleaned = {**cleaned, "type": "object"}
-                entry["parameters"] = cleaned
-        declarations.append(entry)
-    if not declarations:
-        return []
-    return [{"functionDeclarations": declarations}]
-
-
 def openai_messages_to_gemini(
     messages: list[dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Return ``(system_instruction, contents)`` for generateContent."""
     system_chunks: list[str] = []
     contents: list[dict[str, Any]] = []
-    # Map tool_call_id → function name for functionResponse turns.
     call_names: dict[str, str] = {}
 
     for msg in messages:
@@ -285,7 +329,6 @@ def openai_messages_to_gemini(
             })
             continue
 
-        # user / other
         parts = _content_to_parts(msg.get("content"))
         contents.append({"role": "user", "parts": parts})
 
@@ -299,7 +342,7 @@ def gemini_response_to_openai_message(data: dict[str, Any]) -> dict[str, Any]:
     """Convert a generateContent JSON body into an OpenAI chat message dict."""
     candidates = data.get("candidates") or []
     if not candidates or not isinstance(candidates[0], dict):
-        raise RuntimeError("Gemini returned no candidates")
+        raise RuntimeError("Vertex Gemini returned no candidates")
     content = candidates[0].get("content") or {}
     parts = content.get("parts") or []
     text_bits: list[str] = []
@@ -351,11 +394,9 @@ def build_generate_content_body(
     }
     if max_tokens is not None:
         generation["maxOutputTokens"] = int(max_tokens)
-    # Map OpenAI-style reasoning_effort onto Gemini thinkingConfig when present.
     cfg = thinking_config or {}
     effort = str(cfg.get("reasoning_effort") or "").strip().lower()
     if effort:
-        # Gemini 3.x accepts thinkingConfig.thinkingLevel for flash/lite families.
         level = {
             "none": "minimal",
             "minimal": "minimal",
@@ -381,11 +422,11 @@ async def native_generate_content(
     max_tokens: int | None = None,
     thinking_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Call native generateContent and return an OpenAI-shaped assistant message."""
-    model_id = (model or "").strip().removeprefix("models/")
+    """Call Vertex Express generateContent and return an OpenAI-shaped message."""
+    model_id = normalize_vertex_model_id(model)
     if not model_id:
-        raise RuntimeError("Gemini model id is empty")
-    url = f"{GEMINI_NATIVE_API_BASE}/models/{model_id}:generateContent"
+        raise RuntimeError("Vertex Gemini model id is empty")
+    url = vertex_generate_content_url(model_id, api_key)
     body = build_generate_content_body(
         messages=messages,
         tools=tools,
@@ -394,14 +435,16 @@ async def native_generate_content(
         max_tokens=max_tokens,
         thinking_config=thinking_config,
     )
-    response = await client.post(url, headers=google_auth_headers(api_key), json=body)
+    # Redact key from error URLs shown to users.
+    public_url = vertex_generate_content_url(model_id, "***")
+    response = await client.post(url, headers=google_auth_headers(), json=body)
     if response.status_code >= 400:
         detail = (response.text or "").strip()[:800]
         raise RuntimeError(
             format_google_http_error(
                 status_code=response.status_code,
                 reason=response.reason_phrase,
-                url=url,
+                url=public_url,
                 detail=detail,
             )
         )
@@ -409,9 +452,16 @@ async def native_generate_content(
     return gemini_response_to_openai_message(data)
 
 
-async def native_list_models(*, client: httpx.AsyncClient, api_key: str) -> httpx.Response:
-    url = f"{GEMINI_NATIVE_API_BASE}/models"
-    return await client.get(url, headers=google_auth_headers(api_key))
+async def native_list_models(
+    *,
+    client: httpx.AsyncClient,
+    api_key: str,
+    model: str | None = None,
+) -> httpx.Response:
+    """Probe Vertex by fetching the configured publisher model (Express Mode)."""
+    model_id = normalize_vertex_model_id(model or "gemini-2.5-flash")
+    url = vertex_model_get_url(model_id, api_key)
+    return await client.get(url, headers=google_auth_headers())
 
 
 async def native_probe_chat(
@@ -420,47 +470,50 @@ async def native_probe_chat(
     api_key: str,
     model: str,
 ) -> httpx.Response:
-    model_id = (model or "").strip().removeprefix("models/")
-    url = f"{GEMINI_NATIVE_API_BASE}/models/{model_id}:generateContent"
+    url = vertex_generate_content_url(model, api_key)
     body = {
         "contents": [{"role": "user", "parts": [{"text": "Reply with exactly: ok"}]}],
         "generationConfig": {"maxOutputTokens": 16, "temperature": 0},
     }
-    return await client.post(url, headers=google_auth_headers(api_key), json=body)
+    return await client.post(url, headers=google_auth_headers(), json=body)
 
 
 def explain_google_api_error(detail: str | None, *, status_code: int | None = None) -> str:
-    """Return an actionable hint for common Google Gemini / AI Studio API errors.
-
-    ``API_KEY_SERVICE_BLOCKED`` (HTTP 403) means the key authenticated but is not
-    allowed to call ``generativelanguage.googleapis.com`` — usually because it is
-    unrestricted (blocked since June 2026), restricted to a different API
-    (e.g. Vertex AI only), or created outside AI Studio without Gemini access.
-    """
+    """Return an actionable hint for common Vertex Express / Gemini API errors."""
     text = detail or ""
     lower = text.lower()
+    if "api keys are not supported" in lower or "credentials_missing" in lower:
+        return (
+            "This endpoint expects Vertex Express Mode API-key auth on "
+            "aiplatform.googleapis.com/v1/publishers/google/models/…:generateContent?key=… "
+            "(not OAuth OpenAI-compat, and not AI Studio generativelanguage). "
+            "Create/manage the key in Google Cloud Console → APIs & Services → Credentials "
+            "while in Vertex AI Express Mode."
+        )
     if (
         "api_key_service_blocked" in lower
-        or "are blocked" in lower and "generativelanguage" in lower
-        or (status_code == 403 and "permission_denied" in lower and "generativelanguage" in lower)
+        or ("are blocked" in lower and ("aiplatform" in lower or "generativelanguage" in lower))
+        or (
+            status_code == 403
+            and "permission_denied" in lower
+            and ("aiplatform" in lower or "generativelanguage" in lower)
+        )
     ):
         return (
-            "Google blocked this key for generativelanguage.googleapis.com "
-            "(API_KEY_SERVICE_BLOCKED). Fix one of:\n"
-            "1) Create a new key at https://aistudio.google.com/apikey "
-            "(AI Studio Auth keys are restricted to Gemini by default), or\n"
-            "2) In Google Cloud → APIs & Services → Credentials, edit this key → "
-            "API restrictions → Restrict key → enable only "
-            "\"Generative Language API\" (generativelanguage.googleapis.com). "
-            "Unrestricted keys and Vertex-only keys are rejected. "
-            "Syte's nano/havy profiles use AI Studio / Generative Language, "
-            "not full Vertex aiplatform OAuth."
+            "Google blocked this key for the Vertex/Gemini API (API_KEY_SERVICE_BLOCKED). "
+            "Use a Vertex AI Express Mode API key from Google Cloud Console → Credentials, "
+            "and restrict it to the Vertex AI API (aiplatform.googleapis.com). "
+            "Syte nano/havy call Vertex Express — not Google AI Studio."
         )
-    if status_code == 403 and ("generativelanguage" in lower or "gemini" in lower):
+    if status_code == 403 and ("aiplatform" in lower or "vertex" in lower or "gemini" in lower):
         return (
-            "Google returned HTTP 403 for Gemini. Prefer a key from "
-            "https://aistudio.google.com/apikey, or restrict your Cloud Console "
-            "key to the Generative Language API only."
+            "Google returned HTTP 403 for Vertex AI. Confirm Express Mode is active and the "
+            "key is allowed for aiplatform.googleapis.com."
+        )
+    if status_code == 404 and "model" in lower:
+        return (
+            "Model not found on Vertex Express. Check the model id is available in your "
+            "Express Mode project (Google Cloud Agent Studio / model garden)."
         )
     return ""
 
@@ -472,7 +525,7 @@ def format_google_http_error(
     url: str,
     detail: str,
 ) -> str:
-    """Build a user-facing error string, appending Google key-restriction guidance."""
+    """Build a user-facing error string, appending Vertex guidance when relevant."""
     base = (
         f"Client error '{status_code} {reason}' for url '{url}'"
         + (f": {detail}" if detail else "")
