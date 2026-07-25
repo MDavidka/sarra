@@ -78,12 +78,90 @@ async def _http_probe(
     return result
 
 
+async def _gemini_native_probes(profile: str, spec: dict[str, Any], api_key: str) -> list[dict[str, Any]]:
+    """Probe Google via native Gemini REST — required for AQ.… Auth keys."""
+    from syte.gemini_native import (
+        GEMINI_NATIVE_API_BASE,
+        native_list_models,
+        native_probe_chat,
+    )
+
+    del profile
+    probes: list[dict[str, Any]] = []
+    started = time.perf_counter()
+    models_result: dict[str, Any] = {
+        "step": "models_list",
+        "method": "GET",
+        "url": f"{GEMINI_NATIVE_API_BASE}/models",
+        "ok": False,
+        "status_code": None,
+        "latency_ms": None,
+        "error": "",
+        "body_preview": "",
+        "transport": "gemini_native",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await native_list_models(client=client, api_key=api_key)
+        models_result["status_code"] = response.status_code
+        models_result["latency_ms"] = int((time.perf_counter() - started) * 1000)
+        models_result["body_preview"] = (response.text or "")[:500]
+        if response.status_code in (401, 403):
+            models_result["error"] = f"Authentication failed (HTTP {response.status_code})"
+        elif response.status_code >= 400:
+            models_result["error"] = f"HTTP {response.status_code}"
+        else:
+            models_result["ok"] = True
+    except Exception as exc:
+        models_result["latency_ms"] = int((time.perf_counter() - started) * 1000)
+        models_result["error"] = str(exc)
+    probes.append(models_result)
+
+    started = time.perf_counter()
+    chat_url = (
+        f"{GEMINI_NATIVE_API_BASE}/models/"
+        f"{str(spec['model']).removeprefix('models/')}:generateContent"
+    )
+    chat_result: dict[str, Any] = {
+        "step": "chat_completion",
+        "method": "POST",
+        "url": chat_url,
+        "ok": False,
+        "status_code": None,
+        "latency_ms": None,
+        "error": "",
+        "body_preview": "",
+        "transport": "gemini_native",
+        "auth": "x-goog-api-key",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await native_probe_chat(
+                client=client, api_key=api_key, model=str(spec["model"])
+            )
+        chat_result["status_code"] = response.status_code
+        chat_result["latency_ms"] = int((time.perf_counter() - started) * 1000)
+        chat_result["body_preview"] = (response.text or "")[:500]
+        if response.status_code in (401, 403):
+            chat_result["error"] = f"Authentication failed (HTTP {response.status_code})"
+        elif response.status_code >= 400:
+            chat_result["error"] = f"HTTP {response.status_code}"
+        else:
+            chat_result["ok"] = True
+    except Exception as exc:
+        chat_result["latency_ms"] = int((time.perf_counter() - started) * 1000)
+        chat_result["error"] = str(exc)
+    probes.append(chat_result)
+    return probes
+
+
 async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     from syte.ai_providers import (
         aliyun_api_base_for_key,
         key_mismatch_hint,
         looks_like_openrouter_key,
     )
+    from syte.gemini_native import looks_like_google_auth_key, should_use_native_gemini
 
     spec = profile_provider(profile)
     api_key = (api_key or "").strip()
@@ -95,6 +173,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         "Content-Type": "application/json",
     }
     probes: list[dict[str, Any]] = []
+    transport = "openai_compat"
 
     if not api_key:
         return {
@@ -134,23 +213,35 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
             ],
         }
 
-    probes.append(await _http_probe(
-        step="models_list",
-        method="GET",
-        url=f"{base}/models",
-        headers=headers,
-    ))
-    probes.append(await _http_probe(
-        step="chat_completion",
-        method="POST",
-        url=f"{base}/chat/completions",
-        headers=headers,
-        json_body={
-            "model": spec["model"],
-            "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
-            "max_tokens": 16,
-        },
-    ))
+    use_native = profile in {"syra-nano", "syra-havy"} and should_use_native_gemini(
+        api_key, spec["api_base"]
+    )
+    if use_native:
+        transport = "gemini_native"
+        probes = await _gemini_native_probes(profile, spec, api_key)
+        # Surface the native base in the summary so the UI does not look like
+        # we probed the broken OpenAI-compat route for AQ. keys.
+        from syte.gemini_native import GEMINI_NATIVE_API_BASE
+
+        base = GEMINI_NATIVE_API_BASE
+    else:
+        probes.append(await _http_probe(
+            step="models_list",
+            method="GET",
+            url=f"{base}/models",
+            headers=headers,
+        ))
+        probes.append(await _http_probe(
+            step="chat_completion",
+            method="POST",
+            url=f"{base}/chat/completions",
+            headers=headers,
+            json_body={
+                "model": spec["model"],
+                "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
+                "max_tokens": 16,
+            },
+        ))
 
     chat_probe = next((p for p in probes if p["step"] == "chat_completion"), None)
     models_probe = next((p for p in probes if p["step"] == "models_list"), None)
@@ -170,7 +261,17 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     hints: list[str] = []
     if mismatch:
         hints.append(mismatch)
-    if spec["label"] in ("Vertex AI", "Verted") and models_probe and models_probe.get("status_code") == 401:
+    if use_native:
+        hints.append(
+            "Using native Gemini API (x-goog-api-key) because this AQ.… Auth key "
+            "does not work on Google's OpenAI-compatible /v1beta/openai route."
+        )
+    if (
+        spec["label"] in ("Vertex AI", "Verted")
+        and models_probe
+        and models_probe.get("status_code") == 401
+        and not use_native
+    ):
         hints.append(
             "Vertex AI / Gemini often returns HTTP 401 on GET /models even with a valid key — "
             "check chat_completion instead."
@@ -181,8 +282,9 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         and chat_probe.get("status_code") == 403
     ):
         hints.append(
-            "Google returned HTTP 403 — use a Google AI Studio Gemini key (AIza…) with the "
-            "Generative Language API enabled. Unrestricted keys may be blocked."
+            "Google returned HTTP 403 — use a Google AI Studio Gemini key (AQ.… Auth key "
+            "or legacy AIza…) with the Generative Language API enabled. "
+            "Unrestricted legacy keys may be blocked."
         )
     if chat_probe and chat_probe.get("status_code") == 404:
         hints.append(f"Model {spec['model']} not found at provider — name may be outdated.")
@@ -190,6 +292,16 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         hints.append(
             f"This key was rejected by {spec['label']}. "
             f"Ensure it is a {spec['label']} key for profile {profile}."
+        )
+    if (
+        looks_like_google_auth_key(api_key)
+        and not use_native
+        and chat_probe
+        and not chat_probe.get("ok")
+    ):
+        hints.append(
+            "AQ.… Auth keys from AI Studio require the native Gemini API; "
+            "OpenAI-compat Bearer auth is currently broken for this key type."
         )
 
     return {
@@ -204,6 +316,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         "ok": ok,
         "error": error,
         "hints": hints,
+        "transport": transport,
     }
 
 

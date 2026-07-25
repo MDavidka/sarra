@@ -126,6 +126,20 @@ def profile_provider(profile: str) -> ProfileProvider:
     return PROFILE_PROVIDERS.get(profile, PROFILE_PROVIDERS[DEFAULT_PROFILE])
 
 
+def looks_like_google_auth_key(api_key: str | None) -> bool:
+    """Google AI Studio Auth keys (``AQ.…``) — preferred over legacy ``AIza…`` traffic keys."""
+    from syte.gemini_native import looks_like_google_auth_key as _looks
+
+    return _looks(api_key)
+
+
+def looks_like_google_ai_studio_key(api_key: str | None) -> bool:
+    """Accept legacy ``AIza…`` and new ``AQ.…`` Google Gemini / Vertex Express keys."""
+    from syte.gemini_native import looks_like_google_ai_studio_key as _looks
+
+    return _looks(api_key)
+
+
 def looks_like_openrouter_key(api_key: str | None) -> bool:
     """OpenRouter keys are ``sk-or-…`` (legacy syra-ultra before the Aliyun swap)."""
     return (api_key or "").strip().lower().startswith("sk-or-")
@@ -211,14 +225,15 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
         if lower.startswith("sk-") or looks_like_openrouter_key(key):
             return (
                 "This looks like an OpenAI-style key. syra-nano/havy need a Google AI Studio "
-                "Gemini API key (usually starts with AIza…)."
+                "Gemini key (AQ.… Auth key from AI Studio, or a legacy AIza… key)."
             )
-        if lower.startswith("aq."):
-            return (
-                "This key prefix (AQ.) is unusual for Google AI Studio. Use an AI Studio "
-                "Gemini API key (AIza…) with API access enabled; unrestricted keys may get HTTP 403."
-            )
-        return ""
+        if looks_like_google_ai_studio_key(key):
+            # AQ.… Auth keys and legacy AIza… traffic keys are both valid.
+            return ""
+        return (
+            "syra-nano/havy expect a Google AI Studio / Vertex Express Gemini key "
+            "(AI Studio now issues AQ.… Auth keys; older keys start with AIza…)."
+        )
     return ""
 
 

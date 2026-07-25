@@ -2623,6 +2623,13 @@ async def _provider_completion(
     error = "Provider request failed"
     client = _get_provider_client()
 
+    from syte.gemini_native import native_generate_content, should_use_native_gemini
+
+    use_native_gemini = should_use_native_gemini(
+        str(model.get("api_key") or ""),
+        str(model.get("api_base") or ""),
+    )
+
     def _provider_error_message(status_code: int, reason: str, request_url: str, detail: str) -> str:
         detail_l = (detail or "").lower()
         if "no active upstream keys" in detail_l:
@@ -2662,7 +2669,10 @@ async def _provider_completion(
                     "for DashScope pay-as-you-go. OpenRouter keys (sk-or-…) no longer work for syra-ultra."
                 )
             elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
-                hint = " Use a Google AI Studio / Vertex Gemini API key."
+                hint = (
+                    " Use a Google AI Studio Gemini key (AQ.… Auth key from AI Studio, "
+                    "or a legacy AIza… key). AQ. keys are routed via the native Gemini API."
+                )
             source_bits = [f"source={key_source}"]
             if secret_env:
                 source_bits.append(f"env={secret_env}")
@@ -2698,6 +2708,27 @@ async def _provider_completion(
 
     for attempt in range(3):
         try:
+            if use_native_gemini:
+                # AQ.… Auth keys fail on OpenAI-compat Bearer auth; use native REST.
+                # Streaming is not implemented on this path yet — return the full message.
+                message = await native_generate_content(
+                    client=client,
+                    api_key=str(model["api_key"]),
+                    model=str(model["model"]),
+                    messages=cached_messages,
+                    tools=use_tools or None,
+                    temperature=float(thinking_params.get("temperature", temperature)),
+                    top_p=float(thinking_params.get("top_p", 0.95)),
+                    max_tokens=max_tokens,
+                    thinking_config=thinking_params,
+                )
+                if on_token and message.get("content"):
+                    await on_token(str(message["content"]))
+                if on_reasoning and message.get("reasoning_content"):
+                    await on_reasoning(str(message["reasoning_content"]))
+                record_circuit_success(model.get("provider") or "", model.get("model") or "")
+                return message
+
             if payload["stream"]:
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     peek = ""
