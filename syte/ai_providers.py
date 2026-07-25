@@ -26,6 +26,12 @@ DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
 PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
 
+# Global fallbacks so no profile is ever unbounded. A missing completion cap
+# lets a reasoning model spend its whole context on one answer, which is both
+# the slowest and most expensive failure mode.
+DEFAULT_MAX_COMPLETION_TOKENS = 8192
+DEFAULT_MAX_INPUT_TOKENS = 96_000
+
 # Default / legacy aliases (selected model handles both thinking and building).
 DEFAULT_PROFILE = "syra-base"
 BUILDER_PROFILE = DEFAULT_PROFILE
@@ -91,6 +97,9 @@ class ProfileProvider(TypedDict):
     max_tokens: NotRequired[int]
     max_history_messages: NotRequired[int]
     max_tool_result_chars: NotRequired[int]
+    # Estimated input-token ceiling per provider call. Oldest history is trimmed
+    # above this so a long session cannot silently 10x the per-turn input cost.
+    max_input_tokens: NotRequired[int]
 
 
 PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
@@ -104,6 +113,12 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "role": "fast",
         "input_price_per_mtok": 0.25,
         "output_price_per_mtok": 1.50,
+        # Fast profile: short answers, short context. Output is 6x input price,
+        # so a tight completion cap is the single biggest cost lever here.
+        "max_tokens": 8192,
+        "max_history_messages": 48,
+        "max_tool_result_chars": 8000,
+        "max_input_tokens": 120_000,
         "setting_key": "agent_syra_nano_api_key",
         "secret_env": "SYRA_NANO_API_KEY",
     },
@@ -121,6 +136,7 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tokens": 8192,
         "max_history_messages": 48,
         "max_tool_result_chars": 8000,
+        "max_input_tokens": 96_000,
         "setting_key": "agent_syra_base_api_key",
         "secret_env": "SYRA_BASE_API_KEY",
     },
@@ -134,6 +150,12 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "role": "pro",
         "input_price_per_mtok": 1.50,
         "output_price_per_mtok": 7.50,
+        # Most expensive profile (6x nano in, 5x out) — cap generously enough
+        # for full-page builds but never unbounded.
+        "max_tokens": 16384,
+        "max_history_messages": 64,
+        "max_tool_result_chars": 12000,
+        "max_input_tokens": 120_000,
         "setting_key": "agent_syra_havy_api_key",
         "secret_env": "SYRA_HAVY_API_KEY",
     },
@@ -151,6 +173,7 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tokens": 4096,
         "max_history_messages": 40,
         "max_tool_result_chars": 6000,
+        "max_input_tokens": 48_000,
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },
@@ -322,5 +345,7 @@ def provider_catalog() -> list[dict[str, str | int | float]]:
             entry["max_history_messages"] = int(spec["max_history_messages"])
         if "max_tool_result_chars" in spec:
             entry["max_tool_result_chars"] = int(spec["max_tool_result_chars"])
+        if "max_input_tokens" in spec:
+            entry["max_input_tokens"] = int(spec["max_input_tokens"])
         rows.append(entry)
     return rows

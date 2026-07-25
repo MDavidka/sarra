@@ -244,3 +244,87 @@ without executing the underlying action.
 ```json
 { "uuid": "my-site-a1b2c3", "skill_id": "website-editing" }
 ```
+
+
+## Cost, speed, and token controls
+
+Every provider call is bounded. Per-profile caps live in `syte/ai_providers.py`
+(`PROFILE_PROVIDERS`) and are reported by `GET /api/ai_providers`:
+
+| Cap | Meaning | Fallback when unset |
+| --- | --- | --- |
+| `max_tokens` | Completion ceiling per call | `DEFAULT_MAX_COMPLETION_TOKENS` (8192) |
+| `max_input_tokens` | Estimated input ceiling; oldest history is trimmed above it | `DEFAULT_MAX_INPUT_TOKENS` (96k) |
+| `max_history_messages` | Conversation window sent to the provider | `MAX_HISTORY_MESSAGES` (160) |
+| `max_tool_result_chars` | Per-tool-result truncation | `MAX_TOOL_RESULT_CHARS` (16k) |
+
+No profile is unbounded: an uncapped completion is both the slowest and the most
+expensive failure mode. Trimming never drops the system prompt (it holds the
+cacheable prefix) or the most recent turns, and `sanitize_provider_messages` is
+re-run afterwards so `tool_calls`/`tool` pairs stay valid.
+
+Token estimates come from `syte/token_efficiency.py` (`estimate_tokens`,
+`trim_messages_to_budget`). They are intentionally dependency-free heuristics
+used for *budgeting*; authoritative usage is returned by the provider in
+`_usage` and recorded as a `usage` activity event.
+
+### Prompt caching
+
+The system prompt is assembled as a stable prefix plus a dynamic suffix
+(`_build_syte_instruction_parts`). Keep volatile values out of the prefix —
+anything that changes between turns invalidates the provider's prefix cache and
+silently re-bills the whole instruction. Runtime state (service status) belongs
+in `_project_runtime_block`, which lives in the dynamic suffix.
+
+The design contract, theme vocabulary, and shadcn catalog (~4k tokens) are
+injected only when the project is, or could become, a web UI — see
+`_wants_design_contract`. Python/Go/Rust/CLI workspaces skip them.
+
+### Vision cost
+
+Screenshots are the most expensive context a turn can carry:
+
+- Images entering the model context are the chat-optimized variants (~90 KB),
+  not the full-resolution PNG, and carry `detail: "low"` for OpenAI-compatible
+  vision endpoints.
+- Structured visual analysis is an **extra vision call per screenshot**. It runs
+  for the desktop viewport only, and can be disabled entirely:
+
+```json
+{ "key": "agent_visual_analysis_enabled", "value": "0" }
+```
+
+- Prefer `inspect_preview` (DevTools: load state, console errors, page summary)
+  over `screenshot_preview`; it verifies a route without any image tokens.
+
+### MCP tool schemas
+
+`list_mcp_addons` returns addon status plus tool **names and short
+descriptions**. Full JSON Schemas are opt-in, which keeps schema-heavy addons
+from dominating the context:
+
+```json
+{ "include_schemas": true, "addon": "syte" }
+```
+
+### Optional: shadcn/ui MCP server
+
+Syte already injects the pinned 57-component shadcn catalog into website
+prompts, so this is **not** required. If you want live component sources, add
+an MCP addon per project rather than enabling it globally — it runs third-party
+code fetched at launch, so treat it as a supply-chain decision:
+
+```json
+{
+  "uuid": "my-site-a1b2c3",
+  "name": "shadcn",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "@jpisnice/shadcn-ui-mcp-server"]
+}
+```
+
+Register it with `POST /api/agent_mcp_register` (or
+`POST /api/projects/{uuid}/agent/mcp`), then have the agent call
+`connect_mcp` followed by `call_mcp`. Keep `include_schemas` off until the agent
+actually needs a specific tool's arguments.

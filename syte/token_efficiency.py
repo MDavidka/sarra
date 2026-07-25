@@ -251,3 +251,133 @@ def summarize_diff_stat(stat_text: str, *, max_files: int = 40) -> str:
     if len(lines) <= max_files + 2:
         return "\n".join(lines)
     return "\n".join(lines[:max_files] + ["…", lines[-1]])
+
+
+
+# ---------------------------------------------------------------------------
+# Token accounting + input budget enforcement
+#
+# Deliberately dependency-free. ``tiktoken`` is a compiled dependency and its
+# BPE only matches OpenAI models — Syte's primary providers are Gemini/Vertex,
+# DeepSeek, and Qwen, all with different tokenizers, so an exact count would be
+# wrong anyway. These estimates are used for *budgeting* (deciding when to trim),
+# where a consistent ±20% approximation is sufficient. Real usage always comes
+# back from the provider in ``_usage``.
+# ---------------------------------------------------------------------------
+
+# Average characters per token. Prose is ~4.0, source code and JSON are denser.
+_CHARS_PER_TOKEN = 3.6
+# Flat cost of one inline image. Gemini bills fixed-size tiles rather than
+# per-byte, so base64 length is a bad proxy.
+_IMAGE_TOKEN_COST = 300
+
+
+def estimate_tokens(text: str) -> int:
+    """Approximate token count for a string (provider-agnostic heuristic)."""
+    if not text:
+        return 0
+    return max(1, int(len(text) / _CHARS_PER_TOKEN))
+
+
+def estimate_content_tokens(content: object) -> int:
+    """Estimate tokens for OpenAI-style message content (str or parts list)."""
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return estimate_tokens(content)
+    if isinstance(content, list):
+        total = 0
+        for part in content:
+            if isinstance(part, str):
+                total += estimate_tokens(part)
+                continue
+            if not isinstance(part, dict):
+                continue
+            kind = str(part.get("type") or "")
+            if kind == "image_url" or "image_url" in part:
+                total += _IMAGE_TOKEN_COST
+                continue
+            if part.get("text"):
+                total += estimate_tokens(str(part["text"]))
+        return total
+    return estimate_tokens(str(content))
+
+
+def estimate_message_tokens(message: dict) -> int:
+    """Estimate tokens for one chat message, including tool-call payloads."""
+    if not isinstance(message, dict):
+        return 0
+    # Per-message role/framing overhead.
+    total = 4
+    total += estimate_content_tokens(message.get("content"))
+    total += estimate_tokens(str(message.get("reasoning_content") or ""))
+    for call in message.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        fn = call.get("function") or {}
+        total += estimate_tokens(str(fn.get("name") or ""))
+        total += estimate_tokens(str(fn.get("arguments") or ""))
+        total += 8
+    return total
+
+
+def estimate_messages_tokens(messages: Iterable[dict]) -> int:
+    return sum(estimate_message_tokens(m) for m in messages)
+
+
+def trim_messages_to_budget(
+    messages: list[dict],
+    *,
+    max_input_tokens: int | None,
+    keep_recent: int = 6,
+) -> tuple[list[dict], dict]:
+    """Drop the oldest non-system messages until the estimate fits the budget.
+
+    Returns ``(messages, info)``. The system prompt is never dropped (it holds
+    the cacheable prefix) and the most recent ``keep_recent`` messages are always
+    kept so the current task stays intact. Callers must re-run
+    ``sanitize_provider_messages`` afterwards: trimming can orphan a ``tool``
+    result whose ``assistant`` tool_call was removed.
+    """
+    info = {
+        "trimmed": False,
+        "dropped": 0,
+        "estimated_tokens_before": 0,
+        "estimated_tokens_after": 0,
+        "budget": max_input_tokens,
+    }
+    if not messages:
+        return messages, info
+
+    before = estimate_messages_tokens(messages)
+    info["estimated_tokens_before"] = before
+    info["estimated_tokens_after"] = before
+    if not max_input_tokens or max_input_tokens <= 0 or before <= max_input_tokens:
+        return messages, info
+
+    leading_system = 0
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "system":
+            leading_system += 1
+            continue
+        break
+
+    head = messages[:leading_system]
+    body = messages[leading_system:]
+    protected = max(0, int(keep_recent))
+    total = before
+    dropped = 0
+    # Oldest-first removal; never eat into the protected recent window.
+    while total > max_input_tokens and len(body) > protected:
+        total -= estimate_message_tokens(body[0])
+        body = body[1:]
+        dropped += 1
+
+    if not dropped:
+        return messages, info
+
+    result = head + body
+    info["trimmed"] = True
+    info["dropped"] = dropped
+    info["estimated_tokens_after"] = estimate_messages_tokens(result)
+    return result, info

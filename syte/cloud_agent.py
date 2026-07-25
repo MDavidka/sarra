@@ -25,6 +25,8 @@ import httpx
 
 from syte.agent_activity import record_agent_event
 from syte.ai_providers import (
+    DEFAULT_MAX_COMPLETION_TOKENS,
+    DEFAULT_MAX_INPUT_TOKENS,
     DEFAULT_PROFILE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
@@ -832,10 +834,73 @@ def _model_tool_result_chars(model: dict[str, Any] | None) -> int:
     return MAX_TOOL_RESULT_CHARS
 
 
-def _model_max_tokens(model: dict[str, Any] | None) -> int | None:
+def _summarize_mcp_addons(
+    addons: list[dict[str, Any]], *, include_schemas: bool = False,
+) -> list[dict[str, Any]]:
+    """Trim MCP addon listings to what the model needs to pick a tool.
+
+    Full JSON Schemas for every tool of every addon can run to thousands of
+    tokens and are almost never all needed. By default we return tool names plus
+    a short description; the model can request one addon's schemas on demand.
+    """
+    out: list[dict[str, Any]] = []
+    for addon in addons or []:
+        if not isinstance(addon, dict):
+            continue
+        tools = addon.get("tools") or []
+        entry: dict[str, Any] = {
+            "id": addon.get("id"),
+            "name": addon.get("name"),
+            "description": _truncate_for_llm(str(addon.get("description") or ""), 300),
+            "status": addon.get("status"),
+            "builtin": addon.get("builtin"),
+            "tool_count": len(tools) if isinstance(tools, list) else 0,
+        }
+        if not isinstance(tools, list):
+            out.append(entry)
+            continue
+        if include_schemas:
+            entry["tools"] = tools
+        else:
+            entry["tools"] = [
+                {
+                    "name": tool.get("name"),
+                    "description": _truncate_for_llm(str(tool.get("description") or ""), 200),
+                }
+                for tool in tools
+                if isinstance(tool, dict)
+            ]
+        out.append(entry)
+    return out
+
+
+async def _visual_analysis_enabled() -> bool:
+    """Whether screenshots trigger the extra structured vision LLM call.
+
+    Enabled by default (it powers the visual feedback loop) but disabling it
+    removes one vision call per screenshot, which is the largest single cost in
+    a design-review turn.
+    """
+    raw = (await get_setting("agent_visual_analysis_enabled", "1")).strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _model_max_tokens(model: dict[str, Any] | None) -> int:
+    """Completion cap for a provider call — never unbounded.
+
+    An uncapped completion lets a reasoning model spend its whole context on a
+    single answer, which is simultaneously the slowest and priciest outcome.
+    """
     if model and model.get("max_tokens"):
         return max(256, int(model["max_tokens"]))
-    return None
+    return DEFAULT_MAX_COMPLETION_TOKENS
+
+
+def _model_input_budget(model: dict[str, Any] | None) -> int:
+    """Estimated input-token ceiling before oldest history is trimmed."""
+    if model and model.get("max_input_tokens"):
+        return max(8_000, int(model["max_input_tokens"]))
+    return DEFAULT_MAX_INPUT_TOKENS
 
 
 async def ensure_agent_runtime(project: dict[str, Any]) -> dict[str, Any]:
@@ -884,19 +949,80 @@ def get_agent_logs(project_id: str, lines: int = 200) -> str:
 
 
 def _project_metadata_block(project: dict[str, Any] | None) -> str:
-    """Stable project facts from Mongo/SQLite metadata — never requires a file scan."""
+    """Stable project facts from Mongo/SQLite metadata — never requires a file scan.
+
+    Only byte-stable fields belong here: this block sits inside the cacheable
+    static prefix, so anything that changes between turns (service status) would
+    invalidate the provider's prefix cache on every request. Volatile runtime
+    state goes in the dynamic suffix via ``_project_runtime_block``.
+    """
     project = project or {}
     name = project.get("name") or project.get("id") or "unknown"
     domain = project.get("domain") or project.get("preview_domain") or "not set"
     deploy = project.get("deploy_type") or "shell"
-    status = project.get("status") or "unknown"
     return (
         "## Project metadata (never re-scan for this)\n"
         f"Name: {name}\n"
         f"Domain: {domain}\n"
         f"Deploy type: {deploy}\n"
-        f"Service status: {status}\n"
     )
+
+
+# Markers of a codebase that is clearly not a web UI project.
+_NON_WEB_PROJECT_MARKERS = (
+    "requirements.txt",
+    "pyproject.toml",
+    "setup.py",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "Gemfile",
+    "composer.json",
+)
+
+
+def _wants_design_contract(project_id: str, *, is_website: bool) -> bool:
+    """Whether to inject the full design contract + shadcn catalog (~4k tokens).
+
+    Included for website projects and for empty/unknown workspaces — a brand new
+    project is not a Next.js repo yet, and its first request is often "build me a
+    landing page", which is exactly when the component catalog matters most.
+    Omitted only when the workspace is demonstrably a non-web codebase (Python,
+    Go, Rust, a Node package with no React/Next dependency, …).
+    """
+    if is_website:
+        return True
+    app = workspace_path(project_id) / "app"
+    try:
+        if not app.is_dir() or not any(app.iterdir()):
+            return True  # new/empty project — could become a website
+    except OSError:
+        return True
+
+    for marker in _NON_WEB_PROJECT_MARKERS:
+        if (app / marker).is_file():
+            return False
+
+    pkg = app / "package.json"
+    if pkg.is_file():
+        try:
+            data = json.loads(pkg.read_text(errors="replace"))
+            deps = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
+        except (json.JSONDecodeError, OSError, AttributeError):
+            return True
+        # A Node project with no UI framework is a CLI/server, not a web UI.
+        return any(dep in deps for dep in ("next", "react", "vue", "svelte", "astro", "nuxt"))
+
+    # Unknown shape — keep the contract rather than risk an off-contract build.
+    return True
+
+
+def _project_runtime_block(project: dict[str, Any] | None) -> str:
+    """Volatile runtime state — kept out of the cacheable prefix."""
+    project = project or {}
+    status = project.get("status") or "unknown"
+    return f"## Project runtime state\nService status: {status}"
 
 
 def _read_syterules(project_id: str) -> str:
@@ -974,8 +1100,15 @@ def _build_static_instruction(
     project_meta: str,
     website_enforcement: str,
     syterules: str,
+    include_design_contract: bool = True,
 ) -> str:
-    """Build the cacheable instruction prefix (design contract, tools, skills, rules)."""
+    """Build the cacheable instruction prefix (design contract, tools, skills, rules).
+
+    The design contract, theme vocabulary, and 57-component shadcn catalog cost
+    ~4k input tokens per call and are only actionable for web UI work, so they are
+    omitted for projects that are demonstrably not web codebases. See
+    ``_wants_design_contract`` for the (deliberately conservative) condition.
+    """
     from syte.design_contract import (
         DESIGN_CONTRACT_MARKDOWN,
         shadcn_catalog_json,
@@ -1040,11 +1173,21 @@ def _build_static_instruction(
         "overwrites the whole file — always send the complete body. After batches of writes, verify with "
         "list_files/read_file. Preview caching: after fixing a compile error, preview_stop then "
         "preview_start before judging the result.\n",
-        "Website / web UI design contract (mandatory when building websites):\n"
-        f"{DESIGN_CONTRACT_MARKDOWN}\n",
-        f"{themes_prompt_block()}\n",
-        "shadcn/ui component catalog (import only these — never invent names):\n"
-        f"{shadcn_catalog_json()}\n",
+        (
+            "Website / web UI design contract (mandatory when building websites):\n"
+            f"{DESIGN_CONTRACT_MARKDOWN}\n"
+            f"{themes_prompt_block()}\n"
+            "shadcn/ui component catalog (import only these — never invent names):\n"
+            f"{shadcn_catalog_json()}\n"
+        )
+        if include_design_contract
+        else (
+            "This project is not a web UI codebase, so the full design contract and "
+            "shadcn/ui catalog are omitted to keep each turn fast and cheap. If the user "
+            "does ask for a website / web UI, scaffold it with Next.js App Router + "
+            "shadcn/ui + Tailwind — the full contract loads automatically once the "
+            "workspace has a web app.\n"
+        ),
         f"Syte workspace rules:\n{rule_lines}\n",
         f"{active_skills_block}\n",
         f"Project workspace root: {workspace_path(project_id)}\n"
@@ -1101,10 +1244,12 @@ async def _build_syte_instruction_parts(
     is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
     project_meta = _project_metadata_block(project)
     website_enforcement = _website_enforcement_block(is_website=is_website)
+    include_design_contract = _wants_design_contract(project_id, is_website=is_website)
     project_brief = _project_brief_block(project_id)
 
     rules_hash = hashlib.sha256(
-        f"{DESIGN_CONTRACT_VERSION}\n{rule_lines}\n{active_skills_block}\n"
+        f"{DESIGN_CONTRACT_VERSION}\n{int(include_design_contract)}\n"
+        f"{rule_lines}\n{active_skills_block}\n"
         f"{website_enforcement}\n{project_meta}\n{syterules}\n{project_brief}\n"
         f"{workspace_path(project_id)}".encode()
     ).hexdigest()[:16]
@@ -1124,6 +1269,7 @@ async def _build_syte_instruction_parts(
             project_meta=project_meta,
             website_enforcement=website_enforcement,
             syterules=syterules,
+            include_design_contract=include_design_contract,
         )
         if project_brief:
             static = f"{static}\n\n{project_brief}"
@@ -1175,7 +1321,13 @@ async def _build_syte_instruction_parts(
     map_block = workspace_map_block(index_hits, limit=20)
     dynamic = "\n\n".join(
         part
-        for part in (file_memory_block, design_block, memory_block, map_block)
+        for part in (
+            _project_runtime_block(project),
+            file_memory_block,
+            design_block,
+            memory_block,
+            map_block,
+        )
         if part and str(part).strip()
     ).strip()
     return static, dynamic
@@ -1644,8 +1796,11 @@ TOOLS: list[dict[str, Any]] = [
          "keys": {"type": "array", "items": {"type": "string"}},
          "prompt": {"type": "string", "description": "Optional custom prompt shown to the user"},
      }, "required": ["keys"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "list_mcp_addons", "description": "List available MCP addons (built-in syte + any registered) and their connection status/tools.",
-     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "list_mcp_addons", "description": "List available MCP addons (built-in syte + any registered) with their status and tool names. Full tool input schemas are omitted by default — pass include_schemas=true only for the addon you are about to call.",
+     "parameters": {"type": "object", "properties": {
+         "include_schemas": {"type": "boolean", "description": "Return full tool input schemas (large). Default false."},
+         "addon": {"type": "string", "description": "Optional addon id/name filter — use with include_schemas to load one addon's schemas only"},
+     }, "additionalProperties": False}}},
     {"type": "function", "function": {"name": "connect_mcp", "description": "Connect an MCP addon by id or name so its tools become available via call_mcp.",
      "parameters": {"type": "object", "properties": {"addon": {"type": "string"}}, "required": ["addon"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "call_mcp", "description": "Call a tool on a connected MCP addon.",
@@ -1852,7 +2007,23 @@ async def _execute_tool(
         if name == "list_mcp_addons":
             from syte.agent_artifacts import list_mcp_addons
 
-            return {"ok": True, "addons": await list_mcp_addons(project_id)}
+            addons = await list_mcp_addons(project_id)
+            wanted = str(args.get("addon") or "").strip().lower()
+            if wanted:
+                addons = [
+                    a for a in addons
+                    if wanted in {str(a.get("id") or "").lower(), str(a.get("name") or "").lower()}
+                ] or addons
+            return {
+                "ok": True,
+                "addons": _summarize_mcp_addons(
+                    addons, include_schemas=bool(args.get("include_schemas")),
+                ),
+                "hint": (
+                    "Tool input schemas omitted. Call list_mcp_addons with "
+                    "include_schemas=true for the addon you actually intend to use."
+                ) if not args.get("include_schemas") else "",
+            }
         if name == "connect_mcp":
             from syte.agent_artifacts import connect_mcp_addon
 
@@ -2252,16 +2423,31 @@ async def _tool_screenshot_preview(
         shots_out.append(entry)
         if not entry.get("ok") or not isinstance(png, (bytes, bytearray)) or not isinstance(record, dict):
             continue
-        if len(png) <= MAX_VISION_IMAGE_BYTES:
+        # Send the chat-optimized image (~90KB) rather than the full-resolution
+        # PNG (up to 700KB). Layout review does not need full pixels, and image
+        # parts are the single most expensive thing we can put in the context.
+        vision_b64 = str(entry.get("chat_image_base64") or "") or str(
+            record.get("image_base64") or ""
+        )
+        if vision_b64 and len(png) <= MAX_VISION_IMAGE_BYTES:
             vision_parts.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{record['image_base64']}"},
+                # `detail: low` is honored by OpenAI-compatible vision endpoints
+                # and ignored elsewhere.
+                "image_url": {
+                    "url": f"data:image/png;base64,{vision_b64}",
+                    "detail": "low",
+                },
             })
             vision_parts.append({
                 "type": "text",
                 "text": f"[{name} {record['width']}x{record['height']}] {route}",
             })
-        # Structured visual analysis (best-effort) for the visual feedback loop.
+        # Structured visual analysis is an extra vision LLM call per screenshot.
+        # Run it for the desktop viewport only (phone adds cost for little extra
+        # signal) and let operators disable it entirely.
+        if name != "desktop" or not await _visual_analysis_enabled():
+            continue
         try:
             from syte.visual_analysis import analyze_and_store
 
@@ -2717,6 +2903,7 @@ async def _provider_completion(
         record_circuit_success,
     )
     from syte.cloud_agent_store import sanitize_provider_messages
+    from syte.token_efficiency import trim_messages_to_budget
 
     check_circuit_breaker(model.get("provider") or "", model.get("model") or "")
 
@@ -2730,8 +2917,24 @@ async def _provider_completion(
         api_base=str(model.get("api_base") or ""),
     )
     use_tools = TOOLS if tools is None else tools
+    prepared = sanitize_provider_messages(list(messages))
+    # Enforce an input budget before paying for the call. Trimming can orphan a
+    # tool result whose assistant tool_call was dropped, so re-sanitize after.
+    prepared, trim_info = trim_messages_to_budget(
+        prepared, max_input_tokens=_model_input_budget(model),
+    )
+    if trim_info["trimmed"]:
+        prepared = sanitize_provider_messages(prepared)
+        logger.info(
+            "trimmed %d old message(s) for %s: ~%d -> ~%d tokens (budget %s)",
+            trim_info["dropped"],
+            model.get("model") or "model",
+            trim_info["estimated_tokens_before"],
+            trim_info["estimated_tokens_after"],
+            trim_info["budget"],
+        )
     cached_messages = apply_prompt_cache_markers(
-        sanitize_provider_messages(list(messages)),
+        prepared,
         provider=str(model.get("provider") or ""),
         model=str(model.get("model") or ""),
         api_base=str(model.get("api_base") or ""),
@@ -2744,8 +2947,7 @@ async def _provider_completion(
         "stream": bool(stream and (on_token is not None or on_reasoning is not None)),
     }
     max_tokens = _model_max_tokens(model)
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
+    payload["max_tokens"] = max_tokens
     if use_tools:
         payload["tools"] = use_tools
         payload["tool_choice"] = "auto"
