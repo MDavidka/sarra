@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Syte API Reference</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
   <style>
 
     :root {
@@ -3569,6 +3569,12 @@ GET /api/agent_session/sess_9c1e…?since_id=42</pre>
         if (push) history.replaceState(null, '', hash);
       }
 
+      function safeIcons() {
+        try {
+          if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        } catch (_) { /* same-origin vendor; ignore icon paint failures */ }
+      }
+
       function showCat(cat, epId, { push } = { push: true }) {
         const id = valid.has(cat) ? cat : DEFAULT_CAT;
         cats.forEach(b => b.classList.toggle('active', b.dataset.cat === id));
@@ -3586,7 +3592,7 @@ GET /api/agent_session/sess_9c1e…?since_id=42</pre>
         }
         window.scrollTo(0, 0);
         closeDrawer();
-        if (window.lucide) lucide.createIcons();
+        safeIcons();
       }
 
       function applyHash() {
@@ -3611,7 +3617,7 @@ GET /api/agent_session/sess_9c1e…?since_id=42</pre>
       window.addEventListener('hashchange', applyHash);
 
       applyHash();
-      if (window.lucide) lucide.createIcons();
+      safeIcons();
     })();
 
   </script>
