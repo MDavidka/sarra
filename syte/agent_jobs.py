@@ -284,25 +284,39 @@ async def _run_job(
         except Exception as exc:
             error = str(exc) or "Agent request failed"
             await mark_request(request_id, "failed", error=error)
+            from syte.cloud_agent import _failure_metadata
+
+            failure = _failure_metadata(exc)
             await record_agent_event(
                 project_id,
                 "request_failed",
-                title="Request failed",
+                title=failure["title"],
                 detail=error[:4000],
                 payload={
                     "request_id": request_id,
                     "error": "agent_job_failed",
+                    "error_type": failure["error_type"],
+                    "retryable": failure["retryable"],
                     "message": error,
                     "retry_message": message[:4000],
                     "session": session_number,
                     "mark_status": "d",
                     "mark_kind": "error",
+                    **failure["detail"],
                 },
                 source=source,
                 turso_session_id=turso_session_id,
             )
             terminal_status = "failed"
-            return {"ok": False, "request_id": request_id, "error": "agent_job_failed", "message": error}
+            return {
+                "ok": False,
+                "request_id": request_id,
+                "error": "agent_job_failed",
+                "message": error,
+                "error_type": failure["error_type"],
+                "retryable": failure["retryable"],
+                **failure["detail"],
+            }
         finally:
             # Always stamp a terminal status + ended_at so pollers never stay
             # stuck on status=open / "generating".

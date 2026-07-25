@@ -292,6 +292,17 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
                 "Google Cloud Console → Credentials (aiplatform.googleapis.com)."
             )
         )
+    if chat_probe and chat_probe.get("status_code") == 429:
+        hints.append(
+            explain_google_api_error(
+                str(chat_probe.get("body_preview") or chat_probe.get("error") or ""),
+                status_code=429,
+            )
+            or (
+                "Provider quota exhausted (429). The key works — wait for the quota window "
+                "to reset or request more quota."
+            )
+        )
     if chat_probe and chat_probe.get("status_code") == 404:
         hints.append(f"Model {spec['model']} not found at provider — name may be outdated.")
     if chat_probe and chat_probe.get("status_code") in (401, 403) and not mismatch:
@@ -313,6 +324,23 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         "error": error,
         "hints": hints,
         "transport": transport,
+        # Client-side pacing / quota state for this model (429 diagnostics).
+        "quota": _model_quota_info(spec["model"]),
+    }
+
+
+def _model_quota_info(model: str) -> dict[str, Any]:
+    """Pacing limits + current cooldown for a model (429 diagnostics)."""
+    from syte import provider_quota
+
+    limits = provider_quota.limits_for(model)
+    return {
+        "model": model,
+        "requests_per_minute": limits["requests_per_minute"],
+        "max_concurrency": limits["max_concurrency"],
+        "cooldown_remaining_s": round(provider_quota.cooldown_remaining(model), 2),
+        "available": provider_quota.is_available(model),
+        "model_rotation_enabled": provider_quota.rotation_enabled(),
     }
 
 

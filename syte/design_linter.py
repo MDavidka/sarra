@@ -214,6 +214,21 @@ def validate_design(project_id: str) -> dict:
         "detail": "--radius token or rounded-lg used" if radius_ok else "Use --radius token consistently",
     })
 
+    # Single stack: other-stack entry points silently override the Next.js app.
+    from syte.nextjs_layout import find_conflicting_stack_files
+
+    conflicts = find_conflicting_stack_files(app)
+    checks.append({
+        "item": PREFLIGHT_CHECKLIST[14],
+        "ok": not conflicts,
+        "detail": (
+            "No conflicting stack files"
+            if not conflicts
+            else "Remove files that conflict with Next.js + shadcn/ui: "
+            + ", ".join(conflicts[:6])
+        ),
+    })
+
     # images with alt
     img_tags = re.findall(r"<img[^>]*>", all_tsx, re.I)
     img_ok = not img_tags or all("alt=" in t for t in img_tags)

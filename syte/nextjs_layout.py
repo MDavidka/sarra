@@ -1,6 +1,7 @@
 """Detect and fix Next.js App/Pages router layout before Docker build."""
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -202,3 +203,174 @@ def ensure_nextjs_dockerfile(repo: Path) -> list[str]:
     )
     actions.append("Created Dockerfile for Next.js (standalone multi-stage).")
     return actions
+
+
+
+# ---------------------------------------------------------------------------
+# Conflicting-stack cleanup
+#
+# Generated websites must be a single Next.js App Router + Tailwind +
+# shadcn/ui + Radix project. Leftovers from other stacks (a static
+# index.html, a Vite entry, a CRA public/index.html, a Tailwind CDN script)
+# silently win over the real app: preview auto-detection picks the static
+# file, `next build` compiles a different root, and Tailwind's CDN build
+# overrides the compiled design tokens. Files are quarantined rather than
+# deleted so nothing is lost.
+# ---------------------------------------------------------------------------
+
+QUARANTINE_DIR = ".syte/removed-conflicts"
+
+# Entry points / configs that belong to a different stack than Next.js.
+CONFLICTING_STACK_FILES = (
+    "index.html",
+    "public/index.html",
+    "vite.config.ts",
+    "vite.config.js",
+    "vite.config.mjs",
+    "vite.config.cjs",
+    "src/main.tsx",
+    "src/main.jsx",
+    "craco.config.js",
+)
+
+# Root-level copies of App Router files that shadow the real router directory.
+DUPLICATE_ROUTER_FILES = (
+    "page.tsx",
+    "page.jsx",
+    "layout.tsx",
+    "layout.jsx",
+    "globals.css",
+)
+
+_TAILWIND_CDN_RE = re.compile(
+    r"[ \t]*<script[^>]*src=[\"']https?://cdn\.tailwindcss\.com[^\"']*[\"'][^>]*>"
+    r"(?:\s*</script>)?[ \t]*\n?",
+    re.I,
+)
+
+_SKIP_DIR_PARTS = frozenset({"node_modules", ".git", ".next", ".syte", "dist", "build"})
+
+
+def _skipped(rel: Path) -> bool:
+    return any(part in _SKIP_DIR_PARTS for part in rel.parts)
+
+
+def _quarantine(repo: Path, rel: str) -> str | None:
+    """Move ``rel`` out of the build root into the quarantine dir."""
+    source = repo / rel
+    if not source.exists() or source.is_dir():
+        return None
+    target_dir = repo / QUARANTINE_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / rel.replace("/", "__")
+    try:
+        if target.exists():
+            target.unlink()
+        shutil.move(str(source), str(target))
+    except OSError:
+        return None
+    return f"Removed conflicting {rel} (moved to {QUARANTINE_DIR}/{target.name})"
+
+
+def remove_conflicting_stack_files(repo: Path) -> list[str]:
+    """Quarantine non-Next.js entry points and duplicate router/style files.
+
+    No-ops unless ``repo`` is a Next.js project, so Vite/CRA/static projects
+    are never touched.
+    """
+    if not is_nextjs_repo(repo):
+        return []
+
+    actions: list[str] = []
+    for rel in CONFLICTING_STACK_FILES:
+        action = _quarantine(repo, rel)
+        if action:
+            actions.append(action)
+
+    # Root duplicates only matter once a real router directory exists —
+    # fix_nextjs_layout() promotes misplaced files when it does not.
+    router = find_router_dir(repo)
+    if router is not None and router != repo:
+        for name in DUPLICATE_ROUTER_FILES:
+            if (repo / name).exists() and (router / name).exists():
+                action = _quarantine(repo, name)
+                if action:
+                    actions.append(action)
+        if (router / "globals.css").exists() and (repo / "styles" / "globals.css").exists():
+            action = _quarantine(repo, "styles/globals.css")
+            if action:
+                actions.append(action)
+
+    actions.extend(_strip_tailwind_cdn(repo))
+    return actions
+
+
+def _strip_tailwind_cdn(repo: Path, *, max_files: int = 300) -> list[str]:
+    """Remove Tailwind CDN script tags that override the compiled token build."""
+    actions: list[str] = []
+    scanned = 0
+    for pattern in ("*.tsx", "*.jsx", "*.html"):
+        for path in repo.rglob(pattern):
+            if scanned >= max_files:
+                return actions
+            try:
+                rel = path.relative_to(repo)
+            except ValueError:
+                continue
+            if _skipped(rel):
+                continue
+            scanned += 1
+            try:
+                text = path.read_text(errors="replace")
+            except OSError:
+                continue
+            if "cdn.tailwindcss.com" not in text:
+                continue
+            cleaned = _TAILWIND_CDN_RE.sub("", text)
+            if cleaned == text:
+                continue
+            try:
+                path.write_text(cleaned)
+            except OSError:
+                continue
+            actions.append(
+                f"Removed Tailwind CDN script from {rel} (conflicts with the compiled "
+                "Tailwind/shadcn token build)"
+            )
+    return actions
+
+
+def find_conflicting_stack_files(repo: Path) -> list[str]:
+    """Read-only report of files that conflict with the Next.js/shadcn stack."""
+    if not is_nextjs_repo(repo):
+        return []
+
+    found = [rel for rel in CONFLICTING_STACK_FILES if (repo / rel).is_file()]
+    router = find_router_dir(repo)
+    if router is not None and router != repo:
+        found.extend(
+            name
+            for name in DUPLICATE_ROUTER_FILES
+            if (repo / name).is_file() and (router / name).is_file()
+        )
+        if (router / "globals.css").is_file() and (repo / "styles" / "globals.css").is_file():
+            found.append("styles/globals.css")
+
+    scanned = 0
+    for pattern in ("*.tsx", "*.jsx", "*.html"):
+        for path in repo.rglob(pattern):
+            if scanned >= 300:
+                break
+            try:
+                rel = path.relative_to(repo)
+            except ValueError:
+                continue
+            if _skipped(rel):
+                continue
+            scanned += 1
+            try:
+                if "cdn.tailwindcss.com" in path.read_text(errors="replace"):
+                    found.append(f"{rel} (Tailwind CDN script)")
+            except OSError:
+                continue
+    return sorted(dict.fromkeys(found))

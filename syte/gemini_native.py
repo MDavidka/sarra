@@ -21,6 +21,34 @@ from urllib.parse import quote
 
 import httpx
 
+
+class GoogleApiError(RuntimeError):
+    """A Vertex/Gemini HTTP error that keeps the status code inspectable.
+
+    ``native_generate_content`` used to raise a bare ``RuntimeError`` holding a
+    formatted string, which meant callers could not tell a 429 quota error from
+    a 400 bad request and therefore never retried or backed off. Subclassing
+    ``RuntimeError`` keeps every existing ``except RuntimeError`` handler working.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        retry_after: float | None = None,
+        detail: str = "",
+        url: str = "",
+        quota: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = int(status_code)
+        self.retry_after = retry_after
+        self.detail = detail
+        self.url = url
+        self.quota = bool(quota)
+
+
 # Vertex AI Express Mode (Google Cloud) — not AI Studio.
 VERTEX_EXPRESS_API_BASE = "https://aiplatform.googleapis.com/v1"
 # Backward-compatible aliases used by older imports/tests.
@@ -506,14 +534,23 @@ async def native_generate_content(
     public_url = vertex_generate_content_url(model_id, "***")
     response = await client.post(url, headers=google_auth_headers(), json=body)
     if response.status_code >= 400:
+        from syte.provider_quota import is_quota_detail, parse_retry_after_seconds
+
         detail = (response.text or "").strip()[:800]
-        raise RuntimeError(
+        raise GoogleApiError(
             format_google_http_error(
                 status_code=response.status_code,
                 reason=response.reason_phrase,
                 url=public_url,
                 detail=detail,
-            )
+            ),
+            status_code=response.status_code,
+            retry_after=parse_retry_after_seconds(
+                getattr(response, "headers", None), detail
+            ),
+            detail=detail,
+            url=public_url,
+            quota=is_quota_detail(response.status_code, detail),
         )
     data = response.json()
     return gemini_response_to_openai_message(data)
@@ -549,6 +586,17 @@ def explain_google_api_error(detail: str | None, *, status_code: int | None = No
     """Return an actionable hint for common Vertex Express / Gemini API errors."""
     text = detail or ""
     lower = text.lower()
+    if status_code == 429 or "resource_exhausted" in lower or "resource has been exhausted" in lower:
+        return (
+            "Vertex AI quota exhausted (HTTP 429 RESOURCE_EXHAUSTED). This is a rate/quota "
+            "limit, not a bad key. Syte paces requests per model and parks an exhausted model "
+            "for a cooldown, then retries or rotates to the other Vertex model. "
+            "To raise the ceiling: Google Cloud Console → IAM & Admin → Quotas → filter "
+            "aiplatform.googleapis.com and request more online-prediction requests per minute, "
+            "or move the project off Express Mode's shared quota. Lower concurrency with "
+            "SYRA_QUOTA_CONCURRENCY / SYRA_QUOTA_RPM if bursts keep tripping it. "
+            "Details: https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429"
+        )
     if "api keys are not supported" in lower or "credentials_missing" in lower:
         return (
             "This endpoint expects Vertex Express Mode API-key auth on "

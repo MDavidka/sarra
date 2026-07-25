@@ -12,6 +12,7 @@ from syte.nextjs_layout import (
     find_router_dir,
     fix_nextjs_layout,
     is_nextjs_repo as _is_nextjs_repo_layout,
+    remove_conflicting_stack_files,
     validate_nextjs_for_docker,
 )
 from syte.workspace import read_env_vars, run_cmd, workspace_path
@@ -135,6 +136,8 @@ def _prepare_docker_context(repo: Path, dockerfile: Path) -> list[str]:
 
     if _is_nextjs_repo(repo) or _is_nextjs_repo_layout(repo):
         actions.extend(fix_nextjs_layout(repo))
+        # Drop other-stack entry points before the build picks the wrong root.
+        actions.extend(remove_conflicting_stack_files(repo))
         actions.extend(ensure_nextjs_dockerfile(repo))
 
     if (repo / "Dockerfile").is_file():

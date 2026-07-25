@@ -275,6 +275,8 @@ DESIGN_CONTRACT_MARKDOWN = """# Sycord Design Contract
 - [ ] No shadcn Blocks or application-level direct Radix imports
 - [ ] No raw hand-rolled interactive controls outside components/ui
 - [ ] Layout and copy pass the anti-slop quality rules
+- [ ] One stack only — no static `index.html`, Vite/CRA entry, duplicate root `page.tsx`/`globals.css`,
+      or `cdn.tailwindcss.com` script next to the Next.js app
 """
 
 DEPLOY_RULES = {
@@ -321,6 +323,7 @@ PREFLIGHT_CHECKLIST = [
     "No shadcn Blocks or application-level direct Radix imports",
     "No raw hand-rolled interactive controls outside components/ui",
     "Content-specific composition passes the anti-slop quality rules",
+    "Single stack: no static index.html, Vite/CRA entry, or Tailwind CDN script beside the Next.js app",
 ]
 
 
