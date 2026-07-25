@@ -57,16 +57,21 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 15
+AGENT_INSTRUCTION_VERSION = 16
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 # Attempts per provider call. Quota (429) retries and same-provider model
 # rotation share this budget, so it is higher than a plain transport retry.
 PROVIDER_MAX_ATTEMPTS = 5
 MAX_SUBAGENT_STEPS = 12
+MAX_SUBAGENT_RESEARCH_STEPS = 8
 # Wall-clock cap for an entire subagent loop (LLM rounds + tools). Prevents
 # worker leaks when a single step hangs forever despite the step limit (DAV-202).
 SUBAGENT_TIMEOUT_S = 600.0
+SUBAGENT_RESEARCH_TIMEOUT_S = 180.0
+# Bound parallel background subagents per project (cost + workspace races).
+MAX_BACKGROUND_SUBAGENTS_PER_PROJECT = 2
+MAX_STORED_SUBAGENT_RESULTS = 48
 QUESTION_WAIT_TIMEOUT_S = 1800.0
 # Cap inline vision payloads so provider requests stay bounded.
 MAX_VISION_IMAGE_BYTES = 700_000
@@ -79,6 +84,8 @@ _provider_client: httpx.AsyncClient | None = None
 _instruction_cache: dict[tuple[str, int, str], str] = {}
 # Background subagent tasks keyed by ``{project_id}:{task_id}``.
 _background_subagents: dict[str, asyncio.Task[Any]] = {}
+# Completed/cancelled background results keyed the same way (parent can await).
+_background_subagent_results: dict[str, dict[str, Any]] = {}
 # Fire-and-forget work that must not block turn completion (index, preview).
 _bg_tasks: set[asyncio.Task[Any]] = set()
 # Turso message mirrors — drained briefly before end-of-turn resync.
@@ -89,6 +96,25 @@ def _track_bg_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return task
+
+
+def _store_subagent_result(key: str, result: dict[str, Any]) -> None:
+    """Remember a background subagent outcome so the parent can collect it."""
+    _background_subagent_results[key] = result
+    overflow = len(_background_subagent_results) - MAX_STORED_SUBAGENT_RESULTS
+    if overflow <= 0:
+        return
+    for stale in list(_background_subagent_results.keys())[:overflow]:
+        _background_subagent_results.pop(stale, None)
+
+
+def _count_background_subagents(project_id: str) -> int:
+    prefix = f"{project_id}:"
+    return sum(
+        1
+        for key, task in _background_subagents.items()
+        if key.startswith(prefix) and task and not task.done()
+    )
 
 
 def cancel_background_subagents(project_id: str) -> int:
@@ -102,6 +128,17 @@ def cancel_background_subagents(project_id: str) -> int:
         if task and not task.done():
             task.cancel()
             cancelled += 1
+            task_id = key.split(":", 1)[-1]
+            _store_subagent_result(
+                key,
+                {
+                    "ok": False,
+                    "error": "subagent_cancelled",
+                    "status": "cancelled",
+                    "task_id": task_id,
+                    "message": "Subagent cancelled",
+                },
+            )
     return cancelled
 
 
@@ -1007,7 +1044,8 @@ def _build_static_instruction(
         "(project env vars — request_env asks the user when a secret/value is missing); "
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
-        "status/start/stop/logs); delegate_task for bounded sub-work (set background:true to run async).\n"
+        "status/start/stop/logs); delegate_task for bounded sub-work (mode=research|implementation; "
+        "background:true + await_subagent to run research in parallel).\n"
         "Keep `syra/memory.md` current with a short summary, stack, key paths, and conventions. "
         "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
@@ -1555,7 +1593,8 @@ async def get_agent_status(
             "workspace_index", "activity_sse", "model_routing", "web_search",
             "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
             "preview_health", "planner_executor", "syterules", "background_subagents",
-            "subagent_timeout", "workspace_shell_boundary",
+            "subagent_timeout", "workspace_shell_boundary", "subagent_await",
+            "subagent_model_routing", "auto_model_routing",
         ],
     }
 
@@ -1679,17 +1718,44 @@ TOOLS: list[dict[str, Any]] = [
          "case_insensitive": {"type": "boolean"},
      }, "required": ["pattern"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "delegate_task", "description": (
-        "Delegate one bounded independent research, review, or implementation task to a "
-        "subagent sharing this workspace. Set background:true to run asynchronously."),
+        "Delegate one bounded independent task to a subagent sharing this workspace. "
+        "Use mode=research (default) for fast read-only find/review work on a cheaper model; "
+        "mode=implementation when the subagent must edit files. Set background:true to run "
+        "asynchronously, then call await_subagent with the returned task_id to collect results."),
      "parameters": {"type": "object", "properties": {
          "task": {"type": "string"},
          "background": {"type": "boolean"},
+         "mode": {
+             "type": "string",
+             "enum": ["research", "implementation"],
+             "description": "research=read-only/fast/cheap; implementation=can write files",
+         },
      }, "required": ["task"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "await_subagent", "description": (
+        "Wait for a background subagent started by delegate_task and return its findings. "
+        "Pass the task_id from the delegate_task result."),
+     "parameters": {"type": "object", "properties": {
+         "task_id": {"type": "string"},
+         "timeout_s": {"type": "integer", "description": "Seconds to wait (default 120, max 600)"},
+     }, "required": ["task_id"], "additionalProperties": False}}},
 ]
+
+_SUBAGENT_MUTATING_TOOLS = frozenset({
+    "write_file", "delete_file", "run_command", "service", "update_plan",
+    "env_set", "connect_mcp", "call_mcp", "ask_question", "request_env",
+    "delegate_task", "await_subagent",
+})
 
 SUBAGENT_TOOLS = [
     tool for tool in TOOLS
-    if tool["function"]["name"] not in {"delegate_task", "ask_question", "request_env"}
+    if tool["function"]["name"] not in {
+        "delegate_task", "await_subagent", "ask_question", "request_env",
+    }
+]
+
+SUBAGENT_RESEARCH_TOOLS = [
+    tool for tool in SUBAGENT_TOOLS
+    if tool["function"]["name"] not in _SUBAGENT_MUTATING_TOOLS
 ]
 
 
@@ -1887,32 +1953,9 @@ async def _execute_tool(
         if name == "search_code":
             return await _tool_search_code(project_id, args)
         if name == "delegate_task":
-            task = str(args.get("task") or "").strip()
-            if not task:
-                return {"ok": False, "error": "empty_task", "message": "Provide a delegated task."}
-            if not model:
-                return {"ok": False, "error": "model_unavailable", "message": "Subagent model is unavailable."}
-            if args.get("background"):
-                import uuid as uuid_mod
-
-                task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
-                bg_key = f"{project_id}:{task_id}"
-                bg_task = asyncio.create_task(_run_subagent(project_id, task, model))
-                _background_subagents[bg_key] = bg_task
-
-                def _cleanup(done: asyncio.Task[Any], *, key: str = bg_key) -> None:
-                    _background_subagents.pop(key, None)
-
-                bg_task.add_done_callback(_cleanup)
-                return {
-                    "ok": True,
-                    "task_id": task_id,
-                    "status": "running",
-                    "message": "Background subagent started",
-                    "task": task,
-                    "timeout_s": SUBAGENT_TIMEOUT_S,
-                }
-            return await _run_subagent(project_id, task, model)
+            return await _tool_delegate_task(project_id, args, model=model, context=ctx)
+        if name == "await_subagent":
+            return await _tool_await_subagent(project_id, args)
 
         # Auto-connect MCP addons that expose this unknown tool name.
         from syte.agent_artifacts import call_mcp_addon, connect_mcp_addon, list_mcp_addons
@@ -3103,43 +3146,384 @@ async def _provider_completion(
     raise RuntimeError(error)
 
 
-async def _run_subagent(
-    project_id: str, task: str, model: dict[str, str]
-) -> dict[str, Any]:
-    """Run a bounded secondary tool loop and return its findings to the parent."""
+async def _resolve_subagent_model(
+    parent_model: dict[str, Any],
+    task: str,
+    *,
+    mode: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Pick a cost-efficient subagent model, falling back to the parent when needed."""
+    from syte.model_routing import suggest_subagent_profile
+
+    routing = suggest_subagent_profile(
+        task,
+        parent_profile=str(parent_model.get("profile") or ""),
+        mode=mode,
+    )
+    profile = str(routing.get("effective_profile") or parent_model.get("profile") or DEFAULT_PROFILE)
     try:
-        return await asyncio.wait_for(
-            _run_subagent_loop(project_id, task, model),
-            timeout=SUBAGENT_TIMEOUT_S,
+        meta = await model_metadata_for_profile(profile)
+    except Exception:
+        meta = dict(parent_model)
+        routing = {
+            **routing,
+            "effective_profile": parent_model.get("profile"),
+            "reason": f"{routing.get('reason')}; fallback parent (metadata error)",
+            "fallback": "metadata_error",
+        }
+        return meta, routing
+    if not (meta.get("api_key") or "").strip():
+        routing = {
+            **routing,
+            "effective_profile": parent_model.get("profile"),
+            "reason": f"{routing.get('reason')}; fallback parent (API key missing for {profile})",
+            "fallback": "api_key_missing",
+        }
+        return dict(parent_model), routing
+    return meta, routing
+
+
+async def _tool_delegate_task(
+    project_id: str,
+    args: dict[str, Any],
+    *,
+    model: dict[str, Any] | None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    task = str(args.get("task") or "").strip()
+    if not task:
+        return {"ok": False, "error": "empty_task", "message": "Provide a delegated task."}
+    if not model:
+        return {"ok": False, "error": "model_unavailable", "message": "Subagent model is unavailable."}
+
+    sub_model, routing = await _resolve_subagent_model(
+        model, task, mode=str(args.get("mode") or "") or None,
+    )
+    mode = str(routing.get("mode") or "research")
+    timeout_s = (
+        SUBAGENT_RESEARCH_TIMEOUT_S if mode == "research" else SUBAGENT_TIMEOUT_S
+    )
+    background = bool(args.get("background"))
+
+    if background:
+        if _count_background_subagents(project_id) >= MAX_BACKGROUND_SUBAGENTS_PER_PROJECT:
+            return {
+                "ok": False,
+                "error": "subagent_queue_full",
+                "retryable": True,
+                "message": (
+                    f"Already running {MAX_BACKGROUND_SUBAGENTS_PER_PROJECT} background "
+                    "subagents for this project. Await one with await_subagent, or run "
+                    "this task in the foreground."
+                ),
+                "max_background": MAX_BACKGROUND_SUBAGENTS_PER_PROJECT,
+            }
+        import uuid as uuid_mod
+
+        task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
+        bg_key = f"{project_id}:{task_id}"
+        await record_agent_event(
+            project_id,
+            "subagent_started",
+            role="system",
+            title="Background subagent started",
+            detail=task[:240],
+            payload={
+                "task_id": task_id,
+                "mode": mode,
+                "profile": sub_model.get("profile"),
+                "background": True,
+                "routing": routing,
+            },
+            source=CLOUD_RUNTIME,
         )
+        bg_task = asyncio.create_task(
+            _run_subagent(
+                project_id,
+                task,
+                sub_model,
+                mode=mode,
+                task_id=task_id,
+                parent_request_id=str((context or {}).get("request_id") or "") or None,
+            )
+        )
+        _background_subagents[bg_key] = bg_task
+
+        def _cleanup(done: asyncio.Task[Any], *, key: str = bg_key, tid: str = task_id) -> None:
+            _background_subagents.pop(key, None)
+            if key in _background_subagent_results:
+                return
+            if done.cancelled():
+                _store_subagent_result(
+                    key,
+                    {
+                        "ok": False,
+                        "error": "subagent_cancelled",
+                        "status": "cancelled",
+                        "task_id": tid,
+                        "message": "Subagent cancelled",
+                    },
+                )
+                return
+            exc = done.exception() if not done.cancelled() else None
+            if exc is not None:
+                _store_subagent_result(
+                    key,
+                    {
+                        "ok": False,
+                        "error": "subagent_failed",
+                        "status": "failed",
+                        "task_id": tid,
+                        "message": str(exc) or type(exc).__name__,
+                    },
+                )
+                return
+            try:
+                result = done.result()
+            except Exception as result_exc:
+                result = {
+                    "ok": False,
+                    "error": "subagent_failed",
+                    "status": "failed",
+                    "task_id": tid,
+                    "message": str(result_exc) or type(result_exc).__name__,
+                }
+            if isinstance(result, dict):
+                _store_subagent_result(key, {**result, "task_id": tid, "status": result.get("status") or ("completed" if result.get("ok") else "failed")})
+            else:
+                _store_subagent_result(
+                    key,
+                    {
+                        "ok": True,
+                        "task_id": tid,
+                        "status": "completed",
+                        "result": str(result),
+                    },
+                )
+
+        bg_task.add_done_callback(_cleanup)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "status": "running",
+            "message": "Background subagent started — call await_subagent to collect results.",
+            "task": task,
+            "mode": mode,
+            "profile": sub_model.get("profile"),
+            "routing": routing,
+            "timeout_s": timeout_s,
+        }
+
+    await record_agent_event(
+        project_id,
+        "subagent_started",
+        role="system",
+        title="Subagent started",
+        detail=task[:240],
+        payload={
+            "mode": mode,
+            "profile": sub_model.get("profile"),
+            "background": False,
+            "routing": routing,
+        },
+        source=CLOUD_RUNTIME,
+    )
+    result = await _run_subagent(
+        project_id,
+        task,
+        sub_model,
+        mode=mode,
+        parent_request_id=str((context or {}).get("request_id") or "") or None,
+    )
+    await record_agent_event(
+        project_id,
+        "subagent_completed" if result.get("ok") else "subagent_failed",
+        role="system",
+        title="Subagent finished" if result.get("ok") else "Subagent failed",
+        detail=str(result.get("error") or result.get("result") or "")[:240],
+        payload={
+            "mode": mode,
+            "profile": sub_model.get("profile"),
+            "ok": bool(result.get("ok")),
+            "error": result.get("error"),
+            "usage": result.get("usage"),
+            "cost": result.get("cost"),
+        },
+        source=CLOUD_RUNTIME,
+    )
+    return {**result, "mode": mode, "profile": sub_model.get("profile"), "routing": routing}
+
+
+async def _tool_await_subagent(project_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(args.get("task_id") or "").strip()
+    if not task_id:
+        return {"ok": False, "error": "missing_task_id", "message": "Provide task_id from delegate_task."}
+    key = f"{project_id}:{task_id}"
+    timeout_s = max(1, min(int(args.get("timeout_s") or 120), 600))
+
+    stored = _background_subagent_results.get(key)
+    if stored is not None:
+        return {**stored, "task_id": task_id, "awaited": True}
+
+    task = _background_subagents.get(key)
+    if task is None:
+        return {
+            "ok": False,
+            "error": "subagent_not_found",
+            "message": (
+                f"No background subagent '{task_id}' is running or stored for this project. "
+                "It may have been cancelled or the task_id is wrong."
+            ),
+            "task_id": task_id,
+        }
+
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout_s)
     except asyncio.TimeoutError:
         return {
             "ok": False,
-            "error": "subagent_timeout",
+            "error": "await_timeout",
             "retryable": True,
-            "message": (
-                f"Subagent timed out after {int(SUBAGENT_TIMEOUT_S)}s "
-                f"(step limit {MAX_SUBAGENT_STEPS}). Narrow the task or raise tool timeouts carefully."
-            ),
-            "task": task,
-            "timeout_s": SUBAGENT_TIMEOUT_S,
+            "message": f"Subagent {task_id} still running after {timeout_s}s — call await_subagent again.",
+            "task_id": task_id,
+            "status": "running",
         }
     except asyncio.CancelledError:
-        return {
+        stored = _background_subagent_results.get(key) or {
             "ok": False,
             "error": "subagent_cancelled",
+            "status": "cancelled",
+            "message": "Subagent cancelled",
+            "task_id": task_id,
+        }
+        return {**stored, "awaited": True}
+
+    if not isinstance(result, dict):
+        result = {"ok": True, "result": str(result), "status": "completed"}
+    _store_subagent_result(key, {**result, "task_id": task_id})
+    return {**result, "task_id": task_id, "awaited": True}
+
+
+async def _run_subagent(
+    project_id: str,
+    task: str,
+    model: dict[str, Any],
+    *,
+    mode: str = "research",
+    task_id: str | None = None,
+    parent_request_id: str | None = None,
+) -> dict[str, Any]:
+    """Run a bounded secondary tool loop and return its findings to the parent."""
+    resolved_mode = mode if mode in {"research", "implementation"} else "research"
+    timeout_s = (
+        SUBAGENT_RESEARCH_TIMEOUT_S if resolved_mode == "research" else SUBAGENT_TIMEOUT_S
+    )
+    try:
+        result = await asyncio.wait_for(
+            _run_subagent_loop(
+                project_id,
+                task,
+                model,
+                mode=resolved_mode,
+                task_id=task_id,
+                parent_request_id=parent_request_id,
+            ),
+            timeout=timeout_s,
+        )
+        if task_id:
+            key = f"{project_id}:{task_id}"
+            _store_subagent_result(
+                key,
+                {
+                    **result,
+                    "task_id": task_id,
+                    "status": "completed" if result.get("ok") else "failed",
+                },
+            )
+            await record_agent_event(
+                project_id,
+                "subagent_completed" if result.get("ok") else "subagent_failed",
+                role="system",
+                title="Background subagent finished" if result.get("ok") else "Background subagent failed",
+                detail=str(result.get("error") or result.get("result") or "")[:240],
+                payload={
+                    "task_id": task_id,
+                    "mode": resolved_mode,
+                    "profile": model.get("profile"),
+                    "ok": bool(result.get("ok")),
+                    "error": result.get("error"),
+                    "usage": result.get("usage"),
+                    "cost": result.get("cost"),
+                },
+                source=CLOUD_RUNTIME,
+            )
+        return result
+    except asyncio.TimeoutError:
+        payload = {
+            "ok": False,
+            "error": "subagent_timeout",
+            "status": "timeout",
+            "retryable": True,
+            "message": (
+                f"Subagent timed out after {int(timeout_s)}s "
+                f"(mode={resolved_mode}). Narrow the task or raise tool timeouts carefully."
+            ),
+            "task": task,
+            "mode": resolved_mode,
+            "timeout_s": timeout_s,
+        }
+        if task_id:
+            _store_subagent_result(f"{project_id}:{task_id}", {**payload, "task_id": task_id})
+            await record_agent_event(
+                project_id,
+                "subagent_failed",
+                role="system",
+                title="Background subagent timed out",
+                detail=payload["message"],
+                payload={"task_id": task_id, "mode": resolved_mode, "error": "subagent_timeout"},
+                source=CLOUD_RUNTIME,
+            )
+        return payload
+    except asyncio.CancelledError:
+        payload = {
+            "ok": False,
+            "error": "subagent_cancelled",
+            "status": "cancelled",
             "message": "Subagent cancelled",
             "task": task,
+            "mode": resolved_mode,
         }
+        if task_id:
+            _store_subagent_result(f"{project_id}:{task_id}", {**payload, "task_id": task_id})
+        return payload
 
 
 async def _run_subagent_loop(
-    project_id: str, task: str, model: dict[str, str]
+    project_id: str,
+    task: str,
+    model: dict[str, Any],
+    *,
+    mode: str = "research",
+    task_id: str | None = None,
+    parent_request_id: str | None = None,
 ) -> dict[str, Any]:
+    research = mode == "research"
+    max_steps = MAX_SUBAGENT_RESEARCH_STEPS if research else MAX_SUBAGENT_STEPS
+    tools = SUBAGENT_RESEARCH_TOOLS if research else SUBAGENT_TOOLS
+    # Keep subagent tool dumps tight for speed/cost.
+    tool_chars = min(_model_tool_result_chars(model), 6_000 if research else 8_000)
+    mode_line = (
+        "Mode: research (read-only). Do not attempt writes, deletes, shell mutations, or service control."
+        if research
+        else
+        "Mode: implementation. You may edit files. Prefer small, verified changes. Do not deploy "
+        "or run production builds."
+    )
     instruction = (
         "You are a focused Syte subagent sharing the parent's project workspace. Complete only the "
         "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
         "update, or build the production service. Prefer the isolated preview for visual checks. "
+        f"{mode_line} "
         "Return concise findings, changes, and verification for the parent agent.\n\n"
         f"Application source: {workspace_path(project_id) / 'app'}"
     )
@@ -3147,8 +3531,22 @@ async def _run_subagent_loop(
         {"role": "system", "content": instruction},
         {"role": "user", "content": task},
     ]
-    for step in range(MAX_SUBAGENT_STEPS):
-        assistant = await _provider_completion(model, messages, tools=SUBAGENT_TOOLS)
+    usage_acc: dict[str, int] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "thinking_tokens": 0,
+        "total_tokens": 0,
+        "steps": 0,
+    }
+    for step in range(max_steps):
+        assistant = await _provider_completion(model, messages, tools=tools)
+        step_usage = assistant.get("_usage") if isinstance(assistant.get("_usage"), dict) else {}
+        if step_usage:
+            usage_acc["input_tokens"] += int(step_usage.get("input_tokens") or 0)
+            usage_acc["output_tokens"] += int(step_usage.get("output_tokens") or 0)
+            usage_acc["thinking_tokens"] += int(step_usage.get("thinking_tokens") or 0)
+            usage_acc["total_tokens"] += int(step_usage.get("total_tokens") or 0)
+            usage_acc["steps"] += 1
         content = str(assistant.get("content") or "")
         calls = assistant.get("tool_calls") or []
         stored_calls = calls if isinstance(calls, list) else []
@@ -3157,7 +3555,19 @@ async def _run_subagent_loop(
             next_assistant["tool_calls"] = stored_calls
         messages.append(next_assistant)
         if not stored_calls:
-            return {"ok": True, "task": task, "result": content.strip() or "Task completed."}
+            cost_info = _estimate_turn_cost(model, usage_acc)
+            return {
+                "ok": True,
+                "task": task,
+                "mode": mode,
+                "result": content.strip() or "Task completed.",
+                "steps": step + 1,
+                "usage": usage_acc,
+                "cost": cost_info,
+                "profile": model.get("profile"),
+                "parent_request_id": parent_request_id,
+                "task_id": task_id,
+            }
         for call in stored_calls:
             _raise_if_cancelled()
             function = call.get("function") or {}
@@ -3168,47 +3578,66 @@ async def _run_subagent_loop(
                     args = {}
             except json.JSONDecodeError:
                 args = {}
-            try:
-                result = await _execute_tool(
-                    project_id,
-                    name,
-                    args,
-                    model=model,
-                    context={"max_tool_result_chars": _model_tool_result_chars(model)},
-                )
-            except asyncio.CancelledError:
+            if research and name in _SUBAGENT_MUTATING_TOOLS:
                 result = {
                     "ok": False,
-                    "error": "cancelled",
-                    "message": f"Tool {name} cancelled",
-                }
-                public = result
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                    "content": _truncate_tool_payload(
-                        public, max_chars=_model_tool_result_chars(model)
+                    "error": "research_readonly",
+                    "message": (
+                        f"Tool {name} is blocked in research mode. "
+                        "Re-delegate with mode=implementation if edits are required."
                     ),
-                })
-                raise
-            except Exception as exc:
-                result = {
-                    "ok": False,
-                    "error": "tool_failed",
-                    "message": str(exc) or type(exc).__name__,
                 }
+            else:
+                try:
+                    result = await _execute_tool(
+                        project_id,
+                        name,
+                        args,
+                        model=model,
+                        context={
+                            "max_tool_result_chars": tool_chars,
+                            "request_id": parent_request_id,
+                            "subagent": True,
+                            "subagent_mode": mode,
+                        },
+                    )
+                except asyncio.CancelledError:
+                    result = {
+                        "ok": False,
+                        "error": "cancelled",
+                        "message": f"Tool {name} cancelled",
+                    }
+                    public = result
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": str(call.get("id") or f"subagent-{step}"),
+                        "content": _truncate_tool_payload(public, max_chars=tool_chars),
+                    })
+                    raise
+                except Exception as exc:
+                    result = {
+                        "ok": False,
+                        "error": "tool_failed",
+                        "message": str(exc) or type(exc).__name__,
+                    }
             public = {k: v for k, v in result.items() if not str(k).startswith("_")}
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                "content": _truncate_tool_payload(
-                    public, max_chars=_model_tool_result_chars(model)
-                ),
+                "content": _truncate_tool_payload(public, max_chars=tool_chars),
             })
+    cost_info = _estimate_turn_cost(model, usage_acc)
     return {
         "ok": False,
         "error": "subagent_step_limit",
-        "message": f"Subagent did not finish within {MAX_SUBAGENT_STEPS} steps.",
+        "status": "step_limit",
+        "message": f"Subagent did not finish within {max_steps} steps.",
+        "task": task,
+        "mode": mode,
+        "usage": usage_acc,
+        "cost": cost_info,
+        "profile": model.get("profile"),
+        "task_id": task_id,
     }
 
 
@@ -3220,8 +3649,9 @@ async def communicate_with_agent(
     visual_analysis_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    from syte.model_routing import suggest_model_profile
+    from syte.model_routing import normalize_explicit_profile, suggest_model_profile
 
+    model_profile = normalize_explicit_profile(model_profile)
     routing = suggest_model_profile(
         message,
         explicit_profile=model_profile,

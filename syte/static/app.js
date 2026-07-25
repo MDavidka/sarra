@@ -337,6 +337,7 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
   if (modelEl) {
     const profile = document.getElementById('debug-chat-profile')?.value || '';
     const short = ({
+      auto: 'auto',
       'syra-nano': 'nano',
       'syra-base': 'base',
       'syra-havy': 'pro',
@@ -449,6 +450,7 @@ const DEBUG_CHAT_TOOL_META = {
   connect_mcp: { label: 'Connect MCP', icon: 'plug' },
   call_mcp: { label: 'Call MCP', icon: 'plug' },
   delegate_task: { label: 'Delegate task', icon: 'git-fork' },
+  await_subagent: { label: 'Await subagent', icon: 'timer' },
 };
 
 function debugChatActionMeta(event) {
@@ -1569,7 +1571,8 @@ async function cancelDebugChatRequest() {
 
 async function getDebugChatProfile() {
   const select = document.getElementById('debug-chat-profile');
-  return select?.value || select?.getAttribute('value') || 'syra-base';
+  const value = select?.value || select?.getAttribute('value') || 'auto';
+  return value;
 }
 
 function setDebugChatResourceButtons(mode) {
@@ -1832,12 +1835,14 @@ async function sendDebugChatMessage() {
   let chatOk = false;
   let acceptedAsync = false;
   try {
+    const body = { message: sentMessage };
+    // Omit model_profile for auto so backend heuristic routing can pick nano/base/pro.
+    if (profile && profile !== 'auto') {
+      body.model_profile = profile;
+    }
     const res = await api(`/projects/${activeServiceId}/agent/chat`, {
       method: 'POST',
-      body: JSON.stringify({
-        message: sentMessage,
-        model_profile: profile,
-      }),
+      body: JSON.stringify(body),
     });
     chatOk = !!res.ok;
     if (!res.ok) {
@@ -1870,7 +1875,7 @@ async function sendDebugChatMessage() {
       } else {
         debugChatActiveRequestId = res.request_id;
         setDebugChatBusy(true);
-        setDebugChatActivity('Working…', `${profile} · thinking and building`);
+        setDebugChatActivity('Working…', `${profile === 'auto' ? 'auto-routed' : profile} · thinking and building`);
         armDebugChatRequestWatchdog(activeServiceId, res.request_id);
       }
     } else if (res.reply) {
@@ -3356,7 +3361,10 @@ async function loadSettings() {
     if (agentDefaultProfile) agentDefaultProfile.value = defaultProfile;
     if (window.customElements?.whenDefined) await customElements.whenDefined('sl-select');
     const debugChatProfile = document.getElementById('debug-chat-profile');
-    if (debugChatProfile) debugChatProfile.value = defaultProfile;
+    // Keep chat on auto for cost-efficient routing unless the user already picked a profile.
+    if (debugChatProfile && !debugChatProfile.dataset.userSelected) {
+      debugChatProfile.value = 'auto';
+    }
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [
@@ -3699,10 +3707,12 @@ document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugC
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
 document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
 document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
+  const select = document.getElementById('debug-chat-profile');
+  if (select) select.dataset.userSelected = '1';
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';
-    const short = ({ 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra' })[profile] || profile;
+    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
       modelEl.textContent = short;

@@ -71,6 +71,9 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "question_answered",
     "session_stopped",
     "plan",
+    "subagent_started",
+    "subagent_completed",
+    "subagent_failed",
 })
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)

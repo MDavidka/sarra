@@ -72,7 +72,8 @@ and structured tools. Available tools:
   missing keys as a question and writes the answer into env
 - `list_mcp_addons` / `connect_mcp` / `call_mcp` — available MCP addons (built-in `syte` plus
   registered custom addons)
-- `delegate_task` — bounded subagent
+- `delegate_task` — bounded subagent (research/implementation modes; optional background + `await_subagent`)
+- `await_subagent` — collect findings from a background `delegate_task`
 
 ### Code policy
 
@@ -173,9 +174,17 @@ URL, design tokens, pages/active files, and last agent summary id. Configure
 `webhook_urls` in system settings to receive `site.deployed` and
 `agent.session.completed` events.
 
-**Model routing:** When `model_profile` and `thinking_level` are omitted, short
-copy tweaks auto-select `syra-nano`; full landing rebuilds / screenshot remakes
-prefer `syra-havy`.
+**Model routing:** When `model_profile` and `thinking_level` are omitted (or
+`model_profile` is `auto`), short copy tweaks auto-select `syra-nano`; full
+landing rebuilds / screenshot remakes prefer `syra-havy`. The debug chat Model
+menu defaults to **auto** so this routing applies.
+
+**Subagents:** `delegate_task` runs a bounded secondary loop. Default
+`mode=research` is read-only and routes to a cheaper/faster profile (usually
+`syra-nano`, never above the parent). `mode=implementation` may edit files and
+caps expensive parents at `syra-base`. Background work stores results; the parent
+collects them with `await_subagent`. At most 2 background subagents run per
+project.
 
 The system instruction is generated for Syte and includes project access rules,
 enabled skills, workspace location, design contract (for websites), verification

@@ -154,7 +154,12 @@ async def test_design_profile_theme(tmp_data_dir: Path) -> None:
 
 
 def test_model_routing_heuristics() -> None:
-    from syte.model_routing import suggest_model_profile
+    from syte.model_routing import (
+        infer_subagent_mode,
+        normalize_explicit_profile,
+        suggest_model_profile,
+        suggest_subagent_profile,
+    )
 
     nano = suggest_model_profile("change button text to Sign up")
     assert nano["suggested_profile"] == "syra-nano"
@@ -169,6 +174,36 @@ def test_model_routing_heuristics() -> None:
 
     thinking = suggest_model_profile("change button text", thinking_level=4)
     assert thinking["auto_applied"] is False
+
+    auto = suggest_model_profile("change button text to Sign up", explicit_profile="auto")
+    assert auto["auto_applied"] is True
+    assert auto["effective_profile"] == "syra-nano"
+    assert normalize_explicit_profile("auto") is None
+    assert normalize_explicit_profile("syra-base") == "syra-base"
+
+    research = suggest_subagent_profile(
+        "Find where the navbar is defined",
+        parent_profile="syra-havy",
+    )
+    assert research["mode"] == "research"
+    assert research["effective_profile"] == "syra-nano"
+
+    impl = suggest_subagent_profile(
+        "Implement the pricing card component",
+        parent_profile="syra-ultra",
+        mode="implementation",
+    )
+    assert impl["mode"] == "implementation"
+    assert impl["effective_profile"] == "syra-base"
+
+    capped = suggest_subagent_profile(
+        "Find auth helpers",
+        parent_profile="syra-nano",
+        mode="research",
+    )
+    assert capped["effective_profile"] == "syra-nano"
+    assert infer_subagent_mode("write a new login form") == "implementation"
+    assert infer_subagent_mode("locate the theme tokens") == "research"
 
 
 @pytest.mark.asyncio
