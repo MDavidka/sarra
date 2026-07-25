@@ -27,6 +27,7 @@ from syte.ai_providers import (
     DEFAULT_PROFILE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
+    SUBAGENT_PROFILE,
     profile_provider,
 )
 from syte.cloud_agent_store import (
@@ -57,7 +58,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 16
+AGENT_INSTRUCTION_VERSION = 17
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 # Attempts per provider call. Quota (429) retries and same-provider model
@@ -802,10 +803,12 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
         "syra_ultra_model": profiles["syra-ultra"]["model"],
+        "syra_subagent_model": profiles["syra-subagent"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
+        "syra_subagent_api_key": profiles["syra-subagent"]["api_key"],
         "provider_keys": [
             {
                 "profile": name,
@@ -1044,8 +1047,8 @@ def _build_static_instruction(
         "(project env vars — request_env asks the user when a secret/value is missing); "
         "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
-        "status/start/stop/logs); delegate_task for bounded sub-work (mode=research|implementation; "
-        "background:true + await_subagent to run research in parallel).\n"
+        "status/start/stop/logs); update_plan with per-step assignee main|subagent; delegate_task + "
+        "await_subagent for subagent-assigned work (NVIDIA GLM 5.2 when configured).\n"
         "Keep `syra/memory.md` current with a short summary, stack, key paths, and conventions. "
         "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
@@ -1058,7 +1061,11 @@ def _build_static_instruction(
         "Command output is pre-filtered (passing tests / progress noise stripped) — re-run with a "
         "narrower command if you need a specific line.\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
-        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. For a new website "
+        "request that needs 3+ distinct steps, call update_plan BEFORE other tools and assign each "
+        "step to main or subagent. main = you execute on the user's chosen model; subagent = call "
+        "delegate_task (NVIDIA NIM GLM 5.2 when the subagent key is set). Prefer subagent for "
+        "parallel research, file location, audits, and bounded isolated edits; keep orchestration, "
+        "design decisions, final integration, and user questions on main. For a new website "
         "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
         "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
         "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
@@ -1594,7 +1601,8 @@ async def get_agent_status(
             "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
             "preview_health", "planner_executor", "syterules", "background_subagents",
             "subagent_timeout", "workspace_shell_boundary", "subagent_await",
-            "subagent_model_routing", "auto_model_routing",
+            "subagent_model_routing", "auto_model_routing", "plan_assignees",
+            "nvidia_subagent_provider",
         ],
     }
 
@@ -1633,8 +1641,19 @@ TOOLS: list[dict[str, Any]] = [
      "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "service", "description": "Inspect the project or control its isolated dev preview. Production lifecycle actions are unavailable to the agent.",
      "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["status", "preview_start", "preview_stop", "run", "logs", "preview_logs"]}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "update_plan", "description": "Publish or revise a concise execution plan. Persisted to the database and shown in chat as thinking.",
-     "parameters": {"type": "object", "properties": {"steps": {"type": "array", "items": {"type": "string"}}, "note": {"type": "string"}}, "required": ["steps"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "update_plan", "description": (
+        "Publish or revise a concise execution plan BEFORE multi-step work. Each step must be "
+        "assigned: main (you, on the user's chosen model) or subagent (delegate_task / NVIDIA GLM 5.2). "
+        "Pass assignees aligned with steps, or prefix step text with [main]/[subagent]."),
+     "parameters": {"type": "object", "properties": {
+         "steps": {"type": "array", "items": {"type": "string"}},
+         "assignees": {
+             "type": "array",
+             "items": {"type": "string", "enum": ["main", "subagent"]},
+             "description": "Same length as steps. main=chosen model; subagent=NVIDIA GLM 5.2",
+         },
+         "note": {"type": "string"},
+     }, "required": ["steps"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "screenshot_preview", "description": (
         "Capture desktop (1280x800) and phone (390x844) screenshots of a preview route. Images are "
         "saved to the DB/disk, shown in chat, and returned for vision inspection. Start the preview first."),
@@ -1718,17 +1737,17 @@ TOOLS: list[dict[str, Any]] = [
          "case_insensitive": {"type": "boolean"},
      }, "required": ["pattern"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "delegate_task", "description": (
-        "Delegate one bounded independent task to a subagent sharing this workspace. "
-        "Use mode=research (default) for fast read-only find/review work on a cheaper model; "
-        "mode=implementation when the subagent must edit files. Set background:true to run "
-        "asynchronously, then call await_subagent with the returned task_id to collect results."),
+        "Delegate one plan step assigned to subagent. Uses the NVIDIA NIM GLM 5.2 subagent "
+        "provider when configured (falls back to nano/base). Use mode=research (default) for "
+        "read-only find/review; mode=implementation when the subagent must edit files. Set "
+        "background:true to run asynchronously, then call await_subagent with the returned task_id."),
      "parameters": {"type": "object", "properties": {
          "task": {"type": "string"},
          "background": {"type": "boolean"},
          "mode": {
              "type": "string",
              "enum": ["research", "implementation"],
-             "description": "research=read-only/fast/cheap; implementation=can write files",
+             "description": "research=read-only/fast; implementation=can write files",
          },
      }, "required": ["task"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "await_subagent", "description": (
@@ -2178,10 +2197,13 @@ async def _tool_update_plan(
     project_id: str, args: dict[str, Any], ctx: dict[str, Any]
 ) -> dict[str, Any]:
     from syte.agent_artifacts import save_plan
+    from syte.model_routing import normalize_plan_steps
 
-    steps = [str(step).strip() for step in (args.get("steps") or []) if str(step).strip()]
-    if not steps:
+    normalized = normalize_plan_steps(args.get("steps"), args.get("assignees"))
+    if not normalized:
         return {"ok": False, "error": "empty_plan", "message": "Provide at least one plan step."}
+    # Persist display-friendly strings while keeping structured assignee metadata.
+    steps = [f"[{row['assignee']}] {row['text']}" for row in normalized]
     note = str(args.get("note") or "")
     plan = await save_plan(
         project_id,
@@ -2191,7 +2213,17 @@ async def _tool_update_plan(
         session_number=int(ctx.get("session_number") or 0),
         turso_session_id=ctx.get("turso_session_id"),
     )
-    return {"ok": True, "plan_id": plan["id"], "steps": steps, "note": note}
+    return {
+        "ok": True,
+        "plan_id": plan["id"],
+        "steps": steps,
+        "assignments": normalized,
+        "note": note,
+        "guidance": (
+            "Execute [main] steps yourself on the chosen model. "
+            "For each [subagent] step call delegate_task (then await_subagent if background)."
+        ),
+    }
 
 
 async def _tool_screenshot_preview(
@@ -3152,35 +3184,61 @@ async def _resolve_subagent_model(
     *,
     mode: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Pick a cost-efficient subagent model, falling back to the parent when needed."""
-    from syte.model_routing import suggest_subagent_profile
+    """Prefer NVIDIA GLM subagent; fall back to nano/base/parent when needed."""
+    from syte.model_routing import fallback_subagent_profile, suggest_subagent_profile
 
     routing = suggest_subagent_profile(
         task,
         parent_profile=str(parent_model.get("profile") or ""),
         mode=mode,
     )
-    profile = str(routing.get("effective_profile") or parent_model.get("profile") or DEFAULT_PROFILE)
-    try:
-        meta = await model_metadata_for_profile(profile)
-    except Exception:
-        meta = dict(parent_model)
+    preferred = str(routing.get("effective_profile") or SUBAGENT_PROFILE)
+    resolved_mode = str(routing.get("mode") or "research")
+
+    available: set[str] = set()
+    metas: dict[str, dict[str, Any]] = {}
+    candidates = [preferred, *list(routing.get("fallback_profiles") or []), str(parent_model.get("profile") or "")]
+    for name in candidates:
+        profile = (name or "").strip()
+        if not profile or profile in metas:
+            continue
+        try:
+            meta = await model_metadata_for_profile(profile)
+        except Exception:
+            continue
+        metas[profile] = meta
+        if (meta.get("api_key") or "").strip():
+            available.add(profile)
+
+    chosen, source = fallback_subagent_profile(
+        preferred,
+        parent_profile=str(parent_model.get("profile") or ""),
+        mode=resolved_mode,
+        available_profiles=available,
+    )
+    if chosen in metas and (metas[chosen].get("api_key") or "").strip():
+        meta = metas[chosen]
         routing = {
             **routing,
-            "effective_profile": parent_model.get("profile"),
-            "reason": f"{routing.get('reason')}; fallback parent (metadata error)",
-            "fallback": "metadata_error",
+            "effective_profile": chosen,
+            "resolve_source": source,
+            "reason": (
+                routing.get("reason")
+                if chosen == preferred
+                else f"{routing.get('reason')}; using {chosen} ({source})"
+            ),
         }
         return meta, routing
-    if not (meta.get("api_key") or "").strip():
-        routing = {
-            **routing,
-            "effective_profile": parent_model.get("profile"),
-            "reason": f"{routing.get('reason')}; fallback parent (API key missing for {profile})",
-            "fallback": "api_key_missing",
-        }
-        return dict(parent_model), routing
-    return meta, routing
+
+    # Last resort: parent model metadata already in hand.
+    routing = {
+        **routing,
+        "effective_profile": parent_model.get("profile"),
+        "resolve_source": "fallback_parent_key_missing",
+        "reason": f"{routing.get('reason')}; fallback parent (no subagent keys configured)",
+        "fallback": "api_key_missing",
+    }
+    return dict(parent_model), routing
 
 
 async def _tool_delegate_task(

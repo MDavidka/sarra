@@ -186,7 +186,8 @@ def test_model_routing_heuristics() -> None:
         parent_profile="syra-havy",
     )
     assert research["mode"] == "research"
-    assert research["effective_profile"] == "syra-nano"
+    assert research["effective_profile"] == "syra-subagent"
+    assert "syra-nano" in research["fallback_profiles"]
 
     impl = suggest_subagent_profile(
         "Implement the pricing card component",
@@ -194,14 +195,29 @@ def test_model_routing_heuristics() -> None:
         mode="implementation",
     )
     assert impl["mode"] == "implementation"
-    assert impl["effective_profile"] == "syra-base"
+    assert impl["effective_profile"] == "syra-subagent"
 
-    capped = suggest_subagent_profile(
-        "Find auth helpers",
-        parent_profile="syra-nano",
+    from syte.model_routing import fallback_subagent_profile, normalize_plan_steps
+
+    chosen, source = fallback_subagent_profile(
+        "syra-subagent",
+        parent_profile="syra-havy",
         mode="research",
+        available_profiles={"syra-nano", "syra-base"},
     )
-    assert capped["effective_profile"] == "syra-nano"
+    assert chosen == "syra-nano"
+    assert source.startswith("fallback")
+
+    plan = normalize_plan_steps(
+        ["Locate theme tokens", "Rewrite hero"],
+        ["subagent", "main"],
+    )
+    assert plan == [
+        {"text": "Locate theme tokens", "assignee": "subagent"},
+        {"text": "Rewrite hero", "assignee": "main"},
+    ]
+    prefixed = normalize_plan_steps(["[subagent] Find auth helpers", "[main] Integrate"])
+    assert prefixed[0]["assignee"] == "subagent"
     assert infer_subagent_mode("write a new login form") == "implementation"
     assert infer_subagent_mode("locate the theme tokens") == "research"
 

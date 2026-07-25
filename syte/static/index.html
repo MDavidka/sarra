@@ -612,6 +612,7 @@
                 <option value="syra-base" selected>base</option>
                 <option value="syra-havy">pro</option>
                 <option value="syra-ultra">ultra</option>
+                <option value="syra-subagent">subagent · GLM 5.2</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
                 <i data-lucide="zap"></i>
@@ -646,7 +647,7 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">Each model profile thinks and builds. Endpoints and keys are fixed per profile — injected as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, and <code>SYRA_ULTRA_API_KEY</code>. Prices are estimated USD per 1M tokens.</p>
+              <p class="hint block">Main chat profiles think and build. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for <code>delegate_task</code> work after the main agent plans and assigns steps. Keys inject as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, <code>SYRA_ULTRA_API_KEY</code>, and <code>SYRA_SUBAGENT_API_KEY</code>. Prices are estimated USD per 1M tokens.</p>
 
               <div class="ai-key-card" data-profile="syra-nano">
                 <div class="ai-key-head">
@@ -713,6 +714,23 @@
                   <label for="agent-ultra-key">API key <span class="req-mark">*</span></label>
                   <input type="password" id="agent-ultra-key" placeholder="sk-sp-… Token Plan key (or Model Studio sk-…)" autocomplete="off">
                   <span class="hint" id="agent-ultra-key-hint">Aliyun Token Plan keys start with sk-sp-. OpenRouter sk-or- keys no longer work.</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card" data-profile="syra-subagent">
+                <div class="ai-key-head">
+                  <strong>syra-subagent</strong>
+                  <span class="ai-key-provider">NVIDIA NIM · z-ai/glm-5.2</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-subagent-price-in">$0.00</b>/1M</span>
+                  <span>out <b id="agent-subagent-price-out">$0.00</b>/1M</span>
+                </div>
+                <code class="ai-key-url">https://integrate.api.nvidia.com/v1</code>
+                <div class="form-group">
+                  <label for="agent-subagent-key">API key</label>
+                  <input type="password" id="agent-subagent-key" placeholder="nvapi-… from build.nvidia.com" autocomplete="off">
+                  <span class="hint" id="agent-subagent-key-hint">Optional. Used only for delegated subagent tasks after the main agent plans assignees. Get a key at build.nvidia.com (GLM 5.2).</span>
                 </div>
               </div>
 

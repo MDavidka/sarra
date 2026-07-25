@@ -342,6 +342,7 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
       'syra-base': 'base',
       'syra-havy': 'pro',
       'syra-ultra': 'ultra',
+      'syra-subagent': 'subagent',
     })[profile] || profile;
     if (short && active && isWorking) {
       modelEl.hidden = false;
@@ -2200,7 +2201,7 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false };
+let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false, subagent: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -2247,6 +2248,7 @@ function applyAiProviderCatalog(providers) {
     'syra-base': ['agent-base-price-in', 'agent-base-price-out'],
     'syra-havy': ['agent-havy-price-in', 'agent-havy-price-out'],
     'syra-ultra': ['agent-ultra-price-in', 'agent-ultra-price-out'],
+    'syra-subagent': ['agent-subagent-price-in', 'agent-subagent-price-out'],
   };
   for (const [profile, [inId, outId]] of Object.entries(priceIds)) {
     const row = byProfile[profile];
@@ -2275,12 +2277,14 @@ function updateAiApiWarning() {
     'syra-base': 'agent-base-key',
     'syra-havy': 'agent-havy-key',
     'syra-ultra': 'agent-ultra-key',
+    'syra-subagent': 'agent-subagent-key',
   };
   const savedForProfile = {
     'syra-nano': aiApiConfigured.nano,
     'syra-base': aiApiConfigured.base,
     'syra-havy': aiApiConfigured.havy,
     'syra-ultra': aiApiConfigured.ultra,
+    'syra-subagent': aiApiConfigured.subagent,
   };
   const inputId = keyForProfile[profile] || 'agent-base-key';
   const ok = savedForProfile[profile] || aiKeySaved(inputId);
@@ -3140,6 +3144,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const baseKey = document.getElementById('agent-base-key')?.value?.trim() || '';
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const ultraKey = document.getElementById('agent-ultra-key')?.value?.trim() || '';
+  const subagentKey = document.getElementById('agent-subagent-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const tursoDatabaseUrl = document.getElementById('turso-database-url')?.value?.trim() || '';
@@ -3148,7 +3153,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const needBase = !baseKey && !aiApiConfigured.base;
   const needHavy = !havyKey && !aiApiConfigured.havy;
   const needUltra = !ultraKey && !aiApiConfigured.ultra;
-  if (!nanoKey && !baseKey && !havyKey && !ultraKey && needNano && needBase && needHavy && needUltra) {
+  if (!nanoKey && !baseKey && !havyKey && !ultraKey && !subagentKey && needNano && needBase && needHavy && needUltra && !aiApiConfigured.subagent) {
     return toast('Enter at least one model API key');
   }
   const body = {
@@ -3163,6 +3168,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     }
     body.agent_syra_ultra_api_key = ultraKey;
   }
+  if (subagentKey) body.agent_syra_subagent_api_key = subagentKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
@@ -3176,6 +3182,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     if (baseKey) document.getElementById('agent-base-key').value = '';
     if (havyKey) document.getElementById('agent-havy-key').value = '';
     if (ultraKey) document.getElementById('agent-ultra-key').value = '';
+    if (subagentKey) document.getElementById('agent-subagent-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     if (tursoAuthToken) document.getElementById('turso-auth-token').value = '';
     await loadSettings();
@@ -3372,12 +3379,16 @@ async function loadSettings() {
       ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
       ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
+      ['agent-subagent-key', 'agent-subagent-key-hint', s.agent_syra_subagent_api_key_set, 'NVIDIA NIM subagent key saved (GLM 5.2)', 'Optional NVIDIA NIM nvapi-… key for subagents'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
       const hint = document.getElementById(hintId);
       if (input) {
-        input.placeholder = saved ? 'key saved — enter new value to replace' : 'required';
+        const optional = inputId === 'agent-subagent-key';
+        input.placeholder = saved
+          ? 'key saved — enter new value to replace'
+          : (optional ? 'optional — nvapi-… from build.nvidia.com' : 'required');
       }
       if (hint) hint.textContent = saved ? savedText : requiredText;
     });
@@ -3388,6 +3399,7 @@ async function loadSettings() {
       base: Boolean(s.agent_syra_base_api_key_set),
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
+      subagent: Boolean(s.agent_syra_subagent_api_key_set),
     };
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
@@ -3407,6 +3419,7 @@ async function loadSettings() {
       parts.push(s.agent_syra_base_api_key_set ? 'base key saved' : 'no base key');
       parts.push(s.agent_syra_havy_api_key_set ? 'pro key saved' : 'no pro key');
       parts.push(s.agent_syra_ultra_api_key_set ? 'ultra key saved' : 'no ultra key');
+      parts.push(s.agent_syra_subagent_api_key_set ? 'subagent GLM key saved' : 'no subagent key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
       agentRuntimeStatus.textContent = parts.join(' · ');
@@ -3712,7 +3725,7 @@ document.getElementById('debug-chat-profile')?.addEventListener('change', () => 
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';
-    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra' })[profile] || profile;
+    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-subagent': 'subagent' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
       modelEl.textContent = short;
