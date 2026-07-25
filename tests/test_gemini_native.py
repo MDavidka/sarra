@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from syte.ai_providers import key_mismatch_hint
 from syte.gemini_native import (
     GEMINI_NATIVE_API_BASE,
@@ -84,3 +86,28 @@ def test_openai_to_gemini_roundtrip_shapes() -> None:
     assert message["content"] == "Done"
     assert message["tool_calls"][0]["function"]["name"] == "list_files"
     assert GEMINI_NATIVE_API_BASE.endswith("/v1beta")
+
+
+def test_sanitize_strips_additional_properties_from_tools() -> None:
+    from syte.cloud_agent import TOOLS
+    from syte.gemini_native import sanitize_gemini_schema
+
+    tools = openai_tools_to_gemini(TOOLS)
+    blob = json.dumps(tools)
+    assert "additionalProperties" not in blob
+    assert "additional_properties" not in blob
+
+    raw = {
+        "type": "object",
+        "properties": {
+            "env_vars": {"type": "object", "additionalProperties": {"type": "string"}},
+            "merge": {"type": "boolean", "default": True},
+        },
+        "required": ["env_vars"],
+        "additionalProperties": False,
+    }
+    cleaned = sanitize_gemini_schema(raw)
+    assert "additionalProperties" not in cleaned
+    assert "additionalProperties" not in cleaned["properties"]["env_vars"]
+    assert "default" not in cleaned["properties"]["merge"]
+    assert cleaned["properties"]["env_vars"]["type"] == "object"
