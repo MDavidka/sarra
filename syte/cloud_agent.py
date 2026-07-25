@@ -2797,7 +2797,13 @@ async def _provider_completion(
                 await asyncio.sleep(0.2)
                 continue
             break
-    record_circuit_failure(model.get("provider") or "", model.get("model") or "")
+    # Permanent auth/config errors (e.g. API_KEY_SERVICE_BLOCKED) must not open
+    # the breaker — that would lock the user out for 5 minutes after fixing the key.
+    record_circuit_failure(
+        model.get("provider") or "",
+        model.get("model") or "",
+        error=error,
+    )
     raise RuntimeError(error)
 
 
