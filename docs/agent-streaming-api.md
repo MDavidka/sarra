@@ -36,6 +36,21 @@ The `data` payload is always a full activity event:
 Clients should prefer `event_type` + `payload` for parsing. Heartbeats are sent as
 SSE comments: `: heartbeat`.
 
+### Chat lanes: `payload.agent`
+
+Every event carries `payload.agent`, the lane it belongs to:
+
+| value | meaning | rendered in |
+| --- | --- | --- |
+| `"main"` | produced by the main agent | Main tab |
+| `"subagent"` | produced by a delegated subagent | subagent tab |
+
+Subagent events additionally carry `payload.subagent_task_id` (and
+`subagent_mode` / `subagent_task`), so a client can group several concurrent
+subagents. The Syte GUI keeps the two feeds in separate panels: the Main tab
+never shows subagent activity and vice versa. The subagent tab appears the first
+time a subagent starts.
+
 > **Browser `EventSource` note:** `EventSource.onmessage` only receives frames with
 > no `event:` field (or `event: message`). Named frames such as `event: token_delta`
 > require `addEventListener("token_delta", …)` (or an equivalent per-type listener).
@@ -144,9 +159,75 @@ Agent publishes or updates an execution plan (`update_plan` tool or extracted th
   "plan_id": "plan_xyz",
   "steps": ["Step 1: …", "Step 2: …"],
   "session": 42,
+  "request_id": "req-…",
+  "step": 3,
+  "phase": "before_tools",
+  "thinking_tools": ["write_file"],
+  "thinking_targets": ["write_file app/app/pricing/page.tsx"],
+  "thinking_where": "step 3 · before write_file app/app/pricing/page.tsx"
+}
+```
+
+The `step` / `phase` / `thinking_*` fields describe **where** the model was
+thinking, so a client can label the block instead of showing bare reasoning
+text. `phase` is one of `planning`, `site_plan`, `before_tools`, `final_answer`.
+`thinking_where` is a pre-rendered human label; the individual fields are
+provided so clients can format their own.
+
+### `subagent_scope`
+
+Published in the **main** lane immediately before work is delegated. It declares
+the file scope handed to the subagent: those paths are locked for the duration,
+so neither the main agent nor another subagent can write them (attempts fail with
+`file_reserved_by_subagent` / `file_scope_conflict`).
+
+**payload:**
+
+```json
+{
+  "agent": "main",
+  "task_id": "sub-abc",
+  "task": "Build the FAQ page",
+  "mode": "implementation",
+  "files": ["app/app/faq/page.tsx", "app/components/faq.tsx"],
+  "reserved_files": ["app/app/faq/page.tsx", "app/components/faq.tsx"],
+  "locked": true,
+  "background": true,
+  "session": 42,
   "request_id": "req-…"
 }
 ```
+
+`files` is required for `mode=implementation` delegations; research (read-only)
+delegations may omit it, in which case `locked` is `false`.
+
+### `subagent_started` / `subagent_completed` / `subagent_failed`
+
+Subagent lifecycle, emitted in the **subagent** lane
+(`payload.agent = "subagent"`). Terminal events include `usage` and `cost`.
+
+**payload:**
+
+```json
+{
+  "agent": "subagent",
+  "task_id": "sub-abc",
+  "mode": "implementation",
+  "profile": "syra-subagent",
+  "files": ["app/app/faq/page.tsx"],
+  "ok": true,
+  "usage": { "input_tokens": 300, "output_tokens": 120, "steps": 3 },
+  "cost": { "cost_usd": 0.0009, "label": "$0.0009 · 420 tokens" },
+  "session": 42,
+  "request_id": "req-…"
+}
+```
+
+The subagent's own tool calls and reasoning arrive as ordinary
+`tool_call_started` / `tool_call_finished` / `thinking` / `assistant_message`
+events tagged with `agent: "subagent"` and the same `task_id`. They are also
+persisted to `agent_subagent_activity` (see
+[Turso persistence](turso-persistence.md)).
 
 ### `screenshot`
 
@@ -176,6 +257,14 @@ Agent captured a preview screenshot (optionally with visual analysis ids).
 
 Related visual analyses are available at
 `GET /api/projects/{id}/agent/visual_analyses`.
+
+Screenshot captures are rate limited per turn (`MAX_SCREENSHOTS_PER_TURN`, plus a
+cooldown per route). A repeat of a route already captured while no file has been
+written since is answered from cache — the tool result carries
+`skipped: true, reason: "unchanged_since_last_capture"` and no new `screenshot`
+event is emitted. Over-budget or too-frequent calls return
+`screenshot_budget_exhausted` / `screenshot_rate_limited` so the model stops
+polling and uses `inspect_preview` for load/console checks instead.
 
 ### `request_started` / `request_completed` / `request_failed`
 

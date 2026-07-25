@@ -113,6 +113,108 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_message_local_id "
     "ON agent_message(project_id, local_message_id) "
     "WHERE local_message_id IS NOT NULL",
+    # ------------------------------------------------------------------
+    # Per-request rollup: the user request, when it arrived, how much
+    # activity it produced, and what it cost. One row per agent turn,
+    # inserted when the turn starts (status='running') and completed at the
+    # end of generation, when token usage / USD cost are finally known.
+    # See docs/turso-persistence.md for a worked example of the two writes.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS agent_request (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL,
+        session_id TEXT NOT NULL DEFAULT '',
+        project_id TEXT NOT NULL,
+        session_number INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'api',
+        model_profile TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        provider TEXT NOT NULL DEFAULT '',
+        thinking_level TEXT NOT NULL DEFAULT '',
+        request TEXT NOT NULL DEFAULT '',
+        reply TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'running',
+        error TEXT NOT NULL DEFAULT '',
+        activity_count INTEGER NOT NULL DEFAULT 0,
+        subagent_count INTEGER NOT NULL DEFAULT 0,
+        steps INTEGER NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        thinking_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL,
+        cost_label TEXT NOT NULL DEFAULT '',
+        timestamp TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_request_request_id "
+    "ON agent_request(project_id, request_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_request_session "
+    "ON agent_request(session_id, id)",
+    # ------------------------------------------------------------------
+    # Delegated subagent tasks: the task text, the declared file scope the
+    # subagent is allowed to touch, its start time, and its own cost.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS agent_subagent_task (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL DEFAULT '',
+        project_id TEXT NOT NULL,
+        session_number INTEGER NOT NULL DEFAULT 0,
+        parent_request_id TEXT NOT NULL DEFAULT '',
+        task TEXT NOT NULL DEFAULT '',
+        mode TEXT NOT NULL DEFAULT 'research',
+        profile TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        background INTEGER NOT NULL DEFAULT 0,
+        files TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'running',
+        result TEXT NOT NULL DEFAULT '',
+        error TEXT NOT NULL DEFAULT '',
+        activity_count INTEGER NOT NULL DEFAULT 0,
+        steps INTEGER NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        thinking_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL,
+        cost_label TEXT NOT NULL DEFAULT '',
+        started_at TEXT NOT NULL,
+        ended_at TEXT
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_subagent_task_id "
+    "ON agent_subagent_task(project_id, task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_subagent_task_session "
+    "ON agent_subagent_task(session_id, id)",
+    # ------------------------------------------------------------------
+    # Every activity line produced *by a subagent* (tool calls, thinking,
+    # file writes). Kept separate from agent_session_event so the GUI's
+    # subagent tab can be reconstructed without filtering the main feed.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS agent_subagent_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL DEFAULT '',
+        project_id TEXT NOT NULL,
+        parent_request_id TEXT NOT NULL DEFAULT '',
+        event_type TEXT NOT NULL,
+        tool TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL DEFAULT '',
+        detail TEXT NOT NULL DEFAULT '',
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_agent_subagent_activity_task "
+    "ON agent_subagent_activity(task_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_subagent_activity_session "
+    "ON agent_subagent_activity(session_id, id)",
 )
 
 # One cached client + schema-ready flag per (url, token) pair so settings
@@ -508,29 +610,38 @@ async def record_event(
         return local_event
     now = _now()
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    # Retry once: a transient HTTP failure used to silently drop the event row
+    # (the activity trail then had holes even though Turso was healthy).
+    result = await _write_with_retry(
+        "INSERT INTO agent_session_event "
+        "(session_id, project_id, event_type, role, title, detail, payload, source, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            session_id,
+            project_id,
+            event_type,
+            role,
+            (title or "")[:500],
+            (detail or "")[:4000],
+            payload_json,
+            source,
+            now,
+        ],
+        what=f"agent_session_event insert {session_id}/{event_type}",
+    )
+    if result is None:
+        return local_event
+    # Touching updated_at is bookkeeping only — a failure here must never make a
+    # committed event row look unsaved to the caller.
     try:
-        result = await client.execute(
-            "INSERT INTO agent_session_event "
-            "(session_id, project_id, event_type, role, title, detail, payload, source, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                session_id,
-                project_id,
-                event_type,
-                role,
-                (title or "")[:500],
-                (detail or "")[:4000],
-                payload_json,
-                source,
-                now,
-            ],
-        )
         await client.execute(
             "UPDATE agent_session SET updated_at = ? WHERE id = ?", [now, session_id]
         )
     except Exception:
-        logger.exception("Failed to record Turso agent session event for %s", session_id)
-        return local_event
+        logger.warning(
+            "Turso agent_session_event stored, but touching agent_session.updated_at "
+            "failed for %s (non-fatal)", session_id,
+        )
     return {
         "id": result.last_insert_rowid,
         "session_id": session_id,
@@ -880,3 +991,377 @@ async def list_sessions_for_project(
 async def latest_session_id_for_project(project_id: str) -> str | None:
     sessions = await list_sessions_for_project(project_id, limit=1)
     return sessions[0]["id"] if sessions else None
+
+
+
+# ---------------------------------------------------------------------------
+# Detailed per-request / per-subagent persistence
+#
+# ``agent_session`` + ``agent_session_event`` describe *what happened*;
+# the three tables below describe *the work itself* so a backend consumer can
+# answer "what was asked, when, how much activity did it cause, what did it
+# cost, and which subagents ran" with a single row per request.
+#
+# Write order for one turn (see docs/turso-persistence.md):
+#   1. record_request(...)                      -> status='running', cost NULL
+#   2. record_subagent_task(...) per delegation -> status='running', start time
+#   3. record_subagent_activity(...) per line   -> subagent tab feed
+#   4. finalize_subagent_task(...)              -> status + usage + cost
+#   5. finalize_request(...)                    -> status + usage + COST (end)
+# ---------------------------------------------------------------------------
+
+
+async def _write_with_retry(sql: str, params: list[Any], *, what: str) -> Any | None:
+    """Execute one INSERT/UPDATE with a single retry; never raise.
+
+    Turso HTTP calls occasionally fail transiently (cold branch, dropped
+    keep-alive). A single retry turns most of those into a successful write
+    instead of a silently dropped row — the previous behaviour swallowed the
+    first failure and lost the data permanently.
+    """
+    client = await get_turso_client()
+    if client is None:
+        return None
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            return await client.execute(sql, params)
+        except Exception as exc:
+            last_exc = exc
+            if "UNIQUE" in str(exc).upper():
+                # Idempotent replay (same request/task recorded twice) — not a loss.
+                logger.debug("%s already recorded (unique conflict)", what)
+                return None
+            logger.warning("%s failed (attempt %d): %s", what, attempt + 1, exc)
+    logger.error("%s failed after retry: %s", what, last_exc)
+    return None
+
+
+def _usage_ints(usage: dict[str, Any] | None) -> tuple[int, int, int, int, int]:
+    data = usage or {}
+
+    def _int(key: str) -> int:
+        try:
+            return int(data.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    total = _int("total_tokens") or (
+        _int("input_tokens") + _int("output_tokens") + _int("thinking_tokens")
+    )
+    return (
+        _int("input_tokens"),
+        _int("output_tokens"),
+        _int("thinking_tokens"),
+        total,
+        _int("steps"),
+    )
+
+
+def _cost_values(cost: dict[str, Any] | None) -> tuple[float | None, str]:
+    data = cost or {}
+    raw = data.get("cost_usd")
+    try:
+        cost_usd = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        cost_usd = None
+    return cost_usd, str(data.get("label") or "")[:200]
+
+
+async def record_request(
+    request_id: str,
+    project_id: str,
+    request: str,
+    *,
+    session_id: str | None = None,
+    session_number: int = 0,
+    source: str = "api",
+    model_profile: str = "",
+    model: str = "",
+    provider: str = "",
+    thinking_level: Any = "",
+    timestamp: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist the incoming request + its timestamp at the start of a turn.
+
+    Cost is intentionally left NULL here: it is only known once generation
+    finishes, and is written by :func:`finalize_request`.
+    """
+    if not request_id or not project_id:
+        return None
+    now = timestamp or _now()
+    row = {
+        "request_id": request_id,
+        "session_id": session_id or "",
+        "project_id": project_id,
+        "session_number": int(session_number or 0),
+        "source": source,
+        "model_profile": model_profile or "",
+        "model": model or "",
+        "provider": provider or "",
+        "thinking_level": "" if thinking_level is None else str(thinking_level),
+        "request": request or "",
+        "status": "running",
+        "timestamp": now,
+        "started_at": now,
+    }
+    result = await _write_with_retry(
+        "INSERT INTO agent_request "
+        "(request_id, session_id, project_id, session_number, source, model_profile, "
+        "model, provider, thinking_level, request, status, timestamp, started_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            row["request_id"], row["session_id"], row["project_id"], row["session_number"],
+            row["source"], row["model_profile"], row["model"], row["provider"],
+            row["thinking_level"], row["request"][:20000], row["status"],
+            row["timestamp"], row["started_at"],
+        ],
+        what=f"agent_request insert {request_id}",
+    )
+    if result is None:
+        return None
+    return {"id": getattr(result, "last_insert_rowid", None), **row}
+
+
+async def finalize_request(
+    request_id: str,
+    project_id: str,
+    *,
+    status: str = "completed",
+    reply: str = "",
+    error: str = "",
+    usage: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
+    activity_count: int = 0,
+    subagent_count: int = 0,
+    ended_at: str | None = None,
+) -> bool:
+    """Close a request row with its final activity volume and USD cost."""
+    if not request_id or not project_id:
+        return False
+    inp, out, think, total, steps = _usage_ints(usage)
+    cost_usd, cost_label = _cost_values(cost)
+    now = ended_at or _now()
+    result = await _write_with_retry(
+        "UPDATE agent_request SET status = ?, reply = ?, error = ?, activity_count = ?, "
+        "subagent_count = ?, steps = ?, input_tokens = ?, output_tokens = ?, "
+        "thinking_tokens = ?, total_tokens = ?, cost_usd = ?, cost_label = ?, ended_at = ? "
+        "WHERE project_id = ? AND request_id = ?",
+        [
+            status or "completed", (reply or "")[:20000], (error or "")[:2000],
+            int(activity_count or 0), int(subagent_count or 0), steps,
+            inp, out, think, total, cost_usd, cost_label, now,
+            project_id, request_id,
+        ],
+        what=f"agent_request finalize {request_id}",
+    )
+    return result is not None
+
+
+async def get_request(request_id: str, project_id: str) -> dict[str, Any] | None:
+    client = await get_turso_client()
+    if client is None:
+        return None
+    try:
+        rs = await client.execute(
+            "SELECT request_id, session_id, project_id, session_number, source, "
+            "model_profile, model, provider, thinking_level, request, reply, status, "
+            "error, activity_count, subagent_count, steps, input_tokens, output_tokens, "
+            "thinking_tokens, total_tokens, cost_usd, cost_label, timestamp, started_at, "
+            "ended_at FROM agent_request WHERE project_id = ? AND request_id = ? LIMIT 1",
+            [project_id, request_id],
+        )
+    except Exception:
+        logger.exception("Failed to fetch agent_request %s", request_id)
+        return None
+    if not rs.rows:
+        return None
+    row = rs.rows[0]
+    keys = (
+        "request_id", "session_id", "project_id", "session_number", "source",
+        "model_profile", "model", "provider", "thinking_level", "request", "reply",
+        "status", "error", "activity_count", "subagent_count", "steps", "input_tokens",
+        "output_tokens", "thinking_tokens", "total_tokens", "cost_usd", "cost_label",
+        "timestamp", "started_at", "ended_at",
+    )
+    return {key: _row_value(row, key) for key in keys}
+
+
+async def record_subagent_task(
+    task_id: str,
+    project_id: str,
+    task: str,
+    *,
+    session_id: str | None = None,
+    session_number: int = 0,
+    parent_request_id: str = "",
+    mode: str = "research",
+    profile: str = "",
+    model: str = "",
+    background: bool = False,
+    files: list[str] | None = None,
+    started_at: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist a delegated subagent task: what it is, its file scope, its start time."""
+    if not task_id or not project_id:
+        return None
+    now = started_at or _now()
+    result = await _write_with_retry(
+        "INSERT INTO agent_subagent_task "
+        "(task_id, session_id, project_id, session_number, parent_request_id, task, "
+        "mode, profile, model, background, files, status, started_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)",
+        [
+            task_id, session_id or "", project_id, int(session_number or 0),
+            parent_request_id or "", (task or "")[:8000], mode or "research",
+            profile or "", model or "", 1 if background else 0,
+            json.dumps(list(files or []), ensure_ascii=False), now,
+        ],
+        what=f"agent_subagent_task insert {task_id}",
+    )
+    if result is None:
+        return None
+    return {
+        "id": getattr(result, "last_insert_rowid", None),
+        "task_id": task_id,
+        "project_id": project_id,
+        "session_id": session_id or "",
+        "parent_request_id": parent_request_id or "",
+        "task": task,
+        "mode": mode,
+        "profile": profile,
+        "background": bool(background),
+        "files": list(files or []),
+        "status": "running",
+        "started_at": now,
+    }
+
+
+async def finalize_subagent_task(
+    task_id: str,
+    project_id: str,
+    *,
+    status: str = "completed",
+    result: str = "",
+    error: str = "",
+    usage: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
+    activity_count: int = 0,
+    ended_at: str | None = None,
+) -> bool:
+    """Close a subagent task row with its outcome, usage and cost."""
+    if not task_id or not project_id:
+        return False
+    inp, out, think, total, steps = _usage_ints(usage)
+    cost_usd, cost_label = _cost_values(cost)
+    now = ended_at or _now()
+    written = await _write_with_retry(
+        "UPDATE agent_subagent_task SET status = ?, result = ?, error = ?, "
+        "activity_count = ?, steps = ?, input_tokens = ?, output_tokens = ?, "
+        "thinking_tokens = ?, total_tokens = ?, cost_usd = ?, cost_label = ?, ended_at = ? "
+        "WHERE project_id = ? AND task_id = ?",
+        [
+            status or "completed", (result or "")[:20000], (error or "")[:2000],
+            int(activity_count or 0), steps, inp, out, think, total,
+            cost_usd, cost_label, now, project_id, task_id,
+        ],
+        what=f"agent_subagent_task finalize {task_id}",
+    )
+    return written is not None
+
+
+async def record_subagent_activity(
+    task_id: str,
+    project_id: str,
+    event_type: str,
+    *,
+    session_id: str | None = None,
+    parent_request_id: str = "",
+    tool: str = "",
+    title: str = "",
+    detail: str = "",
+    payload: dict[str, Any] | None = None,
+    created_at: str | None = None,
+) -> bool:
+    """Append one subagent activity line (feeds the GUI's subagent tab)."""
+    if not task_id or not project_id or not event_type:
+        return False
+    written = await _write_with_retry(
+        "INSERT INTO agent_subagent_activity "
+        "(task_id, session_id, project_id, parent_request_id, event_type, tool, "
+        "title, detail, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            task_id, session_id or "", project_id, parent_request_id or "",
+            event_type, tool or "", (title or "")[:500], (detail or "")[:4000],
+            json.dumps(payload or {}, ensure_ascii=False), created_at or _now(),
+        ],
+        what=f"agent_subagent_activity insert {task_id}/{event_type}",
+    )
+    return written is not None
+
+
+async def list_subagent_tasks(
+    *, session_id: str | None = None, project_id: str | None = None, limit: int = 100
+) -> list[dict[str, Any]]:
+    client = await get_turso_client()
+    if client is None:
+        return []
+    keys = (
+        "task_id", "session_id", "project_id", "session_number", "parent_request_id",
+        "task", "mode", "profile", "model", "background", "files", "status", "result",
+        "error", "activity_count", "steps", "input_tokens", "output_tokens",
+        "thinking_tokens", "total_tokens", "cost_usd", "cost_label", "started_at",
+        "ended_at",
+    )
+    columns = ", ".join(keys)
+    where = "session_id = ?" if session_id else "project_id = ?"
+    value = session_id or project_id or ""
+    try:
+        rs = await client.execute(
+            f"SELECT {columns} FROM agent_subagent_task WHERE {where} "
+            "ORDER BY id ASC LIMIT ?",
+            [value, max(1, min(limit, 1000))],
+        )
+    except Exception:
+        logger.exception("Failed to list subagent tasks for %s", value)
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in rs.rows:
+        item = {key: _row_value(row, key) for key in keys}
+        try:
+            item["files"] = json.loads(item.get("files") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            item["files"] = []
+        item["background"] = bool(item.get("background"))
+        rows.append(item)
+    return rows
+
+
+async def list_subagent_activity(
+    task_id: str, *, since_id: int = 0, limit: int = 1000
+) -> list[dict[str, Any]]:
+    client = await get_turso_client()
+    if client is None:
+        return []
+    keys = (
+        "id", "task_id", "session_id", "project_id", "parent_request_id",
+        "event_type", "tool", "title", "detail", "payload", "created_at",
+    )
+    try:
+        rs = await client.execute(
+            f"SELECT {', '.join(keys)} FROM agent_subagent_activity "
+            "WHERE task_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
+            [task_id, since_id, max(1, min(limit, 5000))],
+        )
+    except Exception:
+        logger.exception("Failed to list subagent activity for %s", task_id)
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in rs.rows:
+        item = {key: _row_value(row, key) for key in keys}
+        try:
+            item["payload"] = json.loads(item.get("payload") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            item["payload"] = {}
+        rows.append(item)
+    return rows

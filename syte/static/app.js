@@ -40,6 +40,13 @@ let debugChatTerminalRequestIds = new Set();
 let debugChatIdleStatus = 'Agent ready';
 let debugChatActivityLabel = '';
 let debugChatResourceMode = '';
+// Chat lanes: the Main tab shows only main-agent activity, the subagent tab
+// (revealed the first time a subagent starts) shows only subagent activity.
+let debugChatActiveLane = 'main';
+let debugChatRenderLane = 'main';
+let debugChatSubagentSeen = false;
+let debugChatSubagentUnread = 0;
+const debugChatAutoScrollByLane = { main: true, sub: true };
 let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
@@ -280,32 +287,102 @@ function setDebugChatConnectionState(state) {
   }
 }
 
-function getDebugChatMessagesEl() {
-  return document.getElementById('debug-chat-messages');
+// Lane of the event currently being rendered. Every append/stream helper writes
+// into this lane, so main and subagent feeds never interleave.
+function debugChatLaneForEvent(event) {
+  const payload = event?.payload || {};
+  if (payload.agent === 'subagent') return 'sub';
+  if (!payload.agent && payload.subagent_task_id) return 'sub';
+  return 'main';
 }
 
-function hideDebugChatEmpty() {
-  document.getElementById('debug-chat-empty')?.classList.add('hidden');
+function debugChatLaneId(lane) {
+  return lane === 'sub' ? 'debug-chat-messages-sub' : 'debug-chat-messages';
 }
 
-function showDebugChatEmpty() {
-  const empty = document.getElementById('debug-chat-empty');
+function getDebugChatMessagesEl(lane = debugChatRenderLane) {
+  return document.getElementById(debugChatLaneId(lane));
+}
+
+function getDebugChatLaneEls() {
+  return ['main', 'sub']
+    .map(lane => document.getElementById(debugChatLaneId(lane)))
+    .filter(Boolean);
+}
+
+function hideDebugChatEmpty(lane = debugChatRenderLane) {
+  document.getElementById(lane === 'sub' ? 'debug-chat-empty-sub' : 'debug-chat-empty')
+    ?.classList.add('hidden');
+}
+
+function showDebugChatEmpty(lane = debugChatRenderLane) {
+  const empty = document.getElementById(
+    lane === 'sub' ? 'debug-chat-empty-sub' : 'debug-chat-empty',
+  );
   if (empty) empty.classList.remove('hidden');
 }
 
-function updateDebugChatScrollState() {
-  const el = getDebugChatMessagesEl();
-  if (!el) return;
-  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-  debugChatAutoScroll = distanceFromBottom < 72;
+function setDebugChatLane(lane) {
+  const next = lane === 'sub' ? 'sub' : 'main';
+  debugChatActiveLane = next;
+  for (const name of ['main', 'sub']) {
+    const panel = document.getElementById(debugChatLaneId(name));
+    const tab = document.getElementById(name === 'sub' ? 'debug-chat-tab-sub' : 'debug-chat-tab-main');
+    if (panel) panel.classList.toggle('hidden', name !== next);
+    if (tab) {
+      tab.classList.toggle('is-active', name === next);
+      tab.setAttribute('aria-selected', name === next ? 'true' : 'false');
+    }
+  }
+  if (next === 'sub') {
+    debugChatSubagentUnread = 0;
+    updateDebugChatSubagentBadge();
+  }
+  scrollDebugChatToBottom(true, next);
 }
 
-function scrollDebugChatToBottom(force = false) {
-  const el = getDebugChatMessagesEl();
-  if (!el || (!debugChatAutoScroll && !force)) return;
+function updateDebugChatSubagentBadge() {
+  const badge = document.getElementById('debug-chat-tab-sub-badge');
+  if (!badge) return;
+  const show = debugChatSubagentUnread > 0 && debugChatActiveLane !== 'sub';
+  badge.classList.toggle('hidden', !show);
+  badge.textContent = String(Math.min(debugChatSubagentUnread, 99));
+}
+
+// The subagent tab only exists once work has actually been delegated.
+function revealDebugChatSubagentTab() {
+  const tab = document.getElementById('debug-chat-tab-sub');
+  if (!tab) return;
+  debugChatSubagentSeen = true;
+  tab.classList.remove('hidden');
+}
+
+function hideDebugChatSubagentTab() {
+  const tab = document.getElementById('debug-chat-tab-sub');
+  debugChatSubagentSeen = false;
+  debugChatSubagentUnread = 0;
+  updateDebugChatSubagentBadge();
+  if (tab) tab.classList.add('hidden');
+  if (debugChatActiveLane === 'sub') setDebugChatLane('main');
+}
+
+function updateDebugChatScrollState(lane) {
+  const name = lane || debugChatActiveLane;
+  const el = getDebugChatMessagesEl(name);
+  if (!el) return;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  debugChatAutoScrollByLane[name] = distanceFromBottom < 72;
+  if (name === 'main') debugChatAutoScroll = debugChatAutoScrollByLane.main;
+}
+
+function scrollDebugChatToBottom(force = false, lane = debugChatRenderLane) {
+  const el = getDebugChatMessagesEl(lane);
+  if (!el) return;
+  if (!force && !debugChatAutoScrollByLane[lane]) return;
   el.scrollTop = el.scrollHeight;
   if (force) {
-    debugChatAutoScroll = true;
+    debugChatAutoScrollByLane[lane] = true;
+    if (lane === 'main') debugChatAutoScroll = true;
   }
 }
 
@@ -363,8 +440,8 @@ function dismissDebugChatActivitySoon(delay = 2600) {
 }
 
 function clearDebugChatPanel({ resetCursor = false } = {}) {
-  const el = getDebugChatMessagesEl();
-  if (!el) return;
+  const mainEl = getDebugChatMessagesEl('main');
+  if (!mainEl) return;
   if (debugChatStreamFlushFrame) {
     cancelAnimationFrame(debugChatStreamFlushFrame);
     debugChatStreamFlushFrame = null;
@@ -375,13 +452,25 @@ function clearDebugChatPanel({ resetCursor = false } = {}) {
     debugChatThinkingFlushFrame = null;
   }
   debugChatThinkingBuffers.clear();
-  el.innerHTML = '';
-  const empty = document.createElement('div');
-  empty.className = 'debug-chat-empty';
-  empty.id = 'debug-chat-empty';
-  empty.innerHTML = '<p>What would you like to change?</p>';
-  el.appendChild(empty);
+  const laneEmptyText = {
+    main: 'What would you like to change?',
+    sub: 'No subagent has been started yet.',
+  };
+  for (const lane of ['main', 'sub']) {
+    const el = getDebugChatMessagesEl(lane);
+    if (!el) continue;
+    el.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'debug-chat-empty';
+    empty.id = lane === 'sub' ? 'debug-chat-empty-sub' : 'debug-chat-empty';
+    empty.innerHTML = `<p>${laneEmptyText[lane]}</p>`;
+    el.appendChild(empty);
+    debugChatAutoScrollByLane[lane] = true;
+  }
   debugChatRenderedIds.clear();
+  debugChatActionGroups.main = null;
+  debugChatActionGroups.sub = null;
+  hideDebugChatSubagentTab();
   if (resetCursor) {
     debugChatSinceId = 0;
     debugChatTerminalRequestIds.clear();
@@ -390,6 +479,9 @@ function clearDebugChatPanel({ resetCursor = false } = {}) {
   setDebugChatTyping(false);
   if (!debugChatBusy) setDebugChatActivity(debugChatIdleStatus);
 }
+
+// Open/closed collapsible groups of consecutive tool activity, per lane.
+const debugChatActionGroups = { main: null, sub: null };
 
 const DEBUG_CHAT_ACTION_LABELS = {
   file_created: 'Create file',
@@ -411,6 +503,10 @@ const DEBUG_CHAT_ACTION_LABELS = {
   question: 'Question',
   question_answered: 'Answer',
   agent_stopped: 'Stopped',
+  subagent_scope: 'Delegated files',
+  subagent_started: 'Subagent started',
+  subagent_completed: 'Subagent finished',
+  subagent_failed: 'Subagent failed',
 };
 
 const DEBUG_CHAT_EVENT_ICONS = {
@@ -431,6 +527,10 @@ const DEBUG_CHAT_EVENT_ICONS = {
   question: 'circle-help',
   question_answered: 'message-circle',
   agent_stopped: 'square',
+  subagent_scope: 'git-fork',
+  subagent_started: 'git-fork',
+  subagent_completed: 'circle-check',
+  subagent_failed: 'circle-alert',
 };
 
 const DEBUG_CHAT_TOOL_META = {
@@ -467,6 +567,187 @@ function debugChatActionMeta(event) {
   };
 }
 
+// --- Collapsed tool activity -------------------------------------------------
+// A single openable row ("Created 1 file") replaces the long per-command lines.
+// Consecutive activity of the same kind is folded into one row whose body lists
+// every entry, so the transcript stays readable during heavy tool use.
+const DEBUG_CHAT_ACTION_CATEGORIES = {
+  write: { verb: 'Created', noun: ['file', 'files'], icon: 'file-plus-2' },
+  edit: { verb: 'Edited', noun: ['file', 'files'], icon: 'file-pen-line' },
+  delete: { verb: 'Deleted', noun: ['file', 'files'], icon: 'file-x-2' },
+  read: { verb: 'Read', noun: ['file', 'files'], icon: 'file-search-2' },
+  search: { verb: 'Searched', noun: ['time', 'times'], icon: 'search' },
+  command: { verb: 'Ran', noun: ['command', 'commands'], icon: 'terminal' },
+};
+
+const DEBUG_CHAT_TOOL_CATEGORY = {
+  write_file: 'write',
+  delete_file: 'delete',
+  read_file: 'read',
+  list_files: 'read',
+  search_code: 'search',
+  semantic_search: 'search',
+  web_search: 'search',
+  run_command: 'command',
+};
+
+function debugChatActionCategory(event) {
+  const type = event.event_type;
+  const tool = event.payload?.tool || '';
+  if (type === 'file_created') return 'write';
+  if (type === 'file_modified' || type === 'file_changed') return 'edit';
+  if (type === 'file_deleted') return 'delete';
+  if (type === 'file_read') return 'read';
+  if (type === 'file_search') return 'search';
+  if (type === 'command_run' || type === 'command_output') return 'command';
+  if (tool && DEBUG_CHAT_TOOL_CATEGORY[tool]) {
+    // write_file on an existing path reports ok + "updated"; keep it as write/edit.
+    return DEBUG_CHAT_TOOL_CATEGORY[tool];
+  }
+  return '';
+}
+
+function debugChatActionGroupKey(event) {
+  const category = debugChatActionCategory(event);
+  if (category) return `cat:${category}`;
+  const tool = event.payload?.tool || '';
+  if (tool) return `tool:${tool}`;
+  return `type:${event.event_type}`;
+}
+
+function debugChatActionTarget(event) {
+  const payload = event.payload || {};
+  const args = payload.arguments && typeof payload.arguments === 'object' ? payload.arguments : {};
+  const candidates = [
+    payload.path, args.path, payload.command, args.command,
+    payload.route, args.route, args.query, args.pattern, args.task, args.addon,
+    Array.isArray(payload.files) ? payload.files[0] : '', payload.task,
+  ];
+  for (const candidate of candidates) {
+    const text = coerceDebugChatText(candidate).trim();
+    if (text) return text.replace(/\s+/g, ' ').slice(0, 160);
+  }
+  return '';
+}
+
+function debugChatActionLineText(event) {
+  const target = debugChatActionTarget(event);
+  // Keep newlines (the body is pre-wrap) but drop trailing padding.
+  const detail = String(debugChatDetailText(event) || '')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+    .slice(0, 1200);
+  const label = debugChatActionTitle(event);
+  const head = target ? `${label} · ${target}` : label;
+  if (!detail || detail === target) return head;
+  // Multi-line details (file lists, command output) are already self-describing.
+  if (detail.includes('\n')) return `${label}\n${detail}`;
+  return `${head}\n${detail}`;
+}
+
+function debugChatActionSummaryText(groupKey, count, firstTarget, event) {
+  if (groupKey.startsWith('cat:')) {
+    const meta = DEBUG_CHAT_ACTION_CATEGORIES[groupKey.slice(4)];
+    if (meta) {
+      const noun = meta.noun[count === 1 ? 0 : 1];
+      return `${meta.verb} ${count} ${noun}`;
+    }
+  }
+  if (groupKey.startsWith('tool:')) {
+    const tool = groupKey.slice(5);
+    const label = DEBUG_CHAT_TOOL_META[tool]?.label || tool;
+    return count > 1 ? `${label} ×${count}` : label;
+  }
+  if (event?.event_type === 'subagent_scope') {
+    const files = Array.isArray(event.payload?.files) ? event.payload.files : [];
+    return files.length
+      ? `Delegated ${files.length} ${files.length === 1 ? 'file' : 'files'} to subagent`
+      : 'Delegated a research task to subagent';
+  }
+  const label = DEBUG_CHAT_ACTION_LABELS[event?.event_type];
+  if (label) return count > 1 ? `${label} ×${count}` : label;
+  return firstTarget || groupKey.replace(/^type:/, '').replace(/_/g, ' ');
+}
+
+function debugChatActionGroupIcon(groupKey, event) {
+  if (groupKey.startsWith('cat:')) {
+    const meta = DEBUG_CHAT_ACTION_CATEGORIES[groupKey.slice(4)];
+    if (meta) return meta.icon;
+  }
+  return debugChatActionMeta(event).icon;
+}
+
+function appendDebugChatActionRow(event, messagesEl, lane) {
+  const groupKey = debugChatActionGroupKey(event);
+  const target = debugChatActionTarget(event);
+  const failed = event.payload?.ok === false;
+  const existing = debugChatActionGroups[lane];
+
+  if (existing && existing.key === groupKey && existing.card.isConnected) {
+    existing.count += 1;
+    existing.targets.push(target);
+    existing.titleEl.textContent = debugChatActionSummaryText(
+      groupKey, existing.count, existing.targets[0], event,
+    );
+    existing.hintEl.textContent = existing.targets[0]
+      ? `${existing.targets[0]}${existing.count > 1 ? ` +${existing.count - 1} more` : ''}`
+      : '';
+    existing.countEl.textContent = String(existing.count);
+    existing.countEl.classList.toggle('hidden', existing.count < 2);
+    const line = document.createElement('span');
+    line.className = `debug-chat-action-line${failed ? ' debug-chat-action-line-failed' : ''}`;
+    line.textContent = debugChatActionLineText(event);
+    existing.bodyEl.appendChild(line);
+    if (event.id != null) existing.card.dataset.lastEventId = String(event.id);
+    scrollDebugChatToBottom(false, lane);
+    return;
+  }
+
+  const bubble = document.createElement('div');
+  bubble.className = `debug-chat-bubble debug-chat-action${
+    event.event_type.startsWith('subagent') ? ' debug-chat-subagent-scope' : ''
+  }`;
+  if (event.id != null) bubble.dataset.eventId = String(event.id);
+  const icon = debugChatActionGroupIcon(groupKey, event);
+  const title = debugChatActionSummaryText(groupKey, 1, target, event);
+  bubble.innerHTML = `
+    <div class="debug-chat-action-card">
+      <button type="button" class="debug-chat-action-summary" aria-expanded="false">
+        <i data-lucide="${esc(icon)}" aria-hidden="true"></i>
+        <span class="debug-chat-action-title">${esc(title)}</span>
+        <span class="debug-chat-action-hint">${esc(target)}</span>
+        <b class="debug-chat-action-count hidden">1</b>
+        <i data-lucide="chevron-right" class="debug-chat-action-chevron" aria-hidden="true"></i>
+      </button>
+      <div class="debug-chat-action-body"></div>
+    </div>
+  `;
+  const card = bubble.querySelector('.debug-chat-action-card');
+  const summary = bubble.querySelector('.debug-chat-action-summary');
+  const bodyEl = bubble.querySelector('.debug-chat-action-body');
+  const line = document.createElement('span');
+  line.className = `debug-chat-action-line${failed ? ' debug-chat-action-line-failed' : ''}`;
+  line.textContent = debugChatActionLineText(event);
+  bodyEl.appendChild(line);
+  summary.addEventListener('click', () => {
+    const open = card.classList.toggle('is-open');
+    summary.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  messagesEl.appendChild(bubble);
+  debugChatActionGroups[lane] = {
+    key: groupKey,
+    card,
+    bodyEl,
+    titleEl: bubble.querySelector('.debug-chat-action-title'),
+    hintEl: bubble.querySelector('.debug-chat-action-hint'),
+    countEl: bubble.querySelector('.debug-chat-action-count'),
+    count: 1,
+    targets: [target],
+  };
+  if (!debugChatReplayingHistory) refreshIcons(bubble);
+  scrollDebugChatToBottom(false, lane);
+}
+
 function debugChatRoleForEvent(event) {
   const type = event.event_type;
   if (type === 'user_message') return 'user';
@@ -483,7 +764,7 @@ function debugChatRoleForEvent(event) {
     'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
     'file_changed', 'tool_call', 'tool_call_started', 'tool_call_finished',
     'command_run', 'command_output', 'service_action', 'request_started',
-    'agent_stopped',
+    'agent_stopped', 'subagent_scope',
   ].includes(type)) {
     return 'action';
   }
@@ -509,12 +790,14 @@ function setDebugChatTyping(show) {
 
 function ensureStreamingAssistantBubble(requestId) {
   const rid = requestId || 'pending';
-  const messagesEl = getDebugChatMessagesEl();
+  // Token streaming always belongs to the main agent lane.
+  const messagesEl = getDebugChatMessagesEl('main');
   if (!messagesEl) return null;
   const existing = document.getElementById(`debug-chat-stream-${rid}`);
   if (existing) return existing.querySelector('.debug-chat-bubble-body');
 
-  hideDebugChatEmpty();
+  hideDebugChatEmpty('main');
+  debugChatActionGroups.main = null;
   setDebugChatTyping(false);
   const bubble = document.createElement('div');
   bubble.className = 'debug-chat-bubble debug-chat-assistant debug-chat-streaming';
@@ -531,14 +814,49 @@ function ensureStreamingAssistantBubble(requestId) {
   return bubble.querySelector('.debug-chat-bubble-body');
 }
 
+// Human label for where a thinking block happened, from the backend payload
+// (step / phase / targeted tool+file) — see _thinking_context in cloud_agent.py.
+function debugChatThinkingWhere(event) {
+  const payload = event?.payload || {};
+  const explicit = coerceDebugChatText(payload.thinking_where).trim();
+  if (explicit) return explicit;
+  const bits = [];
+  if (payload.step) bits.push(`step ${payload.step}`);
+  const targets = Array.isArray(payload.thinking_targets) ? payload.thinking_targets : [];
+  const tools = Array.isArray(payload.thinking_tools) ? payload.thinking_tools : [];
+  if (targets.length) bits.push(String(targets[0]));
+  else if (tools.length) bits.push(tools.slice(0, 3).join(', '));
+  else if (payload.phase) bits.push(String(payload.phase).replace(/_/g, ' '));
+  if (payload.subagent_task_id) bits.push(`task ${payload.subagent_task_id}`);
+  return bits.join(' · ');
+}
+
+function setDebugChatThinkingWhere(bubble, event) {
+  if (!bubble) return;
+  const where = debugChatThinkingWhere(event);
+  if (!where) return;
+  const head = bubble.querySelector('.debug-chat-bubble-head');
+  if (!head) return;
+  let label = head.querySelector('.debug-chat-thinking-where');
+  if (!label) {
+    label = document.createElement('span');
+    label.className = 'debug-chat-thinking-where';
+    head.appendChild(label);
+  }
+  label.textContent = where;
+}
+
 function ensureStreamingThinkingBubble(requestId) {
   const rid = requestId || 'pending';
-  const messagesEl = getDebugChatMessagesEl();
+  // Streamed reasoning is the main agent's — subagent thinking arrives as
+  // complete `thinking` events and renders in the subagent lane.
+  const messagesEl = getDebugChatMessagesEl('main');
   if (!messagesEl) return null;
   const existing = document.getElementById(`debug-chat-thinking-${rid}`);
   if (existing) return existing.querySelector('.debug-chat-bubble-body');
 
-  hideDebugChatEmpty();
+  hideDebugChatEmpty('main');
+  debugChatActionGroups.main = null;
   const bubble = document.createElement('div');
   bubble.className = 'debug-chat-bubble debug-chat-thinking debug-chat-streaming';
   bubble.id = `debug-chat-thinking-${rid}`;
@@ -550,7 +868,7 @@ function ensureStreamingThinkingBubble(requestId) {
     <div class="debug-chat-bubble-body debug-chat-thinking"></div>
   `;
   messagesEl.appendChild(bubble);
-  scrollDebugChatToBottom();
+  scrollDebugChatToBottom(false, 'main');
   return bubble.querySelector('.debug-chat-bubble-body');
 }
 
@@ -870,7 +1188,9 @@ function debugChatDetailText(event) {
 }
 
 function appendDebugChatBubble(event) {
-  const messagesEl = getDebugChatMessagesEl();
+  const lane = event ? debugChatLaneForEvent(event) : 'main';
+  debugChatRenderLane = lane;
+  const messagesEl = getDebugChatMessagesEl(lane);
   if (!messagesEl || !event) return;
 
   const role = debugChatRoleForEvent(event);
@@ -885,6 +1205,14 @@ function appendDebugChatBubble(event) {
     return;
   }
   setDebugChatTyping(false);
+
+  if (role === 'action') {
+    // Rendered as a collapsed, openable summary row instead of a long line.
+    appendDebugChatActionRow(event, messagesEl, lane);
+    return;
+  }
+  // Any non-action bubble ends the current collapsed group.
+  debugChatActionGroups[lane] = null;
 
   if (role === 'assistant' && detail) {
     const assistants = messagesEl.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
@@ -916,9 +1244,12 @@ function appendDebugChatBubble(event) {
       <div class="debug-chat-bubble-body">${esc(detail)}</div>
     `;
   } else if (role === 'thinking') {
+    // "Where it thought": step + phase + the tool/file the thought was about.
+    const where = debugChatThinkingWhere(event);
     bubble.innerHTML = `
       <div class="debug-chat-bubble-head">
         <span>${esc(event.title || 'Thinking')}</span>
+        ${where ? `<span class="debug-chat-thinking-where">${esc(where)}</span>` : ''}
       </div>
       <div class="debug-chat-bubble-body debug-chat-thinking">${esc(detail)}</div>
     `;
@@ -985,20 +1316,6 @@ function appendDebugChatBubble(event) {
     `;
     const body = bubble.querySelector('.debug-chat-question-body');
     mountDebugChatQuestionWidget(body, event);
-  } else if (role === 'action') {
-    bubble.classList.add('debug-chat-action-new');
-    const actionMeta = debugChatActionMeta(event);
-    const compactDetail = String(detail || '').replace(/\s+/g, ' ').slice(0, 240);
-    bubble.innerHTML = `
-      <div class="debug-chat-action-row">
-        <i data-lucide="${esc(actionMeta.icon)}" aria-hidden="true"></i>
-        <div class="debug-chat-action-text">
-          <strong>${esc(actionTitle)}</strong>
-          ${compactDetail ? `<span>${esc(compactDetail)}</span>` : ''}
-        </div>
-      </div>
-    `;
-    requestAnimationFrame(() => bubble.classList.remove('debug-chat-action-new'));
   } else {
     bubble.innerHTML = `
       <div class="debug-chat-system-row">
@@ -1019,15 +1336,23 @@ function shouldSkipDebugChatEvent(event) {
   if (event.event_type === 'request_started') {
     return true;
   }
+  // "Tool started" rows duplicate the finished row and doubled the noise the
+  // collapsed activity cards are meant to remove — the live status bar already
+  // shows what is running right now.
+  if (event.event_type === 'tool_call_started') return true;
   if (event.event_type === 'token_delta') return true;
   if (event.event_type === 'thinking_delta') return true;
   if (event.event_type === 'thinking') {
     const rid = event.payload?.request_id || debugChatActiveRequestId || 'pending';
-    const streamBubble = document.getElementById(`debug-chat-thinking-${rid}`);
+    // Subagent thinking always gets its own bubble in the subagent lane.
+    const streamBubble = debugChatLaneForEvent(event) === 'sub'
+      ? null
+      : document.getElementById(`debug-chat-thinking-${rid}`);
     if (streamBubble) {
       const body = streamBubble.querySelector('.debug-chat-bubble-body');
       const detail = debugChatDetailText(event);
       if (body && detail) body.textContent = detail;
+      setDebugChatThinkingWhere(streamBubble, event);
       streamBubble.classList.remove('debug-chat-streaming');
       if (event.id != null) {
         debugChatRenderedIds.add(event.id);
@@ -1050,7 +1375,7 @@ function shouldSkipDebugChatEvent(event) {
     if (!debugChatReplayingHistory) {
       finalizeDebugChatStream(event.payload?.request_id, event.payload?.reply || event.detail);
     }
-    const messagesEl = getDebugChatMessagesEl();
+    const messagesEl = getDebugChatMessagesEl('main');
     const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
     const last = assistants?.[assistants.length - 1];
     const body = last?.querySelector('.debug-chat-bubble-body')?.textContent || '';
@@ -1065,7 +1390,11 @@ function shouldSkipDebugChatEvent(event) {
   }
   if (event.event_type === 'assistant_message') {
     const rid = event.payload?.request_id;
-    const streamBubble = rid ? document.getElementById(`debug-chat-stream-${rid}`) : null;
+    // A subagent shares the parent request_id but never owns the main lane's
+    // streaming bubble — its result must not be deduped against it.
+    const streamBubble = rid && debugChatLaneForEvent(event) === 'main'
+      ? document.getElementById(`debug-chat-stream-${rid}`)
+      : null;
     if (streamBubble) {
       const body = streamBubble.querySelector('.debug-chat-bubble-body')?.textContent || '';
       const detail = debugChatDetailText(event);
@@ -1079,7 +1408,7 @@ function shouldSkipDebugChatEvent(event) {
     }
   }
   if (event.event_type === 'user_message') {
-    const messagesEl = getDebugChatMessagesEl();
+    const messagesEl = getDebugChatMessagesEl('main');
     const bubbles = messagesEl?.querySelectorAll('.debug-chat-bubble:not(.debug-chat-typing)');
     const last = bubbles?.[bubbles.length - 1];
     if (last?.classList.contains('debug-chat-user')) {
@@ -1098,6 +1427,13 @@ function shouldSkipDebugChatEvent(event) {
 
 function handleDebugChatActivity(event) {
   if (!event) return;
+  // Route every event to its lane before anything renders.
+  const lane = debugChatLaneForEvent(event);
+  debugChatRenderLane = lane;
+  const isSubagentLifecycle = String(event.event_type || '').startsWith('subagent_');
+  if (lane === 'sub' || isSubagentLifecycle) {
+    revealDebugChatSubagentTab();
+  }
   const eventRequestId = event.payload?.request_id || '';
   const isTerminal = event.event_type === 'request_completed'
     || event.event_type === 'request_failed'
@@ -1163,7 +1499,9 @@ function handleDebugChatActivity(event) {
     }
     return;
   }
-  if (event.event_type === 'thinking' && !debugChatReplayingHistory) {
+  // Only the main agent streams reasoning; finalizing here for a subagent event
+  // would write its text into the main lane's streaming thinking bubble.
+  if (event.event_type === 'thinking' && !debugChatReplayingHistory && lane === 'main') {
     finalizeDebugChatThinking(
       event.payload?.request_id || debugChatActiveRequestId,
       event.detail || event.payload?.delta || '',
@@ -1210,8 +1548,16 @@ function handleDebugChatActivity(event) {
   if (shouldSkipDebugChatEvent(event)) return;
 
   appendDebugChatBubble(event);
+  if (lane === 'sub' && !debugChatReplayingHistory && debugChatActiveLane !== 'sub') {
+    debugChatSubagentUnread += 1;
+    updateDebugChatSubagentBadge();
+  }
   if (!debugChatReplayingHistory && event.event_type === 'thinking') {
-    setDebugChatActivity('Planning…', String(event.detail || 'Preparing a plan').replace(/\s+/g, ' ').slice(0, 160));
+    const where = debugChatThinkingWhere(event);
+    setDebugChatActivity(
+      'Planning…',
+      `${lane === 'sub' ? 'subagent · ' : ''}${where || String(event.detail || 'Preparing a plan').replace(/\s+/g, ' ')}`.slice(0, 160),
+    );
   }
   if (!debugChatReplayingHistory && event.event_type === 'screenshot') {
     setDebugChatActivity('Capturing…', String(event.detail || 'Preview screenshots').slice(0, 160), 'monitor-smartphone');
@@ -1232,10 +1578,23 @@ function handleDebugChatActivity(event) {
         : (event.event_type === 'command_run' || event.event_type === 'command_output')
           ? 'Running…'
           : 'Working…';
+    const target = debugChatActionTarget(event);
     setDebugChatActivity(
       phase,
-      `${debugChatActionTitle(event)}${event.detail ? ` · ${event.detail}` : ''}`.slice(0, 200),
+      `${lane === 'sub' ? 'subagent · ' : ''}${debugChatActionTitle(event)}${
+        target ? ` · ${target}` : ''
+      }`.slice(0, 200),
       event.event_type === 'tool_call_started' ? 'loader' : actionMeta.icon,
+    );
+  }
+  if (!debugChatReplayingHistory && isSubagentLifecycle) {
+    const label = event.event_type === 'subagent_started' ? 'Delegating…' : 'Working…';
+    setDebugChatActivity(
+      label,
+      `${DEBUG_CHAT_ACTION_LABELS[event.event_type] || 'Subagent'}${
+        event.detail ? ` · ${String(event.detail).replace(/\s+/g, ' ')}` : ''
+      }`.slice(0, 200),
+      'git-fork',
     );
   }
   const refreshTypes = [
@@ -1314,7 +1673,9 @@ async function loadDebugChatHistory(projectId) {
     debugChatReplayingHistory = false;
     finalizeAllDebugChatStreams();
     setDebugChatTyping(false);
-    refreshIcons(getDebugChatMessagesEl() || undefined);
+    debugChatRenderLane = debugChatActiveLane;
+    for (const laneEl of getDebugChatLaneEls()) refreshIcons(laneEl);
+    updateDebugChatSubagentBadge();
     if (!debugChatActiveRequestId && !debugChatSendInFlight) {
       setDebugChatBusy(false);
     } else {
@@ -1347,6 +1708,8 @@ const DEBUG_CHAT_SSE_EVENT_TYPES = [
   'file_changed', 'command_output', 'agent_started', 'agent_stopped', 'status',
   'processing', 'service_action', 'screenshot', 'question', 'question_answered',
   'session_stopped', 'plan', 'message',
+  // Subagent lane: scope hand-off (main tab) + subagent lifecycle (subagent tab).
+  'subagent_scope', 'subagent_started', 'subagent_completed', 'subagent_failed',
 ];
 
 function handleAgentActivitySseFrame(evt) {
@@ -1817,14 +2180,16 @@ async function sendDebugChatMessage() {
   debugChatSendInFlight = true;
   updateDebugChatControls();
   setDebugChatActivity('Sending…');
-  hideDebugChatEmpty();
+  // A new user turn always starts in the Main lane.
+  setDebugChatLane('main');
+  hideDebugChatEmpty('main');
   debugChatLastUserMessage = message;
   appendDebugChatBubble({
     event_type: 'user_message',
     title: 'You',
     detail: message,
   });
-  scrollDebugChatToBottom(true);
+  scrollDebugChatToBottom(true, 'main');
   setDebugChatTyping(true);
 
   const profile = await getDebugChatProfile();
@@ -1881,7 +2246,7 @@ async function sendDebugChatMessage() {
       }
     } else if (res.reply) {
       await syncDebugChatHistory(activeServiceId);
-      const messagesEl = getDebugChatMessagesEl();
+      const messagesEl = getDebugChatMessagesEl('main');
       const assistants = messagesEl?.querySelectorAll('.debug-chat-bubble.debug-chat-assistant:not(.debug-chat-typing)');
       const lastBody = assistants?.[assistants.length - 1]?.querySelector('.debug-chat-bubble-body')?.textContent || '';
       if (!lastBody || (!lastBody.includes(res.reply) && !res.reply.includes(lastBody))) {
@@ -3718,7 +4083,17 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
 });
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
-document.getElementById('debug-chat-messages')?.addEventListener('scroll', updateDebugChatScrollState, { passive: true });
+document.getElementById('debug-chat-messages')?.addEventListener(
+  'scroll', () => updateDebugChatScrollState('main'), { passive: true },
+);
+document.getElementById('debug-chat-messages-sub')?.addEventListener(
+  'scroll', () => updateDebugChatScrollState('sub'), { passive: true },
+);
+document.getElementById('debug-chat-tabs')?.addEventListener('click', (ev) => {
+  const tab = ev.target.closest('.debug-chat-tab');
+  if (!tab) return;
+  setDebugChatLane(tab.dataset.chatLane === 'sub' ? 'sub' : 'main');
+});
 document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
   const select = document.getElementById('debug-chat-profile');
   if (select) select.dataset.userSelected = '1';

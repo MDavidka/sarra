@@ -409,9 +409,25 @@
                       <i data-lucide="brain"></i>
                     </button>
                   </div>
-                  <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text">
-                    <div class="debug-chat-empty" id="debug-chat-empty">
-                      <p>What would you like to change?</p>
+                  <div class="debug-chat-tabs" id="debug-chat-tabs" role="tablist" aria-label="Agent activity lanes">
+                    <button type="button" class="debug-chat-tab is-active" id="debug-chat-tab-main" role="tab" aria-selected="true" aria-controls="debug-chat-messages" data-chat-lane="main">
+                      <span>Main</span>
+                    </button>
+                    <button type="button" class="debug-chat-tab hidden" id="debug-chat-tab-sub" role="tab" aria-selected="false" aria-controls="debug-chat-messages-sub" data-chat-lane="sub">
+                      <span>subagent</span>
+                      <b class="debug-chat-tab-badge hidden" id="debug-chat-tab-sub-badge">0</b>
+                    </button>
+                  </div>
+                  <div class="debug-chat-lanes" id="debug-chat-lanes">
+                    <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Main agent conversation" aria-relevant="additions text" data-chat-lane="main">
+                      <div class="debug-chat-empty" id="debug-chat-empty">
+                        <p>What would you like to change?</p>
+                      </div>
+                    </div>
+                    <div class="debug-chat-messages hidden" id="debug-chat-messages-sub" role="log" aria-live="polite" aria-label="Subagent activity" aria-relevant="additions text" data-chat-lane="sub">
+                      <div class="debug-chat-empty" id="debug-chat-empty-sub">
+                        <p>No subagent has been started yet.</p>
+                      </div>
                     </div>
                   </div>
                   <div class="debug-chat-composer">

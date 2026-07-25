@@ -2313,6 +2313,63 @@ code {
   display: flex;
 }
 
+/* Main / subagent lane tabs -------------------------------------------------- */
+.debug-chat-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  margin-bottom: -1px;
+}
+
+.debug-chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.42rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.debug-chat-tab:hover {
+  color: var(--text);
+  background: #f1f1f3;
+}
+
+.debug-chat-tab.is-active {
+  background: #fafafa;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.debug-chat-tab-badge {
+  min-width: 1.15rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.15rem;
+  text-align: center;
+}
+
+.debug-chat-lanes {
+  display: flex;
+  flex: 1;
+  min-height: 280px;
+}
+
+.debug-chat-lanes > .debug-chat-messages.hidden {
+  display: none;
+}
+
 .debug-chat-messages {
   flex: 1;
   min-height: 280px;
@@ -2679,6 +2736,144 @@ code {
   font-family: ui-monospace, monospace;
   font-size: 0.72rem;
   word-break: break-all;
+}
+
+/* Collapsed tool activity: a one-line summary that opens on click ------------- */
+.debug-chat-bubble.debug-chat-action {
+  max-width: min(92%, 720px);
+  padding: 0;
+  background: transparent;
+}
+
+.debug-chat-action-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  overflow: hidden;
+}
+
+.debug-chat-action-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.debug-chat-action-summary:hover {
+  background: #f6f6f7;
+}
+
+.debug-chat-action-summary > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #2563eb;
+  opacity: 0.9;
+}
+
+.debug-chat-action-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-chat-action-hint {
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.debug-chat-action-count {
+  flex-shrink: 0;
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #f1f1f3;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.debug-chat-action-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.debug-chat-action-card.is-open .debug-chat-action-chevron {
+  transform: rotate(90deg);
+}
+
+.debug-chat-action-body {
+  display: none;
+  border-top: 1px solid var(--border);
+  background: #fafafa;
+  padding: 0.5rem 0.6rem;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.debug-chat-action-card.is-open .debug-chat-action-body {
+  display: block;
+}
+
+.debug-chat-action-line {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-chat-action-line + .debug-chat-action-line {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed #e4e4e7;
+}
+
+.debug-chat-action-line-failed {
+  color: #b91c1c;
+}
+
+.debug-chat-thinking-where {
+  display: block;
+  width: 100%;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+  word-break: break-word;
+}
+
+.debug-chat-bubble.debug-chat-thinking .debug-chat-bubble-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.debug-chat-bubble.debug-chat-subagent-scope .debug-chat-action-summary > svg {
+  color: #7c3aed;
 }
 
 .debug-chat-composer {
