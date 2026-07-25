@@ -1,10 +1,11 @@
 """Fixed AI provider endpoints for Syra model profiles.
 
-Each profile is a full think+build model — there is no separate thinker.
+Each main profile is a full think+build model — there is no separate thinker.
 - ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
 - ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
 - ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
+- ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
 """
 
 from __future__ import annotations
