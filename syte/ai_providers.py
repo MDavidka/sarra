@@ -24,17 +24,21 @@ ALIYUN_MAAS_API_BASE = (
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
-PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra")
+PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra", "syra-subagent")
 
 # Default / legacy aliases (selected model handles both thinking and building).
 DEFAULT_PROFILE = "syra-base"
 BUILDER_PROFILE = DEFAULT_PROFILE
 THINKER_PROFILE = DEFAULT_PROFILE  # deprecated — no separate thinker
+# Dedicated subagent profile (NVIDIA NIM GLM 5.2) — not the default chat builder.
+SUBAGENT_PROFILE = "syra-subagent"
 
 NANO_MODEL = "gemini-3.1-flash-lite"
 BASE_MODEL = "deepseek-v4-flash"
 PRO_MODEL = "gemini-3.6-flash"
 ULTRA_MODEL = "qwen3.7-plus"
+SUBAGENT_MODEL = "z-ai/glm-5.2"
+NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
 # Backward-compat aliases used by older tests/docs.
 BUILDER_MODEL = BASE_MODEL
@@ -158,6 +162,23 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },
+    "syra-subagent": {
+        "profile": "syra-subagent",
+        "label": "NVIDIA NIM",
+        "display_name": "subagent",
+        "provider": "openai",
+        "api_base": NVIDIA_NIM_API_BASE,
+        "model": SUBAGENT_MODEL,
+        "role": "subagent",
+        # NVIDIA Build NIM serverless is often free for developers; show $0 guidance.
+        "input_price_per_mtok": 0.0,
+        "output_price_per_mtok": 0.0,
+        "max_tokens": 8192,
+        "max_history_messages": 40,
+        "max_tool_result_chars": 8000,
+        "setting_key": "agent_syra_subagent_api_key",
+        "secret_env": "SYRA_SUBAGENT_API_KEY",
+    },
 }
 
 
@@ -182,6 +203,11 @@ def looks_like_google_ai_studio_key(api_key: str | None) -> bool:
 def looks_like_openrouter_key(api_key: str | None) -> bool:
     """OpenRouter keys are ``sk-or-…`` (legacy syra-ultra before the Aliyun swap)."""
     return (api_key or "").strip().lower().startswith("sk-or-")
+
+
+def looks_like_nvidia_nim_key(api_key: str | None) -> bool:
+    """NVIDIA NIM / build.nvidia.com keys typically start with ``nvapi-``."""
+    return (api_key or "").strip().lower().startswith("nvapi-")
 
 
 def looks_like_aliyun_token_plan_key(api_key: str | None) -> bool:
@@ -269,6 +295,13 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
             )
         # Express Mode keys have varied prefixes — accept any non-sk key.
         return ""
+    if profile == "syra-subagent":
+        if looks_like_nvidia_nim_key(key):
+            return ""
+        return (
+            "syra-subagent expects an NVIDIA NIM API key (usually starts with nvapi-) "
+            "from https://build.nvidia.com/ — used only for delegated subagent work."
+        )
     return ""
 
 

@@ -71,15 +71,29 @@ def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
     assert ultra["role"] != "think"
 
 
+def test_subagent_nvidia_glm() -> None:
+    from syte.ai_providers import NVIDIA_NIM_API_BASE, SUBAGENT_MODEL, SUBAGENT_PROFILE
+
+    assert SUBAGENT_PROFILE in PROFILE_ORDER
+    sub = PROFILE_PROVIDERS[SUBAGENT_PROFILE]
+    assert sub["label"] == "NVIDIA NIM"
+    assert sub["api_base"] == NVIDIA_NIM_API_BASE
+    assert sub["model"] == SUBAGENT_MODEL == "z-ai/glm-5.2"
+    assert sub["role"] == "subagent"
+    assert sub["setting_key"] == "agent_syra_subagent_api_key"
+    assert sub["secret_env"] == "SYRA_SUBAGENT_API_KEY"
+
+
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 4
+    assert len(catalog) == 5
     by_profile = {row["profile"]: row for row in catalog}
     assert by_profile["syra-nano"]["input_price_label"] == "$0.25"
     assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
     assert by_profile["syra-base"]["model"] == "deepseek-v4-flash"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
+    assert by_profile["syra-subagent"]["model"] == "z-ai/glm-5.2"
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
 
@@ -87,3 +101,4 @@ def test_provider_catalog_includes_prices() -> None:
 def test_no_separate_thinker_role() -> None:
     roles = {spec.get("role") for spec in PROFILE_PROVIDERS.values()}
     assert "think" not in roles
+    assert "subagent" in roles

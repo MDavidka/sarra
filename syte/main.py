@@ -148,6 +148,7 @@ class SettingsRequest(BaseModel):
     agent_syra_base_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
+    agent_syra_subagent_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -310,12 +311,14 @@ async def get_settings():
         "agent_syra_base_model": bridge["syra_base_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
         "agent_syra_ultra_model": bridge["syra_ultra_model"],
+        "agent_syra_subagent_model": bridge["syra_subagent_model"],
         "agent_builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
         "agent_thinker_profile": bridge.get("thinker_profile"),
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
+        "agent_syra_subagent_api_key_set": bool(bridge["syra_subagent_api_key"]),
         "ai_providers": provider_catalog(),
         "provider_keys": key_status,
         "provider_envs": [
@@ -472,6 +475,14 @@ async def save_settings(body: SettingsRequest):
             "syra-ultra (Aliyun · qwen3.7-plus) API key saved."
             if ultra_key
             else "syra-ultra API key cleared."
+        )
+    if body.agent_syra_subagent_api_key is not None:
+        sub_key = body.agent_syra_subagent_api_key.strip()
+        await set_setting("agent_syra_subagent_api_key", sub_key)
+        messages.append(
+            "syra-subagent (NVIDIA NIM · z-ai/glm-5.2) API key saved."
+            if sub_key
+            else "syra-subagent API key cleared."
         )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))

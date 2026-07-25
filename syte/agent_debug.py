@@ -386,7 +386,8 @@ def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
         "vars_set": [],
         "detail": (
             "Provider keys are read from Syte settings first, then process env "
-            "(SYRA_NANO_API_KEY / SYRA_BASE_API_KEY / SYRA_HAVY_API_KEY / SYRA_ULTRA_API_KEY)."
+            "(SYRA_NANO_API_KEY / SYRA_BASE_API_KEY / SYRA_HAVY_API_KEY / "
+            "SYRA_ULTRA_API_KEY / SYRA_SUBAGENT_API_KEY)."
         ),
     }
 
