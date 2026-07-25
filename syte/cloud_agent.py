@@ -14,6 +14,7 @@ import itertools
 import json
 import logging
 import os
+import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -58,7 +59,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 17
+AGENT_INSTRUCTION_VERSION = 18
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 # Attempts per provider call. Quota (429) retries and same-provider model
@@ -74,6 +75,11 @@ SUBAGENT_RESEARCH_TIMEOUT_S = 180.0
 MAX_BACKGROUND_SUBAGENTS_PER_PROJECT = 2
 MAX_STORED_SUBAGENT_RESULTS = 48
 QUESTION_WAIT_TIMEOUT_S = 1800.0
+# Preview screenshots are expensive (browser launch + vision payload) and models
+# tend to re-shoot unchanged routes. Cap them per turn and refuse repeats that
+# cannot show anything new (no write since the last capture).
+MAX_SCREENSHOTS_PER_TURN = 4
+SCREENSHOT_MIN_INTERVAL_S = 25.0
 # Cap inline vision payloads so provider requests stay bounded.
 MAX_VISION_IMAGE_BYTES = 700_000
 
@@ -87,6 +93,11 @@ _instruction_cache: dict[tuple[str, int, str], str] = {}
 _background_subagents: dict[str, asyncio.Task[Any]] = {}
 # Completed/cancelled background results keyed the same way (parent can await).
 _background_subagent_results: dict[str, dict[str, Any]] = {}
+# Write ownership of workspace files while a subagent is live:
+# ``{project_id: {normalized_path: task_id}}``. The main agent declares the
+# scope up front (delegate_task.files) so neither it nor a second subagent can
+# edit a file another subagent is already working on.
+_subagent_file_locks: dict[str, dict[str, str]] = defaultdict(dict)
 # Fire-and-forget work that must not block turn completion (index, preview).
 _bg_tasks: set[asyncio.Task[Any]] = set()
 # Turso message mirrors — drained briefly before end-of-turn resync.
@@ -107,6 +118,78 @@ def _store_subagent_result(key: str, result: dict[str, Any]) -> None:
         return
     for stale in list(_background_subagent_results.keys())[:overflow]:
         _background_subagent_results.pop(stale, None)
+
+
+def _normalize_scope_path(path: Any) -> str:
+    """Normalize a declared file-scope path for comparison."""
+    raw = str(path or "").strip().replace("\\", "/")
+    while raw.startswith("./"):
+        raw = raw[2:]
+    raw = raw.lstrip("/")
+    while "//" in raw:
+        raw = raw.replace("//", "/")
+    return raw
+
+
+def normalize_scope_files(files: Any, *, limit: int = 40) -> list[str]:
+    """Return a de-duplicated, normalized list of declared scope paths."""
+    if isinstance(files, str):
+        candidates = [part for part in files.replace(",", "\n").splitlines()]
+    elif isinstance(files, (list, tuple, set)):
+        candidates = list(files)
+    else:
+        candidates = []
+    out: list[str] = []
+    for candidate in candidates:
+        norm = _normalize_scope_path(candidate)
+        if norm and norm not in out:
+            out.append(norm)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _reserve_subagent_files(
+    project_id: str, task_id: str, files: list[str]
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Claim write ownership of ``files`` for one subagent.
+
+    Returns ``(reserved, conflicts)``. Nothing is reserved when any path is
+    already owned by another live subagent, so two agents can never be told
+    they may edit the same file.
+    """
+    owned = _subagent_file_locks[project_id]
+    conflicts = [
+        {"path": path, "task_id": owned[path]}
+        for path in files
+        if owned.get(path) and owned[path] != task_id
+    ]
+    if conflicts:
+        return [], conflicts
+    for path in files:
+        owned[path] = task_id
+    return list(files), []
+
+
+def _release_subagent_files(project_id: str, task_id: str) -> list[str]:
+    """Release every path reserved by one subagent."""
+    owned = _subagent_file_locks.get(project_id) or {}
+    released = [path for path, owner in owned.items() if owner == task_id]
+    for path in released:
+        owned.pop(path, None)
+    if not owned:
+        _subagent_file_locks.pop(project_id, None)
+    return released
+
+
+def subagent_file_owner(project_id: str, path: str) -> str | None:
+    """Return the subagent task id that reserved ``path``, if any."""
+    return (_subagent_file_locks.get(project_id) or {}).get(_normalize_scope_path(path))
+
+
+def subagent_file_scope(project_id: str) -> dict[str, str]:
+    """Snapshot of reserved paths → owning subagent task id."""
+    return dict(_subagent_file_locks.get(project_id) or {})
 
 
 def _count_background_subagents(project_id: str) -> int:
@@ -1069,9 +1152,17 @@ def _build_static_instruction(
         "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
         "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
         "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
-        "Use ask_question whenever you need a preference, secret, numeric setting, or choice. Use "
-        "screenshot_preview only when you need visual layout review across viewports. Use ask_question "
-        "whenever you need a preference, secret, numeric setting, or choice. "
+        "Use ask_question whenever you need a preference, secret, numeric setting, or choice. "
+        "Delegation file scope (mandatory): every delegate_task call must list in `files` the exact "
+        "workspace paths the subagent may create or edit — decide the split BEFORE delegating. Those "
+        "paths are locked to that subagent: you and other subagents are blocked from writing them "
+        "until it finishes, so never delegate two tasks that share a file and never edit a reserved "
+        "file yourself — await the subagent first. "
+        "Screenshots are rate-limited: at most "
+        f"{MAX_SCREENSHOTS_PER_TURN} captures per turn, and a repeat of a route you already captured "
+        "is refused while no file has been written since. Use inspect_preview for load/console "
+        "verification and screenshot_preview only when you need visual layout review across "
+        "viewports — never poll it to 'check again'. "
         "After website edits, ALWAYS call inspect_preview with include_console=true (default) to confirm "
         "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
         "fix them before finishing. Continue using tools until the request is actually complete; "
@@ -1740,16 +1831,30 @@ TOOLS: list[dict[str, Any]] = [
         "Delegate one plan step assigned to subagent. Uses the NVIDIA NIM GLM 5.2 subagent "
         "provider when configured (falls back to nano/base). Use mode=research (default) for "
         "read-only find/review; mode=implementation when the subagent must edit files. Set "
-        "background:true to run asynchronously, then call await_subagent with the returned task_id."),
+        "background:true to run asynchronously, then call await_subagent with the returned task_id. "
+        "ALWAYS list in `files` every workspace file the subagent may create or edit — that scope "
+        "is reserved for it, and both you and other subagents are blocked from writing those "
+        "paths until it finishes, so two agents never edit the same file in parallel. For "
+        "mode=implementation, `files` is mandatory. Never delegate two tasks that share a file: "
+        "split by file, or run them one after another."),
      "parameters": {"type": "object", "properties": {
          "task": {"type": "string"},
+         "files": {
+             "type": "array",
+             "items": {"type": "string"},
+             "description": (
+                 "Workspace-relative paths the subagent owns, e.g. "
+                 "['app/app/pricing/page.tsx', 'app/components/pricing-table.tsx']. "
+                 "Required for mode=implementation; recommended for research."
+             ),
+         },
          "background": {"type": "boolean"},
          "mode": {
              "type": "string",
              "enum": ["research", "implementation"],
              "description": "research=read-only/fast; implementation=can write files",
          },
-     }, "required": ["task"], "additionalProperties": False}}},
+     }, "required": ["task", "files"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "await_subagent", "description": (
         "Wait for a background subagent started by delegate_task and return its findings. "
         "Pass the task_id from the delegate_task result."),
@@ -1776,6 +1881,127 @@ SUBAGENT_RESEARCH_TOOLS = [
     tool for tool in SUBAGENT_TOOLS
     if tool["function"]["name"] not in _SUBAGENT_MUTATING_TOOLS
 ]
+
+
+def _reserved_file_error(
+    project_id: str, path: str, ctx: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Block a write when a live subagent owns the path (no parallel edits)."""
+    owner = subagent_file_owner(project_id, path)
+    if not owner or owner == ctx.get("subagent_task_id"):
+        return None
+    return {
+        "ok": False,
+        "error": "file_reserved_by_subagent",
+        "retryable": True,
+        "message": (
+            f"{path} is reserved by subagent {owner} until it finishes — two agents must "
+            "never edit one file. Wait for it (await_subagent) and then re-read the file, "
+            "or work on a different file now."
+        ),
+        "task_id": owner,
+        "reserved_files": sorted(subagent_file_scope(project_id)),
+    }
+
+
+def _screenshot_guard(
+    project_id: str, args: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Suppress redundant ``screenshot_preview`` calls.
+
+    Capturing a preview costs a browser launch plus a vision payload, and models
+    tend to re-shoot the same unchanged route repeatedly. A capture is skipped
+    when it would repeat a route/viewport combination while nothing has been
+    written since, when it lands inside the cooldown window, or when the turn
+    already used its screenshot budget. The cached description of the previous
+    capture is returned so the model still has the information it asked for.
+    """
+    route = str(args.get("route") or "/").strip() or "/"
+    if not route.startswith("/"):
+        route = "/" + route
+    viewports = args.get("viewports") or ["desktop", "phone"]
+    if not isinstance(viewports, list):
+        viewports = ["desktop", "phone"]
+    signature = f"{route}|{','.join(sorted(str(v) for v in viewports))}"
+    history: dict[str, dict[str, Any]] = ctx.setdefault("_screenshot_history", {})
+    count = int(ctx.get("_screenshot_count") or 0)
+    dirty = bool(ctx.get("_workspace_dirty_since_screenshot"))
+    now = time.monotonic()
+
+    previous = history.get(signature)
+    if previous and not dirty:
+        return {
+            "ok": True,
+            "action": "screenshot_preview",
+            "route": route,
+            "url": previous.get("url"),
+            "skipped": True,
+            "reason": "unchanged_since_last_capture",
+            "screenshots": previous.get("screenshots") or [],
+            "message": (
+                f"Reusing the screenshot already captured for {route} "
+                f"({', '.join(str(v) for v in viewports)}) — no file has been written since, "
+                "so the preview cannot have changed. Do not capture the same route again "
+                "unless you edit something."
+            ),
+        }
+
+    if count >= MAX_SCREENSHOTS_PER_TURN:
+        return {
+            "ok": False,
+            "error": "screenshot_budget_exhausted",
+            "route": route,
+            "message": (
+                f"This turn already captured {count} screenshots (limit "
+                f"{MAX_SCREENSHOTS_PER_TURN}). Use inspect_preview for load/console checks "
+                "and rely on the screenshots you already have."
+            ),
+            "captured": count,
+            "limit": MAX_SCREENSHOTS_PER_TURN,
+        }
+
+    # Cooldown applies to re-shooting the *same* route (e.g. only the viewport
+    # list changed). A different route can show something new, so it is allowed
+    # and bounded by the per-turn budget alone.
+    last_ts = ctx.get("_last_screenshot_ts")
+    same_route = ctx.get("_last_screenshot_route") == route
+    if isinstance(last_ts, (int, float)) and same_route and not dirty:
+        elapsed = now - float(last_ts)
+        if elapsed < SCREENSHOT_MIN_INTERVAL_S:
+            return {
+                "ok": False,
+                "error": "screenshot_rate_limited",
+                "route": route,
+                "retry_after_s": round(SCREENSHOT_MIN_INTERVAL_S - elapsed, 1),
+                "message": (
+                    f"{route} was captured {elapsed:.0f}s ago and nothing changed since. "
+                    "Make an edit first, or use inspect_preview — do not poll "
+                    "screenshot_preview."
+                ),
+            }
+    return None
+
+
+def _record_screenshot_capture(
+    args: dict[str, Any], ctx: dict[str, Any], result: dict[str, Any]
+) -> None:
+    """Remember a successful capture for the dedupe/cooldown guard."""
+    route = str(args.get("route") or "/").strip() or "/"
+    if not route.startswith("/"):
+        route = "/" + route
+    viewports = args.get("viewports") or ["desktop", "phone"]
+    if not isinstance(viewports, list):
+        viewports = ["desktop", "phone"]
+    signature = f"{route}|{','.join(sorted(str(v) for v in viewports))}"
+    history: dict[str, dict[str, Any]] = ctx.setdefault("_screenshot_history", {})
+    history[signature] = {
+        "url": result.get("url"),
+        "screenshots": result.get("screenshots") or [],
+    }
+    ctx["_screenshot_count"] = int(ctx.get("_screenshot_count") or 0) + 1
+    ctx["_last_screenshot_ts"] = time.monotonic()
+    ctx["_last_screenshot_route"] = route
+    ctx["_workspace_dirty_since_screenshot"] = False
 
 
 async def _execute_tool(
@@ -1872,6 +2098,9 @@ async def _execute_tool(
             return {"ok": ok, "content": text, "mime": mime}
         if name == "write_file":
             path = str(args["path"])
+            locked = _reserved_file_error(project_id, path, ctx)
+            if locked:
+                return locked
             ok, message = await write_file(project_id, path, str(args["content"]))
             await _track_touched_file(
                 project_id, path, ctx, content=str(args.get("content") or ""),
@@ -1879,10 +2108,18 @@ async def _execute_tool(
             path_l = path.lower()
             if any(marker in path_l for marker in _UI_PATH_MARKERS):
                 ctx["_ui_edit_detected"] = True
+            if ok:
+                # A new capture can only show something new after a write.
+                ctx["_workspace_dirty_since_screenshot"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
+            locked = _reserved_file_error(project_id, str(args["path"]), ctx)
+            if locked:
+                return locked
             ok, message = await delete_file(project_id, str(args["path"]))
             await _track_touched_file(project_id, str(args["path"]), ctx)
+            if ok:
+                ctx["_workspace_dirty_since_screenshot"] = True
             return {"ok": ok, "message": message}
         if name == "run_command":
             from syte.token_efficiency import filter_cli_output
@@ -1917,8 +2154,17 @@ async def _execute_tool(
                 ctx["plan_submitted"] = True
             return result
         if name == "screenshot_preview":
+            blocked = _screenshot_guard(project_id, args, ctx)
+            if blocked is not None:
+                # Mark as "captured" for a dedupe hit so post-turn automation does
+                # not immediately shoot the same route again.
+                if blocked.get("skipped"):
+                    ctx["_screenshot_captured"] = True
+                return blocked
             result = await _tool_screenshot_preview(project_id, args, ctx)
             ctx["_screenshot_captured"] = True
+            if result.get("ok"):
+                _record_screenshot_capture(args, ctx, result)
             return result
         if name == "inspect_preview":
             return await _tool_inspect_preview(project_id, args, ctx)
@@ -2221,7 +2467,9 @@ async def _tool_update_plan(
         "note": note,
         "guidance": (
             "Execute [main] steps yourself on the chosen model. "
-            "For each [subagent] step call delegate_task (then await_subagent if background)."
+            "For each [subagent] step call delegate_task (then await_subagent if background) and "
+            "pass `files` — the exact paths that subagent owns. Two steps that touch the same file "
+            "must not run in parallel: give them disjoint file lists or run them sequentially."
         ),
     }
 
@@ -2473,11 +2721,16 @@ async def _tool_inspect_preview(
             )
 
     if include_shot:
-        shot = await _tool_screenshot_preview(
-            project_id,
-            {"route": route, "url": target, "viewports": ["desktop"]},
-            ctx,
-        )
+        shot_args = {"route": route, "url": target, "viewports": ["desktop"]}
+        # Piggybacked captures obey the same per-turn budget / repeat guard.
+        blocked = _screenshot_guard(project_id, shot_args, ctx)
+        if blocked is not None:
+            result["screenshot"] = blocked
+            result["message"] = (
+                f"{result['message']}; screenshot skipped ({blocked.get('reason') or blocked.get('error')})"
+            )
+            return result
+        shot = await _tool_screenshot_preview(project_id, shot_args, ctx)
         result["screenshot"] = {
             k: v for k, v in shot.items() if not str(k).startswith("_")
         }
@@ -2487,6 +2740,7 @@ async def _tool_inspect_preview(
             result["_vision_parts"] = shot["_vision_parts"]
         if shot.get("ok"):
             ctx["_screenshot_captured"] = True
+            _record_screenshot_capture(shot_args, ctx, shot)
             if result.get("ok") is not False:
                 result["ok"] = True
             result["message"] = f"{result['message']}; desktop screenshot attached"
@@ -2726,6 +2980,112 @@ async def _parse_sse_completion(
     if any(usage_acc.values()):
         message["_usage"] = usage_acc
     return message
+
+
+_THINKING_TARGET_KEYS = (
+    "path", "route", "command", "query", "pattern", "task", "addon", "action", "url",
+)
+
+_THINKING_PHASE_LABELS = {
+    "before_tools": "before",
+    "final_answer": "final answer",
+    "planning": "planning",
+    "site_plan": "site plan",
+}
+
+
+def _thinking_context(
+    *,
+    step: int,
+    phase: str,
+    calls: list[dict[str, Any]] | None = None,
+    scope_files: list[str] | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    """Describe *where* a thinking block happened so the UI can label it.
+
+    Returns payload fields (``step``, ``phase``, ``thinking_tools``,
+    ``thinking_targets``, ``thinking_where``) that the chat renders as e.g.
+    "Thinking · step 3 · before write_file app/app/page.tsx".
+    """
+    tools: list[str] = []
+    targets: list[str] = []
+    for call in calls or []:
+        function = call.get("function") if isinstance(call, dict) else None
+        function = function or {}
+        name = str(function.get("name") or "").strip()
+        if name and name not in tools:
+            tools.append(name)
+        try:
+            args = json.loads(function.get("arguments") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            args = {}
+        if not isinstance(args, dict):
+            continue
+        for key in _THINKING_TARGET_KEYS:
+            value = args.get(key)
+            if value:
+                label = str(value).replace("\n", " ")[:80]
+                target = f"{name} {label}".strip()
+                if target not in targets:
+                    targets.append(target)
+                break
+    phase_label = _THINKING_PHASE_LABELS.get(phase, phase.replace("_", " "))
+    where_bits = [f"step {step}"] if step else []
+    if targets:
+        where_bits.append(f"{phase_label} {targets[0]}")
+    elif tools:
+        where_bits.append(f"{phase_label} {', '.join(tools[:3])}")
+    elif phase_label:
+        where_bits.append(phase_label)
+    if note:
+        where_bits.append(note)
+    return {
+        "step": int(step or 0),
+        "phase": phase,
+        "thinking_tools": tools[:6],
+        "thinking_targets": targets[:6],
+        "thinking_where": " · ".join(where_bits)[:200],
+        "scope_files": list(scope_files or [])[:12],
+    }
+
+
+async def _finalize_request_row(
+    project_id: str,
+    request_id: str,
+    *,
+    status: str,
+    reply: str = "",
+    error: str = "",
+    usage: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
+    subagent_count: int = 0,
+) -> None:
+    """Write the end-of-generation rollup (activity volume + USD cost) for a turn."""
+    from syte.agent_activity import (
+        activity_count_for_request,
+        clear_activity_count_for_request,
+    )
+
+    activity_count = activity_count_for_request(request_id)
+    try:
+        from syte.turso_store import finalize_request
+
+        await finalize_request(
+            request_id,
+            project_id,
+            status=status,
+            reply=reply,
+            error=error,
+            usage=usage,
+            cost=cost,
+            activity_count=activity_count,
+            subagent_count=int(subagent_count or 0),
+        )
+    except Exception:
+        logger.debug("failed to finalize request row %s", request_id, exc_info=True)
+    finally:
+        clear_activity_count_for_request(request_id)
 
 
 def _estimate_turn_cost(model: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:
@@ -3241,6 +3601,73 @@ async def _resolve_subagent_model(
     return dict(parent_model), routing
 
 
+async def _persist_subagent_task(
+    project_id: str,
+    task_id: str,
+    task: str,
+    *,
+    turso_session_id: str | None,
+    session_number: int,
+    parent_request_id: str,
+    mode: str,
+    model: dict[str, Any],
+    background: bool,
+    files: list[str],
+) -> None:
+    """Durably record a delegated task (task text, scope, start time)."""
+    try:
+        from syte.turso_store import record_subagent_task
+
+        await record_subagent_task(
+            task_id,
+            project_id,
+            task,
+            session_id=turso_session_id,
+            session_number=session_number,
+            parent_request_id=parent_request_id,
+            mode=mode,
+            profile=str(model.get("profile") or ""),
+            model=str(model.get("model") or ""),
+            background=background,
+            files=files,
+        )
+    except Exception:
+        logger.debug("failed to persist subagent task %s", task_id, exc_info=True)
+
+
+async def _finalize_subagent_task(
+    project_id: str,
+    task_id: str,
+    result: dict[str, Any],
+    *,
+    mode: str,
+    released: list[str] | None = None,
+) -> None:
+    """Close the durable subagent row with outcome, usage and cost."""
+    try:
+        from syte.turso_store import finalize_subagent_task
+
+        await finalize_subagent_task(
+            task_id,
+            project_id,
+            status=str(
+                result.get("status")
+                or ("completed" if result.get("ok") else "failed")
+            ),
+            result=str(result.get("result") or "")[:20000],
+            error=str(result.get("error") or ""),
+            usage=result.get("usage") if isinstance(result.get("usage"), dict) else None,
+            cost=result.get("cost") if isinstance(result.get("cost"), dict) else None,
+            activity_count=int(result.get("activity_count") or 0),
+        )
+    except Exception:
+        logger.debug("failed to finalize subagent task %s", task_id, exc_info=True)
+    if released:
+        logger.debug(
+            "subagent %s (%s) released file scope: %s", task_id, mode, ", ".join(released)
+        )
+
+
 async def _tool_delegate_task(
     project_id: str,
     args: dict[str, Any],
@@ -3262,9 +3689,98 @@ async def _tool_delegate_task(
         SUBAGENT_RESEARCH_TIMEOUT_S if mode == "research" else SUBAGENT_TIMEOUT_S
     )
     background = bool(args.get("background"))
+    ctx = context or {}
+    turso_session_id = ctx.get("turso_session_id")
+    session_number = int(ctx.get("session_number") or 0)
+    parent_request_id = str(ctx.get("request_id") or "") or None
+
+    # --- File scope: declared before the task is handed over -----------------
+    scope_files = normalize_scope_files(args.get("files"))
+    writes_files = mode == "implementation"
+    if writes_files and not scope_files:
+        return {
+            "ok": False,
+            "error": "missing_file_scope",
+            "message": (
+                "mode=implementation requires `files`: list every workspace path the "
+                "subagent may create or edit. That scope is reserved so no other agent "
+                "writes the same file in parallel."
+            ),
+        }
+
+    import uuid as uuid_mod
+
+    task_id = f"{'bg' if background else 'sub'}-{uuid_mod.uuid4().hex[:12]}"
+    reserved: list[str] = []
+    if writes_files:
+        reserved, conflicts = _reserve_subagent_files(project_id, task_id, scope_files)
+        if conflicts:
+            return {
+                "ok": False,
+                "error": "file_scope_conflict",
+                "retryable": True,
+                "message": (
+                    "Another subagent already owns "
+                    + ", ".join(f"{c['path']} (task {c['task_id']})" for c in conflicts)
+                    + ". Await that subagent first, or delegate a task with a "
+                    "non-overlapping file list — never two agents on one file."
+                ),
+                "conflicts": conflicts,
+                "reserved_files": sorted(subagent_file_scope(project_id)),
+            }
+
+    # Published to the main chat so the file split is visible before hand-off.
+    await record_agent_event(
+        project_id,
+        "subagent_scope",
+        role="system",
+        title=f"Delegating {len(scope_files) or 'unscoped'} file(s) to subagent",
+        detail=(
+            "\n".join(f"- {path}" for path in scope_files)
+            if scope_files
+            else "No file scope declared (read-only research task)."
+        ),
+        payload={
+            "request_id": parent_request_id,
+            "session": session_number,
+            "agent": "main",
+            "task_id": task_id,
+            "task": task[:500],
+            "mode": mode,
+            "files": scope_files,
+            "reserved_files": reserved,
+            "locked": bool(reserved),
+            "background": background,
+        },
+        source=CLOUD_RUNTIME,
+        turso_session_id=turso_session_id,
+    )
+    await _persist_subagent_task(
+        project_id,
+        task_id,
+        task,
+        turso_session_id=turso_session_id,
+        session_number=session_number,
+        parent_request_id=parent_request_id or "",
+        mode=mode,
+        model=sub_model,
+        background=background,
+        files=scope_files,
+    )
+    ctx["_subagent_count"] = int(ctx.get("_subagent_count") or 0) + 1
+
+    subagent_ctx = {
+        "task_id": task_id,
+        "files": scope_files,
+        "reserved": reserved,
+        "turso_session_id": turso_session_id,
+        "session_number": session_number,
+        "parent_request_id": parent_request_id,
+    }
 
     if background:
         if _count_background_subagents(project_id) >= MAX_BACKGROUND_SUBAGENTS_PER_PROJECT:
+            _release_subagent_files(project_id, task_id)
             return {
                 "ok": False,
                 "error": "subagent_queue_full",
@@ -3276,9 +3792,6 @@ async def _tool_delegate_task(
                 ),
                 "max_background": MAX_BACKGROUND_SUBAGENTS_PER_PROJECT,
             }
-        import uuid as uuid_mod
-
-        task_id = f"bg-{uuid_mod.uuid4().hex[:12]}"
         bg_key = f"{project_id}:{task_id}"
         await record_agent_event(
             project_id,
@@ -3287,13 +3800,19 @@ async def _tool_delegate_task(
             title="Background subagent started",
             detail=task[:240],
             payload={
+                "request_id": parent_request_id,
+                "session": session_number,
+                "agent": "subagent",
                 "task_id": task_id,
+                "task": task[:500],
                 "mode": mode,
                 "profile": sub_model.get("profile"),
                 "background": True,
+                "files": scope_files,
                 "routing": routing,
             },
             source=CLOUD_RUNTIME,
+            turso_session_id=turso_session_id,
         )
         bg_task = asyncio.create_task(
             _run_subagent(
@@ -3302,13 +3821,17 @@ async def _tool_delegate_task(
                 sub_model,
                 mode=mode,
                 task_id=task_id,
-                parent_request_id=str((context or {}).get("request_id") or "") or None,
+                background=True,
+                parent_request_id=parent_request_id,
+                subagent_ctx=subagent_ctx,
             )
         )
         _background_subagents[bg_key] = bg_task
 
         def _cleanup(done: asyncio.Task[Any], *, key: str = bg_key, tid: str = task_id) -> None:
             _background_subagents.pop(key, None)
+            # Idempotent — _run_subagent also releases on its own exit paths.
+            _release_subagent_files(project_id, tid)
             if key in _background_subagent_results:
                 return
             if done.cancelled():
@@ -3364,9 +3887,14 @@ async def _tool_delegate_task(
             "ok": True,
             "task_id": task_id,
             "status": "running",
-            "message": "Background subagent started — call await_subagent to collect results.",
+            "message": (
+                "Background subagent started — call await_subagent to collect results. "
+                f"Reserved files: {', '.join(scope_files) or 'none'} (do not edit them yourself)."
+            ),
             "task": task,
             "mode": mode,
+            "files": scope_files,
+            "reserved_files": reserved,
             "profile": sub_model.get("profile"),
             "routing": routing,
             "timeout_s": timeout_s,
@@ -3379,20 +3907,32 @@ async def _tool_delegate_task(
         title="Subagent started",
         detail=task[:240],
         payload={
+            "request_id": parent_request_id,
+            "session": session_number,
+            "agent": "subagent",
+            "task_id": task_id,
+            "task": task[:500],
             "mode": mode,
             "profile": sub_model.get("profile"),
             "background": False,
+            "files": scope_files,
             "routing": routing,
         },
         source=CLOUD_RUNTIME,
+        turso_session_id=turso_session_id,
     )
-    result = await _run_subagent(
-        project_id,
-        task,
-        sub_model,
-        mode=mode,
-        parent_request_id=str((context or {}).get("request_id") or "") or None,
-    )
+    try:
+        result = await _run_subagent(
+            project_id,
+            task,
+            sub_model,
+            mode=mode,
+            task_id=task_id,
+            parent_request_id=parent_request_id,
+            subagent_ctx=subagent_ctx,
+        )
+    finally:
+        _release_subagent_files(project_id, task_id)
     await record_agent_event(
         project_id,
         "subagent_completed" if result.get("ok") else "subagent_failed",
@@ -3400,16 +3940,36 @@ async def _tool_delegate_task(
         title="Subagent finished" if result.get("ok") else "Subagent failed",
         detail=str(result.get("error") or result.get("result") or "")[:240],
         payload={
+            "request_id": parent_request_id,
+            "session": session_number,
+            "agent": "subagent",
+            "task_id": task_id,
             "mode": mode,
             "profile": sub_model.get("profile"),
             "ok": bool(result.get("ok")),
             "error": result.get("error"),
+            "files": scope_files,
             "usage": result.get("usage"),
             "cost": result.get("cost"),
         },
         source=CLOUD_RUNTIME,
+        turso_session_id=turso_session_id,
     )
-    return {**result, "mode": mode, "profile": sub_model.get("profile"), "routing": routing}
+    await _finalize_subagent_task(
+        project_id,
+        task_id,
+        result,
+        mode=mode,
+        released=scope_files if reserved else [],
+    )
+    return {
+        **result,
+        "task_id": task_id,
+        "mode": mode,
+        "files": scope_files,
+        "profile": sub_model.get("profile"),
+        "routing": routing,
+    }
 
 
 async def _tool_await_subagent(project_id: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -3469,13 +4029,21 @@ async def _run_subagent(
     *,
     mode: str = "research",
     task_id: str | None = None,
+    background: bool = False,
     parent_request_id: str | None = None,
+    subagent_ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run a bounded secondary tool loop and return its findings to the parent."""
+    """Run a bounded secondary tool loop and return its findings to the parent.
+
+    Terminal ``subagent_*`` events and stored results are emitted here only for
+    *background* runs; foreground delegation reports them from
+    :func:`_tool_delegate_task` so the parent never double-reports one task.
+    """
     resolved_mode = mode if mode in {"research", "implementation"} else "research"
     timeout_s = (
         SUBAGENT_RESEARCH_TIMEOUT_S if resolved_mode == "research" else SUBAGENT_TIMEOUT_S
     )
+    turso_session_id = (subagent_ctx or {}).get("turso_session_id")
     try:
         result = await asyncio.wait_for(
             _run_subagent_loop(
@@ -3485,10 +4053,11 @@ async def _run_subagent(
                 mode=resolved_mode,
                 task_id=task_id,
                 parent_request_id=parent_request_id,
+                subagent_ctx=subagent_ctx,
             ),
             timeout=timeout_s,
         )
-        if task_id:
+        if task_id and background:
             key = f"{project_id}:{task_id}"
             _store_subagent_result(
                 key,
@@ -3505,15 +4074,23 @@ async def _run_subagent(
                 title="Background subagent finished" if result.get("ok") else "Background subagent failed",
                 detail=str(result.get("error") or result.get("result") or "")[:240],
                 payload={
+                    "request_id": parent_request_id,
+                    "session": int((subagent_ctx or {}).get("session_number") or 0),
+                    "agent": "subagent",
                     "task_id": task_id,
                     "mode": resolved_mode,
                     "profile": model.get("profile"),
                     "ok": bool(result.get("ok")),
                     "error": result.get("error"),
+                    "files": (subagent_ctx or {}).get("files") or [],
                     "usage": result.get("usage"),
                     "cost": result.get("cost"),
                 },
                 source=CLOUD_RUNTIME,
+                turso_session_id=turso_session_id,
+            )
+            await _finalize_subagent_task(
+                project_id, task_id, result, mode=resolved_mode,
             )
         return result
     except asyncio.TimeoutError:
@@ -3530,16 +4107,26 @@ async def _run_subagent(
             "mode": resolved_mode,
             "timeout_s": timeout_s,
         }
-        if task_id:
+        if task_id and background:
             _store_subagent_result(f"{project_id}:{task_id}", {**payload, "task_id": task_id})
             await record_agent_event(
                 project_id,
                 "subagent_failed",
                 role="system",
-                title="Background subagent timed out",
+                title="Subagent timed out",
                 detail=payload["message"],
-                payload={"task_id": task_id, "mode": resolved_mode, "error": "subagent_timeout"},
+                payload={
+                    "request_id": parent_request_id,
+                    "agent": "subagent",
+                    "task_id": task_id,
+                    "mode": resolved_mode,
+                    "error": "subagent_timeout",
+                },
                 source=CLOUD_RUNTIME,
+                turso_session_id=turso_session_id,
+            )
+            await _finalize_subagent_task(
+                project_id, task_id, payload, mode=resolved_mode,
             )
         return payload
     except asyncio.CancelledError:
@@ -3551,9 +4138,15 @@ async def _run_subagent(
             "task": task,
             "mode": resolved_mode,
         }
-        if task_id:
+        if task_id and background:
             _store_subagent_result(f"{project_id}:{task_id}", {**payload, "task_id": task_id})
+            await _finalize_subagent_task(
+                project_id, task_id, payload, mode=resolved_mode,
+            )
         return payload
+    finally:
+        if task_id:
+            _release_subagent_files(project_id, task_id)
 
 
 async def _run_subagent_loop(
@@ -3564,12 +4157,81 @@ async def _run_subagent_loop(
     mode: str = "research",
     task_id: str | None = None,
     parent_request_id: str | None = None,
+    subagent_ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     research = mode == "research"
     max_steps = MAX_SUBAGENT_RESEARCH_STEPS if research else MAX_SUBAGENT_STEPS
     tools = SUBAGENT_RESEARCH_TOOLS if research else SUBAGENT_TOOLS
     # Keep subagent tool dumps tight for speed/cost.
     tool_chars = min(_model_tool_result_chars(model), 6_000 if research else 8_000)
+    scope = subagent_ctx or {}
+    scope_files = list(scope.get("files") or [])
+    turso_session_id = scope.get("turso_session_id")
+    session_number = int(scope.get("session_number") or 0)
+    activity_count = 0
+
+    async def _emit_subagent(
+        event_type: str,
+        *,
+        role: str = "system",
+        title: str = "",
+        detail: str = "",
+        base: dict[str, Any] | None = None,
+        tool: str = "",
+    ) -> None:
+        """Record one subagent activity line (subagent chat tab + Turso)."""
+        nonlocal activity_count
+        if not task_id:
+            return
+        activity_count += 1
+        payload = {
+            "request_id": parent_request_id,
+            "session": session_number,
+            "agent": "subagent",
+            "task_id": task_id,
+            "subagent_mode": mode,
+            "subagent_task": task[:240],
+            **(base or {}),
+        }
+        try:
+            await record_agent_event(
+                project_id,
+                event_type,
+                role=role,
+                title=title,
+                detail=detail,
+                payload=payload,
+                source=CLOUD_RUNTIME,
+                turso_session_id=turso_session_id,
+                agent="subagent",
+                subagent_task_id=task_id,
+            )
+        except Exception:
+            logger.debug("subagent activity event failed", exc_info=True)
+        try:
+            from syte.turso_store import record_subagent_activity
+
+            await record_subagent_activity(
+                task_id,
+                project_id,
+                event_type,
+                session_id=turso_session_id,
+                parent_request_id=parent_request_id or "",
+                tool=tool,
+                title=title,
+                detail=detail,
+                payload=payload,
+            )
+        except Exception:
+            logger.debug("subagent activity mirror failed", exc_info=True)
+
+    file_scope_line = (
+        "You own exactly these files and must not create or edit any other file: "
+        + ", ".join(scope_files)
+        + ". "
+        if scope_files
+        else ""
+    )
     mode_line = (
         "Mode: research (read-only). Do not attempt writes, deletes, shell mutations, or service control."
         if research
@@ -3581,7 +4243,7 @@ async def _run_subagent_loop(
         "You are a focused Syte subagent sharing the parent's project workspace. Complete only the "
         "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
         "update, or build the production service. Prefer the isolated preview for visual checks. "
-        f"{mode_line} "
+        f"{mode_line} {file_scope_line}"
         "Return concise findings, changes, and verification for the parent agent.\n\n"
         f"Application source: {workspace_path(project_id) / 'app'}"
     )
@@ -3612,8 +4274,31 @@ async def _run_subagent_loop(
         if stored_calls:
             next_assistant["tool_calls"] = stored_calls
         messages.append(next_assistant)
+        # Subagent reasoning, annotated with where in its loop it was thinking.
+        reasoning = str(assistant.get("reasoning_content") or "").strip()
+        if reasoning:
+            await _emit_subagent(
+                "thinking",
+                role="assistant",
+                title="Thinking",
+                detail=reasoning[:4000],
+                base=_thinking_context(
+                    step=step + 1,
+                    phase="before_tools" if stored_calls else "final_answer",
+                    calls=stored_calls,
+                    scope_files=scope_files,
+                ),
+            )
         if not stored_calls:
             cost_info = _estimate_turn_cost(model, usage_acc)
+            if content.strip():
+                await _emit_subagent(
+                    "assistant_message",
+                    role="assistant",
+                    title="Subagent result",
+                    detail=content.strip()[:4000],
+                    base={"steps": step + 1, "usage": usage_acc, "cost": cost_info},
+                )
             return {
                 "ok": True,
                 "task": task,
@@ -3625,6 +4310,8 @@ async def _run_subagent_loop(
                 "profile": model.get("profile"),
                 "parent_request_id": parent_request_id,
                 "task_id": task_id,
+                "activity_count": activity_count,
+                "files": scope_files,
             }
         for call in stored_calls:
             _raise_if_cancelled()
@@ -3636,6 +4323,13 @@ async def _run_subagent_loop(
                     args = {}
             except json.JSONDecodeError:
                 args = {}
+            await _emit_subagent(
+                "tool_call_started",
+                title=name,
+                detail=json.dumps(args)[:1000],
+                base={"tool": name, "arguments": args, "phase": "started", "step": step + 1},
+                tool=name,
+            )
             if research and name in _SUBAGENT_MUTATING_TOOLS:
                 result = {
                     "ok": False,
@@ -3644,6 +4338,23 @@ async def _run_subagent_loop(
                         f"Tool {name} is blocked in research mode. "
                         "Re-delegate with mode=implementation if edits are required."
                     ),
+                }
+            elif (
+                scope_files
+                and name in {"write_file", "delete_file"}
+                and _normalize_scope_path(args.get("path")) not in scope_files
+            ):
+                # Hard scope: a subagent may only touch the files the parent reserved
+                # for it, so parallel subagents can never collide on one file.
+                result = {
+                    "ok": False,
+                    "error": "outside_file_scope",
+                    "message": (
+                        f"{args.get('path')} is outside your delegated file scope "
+                        f"({', '.join(scope_files)}). Report the needed change back to the "
+                        "parent agent instead of editing it."
+                    ),
+                    "files": scope_files,
                 }
             else:
                 try:
@@ -3655,8 +4366,12 @@ async def _run_subagent_loop(
                         context={
                             "max_tool_result_chars": tool_chars,
                             "request_id": parent_request_id,
+                            "session_number": session_number,
+                            "turso_session_id": turso_session_id,
                             "subagent": True,
                             "subagent_mode": mode,
+                            "subagent_task_id": task_id,
+                            "subagent_files": scope_files,
                         },
                     )
                 except asyncio.CancelledError:
@@ -3679,10 +4394,25 @@ async def _run_subagent_loop(
                         "message": str(exc) or type(exc).__name__,
                     }
             public = {k: v for k, v in result.items() if not str(k).startswith("_")}
+            encoded = _truncate_tool_payload(public, max_chars=tool_chars)
+            await _emit_subagent(
+                "tool_call_finished",
+                title=name,
+                detail=encoded[:4000],
+                base={
+                    "tool": name,
+                    "ok": bool(result.get("ok")),
+                    "phase": "finished",
+                    "step": step + 1,
+                    "path": args.get("path"),
+                    "command": args.get("command"),
+                },
+                tool=name,
+            )
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(call.get("id") or f"subagent-{step}"),
-                "content": _truncate_tool_payload(public, max_chars=tool_chars),
+                "content": encoded,
             })
     cost_info = _estimate_turn_cost(model, usage_acc)
     return {
@@ -3696,6 +4426,8 @@ async def _run_subagent_loop(
         "cost": cost_info,
         "profile": model.get("profile"),
         "task_id": task_id,
+        "activity_count": activity_count,
+        "files": scope_files,
     }
 
 
@@ -3874,6 +4606,28 @@ async def _communicate_with_agent_impl(
             "mark_kind": kind,
         })
         return payload
+
+    # Durable per-request row: the request text + its timestamp are stored now;
+    # activity volume and cost are written back when generation finishes.
+    turn_started_at = _now()
+    try:
+        from syte.turso_store import record_request as record_turso_request
+
+        await record_turso_request(
+            request_id,
+            project_id,
+            message,
+            session_id=turso_session_id,
+            session_number=int(session_number or 0),
+            source=source,
+            model_profile=str(model.get("profile") or ""),
+            model=str(model.get("model") or ""),
+            provider=str(model.get("provider") or ""),
+            thinking_level=gen.get("thinking_level"),
+            timestamp=turn_started_at,
+        )
+    except Exception:
+        logger.debug("failed to persist request row %s", request_id, exc_info=True)
 
     if emit_request_started:
         await record_agent_event(
@@ -4057,7 +4811,11 @@ async def _communicate_with_agent_impl(
                     payload=_mark_payload(
                         status="d",
                         kind="plan",
-                        base={"plan_id": (plan_row or {}).get("id"), "steps": plan_steps},
+                        base={
+                            "plan_id": (plan_row or {}).get("id"),
+                            "steps": plan_steps,
+                            **_thinking_context(step=0, phase="site_plan"),
+                        },
                     ),
                     source=source,
                     turso_session_id=turso_session_id,
@@ -4280,7 +5038,15 @@ async def _communicate_with_agent_impl(
                     payload=_mark_payload(
                         status="g",
                         kind="plan",
-                        base={"plan_id": (plan_row or {}).get("id")},
+                        base={
+                            "plan_id": (plan_row or {}).get("id"),
+                            # Where this thought happened (step + what it was about).
+                            **_thinking_context(
+                                step=step + 1,
+                                phase="before_tools",
+                                calls=stored_calls,
+                            ),
+                        },
                     ),
                     source=source,
                     turso_session_id=turso_session_id,
@@ -4367,6 +5133,17 @@ async def _communicate_with_agent_impl(
                     ),
                     source=source,
                     turso_session_id=turso_session_id,
+                )
+                # Cost is only known now that generation finished — close the
+                # durable request row with usage, activity volume and USD cost.
+                await _finalize_request_row(
+                    project_id,
+                    request_id,
+                    status="completed",
+                    reply=reply,
+                    usage=turn_usage,
+                    cost=cost_info,
+                    subagent_count=int(tool_context.get("_subagent_count") or 0),
                 )
                 if cost_info.get("cost_usd") is not None or turn_usage.get("total_tokens"):
                     await record_agent_event(
@@ -4570,7 +5347,11 @@ async def _communicate_with_agent_impl(
                         payload=_mark_payload(
                             status="d",
                             kind="plan",
-                            base={"plan_id": result.get("plan_id"), "steps": plan_steps},
+                            base={
+                                "plan_id": result.get("plan_id"),
+                                "steps": plan_steps,
+                                **_thinking_context(step=step + 1, phase="planning"),
+                            },
                         ),
                         source=source,
                         turso_session_id=turso_session_id,
@@ -4730,6 +5511,15 @@ async def _communicate_with_agent_impl(
             source=source,
             turso_session_id=turso_session_id,
         )
+        await _finalize_request_row(
+            project_id,
+            request_id,
+            status="cancelled",
+            error="cancelled",
+            usage=turn_usage,
+            cost=_estimate_turn_cost(model, turn_usage),
+            subagent_count=int(tool_context.get("_subagent_count") or 0),
+        )
         if opened_turso_session:
             await close_turso_session(turso_session_id, status="cancelled")
         raise
@@ -4756,6 +5546,15 @@ async def _communicate_with_agent_impl(
             ),
             source=source,
             turso_session_id=turso_session_id,
+        )
+        await _finalize_request_row(
+            project_id,
+            request_id,
+            status="failed",
+            error=error,
+            usage=turn_usage,
+            cost=_estimate_turn_cost(model, turn_usage),
+            subagent_count=int(tool_context.get("_subagent_count") or 0),
         )
         if opened_turso_session:
             await close_turso_session(turso_session_id, status="failed")

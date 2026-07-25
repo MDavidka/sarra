@@ -74,10 +74,45 @@ ACTIVITY_EVENT_TYPES = frozenset({
     "subagent_started",
     "subagent_completed",
     "subagent_failed",
+    # File scope a subagent is allowed to touch, published by the main agent
+    # *before* it delegates so two agents never edit the same file.
+    "subagent_scope",
 })
+
+# Chat lanes. Every event carries ``payload.agent``: the GUI renders "main"
+# events in the Main tab and "subagent" events in the subagent tab, so the two
+# feeds never interleave.
+AGENT_LANE_MAIN = "main"
+AGENT_LANE_SUBAGENT = "subagent"
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
 _hot_event_counts: dict[str, int] = defaultdict(int)
+# Non-stream activity lines per request id — persisted as
+# ``agent_request.activity_count`` when the turn finishes.
+_request_activity_counts: dict[str, int] = {}
+_MAX_TRACKED_REQUESTS = 256
+
+
+def _bump_request_activity(payload: Any, event_type: str) -> None:
+    if event_type in HOT_STREAM_EVENT_TYPES or not isinstance(payload, dict):
+        return
+    request_id = str(payload.get("request_id") or "").strip()
+    if not request_id:
+        return
+    _request_activity_counts[request_id] = _request_activity_counts.get(request_id, 0) + 1
+    overflow = len(_request_activity_counts) - _MAX_TRACKED_REQUESTS
+    if overflow > 0:
+        for stale in list(_request_activity_counts.keys())[:overflow]:
+            _request_activity_counts.pop(stale, None)
+
+
+def activity_count_for_request(request_id: str) -> int:
+    """Return how many non-stream activity events a request produced."""
+    return int(_request_activity_counts.get(str(request_id or ""), 0))
+
+
+def clear_activity_count_for_request(request_id: str) -> None:
+    _request_activity_counts.pop(str(request_id or ""), None)
 
 
 def _now() -> str:
@@ -200,6 +235,8 @@ async def record_agent_event(
     payload: dict[str, Any] | None = None,
     source: str = "agent",
     turso_session_id: str | None = None,
+    agent: str = AGENT_LANE_MAIN,
+    subagent_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Persist an activity event locally and optionally mirror it to Turso.
 
@@ -215,6 +252,17 @@ async def record_agent_event(
     clean_payload = _sanitize_event_payload(payload or {})
     if not isinstance(clean_payload, dict):
         clean_payload = payload or {}
+    # Stamp the chat lane so clients can split main vs subagent feeds. An
+    # explicit payload["agent"] (already set by a caller) always wins.
+    lane = AGENT_LANE_SUBAGENT if subagent_task_id and agent == AGENT_LANE_MAIN else agent
+    if isinstance(clean_payload, dict):
+        clean_payload = {
+            "agent": clean_payload.get("agent") or lane or AGENT_LANE_MAIN,
+            **clean_payload,
+        }
+        if subagent_task_id and not clean_payload.get("subagent_task_id"):
+            clean_payload["subagent_task_id"] = subagent_task_id
+    _bump_request_activity(clean_payload, event_type)
     payload_json = json.dumps(clean_payload, ensure_ascii=False)
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
