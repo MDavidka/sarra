@@ -2673,11 +2673,11 @@ async def _provider_completion(
                     "(Token Plan console), or a standard Model Studio sk- key "
                     "for DashScope pay-as-you-go. OpenRouter keys (sk-or-…) no longer work for syra-ultra."
                 )
-            elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
+            elif "aiplatform.googleapis.com" in api_base or "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
                 hint = (
-                    " Use a Google AI Studio Gemini key from https://aistudio.google.com/apikey "
-                    "(AQ.… Auth key). Restrict Cloud Console keys to Generative Language API only — "
-                    "unrestricted / Vertex-only keys get API_KEY_SERVICE_BLOCKED."
+                    " Use a Google Cloud Vertex AI Express Mode API key "
+                    "(Cloud Console → Credentials). Syte calls "
+                    "aiplatform.googleapis.com/v1/publishers/google/models/…:generateContent."
                 )
             source_bits = [f"source={key_source}"]
             if secret_env:
@@ -2716,8 +2716,8 @@ async def _provider_completion(
     for attempt in range(3):
         try:
             if use_native_gemini:
-                # AQ.… Auth keys fail on OpenAI-compat Bearer auth; use native REST.
-                # Streaming is not implemented on this path yet — return the full message.
+                # Vertex Express Mode API keys use native generateContent (?key=),
+                # not OpenAI-compat Bearer auth.
                 message = await native_generate_content(
                     client=client,
                     api_key=str(model["api_key"]),

@@ -24,7 +24,7 @@ def test_build_model_thinking_params_applies_temperature_top_p() -> None:
         cfg,
         provider="openai",
         model="gemini-3.6-flash",
-        api_base="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_base="https://aiplatform.googleapis.com/v1",
     )
     assert params["temperature"] == 0.3
     assert params["top_p"] == 0.98

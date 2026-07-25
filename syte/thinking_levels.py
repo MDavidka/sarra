@@ -172,7 +172,11 @@ def model_supports_native_thinking(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
-    is_gemini = "gemini" in model_l or "generativelanguage.googleapis.com" in api_l
+    is_gemini = (
+        "gemini" in model_l
+        or "generativelanguage.googleapis.com" in api_l
+        or "aiplatform.googleapis.com" in api_l
+    )
     is_qwen = "qwen" in model_l
     return bool(
         is_deepseek
@@ -225,7 +229,11 @@ def build_model_thinking_params(
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
     is_openrouter = "openrouter.ai" in api_l
-    is_gemini = "gemini" in model_l or "generativelanguage.googleapis.com" in api_l
+    is_gemini = (
+        "gemini" in model_l
+        or "generativelanguage.googleapis.com" in api_l
+        or "aiplatform.googleapis.com" in api_l
+    )
 
     # DeepSeek prefix cache is safe even without thinking mode.
     if is_deepseek:
