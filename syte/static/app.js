@@ -733,11 +733,11 @@ async function submitDebugChatQuestionAnswer(questionId, answer, formEl) {
   controls?.forEach((el) => { el.disabled = true; });
   try {
     const res = await api(
-      `/api/projects/${encodeURIComponent(activeServiceId)}/agent/questions/${encodeURIComponent(questionId)}/answer`,
+      `/projects/${encodeURIComponent(activeServiceId)}/agent/questions/${encodeURIComponent(questionId)}/answer`,
       { method: 'POST', body: JSON.stringify({ answer }) },
     );
-    if (!res.ok) {
-      toast(res.message || 'Failed to send answer', 'error');
+    if (res && res.ok === false) {
+      toast(res.message || 'Failed to send answer');
       controls?.forEach((el) => { el.disabled = false; });
       return;
     }
@@ -745,7 +745,7 @@ async function submitDebugChatQuestionAnswer(questionId, answer, formEl) {
     if (status) status.textContent = 'Answer sent';
     setDebugChatActivity('Working…', 'Continuing with your answer');
   } catch (err) {
-    toast(String(err), 'error');
+    toast(normalizeFetchError(err?.message || String(err)));
     controls?.forEach((el) => { el.disabled = false; });
   }
 }
