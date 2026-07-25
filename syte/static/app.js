@@ -649,7 +649,18 @@ function finalizeAllDebugChatStreams() {
 
 function debugChatErrorPresentation(event) {
   const code = event?.payload?.error || '';
+  const errorType = event?.payload?.error_type || '';
+  const retryAfter = Number(event?.payload?.retry_after_s);
   const fallback = event?.detail || event?.payload?.message || 'The request could not be completed.';
+  if (errorType === 'rate_limited' || code === 'rate_limited') {
+    const waitHint = Number.isFinite(retryAfter) && retryAfter > 0
+      ? ` Wait about ${Math.max(1, Math.ceil(retryAfter))}s, then retry.`
+      : ' Wait a moment, then retry.';
+    return {
+      title: 'Rate limited',
+      detail: `${fallback}${waitHint}`,
+    };
+  }
   const known = {
     api_key_missing: {
       title: 'Connect an AI provider',

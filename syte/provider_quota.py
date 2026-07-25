@@ -7,18 +7,22 @@ immediately (or in a tight loop) makes the situation worse, so Syte:
 1. paces outbound requests per model (requests/minute + max concurrency),
 2. parks a model for a cooldown window after a 429 — honoring ``Retry-After``
    or ``google.rpc.RetryInfo.retryDelay`` when Google sends one,
-3. rotates to a same-provider fallback model while the primary is parked.
+3. rotates to a same-provider fallback model while the primary is parked,
+4. retries with truncated exponential backoff + full jitter (Google guidance).
 
 Cooldowns are process-local and best-effort: they reduce wasted round-trips,
 they are not a hard guarantee.
 
-Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429
+References:
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deploy/error-code-429
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/retry-strategy
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import random
 import re
 import time
 from collections.abc import AsyncIterator, Mapping
@@ -32,8 +36,11 @@ MAX_QUOTA_COOLDOWN_S = 300.0
 # A single acquire() never blocks a turn longer than this waiting on cooldown —
 # the caller's retry loop prefers rotating to a fallback model instead.
 MAX_COOLDOWN_WAIT_S = 15.0
+# Truncated exponential backoff defaults (Google Gen AI SDK HttpRetryOptions).
+INITIAL_RETRY_DELAY_S = 1.0
+RETRY_EXP_BASE = 2.0
 # Upper bound for a single retry sleep in the caller's backoff loop.
-MAX_RETRY_SLEEP_S = 45.0
+MAX_RETRY_SLEEP_S = 60.0
 
 _DEFAULT_MAX_CONCURRENCY = 8
 
@@ -181,11 +188,20 @@ def next_available_model(model: str) -> str | None:
 
 
 def retry_delay(attempt: int, *, retry_after: float | None = None) -> float:
-    """Backoff for retry ``attempt`` (0-based), preferring the server's hint."""
+    """Truncated exponential backoff with full jitter for retry ``attempt`` (0-based).
+
+    Matches Google's Gemini Enterprise Agent Platform guidance / Gen AI SDK
+    defaults (``initial_delay=1``, ``exp_base=2``, ``max_delay=60``, full
+    jitter): pick a uniform wait in ``[0, min(max_delay, initial * base^n)]``.
+    When the server sends ``Retry-After`` / ``RetryInfo``, prefer that window
+    with mild jitter so synchronized clients do not stampede.
+    """
     if retry_after is not None and retry_after > 0:
-        return min(float(retry_after), MAX_RETRY_SLEEP_S)
-    # Deterministic exponential backoff; jitter is added by the caller.
-    return min(2.0 * (2**max(0, attempt)), MAX_RETRY_SLEEP_S)
+        hinted = min(float(retry_after), MAX_RETRY_SLEEP_S)
+        return max(0.1, random.uniform(hinted * 0.5, hinted))
+    n = max(0, int(attempt))
+    delay_cap = min(INITIAL_RETRY_DELAY_S * (RETRY_EXP_BASE**n), MAX_RETRY_SLEEP_S)
+    return max(0.1, random.uniform(0.0, delay_cap))
 
 
 async def acquire(model: str) -> None:

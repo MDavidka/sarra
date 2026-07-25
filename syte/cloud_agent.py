@@ -14,7 +14,6 @@ import itertools
 import json
 import logging
 import os
-import random
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -2878,7 +2877,7 @@ async def _provider_completion(
         bits.append(
             "Retry in a moment, switch model profile, or raise the provider quota "
             "(Vertex AI: Google Cloud Console → IAM & Admin → Quotas → aiplatform.googleapis.com; "
-            "https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429)."
+            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deploy/error-code-429)."
         )
         return " ".join(bits)
 
@@ -2908,9 +2907,11 @@ async def _provider_completion(
         rotated = provider_quota.next_available_model(model_id)
         if rotated and rotated not in models_tried:
             models_tried.append(rotated)
+            # Brief pause before the sibling model — full backoff is reserved
+            # for same-model retries (truncated exponential + jitter).
             return "rotate", rotated, 0.25
         delay = provider_quota.retry_delay(attempt, retry_after=retry_after)
-        return "retry", model_id, delay + random.uniform(0, 0.4)
+        return "retry", model_id, delay
 
     for attempt in range(PROVIDER_MAX_ATTEMPTS):
         if pending_delay > 0:
@@ -2918,7 +2919,11 @@ async def _provider_completion(
             pending_delay = 0.0
         payload["model"] = active_model
         # Pace outbound calls per model so bursts do not trip provider quota.
-        await provider_quota.acquire(active_model)
+        # Capture the model we acquired — active_model may rotate mid-attempt,
+        # and releasing the wrong semaphore permanently leaks concurrency slots
+        # (which then looks like more 429s under load).
+        slot_model = active_model
+        await provider_quota.acquire(slot_model)
         try:
             if use_native_gemini:
                 # Vertex Express Mode API keys use native generateContent (?key=),
@@ -2953,7 +2958,7 @@ async def _provider_completion(
                     ):
                         pending_delay = provider_quota.retry_delay(
                             attempt, retry_after=exc.retry_after
-                        ) + random.uniform(0, 0.4)
+                        )
                         continue
                     break
                 if on_token and message.get("content"):
@@ -2986,7 +2991,7 @@ async def _provider_completion(
                     if _is_retryable_provider_status(response.status_code, peek) and attempt < last_attempt:
                         if not peek:
                             await response.aread()
-                        pending_delay = provider_quota.retry_delay(attempt) + random.uniform(0, 0.4)
+                        pending_delay = provider_quota.retry_delay(attempt)
                         continue
                     if response.status_code >= 400:
                         detail = peek or (await response.aread()).decode(errors="replace").strip()[:800]
@@ -3024,7 +3029,7 @@ async def _provider_completion(
                 pending_delay = delay
                 continue
             if _is_retryable_provider_status(response.status_code, detail) and attempt < last_attempt:
-                pending_delay = provider_quota.retry_delay(attempt) + random.uniform(0, 0.4)
+                pending_delay = provider_quota.retry_delay(attempt)
                 continue
             if response.status_code >= 400:
                 raise RuntimeError(
@@ -3073,7 +3078,7 @@ async def _provider_completion(
                 continue
             break
         finally:
-            provider_quota.release(active_model)
+            provider_quota.release(slot_model)
 
     if quota_exhausted:
         # Quota is transient: keep the circuit closed so the next turn can try
@@ -3089,7 +3094,8 @@ async def _provider_completion(
                 "models_tried": [base_model_id, *models_tried],
                 "retry_after_s": round(quota_cooldown_s, 1),
                 "help_url": (
-                    "https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429"
+                    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/"
+                    "models/deploy/error-code-429"
                 ),
             },
         )
