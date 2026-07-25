@@ -4034,11 +4034,17 @@ startStatsPoll();
 refreshIcons();
 
 // Surface real errors instead of the blank cross-origin "Script error." toast/dialog.
+// Same-origin lucide is vendored under /static/vendor/; remaining CDN risk is Shoelace.
 window.addEventListener('error', (event) => {
   const msg = String(event?.message || event?.error?.message || '');
   if (!msg) return;
   if (/^script error\.?$/i.test(msg.trim())) {
-    console.error('[Syte] Cross-origin script error (often CDN/lucide). Details are masked by the browser.', event);
+    const src = String(event?.filename || event?.target?.src || '');
+    console.error(
+      '[Syte] Cross-origin script error (CDN). Details are masked by the browser.',
+      src ? `src=${src}` : '(no filename)',
+      event,
+    );
   }
 });
 window.addEventListener('unhandledrejection', (event) => {
