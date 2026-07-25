@@ -286,6 +286,77 @@ async def test_one_bad_schema_statement_does_not_disable_all_turso_writes(
 
 
 @pytest.mark.asyncio
+async def test_alter_ended_at_duplicate_is_not_schema_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ALTER TABLE … ADD COLUMN ended_at must not poison schema_errors.
+
+    Fresh CREATE TABLE already includes ended_at, so the additive migration
+    fails with duplicate-column (or, on remote Turso, sometimes KeyError('result')).
+    That must not surface as ``schema setup had failing statement(s)``.
+    """
+    from syte import turso_store
+
+    db_path = tmp_path / "turso-alter.db"
+
+    async def fake_settings():
+        return f"file:{db_path}", ""
+
+    monkeypatch.setattr(turso_store, "turso_settings", fake_settings)
+    turso_store.reset_client_cache()
+
+    client = await turso_store.get_turso_client()
+    assert client is not None
+
+    debug = await turso_store.turso_debug_status()
+    assert debug["reachable"] is True
+    assert debug["schema_errors"] == ""
+    assert "ended_at" not in (debug["schema_errors"] or "")
+
+    # Simulate the remote Turso KeyError('result') path explicitly.
+    turso_store.reset_client_cache()
+
+    client2 = await turso_store.get_turso_client()
+    assert client2 is not None
+    # Force re-init with a KeyError on the ALTER only.
+    turso_store._schema_ready.clear()
+    turso_store._last_error.clear()
+
+    real_execute = client2.execute
+
+    async def flaky_execute(sql, *args, **kwargs):
+        if isinstance(sql, str) and "ADD COLUMN ended_at" in sql:
+            raise KeyError("result")
+        return await real_execute(sql, *args, **kwargs)
+
+    client2.execute = flaky_execute
+    client3 = await turso_store.get_turso_client()
+    assert client3 is not None
+    debug2 = await turso_store.turso_debug_status()
+    assert debug2["schema_errors"] == ""
+
+    turso_store.reset_client_cache()
+
+
+def test_format_schema_exc_keyerror_is_readable() -> None:
+    from syte.turso_store import _format_schema_exc, _is_benign_schema_failure
+
+    assert "KeyError" in _format_schema_exc(KeyError("result"))
+    assert _is_benign_schema_failure(
+        "ALTER TABLE agent_session ADD COLUMN ended_at TEXT",
+        KeyError("result"),
+    )
+    assert _is_benign_schema_failure(
+        "ALTER TABLE agent_session ADD COLUMN ended_at TEXT",
+        RuntimeError("SQLITE_ERROR: duplicate column name: ended_at"),
+    )
+    assert not _is_benign_schema_failure(
+        "CREATE THIS IS NOT VALID SQL",
+        RuntimeError("syntax error"),
+    )
+
+
+@pytest.mark.asyncio
 async def test_turso_debug_status_reports_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     from syte import turso_store
 
