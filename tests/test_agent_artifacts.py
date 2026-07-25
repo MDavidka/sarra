@@ -204,7 +204,11 @@ async def test_update_plan_tool_persists(tmp_data_dir: Path) -> None:
     assert result["ok"] is True
     assert result["plan_id"]
     plans = await list_plans(project["id"])
-    assert plans[0]["steps"] == ["A", "B"]
+    assert plans[0]["steps"] == ["[main] A", "[main] B"]
+    assert result["assignments"] == [
+        {"text": "A", "assignee": "main"},
+        {"text": "B", "assignee": "main"},
+    ]
 
 
 @pytest.mark.asyncio

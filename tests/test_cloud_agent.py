@@ -666,9 +666,10 @@ async def test_update_plan_tool_returns_structured_plan(tmp_data_dir: Path) -> N
     result = await _execute_tool("plan-proj", "update_plan", {"steps": ["Inspect", "Verify"]})
 
     assert result["ok"] is True
-    assert result["steps"] == ["Inspect", "Verify"]
+    assert result["steps"] == ["[main] Inspect", "[main] Verify"]
     assert result["note"] == ""
     assert result.get("plan_id")
+    assert result["assignments"][0]["assignee"] == "main"
 
 
 @pytest.mark.asyncio

@@ -24,9 +24,11 @@ OpenAI-compatible endpoints:
 - `syra-base`: DeepSeek V4 Flash (default)
 - `syra-havy`: Vertex AI Gemini 3.6 Flash (pro)
 - `syra-ultra`: Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
+- `syra-subagent`: NVIDIA NIM GLM 5.2 (`https://integrate.api.nvidia.com/v1`, model `z-ai/glm-5.2`) — used only for delegated subagent work
 
-Each profile is a full think+build model with its own API key
+Main chat profiles are full think+build models with their own API keys
 (`SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, `SYRA_HAVY_API_KEY`, `SYRA_ULTRA_API_KEY`).
+The subagent key is `SYRA_SUBAGENT_API_KEY` (NVIDIA `nvapi-…` from build.nvidia.com).
 
 Token efficiency: tool/CLI output is filtered before it re-enters context; listings
 honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).
@@ -179,12 +181,12 @@ URL, design tokens, pages/active files, and last agent summary id. Configure
 landing rebuilds / screenshot remakes prefer `syra-havy`. The debug chat Model
 menu defaults to **auto** so this routing applies.
 
-**Subagents:** `delegate_task` runs a bounded secondary loop. Default
-`mode=research` is read-only and routes to a cheaper/faster profile (usually
-`syra-nano`, never above the parent). `mode=implementation` may edit files and
-caps expensive parents at `syra-base`. Background work stores results; the parent
-collects them with `await_subagent`. At most 2 background subagents run per
-project.
+**Subagents:** Multi-step turns must `update_plan` first with per-step assignees
+(`main` = user's chosen model, `subagent` = NVIDIA GLM 5.2 via `delegate_task`).
+`delegate_task` defaults to `mode=research` (read-only) and prefers
+`syra-subagent`, falling back to nano/base when the NVIDIA key is missing.
+Background work stores results; the parent collects them with `await_subagent`.
+At most 2 background subagents run per project.
 
 The system instruction is generated for Syte and includes project access rules,
 enabled skills, workspace location, design contract (for websites), verification

@@ -243,11 +243,12 @@ async def test_subagent_uses_routed_cheaper_model(
     seen: dict[str, Any] = {}
 
     async def fake_meta(profile):
+        key = "nvapi-test" if profile == "syra-subagent" else "other-key"
         return {
             "provider": "x",
             "model": profile,
-            "api_base": "",
-            "api_key": "nano-key",
+            "api_base": "https://integrate.api.nvidia.com/v1" if profile == "syra-subagent" else "",
+            "api_key": key,
             "profile": profile,
         }
 
@@ -266,9 +267,32 @@ async def test_subagent_uses_routed_cheaper_model(
         model=parent,
     )
     assert result["ok"] is True
-    assert seen["model"]["profile"] == "syra-nano"
+    assert seen["model"]["profile"] == "syra-subagent"
     assert seen["mode"] == "research"
-    assert result["profile"] == "syra-nano"
+    assert result["profile"] == "syra-subagent"
+
+
+@pytest.mark.asyncio
+async def test_update_plan_assigns_main_and_subagent(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.cloud_agent import _tool_update_plan
+
+    project = await _project("plan-assign")
+    result = await _tool_update_plan(
+        project["id"],
+        {
+            "steps": ["Find navbar component", "Rewrite hero copy"],
+            "assignees": ["subagent", "main"],
+            "note": "split work",
+        },
+        {"request_id": "req-plan", "session_number": 1},
+    )
+    assert result["ok"] is True
+    assert result["assignments"][0]["assignee"] == "subagent"
+    assert result["assignments"][1]["assignee"] == "main"
+    assert result["steps"][0].startswith("[subagent]")
+    assert "delegate_task" in result["guidance"]
 
 
 @pytest.mark.asyncio
