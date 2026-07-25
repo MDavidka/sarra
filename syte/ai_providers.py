@@ -43,15 +43,19 @@ THINKER_MODEL = ULTRA_MODEL
 # ---------------------------------------------------------------------------
 # Quota guidance (HTTP 429 RESOURCE_EXHAUSTED avoidance)
 #
-# Vertex AI Express Mode shares a small per-project quota, so Syte paces
-# outbound requests client-side instead of discovering the ceiling with 429s.
-# Values are deliberately conservative; override globally with the
-# ``SYRA_QUOTA_RPM`` / ``SYRA_QUOTA_CONCURRENCY`` environment variables.
-# https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429
+# Vertex AI Express Mode / pay-as-you-go shares capacity, so Syte:
+# - uses the global endpoint (aiplatform.googleapis.com — not regional)
+# - paces outbound requests client-side (rpm + concurrency)
+# - retries with truncated exponential backoff + full jitter
+# Values are deliberately conservative; override globally with
+# ``SYRA_QUOTA_RPM`` / ``SYRA_QUOTA_CONCURRENCY``.
+# https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deploy/error-code-429
 # ---------------------------------------------------------------------------
 MODEL_RATE_LIMITS: dict[str, dict[str, int]] = {
-    NANO_MODEL: {"requests_per_minute": 55, "max_concurrency": 3},
-    PRO_MODEL: {"requests_per_minute": 25, "max_concurrency": 2},
+    # Slightly below typical Express shared ceilings so bursts smooth out
+    # instead of discovering the limit via 429 RESOURCE_EXHAUSTED.
+    NANO_MODEL: {"requests_per_minute": 40, "max_concurrency": 2},
+    PRO_MODEL: {"requests_per_minute": 15, "max_concurrency": 1},
 }
 
 # Swap targets used while a model is quota-parked. Both Vertex models accept the

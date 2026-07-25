@@ -595,7 +595,9 @@ def explain_google_api_error(detail: str | None, *, status_code: int | None = No
             "aiplatform.googleapis.com and request more online-prediction requests per minute, "
             "or move the project off Express Mode's shared quota. Lower concurrency with "
             "SYRA_QUOTA_CONCURRENCY / SYRA_QUOTA_RPM if bursts keep tripping it. "
-            "Details: https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429"
+            "Prefer the global Vertex endpoint (aiplatform.googleapis.com) and truncated "
+            "exponential backoff — see "
+            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deploy/error-code-429"
         )
     if "api keys are not supported" in lower or "credentials_missing" in lower:
         return (
