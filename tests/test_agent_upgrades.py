@@ -94,6 +94,37 @@ def test_circuit_breaker_opens_after_failures() -> None:
     with pytest.raises(ProviderError) as exc:
         check_circuit_breaker("openai", "deepseek-chat")
     assert exc.value.error_type == "circuit_open"
+    assert "cool-down" in exc.value.message or "re-save" in exc.value.message
+    reset_circuit_breaker()
+
+
+def test_circuit_breaker_ignores_permanent_auth_errors() -> None:
+    from syte.agent_errors import (
+        check_circuit_breaker,
+        is_permanent_provider_failure,
+        record_circuit_failure,
+        reset_circuit_breaker,
+        reset_profile_circuit_breakers,
+    )
+
+    assert is_permanent_provider_failure("API_KEY_SERVICE_BLOCKED")
+    assert is_permanent_provider_failure("Permission_Denied are blocked")
+    reset_circuit_breaker()
+    for _ in range(5):
+        recorded = record_circuit_failure(
+            "openai",
+            "gemini-3.1-flash-lite",
+            error='{"reason":"API_KEY_SERVICE_BLOCKED"}',
+        )
+        assert recorded is False
+    # Permanent failures must not open the breaker.
+    check_circuit_breaker("openai", "gemini-3.1-flash-lite")
+
+    for _ in range(3):
+        assert record_circuit_failure("openai", "gemini-3.1-flash-lite", error="timeout") is True
+    cleared = reset_profile_circuit_breakers("syra-nano")
+    assert "openai:gemini-3.1-flash-lite" in cleared
+    check_circuit_breaker("openai", "gemini-3.1-flash-lite")
     reset_circuit_breaker()
 
 

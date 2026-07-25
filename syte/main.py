@@ -440,6 +440,9 @@ async def save_settings(body: SettingsRequest):
         messages.append(f"Default Syte cloud model profile: {profile}")
     if body.agent_syra_nano_api_key is not None:
         await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
+        from syte.agent_errors import reset_profile_circuit_breakers
+
+        reset_profile_circuit_breakers("syra-nano")
         messages.append(
             "syra-nano (Vertex AI · gemini-3.1-flash-lite) API key saved."
             if body.agent_syra_nano_api_key.strip()
@@ -447,6 +450,9 @@ async def save_settings(body: SettingsRequest):
         )
     if body.agent_syra_base_api_key is not None:
         await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
+        from syte.agent_errors import reset_profile_circuit_breakers
+
+        reset_profile_circuit_breakers("syra-base")
         messages.append(
             "syra-base (DeepSeek · deepseek-v4-flash) API key saved."
             if body.agent_syra_base_api_key.strip()
@@ -454,6 +460,9 @@ async def save_settings(body: SettingsRequest):
         )
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
+        from syte.agent_errors import reset_profile_circuit_breakers
+
+        reset_profile_circuit_breakers("syra-havy")
         messages.append(
             "syra-havy / pro (Vertex AI · gemini-3.6-flash) API key saved."
             if body.agent_syra_havy_api_key.strip()
@@ -468,6 +477,9 @@ async def save_settings(body: SettingsRequest):
                 "Paste an Aliyun Token Plan key (sk-sp-…) or a Model Studio sk- key.",
             )
         await set_setting("agent_syra_ultra_api_key", ultra_key)
+        from syte.agent_errors import reset_profile_circuit_breakers
+
+        reset_profile_circuit_breakers("syra-ultra")
         messages.append(
             "syra-ultra (Aliyun · qwen3.7-plus) API key saved."
             if ultra_key
