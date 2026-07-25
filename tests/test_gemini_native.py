@@ -111,3 +111,26 @@ def test_sanitize_strips_additional_properties_from_tools() -> None:
     assert "additionalProperties" not in cleaned["properties"]["env_vars"]
     assert "default" not in cleaned["properties"]["merge"]
     assert cleaned["properties"]["env_vars"]["type"] == "object"
+
+
+def test_explain_api_key_service_blocked() -> None:
+    from syte.gemini_native import explain_google_api_error, format_google_http_error
+
+    detail = (
+        '{"error":{"code":403,"message":"Requests to this API generativelanguage.googleapis.com '
+        'method google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent are blocked.",'
+        '"status":"PERMISSION_DENIED","details":[{"reason":"API_KEY_SERVICE_BLOCKED"}]}}'
+    )
+    hint = explain_google_api_error(detail, status_code=403)
+    assert "API_KEY_SERVICE_BLOCKED" in hint
+    assert "aistudio.google.com/apikey" in hint
+    assert "Generative Language API" in hint
+
+    formatted = format_google_http_error(
+        status_code=403,
+        reason="Forbidden",
+        url="https://generativelanguage.googleapis.com/v1beta/models/x:generateContent",
+        detail=detail,
+    )
+    assert "403" in formatted
+    assert "aistudio.google.com/apikey" in formatted

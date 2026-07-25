@@ -2637,6 +2637,11 @@ async def _provider_completion(
                 f"Provider has no active upstream keys for {model.get('model') or 'this model'}. "
                 "Check the provider admin console, then retry."
             )
+        from syte.gemini_native import explain_google_api_error
+
+        google_hint = explain_google_api_error(detail, status_code=status_code)
+        if google_hint:
+            return google_hint
         if (
             status_code in {401, 403}
             or "invalid or deactivated api key" in detail_l
@@ -2670,8 +2675,9 @@ async def _provider_completion(
                 )
             elif "generativelanguage.googleapis.com" in api_base or "vertex" in str(label).lower():
                 hint = (
-                    " Use a Google AI Studio Gemini key (AQ.… Auth key from AI Studio, "
-                    "or a legacy AIza… key). AQ. keys are routed via the native Gemini API."
+                    " Use a Google AI Studio Gemini key from https://aistudio.google.com/apikey "
+                    "(AQ.… Auth key). Restrict Cloud Console keys to Generative Language API only — "
+                    "unrestricted / Vertex-only keys get API_KEY_SERVICE_BLOCKED."
                 )
             source_bits = [f"source={key_source}"]
             if secret_env:
@@ -2701,6 +2707,7 @@ async def _provider_completion(
                 "invalid api key",
                 "incorrect api key",
                 "api key you provided is invalid",
+                "api_key_service_blocked",
             )
         ):
             return False

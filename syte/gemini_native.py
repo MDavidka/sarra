@@ -398,8 +398,12 @@ async def native_generate_content(
     if response.status_code >= 400:
         detail = (response.text or "").strip()[:800]
         raise RuntimeError(
-            f"Client error '{response.status_code} {response.reason_phrase}' for url '{url}'"
-            + (f": {detail}" if detail else "")
+            format_google_http_error(
+                status_code=response.status_code,
+                reason=response.reason_phrase,
+                url=url,
+                detail=detail,
+            )
         )
     data = response.json()
     return gemini_response_to_openai_message(data)
@@ -423,3 +427,57 @@ async def native_probe_chat(
         "generationConfig": {"maxOutputTokens": 16, "temperature": 0},
     }
     return await client.post(url, headers=google_auth_headers(api_key), json=body)
+
+
+def explain_google_api_error(detail: str | None, *, status_code: int | None = None) -> str:
+    """Return an actionable hint for common Google Gemini / AI Studio API errors.
+
+    ``API_KEY_SERVICE_BLOCKED`` (HTTP 403) means the key authenticated but is not
+    allowed to call ``generativelanguage.googleapis.com`` — usually because it is
+    unrestricted (blocked since June 2026), restricted to a different API
+    (e.g. Vertex AI only), or created outside AI Studio without Gemini access.
+    """
+    text = detail or ""
+    lower = text.lower()
+    if (
+        "api_key_service_blocked" in lower
+        or "are blocked" in lower and "generativelanguage" in lower
+        or (status_code == 403 and "permission_denied" in lower and "generativelanguage" in lower)
+    ):
+        return (
+            "Google blocked this key for generativelanguage.googleapis.com "
+            "(API_KEY_SERVICE_BLOCKED). Fix one of:\n"
+            "1) Create a new key at https://aistudio.google.com/apikey "
+            "(AI Studio Auth keys are restricted to Gemini by default), or\n"
+            "2) In Google Cloud → APIs & Services → Credentials, edit this key → "
+            "API restrictions → Restrict key → enable only "
+            "\"Generative Language API\" (generativelanguage.googleapis.com). "
+            "Unrestricted keys and Vertex-only keys are rejected. "
+            "Syte's nano/havy profiles use AI Studio / Generative Language, "
+            "not full Vertex aiplatform OAuth."
+        )
+    if status_code == 403 and ("generativelanguage" in lower or "gemini" in lower):
+        return (
+            "Google returned HTTP 403 for Gemini. Prefer a key from "
+            "https://aistudio.google.com/apikey, or restrict your Cloud Console "
+            "key to the Generative Language API only."
+        )
+    return ""
+
+
+def format_google_http_error(
+    *,
+    status_code: int,
+    reason: str,
+    url: str,
+    detail: str,
+) -> str:
+    """Build a user-facing error string, appending Google key-restriction guidance."""
+    base = (
+        f"Client error '{status_code} {reason}' for url '{url}'"
+        + (f": {detail}" if detail else "")
+    )
+    hint = explain_google_api_error(detail, status_code=status_code)
+    if hint:
+        return f"{base}\n\n{hint}"
+    return base

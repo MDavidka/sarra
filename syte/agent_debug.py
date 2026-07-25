@@ -281,10 +281,19 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         and chat_probe
         and chat_probe.get("status_code") == 403
     ):
+        from syte.gemini_native import explain_google_api_error
+
+        blocked = explain_google_api_error(
+            str(chat_probe.get("body_preview") or chat_probe.get("error") or ""),
+            status_code=403,
+        )
         hints.append(
-            "Google returned HTTP 403 — use a Google AI Studio Gemini key (AQ.… Auth key "
-            "or legacy AIza…) with the Generative Language API enabled. "
-            "Unrestricted legacy keys may be blocked."
+            blocked
+            or (
+                "Google returned HTTP 403 — create a key at https://aistudio.google.com/apikey "
+                "or restrict your Cloud Console key to Generative Language API only. "
+                "Unrestricted / Vertex-only keys are blocked (API_KEY_SERVICE_BLOCKED)."
+            )
         )
     if chat_probe and chat_probe.get("status_code") == 404:
         hints.append(f"Model {spec['model']} not found at provider — name may be outdated.")
