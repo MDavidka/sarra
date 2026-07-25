@@ -125,6 +125,69 @@ def _content_to_parts(content: Any) -> list[dict[str, Any]]:
     return parts or [{"text": ""}]
 
 
+# JSON Schema keys Gemini's FunctionDeclaration.parameters Schema rejects.
+_GEMINI_SCHEMA_DROP = frozenset({
+    "additionalProperties",
+    "additional_properties",
+    "$schema",
+    "$id",
+    "$defs",
+    "definitions",
+    "examples",
+    "default",
+    "const",
+    "oneOf",
+    "allOf",
+    "anyOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentRequired",
+    "dependentSchemas",
+    "patternProperties",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+    "prefixItems",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "uniqueItems",
+    "contentEncoding",
+    "contentMediaType",
+})
+
+
+def sanitize_gemini_schema(schema: Any) -> Any:
+    """Strip JSON Schema features Gemini's function-calling Schema rejects.
+
+    OpenAI-style tool parameters often include ``additionalProperties: false``
+    (and nested ``additionalProperties`` maps). Gemini returns HTTP 400
+    ``Unknown name "additionalProperties"`` for those fields.
+    """
+    if isinstance(schema, list):
+        return [sanitize_gemini_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _GEMINI_SCHEMA_DROP:
+            continue
+        if key in {"properties", "defs"} and isinstance(value, dict):
+            out[key] = {
+                str(prop): sanitize_gemini_schema(prop_schema)
+                for prop, prop_schema in value.items()
+            }
+            continue
+        if key == "items":
+            out[key] = sanitize_gemini_schema(value)
+            continue
+        if isinstance(value, (dict, list)):
+            out[key] = sanitize_gemini_schema(value)
+            continue
+        out[key] = value
+    return out
+
+
 def openai_tools_to_gemini(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     if not tools:
         return []
@@ -144,7 +207,12 @@ def openai_tools_to_gemini(tools: list[dict[str, Any]] | None) -> list[dict[str,
         }
         params = fn.get("parameters")
         if isinstance(params, dict):
-            entry["parameters"] = params
+            cleaned = sanitize_gemini_schema(params)
+            if isinstance(cleaned, dict):
+                # Gemini expects an object schema; ensure type is present.
+                if "type" not in cleaned:
+                    cleaned = {**cleaned, "type": "object"}
+                entry["parameters"] = cleaned
         declarations.append(entry)
     if not declarations:
         return []
