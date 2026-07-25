@@ -40,6 +40,39 @@ ULTRA_MODEL = "qwen3.7-plus"
 BUILDER_MODEL = BASE_MODEL
 THINKER_MODEL = ULTRA_MODEL
 
+# ---------------------------------------------------------------------------
+# Quota guidance (HTTP 429 RESOURCE_EXHAUSTED avoidance)
+#
+# Vertex AI Express Mode shares a small per-project quota, so Syte paces
+# outbound requests client-side instead of discovering the ceiling with 429s.
+# Values are deliberately conservative; override globally with the
+# ``SYRA_QUOTA_RPM`` / ``SYRA_QUOTA_CONCURRENCY`` environment variables.
+# https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429
+# ---------------------------------------------------------------------------
+MODEL_RATE_LIMITS: dict[str, dict[str, int]] = {
+    NANO_MODEL: {"requests_per_minute": 55, "max_concurrency": 3},
+    PRO_MODEL: {"requests_per_minute": 25, "max_concurrency": 2},
+}
+
+# Swap targets used while a model is quota-parked. Both Vertex models accept the
+# same Express Mode API key, so only the model id changes — no re-auth needed.
+# Rotation favors availability over price; disable with
+# ``SYRA_QUOTA_MODEL_ROTATION=0``.
+MODEL_FALLBACKS: dict[str, tuple[str, ...]] = {
+    NANO_MODEL: (PRO_MODEL,),
+    PRO_MODEL: (NANO_MODEL,),
+}
+
+
+def model_rate_limit(model: str) -> dict[str, int]:
+    """Client-side pacing limits for a model (empty dict-safe defaults)."""
+    return dict(MODEL_RATE_LIMITS.get((model or "").strip(), {}))
+
+
+def model_fallback_chain(model: str) -> tuple[str, ...]:
+    """Same-provider models to try when ``model`` is quota-exhausted."""
+    return MODEL_FALLBACKS.get((model or "").strip(), ())
+
 
 class ProfileProvider(TypedDict):
     profile: str

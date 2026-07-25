@@ -58,9 +58,12 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 14
+AGENT_INSTRUCTION_VERSION = 15
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
+# Attempts per provider call. Quota (429) retries and same-provider model
+# rotation share this budget, so it is higher than a plain transport retry.
+PROVIDER_MAX_ATTEMPTS = 5
 MAX_SUBAGENT_STEPS = 12
 # Wall-clock cap for an entire subagent loop (LLM rounds + tools). Prevents
 # worker leaks when a single step hangs forever despite the step limit (DAV-202).
@@ -172,6 +175,47 @@ def _raise_if_cancelled() -> None:
     task = asyncio.current_task()
     if task is not None and task.cancelled():
         raise asyncio.CancelledError()
+
+
+_FAILURE_TITLES = {
+    "rate_limited": "Rate limited",
+    "circuit_open": "Provider temporarily unavailable",
+    "provider_error": "Provider error",
+}
+
+
+def _failure_metadata(exc: BaseException) -> dict[str, Any]:
+    """Normalize a turn failure into UI-renderable fields.
+
+    Structured agent errors (``AgentError`` subclasses) carry an error type,
+    a retryable flag, and JSON-safe detail such as ``retry_after_s``. Anything
+    else degrades to a generic non-retryable failure so the UI never has to
+    parse error strings.
+    """
+    from syte.agent_errors import AgentError
+
+    error_type = "cloud_agent_failed"
+    retryable = False
+    detail: dict[str, Any] = {}
+    if isinstance(exc, AgentError):
+        error_type = exc.error_type or error_type
+        retryable = bool(exc.retryable)
+        for key, value in (exc.detail or {}).items():
+            name = str(key)
+            if name in {"ok", "error", "message", "retryable", "error_type"}:
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                detail[name] = value
+            elif isinstance(value, (list, tuple)):
+                detail[name] = [
+                    item for item in value if isinstance(item, (str, int, float, bool))
+                ]
+    return {
+        "error_type": error_type,
+        "retryable": retryable,
+        "detail": detail,
+        "title": _FAILURE_TITLES.get(error_type, "Request failed"),
+    }
 
 
 def _system_message_for_provider(static: str, dynamic: str, model: dict[str, Any]) -> dict[str, Any]:
@@ -901,6 +945,14 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
             "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
             "- Never ship bare unstyled HTML scaffolds\n"
+            "- ONE stack only. Never create files that conflict with the Next.js app: no "
+            "index.html, no public/index.html, no vite.config.*, no src/main.tsx, and no "
+            "<script src=\"https://cdn.tailwindcss.com\"> — Tailwind is compiled from "
+            "app/tailwind.config.ts + app/app/globals.css. Syte quarantines these on deploy\n"
+            "- Keep exactly one page.tsx / layout.tsx / globals.css per route directory; never "
+            "add a duplicate copy at the app/ root beside app/app/\n"
+            "- Radix is used only inside app/components/ui/* wrappers (shadcn primitives); "
+            "application code imports @/components/ui/*\n"
             "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
             "- After UI changes: preview_start → inspect_preview (DevTools load/console) first; "
             "screenshot_preview only when you need visual layout review\n"
@@ -2709,7 +2761,12 @@ async def _provider_completion(
     error = "Provider request failed"
     client = _get_provider_client()
 
-    from syte.gemini_native import native_generate_content, should_use_native_gemini
+    from syte import provider_quota
+    from syte.gemini_native import (
+        GoogleApiError,
+        native_generate_content,
+        should_use_native_gemini,
+    )
 
     use_native_gemini = should_use_native_gemini(
         str(model.get("api_key") or ""),
@@ -2799,27 +2856,112 @@ async def _provider_completion(
             return False
         return True
 
-    for attempt in range(3):
+    # Quota-aware retry state. ``active_model`` may rotate to a same-provider
+    # fallback while the primary model is parked after HTTP 429.
+    base_model_id = str(model.get("model") or "")
+    active_model = base_model_id
+    models_tried: list[str] = []
+    pending_delay = 0.0
+    quota_exhausted = False
+    quota_cooldown_s = 0.0
+    last_attempt = PROVIDER_MAX_ATTEMPTS - 1
+
+    def _quota_message(model_id: str, cooldown: float) -> str:
+        profile = model.get("profile") or "The selected model"
+        bits = [
+            f"{profile} hit the provider quota (HTTP 429 RESOURCE_EXHAUSTED) on {model_id}.",
+            f"Syte paced and retried the request, then parked this model for "
+            f"~{int(max(1, round(cooldown)))}s.",
+        ]
+        if models_tried:
+            bits.append("Fallback models tried: " + ", ".join(models_tried) + ".")
+        bits.append(
+            "Retry in a moment, switch model profile, or raise the provider quota "
+            "(Vertex AI: Google Cloud Console → IAM & Admin → Quotas → aiplatform.googleapis.com; "
+            "https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429)."
+        )
+        return " ".join(bits)
+
+    def _plan_quota_retry(
+        model_id: str, retry_after: float | None, detail: str, attempt: int
+    ) -> tuple[str, str, float]:
+        """Record a 429 and decide the next step.
+
+        Returns ``(action, next_model, delay)`` where action is ``rotate``,
+        ``retry``, or ``stop``. Rotation keeps the turn alive on a sibling model
+        instead of failing the whole request while quota recovers.
+        """
+        nonlocal error, quota_exhausted, quota_cooldown_s
+        cooldown = provider_quota.record_quota_exhausted(model_id, retry_after=retry_after)
+        quota_exhausted = True
+        quota_cooldown_s = cooldown
+        error = _quota_message(model_id, cooldown)
+        logger.warning(
+            "provider quota 429 on %s (cooldown %.1fs, attempt %d/%d)",
+            model_id,
+            cooldown,
+            attempt + 1,
+            PROVIDER_MAX_ATTEMPTS,
+        )
+        if attempt >= last_attempt:
+            return "stop", model_id, 0.0
+        rotated = provider_quota.next_available_model(model_id)
+        if rotated and rotated not in models_tried:
+            models_tried.append(rotated)
+            return "rotate", rotated, 0.25
+        delay = provider_quota.retry_delay(attempt, retry_after=retry_after)
+        return "retry", model_id, delay + random.uniform(0, 0.4)
+
+    for attempt in range(PROVIDER_MAX_ATTEMPTS):
+        if pending_delay > 0:
+            await asyncio.sleep(pending_delay)
+            pending_delay = 0.0
+        payload["model"] = active_model
+        # Pace outbound calls per model so bursts do not trip provider quota.
+        await provider_quota.acquire(active_model)
         try:
             if use_native_gemini:
                 # Vertex Express Mode API keys use native generateContent (?key=),
                 # not OpenAI-compat Bearer auth.
-                message = await native_generate_content(
-                    client=client,
-                    api_key=str(model["api_key"]),
-                    model=str(model["model"]),
-                    messages=cached_messages,
-                    tools=use_tools or None,
-                    temperature=float(thinking_params.get("temperature", temperature)),
-                    top_p=float(thinking_params.get("top_p", 0.95)),
-                    max_tokens=max_tokens,
-                    thinking_config=thinking_params,
-                )
+                try:
+                    message = await native_generate_content(
+                        client=client,
+                        api_key=str(model["api_key"]),
+                        model=active_model,
+                        messages=cached_messages,
+                        tools=use_tools or None,
+                        temperature=float(thinking_params.get("temperature", temperature)),
+                        top_p=float(thinking_params.get("top_p", 0.95)),
+                        max_tokens=max_tokens,
+                        thinking_config=thinking_params,
+                    )
+                except GoogleApiError as exc:
+                    error = str(exc)
+                    detail = exc.detail or error
+                    if exc.quota:
+                        action, next_model, delay = _plan_quota_retry(
+                            active_model, exc.retry_after, detail, attempt,
+                        )
+                        if action == "stop":
+                            break
+                        active_model = next_model
+                        pending_delay = delay
+                        continue
+                    if (
+                        _is_retryable_provider_status(exc.status_code, detail)
+                        and attempt < last_attempt
+                    ):
+                        pending_delay = provider_quota.retry_delay(
+                            attempt, retry_after=exc.retry_after
+                        ) + random.uniform(0, 0.4)
+                        continue
+                    break
                 if on_token and message.get("content"):
                     await on_token(str(message["content"]))
                 if on_reasoning and message.get("reasoning_content"):
                     await on_reasoning(str(message["reasoning_content"]))
-                record_circuit_success(model.get("provider") or "", model.get("model") or "")
+                provider_quota.record_success(active_model)
+                record_circuit_success(model.get("provider") or "", active_model)
                 return message
 
             if payload["stream"]:
@@ -2827,10 +2969,24 @@ async def _provider_completion(
                     peek = ""
                     if response.status_code >= 400:
                         peek = (await response.aread()).decode(errors="replace").strip()[:800]
-                    if _is_retryable_provider_status(response.status_code, peek) and attempt < 2:
+                    if provider_quota.is_quota_detail(response.status_code, peek):
+                        action, next_model, delay = _plan_quota_retry(
+                            active_model,
+                            provider_quota.parse_retry_after_seconds(
+                                getattr(response, "headers", None), peek
+                            ),
+                            peek,
+                            attempt,
+                        )
+                        if action == "stop":
+                            break
+                        active_model = next_model
+                        pending_delay = delay
+                        continue
+                    if _is_retryable_provider_status(response.status_code, peek) and attempt < last_attempt:
                         if not peek:
                             await response.aread()
-                        await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
+                        pending_delay = provider_quota.retry_delay(attempt) + random.uniform(0, 0.4)
                         continue
                     if response.status_code >= 400:
                         detail = peek or (await response.aread()).decode(errors="replace").strip()[:800]
@@ -2845,13 +3001,30 @@ async def _provider_completion(
                     message = await _parse_sse_completion(
                         response, on_token=on_token, on_reasoning=on_reasoning,
                     )
-                    record_circuit_success(model.get("provider") or "", model.get("model") or "")
+                    provider_quota.record_success(active_model)
+                    record_circuit_success(model.get("provider") or "", active_model)
                     return message
 
             response = await client.post(url, headers=headers, json=payload)
             detail = (response.text or "").strip()[:800] if response.status_code >= 400 else ""
-            if _is_retryable_provider_status(response.status_code, detail) and attempt < 2:
-                await asyncio.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.4))
+            if response.status_code >= 400 and provider_quota.is_quota_detail(
+                response.status_code, detail
+            ):
+                action, next_model, delay = _plan_quota_retry(
+                    active_model,
+                    provider_quota.parse_retry_after_seconds(
+                        getattr(response, "headers", None), detail
+                    ),
+                    detail,
+                    attempt,
+                )
+                if action == "stop":
+                    break
+                active_model = next_model
+                pending_delay = delay
+                continue
+            if _is_retryable_provider_status(response.status_code, detail) and attempt < last_attempt:
+                pending_delay = provider_quota.retry_delay(attempt) + random.uniform(0, 0.4)
                 continue
             if response.status_code >= 400:
                 raise RuntimeError(
@@ -2877,24 +3050,50 @@ async def _provider_completion(
                     "total_tokens": int(usage.get("total_tokens") or 0),
                     "thinking_tokens": int(usage.get("reasoning_tokens") or 0),
                 }
-            record_circuit_success(model.get("provider") or "", model.get("model") or "")
+            provider_quota.record_success(active_model)
+            record_circuit_success(model.get("provider") or "", active_model)
             return message
         except ProviderError:
             raise
         except httpx.HTTPError as exc:
             error = str(exc)
-            if attempt < 2:
-                await asyncio.sleep(1.5 * (2 ** attempt))
+            if attempt < last_attempt:
+                pending_delay = provider_quota.retry_delay(attempt)
                 continue
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
             # Streaming failures fall back once to a non-stream request.
-            if payload.get("stream") and attempt < 2 and "no active upstream keys" not in error.lower():
+            if (
+                payload.get("stream")
+                and attempt < last_attempt
+                and "no active upstream keys" not in error.lower()
+            ):
                 payload["stream"] = False
-                await asyncio.sleep(0.2)
+                pending_delay = 0.2
                 continue
             break
-    record_circuit_failure(model.get("provider") or "", model.get("model") or "")
+        finally:
+            provider_quota.release(active_model)
+
+    if quota_exhausted:
+        # Quota is transient: keep the circuit closed so the next turn can try
+        # again once the cooldown elapses, and hand the UI a structured error.
+        raise ProviderError(
+            error,
+            error_type="rate_limited",
+            retryable=True,
+            detail={
+                "provider": model.get("provider") or "",
+                "profile": model.get("profile") or "",
+                "model": base_model_id,
+                "models_tried": [base_model_id, *models_tried],
+                "retry_after_s": round(quota_cooldown_s, 1),
+                "help_url": (
+                    "https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429"
+                ),
+            },
+        )
+    record_circuit_failure(model.get("provider") or "", base_model_id)
     raise RuntimeError(error)
 
 
@@ -3803,6 +4002,25 @@ async def _communicate_with_agent_impl(
                         "tool_call_id": call_id,
                         "content": encoded,
                     })
+                    # Close the started tool row so the UI never shows a
+                    # permanently spinning tool call after an interrupt.
+                    try:
+                        await record_agent_event(
+                            project_id, "tool_call_finished", title=name,
+                            detail=encoded[:4000],
+                            payload=_mark_payload(
+                                status="d",
+                                kind="tool",
+                                base={"tool": name, "ok": False, "phase": "finished",
+                                      "error_type": "cancelled"},
+                            ),
+                            source=source,
+                            turso_session_id=turso_session_id,
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).debug(
+                            "cancelled tool_call_finished event failed", exc_info=True
+                        )
                     try:
                         await _persist_message(
                             project_id,
@@ -4025,14 +4243,21 @@ async def _communicate_with_agent_impl(
         error = str(exc) or "Cloud agent request failed"
         _write_log(project_id, f"request {request_id} failed: {error}")
         await update_project(project_id, {"agent_last_error": error[:4000]})
+        # Structured failure metadata so the UI can render a recoverable banner
+        # (e.g. "rate limited, retry in 20s") instead of a dead-end error state.
+        # ``error`` stays "cloud_agent_failed" for backwards compatibility.
+        failure = _failure_metadata(exc)
         await record_agent_event(
-            project_id, "request_failed", title="Request failed", detail=error[:4000],
+            project_id, "request_failed", title=failure["title"], detail=error[:4000],
             payload=_mark_payload(
                 status="d",
                 kind="error",
                 base={
                     "error": "cloud_agent_failed",
+                    "error_type": failure["error_type"],
+                    "retryable": failure["retryable"],
                     "retry_message": message[:4000],
+                    **failure["detail"],
                 },
             ),
             source=source,
@@ -4042,7 +4267,10 @@ async def _communicate_with_agent_impl(
             await close_turso_session(turso_session_id, status="failed")
         return {"ok": False, "request_id": request_id, "session": session_number,
                 "turso_session_id": turso_session_id,
-                "error": "cloud_agent_failed", "message": error}
+                "error": "cloud_agent_failed", "message": error,
+                "error_type": failure["error_type"],
+                "retryable": failure["retryable"],
+                **failure["detail"]}
     finally:
         if _active_turns.get(project_id) is current:
             _active_turns.pop(project_id, None)
