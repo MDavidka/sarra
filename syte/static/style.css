@@ -2427,6 +2427,14 @@ code {
 .debug-chat-thinking .debug-chat-bubble-body {
   font-style: italic;
   font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-chat-usage-row {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  opacity: 0.9;
 }
 
 .debug-chat-screenshot {

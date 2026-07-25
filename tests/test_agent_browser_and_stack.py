@@ -194,6 +194,12 @@ async def test_inspect_preview_captures_console_by_default(monkeypatch: pytest.M
                 "network_failures": [],
                 "console_error_count": 1,
                 "page_error_count": 0,
+                "page_summary": {
+                    "body_text_length": 12,
+                    "h1": "Demo",
+                    "visible_controls": ["Home"],
+                    "failed_resources": [],
+                },
                 "message": "console errors present",
             }
         return {"ok": False, "error": "unexpected", "message": action}
@@ -206,6 +212,9 @@ async def test_inspect_preview_captures_console_by_default(monkeypatch: pytest.M
     assert result["console_error_count"] == 1
     assert result["ok"] is False
     assert result["console_logs"][0]["text"].startswith("ReferenceError")
+    assert result["page_summary"]["body_text_length"] == 12
+    assert result["page_summary"]["h1"] == "Demo"
+    assert "DevTools:" in result["message"]
 
 
 def test_console_text_helper() -> None:

@@ -43,8 +43,10 @@ You are editing a live website project in the Syte workspace.
   or testimonials. Use content-specific composition and concrete copy.
 - For new builds/redesigns, use `web_search` for relevant current design conventions; use the v0
   prompt as workflow inspiration and official shadcn, Radix, and WCAG 2.2 docs as authority.
-- After UI edits: `inspect_preview` (browser console + load check) then `screenshot_preview`.
+- After UI edits: prefer `inspect_preview` (Chromium DevTools load/console/page_summary)
+  to confirm the preview loads; use `screenshot_preview` only for visual layout review.
   Fix any console/page errors before marking work done.
+- Keep `syra/memory.md` updated with stack, key paths, and conventions.
 """,
     "workspace-search.md": """# Workspace search
 
@@ -72,11 +74,9 @@ syte-access screenshot      # capture preview screenshot when available
 syte-access console         # Chromium DevTools: load check + browser console/page errors
 ```
 
-Prefer the agent tools `inspect_preview` (console by default) and `screenshot_preview` over raw curl.
-Custom URLs saved in project access config can be fetched with `syte-access fetch <url>`.
-
-Use preview access to verify visual changes, read rendered HTML, inspect browser console errors,
-and read preview/dev-server logs. Never finish UI work with unresolved console errors.
+Prefer the agent tool `inspect_preview` (DevTools load/console/page_summary) to verify the
+preview loads without taking screenshots. Use `screenshot_preview` only when you need visual
+layout review across phone/desktop. Never finish UI work with unresolved console errors.
 """,
     "service-management.md": """# Service management (Syte)
 
