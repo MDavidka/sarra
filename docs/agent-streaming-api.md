@@ -327,14 +327,16 @@ to `session_stopped`; clients should handle **both**.
 
 ### `session_stopped`
 
-Session ended (completed, interrupted, or errored). Always treat this as terminal
-for the turn when present.
+Emitted when a turn/session is **actually stopped** (user cancel, stop API, or
+interrupt). Successful turns emit ``request_completed`` only — they no longer
+emit ``session_stopped`` with ``reason: completed``, so clients do not treat the
+agent as idle while follow-up work continues in the same chat session.
 
 **payload:**
 
 ```json
 {
-  "reason": "completed",
+  "reason": "interrupted",
   "stopped_at": "2026-07-20T14:30:00+00:00",
   "session": 42,
   "turso_session_id": "ts_abc",
@@ -342,6 +344,7 @@ for the turn when present.
 }
 ```
 
+`reason` values include `stopped`, `interrupted`, and `cancelled`.
 ### `tool_error`
 
 Structured tool failure for observability (does not replace `tool_call_finished`).

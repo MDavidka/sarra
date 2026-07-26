@@ -167,6 +167,28 @@ async def begin_turn_session(project_id: str, model_profile: str | None = None) 
     return int(row[0]) if row else 1
 
 
+async def ensure_latest_session(
+    project_id: str,
+    model_profile: str | None = None,
+    *,
+    force_new: bool = False,
+) -> int:
+    """Reuse the project's latest chat session, or open a new one when needed.
+
+    Follow-up messages continue the same session so provider history accumulates
+    and the chat UI only has to stream ``session=last``. A new session is opened
+    when there is none yet, after clear/restart, or when ``force_new`` is set
+    (explicit "new chat").
+    """
+    if not force_new:
+        current = await current_session_number(project_id)
+        if current > 0:
+            profile = (model_profile or "syra-base").strip() or "syra-base"
+            await ensure_session(project_id, profile)
+            return current
+    return await begin_turn_session(project_id, model_profile)
+
+
 async def set_turso_session_id(project_id: str, turso_session_id: str | None) -> None:
     """Record the durable Turso session UUID backing the project's current turn."""
     await ensure_cloud_agent_tables()

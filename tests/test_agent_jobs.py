@@ -1,7 +1,9 @@
 """Tests for async agent job queue."""
 
-import pytest
+import asyncio
 from pathlib import Path
+
+import pytest
 
 from syte.config import settings
 
@@ -113,10 +115,20 @@ async def test_api_started_session_syncs_every_message_to_turso_live(
     assert result["ok"] is True
     session_id = result["turso_session_id"]
     # The durable Turso session is opened and its request_started activity
-    # event is written synchronously during admission — before the
+    # event is queued for mirror during admission — before the
     # background worker (which persists the actual chat messages) even runs.
     assert session_id
-    session_doc = await turso_store.get_session(session_id)
+    from syte.agent_activity import drain_turso_event_mirrors
+
+    session_doc = None
+    for _ in range(20):
+        await drain_turso_event_mirrors(timeout_s=0.5)
+        session_doc = await turso_store.get_session(session_id)
+        if session_doc and any(
+            e["event_type"] == "request_started" for e in session_doc.get("events") or []
+        ):
+            break
+        await asyncio.sleep(0.05)
     assert session_doc is not None
     assert any(e["event_type"] == "request_started" for e in session_doc["events"])
 

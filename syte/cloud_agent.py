@@ -33,11 +33,11 @@ from syte.ai_providers import (
 )
 from syte.cloud_agent_store import (
     append_message,
-    begin_turn_session,
     clear_conversation,
     conversation_messages,
     current_session_number,
     current_turso_session_id,
+    ensure_latest_session,
     ensure_session,
     mark_message_synced,
     session_sync_status,
@@ -65,8 +65,8 @@ PROVIDER_TIMEOUT_S = 600.0
 # Attempts per provider call. Quota (429) retries and same-provider model
 # rotation share this budget, so it is higher than a plain transport retry.
 PROVIDER_MAX_ATTEMPTS = 5
-MAX_SUBAGENT_STEPS = 12
-MAX_SUBAGENT_RESEARCH_STEPS = 8
+MAX_SUBAGENT_STEPS = 28
+MAX_SUBAGENT_RESEARCH_STEPS = 14
 # Wall-clock cap for an entire subagent loop (LLM rounds + tools). Prevents
 # worker leaks when a single step hangs forever despite the step limit (DAV-202).
 SUBAGENT_TIMEOUT_S = 600.0
@@ -1436,7 +1436,7 @@ async def _post_turn_preview_checks(
         from syte.preview_health import wait_for_preview_ready
 
         ok_preview, preview_url, _status = await wait_for_preview_ready(
-            project_id, max_wait_s=8, poll_s=1.5,
+            project_id, max_wait_s=5, poll_s=1.0,
         )
         if not ok_preview:
             await record_agent_event(
@@ -1859,6 +1859,10 @@ TOOLS: list[dict[str, Any]] = [
              "type": "string",
              "enum": ["research", "implementation"],
              "description": "research=read-only/fast; implementation=can write files",
+         },
+         "max_steps": {
+             "type": "integer",
+             "description": "Optional tool-round budget (default 14 research / 28 implementation, max 48)",
          },
      }, "required": ["task", "files"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "await_subagent", "description": (
@@ -2661,18 +2665,42 @@ async def _tool_inspect_preview(
     include_console = True if "include_console" not in args else bool(args.get("include_console"))
 
     status = await run_access_action(project_id, "status")
-    base = str(status.get("preview_url") or status.get("preview_direct_url") or "")
+    # Prefer the fetchable origin (direct when TLS is down) so allowlist checks pass.
+    base = str(
+        status.get("preview_fetch_url")
+        or status.get("preview_url")
+        or status.get("preview_direct_url")
+        or status.get("preview_domain_url")
+        or ""
+    )
     target = explicit_url or (urljoin(base.rstrip("/") + "/", route.lstrip("/")) if base else "")
     if not target and base:
         target = base.rstrip("/") + route
     if not target:
+        logs = await run_access_action(project_id, "logs", lines=120)
         return {
             "ok": False,
             "error": "no_preview",
             "message": "Preview URL unavailable — call service preview_start first.",
+            "preview_logs": (logs.get("logs") or "")[-8000:],
         }
 
     fetched = await run_access_action(project_id, "fetch", url=target)
+    # If the agent passed a domain URL while only direct is reachable, retry fetch URL.
+    if (
+        not fetched.get("ok")
+        and fetched.get("error") == "url_not_allowed"
+        and not explicit_url
+        and status.get("preview_fetch_url")
+        and str(status.get("preview_fetch_url")) != base
+    ):
+        alt_base = str(status.get("preview_fetch_url") or "")
+        alt_target = urljoin(alt_base.rstrip("/") + "/", route.lstrip("/"))
+        fetched = await run_access_action(project_id, "fetch", url=alt_target)
+        if fetched.get("ok") or fetched.get("error") != "url_not_allowed":
+            target = alt_target
+            base = alt_base
+
     result: dict[str, Any] = {
         "ok": bool(fetched.get("ok")),
         "action": "inspect_preview",
@@ -2689,8 +2717,10 @@ async def _tool_inspect_preview(
     }
     if fetched.get("error"):
         result["error"] = fetched.get("error")
+    if fetched.get("allowed_urls"):
+        result["allowed_urls"] = fetched.get("allowed_urls")
 
-    if include_console:
+    if include_console and result.get("ok") is not False:
         console = await run_access_action(
             project_id,
             "console",
@@ -2718,6 +2748,8 @@ async def _tool_inspect_preview(
             result["message"] = (
                 f"{result['message']}; DevTools: {console.get('message') or 'console issues'}"
             )
+            if console.get("error"):
+                result["error"] = console.get("error")
         else:
             result["message"] = (
                 f"{result['message']}; browser load_ok={bool(console.get('load_ok'))}, "
@@ -2725,6 +2757,37 @@ async def _tool_inspect_preview(
                 f"page_errors={result['page_error_count']}, "
                 f"body_chars={body_len}"
             )
+    elif include_console and result.get("ok") is False:
+        # Still try console on the preferred fetch URL when fetch failed for other reasons.
+        console = await run_access_action(
+            project_id,
+            "console",
+            url=target,
+            include_screenshot=False,
+        )
+        if console.get("ok") or console.get("console_logs") or console.get("page_errors"):
+            result["devtools"] = {
+                k: v
+                for k, v in console.items()
+                if k not in {"png_bytes", "image_base64"}
+            }
+            result["console_logs"] = console.get("console_logs") or []
+            result["page_errors"] = console.get("page_errors") or []
+
+    # Always attach recent preview server logs when inspect fails so the agent
+    # can diagnose without a second tool round-trip (and when URL allow fails).
+    if not result.get("ok"):
+        try:
+            logs = await run_access_action(project_id, "logs", lines=160)
+            log_text = str(logs.get("logs") or "")
+            if log_text.strip():
+                result["preview_logs"] = log_text[-8000:]
+                result["message"] = (
+                    f"{result['message']}; preview_logs attached "
+                    f"({min(160, log_text.count(chr(10)) + 1)} lines)"
+                )
+        except Exception:
+            logger.debug("preview log attach failed", exc_info=True)
 
     if include_shot:
         shot_args = {"route": route, "url": target, "viewports": ["desktop"]}
@@ -3782,6 +3845,7 @@ async def _tool_delegate_task(
         "turso_session_id": turso_session_id,
         "session_number": session_number,
         "parent_request_id": parent_request_id,
+        "max_steps": args.get("max_steps"),
     }
 
     if background:
@@ -4166,15 +4230,23 @@ async def _run_subagent_loop(
     subagent_ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     research = mode == "research"
+    scope = subagent_ctx or {}
     max_steps = MAX_SUBAGENT_RESEARCH_STEPS if research else MAX_SUBAGENT_STEPS
+    # Parent may raise the budget for hard implementation tasks (still capped).
+    requested_steps = scope.get("max_steps")
+    try:
+        if requested_steps is not None:
+            max_steps = max(4, min(int(requested_steps), 40 if research else 48))
+    except (TypeError, ValueError):
+        pass
     tools = SUBAGENT_RESEARCH_TOOLS if research else SUBAGENT_TOOLS
     # Keep subagent tool dumps tight for speed/cost.
     tool_chars = min(_model_tool_result_chars(model), 6_000 if research else 8_000)
-    scope = subagent_ctx or {}
     scope_files = list(scope.get("files") or [])
     turso_session_id = scope.get("turso_session_id")
     session_number = int(scope.get("session_number") or 0)
     activity_count = 0
+    last_substantive = ""
 
     async def _emit_subagent(
         event_type: str,
@@ -4250,6 +4322,9 @@ async def _run_subagent_loop(
         "delegated task. Inspect files and use workspace tools as needed. Do not deploy, start, stop, "
         "update, or build the production service. Prefer the isolated preview for visual checks. "
         f"{mode_line} {file_scope_line}"
+        f"Budget: finish within {max_steps} tool rounds. Batch reads, avoid exploratory loops, and "
+        "return a concise final answer as soon as the task is done — do not keep calling tools after "
+        "you have enough evidence.\n"
         "Return concise findings, changes, and verification for the parent agent.\n\n"
         f"Application source: {workspace_path(project_id) / 'app'}"
     )
@@ -4274,6 +4349,8 @@ async def _run_subagent_loop(
             usage_acc["total_tokens"] += int(step_usage.get("total_tokens") or 0)
             usage_acc["steps"] += 1
         content = str(assistant.get("content") or "")
+        if content.strip():
+            last_substantive = content.strip()
         calls = assistant.get("tool_calls") or []
         stored_calls = calls if isinstance(calls, list) else []
         next_assistant: dict[str, Any] = {"role": "assistant", "content": content}
@@ -4421,11 +4498,45 @@ async def _run_subagent_loop(
                 "content": encoded,
             })
     cost_info = _estimate_turn_cost(model, usage_acc)
+    # Prefer a partial success with whatever the subagent already learned over a
+    # hard failure — parents were treating every step_limit as a dead end.
+    if last_substantive:
+        await _emit_subagent(
+            "assistant_message",
+            role="assistant",
+            title="Subagent partial result",
+            detail=last_substantive[:4000],
+            base={"steps": max_steps, "usage": usage_acc, "cost": cost_info, "partial": True},
+        )
+        return {
+            "ok": True,
+            "partial": True,
+            "error": "subagent_step_limit",
+            "status": "partial",
+            "message": (
+                f"Subagent hit the {max_steps}-step budget and returned partial findings. "
+                "Re-delegate a narrower follow-up if more work remains."
+            ),
+            "task": task,
+            "mode": mode,
+            "result": last_substantive,
+            "steps": max_steps,
+            "usage": usage_acc,
+            "cost": cost_info,
+            "profile": model.get("profile"),
+            "task_id": task_id,
+            "activity_count": activity_count,
+            "files": scope_files,
+        }
     return {
         "ok": False,
         "error": "subagent_step_limit",
         "status": "step_limit",
-        "message": f"Subagent did not finish within {max_steps} steps.",
+        "retryable": True,
+        "message": (
+            f"Subagent did not finish within {max_steps} steps. "
+            "Narrow the task, pass mode=research for exploration, or raise max_steps."
+        ),
         "task": task,
         "mode": mode,
         "usage": usage_acc,
@@ -4539,13 +4650,12 @@ async def _communicate_with_agent_impl(
             "secret_env": secret_env,
         }
 
-    # One user message opens one numbered chat session. Every event produced
-    # while working the turn is mirrored to a durable Turso session (see
-    # syte.turso_store) so clients fetch the whole session by UUID from the
-    # Turso access route instead of streaming it live.
+    # One durable chat session per project conversation. Follow-up messages
+    # reuse the latest session so history accumulates and the UI only streams
+    # session=last. Each turn still opens its own Turso UUID for poll clients.
     opened_turso_session = False
     if session_number is None:
-        session_number = await begin_turn_session(project_id, model["profile"])
+        session_number = await ensure_latest_session(project_id, model["profile"])
         message_index = 0
         turso_session_id = await open_turso_session(
             project_id, session_number=session_number, model_profile=model["profile"],
@@ -5105,11 +5215,11 @@ async def _communicate_with_agent_impl(
                             "auto screenshot after UI edits failed", exc_info=True
                         )
 
-                # Preview health / missing-route checks run in the background so
-                # "Completed" is not blocked for up to ~45s after the model finishes.
+                # Finish preview checks *before* marking the turn complete so the
+                # UI never shows "Completed" / session_stopped while work continues.
                 if is_website:
-                    _track_bg_task(
-                        asyncio.create_task(
+                    try:
+                        await asyncio.wait_for(
                             _post_turn_preview_checks(
                                 project_id,
                                 model=model,
@@ -5118,15 +5228,19 @@ async def _communicate_with_agent_impl(
                                 turso_session_id=turso_session_id,
                                 request_id=request_id,
                                 session_number=session_number,
-                            )
+                            ),
+                            timeout=8.0,
                         )
-                    )
+                    except asyncio.TimeoutError:
+                        logger.debug("post-turn preview checks timed out")
+                    except Exception:
+                        logger.debug("post-turn preview checks failed", exc_info=True)
 
-                reply = content.strip() or "Completed."
+                reply = content.strip() or "Done."
                 cost_info = _estimate_turn_cost(model, turn_usage)
                 await _flush_hot_deltas()
                 await record_agent_event(
-                    project_id, "request_completed", role="assistant", title="Completed",
+                    project_id, "request_completed", role="assistant", title="Done",
                     detail=reply[:4000],
                     payload=_mark_payload(
                         status="d",
@@ -5169,23 +5283,10 @@ async def _communicate_with_agent_impl(
                         source=source,
                         turso_session_id=turso_session_id,
                     )
-                await record_agent_event(
-                    project_id,
-                    "session_stopped",
-                    title="Session stopped",
-                    detail="completed",
-                    payload=_mark_payload(
-                        status="d",
-                        kind="status",
-                        base={
-                            "reason": "completed",
-                            "stopped_at": _now(),
-                            "turso_session_id": turso_session_id,
-                        },
-                    ),
-                    source=source,
-                    turso_session_id=turso_session_id,
-                )
+                # Close the per-turn Turso UUID for pollers, but do NOT emit
+                # session_stopped — that marker is reserved for real stop/interrupt
+                # and was confusing clients into thinking the agent was idle while
+                # background work (or the next follow-up) continued.
                 if opened_turso_session:
                     await close_turso_session(turso_session_id, status="completed")
                 # Background memory: summarize long sessions + notify webhooks.
@@ -5207,7 +5308,7 @@ async def _communicate_with_agent_impl(
                         min_messages=2,
                     )
                     try:
-                        await _drain_turso_mirrors(timeout_s=5.0)
+                        await _drain_turso_mirrors(timeout_s=2.0)
                         await _resync_unsynced_messages(
                             project_id,
                             session_number=session_number,
