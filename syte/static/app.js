@@ -497,12 +497,13 @@ const DEBUG_CHAT_ACTION_LABELS = {
   file_changed: 'File changed',
   service_action: 'Service',
   request_started: 'Request started',
-  request_completed: 'Completed',
+  request_completed: 'Done',
   processing: 'Working',
   screenshot: 'Screenshot',
   question: 'Question',
   question_answered: 'Answer',
   agent_stopped: 'Stopped',
+  session_stopped: 'Stopped',
   subagent_scope: 'Delegated files',
   subagent_started: 'Subagent started',
   subagent_completed: 'Subagent finished',
@@ -1336,6 +1337,26 @@ function shouldSkipDebugChatEvent(event) {
   if (event.event_type === 'request_started') {
     return true;
   }
+  // Turn-complete session_stopped was removed server-side; ignore any legacy
+  // "completed" markers so the UI does not look idle while work continues.
+  if (
+    event.event_type === 'session_stopped'
+    && String(event.payload?.reason || event.detail || '').toLowerCase() === 'completed'
+  ) {
+    if (event.id != null) {
+      debugChatRenderedIds.add(event.id);
+      debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    }
+    return true;
+  }
+  // Post-turn health checks after the reply must not spam the transcript.
+  if (event.payload?.async_post_turn && !debugChatBusy) {
+    if (event.id != null) {
+      debugChatRenderedIds.add(event.id);
+      debugChatSinceId = Math.max(debugChatSinceId, event.id);
+    }
+    return true;
+  }
   // "Tool started" rows duplicate the finished row and doubled the noise the
   // collapsed activity cards are meant to remove — the live status bar already
   // shows what is running right now.
@@ -1511,6 +1532,10 @@ function handleDebugChatActivity(event) {
     event.event_type === 'request_completed'
     || event.event_type === 'request_failed'
     || event.event_type === 'agent_stopped'
+    || (
+      event.event_type === 'session_stopped'
+      && String(event.payload?.reason || '').toLowerCase() !== 'completed'
+    )
   ) {
     const requestId = eventRequestId || debugChatActiveRequestId;
     finalizeDebugChatThinking(requestId);

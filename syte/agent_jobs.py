@@ -12,6 +12,7 @@ from syte.cloud_agent_store import (
     begin_turn_session,
     current_session_number,
     current_turso_session_id,
+    ensure_latest_session,
     enqueue_request,
     mark_request,
     pending_requests,
@@ -114,7 +115,8 @@ async def submit_agent_request(
     # session (see syte.turso_store) exists from the very first event, before
     # the worker starts tools. Local SQLite fallback guarantees a session id
     # even when remote Turso is unset (required by sycord-pages).
-    session_number = await begin_turn_session(project_id, model_profile)
+    # Reuse the latest numbered chat session so follow-ups keep history.
+    session_number = await ensure_latest_session(project_id, model_profile)
     turso_session_id = await open_turso_session(
         project_id, session_number=session_number, model_profile=model_profile,
     )

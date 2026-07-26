@@ -37,6 +37,9 @@ AGENT_EVENTS_MAX_AGE_DAYS = 14
 # High-frequency stream chunks — must not await Turso or prune on the hot path.
 HOT_STREAM_EVENT_TYPES = frozenset({"token_delta", "thinking_delta"})
 _HOT_PRUNE_EVERY = 250
+# Cold tool/status events used to prune on *every* write, which added 1–10s of
+# SQLite DELETE work between tool calls. Prune periodically instead.
+_COLD_PRUNE_EVERY = 40
 
 # Batch hot deltas before one SSE/local frame so Turso durable writes stay free.
 HOT_DELTA_BATCH_MIN_CHARS = 300
@@ -108,6 +111,7 @@ AGENT_LANE_SUBAGENT = "subagent"
 
 _subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
 _hot_event_counts: dict[str, int] = defaultdict(int)
+_cold_event_counts: dict[str, int] = defaultdict(int)
 # Non-stream activity lines per request id — persisted as
 # ``agent_request.activity_count`` when the turn finishes.
 _request_activity_counts: dict[str, int] = {}
@@ -635,10 +639,16 @@ async def record_agent_event(
         }
         _notify_subscribers(project_id, event)
 
-    should_prune = not is_hot
+    # Prune periodically — never on every cold tool write (that added multi-second
+    # SQLite DELETE latency between tools).
+    should_prune = False
     if is_hot:
         _hot_event_counts[project_id] += 1
         if _hot_event_counts[project_id] % _HOT_PRUNE_EVERY == 0:
+            should_prune = True
+    else:
+        _cold_event_counts[project_id] += 1
+        if _cold_event_counts[project_id] % _COLD_PRUNE_EVERY == 0:
             should_prune = True
     if should_prune:
         try:

@@ -93,6 +93,10 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
 
     Compares hostname (not raw netloc) and rejects userinfo tricks, non-http(s)
     schemes, and private/link-local/metadata destinations when resolvable.
+
+    ``preview_url`` may be a single URL or callers may pass multiple preview
+    candidates via ``custom_urls`` (domain, direct, fetch). Any matching host
+    from those candidates is allowed.
     """
     import ipaddress
     import socket
@@ -118,13 +122,14 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
         p, host = parsed
 
         allowed_hosts: set[str] = set()
-        for candidate in [preview_url, *(custom_urls or [])]:
+        candidates = [preview_url, *(custom_urls or [])]
+        for candidate in candidates:
             c = _parse(candidate)
             if c:
                 allowed_hosts.add(c[1])
 
         # Exact URL match still allowed for configured custom URLs.
-        exact = {u for u in [preview_url, *(custom_urls or [])] if u}
+        exact = {u for u in candidates if u}
         if url in exact and host in allowed_hosts:
             pass  # still subject to private-IP check below
         elif host not in allowed_hosts:
@@ -141,9 +146,8 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
                 or ip.is_multicast
                 or ip.is_unspecified
             ):
-                # Allow only if the preview itself is on that host (local preview).
-                prev = _parse(preview_url)
-                if not prev or prev[1] != host:
+                # Allow only if one of the preview hosts is that same host.
+                if host not in allowed_hosts:
                     return False
         except ValueError:
             # Hostname — resolve and reject private destinations unless preview host.
@@ -154,8 +158,6 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
                 # (preview may be DNS-only on the public edge). Private-IP SSRF is
                 # covered when resolution succeeds.
                 return host in allowed_hosts
-            prev = _parse(preview_url)
-            preview_host = prev[1] if prev else ""
             for info in infos:
                 addr = info[4][0]
                 try:
@@ -169,11 +171,38 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
                     or ip.is_reserved
                     or ip.is_multicast
                     or ip.is_unspecified
-                ) and host != preview_host:
+                ) and host not in allowed_hosts:
                     return False
         return True
     except Exception:
         return False
+
+
+def _preview_allowlist(urls: dict[str, Any], custom_urls: list[str]) -> tuple[str, list[str]]:
+    """Primary fetch URL + every preview host the agent may inspect."""
+    primary = str(
+        urls.get("preview_fetch_url")
+        or urls.get("preview_url")
+        or urls.get("preview_direct_url")
+        or urls.get("preview_domain_url")
+        or ""
+    )
+    extras: list[str] = []
+    for key in (
+        "preview_fetch_url",
+        "preview_url",
+        "preview_direct_url",
+        "preview_domain_url",
+        "preview_embed_url",
+    ):
+        value = str(urls.get(key) or "").strip()
+        if value and value not in extras and value != primary:
+            extras.append(value)
+    for value in custom_urls or []:
+        text = str(value or "").strip()
+        if text and text not in extras and text != primary:
+            extras.append(text)
+    return primary, extras
 
 
 async def _preview_context(project_id: str) -> tuple[dict | None, dict[str, Any]]:
@@ -237,7 +266,7 @@ async def run_access_action(
     urls = ctx["urls"]
     access = ctx["access"]
     custom_urls = [str(u) for u in (access.get("custom_urls") or [])]
-    preview_url = str(urls.get("preview_fetch_url") or urls.get("preview_url") or "")
+    preview_url, allow_urls = _preview_allowlist(urls, custom_urls)
 
     if act == "status":
         return {
@@ -248,6 +277,7 @@ async def run_access_action(
             "preview_url": urls.get("preview_url"),
             "preview_domain_url": urls.get("preview_domain_url"),
             "preview_direct_url": urls.get("preview_direct_url"),
+            "preview_fetch_url": urls.get("preview_fetch_url") or preview_url or None,
             "preview_port": urls.get("preview_port"),
             "custom_urls": custom_urls,
             "at": _now(),
@@ -265,11 +295,13 @@ async def run_access_action(
         target = (url or "").strip() or preview_url
         if not target:
             return {"ok": False, "error": "no_url", "message": "No preview URL — start preview or pass url"}
-        if not _is_allowed_url(target, preview_url, custom_urls):
+        if not _is_allowed_url(target, preview_url, allow_urls):
             return {
                 "ok": False,
                 "error": "url_not_allowed",
                 "message": "URL not allowed — use preview URL or add it in Debug Chat access settings",
+                "preview_url": preview_url or None,
+                "allowed_urls": [u for u in [preview_url, *allow_urls] if u][:8],
             }
         try:
             # Do not follow redirects off the allowlist (SSRF via Location).
@@ -283,7 +315,7 @@ async def run_access_action(
                     if not location:
                         break
                     next_url = str(httpx.URL(target).join(location))
-                    if not _is_allowed_url(next_url, preview_url, custom_urls):
+                    if not _is_allowed_url(next_url, preview_url, allow_urls):
                         return {
                             "ok": False,
                             "error": "url_not_allowed",
@@ -323,8 +355,14 @@ async def run_access_action(
         target = (url or "").strip() or preview_url
         if not target:
             return {"ok": False, "error": "no_url", "message": "No preview URL for screenshot"}
-        if not _is_allowed_url(target, preview_url, custom_urls):
-            return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for screenshot"}
+        if not _is_allowed_url(target, preview_url, allow_urls):
+            return {
+                "ok": False,
+                "error": "url_not_allowed",
+                "message": "URL not allowed for screenshot",
+                "preview_url": preview_url or None,
+                "allowed_urls": [u for u in [preview_url, *allow_urls] if u][:8],
+            }
         # Legacy single-shot (desktop) plus dual-viewport helpers for agents.
         shots = await capture_preview_screenshots(target, viewports=("desktop", "phone"))
         public = {
@@ -344,8 +382,14 @@ async def run_access_action(
         target = (url or "").strip() or preview_url
         if not target:
             return {"ok": False, "error": "no_url", "message": "No preview URL for console inspect"}
-        if not _is_allowed_url(target, preview_url, custom_urls):
-            return {"ok": False, "error": "url_not_allowed", "message": "URL not allowed for console inspect"}
+        if not _is_allowed_url(target, preview_url, allow_urls):
+            return {
+                "ok": False,
+                "error": "url_not_allowed",
+                "message": "URL not allowed for console inspect",
+                "preview_url": preview_url or None,
+                "allowed_urls": [u for u in [preview_url, *allow_urls] if u][:8],
+            }
         browser = find_headless_browser()
         if not browser:
             return {
