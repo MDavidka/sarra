@@ -231,6 +231,49 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _format_schema_exc(exc: BaseException) -> str:
+    """Readable schema-failure text (KeyError('result') otherwise looks like ``'result'``)."""
+    if isinstance(exc, KeyError):
+        return f"KeyError({exc!s})"
+    code = getattr(exc, "code", None)
+    explanation = getattr(exc, "explanation", None)
+    if code and explanation:
+        return f"{type(exc).__name__}: {code}: {explanation}"
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _is_additive_column_migration(stmt: str) -> bool:
+    normalized = " ".join(stmt.split()).upper()
+    return normalized.startswith("ALTER TABLE") and " ADD COLUMN " in normalized
+
+
+def _is_benign_schema_failure(stmt: str, exc: BaseException) -> bool:
+    """Return True when a schema statement failure is expected / safe to ignore.
+
+    Additive ``ALTER TABLE … ADD COLUMN`` migrations fail once the column already
+    exists (fresh ``CREATE TABLE`` already includes it). Local libSQL reports
+    ``duplicate column name``; remote Turso/Hrana sometimes raises a bare
+    ``KeyError('result')`` instead — which the GUI showed as
+    ``… -> 'result'`` and falsely kept the brain red.
+    """
+    msg = " ".join(
+        str(part).lower()
+        for part in (
+            exc,
+            getattr(exc, "code", ""),
+            getattr(exc, "explanation", ""),
+            getattr(exc, "message", ""),
+        )
+        if part
+    )
+    if "duplicate column" in msg or "already exists" in msg:
+        return True
+    if _is_additive_column_migration(stmt):
+        # Idempotent migrations: never poison schema_errors / brain indicator.
+        return True
+    return False
+
+
 async def turso_settings() -> tuple[str, str]:
     """Return the configured ``(database_url, auth_token)`` pair, or ("", "")."""
     url = (await get_setting("turso_database_url", "")).strip()
@@ -348,13 +391,21 @@ async def get_turso_client() -> Any | None:
             except Exception as exc:
                 # Additive ALTER COLUMN migrations are expected to fail once the
                 # column already exists (fresh CREATE TABLE already includes it).
-                msg = str(exc).lower()
-                if "duplicate column" in msg or "already exists" in msg:
+                # Remote Turso may also raise KeyError('result') instead of a
+                # typed duplicate-column error — treat those as benign too.
+                if _is_benign_schema_failure(stmt, exc):
+                    logger.debug(
+                        "Turso schema migration skipped (already applied): %s (%s)",
+                        " ".join(stmt.split())[:80],
+                        _format_schema_exc(exc),
+                    )
                     continue
                 short = stmt.strip().splitlines()[0][:80]
-                failures.append(f"{short}... -> {exc}")
+                failures.append(f"{short}... -> {_format_schema_exc(exc)}")
                 logger.warning(
-                    "Turso schema statement failed (continuing): %s -> %r", short, exc
+                    "Turso schema statement failed (continuing): %s -> %s",
+                    short,
+                    _format_schema_exc(exc),
                 )
         if failures:
             _last_error[key] = "; ".join(failures)
