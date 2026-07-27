@@ -118,11 +118,13 @@ def _is_env_assignment(token: str) -> bool:
 
 
 def _command_segments(command: str) -> list[str]:
+    # Replace newlines with semicolons so they are treated as command separators
+    command = command.replace("\n", ";").replace("\r", ";")
     lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;")
     lexer.whitespace_split = True
     segments: list[list[str]] = [[]]
     for token in lexer:
-        if token in {";", "&&", "||", "|"}:
+        if token in {";", "&&", "||", "|", "&"}:
             segments.append([])
         else:
             segments[-1].append(token)
