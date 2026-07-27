@@ -638,6 +638,16 @@ async def record_agent_event(
             "created_at": now,
         }
         _notify_subscribers(project_id, event)
+        # Mirror failing events into the durable per-session failure log. The
+        # classifier is pure Python and returns None for successful events, so
+        # only genuine failures pay for an extra write. Single choke point =
+        # main agent and subagents are both captured with no call-site work.
+        try:
+            from syte.agent_failures import maybe_record_event_failure
+
+            await maybe_record_event_failure(project_id, event)
+        except Exception:
+            logging.getLogger(__name__).debug("failure log mirror failed", exc_info=True)
 
     # Prune periodically — never on every cold tool write (that added multi-second
     # SQLite DELETE latency between tools).

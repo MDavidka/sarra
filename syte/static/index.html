@@ -408,6 +408,29 @@
                     </div>
                     <div class="debug-chat-resources-body" id="debug-chat-resources-body"></div>
                   </div>
+                  <!-- Session failure log: every failed task/tool/request/subagent for
+                       this chat session. Opened by double-clicking the brain icon. -->
+                  <div class="debug-chat-resources debug-chat-failures hidden" id="debug-chat-failures" role="region" aria-label="Session failure log" aria-live="polite">
+                    <div class="debug-chat-resources-head">
+                      <div>
+                        <strong id="debug-chat-failures-title">Session failure log</strong>
+                        <span id="debug-chat-failures-subtitle">Failed tasks, tools, requests and subagents.</span>
+                      </div>
+                      <div class="debug-chat-failures-actions">
+                        <label class="debug-chat-failures-scope" for="debug-chat-failures-scope">
+                          <span>Scope</span>
+                          <select id="debug-chat-failures-scope" aria-label="Failure log scope">
+                            <option value="last" selected>This session</option>
+                            <option value="all">All sessions</option>
+                          </select>
+                        </label>
+                        <button type="button" class="debug-chat-resource-action" id="debug-chat-failures-refresh">Refresh</button>
+                        <button type="button" class="debug-chat-resource-action" id="debug-chat-failures-clear">Clear</button>
+                        <button type="button" class="debug-chat-resource-close" id="debug-chat-failures-close" aria-label="Close failure log">×</button>
+                      </div>
+                    </div>
+                    <div class="debug-chat-resources-body" id="debug-chat-failures-body"></div>
+                  </div>
                   <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
                     <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
                     <span class="debug-chat-activity-pulse" aria-hidden="true"></span>
@@ -417,8 +440,9 @@
                       <span class="debug-chat-activity-detail"></span>
                     </span>
                     <span class="debug-chat-activity-model" id="debug-chat-activity-model" hidden></span>
-                    <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="All session messages saved to Turso">
+                    <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="Turso save status — double-click to open the session failure log">
                       <i data-lucide="brain"></i>
+                      <b class="debug-chat-brain-badge hidden" id="debug-chat-brain-badge">0</b>
                     </button>
                   </div>
                   <div class="debug-chat-tabs" id="debug-chat-tabs" role="tablist" aria-label="Agent activity lanes">

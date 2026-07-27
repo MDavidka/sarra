@@ -152,23 +152,26 @@ function setDebugChatBrainStatus(sync) {
   const btn = document.getElementById('debug-chat-brain');
   if (!btn) return;
   btn.classList.remove('brain-saved', 'brain-unsaved', 'brain-unconfigured');
+  let label;
   if (!sync || !sync.turso_configured) {
     btn.classList.add('brain-unconfigured');
-    btn.setAttribute('aria-label', 'Turso is not configured — messages are only saved locally');
-    btn.title = 'Turso is not configured — messages are only saved locally';
-    return;
-  }
-  if (sync.all_saved) {
+    label = 'Turso is not configured — messages are only saved locally';
+  } else if (sync.all_saved) {
     btn.classList.add('brain-saved');
-    const label = `All ${sync.total_messages || 0} session message(s) saved to Turso`;
-    btn.setAttribute('aria-label', label);
-    btn.title = label;
+    label = `All ${sync.total_messages || 0} session message(s) saved to Turso`;
   } else {
     btn.classList.add('brain-unsaved');
-    const label = `${sync.synced_messages || 0} of ${sync.total_messages || 0} session messages saved to Turso — retrying`;
-    btn.setAttribute('aria-label', label);
-    btn.title = label;
+    label = `${sync.synced_messages || 0} of ${sync.total_messages || 0} session messages saved to Turso — retrying`;
   }
+  // The brain is also the failure-log trigger, so keep the sync text as the
+  // prefix and let the badge/count logic append the failure hint.
+  btn.dataset.syncLabel = label;
+  btn.setAttribute('aria-label', `${label}. Double-click to open the session failure log.`);
+  const badge = document.getElementById('debug-chat-brain-badge');
+  const count = badge && !badge.classList.contains('hidden') ? badge.textContent : '';
+  btn.title = count
+    ? `${label} — ${count} failure(s) this session. Double-click for the failure log.`
+    : `${label} — double-click for the session failure log`;
 }
 
 let debugChatBrainLastLoggedState = '';
@@ -222,6 +225,8 @@ async function pollDebugChatBrainOnce(projectId) {
   try {
     const res = await api(`/projects/${projectId}/agent/turso_sync`);
     if (res.ok) {
+      // Refresh the failure count first so the brain's tooltip can include it.
+      await loadDebugChatFailures(projectId, { render: false });
       setDebugChatBrainStatus(res);
       const state = res.turso_configured ? (res.all_saved ? 'green' : 'red') : 'unconfigured';
       // Only re-run (and re-log) the heavier diagnostic call when the
@@ -261,6 +266,308 @@ function stopDebugChatBrainPoll() {
     debugChatBrainPollTimer = null;
   }
   debugChatBrainPollInFlight = false;
+}
+
+// ---------------------------------------------------------------------------
+// Session failure log — every failed task, tool, request and subagent for the
+// session, opened by DOUBLE-CLICKING the brain icon. Activity events are pruned
+// and replay-window limited, so this failure-only view is the reliable answer to
+// "what actually went wrong?". Backed by GET/DELETE .../agent/failures.
+// ---------------------------------------------------------------------------
+
+const FAILURE_KIND_LABEL = {
+  request: 'request',
+  subagent: 'subagent',
+  tool: 'tool',
+  provider: 'provider',
+  session: 'session',
+  preview: 'preview',
+  design: 'design',
+};
+
+function debugChatFailureScope() {
+  return document.getElementById('debug-chat-failures-scope')?.value || 'last';
+}
+
+function formatFailureTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function renderDebugChatFailures(payload) {
+  const body = document.getElementById('debug-chat-failures-body');
+  if (!body) return;
+  const failures = payload?.failures || [];
+  const summary = payload?.summary || {};
+  body.innerHTML = '';
+
+  const subtitle = document.getElementById('debug-chat-failures-subtitle');
+  if (subtitle) {
+    subtitle.textContent = failures.length
+      ? `${summary.total || failures.length} failure(s) — newest first`
+      : 'No failures recorded for this scope.';
+  }
+
+  if (!failures.length) {
+    const empty = document.createElement('div');
+    empty.className = 'debug-chat-resource-empty';
+    empty.textContent = 'Nothing failed here. Failed tools, requests and subagents show up automatically.';
+    body.appendChild(empty);
+    return;
+  }
+
+  const kinds = Object.entries(summary.by_kind || {});
+  if (kinds.length) {
+    const chips = document.createElement('div');
+    chips.className = 'debug-chat-failure-summary';
+    for (const [kind, count] of kinds.sort((a, b) => b[1] - a[1])) {
+      const chip = document.createElement('span');
+      chip.textContent = `${FAILURE_KIND_LABEL[kind] || kind}: ${count}`;
+      chips.appendChild(chip);
+    }
+    body.appendChild(chips);
+  }
+
+  for (const failure of failures) {
+    const row = document.createElement('div');
+    row.className = `debug-chat-failure-row kind-${failure.kind || 'tool'}`;
+
+    const head = document.createElement('div');
+    head.className = 'debug-chat-failure-head';
+
+    const kind = document.createElement('span');
+    kind.className = 'debug-chat-failure-kind';
+    kind.textContent = FAILURE_KIND_LABEL[failure.kind] || failure.kind || 'error';
+    head.appendChild(kind);
+
+    if (failure.agent === 'subagent') {
+      const lane = document.createElement('span');
+      lane.className = 'debug-chat-failure-lane';
+      lane.textContent = failure.subagent_task_id
+        ? `subagent ${failure.subagent_task_id}`
+        : 'subagent';
+      head.appendChild(lane);
+    }
+    if (failure.tool) {
+      const tool = document.createElement('span');
+      tool.className = 'debug-chat-failure-tool';
+      tool.textContent = failure.tool;
+      head.appendChild(tool);
+    }
+    const error = document.createElement('span');
+    error.className = 'debug-chat-failure-error';
+    error.textContent = failure.error || 'error';
+    head.appendChild(error);
+
+    if (failure.retryable) {
+      const retry = document.createElement('span');
+      retry.className = 'debug-chat-failure-retry';
+      retry.textContent = 'retryable';
+      head.appendChild(retry);
+    }
+    const when = document.createElement('span');
+    when.className = 'debug-chat-failure-when';
+    when.textContent = [
+      failure.session ? `s${failure.session}` : '',
+      formatFailureTime(failure.created_at),
+    ].filter(Boolean).join(' · ');
+    head.appendChild(when);
+    row.appendChild(head);
+
+    if (failure.message) {
+      const message = document.createElement('div');
+      message.className = 'debug-chat-failure-message';
+      message.textContent = String(failure.message).slice(0, 1200);
+      row.appendChild(message);
+    }
+    if (failure.target) {
+      const target = document.createElement('div');
+      target.className = 'debug-chat-failure-target';
+      target.textContent = failure.target;
+      row.appendChild(target);
+    }
+    body.appendChild(row);
+  }
+}
+
+function updateDebugChatFailureBadge(total) {
+  const badge = document.getElementById('debug-chat-brain-badge');
+  if (!badge) return;
+  const count = Number(total) || 0;
+  badge.classList.toggle('hidden', count <= 0);
+  badge.textContent = count > 99 ? '99+' : String(count);
+  const btn = document.getElementById('debug-chat-brain');
+  if (btn) {
+    const base = btn.dataset.syncLabel || 'Turso save status';
+    btn.title = count > 0
+      ? `${base} — ${count} failure(s) this session. Double-click for the failure log.`
+      : `${base} — double-click for the session failure log`;
+  }
+}
+
+async function loadDebugChatFailures(projectId, { render = true } = {}) {
+  if (!projectId) return null;
+  try {
+    const scope = render ? debugChatFailureScope() : 'last';
+    // Badge-only refreshes ask for a single row: `summary` is computed
+    // independently of `limit`, so the count is exact and the payload is tiny.
+    const limit = render ? 300 : 1;
+    const res = await api(
+      `/projects/${projectId}/agent/failures?session=${encodeURIComponent(scope)}&limit=${limit}`,
+    );
+    if (!res.ok) return null;
+    if (render) renderDebugChatFailures(res);
+    // The badge always reflects the current session, never the "all" scope.
+    if (scope === 'last') updateDebugChatFailureBadge(res.summary?.total || 0);
+    return res;
+  } catch (err) {
+    if (render) {
+      const body = document.getElementById('debug-chat-failures-body');
+      if (body) {
+        body.innerHTML = '';
+        const error = document.createElement('div');
+        error.className = 'debug-chat-resource-empty';
+        error.textContent = normalizeFetchError(err.message);
+        body.appendChild(error);
+      }
+    }
+    return null;
+  }
+}
+
+function closeDebugChatFailureLog() {
+  document.getElementById('debug-chat-failures')?.classList.add('hidden');
+}
+
+async function openDebugChatFailureLog() {
+  const panel = document.getElementById('debug-chat-failures');
+  if (!panel || !activeServiceId) return;
+  // The failure log and the MCP/skills resources panel share the same slot.
+  document.getElementById('debug-chat-resources')?.classList.add('hidden');
+  panel.classList.remove('hidden');
+  const body = document.getElementById('debug-chat-failures-body');
+  if (body && !body.childElementCount) {
+    body.innerHTML = '<div class="debug-chat-resource-loading">Loading failure log…</div>';
+  }
+  await loadDebugChatFailures(activeServiceId);
+}
+
+function toggleDebugChatFailureLog() {
+  const panel = document.getElementById('debug-chat-failures');
+  if (!panel) return;
+  if (panel.classList.contains('hidden')) void openDebugChatFailureLog();
+  else closeDebugChatFailureLog();
+}
+
+// ---------------------------------------------------------------------------
+// Durable subagent roster. The subagent tab used to be revealed only by
+// replayed activity events, so a subagent whose events aged out of the replay
+// window became invisible even though it ran. This reads the durable task list
+// (GET .../agent/subagents) so the tab and its history survive a reload.
+// ---------------------------------------------------------------------------
+
+function renderDebugChatSubagentRoster(tasks) {
+  const laneEl = getDebugChatMessagesEl('sub');
+  if (!laneEl) return;
+  document.getElementById('debug-chat-subagent-roster')?.remove();
+  if (!tasks?.length) return;
+
+  const roster = document.createElement('div');
+  roster.className = 'debug-chat-subagent-roster';
+  roster.id = 'debug-chat-subagent-roster';
+
+  const head = document.createElement('div');
+  head.className = 'debug-chat-subagent-roster-head';
+  head.textContent = `Delegated tasks (${tasks.length})`;
+  roster.appendChild(head);
+
+  for (const task of tasks.slice(0, 12)) {
+    const row = document.createElement('div');
+    row.className = 'debug-chat-subagent-task';
+
+    const rowHead = document.createElement('div');
+    rowHead.className = 'debug-chat-subagent-task-head';
+    const status = document.createElement('span');
+    status.className = `debug-chat-subagent-status status-${task.status || 'running'}`;
+    status.textContent = task.status || 'running';
+    rowHead.appendChild(status);
+    const id = document.createElement('span');
+    id.className = 'debug-chat-subagent-mode';
+    id.textContent = `${task.task_id} · ${task.mode || 'research'}${task.background ? ' · bg' : ''}`;
+    rowHead.appendChild(id);
+    if (task.error) {
+      const error = document.createElement('span');
+      error.className = 'debug-chat-failure-error';
+      error.textContent = task.error;
+      rowHead.appendChild(error);
+    }
+    row.appendChild(rowHead);
+
+    const text = document.createElement('div');
+    text.className = 'debug-chat-subagent-task-text';
+    text.textContent = String(task.task || '').slice(0, 400);
+    row.appendChild(text);
+
+    if (Array.isArray(task.files) && task.files.length) {
+      const files = document.createElement('div');
+      files.className = 'debug-chat-subagent-task-files';
+      files.textContent = task.files.join(', ');
+      row.appendChild(files);
+    }
+    roster.appendChild(row);
+  }
+  laneEl.prepend(roster);
+}
+
+let debugChatSubagentRefreshTimer = null;
+let debugChatFailureRefreshTimer = null;
+
+// Subagent lifecycle events arrive in bursts (scope → started → tools → done);
+// coalesce them into one roster refresh.
+function scheduleDebugChatSubagentRefresh() {
+  if (debugChatSubagentRefreshTimer) return;
+  debugChatSubagentRefreshTimer = setTimeout(() => {
+    debugChatSubagentRefreshTimer = null;
+    void loadDebugChatSubagents(activeServiceId);
+  }, 1200);
+}
+
+function debugChatIsFailureEvent(event) {
+  const type = String(event?.event_type || '');
+  if (type === 'request_failed' || type === 'subagent_failed' || type === 'tool_error') return true;
+  if (type === 'tool_call_finished') return event?.payload?.ok === false;
+  return false;
+}
+
+// Keep the brain badge (and an open failure panel) current without polling the
+// failure endpoint on every frame.
+function scheduleDebugChatFailureRefresh() {
+  if (debugChatFailureRefreshTimer) return;
+  debugChatFailureRefreshTimer = setTimeout(() => {
+    debugChatFailureRefreshTimer = null;
+    const panelOpen = !document.getElementById('debug-chat-failures')?.classList.contains('hidden');
+    void loadDebugChatFailures(activeServiceId, { render: panelOpen });
+  }, 1500);
+}
+
+async function loadDebugChatSubagents(projectId) {
+  if (!projectId) return null;
+  try {
+    const res = await api(`/projects/${projectId}/agent/subagents?session=last&limit=50`);
+    if (!res.ok) return null;
+    const tasks = res.subagents || [];
+    if (tasks.length) {
+      revealDebugChatSubagentTab();
+      hideDebugChatEmpty('sub');
+      renderDebugChatSubagentRoster(tasks);
+      updateDebugChatSubagentBadge();
+    }
+    return res;
+  } catch (_) {
+    return null;
+  }
 }
 
 function setDebugChatConnectionState(state) {
@@ -471,6 +778,11 @@ function clearDebugChatPanel({ resetCursor = false } = {}) {
   debugChatActionGroups.main = null;
   debugChatActionGroups.sub = null;
   hideDebugChatSubagentTab();
+  // Failure panel + badge belong to the project/session being cleared.
+  closeDebugChatFailureLog();
+  const failuresBody = document.getElementById('debug-chat-failures-body');
+  if (failuresBody) failuresBody.innerHTML = '';
+  updateDebugChatFailureBadge(0);
   if (resetCursor) {
     debugChatSinceId = 0;
     debugChatTerminalRequestIds.clear();
@@ -811,7 +1123,7 @@ function ensureStreamingAssistantBubble(requestId) {
     <div class="debug-chat-bubble-body"></div>
   `;
   messagesEl.appendChild(bubble);
-  scrollDebugChatToBottom();
+  scrollDebugChatToBottom(false, 'main');
   return bubble.querySelector('.debug-chat-bubble-body');
 }
 
@@ -879,7 +1191,9 @@ function flushDebugChatThinkingBuffers() {
     const bodyEl = ensureStreamingThinkingBubble(rid);
     if (bodyEl) bodyEl.textContent = text;
   }
-  scrollDebugChatToBottom();
+  // Streaming bubbles always live in the main lane — never scroll whichever
+  // lane happened to render last (a subagent event can land between frames).
+  scrollDebugChatToBottom(false, 'main');
 }
 
 function queueDebugChatThinkingDelta(requestId, delta, snapshot) {
@@ -908,7 +1222,7 @@ function finalizeDebugChatThinking(requestId, finalText = '') {
   if (bodyEl && text) bodyEl.textContent = text;
   bubble = document.getElementById(`debug-chat-thinking-${rid}`);
   if (bubble) bubble.classList.remove('debug-chat-streaming');
-  scrollDebugChatToBottom();
+  scrollDebugChatToBottom(false, 'main');
 }
 
 function flushDebugChatStreamBuffers() {
@@ -917,7 +1231,7 @@ function flushDebugChatStreamBuffers() {
     const bodyEl = ensureStreamingAssistantBubble(rid);
     if (bodyEl) bodyEl.textContent = text;
   }
-  scrollDebugChatToBottom();
+  scrollDebugChatToBottom(false, 'main');
 }
 
 function coerceDebugChatText(value) {
@@ -957,7 +1271,7 @@ function finalizeDebugChatStream(requestId, finalText = '') {
   if (bodyEl && text) bodyEl.textContent = text;
   bubble = document.getElementById(`debug-chat-stream-${rid}`);
   if (bubble) bubble.classList.remove('debug-chat-streaming');
-  scrollDebugChatToBottom();
+  scrollDebugChatToBottom(false, 'main');
 }
 
 function finalizeAllDebugChatStreams() {
@@ -1454,6 +1768,10 @@ function handleDebugChatActivity(event) {
   const isSubagentLifecycle = String(event.event_type || '').startsWith('subagent_');
   if (lane === 'sub' || isSubagentLifecycle) {
     revealDebugChatSubagentTab();
+    if (!debugChatReplayingHistory) scheduleDebugChatSubagentRefresh();
+  }
+  if (!debugChatReplayingHistory && debugChatIsFailureEvent(event)) {
+    scheduleDebugChatFailureRefresh();
   }
   const eventRequestId = event.payload?.request_id || '';
   const isTerminal = event.event_type === 'request_completed'
@@ -1699,6 +2017,11 @@ async function loadDebugChatHistory(projectId) {
     finalizeAllDebugChatStreams();
     setDebugChatTyping(false);
     debugChatRenderLane = debugChatActiveLane;
+    // Durable sources of truth, independent of the replay window: a subagent
+    // that ran earlier in this session still reveals its tab, and the brain
+    // badge shows this session's failure count immediately on open.
+    await loadDebugChatSubagents(projectId);
+    await loadDebugChatFailures(projectId, { render: false });
     for (const laneEl of getDebugChatLaneEls()) refreshIcons(laneEl);
     updateDebugChatSubagentBadge();
     if (!debugChatActiveRequestId && !debugChatSendInFlight) {
@@ -2049,6 +2372,8 @@ async function openDebugChatResources(mode) {
   const body = document.getElementById('debug-chat-resources-body');
   if (!panel || !body) return;
   setDebugChatResourceButtons(mode);
+  // Resources and the failure log share the same slot above the chat lanes.
+  closeDebugChatFailureLog();
   panel.classList.remove('hidden');
   body.innerHTML = '<div class="debug-chat-resource-loading">Loading…</div>';
   try {
@@ -4124,6 +4449,35 @@ document.getElementById('debug-chat-tabs')?.addEventListener('click', (ev) => {
   const tab = ev.target.closest('.debug-chat-tab');
   if (!tab) return;
   setDebugChatLane(tab.dataset.chatLane === 'sub' ? 'sub' : 'main');
+});
+// Double-clicking the brain opens the session failure log (failed tasks, tools,
+// requests and subagents). A single click stays a no-op so the sync indicator
+// keeps behaving like an indicator.
+document.getElementById('debug-chat-brain')?.addEventListener('dblclick', (ev) => {
+  ev.preventDefault();
+  toggleDebugChatFailureLog();
+});
+document.getElementById('debug-chat-failures-close')?.addEventListener('click', closeDebugChatFailureLog);
+document.getElementById('debug-chat-failures-refresh')?.addEventListener('click', () => {
+  void loadDebugChatFailures(activeServiceId);
+});
+document.getElementById('debug-chat-failures-scope')?.addEventListener('change', () => {
+  void loadDebugChatFailures(activeServiceId);
+});
+document.getElementById('debug-chat-failures-clear')?.addEventListener('click', async () => {
+  if (!activeServiceId) return;
+  const scope = debugChatFailureScope();
+  try {
+    await api(
+      `/projects/${activeServiceId}/agent/failures?session=${encodeURIComponent(scope)}`,
+      { method: 'DELETE' },
+    );
+  } catch (err) {
+    toast(normalizeFetchError(err.message));
+    return;
+  }
+  updateDebugChatFailureBadge(0);
+  await loadDebugChatFailures(activeServiceId);
 });
 document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
   const select = document.getElementById('debug-chat-profile');

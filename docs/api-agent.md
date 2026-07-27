@@ -192,9 +192,107 @@ Disable a project skill (removes the active row; catalog entry remains).
 
 Delete a custom skill definition entirely (also clears activation). Built-ins cannot be purged.
 
+## Session failure log
+
+Activity events are pruned and replay-window limited, and they mix success with
+failure. The failure log is a small, failure-only table that answers "what
+actually went wrong in this session?" — failed tools, requests, subagents,
+provider errors and preview checks, for the main agent **and** every subagent.
+In the GUI it opens by **double-clicking the brain icon** in the chat status bar.
+
+Rows are recorded automatically from activity events; expected control flow
+(`plan_required`, `question_required`, `research_readonly`, file-scope refusals,
+`await_timeout`) is deliberately excluded so real problems are not buried.
+
+### GET `/api/projects/{project_id}/agent/failures`
+
+| Query | Default | Notes |
+|-------|---------|-------|
+| `session` | `last` | `last`, `all`, or a session number |
+| `limit` | `200` | 1–1000. `summary` is computed independently, so `limit=1` gives an exact count with a tiny payload |
+| `kind` | – | `request` \| `subagent` \| `tool` \| `provider` \| `session` \| `preview` \| `design` |
+
+```json
+{
+  "ok": true,
+  "session": "last",
+  "failures": [
+    {
+      "id": 42,
+      "session": 4,
+      "request_id": "rq-1",
+      "agent": "subagent",
+      "subagent_task_id": "sub-9f2c",
+      "kind": "tool",
+      "tool": "write_file",
+      "error": "outside_file_scope",
+      "message": "…",
+      "target": "app/app/page.tsx",
+      "retryable": false,
+      "created_at": "2026-07-27T16:06:32.336996+00:00"
+    }
+  ],
+  "summary": { "total": 3, "by_kind": { "tool": 2, "provider": 1 }, "by_tool": { "write_file": 2 }, "sessions": [4, 3] }
+}
+```
+
+### DELETE `/api/projects/{project_id}/agent/failures?session=last`
+
+Clears the log for that scope: `{ "ok": true, "removed": 3 }`.
+
+## Subagent tasks
+
+Durable record of every delegated task, written to local SQLite **and** Turso.
+The local copy is what `await_subagent` recovers from after a restart and what
+reveals the GUI subagent tab on load, so a subagent stays visible even when its
+activity events have aged out of the replay window.
+
+### GET `/api/projects/{project_id}/agent/subagents?session=last&limit=50`
+
+```json
+{
+  "ok": true,
+  "session": "last",
+  "count": 2,
+  "running": 1,
+  "failed": 0,
+  "subagents": [
+    {
+      "task_id": "sub-9f2c1a",
+      "session": 4,
+      "parent_request_id": "rq-1",
+      "task": "find the hero component",
+      "mode": "research",
+      "profile": "syra-subagent",
+      "background": true,
+      "files": ["app/app/page.tsx"],
+      "status": "completed",
+      "result": "…",
+      "error": "",
+      "usage": { "total_tokens": 1840 },
+      "cost": { "cost_usd": 0.0011 },
+      "activity_count": 12,
+      "started_at": "2026-07-27T16:05:00+00:00",
+      "finished_at": "2026-07-27T16:05:41+00:00"
+    }
+  ]
+}
+```
+
+`status` is one of `running`, `completed`, `partial`, `failed`, `timeout`,
+`cancelled`. Rows left at `running` by a restart are swept to `cancelled` the
+next time the project's agent is warmed.
+
 ## Token API mirrors
 
 Authenticate with `X-API-Key: syte_…` or `Authorization: Bearer syte_…`.
+
+### Failures and subagents
+
+| Action | Endpoint |
+|--------|----------|
+| Failure log | `GET /api/agent_failures?uuid=&session=last&limit=200&kind=` |
+| Subagent tasks | `GET /api/agent_subagents?uuid=&session=last&limit=50` |
 
 ### MCP
 

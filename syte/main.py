@@ -832,6 +832,78 @@ async def api_agent_turso_debug_public(project_id: str):
     return {"ok": True, "project_id": project_id, **(await turso_debug_status())}
 
 
+@app.get("/api/projects/{project_id}/agent/failures")
+async def api_agent_failures_public(
+    project_id: str,
+    session: str = "last",
+    limit: int = 200,
+    kind: str = "",
+):
+    """Per-session failure log — every failed task, tool, request and subagent.
+
+    Surfaced in the GUI by double-clicking the brain icon. Activity events are
+    pruned and replay-window limited, so this failure-only table is what answers
+    "what actually went wrong in this session?".
+
+    ``session``: ``last`` (default), a session number, or ``all``.
+    """
+    from syte.agent_failures import failure_summary, list_failures
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    scope = session or "last"
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "session": scope,
+        "failures": await list_failures(
+            project_id, session=scope, limit=max(1, min(limit, 1000)), kind=kind or ""
+        ),
+        "summary": await failure_summary(project_id, session=scope),
+    }
+
+
+@app.delete("/api/projects/{project_id}/agent/failures")
+async def api_agent_failures_clear_public(project_id: str, session: str = "last"):
+    """Clear the failure log for a session (or ``all``)."""
+    from syte.agent_failures import clear_failures
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    removed = await clear_failures(project_id, session=session or "last")
+    return {"ok": True, "project_id": project_id, "removed": removed}
+
+
+@app.get("/api/projects/{project_id}/agent/subagents")
+async def api_agent_subagents_public(
+    project_id: str, session: str = "last", limit: int = 50,
+):
+    """Durable list of delegated subagent tasks for this project/session.
+
+    The GUI subagent tab used to be revealed only by replayed activity events,
+    so a subagent whose events aged out of the replay window became invisible.
+    This endpoint is the durable source of truth the tab now checks on load.
+    """
+    from syte.subagent_store import list_tasks
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    tasks = await list_tasks(project_id, session=session or "last", limit=limit)
+    running = [t for t in tasks if t.get("status") == "running"]
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "session": session or "last",
+        "subagents": tasks,
+        "count": len(tasks),
+        "running": len(running),
+        "failed": len([t for t in tasks if t.get("status") in {"failed", "timeout"}]),
+    }
+
+
 @app.get("/api/projects/{project_id}/agent/logs")
 async def api_agent_logs_public(project_id: str, lines: int = 200):
     from syte.cloud_agent import get_agent_logs

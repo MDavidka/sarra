@@ -59,7 +59,7 @@ from syte.workspace import ensure_workspace, workspace_path
 CLOUD_RUNTIME = "kilo-cloud"
 # Compatibility for older API consumers that imported this symbol.
 OPENHANDS_RUNTIME = CLOUD_RUNTIME
-AGENT_INSTRUCTION_VERSION = 18
+AGENT_INSTRUCTION_VERSION = 19
 MAX_HISTORY_MESSAGES = 160
 PROVIDER_TIMEOUT_S = 600.0
 # Attempts per provider call. Quota (429) retries and same-provider model
@@ -1068,6 +1068,13 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "This is a Next.js website project. You MUST:\n"
             "- Use Next.js App Router (routes in app/app/ — double app/ is correct)\n"
             "- Import shadcn/ui components from @/components/ui/* only\n"
+            "- Resolve every component's real API with shadcn_registry (info → search → view/docs) "
+            "BEFORE writing UI, and install missing primitives with shadcn_registry(action=add). "
+            "Never write a component's props or sub-component names from memory, and never "
+            "hand-roll a primitive the registry already provides\n"
+            "- State the creative direction (and one rejected alternative) before code; avoid the "
+            "banned slop signature (indigo/violet accent, purple gradient, centered hero + three "
+            "icon cards, gradient text, glassmorphism)\n"
             "- Compose pages from the 57 cataloged components; never use shadcn Blocks or block templates\n"
             "- Keep direct Radix imports inside components/ui wrappers; preserve keyboard/focus/ARIA behavior\n"
             "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
@@ -1083,7 +1090,8 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "application code imports @/components/ui/*\n"
             "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
             "- After UI changes: preview_start → inspect_preview (DevTools load/console) first; "
-            "screenshot_preview only when you need visual layout review\n"
+            "screenshot_preview only when you need visual layout review. Use browse_url against the "
+            "dev server URL when you need the browser console for a non-default route or port\n"
             "- Follow the Design Contract below strictly\n"
         )
     return (
@@ -1106,7 +1114,9 @@ def _build_static_instruction(
     """Build the cacheable instruction prefix (design contract, tools, skills, rules)."""
     from syte.design_contract import (
         DESIGN_CONTRACT_MARKDOWN,
+        creative_direction_block,
         shadcn_catalog_json,
+        slop_signature_block,
         themes_prompt_block,
     )
 
@@ -1134,7 +1144,11 @@ def _build_static_instruction(
         "ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
-        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (current web info); "
+        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (find current web "
+        "info); fetch_url (READ any public page/API you found — docs, references, changelogs); "
+        "browse_url (real headless Chromium against any URL incl. the dev server on 127.0.0.1: "
+        "console logs, page exceptions, failed requests); shadcn_registry "
+        "(info/search/view/docs/add/apply_preset — the live component registry); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
         "status/start/stop/logs); update_plan with per-step assignee main|subagent; delegate_task + "
         "await_subagent for subagent-assigned work (NVIDIA GLM 5.2 when configured).\n"
@@ -1183,8 +1197,12 @@ def _build_static_instruction(
         "preview_start before judging the result.\n",
         "Website / web UI design contract (mandatory when building websites):\n"
         f"{DESIGN_CONTRACT_MARKDOWN}\n",
+        f"{creative_direction_block()}\n",
+        f"{slop_signature_block()}\n",
         f"{themes_prompt_block()}\n",
-        "shadcn/ui component catalog (import only these — never invent names):\n"
+        "shadcn/ui component catalog (import only these — never invent names). This list is the "
+        "allowed surface, NOT the API reference: resolve real sub-components, props and imports "
+        "with shadcn_registry (action=view / action=docs) before you write the file.\n"
         f"{shadcn_catalog_json()}\n",
         f"Syte workspace rules:\n{rule_lines}\n",
         f"{active_skills_block}\n",
@@ -1482,8 +1500,24 @@ async def _post_turn_preview_checks(
         logger.debug("preview health check failed", exc_info=True)
 
 
+async def _sweep_orphan_subagents(project_id: str) -> int:
+    """Close local subagent rows whose worker no longer exists.
+
+    A service restart or a hard interrupt leaves rows stuck at ``running``,
+    which made ``await_subagent`` wait on nothing and the GUI show a task as
+    permanently in-flight. Only safe when this process has no live background
+    subagent for the project.
+    """
+    if _count_background_subagents(project_id):
+        return 0
+    from syte.subagent_store import mark_orphans_cancelled
+
+    return await mark_orphans_cancelled(project_id)
+
+
 async def warm_agent(project_id: str, *, source: str = "api") -> dict[str, Any]:
     ok, message, status = await start_agent(project_id)
+    await _sweep_orphan_subagents(project_id)
     return {"ok": ok, "status": status.get("agent_status", "error"), "message": message,
             "project_id": project_id, "already_warming": False, "source": source}
 
@@ -1815,6 +1849,49 @@ TOOLS: list[dict[str, Any]] = [
          "query": {"type": "string"},
          "max_results": {"type": "integer"},
      }, "required": ["query"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "fetch_url", "description": (
+        "Read any public web page or API response as text. Use it after web_search to actually "
+        "READ the documentation, design reference, or changelog you found instead of relying on "
+        "memory. HTML is reduced to readable prose. Blocked: non-http(s) schemes, cloud metadata "
+        "endpoints, and private/loopback addresses (use browse_url for this project's dev server)."),
+     "parameters": {"type": "object", "properties": {
+         "url": {"type": "string"},
+         "extract": {"type": "string", "enum": ["text", "raw", "links"], "description": "text=readable prose (default), raw=body as received, links=text + outbound links"},
+         "max_chars": {"type": "integer", "description": "Content cap (default 20000, max 120000)"},
+     }, "required": ["url"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "browse_url", "description": (
+        "Open a URL in real headless Chromium and return browser-side diagnostics: console logs, "
+        "uncaught page exceptions, failed network requests, document title and readyState. This is "
+        "how you read the DEV SERVER's browser console (hydration errors, client runtime errors) "
+        "which never appear in server logs. Loopback/private hosts are allowed here on purpose. "
+        "For the project's own preview route prefer inspect_preview; use browse_url for any other "
+        "origin, a specific port, or an external page you need rendered."),
+     "parameters": {"type": "object", "properties": {
+         "url": {"type": "string", "description": "Full URL, e.g. http://127.0.0.1:3000/dashboard"},
+         "include_screenshot": {"type": "boolean", "description": "Also return a screenshot (default false)"},
+         "width": {"type": "integer"},
+         "height": {"type": "integer"},
+     }, "required": ["url"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "shadcn_registry", "description": (
+        "Live shadcn/ui registry access — the source of truth for component names, sub-components, "
+        "props, dependencies and file paths. Call this BEFORE writing UI code; never recall a "
+        "component API from memory. Actions: info (this project's framework/aliases/installed "
+        "components), search (find components across registries), view (real source + deps of "
+        "specific items), docs (real API reference), add (install actual registry source into "
+        "components/ui — use instead of hand-writing a primitive), apply_preset (theme/font preset), "
+        "presets (resolve current preset). Typical flow: info → search → view/docs → add → build."),
+     "parameters": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["info", "search", "view", "docs", "add", "apply_preset", "presets"]},
+         "query": {"type": "string", "description": "For action=search"},
+         "items": {"type": "array", "items": {"type": "string"}, "description": "Item names for view/add, e.g. ['button','navigation-menu']"},
+         "component": {"type": "string", "description": "For action=docs"},
+         "registries": {"type": "array", "items": {"type": "string"}, "description": "Registry names for search (default ['@shadcn'])"},
+         "limit": {"type": "integer"},
+         "dry_run": {"type": "boolean", "description": "For action=add — preview without writing"},
+         "overwrite": {"type": "boolean", "description": "For action=add"},
+         "preset": {"type": "string", "description": "For action=apply_preset"},
+         "only": {"type": "string", "description": "For action=apply_preset: theme | font"},
+     }, "required": ["action"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "semantic_search", "description": (
         "Search the workspace index by meaning/tags (not exact keywords only). "
         "Use before full-workspace crawls when looking for related components or pages."),
@@ -2213,6 +2290,43 @@ async def _execute_tool(
                 str(args.get("query") or ""),
                 max_results=int(args.get("max_results") or 5),
             )
+        if name == "fetch_url":
+            from syte.web_access import fetch_url as do_fetch_url
+
+            return await do_fetch_url(
+                str(args.get("url") or ""),
+                extract=str(args.get("extract") or "text"),
+                max_chars=int(args.get("max_chars") or 20_000),
+            )
+        if name == "browse_url":
+            from syte.web_access import browse_url as do_browse_url
+
+            return await do_browse_url(
+                str(args.get("url") or ""),
+                include_screenshot=bool(args.get("include_screenshot")),
+                width=int(args.get("width") or 1280),
+                height=int(args.get("height") or 800),
+            )
+        if name == "shadcn_registry":
+            from syte.shadcn_registry import run_action as shadcn_action
+
+            action = str(args.get("action") or "").strip().lower()
+            # Read-only subagents may inspect the registry but never install into
+            # the shared workspace (that is a write the parent must own).
+            if (
+                ctx.get("subagent_mode") == "research"
+                and action in {"add", "apply_preset"}
+            ):
+                return {
+                    "ok": False,
+                    "error": "research_readonly",
+                    "message": (
+                        f"shadcn_registry action={action} writes to the workspace and is "
+                        "blocked in research mode. Report the components to install back "
+                        "to the parent agent."
+                    ),
+                }
+            return await shadcn_action(project_id, args)
         if name == "semantic_search":
             from syte.agent_memory import lookup_workspace_paths, prompt_tags_from_message
 
@@ -3683,7 +3797,27 @@ async def _persist_subagent_task(
     background: bool,
     files: list[str],
 ) -> None:
-    """Durably record a delegated task (task text, scope, start time)."""
+    """Durably record a delegated task (task text, scope, start time).
+
+    Written to BOTH stores: local SQLite is always available (and is what
+    ``await_subagent`` recovery and the GUI subagent tab read), Turso is the
+    cross-host mirror and may be unconfigured or unreachable.
+    """
+    from syte.subagent_store import record_task as record_local_subagent_task
+
+    await record_local_subagent_task(
+        task_id,
+        project_id,
+        task,
+        session=session_number,
+        turso_session_id=turso_session_id,
+        parent_request_id=parent_request_id,
+        mode=mode,
+        profile=str(model.get("profile") or ""),
+        model=str(model.get("model") or ""),
+        background=background,
+        files=files,
+    )
     try:
         from syte.turso_store import record_subagent_task
 
@@ -3712,7 +3846,10 @@ async def _finalize_subagent_task(
     mode: str,
     released: list[str] | None = None,
 ) -> None:
-    """Close the durable subagent row with outcome, usage and cost."""
+    """Close the durable subagent row with outcome, usage and cost (local + Turso)."""
+    from syte.subagent_store import finalize_task as finalize_local_subagent_task
+
+    await finalize_local_subagent_task(task_id, project_id, result)
     try:
         from syte.turso_store import finalize_subagent_task
 
@@ -4055,6 +4192,43 @@ async def _tool_await_subagent(project_id: str, args: dict[str, Any]) -> dict[st
 
     task = _background_subagents.get(key)
     if task is None:
+        # The in-memory result cache is bounded and does not survive a restart.
+        # Recover the outcome from the durable local record instead of telling
+        # the parent the subagent never existed (DAV-210).
+        from syte.subagent_store import TERMINAL_STATUSES, get_task as get_local_subagent_task
+
+        stored_row = await get_local_subagent_task(task_id, project_id)
+        if stored_row and stored_row.get("status") in TERMINAL_STATUSES:
+            recovered = {
+                "ok": stored_row["status"] in {"completed", "partial"},
+                "status": stored_row["status"],
+                "task_id": task_id,
+                "task": stored_row.get("task"),
+                "mode": stored_row.get("mode"),
+                "files": stored_row.get("files") or [],
+                "result": stored_row.get("result") or "",
+                "usage": stored_row.get("usage") or {},
+                "cost": stored_row.get("cost") or {},
+                "recovered_from": "local_store",
+            }
+            if stored_row.get("error"):
+                recovered["error"] = stored_row["error"]
+            _store_subagent_result(key, recovered)
+            return {**recovered, "awaited": True}
+        if stored_row:
+            return {
+                "ok": False,
+                "error": "subagent_lost",
+                "retryable": False,
+                "status": "lost",
+                "message": (
+                    f"Subagent '{task_id}' was recorded as still running but its worker is "
+                    "gone (service restart or interrupt). Re-delegate the task."
+                ),
+                "task_id": task_id,
+                "task": stored_row.get("task"),
+                "files": stored_row.get("files") or [],
+            }
         return {
             "ok": False,
             "error": "subagent_not_found",
@@ -4489,6 +4663,15 @@ async def _run_subagent_loop(
                     "step": step + 1,
                     "path": args.get("path"),
                     "command": args.get("command"),
+                    **(
+                        {}
+                        if result.get("ok")
+                        else {
+                            "error": str(result.get("error") or "tool_failed"),
+                            "message": str(result.get("message") or "")[:1000],
+                            "retryable": bool(result.get("retryable")),
+                        }
+                    ),
                 },
                 tool=name,
             )
@@ -5568,6 +5751,20 @@ async def _communicate_with_agent_impl(
                             "tool": name,
                             "ok": bool(result.get("ok")),
                             "phase": "finished",
+                            # Explicit failure fields so the session failure log
+                            # (brain icon, double-click) does not have to parse
+                            # the encoded tool payload.
+                            **(
+                                {}
+                                if result.get("ok")
+                                else {
+                                    "error": str(result.get("error") or "tool_failed"),
+                                    "message": str(result.get("message") or "")[:1000],
+                                    "retryable": bool(result.get("retryable")),
+                                }
+                            ),
+                            **({"path": args["path"]} if args.get("path") else {}),
+                            **({"command": args["command"]} if args.get("command") else {}),
                         },
                     ),
                     source=source,
