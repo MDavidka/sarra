@@ -328,3 +328,12 @@ def test_output_limits_truncate_and_cap_stream() -> None:
     assert "truncated" in text
     assert len(seen) == 1000
     assert len(text.encode()) <= 50 + len(TRUNCATION_MARKER.encode())
+
+def test_command_allowlist_rejects_newline_and_ampersand_bypasses() -> None:
+    assert _allowlist_violation("npm run lint\nsh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint\rsh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint & sh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint && sh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint || sh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint ; sh -c 'id'") == "sh"
+    assert _allowlist_violation("npm run lint | sh") == "sh"
