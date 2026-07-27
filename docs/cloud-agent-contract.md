@@ -74,8 +74,31 @@ and structured tools. Available tools:
   missing keys as a question and writes the answer into env
 - `list_mcp_addons` / `connect_mcp` / `call_mcp` — available MCP addons (built-in `syte` plus
   registered custom addons)
+- `web_search` — find current information (Tavily → Brave → DuckDuckGo, by configured key)
+- `fetch_url` — **read** any public page or API response found by `web_search`. HTML is reduced to
+  readable prose (`extract=text|raw|links`, `max_chars` up to 120 000). Guarded: http(s) only, no
+  credentialed URLs, cloud metadata endpoints permanently blocked, private/loopback targets
+  refused, and each redirect hop is re-validated.
+- `browse_url` — open **any** URL in real headless Chromium and return console logs, uncaught page
+  exceptions, failed network requests, title and `readyState`. Loopback and private hosts are
+  allowed here on purpose so the agent can read the **dev server's browser console**
+  (`http://127.0.0.1:<port>`), where hydration and client runtime errors surface but never reach
+  the server log. Prefer `inspect_preview` for the project's own preview route.
+- `shadcn_registry` — live component registry access, the source of truth for component names,
+  sub-components, props, dependencies and file paths:
+  `info` (project framework/aliases/installed components), `search`, `view` (real item source),
+  `docs` (real API reference), `add` (install actual registry source, `dry_run` supported),
+  `apply_preset`, `presets`. Backed by the shadcn CLI with public-registry and docs-site
+  fallbacks, so it degrades gracefully offline instead of dead-ending a turn. Read-only
+  (`mode=research`) subagents may inspect but not `add` / `apply_preset`.
 - `delegate_task` — bounded subagent (research/implementation modes; optional background + `await_subagent`)
-- `await_subagent` — collect findings from a background `delegate_task`
+- `await_subagent` — collect findings from a background `delegate_task`. Recovers a finished task
+  from the durable local record when the in-memory result cache has rotated or the service
+  restarted; a task whose worker is gone returns `subagent_lost` instead of `subagent_not_found`.
+
+Internet access is on by default and can be disabled per deployment with the
+`agent_internet_access` setting (`off`/`false`/`0`). Extra hosts can be denied with a
+comma/space separated `agent_internet_blocklist` (matches the host and its subdomains).
 
 ### Code policy
 
@@ -90,6 +113,33 @@ Ant Design.
 For a new website or substantive redesign, the runtime enforces a clarification-or-plan gate.
 When the brief lacks a material design choice, the agent asks one batched question before planning.
 Otherwise it plans first. File inspection and edits remain blocked until that sequence completes.
+
+### Design quality: verify components, direct the creative
+
+Design Contract 2.1 addresses the two reasons generated UI looks generic.
+
+**Guessing the components.** The catalog names the allowed component surface; it is not an API
+reference. The agent must resolve real sub-components, props and imports through `shadcn_registry`
+(`info` → `search` → `view` / `docs`) *before* writing a file, and install missing primitives with
+`shadcn_registry(action=add)` rather than hand-rolling them. Anything `view`/`docs` does not show
+does not exist.
+
+**Guessing the design.** A single pass that has to set taste, explore options and write the
+implementation at once resolves that ambiguity toward the most common answer in training data. The
+contract therefore separates three jobs: state a product-specific **direction**, **explore** at
+least two materially different compositions and justify the choice, then **specify** tokens, type
+scale, grid, section order and component mapping in `update_plan` and build to that spec. Research
+real references with `web_search` + `fetch_url` first, and commit to exactly one deliberate
+signature move per site.
+
+The contract also bans the documented "AI slop" defaults unless the written direction argues for
+them: `indigo-500`/`violet-500`/`purple-500` accents and purple-to-indigo gradients, Inter or
+Roboto as the only typeface, a centered hero + single CTA with a badge pill above it, a row of
+exactly three icon cards as the primary feature layout, numbered 1-2-3 strips, colored
+left-border cards, gradient text, glassmorphism, glowing blobs, and uniform `rounded-2xl` +
+0.1-opacity shadows. Pages need at least three structurally different section types, and the
+agent is expected to critique its own output against these rules after `inspect_preview` and fix
+what fails.
 
 ### Session stop markers
 
@@ -466,6 +516,46 @@ The GUI polls this route every 3 seconds while the "Agent chat" tab is open
 (`syte/static/app.js`, `startDebugChatBrainPoll` / `pollDebugChatBrainOnce`),
 independent of the 2-second activity poll, so the brain icon updates live as
 new messages are produced during an in-progress turn.
+
+### Session failure log — double-click the brain
+
+The brain icon is also the entry point to the **session failure log**:
+double-clicking it opens a panel listing every failed task, tool, request,
+subagent, provider call and preview check for the session, for the main agent
+and every subagent. A red badge on the icon shows the current session's failure
+count.
+
+Rows come from `GET /api/projects/{project_id}/agent/failures` (token mirror
+`GET /api/agent_failures?uuid=`), backed by the local `agent_failure` table.
+Recording happens at a single choke point — `record_agent_event()` classifies
+every cold activity event — so subagents are captured with no per-call-site
+instrumentation. Expected control flow (`plan_required`, `question_required`,
+`research_readonly`, file-scope refusals, `await_timeout`) is excluded so real
+failures are not buried. `DELETE` on the same route clears a scope. Schema and
+response shape: [Agent API](./api-agent.md#session-failure-log).
+
+### Subagent visibility
+
+Delegated tasks are recorded in **both** local SQLite (`agent_subagent_local`)
+and Turso. The local copy exists because Turso may be unconfigured or
+unreachable, and it fixes two failures that made subagents look broken:
+
+- `await_subagent` returned `subagent_not_found` once the bounded in-memory
+  result cache rotated or the service restarted. It now recovers a finished task
+  from the local record, and reports `subagent_lost` (not "never existed") when
+  a row is still `running` but its worker is gone. Rows orphaned by a restart
+  are swept to `cancelled` the next time the project's agent is warmed.
+- The GUI subagent tab was revealed only by *replayed activity events*
+  (`limit=500`, `session=last`). Subagent activity is verbose, so on a busy
+  session the reveal event aged out of the window and the tab stayed hidden even
+  though the lane had content. The tab is now also revealed from
+  `GET /api/projects/{project_id}/agent/subagents`, which additionally renders a
+  durable roster (task, mode, file scope, status, error) at the top of the lane.
+
+Lane routing is unchanged — `payload.agent` / `payload.subagent_task_id` decide
+the lane — but streaming bubbles are now pinned to the main lane explicitly, so
+a subagent event arriving between a token frame and its render no longer
+redirects the main agent's reply into the subagent tab.
 
 ### Diagnosing a stuck-red brain — `agent/turso_debug`
 

@@ -568,6 +568,56 @@ async def api_agent_activity_stream(
     return sse_stream_response(request, _gen())
 
 
+@router.get("/agent_failures")
+async def api_agent_failures(
+    uuid: str = Query(...),
+    session: str = Query("last", description="last | all | session number"),
+    limit: int = Query(200, ge=1, le=1000),
+    kind: str = Query("", description="Filter: request|subagent|tool|provider|session|preview|design"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Failure-only session log: failed tools, tasks, requests and subagents."""
+    from syte.agent_failures import failure_summary, list_failures
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "session": session or "last",
+        "failures": await list_failures(
+            uuid, session=session or "last", limit=limit, kind=kind or ""
+        ),
+        "summary": await failure_summary(uuid, session=session or "last"),
+    }
+
+
+@router.get("/agent_subagents")
+async def api_agent_subagents(
+    uuid: str = Query(...),
+    session: str = Query("last", description="last | all | session number"),
+    limit: int = Query(50, ge=1, le=500),
+    _token: dict = Depends(verify_api_token),
+):
+    """Durable list of delegated subagent tasks (status, scope, result, cost)."""
+    from syte.subagent_store import list_tasks
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    tasks = await list_tasks(uuid, session=session or "last", limit=limit)
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "session": session or "last",
+        "subagents": tasks,
+        "count": len(tasks),
+        "running": len([t for t in tasks if t.get("status") == "running"]),
+        "failed": len([t for t in tasks if t.get("status") in {"failed", "timeout"}]),
+    }
+
+
 @router.get("/agent_screenshots")
 async def api_agent_screenshots(
     uuid: str = Query(...),

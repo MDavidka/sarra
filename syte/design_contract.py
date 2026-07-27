@@ -1,17 +1,55 @@
 """Sycord Design Contract — mandatory rules for AI-generated Next.js sites."""
 
-DESIGN_CONTRACT_VERSION = "2.0"
+DESIGN_CONTRACT_VERSION = "2.1"
 
 DESIGN_REFERENCE_URLS = {
     "website_builder_baseline": (
         "https://github.com/webprompts/webprompts.github.io/blob/gh-pages/v0.md"
     ),
     "shadcn_components": "https://ui.shadcn.com/docs/components",
+    "shadcn_cli": "https://ui.shadcn.com/docs/cli",
+    "shadcn_mcp": "https://ui.shadcn.com/docs/mcp",
+    "shadcn_agent_skills": "https://ui.shadcn.com/docs/skills",
     "radix_accessibility": (
         "https://www.radix-ui.com/primitives/docs/overview/accessibility"
     ),
     "wcag_22": "https://www.w3.org/TR/WCAG22/",
 }
+
+# Documented defaults that make AI-generated UI recognisable as AI-generated.
+# These are the literal statistical centre of "modern web UI" in training data,
+# so an unguided model converges on them; naming them explicitly is what stops
+# it. Values are stock Tailwind, i.e. nobody's deliberate brand decision.
+SLOP_SIGNATURE = {
+    "colors": ["#6366F1 indigo-500", "#8B5CF6 violet-500", "#A855F7 purple-500"],
+    "fonts": ["Inter as the only typeface", "Roboto as the only typeface"],
+    "layouts": [
+        "centered hero headline + single CTA",
+        "row of exactly three icon cards below the hero",
+        "badge pill above the headline",
+        "numbered 1-2-3 steps strip",
+        "colored left-border accent card",
+    ],
+    "effects": [
+        "purple-to-indigo gradient hero",
+        "gradient text headline",
+        "glassmorphism panels",
+        "glowing background blobs",
+        "uniform rounded-2xl + 0.1-opacity shadow on everything",
+    ],
+}
+
+# A website build must resolve three separate jobs. Fusing them into one pass is
+# what produces the average: the model is asked to be taste director, explorer
+# and engineer simultaneously, so it answers with the safest common output.
+CREATIVE_DIRECTION_JOBS = (
+    "direction — what this specific product should feel like, and why (stated in words "
+    "before any code, anchored to the brand/audience/content, not to adjectives)",
+    "exploration — at least two genuinely different compositional approaches considered, "
+    "with the chosen one justified against the rejected one",
+    "specification — concrete tokens, type scale, grid, section order and component "
+    "mapping recorded in the plan so the build executes a decision instead of guessing",
+)
 
 # Named visual themes the agent should offer via ask_question(choice) when
 # scaffolding a new website. Each theme maps to Tailwind CSS variables + fonts.
@@ -187,6 +225,36 @@ DESIGN_CONTRACT_MARKDOWN = """# Sycord Design Contract
 - Apply the chosen theme's CSS variables, font pairing, radius, and shadow level before building pages.
 - Do not invent a one-off palette when a named theme fits.
 
+## 0.1 Creative direction before code (mandatory for new sites / redesigns)
+Generic output is not a model-capability gap; it is what happens when one pass has to be
+taste director, explorer, and engineer at once. Keep those three jobs separate:
+1. **Direction** — before writing any file, state in the plan (or the reply) what this
+   *specific* product should feel like and why, tied to its brand, audience, and real
+   content. Never a bare adjective like "clean", "modern", or "premium".
+2. **Exploration** — consider at least two materially different compositions (not two
+   colour swaps). Name the one you chose and why the other was rejected.
+3. **Specification** — record the decision as concrete tokens, type scale, grid, section
+   order, and component mapping in `update_plan`, then build to that spec.
+- Use `web_search` + `fetch_url` on real, current references for the product's category
+  before designing. Look at how actual products in that space are composed.
+- Commit to exactly one deliberate signature move per site (an editorial grid, a real data
+  visualization, oversized type, a dense table-first layout, an asymmetric split, genuine
+  product media). One considered decision beats five default effects.
+- If you cannot say *why* a layout choice belongs to this product, it is a default. Replace it.
+
+## 0.2 Component sourcing — verify, never recall
+- `shadcn_registry` is the source of truth for component names, sub-components, props, and
+  file paths. **Call it before writing UI code**, not after a build error.
+- Order of operations for any new interface surface:
+  `shadcn_registry(action=info)` → `shadcn_registry(action=search, query=...)` →
+  `shadcn_registry(action=view, items=[...])` or `action=docs` → then write the page.
+- Install real component source with `shadcn_registry(action=add, items=[...])` instead of
+  hand-writing a primitive. Hand-rolled substitutes for cataloged components are a defect.
+- Never invent an import path, a sub-component name, or a prop. If `view`/`docs` does not
+  show it, it does not exist — search for the component that actually does the job.
+- Composite patterns (Combobox, DatePicker, DataTable) are assembled from their listed
+  primitives; `view` each primitive rather than guessing the composition.
+
 ## 1. Framework & Component Rules
 - Stack is **Next.js (App Router) + shadcn/ui + Tailwind + Lucide** only for websites.
 - **FORBIDDEN UI kits (never install or import):** HeroUI, NextUI, Chakra UI, MUI / Material UI,
@@ -240,9 +308,22 @@ DESIGN_CONTRACT_MARKDOWN = """# Sycord Design Contract
 ## 7. Anti-slop quality rules
 - Build a content-specific visual hierarchy, not a generic template. One clear focal point per
   viewport; deliberate grid, type scale, alignment, density, and whitespace rhythm.
+- **Banned-by-default signature** (the documented "AI slop starter pack"). Each item below is
+  forbidden unless the stated creative direction explicitly argues for it in the plan:
+  - accent `indigo-500 / violet-500 / purple-500` (#6366F1, #8B5CF6, #A855F7) or any
+    purple-to-indigo gradient
+  - Inter or Roboto as the *only* typeface — pair a display face with the body face
+  - centered hero headline + one CTA, with a badge pill above it
+  - a row of exactly three icon cards as the primary feature layout
+  - numbered 1-2-3 steps strip; colored left-border accent card
+  - gradient text, glowing blobs, glassmorphism, uniform `rounded-2xl` + 0.1-opacity shadow
+    applied to every surface
 - Do not default to a huge centered headline, gradient text, glowing blobs, glassmorphism, bento
   grids, floating cards, excessive pills, or a three-card feature row. Use these only when the
   product and chosen direction justify them.
+- Vary the section grammar: at least three structurally different section types per page
+  (e.g. editorial two-column, full-bleed media, dense table/list, comparison, timeline).
+  Repeating one card grid down the page is the failure mode, not the goal.
 - Do not put every section inside a Card. Use semantic sections, lists, tables, or editorial
   layouts when those structures communicate better.
 - Avoid repetitive section cadence and uniform card geometry. Vary composition based on content
@@ -251,16 +332,26 @@ DESIGN_CONTRACT_MARKDOWN = """# Sycord Design Contract
   compliance claims, integrations, or metrics; label genuine placeholders in development only.
 - Every visible control must work. Include hover, focus-visible, active, disabled, loading, empty,
   error, and success states where the flow requires them.
-- Research current, relevant design conventions with `web_search` for new builds/redesigns. Treat
+- Research current, relevant design conventions with `web_search` + `fetch_url` for new
+  builds/redesigns, and read the actual component API with `shadcn_registry` before coding. Treat
   the v0 prompt reference as workflow inspiration, then follow official shadcn, Radix, and WCAG 2.2
   documentation as the implementation authority.
+- Close the loop: after building, `inspect_preview` (and `screenshot_preview` when layout review is
+  needed), then critique your own output against this section by name and fix what fails. A first
+  draft is a draft, not the answer.
 - Starting references:
   - Builder workflow: https://github.com/webprompts/webprompts.github.io/blob/gh-pages/v0.md
   - Components: https://ui.shadcn.com/docs/components
+  - Component CLI for agents: https://ui.shadcn.com/docs/cli
+  - Registry access for agents: https://ui.shadcn.com/docs/mcp
   - Primitive accessibility: https://www.radix-ui.com/primitives/docs/overview/accessibility
   - Accessibility standard: https://www.w3.org/TR/WCAG22/
 
 ## 8. Pre-Flight Checklist
+- [ ] Creative direction stated in words, with a rejected alternative, before code
+- [ ] Component APIs verified with `shadcn_registry` (view/docs) — nothing written from memory
+- [ ] No banned-by-default slop signature (indigo/violet accent, centered-hero + 3 cards, etc.)
+- [ ] At least three structurally different section types on the page
 - [ ] Named theme applied (or explicit user palette)
 - [ ] `--font-sans` on body
 - [ ] `--card` ≠ `--background` (light + dark)
@@ -309,6 +400,10 @@ DEPLOY_RULES = {
 }
 
 PREFLIGHT_CHECKLIST = [
+    "Creative direction written out (product-specific, with a rejected alternative) before code",
+    "Component names/props/imports verified via shadcn_registry view/docs — none from memory",
+    "No banned slop signature: indigo/violet accent, purple gradient, centered-hero + 3 icon cards",
+    "At least three structurally different section types on the page",
     "Named theme applied (minimal|bold|corporate|vibrant|dark-tech) or explicit user palette",
     "Font variable is --font-sans and applied to body",
     "--card != --background in light AND dark mode",
@@ -347,6 +442,41 @@ def themes_prompt_block() -> str:
     return "\n".join(lines)
 
 
+def slop_signature_block() -> str:
+    """Explicit banned-default list for the agent instruction.
+
+    Naming the statistical centre is what stops a model converging on it; a
+    generic "be creative" instruction does not.
+    """
+    lines = [
+        "Banned-by-default AI-slop signature (allowed ONLY if the written creative "
+        "direction explicitly argues for it):",
+    ]
+    for group, values in SLOP_SIGNATURE.items():
+        lines.append(f"- {group}: " + "; ".join(values))
+    lines.append(
+        "- Instead: pick tokens that mean something for this product, pair a display face "
+        "with the body face, and vary section grammar (min. 3 structurally different section types)."
+    )
+    return "\n".join(lines)
+
+
+def creative_direction_block() -> str:
+    """The three separate jobs a website build must resolve, in order."""
+    lines = [
+        "Creative direction protocol — resolve these as SEPARATE steps, never fused into "
+        "one pass (fusing them is what produces generic output):",
+    ]
+    for index, job in enumerate(CREATIVE_DIRECTION_JOBS, start=1):
+        lines.append(f"{index}. {job}")
+    lines.append(
+        "Component facts are never recalled: run shadcn_registry (info → search → view/docs) "
+        "before writing UI, and install real registry source with action=add instead of "
+        "hand-rolling a primitive."
+    )
+    return "\n".join(lines)
+
+
 def build_design_contract_spec() -> dict:
     return {
         "version": DESIGN_CONTRACT_VERSION,
@@ -356,7 +486,12 @@ def build_design_contract_spec() -> dict:
         "themes": DESIGN_THEMES,
         "shadcn_components": SHADCN_COMPONENT_CATALOG,
         "design_references": DESIGN_REFERENCE_URLS,
+        "slop_signature": SLOP_SIGNATURE,
+        "creative_direction_jobs": list(CREATIVE_DIRECTION_JOBS),
         "rules": {
+            "creative_direction": "State direction, consider two compositions, then specify tokens/grid/sections before building",
+            "component_sourcing": "shadcn_registry info→search→view/docs before writing UI; never recall props from memory",
+            "anti_slop": "Banned by default: indigo/violet accent, purple gradient, centered hero + three icon cards, gradient text, glassmorphism",
             "components": "57 separate shadcn/ui primitives/patterns; no shadcn Blocks; Radix through local components/ui wrappers; never HeroUI/NextUI/Chakra/MUI/Ant",
             "fonts": "Theme pairing or Inter via next/font/google; CSS var --font-sans on body",
             "colors": "Named theme or shadcn preset base + one accent; card != background; dark mode required",
@@ -378,6 +513,10 @@ def build_system_prompt() -> str:
         "You are building a production website on Syte. Follow the Sycord Design Contract "
         "for every UI decision (Next.js + shadcn/ui + Tailwind + Lucide + Inter).\n\n"
         + DESIGN_CONTRACT_MARKDOWN
+        + "\n\n## Creative direction\n"
+        + creative_direction_block()
+        + "\n\n## Anti-slop\n"
+        + slop_signature_block()
         + "\n\n## Themes\n"
         + themes_prompt_block()
         + "\n\n## shadcn/ui catalog\n"
