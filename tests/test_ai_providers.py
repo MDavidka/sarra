@@ -12,7 +12,9 @@ from syte.ai_providers import (
     ULTRA_MODEL,
     VERTEX_API_BASE,
     format_price_per_mtok,
+    normalize_provider_api_base,
     profile_provider,
+    provider_chat_completion_url,
     provider_catalog,
 )
 
@@ -26,6 +28,24 @@ def test_nano_vertex_gemini_flash_lite() -> None:
     assert nano["input_price_per_mtok"] == 0.25
     assert nano["output_price_per_mtok"] == 1.50
     assert nano["setting_key"] == "agent_syra_nano_api_key"
+
+
+def test_agentrouter_api_base_uses_openai_v1_root() -> None:
+    assert normalize_provider_api_base("https://agentrouter.org/api/v1") == (
+        "https://agentrouter.org/v1"
+    )
+    assert normalize_provider_api_base("https://agentrouter.org/api/v1/") == (
+        "https://agentrouter.org/v1"
+    )
+    assert provider_chat_completion_url("https://agentrouter.org/api/v1") == (
+        "https://agentrouter.org/v1/chat/completions"
+    )
+
+
+def test_provider_api_base_normalization_does_not_change_other_hosts() -> None:
+    base = "https://api.deepseek.com/v1"
+    assert normalize_provider_api_base(base) == base
+    assert provider_chat_completion_url(base) == f"{base}/chat/completions"
 
 
 def test_base_deepseek_v4_flash() -> None:

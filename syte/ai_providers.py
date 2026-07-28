@@ -12,6 +12,7 @@ Each main profile is a full think+build model — there is no separate thinker.
 from __future__ import annotations
 
 from typing import NotRequired, TypedDict
+from urllib.parse import urlsplit, urlunsplit
 
 VERTEX_API_BASE = "https://aiplatform.googleapis.com/v1"
 # Legacy alias kept for imports/migrations.
@@ -204,6 +205,31 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
 
 def profile_provider(profile: str) -> ProfileProvider:
     return PROFILE_PROVIDERS.get(profile, PROFILE_PROVIDERS[DEFAULT_PROFILE])
+
+
+def normalize_provider_api_base(api_base: str) -> str:
+    """Normalize known provider base URL aliases before adding API paths.
+
+    AgentRouter's OpenAI-compatible endpoint is rooted at ``/v1``.  Its
+    legacy-looking ``/api/v1`` spelling is accepted by some clients as a base
+    URL, but produces a 404 when the client appends ``/chat/completions``.
+    Keep this correction scoped to AgentRouter so other providers' paths are
+    left untouched.
+    """
+    base = (api_base or "").strip().rstrip("/")
+    parts = urlsplit(base)
+    if parts.hostname and parts.hostname.lower() in {
+        "agentrouter.org",
+        "www.agentrouter.org",
+    }:
+        if parts.path.rstrip("/") == "/api/v1":
+            return urlunsplit(parts._replace(path="/v1"))
+    return base
+
+
+def provider_chat_completion_url(api_base: str) -> str:
+    """Return the OpenAI-compatible chat completions URL for a provider."""
+    return f"{normalize_provider_api_base(api_base)}/chat/completions"
 
 
 def looks_like_google_auth_key(api_key: str | None) -> bool:

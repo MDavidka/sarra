@@ -29,6 +29,7 @@ from syte.ai_providers import (
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
     SUBAGENT_PROFILE,
+    provider_chat_completion_url,
     profile_provider,
 )
 from syte.cloud_agent_store import (
@@ -3376,7 +3377,7 @@ async def _provider_completion(
         payload["reasoning_effort"] = thinking_params["reasoning_effort"]
 
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
-    url = model["api_base"].rstrip("/") + "/chat/completions"
+    url = provider_chat_completion_url(model["api_base"])
     error = "Provider request failed"
     client = _get_provider_client()
 

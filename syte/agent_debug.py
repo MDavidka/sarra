@@ -9,7 +9,13 @@ from typing import Any
 
 import httpx
 
-from syte.ai_providers import PROFILE_ORDER, PROFILE_PROVIDERS, profile_provider
+from syte.ai_providers import (
+    PROFILE_ORDER,
+    PROFILE_PROVIDERS,
+    normalize_provider_api_base,
+    profile_provider,
+    provider_chat_completion_url,
+)
 from syte.cloud_agent import (
     agent_log_path,
     bridge_settings,
@@ -169,9 +175,9 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
 
     spec = profile_provider(profile)
     api_key = (api_key or "").strip()
-    base = spec["api_base"].rstrip("/")
+    base = normalize_provider_api_base(spec["api_base"])
     if profile == "syra-ultra" and api_key:
-        base = aliyun_api_base_for_key(api_key).rstrip("/")
+        base = normalize_provider_api_base(aliyun_api_base_for_key(api_key))
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -234,7 +240,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         probes.append(await _http_probe(
             step="chat_completion",
             method="POST",
-            url=f"{base}/chat/completions",
+            url=provider_chat_completion_url(base),
             headers=headers,
             json_body={
                 "model": spec["model"],
