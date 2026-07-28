@@ -1187,7 +1187,7 @@ def _build_static_instruction(
         "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
         "fix them before finishing. Continue using tools until the request is actually complete; "
         "the user can interrupt a long turn.\n",
-        "Never deploy, start, stop, update, or build the production service for testing, and never run "
+        "If the user asks to 'create hosting', do not just create a static site — use the integration instead. Use generative thinking to create something genuinely creative and content-specific, avoiding general AI slop. After a subagent task completes (via await_subagent or a synchronous delegate_task), you must immediately trigger code verification (e.g. npm run lint) and start the preview. Never deploy, start, stop, update, or build the production service for testing, and never run "
         "production build commands such as npm run build or next build. Prefer the isolated preview for "
         "visual checks and workspace commands for lint/tests.\n",
         "Paths: write_file paths are relative to the workspace root; application source lives in app/. "
