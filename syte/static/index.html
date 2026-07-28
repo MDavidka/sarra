@@ -395,6 +395,7 @@
                         <option value="syra-base">base</option>
                         <option value="syra-havy">pro</option>
                         <option value="syra-ultra">ultra</option>
+                        <option value="syra-ultra-plus">ultra+</option>
                       </select>
                     </label>
                   </div>
@@ -664,6 +665,7 @@
                 <option value="syra-base" selected>base</option>
                 <option value="syra-havy">pro</option>
                 <option value="syra-ultra">ultra</option>
+                <option value="syra-ultra-plus">ultra+</option>
                 <option value="syra-subagent">subagent · GLM 5.2</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
@@ -769,6 +771,23 @@
                 </div>
               </div>
 
+              <div class="ai-key-card" data-profile="syra-ultra-plus">
+                <div class="ai-key-head">
+                  <strong>syra-ultra-plus · ultra+</strong>
+                  <span class="ai-key-provider">AgentRouter · claude-opus-5</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-ultra-plus-price-in">$15.00</b>/1M</span>
+                  <span>out <b id="agent-ultra-plus-price-out">$75.00</b>/1M</span>
+                </div>
+                <code class="ai-key-url">https://agentrouter.org/api/v1</code>
+                <div class="form-group">
+                  <label for="agent-ultra-plus-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-ultra-plus-key" placeholder="AgentRouter API key" autocomplete="off">
+                  <span class="hint" id="agent-ultra-plus-key-hint">Use only for code generation. Testing and previews use nano.</span>
+                </div>
+              </div>
+
               <div class="ai-key-card" data-profile="syra-subagent">
                 <div class="ai-key-head">
                   <strong>syra-subagent</strong>
@@ -794,6 +813,7 @@
                     <option value="syra-base">syra-base · base</option>
                     <option value="syra-havy">syra-havy · pro</option>
                     <option value="syra-ultra">syra-ultra · ultra</option>
+                    <option value="syra-ultra-plus">syra-ultra-plus · ultra+ (Opus 5)</option>
                   </select>
                 </div>
                 <div class="form-group">

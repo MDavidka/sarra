@@ -5,6 +5,7 @@ Each main profile is a full think+build model — there is no separate thinker.
 - ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
 - ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
+- ``syra-ultra-plus`` — AgentRouter Claude Opus 5 (code generation only, cost-capped)
 - ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
 """
 
@@ -23,9 +24,10 @@ ALIYUN_MAAS_API_BASE = (
 )
 # Pay-as-you-go DashScope OpenAI-compat (standard ``sk-`` Aliyun keys — not Token Plan).
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+AGENTROUTER_API_BASE = "https://agentrouter.org/api/v1"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
-PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra", "syra-subagent")
+PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra", "syra-ultra-plus", "syra-subagent")
 
 # Default / legacy aliases (selected model handles both thinking and building).
 DEFAULT_PROFILE = "syra-base"
@@ -38,6 +40,7 @@ NANO_MODEL = "gemini-3.1-flash-lite"
 BASE_MODEL = "deepseek-v4-flash"
 PRO_MODEL = "gemini-3.6-flash"
 ULTRA_MODEL = "qwen3.7-plus"
+ULTRA_PLUS_MODEL = "claude-opus-5"
 SUBAGENT_MODEL = "z-ai/glm-5.2"
 NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
@@ -162,6 +165,22 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tool_result_chars": 6000,
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
+    },
+    "syra-ultra-plus": {
+        "profile": "syra-ultra-plus",
+        "label": "AgentRouter",
+        "display_name": "ultra+",
+        "provider": "openai",
+        "api_base": AGENTROUTER_API_BASE,
+        "model": ULTRA_PLUS_MODEL,
+        "role": "ultra+",
+        "input_price_per_mtok": 15.0,
+        "output_price_per_mtok": 75.0,
+        "max_tokens": 2048,
+        "max_history_messages": 24,
+        "max_tool_result_chars": 4000,
+        "setting_key": "agent_syra_ultra_plus_api_key",
+        "secret_env": "SYRA_ULTRA_PLUS_API_KEY",
     },
     "syra-subagent": {
         "profile": "syra-subagent",

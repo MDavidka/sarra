@@ -188,6 +188,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-base": "Default — DeepSeek V4 Flash (think + build)",
                 "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
                 "syra-ultra": "Ultra — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)",
+                "syra-ultra-plus": "Ultra+ — AgentRouter Claude Opus 5 (code generation only)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (

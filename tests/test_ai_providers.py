@@ -45,6 +45,8 @@ def test_base_deepseek_v4_flash() -> None:
 
 def test_pro_vertex_gemini_36_flash() -> None:
     assert "syra-havy" in PROFILE_ORDER
+    assert "syra-ultra-plus" in PROFILE_ORDER
+    assert PROFILE_PROVIDERS["syra-ultra-plus"]["model"] == "claude-opus-5"
     pro = PROFILE_PROVIDERS["syra-havy"]
     assert pro["display_name"] == "pro"
     assert pro["label"] == "Vertex AI"
@@ -86,13 +88,14 @@ def test_subagent_nvidia_glm() -> None:
 
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 5
+    assert len(catalog) == 6
     by_profile = {row["profile"]: row for row in catalog}
     assert by_profile["syra-nano"]["input_price_label"] == "$0.25"
     assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
     assert by_profile["syra-base"]["model"] == "deepseek-v4-flash"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
+    assert by_profile["syra-ultra-plus"]["display_name"] == "ultra+"
     assert by_profile["syra-subagent"]["model"] == "z-ai/glm-5.2"
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
