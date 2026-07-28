@@ -892,11 +892,13 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_base_model": profiles["syra-base"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
         "syra_ultra_model": profiles["syra-ultra"]["model"],
+        "syra_ultra_plus_model": profiles["syra-ultra-plus"]["model"],
         "syra_subagent_model": profiles["syra-subagent"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_base_api_key": profiles["syra-base"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
+        "syra_ultra_plus_api_key": profiles["syra-ultra-plus"]["api_key"],
         "syra_subagent_api_key": profiles["syra-subagent"]["api_key"],
         "provider_keys": [
             {
@@ -5895,7 +5897,13 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
             profile = model_profile.strip() or "syra-base"
             if profile not in PROFILE_PROVIDERS:
                 raise ValueError(f"Unknown model profile: {profile}")
+            if profile == "syra-ultra-plus":
+                # The probe endpoint is never a code-generation request.
+                profile = "syra-nano"
             project = {**project, "agent_model_profile": profile}
+        else:
+            # Connectivity tests and preview warmups must stay cheap; Opus is code-generation only.
+            project = {**project, "agent_model_profile": "syra-nano"}
         model = await selected_model_metadata(project)
         if not (model.get("api_key") or "").strip():
             raise RuntimeError(f"No API key configured for profile {model.get('profile')}")

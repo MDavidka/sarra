@@ -726,6 +726,7 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
       'syra-base': 'base',
       'syra-havy': 'pro',
       'syra-ultra': 'ultra',
+      'syra-ultra-plus': 'ultra+',
       'syra-subagent': 'subagent',
     })[profile] || profile;
     if (short && active && isWorking) {
@@ -2916,7 +2917,7 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false, subagent: false };
+let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false, ultraPlus: false, subagent: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -2963,6 +2964,7 @@ function applyAiProviderCatalog(providers) {
     'syra-base': ['agent-base-price-in', 'agent-base-price-out'],
     'syra-havy': ['agent-havy-price-in', 'agent-havy-price-out'],
     'syra-ultra': ['agent-ultra-price-in', 'agent-ultra-price-out'],
+    'syra-ultra-plus': ['agent-ultra-plus-price-in', 'agent-ultra-plus-price-out'],
     'syra-subagent': ['agent-subagent-price-in', 'agent-subagent-price-out'],
   };
   for (const [profile, [inId, outId]] of Object.entries(priceIds)) {
@@ -2992,6 +2994,7 @@ function updateAiApiWarning() {
     'syra-base': 'agent-base-key',
     'syra-havy': 'agent-havy-key',
     'syra-ultra': 'agent-ultra-key',
+    'syra-ultra-plus': 'agent-ultra-plus-key',
     'syra-subagent': 'agent-subagent-key',
   };
   const savedForProfile = {
@@ -2999,6 +3002,7 @@ function updateAiApiWarning() {
     'syra-base': aiApiConfigured.base,
     'syra-havy': aiApiConfigured.havy,
     'syra-ultra': aiApiConfigured.ultra,
+    'syra-ultra-plus': aiApiConfigured.ultraPlus,
     'syra-subagent': aiApiConfigured.subagent,
   };
   const inputId = keyForProfile[profile] || 'agent-base-key';
@@ -3859,6 +3863,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const baseKey = document.getElementById('agent-base-key')?.value?.trim() || '';
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const ultraKey = document.getElementById('agent-ultra-key')?.value?.trim() || '';
+  const ultraPlusKey = document.getElementById('agent-ultra-plus-key')?.value?.trim() || '';
   const subagentKey = document.getElementById('agent-subagent-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
@@ -3883,6 +3888,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     }
     body.agent_syra_ultra_api_key = ultraKey;
   }
+  if (ultraPlusKey) body.agent_syra_ultra_plus_api_key = ultraPlusKey;
   if (subagentKey) body.agent_syra_subagent_api_key = subagentKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
@@ -4094,6 +4100,7 @@ async function loadSettings() {
       ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
       ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
+      ['agent-ultra-plus-key', 'agent-ultra-plus-key-hint', s.agent_syra_ultra_plus_api_key_set, 'AgentRouter Opus 5 key saved', 'AgentRouter API key required for code generation'],
       ['agent-subagent-key', 'agent-subagent-key-hint', s.agent_syra_subagent_api_key_set, 'NVIDIA NIM subagent key saved (GLM 5.2)', 'Optional NVIDIA NIM nvapi-… key for subagents'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
@@ -4114,6 +4121,7 @@ async function loadSettings() {
       base: Boolean(s.agent_syra_base_api_key_set),
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
+      ultraPlus: Boolean(s.agent_syra_ultra_plus_api_key_set),
       subagent: Boolean(s.agent_syra_subagent_api_key_set),
     };
     if (syraInternalSecret) {

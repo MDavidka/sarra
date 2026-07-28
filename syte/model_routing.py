@@ -15,6 +15,10 @@ _NANO_PATTERNS = [
     re.compile(r"\b(yes|no|ok|thanks|continue)\b", re.I),
 ]
 
+_CODEGEN_PATTERNS = [
+    re.compile(r"\b(implement|write|create|build|generate|refactor|patch|add)\b.{0,80}\b(code|component|feature|function|api|endpoint|test|migration)\b", re.I),
+]
+
 # Large rebuild signals → syra-havy
 _HAVY_PATTERNS = [
     re.compile(r"\b(build|create|generate|redesign|remake|rebuild)\b.{0,60}\b(landing|homepage|website|page|site)\b", re.I),
@@ -79,6 +83,9 @@ def suggest_model_profile(
     if improve_from_screenshot and len(text) > 40:
         suggested = "syra-havy"
         reason = "screenshot-based design remake"
+    elif any(p.search(text) for p in _CODEGEN_PATTERNS):
+        suggested = "syra-ultra-plus"
+        reason = "code generation uses the ultra+ Opus profile"
     elif any(p.search(text) for p in _HAVY_PATTERNS):
         suggested = "syra-havy"
         reason = "full page / multi-file build signal"
