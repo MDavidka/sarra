@@ -81,7 +81,7 @@ def test_solar_local_qwen_coder_profile() -> None:
     solar = PROFILE_PROVIDERS["syra-solar"]
     assert solar["label"] == "Solar VM"
     assert solar["api_base"] == OLLAMA_API_BASE
-    assert solar["model"] == SOLAR_MODEL == "qwen2.5-coder:7b"
+    assert solar["model"] == SOLAR_MODEL == "qwen2.5-coder:3b"
     assert solar["role"] == "local"
     assert solar["local"] is True
 
@@ -107,7 +107,7 @@ def test_provider_catalog_includes_prices() -> None:
     assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
-    assert by_profile["syra-solar"]["model"] == "qwen2.5-coder:7b"
+    assert by_profile["syra-solar"]["model"] == "qwen2.5-coder:3b"
     assert by_profile["syra-subagent"]["model"] == "z-ai/glm-5.2"
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"

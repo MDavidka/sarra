@@ -4,7 +4,7 @@ Each main profile is a full think+build model — there is no separate thinker.
 - ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
 - ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
-- ``syra-solar`` — local Ollama Solar runtime (Qwen 2.5 Coder 7B)
+- ``syra-solar`` — local Ollama Solar runtime (Qwen 2.5 Coder 3B)
 - ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
 """
 
@@ -44,7 +44,7 @@ SUBAGENT_PROFILE = "syra-subagent"
 NANO_MODEL = "gemini-3.1-flash-lite"
 PRO_MODEL = "gemini-3.6-flash"
 ULTRA_MODEL = "qwen3.7-plus"
-SOLAR_MODEL = "qwen2.5-coder:7b"
+SOLAR_MODEL = "qwen2.5-coder:3b"
 SUBAGENT_MODEL = "z-ai/glm-5.2"
 NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
