@@ -310,9 +310,18 @@ def looks_like_deepseek_key(api_key: str | None) -> bool:
     key = (api_key or "").strip().lower()
     if not key.startswith("sk-"):
         return False
-    if looks_like_openrouter_key(key) or looks_like_aliyun_token_plan_key(key):
+    if (
+        looks_like_openrouter_key(key)
+        or looks_like_aliyun_token_plan_key(key)
+        or looks_like_agentrouter_key(key)
+    ):
         return False
     return True
+
+
+def looks_like_agentrouter_key(api_key: str | None) -> bool:
+    """AgentRouter keys typically start with ``sk-ar-``."""
+    return (api_key or "").strip().lower().startswith("sk-ar-")
 
 
 def aliyun_api_base_for_key(api_key: str | None) -> str:
@@ -378,6 +387,13 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
         return (
             "syra-subagent expects an NVIDIA NIM API key (usually starts with nvapi-) "
             "from https://build.nvidia.com/ — used only for delegated subagent work."
+        )
+    if profile == "syra-ultra-plus":
+        if looks_like_agentrouter_key(key):
+            return ""
+        return (
+            "syra-ultra-plus expects an AgentRouter API key (starts with sk-ar-…) "
+            "from https://agentrouter.org/ — used for Claude Opus 5 code generation."
         )
     return ""
 
