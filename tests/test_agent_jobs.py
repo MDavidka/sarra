@@ -95,7 +95,7 @@ async def test_api_started_session_syncs_every_message_to_turso_live(
 
     await init_db()
     await set_setting("agent_provider_lineup_v3_migrated", "1")
-    await set_setting("agent_syra_base_api_key", "sk-test-base-key")
+    await set_setting("agent_syra_nano_api_key", "gemini-test-key")
     await create_project({"id": "job-live-proj", "name": "Live", "port": 3021, "start_command": ""})
 
     turso_db = tmp_data_dir / "turso-local-jobs.db"
@@ -174,7 +174,7 @@ async def test_run_job_converts_unexpected_exception_to_terminal_event(
         "job-error-proj",
         "req-error",
         "fix the page",
-        model_profile="syra-base",
+        model_profile="syra-nano",
         source="test",
         auto_start=True,
     )
@@ -201,7 +201,7 @@ async def test_run_job_always_closes_turso_session_on_success(
 
     await init_db()
     await set_setting("agent_provider_lineup_v3_migrated", "1")
-    await set_setting("agent_syra_base_api_key", "sk-test-base-key")
+    await set_setting("agent_syra_nano_api_key", "gemini-test-key")
     await create_project({"id": "job-close-proj", "name": "Close", "port": 3022, "start_command": ""})
 
     turso_db = tmp_data_dir / "turso-close.db"
@@ -223,7 +223,7 @@ async def test_run_job_always_closes_turso_session_on_success(
         "job-close-proj",
         "req-close",
         "hello",
-        model_profile="syra-base",
+        model_profile="syra-nano",
         source="test",
         auto_start=True,
         session_number=1,
@@ -246,7 +246,7 @@ async def test_submit_interrupts_previous_turso_session_not_new(
 
     await init_db()
     await create_project({"id": "job-int-proj", "name": "Int", "port": 3023, "start_command": ""})
-    await ensure_session("job-int-proj", "syra-base")
+    await ensure_session("job-int-proj", "syra-nano")
     await set_turso_session_id("job-int-proj", "old-session-id")
 
     interrupted: list[str | None] = []

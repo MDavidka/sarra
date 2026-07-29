@@ -186,7 +186,7 @@ def test_model_routing_heuristics() -> None:
         parent_profile="syra-havy",
     )
     assert research["mode"] == "research"
-    assert research["effective_profile"] == "syra-subagent"
+    assert research["effective_profile"] == "syra-nano"
     assert "syra-nano" in research["fallback_profiles"]
 
     impl = suggest_subagent_profile(
@@ -195,15 +195,15 @@ def test_model_routing_heuristics() -> None:
         mode="implementation",
     )
     assert impl["mode"] == "implementation"
-    assert impl["effective_profile"] == "syra-subagent"
+    assert impl["effective_profile"] == "syra-havy"
 
     from syte.model_routing import fallback_subagent_profile, normalize_plan_steps
 
     chosen, source = fallback_subagent_profile(
-        "syra-subagent",
+        "syra-nano",
         parent_profile="syra-havy",
         mode="research",
-        available_profiles={"syra-nano", "syra-base"},
+        available_profiles={"syra-nano", "syra-ultra"},
     )
     assert chosen == "syra-nano"
     assert source.startswith("fallback")

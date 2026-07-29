@@ -86,7 +86,7 @@ agents can write the same file (see `delegate_task.files`).
 await turso_store.record_subagent_task(
     "sub-abc", "proj-42", "Build the FAQ page",
     session_id="8f1c…", session_number=7, parent_request_id="req-1",
-    mode="implementation", profile="syra-subagent", model="glm-5.2",
+    mode="implementation", profile="syra-havy", model="claude-sonnet-4-6",
     background=True,
     files=["app/app/faq/page.tsx", "app/components/faq.tsx"],
 )

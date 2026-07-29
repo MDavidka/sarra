@@ -248,7 +248,7 @@ Subagent lifecycle, emitted in the **subagent** lane
   "agent": "subagent",
   "task_id": "sub-abc",
   "mode": "implementation",
-  "profile": "syra-subagent",
+  "profile": "syra-nano",
   "files": ["app/app/faq/page.tsx"],
   "ok": true,
   "usage": { "input_tokens": 300, "output_tokens": 120, "steps": 3 },

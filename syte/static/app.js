@@ -722,11 +722,9 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
     const profile = document.getElementById('debug-chat-profile')?.value || '';
     const short = ({
       auto: 'auto',
-      'syra-nano': 'nano',
-      'syra-havy': 'pro',
-      'syra-ultra': 'ultra',
-      'syra-solar': 'solar · Qwen 2.5 Coder 3B',
-      'syra-subagent': 'subagent',
+      'syra-nano': 'Go · Gemini 2.5 Flash',
+      'syra-ultra': 'Air · Aliyun Qwen',
+      'syra-havy': 'Metal · Claude Sonnet 4.6',
     })[profile] || profile;
     if (short && active && isWorking) {
       modelEl.hidden = false;
@@ -2916,8 +2914,7 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = { nano: false, havy: false, ultra: false, solar: false, subagent: false };
-let solarStatusPollTimer = null;
+let aiApiConfigured = { nano: false, havy: false, ultra: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -2963,7 +2960,6 @@ function applyAiProviderCatalog(providers) {
     'syra-nano': ['agent-nano-price-in', 'agent-nano-price-out'],
     'syra-havy': ['agent-havy-price-in', 'agent-havy-price-out'],
     'syra-ultra': ['agent-ultra-price-in', 'agent-ultra-price-out'],
-    'syra-subagent': ['agent-subagent-price-in', 'agent-subagent-price-out'],
   };
   for (const [profile, [inId, outId]] of Object.entries(priceIds)) {
     const row = byProfile[profile];
@@ -2986,19 +2982,16 @@ function applyAiProviderCatalog(providers) {
 
 function updateAiApiWarning() {
   const warn = document.getElementById('ai-api-warning');
-  const profile = document.getElementById('ai-test-profile')?.value || 'syra-solar';
+  const profile = document.getElementById('ai-test-profile')?.value || 'syra-nano';
   const keyForProfile = {
     'syra-nano': 'agent-nano-key',
     'syra-havy': 'agent-havy-key',
     'syra-ultra': 'agent-ultra-key',
-    'syra-subagent': 'agent-subagent-key',
   };
   const savedForProfile = {
     'syra-nano': aiApiConfigured.nano,
     'syra-havy': aiApiConfigured.havy,
     'syra-ultra': aiApiConfigured.ultra,
-    'syra-solar': aiApiConfigured.solar,
-    'syra-subagent': aiApiConfigured.subagent,
   };
   const inputId = keyForProfile[profile] || '';
   const ok = savedForProfile[profile] || aiKeySaved(inputId);
@@ -3012,6 +3005,7 @@ function openAiSettings() {
   sheet.classList.remove('hidden');
   document.body.classList.add('ai-settings-open');
   loadSettings();
+  loadLegacySolarStatus();
   refreshIcons();
 }
 
@@ -3022,68 +3016,48 @@ function closeAiSettings() {
   document.body.classList.remove('ai-settings-open');
 }
 
-function renderSolarStatus(status) {
+function renderLegacySolarStatus(status) {
   const badge = document.getElementById('solar-status-badge');
   const message = document.getElementById('solar-status-message');
-  const button = document.getElementById('setup-solar-btn');
+  const button = document.getElementById('delete-solar-btn');
   const state = status?.status || 'not_configured';
-  const running = Boolean(status?.running);
   if (badge) {
-    badge.textContent = running ? 'running' : state.replace('_', ' ');
-    badge.className = `solar-status-badge ${running ? 'running' : state}`;
+    badge.textContent = state.replace('_', ' ');
+    badge.className = `solar-status-badge ${state}`;
   }
-  if (message) message.textContent = status?.message || 'Solar is not installed.';
+  if (message) message.textContent = status?.message || 'Legacy Solar is not installed.';
   if (button) {
-    button.disabled = ['installing', 'starting', 'downloading'].includes(state);
-    button.querySelector('span').textContent = running
-      ? 'Solar is running'
-      : button.disabled ? 'Setting up Solar…' : 'Install and start Solar';
-  }
-  aiApiConfigured.solar = running;
-  if (running || state === 'error') {
-    if (solarStatusPollTimer) clearInterval(solarStatusPollTimer);
-    solarStatusPollTimer = null;
+    button.disabled = state !== 'installed';
   }
 }
 
-async function loadSolarStatus() {
+async function loadLegacySolarStatus() {
   try {
     const status = await api('/ai/solar/status');
-    renderSolarStatus(status);
-    if (status.status !== 'running' && status.status !== 'error' && !solarStatusPollTimer) {
-      solarStatusPollTimer = setInterval(loadSolarStatus, 2500);
-    }
+    renderLegacySolarStatus(status);
   } catch (e) {
-    renderSolarStatus({ status: 'error', message: e.message });
+    renderLegacySolarStatus({ status: 'error', message: e.message });
   }
 }
 
-async function startSolarSetup() {
-  const button = document.getElementById('setup-solar-btn');
+async function deleteLegacySolar() {
+  const button = document.getElementById('delete-solar-btn');
   if (button) button.disabled = true;
   try {
-    renderSolarStatus({ status: 'installing', message: 'Starting Solar setup…' });
-    const status = await api('/ai/solar/setup', { method: 'POST' });
-    renderSolarStatus(status);
-    if (!status.running && status.status !== 'error') {
-      await loadSolarStatus();
-    }
+    const status = await api('/ai/solar', { method: 'DELETE' });
+    renderLegacySolarStatus(status);
+    toast(status?.message || 'Legacy Solar removed from the VM');
   } catch (e) {
-    renderSolarStatus({ status: 'error', message: e.message });
+    renderLegacySolarStatus({ status: 'error', message: e.message });
   }
 }
 
 function setAiSettingsTab(tab) {
-  const solar = tab === 'solar';
-  document.getElementById('ai-panel-providers')?.classList.toggle('hidden', solar);
-  document.getElementById('ai-panel-solar')?.classList.toggle('hidden', !solar);
-  const providerTab = document.getElementById('ai-tab-providers');
-  const solarTab = document.getElementById('ai-tab-solar');
-  providerTab?.classList.toggle('is-active', !solar);
-  solarTab?.classList.toggle('is-active', solar);
-  providerTab?.setAttribute('aria-selected', solar ? 'false' : 'true');
-  solarTab?.setAttribute('aria-selected', solar ? 'true' : 'false');
-  if (solar) loadSolarStatus();
+  if (tab !== 'providers') return;
+  document.getElementById('ai-panel-providers')?.classList.remove('hidden');
+  document.getElementById('ai-tab-providers')?.classList.add('is-active');
+  document.getElementById('ai-tab-providers')?.setAttribute('aria-selected', 'true');
+  loadLegacySolarStatus();
 }
 
 async function api(path, opts = {}) {
@@ -3921,13 +3895,12 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const nanoKey = document.getElementById('agent-nano-key')?.value?.trim() || '';
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const ultraKey = document.getElementById('agent-ultra-key')?.value?.trim() || '';
-  const subagentKey = document.getElementById('agent-subagent-key')?.value?.trim() || '';
   const internalSecret = document.getElementById('syra-internal-secret')?.value?.trim() || '';
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const tursoDatabaseUrl = document.getElementById('turso-database-url')?.value?.trim() || '';
   const tursoAuthToken = document.getElementById('turso-auth-token')?.value?.trim() || '';
   const body = {
-    agent_default_model_profile: document.getElementById('agent-default-profile')?.value || 'syra-solar',
+    agent_default_model_profile: document.getElementById('agent-default-profile')?.value || 'syra-nano',
   };
   if (nanoKey) body.agent_syra_nano_api_key = nanoKey;
   if (havyKey) body.agent_syra_havy_api_key = havyKey;
@@ -3937,7 +3910,6 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     }
     body.agent_syra_ultra_api_key = ultraKey;
   }
-  if (subagentKey) body.agent_syra_subagent_api_key = subagentKey;
   if (internalSecret) body.syra_internal_secret = internalSecret;
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
@@ -3950,7 +3922,6 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     if (nanoKey) document.getElementById('agent-nano-key').value = '';
     if (havyKey) document.getElementById('agent-havy-key').value = '';
     if (ultraKey) document.getElementById('agent-ultra-key').value = '';
-    if (subagentKey) document.getElementById('agent-subagent-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     if (tursoAuthToken) document.getElementById('turso-auth-token').value = '';
     await loadSettings();
@@ -4083,7 +4054,7 @@ async function waitForServerRestart(maxAttempts = 30, intervalMs = 2000) {
 async function loadSettings() {
   try {
     const s = await api('/settings');
-    void loadSolarStatus();
+    void loadLegacySolarStatus();
     const ip = document.getElementById('set-ip');
     const email = document.getElementById('set-email');
     const domain = document.getElementById('set-domain');
@@ -4133,7 +4104,7 @@ async function loadSettings() {
         cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
       }
     }
-    const defaultProfile = s.agent_default_model_profile || 'syra-solar';
+    const defaultProfile = s.agent_default_model_profile || 'syra-nano';
     if (agentDefaultProfile) agentDefaultProfile.value = defaultProfile;
     if (window.customElements?.whenDefined) await customElements.whenDefined('sl-select');
     const debugChatProfile = document.getElementById('debug-chat-profile');
@@ -4144,19 +4115,17 @@ async function loadSettings() {
     if (agentMaxCount && s.agent_max_count) agentMaxCount.value = s.agent_max_count;
     if (agentMaxCount && !s.agent_max_count) agentMaxCount.placeholder = '50';
     const keyFields = [
-      ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Vertex AI nano key saved', 'Vertex AI API key required'],
-      ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
-      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
-      ['agent-subagent-key', 'agent-subagent-key-hint', s.agent_syra_subagent_api_key_set, 'NVIDIA NIM subagent key saved (GLM 5.2)', 'Optional NVIDIA NIM nvapi-… key for subagents'],
+      ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Gemini Go key saved', 'Gemini API key required'],
+      ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun Air key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
+      ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'VyceAI Metal key saved', 'VyceAI API key required'],
     ];
     keyFields.forEach(([inputId, hintId, saved, savedText, requiredText]) => {
       const input = document.getElementById(inputId);
       const hint = document.getElementById(hintId);
       if (input) {
-        const optional = inputId === 'agent-subagent-key';
         input.placeholder = saved
           ? 'key saved — enter new value to replace'
-          : (optional ? 'optional — nvapi-… from build.nvidia.com' : 'required');
+          : 'required';
       }
       if (hint) hint.textContent = saved ? savedText : requiredText;
     });
@@ -4166,8 +4135,6 @@ async function loadSettings() {
       nano: Boolean(s.agent_syra_nano_api_key_set),
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
-      solar: Boolean(s.agent_syra_solar_running),
-      subagent: Boolean(s.agent_syra_subagent_api_key_set),
     };
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
@@ -4183,11 +4150,9 @@ async function loadSettings() {
     if (agentRuntimeStatus) {
       const parts = [];
       parts.push(`default: ${defaultProfile}`);
-      parts.push(s.agent_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
-      parts.push(s.agent_syra_havy_api_key_set ? 'pro key saved' : 'no pro key');
-      parts.push(s.agent_syra_ultra_api_key_set ? 'ultra key saved' : 'no ultra key');
-      parts.push(s.agent_syra_solar_running ? 'Solar running' : 'Solar not running');
-      parts.push(s.agent_syra_subagent_api_key_set ? 'subagent GLM key saved' : 'no subagent key');
+      parts.push(s.agent_syra_nano_api_key_set ? 'Go key saved' : 'no Go key');
+      parts.push(s.agent_syra_ultra_api_key_set ? 'Air key saved' : 'no Air key');
+      parts.push(s.agent_syra_havy_api_key_set ? 'Metal key saved' : 'no Metal key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
       agentRuntimeStatus.textContent = parts.join(' · ');
@@ -4259,7 +4224,7 @@ async function loadAiDashboard() {
       li.classList.toggle('done', !!onboard[step]);
     });
     const hint = document.getElementById('ai-onboard-hint');
-    const keysConfigured = [onboard.ai_models, aiApiConfigured.nano, aiApiConfigured.solar, aiApiConfigured.havy, aiApiConfigured.ultra].some(Boolean);
+    const keysConfigured = [onboard.ai_models, aiApiConfigured.nano, aiApiConfigured.havy, aiApiConfigured.ultra].some(Boolean);
     if (hint) {
       hint.textContent = onboard.complete
         ? 'Ready for sycord.com agent requests'
@@ -4538,7 +4503,7 @@ document.getElementById('debug-chat-profile')?.addEventListener('change', () => 
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';
-    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-solar': 'solar · Qwen 2.5 Coder 3B', 'syra-subagent': 'subagent' })[profile] || profile;
+    const short = ({ auto: 'auto', 'syra-nano': 'Go · Gemini 2.5 Flash', 'syra-ultra': 'Air · Aliyun Qwen', 'syra-havy': 'Metal · Claude Sonnet 4.6' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
       modelEl.textContent = short;
@@ -4566,8 +4531,7 @@ document.getElementById('ai-header-settings-btn')?.addEventListener('click', ope
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-tab-providers')?.addEventListener('click', () => setAiSettingsTab('providers'));
-document.getElementById('ai-tab-solar')?.addEventListener('click', () => setAiSettingsTab('solar'));
-document.getElementById('setup-solar-btn')?.addEventListener('click', startSolarSetup);
+document.getElementById('delete-solar-btn')?.addEventListener('click', deleteLegacySolar);
 
 document.getElementById('ai-test-profile')?.addEventListener('change', () => {
   updateAiApiWarning();

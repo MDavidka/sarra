@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from syte.ai_providers import SUBAGENT_PROFILE
-
 # Short copy / tiny fix signals → syra-nano
 _NANO_PATTERNS = [
     re.compile(r"\b(change|update|rename|fix|tweak|center|align)\b.{0,40}\b(text|button|label|title|copy|color|padding|margin)\b", re.I),
@@ -37,15 +35,11 @@ _SUBAGENT_IMPL_PATTERNS = [
     re.compile(r"\b(implement|write|edit|create|fix|refactor|rename|delete|apply|patch|update file|add)\b", re.I),
 ]
 
-# Cheapest → most expensive. Subagents never upgrade above the parent for fallbacks.
-# Dedicated NVIDIA subagent sits beside base for ranking (not above parent havy/ultra when
-# falling back — but the dedicated profile itself is preferred when its key is set).
+# Cheapest → most expensive. Delegated work uses one of the public profiles.
 _PROFILE_COST_RANK = {
     "syra-nano": 0,
-    "syra-solar": 1,
-    "syra-subagent": 1,
+    "syra-ultra": 1,
     "syra-havy": 2,
-    "syra-ultra": 3,
 }
 
 _AUTO_PROFILE_ALIASES = frozenset({"", "auto", "automatic", "route", "smart"})
@@ -76,7 +70,7 @@ def suggest_model_profile(
     Automatic downgrade/upgrade applies only when both are omitted / auto.
     """
     text = (message or "").strip()
-    suggested = "syra-solar"
+    suggested = "syra-nano"
     reason = "default balanced edits"
     explicit = normalize_explicit_profile(explicit_profile)
 
@@ -84,8 +78,8 @@ def suggest_model_profile(
         suggested = "syra-havy"
         reason = "screenshot-based design remake"
     elif any(p.search(text) for p in _CODEGEN_PATTERNS):
-        suggested = "syra-solar"
-        reason = "code generation uses the local Solar coding model"
+        suggested = "syra-havy"
+        reason = "code generation uses the Metal coding model"
     elif any(p.search(text) for p in _HAVY_PATTERNS):
         suggested = "syra-havy"
         reason = "full page / multi-file build signal"
@@ -167,15 +161,15 @@ def normalize_plan_steps(
 
 def _cap_profile(profile: str, parent_profile: str | None) -> str:
     """Never route a fallback subagent above the parent's cost tier."""
-    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
+    parent = (parent_profile or "syra-nano").strip() or "syra-nano"
     want_rank = _PROFILE_COST_RANK.get(profile, 1)
     parent_rank = _PROFILE_COST_RANK.get(parent, 1)
     if want_rank <= parent_rank:
-        return profile if profile in _PROFILE_COST_RANK else "syra-solar"
+        return profile if profile in _PROFILE_COST_RANK else "syra-nano"
     for name, rank in sorted(_PROFILE_COST_RANK.items(), key=lambda item: -item[1]):
         if rank <= parent_rank:
             return name
-    return "syra-solar"
+    return "syra-nano"
 
 
 def suggest_subagent_profile(
@@ -184,23 +178,12 @@ def suggest_subagent_profile(
     parent_profile: str | None = None,
     mode: str | None = None,
 ) -> dict[str, Any]:
-    """Prefer the dedicated NVIDIA GLM subagent profile; fall back by mode.
-
-    The runtime still falls back to nano/base/parent when the NVIDIA key is
-    missing — this function only picks the preferred profile id.
-    """
+    """Choose a public profile for delegated work, with no hidden provider."""
     resolved_mode = infer_subagent_mode(task, mode)
-    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
-
-    # Dedicated NVIDIA GLM 5.2 provider is the primary subagent model.
-    suggested = SUBAGENT_PROFILE
-    reason = "dedicated NVIDIA NIM GLM 5.2 subagent provider"
-    fallbacks = (
-        ["syra-nano", "syra-solar"]
-        if resolved_mode == "research"
-        else ["syra-solar", "syra-nano"]
-    )
-    # Cap non-dedicated fallbacks to parent tier later in resolution.
+    parent = (parent_profile or "syra-nano").strip() or "syra-nano"
+    suggested = "syra-nano" if resolved_mode == "research" else "syra-havy"
+    reason = f"public {suggested} profile for delegated {resolved_mode} work"
+    fallbacks = ["syra-nano", "syra-ultra", parent]
     effective = suggested
 
     return {
@@ -221,21 +204,17 @@ def fallback_subagent_profile(
     available_profiles: set[str] | frozenset[str],
 ) -> tuple[str, str]:
     """Pick the best available profile when ``preferred`` has no API key."""
-    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
+    parent = (parent_profile or "syra-nano").strip() or "syra-nano"
     chain = [preferred]
     if mode == "research":
-        chain.extend(["syra-nano", "syra-solar", parent])
+        chain.extend(["syra-nano", "syra-ultra", parent])
     else:
-        chain.extend(["syra-solar", "syra-nano", parent])
+        chain.extend(["syra-havy", "syra-nano", "syra-ultra", parent])
     seen: set[str] = set()
     for name in chain:
         if not name or name in seen:
             continue
         seen.add(name)
-        if name == SUBAGENT_PROFILE:
-            if name in available_profiles:
-                return name, "nvidia_subagent"
-            continue
         capped = _cap_profile(name, parent)
         if capped in available_profiles:
             return capped, f"fallback:{capped}"

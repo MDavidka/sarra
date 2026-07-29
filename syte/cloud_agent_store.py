@@ -147,7 +147,9 @@ async def begin_turn_session(project_id: str, model_profile: str | None = None) 
     """
     await ensure_cloud_agent_tables()
     now = _now()
-    profile = (model_profile or "syra-solar").strip() or "syra-solar"
+    from syte.ai_providers import DEFAULT_PROFILE
+
+    profile = (model_profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
             "INSERT INTO agent_sessions"
@@ -183,7 +185,9 @@ async def ensure_latest_session(
     if not force_new:
         current = await current_session_number(project_id)
         if current > 0:
-            profile = (model_profile or "syra-solar").strip() or "syra-solar"
+            from syte.ai_providers import DEFAULT_PROFILE
+
+            profile = (model_profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE
             await ensure_session(project_id, profile)
             return current
     return await begin_turn_session(project_id, model_profile)

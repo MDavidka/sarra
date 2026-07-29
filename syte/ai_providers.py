@@ -1,11 +1,9 @@
 """Fixed AI provider endpoints for Syra model profiles.
 
-Each main profile is a full think+build model — there is no separate thinker.
-- ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
-- ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
-- ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
-- ``syra-solar`` — local Ollama Solar runtime (Qwen 2.5 Coder 3B)
-- ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
+Each public profile is a full think+build model — there is no separate thinker.
+- ``syra-nano`` — Go / Gemini 2.5 Flash
+- ``syra-ultra`` — Air / Aliyun Qwen
+- ``syra-havy`` — Metal / VyceAI Claude Sonnet 4.6
 """
 
 from __future__ import annotations
@@ -24,32 +22,25 @@ ALIYUN_MAAS_API_BASE = (
 )
 # Pay-as-you-go DashScope OpenAI-compat (standard ``sk-`` Aliyun keys — not Token Plan).
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"
+VYCEAI_API_BASE = "https://vyceai.com/v1"
 
 PROFILE_ORDER = (
     "syra-nano",
-    "syra-havy",
     "syra-ultra",
-    "syra-solar",
-    "syra-subagent",
+    "syra-havy",
 )
 
 # Default / legacy aliases (selected model handles both thinking and building).
-DEFAULT_PROFILE = "syra-solar"
+DEFAULT_PROFILE = "syra-nano"
 BUILDER_PROFILE = DEFAULT_PROFILE
 THINKER_PROFILE = DEFAULT_PROFILE  # deprecated — no separate thinker
-# Dedicated subagent profile (NVIDIA NIM GLM 5.2) — not the default chat builder.
-SUBAGENT_PROFILE = "syra-subagent"
 
-NANO_MODEL = "gemini-3.1-flash-lite"
-PRO_MODEL = "gemini-3.6-flash"
+NANO_MODEL = "gemini-2.5-flash"
+PRO_MODEL = "claude-sonnet-4-6"
 ULTRA_MODEL = "qwen3.7-plus"
-SOLAR_MODEL = "qwen2.5-coder:3b"
-SUBAGENT_MODEL = "z-ai/glm-5.2"
-NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
 # Backward-compat aliases used by older tests/docs.
-BUILDER_MODEL = SOLAR_MODEL
+BUILDER_MODEL = NANO_MODEL
 THINKER_MODEL = ULTRA_MODEL
 
 # ---------------------------------------------------------------------------
@@ -99,7 +90,7 @@ class ProfileProvider(TypedDict):
     model: str
     setting_key: str
     secret_env: str
-    role: NotRequired[str]  # "fast" | "pro" | "ultra" | "local" | "subagent"
+    role: NotRequired[str]  # "fast" | "ultra" | "metal"
     local: NotRequired[bool]
     # Estimated USD per 1M tokens (public list prices; for UI guidance only).
     input_price_per_mtok: NotRequired[float]
@@ -114,8 +105,8 @@ class ProfileProvider(TypedDict):
 PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     "syra-nano": {
         "profile": "syra-nano",
-        "label": "Vertex AI",
-        "display_name": "nano",
+        "label": "Gemini",
+        "display_name": "go",
         "provider": "openai",
         "api_base": VERTEX_API_BASE,
         "model": NANO_MODEL,
@@ -127,21 +118,21 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
     },
     "syra-havy": {
         "profile": "syra-havy",
-        "label": "Vertex AI",
-        "display_name": "pro",
+        "label": "VyceAI",
+        "display_name": "metal",
         "provider": "openai",
-        "api_base": VERTEX_API_BASE,
+        "api_base": VYCEAI_API_BASE,
         "model": PRO_MODEL,
-        "role": "pro",
-        "input_price_per_mtok": 1.50,
-        "output_price_per_mtok": 7.50,
+        "role": "metal",
+        "input_price_per_mtok": 3.00,
+        "output_price_per_mtok": 15.00,
         "setting_key": "agent_syra_havy_api_key",
         "secret_env": "SYRA_HAVY_API_KEY",
     },
     "syra-ultra": {
         "profile": "syra-ultra",
         "label": "Aliyun",
-        "display_name": "ultra",
+        "display_name": "Air",
         "provider": "openai",
         "api_base": ALIYUN_MAAS_API_BASE,
         "model": ULTRA_MODEL,
@@ -154,40 +145,6 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tool_result_chars": 6000,
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
-    },
-    "syra-solar": {
-        "profile": "syra-solar",
-        "label": "Solar VM",
-        "display_name": "solar",
-        "provider": "ollama",
-        "api_base": OLLAMA_API_BASE,
-        "model": SOLAR_MODEL,
-        "role": "local",
-        "local": True,
-        "input_price_per_mtok": 0.0,
-        "output_price_per_mtok": 0.0,
-        "max_tokens": 8192,
-        "max_history_messages": 48,
-        "max_tool_result_chars": 8000,
-        "setting_key": "agent_syra_solar_api_key",
-        "secret_env": "OLLAMA_API_KEY",
-    },
-    "syra-subagent": {
-        "profile": "syra-subagent",
-        "label": "NVIDIA NIM",
-        "display_name": "subagent",
-        "provider": "openai",
-        "api_base": NVIDIA_NIM_API_BASE,
-        "model": SUBAGENT_MODEL,
-        "role": "subagent",
-        # NVIDIA Build NIM serverless is often free for developers; show $0 guidance.
-        "input_price_per_mtok": 0.0,
-        "output_price_per_mtok": 0.0,
-        "max_tokens": 8192,
-        "max_history_messages": 40,
-        "max_tool_result_chars": 8000,
-        "setting_key": "agent_syra_subagent_api_key",
-        "secret_env": "SYRA_SUBAGENT_API_KEY",
     },
 }
 
@@ -238,11 +195,6 @@ def looks_like_google_ai_studio_key(api_key: str | None) -> bool:
 def looks_like_openrouter_key(api_key: str | None) -> bool:
     """OpenRouter keys are ``sk-or-…`` (legacy syra-ultra before the Aliyun swap)."""
     return (api_key or "").strip().lower().startswith("sk-or-")
-
-
-def looks_like_nvidia_nim_key(api_key: str | None) -> bool:
-    """NVIDIA NIM / build.nvidia.com keys typically start with ``nvapi-``."""
-    return (api_key or "").strip().lower().startswith("nvapi-")
 
 
 def looks_like_aliyun_token_plan_key(api_key: str | None) -> bool:
@@ -313,25 +265,18 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
             "syra-ultra expects an Aliyun key: Token Plan sk-sp-… or Model Studio sk-… "
             "(not an OpenRouter / DeepSeek / Gemini key)."
         )
-    if profile == "syra-solar":
-        return "Solar runs locally on this VM; install it from the Solar setup tab."
-    if profile in {"syra-nano", "syra-havy"}:
+    if profile == "syra-nano":
         lower = key.lower()
         if lower.startswith("sk-") or looks_like_openrouter_key(key):
             return (
-                "This looks like an OpenAI-style key. syra-nano/havy need a Google Cloud "
+                "This looks like an OpenAI-style key. syra-nano needs a Google Cloud "
                 "Vertex AI Express Mode API key from Cloud Console → Credentials "
                 "(not a DeepSeek/Aliyun/OpenRouter sk- key)."
             )
         # Express Mode keys have varied prefixes — accept any non-sk key.
         return ""
-    if profile == "syra-subagent":
-        if looks_like_nvidia_nim_key(key):
-            return ""
-        return (
-            "syra-subagent expects an NVIDIA NIM API key (usually starts with nvapi-) "
-            "from https://build.nvidia.com/ — used only for delegated subagent work."
-        )
+    if profile == "syra-havy":
+        return "VyceAI expects an API key for the Claude Sonnet 4.6 endpoint at vyceai.com."
     return ""
 
 

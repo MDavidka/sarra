@@ -38,8 +38,7 @@ workspace text search — prefer it over unbounded `list_files` / shell grep.
 ```
 
 Omit `model_profile` or set it to `auto` to let Syte pick `syra-nano` /
-`syra-base` / `syra-havy` from the message. Explicit profiles, including
-`syra-kimi` for ChinaAPI Kimi K3, still win.
+`syra-ultra` / `syra-havy` from the message. Explicit profiles still win.
 
 Optional visual feedback fields:
 
@@ -264,7 +263,7 @@ activity events have aged out of the replay window.
       "parent_request_id": "rq-1",
       "task": "find the hero component",
       "mode": "research",
-      "profile": "syra-subagent",
+      "profile": "syra-nano",
       "background": true,
       "files": ["app/app/page.tsx"],
       "status": "completed",

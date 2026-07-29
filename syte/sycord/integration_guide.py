@@ -98,7 +98,7 @@ def build_backend_integration(base_url: str = "") -> dict:
             {
                 "when": "User asks AI to edit code (async)",
                 "call": f"POST {api}/agent_change",
-                "you_send": '{"uuid":"<syte_uuid>","message":"…","model_profile":"syra-solar"}',
+                "you_send": '{"uuid":"<syte_uuid>","message":"…","model_profile":"syra-nano"}',
                 "you_save": "request_id and turso_session_id from response",
                 "you_show_user": "chat timeline built by polling the durable Turso session",
             },
@@ -375,7 +375,7 @@ def _step_agent_change(api: str, base: str) -> dict:
             "body_json": {
                 "uuid": "myapp-a1b2c3",
                 "message": "Add a dark mode toggle to the navbar",
-                "model_profile": "syra-solar",
+                "model_profile": "syra-nano",
                 "wait": False,
             },
             "body_fields": {
@@ -384,7 +384,7 @@ def _step_agent_change(api: str, base: str) -> dict:
                 "model_profile": {
                     "type": "string",
                     "required": False,
-                "enum": ["syra-solar", "syra-nano", "syra-havy", "syra-ultra"],
+                "enum": ["syra-nano", "syra-ultra", "syra-havy"],
                 },
                 "wait": {
                     "type": "boolean",
@@ -415,7 +415,7 @@ def _step_agent_change(api: str, base: str) -> dict:
             "const res = await postJson('/sycord/api/agent_change', {\n"
             "  uuid: project.syte_uuid,\n"
             "  message: userMessage,\n"
-                "  model_profile: 'syra-solar',\n"
+                "  model_profile: 'syra-nano',\n"
             "});\n"
             "pollAgentSession(project.syte_uuid, res.turso_session_id);"
         ),
@@ -448,7 +448,7 @@ def _step_agent_session(api: str, base: str) -> dict:
                 "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
                 "project_id": "myapp-a1b2c3",
                 "session_number": 3,
-                "model_profile": "syra-solar",
+            "model_profile": "syra-nano",
                 "status": "completed",
                 "created_at": "2026-07-15T12:00:00+00:00",
                 "updated_at": "2026-07-15T12:00:04+00:00",

@@ -83,11 +83,9 @@ async def agents_online_count() -> int:
 async def get_dashboard_metrics() -> dict:
     from syte.cloud_agent import bridge_settings
     from syte.system_stats import get_system_stats
-    from syte.solar_runtime import solar_status
 
     await ensure_agent_requests_table()
     bridge = await bridge_settings()
-    solar = await solar_status()
     stats = get_system_stats()
     online = await agents_online_count()
     mnoa_max = await max_agents_allowed()
@@ -99,13 +97,8 @@ async def get_dashboard_metrics() -> dict:
     mnoa_percent = min(100, int(round(online / max(1, mnoa_max) * 100)))
 
     internal_ok = bool((await get_setting("syra_internal_secret", "")).strip())
-    keys_ok = bool(solar["running"]) or any(
-        bool(bridge["profiles"][name]["api_key"])
-        for name in PROFILE_ORDER if name != "syra-solar"
-    )
-    provider_ok = bool(solar["running"]) or any(
-        bool(bridge["profiles"][name]["api_key"]) for name in ("syra-nano", "syra-havy", "syra-ultra")
-    )
+    keys_ok = any(bool(bridge["profiles"][name]["api_key"]) for name in PROFILE_ORDER)
+    provider_ok = keys_ok
     cloud_runtime_ok = cloud_agent_installed()
 
     onboarding = {
