@@ -33,9 +33,8 @@ def test_google_key_shapes() -> None:
     assert not looks_like_vertex_api_key("sk-or-v1-abc")
 
 
-def test_nano_havy_accept_vertex_express_keys() -> None:
+def test_nano_accepts_vertex_express_keys() -> None:
     assert key_mismatch_hint("syra-nano", "vertex-express-key-xyz") == ""
-    assert key_mismatch_hint("syra-havy", "AQ.AbCdEf123") == ""
     hint = key_mismatch_hint("syra-nano", "sk-openai-looking")
     assert "Vertex" in hint
     assert "OpenAI-style" in hint

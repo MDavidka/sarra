@@ -28,7 +28,6 @@ from syte.ai_providers import (
     DEFAULT_PROFILE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
-    SUBAGENT_PROFILE,
     provider_chat_completion_url,
     profile_provider,
 )
@@ -760,8 +759,8 @@ async def resolve_profile_api_key(profile: str) -> dict[str, str]:
 
 
 async def migrate_provider_lineup_keys() -> dict[str, Any]:
-    """Keep the provider migration hook safe for installations upgrading to Solar."""
-    return {"migrated": False, "reason": "solar_lineup"}
+    """Keep the provider migration hook safe across lineup changes."""
+    return {"migrated": False, "reason": "three_model_lineup"}
 
 
 async def provider_key_status() -> list[dict[str, str | bool]]:
@@ -831,13 +830,9 @@ async def bridge_settings() -> dict[str, Any]:
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
         "syra_ultra_model": profiles["syra-ultra"]["model"],
-        "syra_solar_model": profiles["syra-solar"]["model"],
-        "syra_subagent_model": profiles["syra-subagent"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
-        "syra_solar_api_key": profiles["syra-solar"]["api_key"],
-        "syra_subagent_api_key": profiles["syra-subagent"]["api_key"],
         "provider_keys": [
             {
                 "profile": name,
@@ -1091,7 +1086,7 @@ def _build_static_instruction(
         "(info/search/view/docs/add/apply_preset — the live component registry); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
         "status/start/stop/logs); update_plan with per-step assignee main|subagent; delegate_task + "
-        "await_subagent for subagent-assigned work (NVIDIA GLM 5.2 when configured).\n"
+        "await_subagent for subagent-assigned work using configured public profiles.\n"
         "Keep `syra/memory.md` current with a short summary, stack, key paths, and conventions. "
         "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
@@ -1106,7 +1101,7 @@ def _build_static_instruction(
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
         "request that needs 3+ distinct steps, call update_plan BEFORE other tools and assign each "
         "step to main or subagent. main = you execute on the user's chosen model; subagent = call "
-        "delegate_task (NVIDIA NIM GLM 5.2 when the subagent key is set). Prefer subagent for "
+        "delegate_task using configured public profiles. Prefer subagent for "
         "parallel research, file location, audits, and bounded isolated edits; keep orchestration, "
         "design decisions, final integration, and user questions on main. For a new website "
         "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
@@ -1682,7 +1677,7 @@ async def update_agent_settings(
     project_id: str, *, model_profile: str | None = None, include_status: bool = True
 ) -> dict[str, Any]:
     if model_profile is not None:
-        profile = model_profile.strip() or "syra-solar"
+        profile = model_profile.strip() or DEFAULT_PROFILE
         if profile not in PROFILE_PROVIDERS:
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
@@ -1851,8 +1846,8 @@ TOOLS: list[dict[str, Any]] = [
          "case_insensitive": {"type": "boolean"},
      }, "required": ["pattern"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "delegate_task", "description": (
-        "Delegate one plan step assigned to subagent. Uses the NVIDIA NIM GLM 5.2 subagent "
-        "provider when configured (falls back to nano/base). Use mode=research (default) for "
+        "Delegate one plan step assigned to subagent using a public profile "
+        "(falls back to Go). Use mode=research (default) for "
         "read-only find/review; mode=implementation when the subagent must edit files. Set "
         "background:true to run asynchronously, then call await_subagent with the returned task_id. "
         "ALWAYS list in `files` every workspace file the subagent may create or edit — that scope "
@@ -3682,7 +3677,7 @@ async def _resolve_subagent_model(
         parent_profile=str(parent_model.get("profile") or ""),
         mode=mode,
     )
-    preferred = str(routing.get("effective_profile") or SUBAGENT_PROFILE)
+    preferred = str(routing.get("effective_profile") or "syra-nano")
     resolved_mode = str(routing.get("mode") or "research")
 
     available: set[str] = set()
@@ -5839,7 +5834,7 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         }
     try:
         if model_profile:
-            profile = model_profile.strip() or "syra-solar"
+            profile = model_profile.strip() or DEFAULT_PROFILE
             if profile not in PROFILE_PROVIDERS:
                 raise ValueError(f"Unknown model profile: {profile}")
             project = {**project, "agent_model_profile": profile}

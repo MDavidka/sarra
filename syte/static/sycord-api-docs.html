@@ -163,7 +163,7 @@ file=&lt;binary&gt;</pre>
           <div class="step-num">Step 5 — AI code change (async)</div>
           <p><strong>POST</strong> <code>/sycord/api/agent_change</code> · Content-Type: <code>application/json</code></p>
           <h3>You send</h3>
-          <pre>{ "uuid": "myapp-a1b2c3", "message": "Add a dark mode toggle", "model_profile": "syra-solar" }</pre>
+          <pre>{ "uuid": "myapp-a1b2c3", "message": "Add a dark mode toggle", "model_profile": "syra-nano" }</pre>
           <h3>Syte returns JSON immediately</h3>
           <pre>{ "ok": true, "request_id": "req_abc123def456", "status": "accepted", "turso_session_id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9", "session_url": "/sycord/api/agent_session/b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9" }</pre>
           <h3>Your backend does</h3>
@@ -561,7 +561,7 @@ await db.projects.update({
             <div class="endpoint-name">Request code change (async)</div>
           </div>
           <div class="endpoint-body">
-            <pre>{ "uuid": "testproject-a1b2c3", "message": "Add dark mode toggle", "model_profile": "syra-solar", "wait": false }</pre>
+            <pre>{ "uuid": "testproject-a1b2c3", "message": "Add dark mode toggle", "model_profile": "syra-nano", "wait": false }</pre>
             <pre>{
   "ok": true,
   "uuid": "testproject-a1b2c3",

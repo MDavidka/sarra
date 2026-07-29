@@ -54,7 +54,7 @@ async def test_removed_provider_migration_is_noop(tmp_data_dir: Path) -> None:
     await init_db()
 
     result = await migrate_provider_lineup_keys()
-    assert result == {"migrated": False, "reason": "solar_lineup"}
+    assert result == {"migrated": False, "reason": "three_model_lineup"}
 
     again = await migrate_provider_lineup_keys()
     assert again == result

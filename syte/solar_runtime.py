@@ -1,14 +1,14 @@
-"""Install and supervise the local Solar-compatible coding model.
+"""Remove the legacy Solar/Ollama model from an existing Syte VM.
 
-Solar is exposed through Ollama's OpenAI-compatible API so the normal agent
-completion path can use it without a second chat implementation.
+Solar is no longer an available provider.  This small compatibility module is
+kept so installations created by older releases can clean up the downloaded
+model without reinstalling or starting Ollama.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,22 +16,17 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from syte.ai_providers import OLLAMA_API_BASE, SOLAR_MODEL
 from syte.config import settings
 
-OLLAMA_URL = OLLAMA_API_BASE.removesuffix("/v1")
-_setup_task: asyncio.Task[None] | None = None
+OLLAMA_URL = "http://127.0.0.1:11434"
+SOLAR_MODEL = "qwen2.5-coder:3b"
 _ollama_process: subprocess.Popen[str] | None = None
-_state: dict[str, Any] = {"status": "not_configured", "message": "Solar is not installed."}
+_state: dict[str, Any] = {"status": "not_configured", "message": "Legacy Solar is not installed."}
 
 
 def _log_path() -> Path:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    return settings.data_dir / "solar-setup.log"
-
-
-def _set_state(status: str, message: str = "") -> None:
-    _state.update({"status": status, "message": message})
+    return settings.data_dir / "solar-cleanup.log"
 
 
 def _request_json(path: str, *, timeout: float = 1.5) -> dict[str, Any] | None:
@@ -60,121 +55,79 @@ async def _local_snapshot() -> tuple[bool, bool, bool]:
 
 
 async def solar_status() -> dict[str, Any]:
-    """Return the user-facing installation, process, and model state."""
+    """Return the legacy Solar model state for the cleanup card."""
     installed, reachable, model_available = await _local_snapshot()
-    setup_running = _setup_task is not None and not _setup_task.done()
-    if setup_running:
-        status = _state.get("status") or "installing"
-    elif reachable and model_available:
-        status = "running"
-    elif _state.get("status") == "error":
+    if _state.get("status") == "error":
         status = "error"
-    elif installed and reachable:
+    elif model_available:
         status = "installed"
     elif installed:
-        status = "installed"
+        status = "ollama_only"
     else:
         status = "not_configured"
-    if status == "running":
-        message = "Solar is running and accepting AI chat requests."
-    elif status == "installed":
-        message = "Ollama is installed; the Solar model still needs to be started or downloaded."
-    elif setup_running:
-        message = _state.get("message") or "Installing Solar model…"
+    if status == "installed":
+        message = "Legacy Solar is installed on this VM."
+    elif status == "ollama_only":
+        message = (
+            _state.get("message")
+            if _state.get("message") and _state.get("message") != "Legacy Solar is not installed."
+            else "Ollama is installed, but the legacy Solar model is not present."
+        )
     else:
-        message = _state.get("message") or "Solar is not installed."
+        message = _state.get("message") or "Legacy Solar is not installed."
     return {
         "ok": True,
-        "profile": "syra-solar",
+        "profile": "legacy-solar",
         "model": SOLAR_MODEL,
         "display_model": "Qwen 2.5 Coder 3B",
-        "api_base": OLLAMA_API_BASE,
         "installed": installed,
         "reachable": reachable,
         "model_available": model_available,
-        "running": status == "running",
+        "running": False,
         "status": status,
         "message": message,
         "log_path": str(_log_path()),
     }
 
 
-def _run_logged(argv: list[str], *, input_text: str | None = None) -> tuple[int, str]:
-    log_path = _log_path()
-    with log_path.open("a", encoding="utf-8") as log:
+def _run_logged(argv: list[str]) -> tuple[int, str]:
+    with _log_path().open("a", encoding="utf-8") as log:
         log.write(f"\n$ {' '.join(argv)}\n")
         result = subprocess.run(
             argv,
-            input=input_text,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
-            timeout=1800,
+            timeout=300,
         )
         output = result.stdout or ""
         log.write(output)
     return result.returncode, output
 
 
-def _start_ollama() -> None:
+def _stop_managed_ollama() -> None:
     global _ollama_process
     if _ollama_process is not None and _ollama_process.poll() is None:
-        return
-    log = _log_path().open("a", encoding="utf-8")
-    env = {**os.environ, "OLLAMA_HOST": "127.0.0.1:11434"}
-    _ollama_process = subprocess.Popen(
-        ["ollama", "serve"],
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        env=env,
-        start_new_session=True,
-        text=True,
-    )
+        _ollama_process.terminate()
+        try:
+            _ollama_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _ollama_process.kill()
+    _ollama_process = None
 
 
-async def _install_and_start() -> None:
+async def delete_solar() -> dict[str, Any]:
+    """Delete the legacy Solar model without touching other Ollama models."""
     try:
-        _set_state("installing", "Installing Ollama on the VM…")
+        _stop_managed_ollama()
         if shutil.which("ollama") is None:
-            if shutil.which("curl") is None:
-                raise RuntimeError("curl is required to install Ollama on this VM.")
-            code, script = await asyncio.to_thread(
-                _run_logged, ["curl", "-fsSL", "https://ollama.com/install.sh"]
-            )
-            if code != 0 or not script.strip():
-                raise RuntimeError("Could not download the Ollama installer. See the Solar setup log.")
-            code, output = await asyncio.to_thread(_run_logged, ["sh"], input_text=script)
-            if code != 0 or shutil.which("ollama") is None:
-                raise RuntimeError(
-                    "Ollama installation failed. " + (output.strip()[-500:] or "See the Solar setup log.")
-                )
-
-        _set_state("starting", "Starting the local Solar API…")
-        await asyncio.to_thread(_start_ollama)
-        for _ in range(60):
-            _, reachable, _ = await _local_snapshot()
-            if reachable:
-                break
-            await asyncio.sleep(1)
-        else:
-            raise RuntimeError("Ollama did not start on http://127.0.0.1:11434.")
-
-        _set_state("downloading", f"Downloading {SOLAR_MODEL} (this can take a few minutes)…")
-        code, output = await asyncio.to_thread(_run_logged, ["ollama", "pull", SOLAR_MODEL])
-        if code != 0:
-            raise RuntimeError(output.strip()[-700:] or f"Could not download {SOLAR_MODEL}.")
-        _set_state("running", "Solar is running and accepting AI chat requests.")
+            _state.update({"status": "not_configured", "message": "Legacy Solar is not installed."})
+            return await solar_status()
+        code, output = await asyncio.to_thread(_run_logged, ["ollama", "rm", SOLAR_MODEL])
+        if code != 0 and "not found" not in output.lower():
+            raise RuntimeError(output.strip()[-700:] or f"Could not remove {SOLAR_MODEL}.")
+        _state.update({"status": "not_configured", "message": "Legacy Solar was removed from this VM."})
     except Exception as exc:  # surfaced through the status endpoint
-        _set_state("error", str(exc) or "Solar setup failed.")
-
-
-async def start_solar_setup() -> dict[str, Any]:
-    """Start idempotent background setup and return its current state."""
-    global _setup_task
-    if _setup_task is None or _setup_task.done():
-        current = await solar_status()
-        if current["running"]:
-            return current
-        _setup_task = asyncio.create_task(_install_and_start())
+        _state.update({"status": "error", "message": str(exc) or "Solar cleanup failed."})
     return await solar_status()

@@ -17,19 +17,16 @@ and restartable work. It does not launch a CLI or HTTP server per project.
   rows, mirrored live): Turso (libSQL), single shared `agent_message` table
   — see "Durable message store (Turso)" below
 
-The agent uses only Syte's configured Syra profiles and their existing fixed
+The agent uses only Syte's three configured public profiles and their fixed
 OpenAI-compatible endpoints:
 
-- `syra-nano`: Vertex AI Gemini Flash Lite (fast)
-- `syra-base`: DeepSeek V4 Flash (default)
-- `syra-kimi`: ChinaAPI Kimi K3 (`https://api.chinaapi.ai/v1`, model `kimi-k3`; dashboard: `https://dash.chinaapi.ai/`)
-- `syra-havy`: Vertex AI Gemini 3.6 Flash (pro)
-- `syra-ultra`: Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
-- `syra-subagent`: NVIDIA NIM GLM 5.2 (`https://integrate.api.nvidia.com/v1`, model `z-ai/glm-5.2`) — used only for delegated subagent work
+- `syra-nano`: Go / Gemini 2.5 Flash (`https://aiplatform.googleapis.com/v1`)
+- `syra-ultra`: Air / Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
+- `syra-havy`: Metal / VyceAI Claude Sonnet 4.6 (`https://vyceai.com/v1`, model `claude-sonnet-4-6`)
 
 Main chat profiles are full think+build models with their own API keys
-(`SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, `SYRA_KIMI_API_KEY`, `SYRA_HAVY_API_KEY`, `SYRA_ULTRA_API_KEY`).
-The subagent key is `SYRA_SUBAGENT_API_KEY` (NVIDIA `nvapi-…` from build.nvidia.com).
+(`SYRA_NANO_API_KEY`, `SYRA_ULTRA_API_KEY`, `SYRA_HAVY_API_KEY`). Delegated
+subagent tasks reuse these public profiles rather than a separate provider key.
 
 Token efficiency: tool/CLI output is filtered before it re-enters context; listings
 honor `.aiignore` / `.copilotignore` (auto-seeded under `app/`).

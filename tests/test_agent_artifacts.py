@@ -20,7 +20,7 @@ async def _project(project_id: str = "art-proj") -> dict:
     from syte.database import create_project, get_project, init_db, set_setting
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    await set_setting("agent_syra_nano_api_key", "go-key")
     await create_project({"id": project_id, "name": "Art", "port": 3000, "start_command": ""})
     return (await get_project(project_id)) or {}
 

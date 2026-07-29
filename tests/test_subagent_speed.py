@@ -25,7 +25,7 @@ async def _project(name: str) -> dict[str, Any]:
     from syte.database import create_project, get_project, init_db, set_setting
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    await set_setting("agent_syra_nano_api_key", "go-key")
     await set_setting("agent_syra_nano_api_key", "AQ.nano-test-key")
     await create_project({"id": f"sub-{name}", "name": name, "port": 3099, "start_command": ""})
     return (await get_project(f"sub-{name}")) or {}
@@ -46,7 +46,7 @@ async def test_subagent_wall_clock_timeout(monkeypatch: pytest.MonkeyPatch) -> N
     result = await cloud_agent._run_subagent(
         "proj",
         "do stuff",
-        {"provider": "x", "model": "y", "api_base": "", "api_key": "k", "profile": "syra-base"},
+        {"provider": "x", "model": "y", "api_base": "", "api_key": "k", "profile": "syra-nano"},
         mode="implementation",
     )
     assert result["ok"] is False
@@ -145,7 +145,7 @@ async def test_background_subagent_concurrency_cap(
         "model": "y",
         "api_base": "",
         "api_key": "k",
-        "profile": "syra-base",
+        "profile": "syra-nano",
     }
 
     async def fake_resolve(parent_model, task, *, mode=None):
@@ -243,11 +243,11 @@ async def test_subagent_uses_routed_cheaper_model(
     seen: dict[str, Any] = {}
 
     async def fake_meta(profile):
-        key = "nvapi-test" if profile == "syra-subagent" else "other-key"
+        key = "other-key"
         return {
             "provider": "x",
             "model": profile,
-            "api_base": "https://integrate.api.nvidia.com/v1" if profile == "syra-subagent" else "",
+            "api_base": "",
             "api_key": key,
             "profile": profile,
         }
@@ -267,9 +267,9 @@ async def test_subagent_uses_routed_cheaper_model(
         model=parent,
     )
     assert result["ok"] is True
-    assert seen["model"]["profile"] == "syra-subagent"
+    assert seen["model"]["profile"] == "syra-nano"
     assert seen["mode"] == "research"
-    assert result["profile"] == "syra-subagent"
+    assert result["profile"] == "syra-nano"
 
 
 @pytest.mark.asyncio

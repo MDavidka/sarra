@@ -391,10 +391,9 @@
                       <span>Model</span>
                       <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="auto" selected>auto</option>
-                        <option value="syra-nano">nano</option>
-                        <option value="syra-havy">pro</option>
-                        <option value="syra-ultra">ultra</option>
-                        <option value="syra-solar">solar · Qwen 2.5 Coder 3B</option>
+                        <option value="syra-nano">Go · Gemini 2.5 Flash</option>
+                        <option value="syra-ultra">Air · Aliyun Qwen</option>
+                        <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
                       </select>
                     </label>
                   </div>
@@ -643,7 +642,7 @@
                 <ul class="ai-checklist" id="ai-checklist">
                   <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
                   <li data-step="ai_models"><span class="ai-check-box"></span><span>At least one model API key</span></li>
-                  <li data-step="provider"><span class="ai-check-box"></span><span>Vertex AI and DeepSeek keys</span></li>
+                  <li data-step="provider"><span class="ai-check-box"></span><span>Provider keys ready</span></li>
                   <li data-step="cloud_runtime"><span class="ai-check-box"></span><span>Syte cloud runtime ready</span></li>
                 </ul>
                 <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
@@ -660,11 +659,9 @@
                 <option value="">Project…</option>
               </select>
               <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
-                <option value="syra-nano">nano</option>
-                <option value="syra-solar" selected>solar · Qwen 2.5 Coder 3B</option>
-                <option value="syra-havy">pro</option>
-                <option value="syra-ultra">ultra</option>
-                <option value="syra-subagent">subagent · GLM 5.2</option>
+                <option value="syra-nano" selected>Go · Gemini 2.5 Flash</option>
+                <option value="syra-ultra">Air · Aliyun Qwen</option>
+                <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
                 <i data-lucide="zap"></i>
@@ -701,15 +698,14 @@
             <div class="ai-settings-body">
               <div class="ai-settings-tabs" role="tablist" aria-label="AI setup">
                 <button type="button" class="ai-settings-tab is-active" id="ai-tab-providers" role="tab" aria-selected="true" aria-controls="ai-panel-providers">Providers</button>
-                <button type="button" class="ai-settings-tab" id="ai-tab-solar" role="tab" aria-selected="false" aria-controls="ai-panel-solar">Setup Solar model</button>
               </div>
               <div id="ai-panel-providers" role="tabpanel" aria-labelledby="ai-tab-providers">
-              <p class="hint block">Main chat profiles think and build. Solar runs locally on this VM using Qwen 2.5 Coder 3B. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for delegated work. Prices are estimated USD per 1M tokens.</p>
+              <p class="hint block">Main chat profiles think and build. Choose from Go (Gemini), Air (Aliyun Qwen), or Metal (VyceAI Claude). Prices are estimated USD per 1M tokens.</p>
 
               <div class="ai-key-card" data-profile="syra-nano">
                 <div class="ai-key-head">
-                  <strong>syra-nano</strong>
-                  <span class="ai-key-provider">Vertex AI · gemini-3.1-flash-lite</span>
+                  <strong>Go · syra-nano</strong>
+                  <span class="ai-key-provider">Gemini · gemini-2.5-flash</span>
                 </div>
                 <div class="ai-key-price" aria-label="Estimated price">
                   <span>in <b id="agent-nano-price-in">$0.25</b>/1M</span>
@@ -718,31 +714,31 @@
                 <code class="ai-key-url">https://aiplatform.googleapis.com/v1/publishers/google/models</code>
                 <div class="form-group">
                   <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-nano-key" placeholder="Vertex Express API key (Cloud Console)" autocomplete="off">
-                  <span class="hint" id="agent-nano-key-hint">Required for nano. Google Cloud Vertex AI Express Mode key — not AI Studio.</span>
+                  <input type="password" id="agent-nano-key" placeholder="Gemini API key" autocomplete="off">
+                  <span class="hint" id="agent-nano-key-hint">Required for Go. Use a Google Gemini / Vertex API key.</span>
                 </div>
               </div>
 
               <div class="ai-key-card" data-profile="syra-havy">
                 <div class="ai-key-head">
-                  <strong>syra-havy · pro</strong>
-                  <span class="ai-key-provider">Vertex AI · gemini-3.6-flash</span>
+                  <strong>Metal · syra-havy</strong>
+                  <span class="ai-key-provider">VyceAI · claude-sonnet-4-6</span>
                 </div>
                 <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-havy-price-in">$1.50</b>/1M</span>
-                  <span>out <b id="agent-havy-price-out">$7.50</b>/1M</span>
+                  <span>in <b id="agent-havy-price-in">$3.00</b>/1M</span>
+                  <span>out <b id="agent-havy-price-out">$15.00</b>/1M</span>
                 </div>
-                <code class="ai-key-url">https://aiplatform.googleapis.com/v1/publishers/google/models</code>
+                <code class="ai-key-url">https://vyceai.com/v1</code>
                 <div class="form-group">
                   <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-havy-key" placeholder="Vertex Express API key (Cloud Console)" autocomplete="off">
-                  <span class="hint" id="agent-havy-key-hint">Required for pro. Google Cloud Vertex AI Express Mode key — not AI Studio.</span>
+                  <input type="password" id="agent-havy-key" placeholder="VyceAI API key" autocomplete="off">
+                  <span class="hint" id="agent-havy-key-hint">Required for Metal. VyceAI OpenAI-compatible Claude endpoint.</span>
                 </div>
               </div>
 
               <div class="ai-key-card" data-profile="syra-ultra">
                 <div class="ai-key-head">
-                  <strong>syra-ultra</strong>
+                  <strong>Air · syra-ultra</strong>
                   <span class="ai-key-provider">Aliyun · qwen3.7-plus</span>
                 </div>
                 <div class="ai-key-price" aria-label="Estimated price">
@@ -757,31 +753,13 @@
                 </div>
               </div>
 
-              <div class="ai-key-card" data-profile="syra-subagent">
-                <div class="ai-key-head">
-                  <strong>syra-subagent</strong>
-                  <span class="ai-key-provider">NVIDIA NIM · z-ai/glm-5.2</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-subagent-price-in">$0.00</b>/1M</span>
-                  <span>out <b id="agent-subagent-price-out">$0.00</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://integrate.api.nvidia.com/v1</code>
-                <div class="form-group">
-                  <label for="agent-subagent-key">API key</label>
-                  <input type="password" id="agent-subagent-key" placeholder="nvapi-… from build.nvidia.com" autocomplete="off">
-                  <span class="hint" id="agent-subagent-key-hint">Optional. Used only for delegated subagent tasks after the main agent plans assignees. Get a key at build.nvidia.com (GLM 5.2).</span>
-                </div>
-              </div>
-
               <div class="form-row">
                 <div class="form-group">
                   <label for="agent-default-profile">Default profile</label>
                   <select id="agent-default-profile">
-                    <option value="syra-nano">syra-nano · nano</option>
-                    <option value="syra-havy">syra-havy · pro</option>
-                    <option value="syra-ultra">syra-ultra · ultra</option>
-                    <option value="syra-solar">syra-solar · Solar (Qwen 2.5 Coder 3B)</option>
+                    <option value="syra-nano">Go · Gemini 2.5 Flash</option>
+                    <option value="syra-ultra">Air · Aliyun Qwen</option>
+                    <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -818,29 +796,25 @@
                 <summary>Provider keys &amp; environment</summary>
                 <p class="hint block">Keys resolve from saved settings first, then process env. Values are masked.</p>
                 <div class="ai-env-grid" id="ai-provider-key-status">
-                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
-                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
-                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
-                  <div class="ai-env-row"><code>LOCAL_OLLAMA</code><span>Solar VM · Qwen 2.5 Coder 3B</span></div>
+                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Gemini · Go</span></div>
+                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · Air</span></div>
+                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>VyceAI · Metal</span></div>
                 </div>
               </details>
 
               <div id="agent-runtime-status" class="hint"></div>
               </div>
 
-              <div id="ai-panel-solar" class="hidden" role="tabpanel" aria-labelledby="ai-tab-solar">
-                <div class="solar-setup-card">
+              <div class="ai-key-card legacy-solar-cleanup-card">
                   <div class="ai-key-head">
-                    <strong>Solar model on this VM</strong>
+                    <strong>Legacy Solar cleanup</strong>
                     <span class="solar-status-badge" id="solar-status-badge">not configured</span>
                   </div>
-                  <p class="hint block">Install Ollama, download Qwen 2.5 Coder 3B, and start its local OpenAI-compatible API for AI chat.</p>
+                  <p class="hint block">Solar is no longer offered as a model. Remove its old Ollama download from this VM if it was installed by an earlier Syte release.</p>
                   <div class="solar-model-meta"><span>Model</span><code>qwen2.5-coder:3b</code></div>
-                  <div class="solar-model-meta"><span>API</span><code>http://127.0.0.1:11434/v1</code></div>
-                  <p class="hint" id="solar-status-message">Solar is not installed.</p>
-                  <button type="button" class="btn-pill btn-primary" id="setup-solar-btn"><i data-lucide="download"></i><span>Install and start Solar</span></button>
+                  <p class="hint" id="solar-status-message">Legacy Solar is not installed.</p>
+                  <button type="button" class="btn-pill btn-ghost" id="delete-solar-btn"><i data-lucide="trash-2"></i><span>Remove Solar from VM</span></button>
                 </div>
-              </div>
             </div>
             <div class="ai-settings-foot">
               <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>

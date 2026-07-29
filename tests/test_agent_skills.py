@@ -29,14 +29,14 @@ async def test_write_agent_config_includes_rules_and_skills(tmp_data_dir: Path) 
 
     await init_db()
     await set_setting("agent_provider_lineup_v3_migrated", "1")
-    await set_setting("agent_syra_base_api_key", "sk-test-base-key")
+    await set_setting("agent_syra_nano_api_key", "gemini-test-key")
     await create_project({
         "id": "skills-proj",
         "name": "Skills",
         "port": 3010,
         "start_command": "",
     })
-    await update_project("skills-proj", {"agent_model_profile": "syra-base"})
+    await update_project("skills-proj", {"agent_model_profile": "syra-nano"})
 
     project = await get_project("skills-proj")
     path = await write_agent_config(project or {})

@@ -1391,7 +1391,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
         <section class="section">
           <h2 class="section-title">Agent (token API)</h2>
           <p class="section-desc">Manage a project agent from an external page. Base <code>/api</code>, header <code>X-API-Key</code>. Session-auth mirrors live at <code>/api/projects/{uuid}/agent/*</code>.</p>
-<div class="note">Profiles: <code>syra-solar</code>, <code>syra-nano</code>, <code>syra-havy</code>, <code>syra-ultra</code>. Subagent-only: <code>syra-subagent</code>. Configure keys or set up Solar in Settings → AI. Prefer <code>agent_change</code> (background) for external UIs; <code>agent_communicate</code> waits for the turn.</div>
+<div class="note">Profiles: <code>syra-nano</code> (Go / Gemini 2.5), <code>syra-ultra</code> (Air / Aliyun Qwen), and <code>syra-havy</code> (Metal / VyceAI Claude Sonnet 4.6). Configure keys in Settings → AI. Prefer <code>agent_change</code> (background) for external UIs; <code>agent_communicate</code> waits for the turn.</div>
 
 
           <div class="endpoint" id="agent-status" data-ep="agent-status">
@@ -1431,7 +1431,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
     &quot;synced_messages&quot;: 12,
     &quot;all_saved&quot;: true
   },
-  &quot;agent_model&quot;: {&quot;profile&quot;: &quot;syra-solar&quot;, &quot;model&quot;: &quot;qwen2.5-coder:3b&quot;}
+  &quot;agent_model&quot;: {&quot;profile&quot;: &quot;syra-nano&quot;, &quot;model&quot;: &quot;gemini-2.5-flash&quot;}
 }</pre>
             </div>
           </div>
@@ -1612,9 +1612,9 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
                     <span class="field-type">string</span>
                   </div>
                   
-                  <div class="field-desc"><code>syra-solar|syra-nano|syra-havy|syra-ultra</code></div>
+                  <div class="field-desc"><code>syra-nano|syra-ultra|syra-havy</code></div>
                 </div>
-              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;model_profile&quot;:&quot;syra-solar&quot;}</pre>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;model_profile&quot;:&quot;syra-nano&quot;}</pre>
             </div>
           </div>
 
@@ -1927,7 +1927,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,�
                     <span class="field-type">string</span>
                   </div>
                   
-                  <div class="field-desc">syra-solar | syra-nano | syra-havy | syra-ultra</div>
+                  <div class="field-desc">syra-nano | syra-ultra | syra-havy</div>
                 </div>                <div class="field">
                   <div class="field-head">
                     <span class="field-name">thinking_level<span class="opt">?</span></span>
@@ -3118,7 +3118,7 @@ data: {…}</pre>
     &quot;task_id&quot;: &quot;sub_3&quot;,
     &quot;task&quot;: &quot;Implement PricingCard&quot;,
     &quot;mode&quot;: &quot;build&quot;,
-    &quot;profile&quot;: &quot;syra-subagent&quot;,
+    &quot;profile&quot;: &quot;syra-nano&quot;,
     &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;],
     &quot;request_id&quot;: &quot;req_8f2a&quot;,
     &quot;session&quot;: 3,
@@ -3463,7 +3463,7 @@ GET /api/agent_session/sess_9c1e…?since_id=42</pre>
   &quot;project_id&quot;: &quot;my-site&quot;,
   &quot;session_number&quot;: 3,
   &quot;source&quot;: &quot;sycord&quot;,
-  &quot;model_profile&quot;: &quot;syra-solar&quot;,
+  &quot;model_profile&quot;: &quot;syra-nano&quot;,
   &quot;request&quot;: &quot;Build a pricing page&quot;,
   &quot;status&quot;: &quot;running&quot;,
   &quot;started_at&quot;: &quot;2026-07-25T21:00:00Z&quot;
@@ -3476,7 +3476,7 @@ GET /api/agent_session/sess_9c1e…?since_id=42</pre>
   &quot;parent_request_id&quot;: &quot;req_8f2a&quot;,
   &quot;task&quot;: &quot;Implement PricingCard&quot;,
   &quot;mode&quot;: &quot;build&quot;,
-  &quot;profile&quot;: &quot;syra-subagent&quot;,
+  &quot;profile&quot;: &quot;syra-nano&quot;,
   &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;],
   &quot;status&quot;: &quot;running&quot;
 }</pre>

@@ -21,7 +21,7 @@ async def _project(project_id: str = "cloud-proj") -> dict:
     from syte.database import create_project, get_project, init_db, set_setting
 
     await init_db()
-    await set_setting("agent_syra_base_api_key", "base-key")
+    await set_setting("agent_syra_nano_api_key", "go-key")
     await create_project({"id": project_id, "name": "Cloud", "port": 3000, "start_command": ""})
     return (await get_project(project_id)) or {}
 
@@ -708,7 +708,7 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
 
     project = await _project("think-proj")
     await set_setting("agent_provider_lineup_v3_migrated", "1")
-    await set_setting("agent_syra_base_api_key", "sk-deepseek-test-key")
+    await set_setting("agent_syra_nano_api_key", "gemini-test-key")
     calls = {"n": 0}
 
     async def fake_provider(model, messages, **kwargs):
@@ -738,10 +738,10 @@ async def test_thinking_level_caps_tool_steps_and_skips_persist_profile(
     )
     assert result["ok"] is True
     assert result["thinking_level"] == 1
-    assert result["model_profile"] == "syra-solar"
+    assert result["model_profile"] == "syra-nano"
     # Instant budget (10 tool-enabled rounds) + 1 final no-tools round
     assert calls["n"] == 11
     assert calls["last_kwargs"].get("tools") == []
     refreshed = await get_project(project["id"])
     # thinking_level must not persist a non-default Instant override onto the project
-    assert refreshed.get("agent_model_profile") in {None, "syra-solar"}
+    assert refreshed.get("agent_model_profile") in {None, "syra-nano"}

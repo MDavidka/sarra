@@ -113,7 +113,7 @@ async def test_agent_settings_use_cloud_namespace(
     assert await get_setting("agent_syra_ultra_api_key") == "aliyun-ultra-key"
     assert "Syte cloud" in " ".join(res["messages"])
     assert any("syra-ultra" in m or "Qwen" in m for m in res["messages"])
-    assert any("Vertex" in m or "syra-nano" in m for m in res["messages"])
+    assert any("Gemini" in m or "syra-nano" in m for m in res["messages"])
 
 @pytest.mark.asyncio
 async def test_removed_base_provider_settings_are_not_migrated(tmp_data_dir: Path) -> None:

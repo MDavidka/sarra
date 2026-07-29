@@ -37,17 +37,6 @@ async def test_profile_api_key_falls_back_to_env(
 
 
 @pytest.mark.asyncio
-async def test_solar_profile_uses_local_runtime_credential(tmp_data_dir: Path) -> None:
-    from syte.cloud_agent import resolve_profile_api_key
-    from syte.database import init_db
-
-    await init_db()
-    resolved = await resolve_profile_api_key("syra-solar")
-    assert resolved["source"] == "local"
-    assert resolved["api_key"] == "ollama"
-
-
-@pytest.mark.asyncio
 async def test_settings_key_wins_over_env(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -88,3 +77,27 @@ async def test_provider_key_status_and_settings_payload(tmp_data_dir: Path, monk
     assert "provider_keys" in payload
     assert "provider_envs" in payload
     assert any(row["name"] == "SYRA_ULTRA_API_KEY" and row["set"] for row in payload["provider_envs"])
+
+
+@pytest.mark.asyncio
+async def test_legacy_solar_delete_removes_only_its_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import solar_runtime
+
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(solar_runtime.shutil, "which", lambda name: "/usr/bin/ollama" if name == "ollama" else None)
+    async def fake_snapshot() -> tuple[bool, bool, bool]:
+        return True, True, False
+
+    monkeypatch.setattr(solar_runtime, "_local_snapshot", fake_snapshot)
+    monkeypatch.setattr(
+        solar_runtime,
+        "_run_logged",
+        lambda argv: (commands.append(argv) or (0, "removed")),
+    )
+
+    result = await solar_runtime.delete_solar()
+
+    assert commands == [["ollama", "rm", "qwen2.5-coder:3b"]]
+    assert result["status"] == "ollama_only"
+    assert "removed" in result["message"]

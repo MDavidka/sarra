@@ -147,7 +147,6 @@ class SettingsRequest(BaseModel):
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
-    agent_syra_subagent_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -309,15 +308,11 @@ async def get_settings():
         "agent_syra_nano_model": bridge["syra_nano_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
         "agent_syra_ultra_model": bridge["syra_ultra_model"],
-        "agent_syra_solar_model": bridge["syra_solar_model"],
-        "agent_syra_subagent_model": bridge["syra_subagent_model"],
         "agent_builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
         "agent_thinker_profile": bridge.get("thinker_profile"),
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
-        "agent_syra_solar_running": (await _solar_status())["running"],
-        "agent_syra_subagent_api_key_set": bool(bridge["syra_subagent_api_key"]),
         "ai_providers": provider_catalog(),
         "provider_keys": key_status,
         "provider_envs": [
@@ -357,11 +352,11 @@ async def get_solar_status():
     return await _solar_status()
 
 
-@app.post("/api/ai/solar/setup")
-async def setup_solar_model():
-    from syte.solar_runtime import start_solar_setup
+@app.delete("/api/ai/solar")
+async def delete_solar_model():
+    from syte.solar_runtime import delete_solar
 
-    return await start_solar_setup()
+    return await delete_solar()
 
 
 @app.put("/api/settings")
@@ -453,7 +448,9 @@ async def save_settings(body: SettingsRequest):
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import PROFILE_PROVIDERS
 
-        profile = body.agent_default_model_profile.strip() or "syra-solar"
+        from syte.ai_providers import DEFAULT_PROFILE
+
+        profile = body.agent_default_model_profile.strip() or DEFAULT_PROFILE
         if profile not in PROFILE_PROVIDERS:
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
@@ -461,14 +458,14 @@ async def save_settings(body: SettingsRequest):
     if body.agent_syra_nano_api_key is not None:
         await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
         messages.append(
-            "syra-nano (Vertex AI · gemini-3.1-flash-lite) API key saved."
+            "Go (Gemini · gemini-2.5-flash) API key saved."
             if body.agent_syra_nano_api_key.strip()
             else "syra-nano API key cleared."
         )
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
         messages.append(
-            "syra-havy / pro (Vertex AI · gemini-3.6-flash) API key saved."
+            "Metal (VyceAI · claude-sonnet-4-6) API key saved."
             if body.agent_syra_havy_api_key.strip()
             else "syra-havy API key cleared."
         )
@@ -482,17 +479,9 @@ async def save_settings(body: SettingsRequest):
             )
         await set_setting("agent_syra_ultra_api_key", ultra_key)
         messages.append(
-            "syra-ultra (Aliyun · qwen3.7-plus) API key saved."
+            "Air (Aliyun · qwen3.7-plus) API key saved."
             if ultra_key
             else "syra-ultra API key cleared."
-        )
-    if body.agent_syra_subagent_api_key is not None:
-        sub_key = body.agent_syra_subagent_api_key.strip()
-        await set_setting("agent_syra_subagent_api_key", sub_key)
-        messages.append(
-            "syra-subagent (NVIDIA NIM · z-ai/glm-5.2) API key saved."
-            if sub_key
-            else "syra-subagent API key cleared."
         )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))

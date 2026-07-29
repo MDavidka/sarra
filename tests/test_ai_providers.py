@@ -4,13 +4,12 @@ from syte.ai_providers import (
     ALIYUN_MAAS_API_BASE,
     DEFAULT_PROFILE,
     NANO_MODEL,
-    OLLAMA_API_BASE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
     PRO_MODEL,
-    SOLAR_MODEL,
     ULTRA_MODEL,
     VERTEX_API_BASE,
+    VYCEAI_API_BASE,
     format_price_per_mtok,
     normalize_provider_api_base,
     profile_provider,
@@ -19,14 +18,14 @@ from syte.ai_providers import (
 )
 
 
-def test_nano_vertex_gemini_flash_lite() -> None:
+def test_go_gemini_flash() -> None:
     nano = PROFILE_PROVIDERS["syra-nano"]
-    assert nano["label"] == "Vertex AI"
+    assert DEFAULT_PROFILE == "syra-nano"
+    assert nano["label"] == "Gemini"
+    assert nano["display_name"] == "go"
     assert nano["api_base"] == VERTEX_API_BASE
-    assert nano["model"] == NANO_MODEL == "gemini-3.1-flash-lite"
+    assert nano["model"] == NANO_MODEL == "gemini-2.5-flash"
     assert nano["role"] == "fast"
-    assert nano["input_price_per_mtok"] == 0.25
-    assert nano["output_price_per_mtok"] == 1.50
     assert nano["setting_key"] == "agent_syra_nano_api_key"
 
 
@@ -48,16 +47,14 @@ def test_provider_api_base_normalization_does_not_change_other_hosts() -> None:
     assert provider_chat_completion_url(base) == f"{base}/chat/completions"
 
 
-def test_pro_vertex_gemini_36_flash() -> None:
+def test_metal_vyceai_claude_sonnet() -> None:
     assert "syra-havy" in PROFILE_ORDER
     pro = PROFILE_PROVIDERS["syra-havy"]
-    assert pro["display_name"] == "pro"
-    assert pro["label"] == "Vertex AI"
-    assert pro["api_base"] == VERTEX_API_BASE
-    assert pro["model"] == PRO_MODEL == "gemini-3.6-flash"
-    assert pro["role"] == "pro"
-    assert pro["input_price_per_mtok"] == 1.50
-    assert pro["output_price_per_mtok"] == 7.50
+    assert pro["display_name"] == "metal"
+    assert pro["label"] == "VyceAI"
+    assert pro["api_base"] == VYCEAI_API_BASE
+    assert pro["model"] == PRO_MODEL == "claude-sonnet-4-6"
+    assert pro["role"] == "metal"
 
 
 def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
@@ -76,39 +73,16 @@ def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
     assert ultra["role"] != "think"
 
 
-def test_solar_local_qwen_coder_profile() -> None:
-    assert DEFAULT_PROFILE == "syra-solar"
-    solar = PROFILE_PROVIDERS["syra-solar"]
-    assert solar["label"] == "Solar VM"
-    assert solar["api_base"] == OLLAMA_API_BASE
-    assert solar["model"] == SOLAR_MODEL == "qwen2.5-coder:3b"
-    assert solar["role"] == "local"
-    assert solar["local"] is True
-
-
-def test_subagent_nvidia_glm() -> None:
-    from syte.ai_providers import NVIDIA_NIM_API_BASE, SUBAGENT_MODEL, SUBAGENT_PROFILE
-
-    assert SUBAGENT_PROFILE in PROFILE_ORDER
-    sub = PROFILE_PROVIDERS[SUBAGENT_PROFILE]
-    assert sub["label"] == "NVIDIA NIM"
-    assert sub["api_base"] == NVIDIA_NIM_API_BASE
-    assert sub["model"] == SUBAGENT_MODEL == "z-ai/glm-5.2"
-    assert sub["role"] == "subagent"
-    assert sub["setting_key"] == "agent_syra_subagent_api_key"
-    assert sub["secret_env"] == "SYRA_SUBAGENT_API_KEY"
-
-
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 5
+    assert len(catalog) == 3
     by_profile = {row["profile"]: row for row in catalog}
-    assert by_profile["syra-nano"]["input_price_label"] == "$0.25"
-    assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
-    assert by_profile["syra-havy"]["display_name"] == "pro"
+    assert by_profile["syra-nano"]["display_name"] == "go"
+    assert by_profile["syra-nano"]["model"] == "gemini-2.5-flash"
+    assert by_profile["syra-havy"]["display_name"] == "metal"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
-    assert by_profile["syra-solar"]["model"] == "qwen2.5-coder:3b"
-    assert by_profile["syra-subagent"]["model"] == "z-ai/glm-5.2"
+    assert by_profile["syra-ultra"]["display_name"] == "Air"
+    assert set(by_profile) == {"syra-nano", "syra-ultra", "syra-havy"}
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
 
@@ -116,4 +90,4 @@ def test_provider_catalog_includes_prices() -> None:
 def test_no_separate_thinker_role() -> None:
     roles = {spec.get("role") for spec in PROFILE_PROVIDERS.values()}
     assert "think" not in roles
-    assert "subagent" in roles
+    assert roles == {"fast", "metal", "ultra"}
