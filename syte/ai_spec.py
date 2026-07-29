@@ -142,9 +142,11 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
             {"method": "POST", "path": "/api/agent_stop", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_restart", "auth": True, "body": {"uuid": "str"}},
-            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-kimi|syra-havy|syra-ultra"}},
+            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-solar|syra-nano|syra-havy|syra-ultra"}},
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
+            {"method": "GET", "path": "/api/ai/solar/status", "auth": False, "description": "Solar VM installation and Qwen 2.5 Coder 7B running state"},
+            {"method": "POST", "path": "/api/ai/solar/setup", "auth": False, "description": "Install Ollama, download Qwen 2.5 Coder 7B, and start the local AI API"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
             {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "thinking_level": "optional 1-5"}},
             {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional", "thinking_level": "optional 1-5"}, "description": "Async code change — returns request_id + turso_session_id immediately; fetch agent_session/{id} for the durable record"},
@@ -185,16 +187,14 @@ def build_ai_spec(base_url: str = "") -> dict:
             "documentation": f"{base}/api/#agent" if base else "/api/#agent",
             "model_profiles": {
                 "syra-nano": "Fast — Vertex AI Gemini 3.1 Flash Lite",
-                "syra-base": "Default — DeepSeek V4 Flash (think + build)",
-                "syra-kimi": "Kimi — ChinaAPI Kimi K3 (kimi-k3, native reasoning)",
                 "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
                 "syra-ultra": "Ultra — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)",
-                "syra-ultra-plus": "Ultra+ — AgentRouter Claude Opus 5 (code generation only)",
+                "syra-solar": "Solar VM — Ollama Qwen 2.5 Coder 7B (local)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Vertex AI / DeepSeek / ChinaAPI / Aliyun API keys, "
-                "estimated in/out token prices, and turso_database_url / turso_auth_token for durable session storage"
+                "Syte GUI → AI tab — internal secret, Solar VM setup, per-profile API keys, estimated token prices, "
+                "and turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",

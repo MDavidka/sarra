@@ -104,30 +104,26 @@ async def test_agent_settings_use_cloud_namespace(
     res = await save_settings(SettingsRequest(
         agent_default_model_profile="syra-ultra",
         agent_syra_nano_api_key="nano-key",
-        agent_syra_base_api_key="deepseek-base-key",
-        agent_syra_kimi_api_key="chinaapi-kimi-key",
         agent_syra_havy_api_key="havy-key",
         agent_syra_ultra_api_key="aliyun-ultra-key",
     ))
 
     assert res["ok"] is True
     assert await get_setting("agent_default_model_profile") == "syra-ultra"
-    assert await get_setting("agent_syra_base_api_key") == "deepseek-base-key"
-    assert await get_setting("agent_syra_kimi_api_key") == "chinaapi-kimi-key"
     assert await get_setting("agent_syra_ultra_api_key") == "aliyun-ultra-key"
     assert "Syte cloud" in " ".join(res["messages"])
     assert any("syra-ultra" in m or "Qwen" in m for m in res["messages"])
-    assert any("DeepSeek" in m or "syra-base" in m for m in res["messages"])
+    assert any("Vertex" in m or "syra-nano" in m for m in res["messages"])
 
 @pytest.mark.asyncio
-async def test_legacy_provider_settings_are_migrated_once(tmp_data_dir: Path) -> None:
+async def test_removed_base_provider_settings_are_not_migrated(tmp_data_dir: Path) -> None:
     from syte.database import get_setting, init_db, set_setting
 
     await init_db()
     await set_setting("continue_syra_base_api_key", "saved-key")
     await init_db()
 
-    assert await get_setting("agent_syra_base_api_key") == "saved-key"
+    assert await get_setting("agent_syra_base_api_key") == ""
 
 
 @pytest.mark.asyncio

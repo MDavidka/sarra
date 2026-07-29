@@ -25,7 +25,7 @@ async def _project(project_id: str) -> dict:
 
     await init_db()
     # DeepSeek-shaped key so migrate_provider_lineup_keys does not move it off base.
-    await set_setting("agent_syra_base_api_key", "sk-test-deepseek-key-for-agent-tests")
+    await set_setting("agent_syra_nano_api_key", "vertex-test-key-for-agent-tests")
     await create_project({"id": project_id, "name": project_id, "port": 3000, "start_command": ""})
     return (await get_project(project_id)) or {}
 

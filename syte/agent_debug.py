@@ -392,8 +392,8 @@ def inspect_agent_secrets(project_id: str) -> dict[str, Any]:
         "vars_set": [],
         "detail": (
             "Provider keys are read from Syte settings first, then process env "
-            "(SYRA_NANO_API_KEY / SYRA_BASE_API_KEY / SYRA_HAVY_API_KEY / "
-            "SYRA_ULTRA_API_KEY / SYRA_SUBAGENT_API_KEY)."
+            "(SYRA_NANO_API_KEY / SYRA_HAVY_API_KEY / SYRA_ULTRA_API_KEY / "
+            "SYRA_SUBAGENT_API_KEY). Solar uses the local Ollama runtime."
         ),
     }
 
@@ -443,7 +443,7 @@ async def build_ai_debug_report(
     key_status = await provider_key_status()
     key_by_profile = {row["profile"]: row for row in key_status}
     active_profile = (
-        model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-base"
+        model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-solar"
     ).strip()
     if model_profile and model_profile != project.get("agent_model_profile"):
         await update_project(project_id, {"agent_model_profile": model_profile})

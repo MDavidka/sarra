@@ -47,26 +47,17 @@ def test_ultra_mismatch_hint_for_openrouter() -> None:
 
 
 @pytest.mark.asyncio
-async def test_migrate_v4_moves_token_plan_off_base_over_openrouter(tmp_data_dir: Path) -> None:
+async def test_removed_provider_migration_is_noop(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import migrate_provider_lineup_keys
-    from syte.database import get_setting, init_db, set_setting
+    from syte.database import init_db
 
     await init_db()
-    await set_setting("agent_provider_lineup_v3_migrated", "1")
-    await set_setting("agent_syra_base_api_key", "sk-sp-real-token-plan")
-    await set_setting("agent_syra_ultra_api_key", "sk-or-v1-old-openrouter817a")
 
     result = await migrate_provider_lineup_keys()
-    assert result["migrated"] is True
-    assert result["moved_base_to_ultra"] is True
-    assert result["cleared_openrouter_ultra"] is True
-    assert await get_setting("agent_syra_ultra_api_key") == "sk-sp-real-token-plan"
-    assert await get_setting("agent_syra_base_api_key") == ""
-    assert await get_setting("agent_openrouter_api_key_legacy") == "sk-or-v1-old-openrouter817a"
-    assert await get_setting("agent_provider_lineup_v4_migrated") == "1"
+    assert result == {"migrated": False, "reason": "solar_lineup"}
 
     again = await migrate_provider_lineup_keys()
-    assert again["migrated"] is False
+    assert again == result
 
 
 @pytest.mark.asyncio
@@ -81,17 +72,13 @@ async def test_probe_fail_fast_on_openrouter_ultra(tmp_data_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migrate_notes_leftover_openrouter_on_ultra(tmp_data_dir: Path) -> None:
+async def test_removed_provider_migration_does_not_touch_ultra(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import migrate_provider_lineup_keys
     from syte.database import get_setting, init_db, set_setting
 
     await init_db()
-    await set_setting("agent_provider_lineup_v3_migrated", "1")
     await set_setting("agent_syra_ultra_api_key", "sk-or-v1-still-there817a")
-    await set_setting("agent_syra_base_api_key", "sk-deepseek-ok")
 
     result = await migrate_provider_lineup_keys()
-    assert result["migrated"] is True
-    assert result["moved_base_to_ultra"] is False
-    assert "OpenRouter" in result["note"]
+    assert result["migrated"] is False
     assert await get_setting("agent_syra_ultra_api_key") == "sk-or-v1-still-there817a"

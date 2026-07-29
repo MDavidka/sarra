@@ -149,7 +149,7 @@ async def analyze_screenshot_with_vision(
             viewport=viewport, width=width, height=height, route=route,
         )
 
-    # DeepSeek (syra-base) does not support vision — use heuristic unless profile claims vision.
+    # The local Solar coding model does not support vision — use heuristic unless profile claims vision.
     provider = (model.get("provider") or "").lower()
     supports_vision = "gemini" in provider or "verted" in provider or model.get("supports_vision")
     if not supports_vision and "deepseek" in provider:

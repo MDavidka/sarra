@@ -392,11 +392,9 @@
                       <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="auto" selected>auto</option>
                         <option value="syra-nano">nano</option>
-                        <option value="syra-base">base</option>
-                        <option value="syra-kimi">kimi · K3</option>
                         <option value="syra-havy">pro</option>
                         <option value="syra-ultra">ultra</option>
-                        <option value="syra-ultra-plus">ultra+</option>
+                        <option value="syra-solar">solar · Qwen 2.5 Coder 7B</option>
                       </select>
                     </label>
                   </div>
@@ -663,11 +661,9 @@
               </select>
               <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
                 <option value="syra-nano">nano</option>
-                <option value="syra-base" selected>base</option>
-                <option value="syra-kimi">kimi · K3</option>
+                <option value="syra-solar" selected>solar · Qwen 2.5 Coder 7B</option>
                 <option value="syra-havy">pro</option>
                 <option value="syra-ultra">ultra</option>
-                <option value="syra-ultra-plus">ultra+</option>
                 <option value="syra-subagent">subagent · GLM 5.2</option>
               </select>
               <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
@@ -703,7 +699,12 @@
               </button>
             </div>
             <div class="ai-settings-body">
-              <p class="hint block">Main chat profiles think and build. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for <code>delegate_task</code> work after the main agent plans and assigns steps. Keys inject as <code>SYRA_NANO_API_KEY</code>, <code>SYRA_BASE_API_KEY</code>, <code>SYRA_HAVY_API_KEY</code>, <code>SYRA_ULTRA_API_KEY</code>, and <code>SYRA_SUBAGENT_API_KEY</code>. Prices are estimated USD per 1M tokens.</p>
+              <div class="ai-settings-tabs" role="tablist" aria-label="AI setup">
+                <button type="button" class="ai-settings-tab is-active" id="ai-tab-providers" role="tab" aria-selected="true" aria-controls="ai-panel-providers">Providers</button>
+                <button type="button" class="ai-settings-tab" id="ai-tab-solar" role="tab" aria-selected="false" aria-controls="ai-panel-solar">Setup Solar model</button>
+              </div>
+              <div id="ai-panel-providers" role="tabpanel" aria-labelledby="ai-tab-providers">
+              <p class="hint block">Main chat profiles think and build. Solar runs locally on this VM using Qwen 2.5 Coder 7B. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for delegated work. Prices are estimated USD per 1M tokens.</p>
 
               <div class="ai-key-card" data-profile="syra-nano">
                 <div class="ai-key-head">
@@ -719,40 +720,6 @@
                   <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
                   <input type="password" id="agent-nano-key" placeholder="Vertex Express API key (Cloud Console)" autocomplete="off">
                   <span class="hint" id="agent-nano-key-hint">Required for nano. Google Cloud Vertex AI Express Mode key — not AI Studio.</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card" data-profile="syra-base">
-                <div class="ai-key-head">
-                  <strong>syra-base</strong>
-                  <span class="ai-key-provider">DeepSeek · deepseek-v4-flash</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-base-price-in">$0.14</b>/1M</span>
-                  <span>out <b id="agent-base-price-out">$0.28</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://api.deepseek.com/v1</code>
-                <div class="form-group">
-                  <label for="agent-base-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
-                  <span class="hint" id="agent-base-key-hint">Required for base profile (default).</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card" data-profile="syra-kimi">
-                <div class="ai-key-head">
-                  <strong>syra-kimi · K3</strong>
-                  <span class="ai-key-provider">ChinaAPI · kimi-k3</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-kimi-price-in">$3.20</b>/1M</span>
-                  <span>out <b id="agent-kimi-price-out">$16.00</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://api.chinaapi.ai/v1</code>
-                <div class="form-group">
-                  <label for="agent-kimi-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-kimi-key" placeholder="ChinaAPI key from dash.chinaapi.ai" autocomplete="off">
-                  <span class="hint" id="agent-kimi-key-hint">Kimi K3 always runs in thinking mode. Get a key at dash.chinaapi.ai.</span>
                 </div>
               </div>
 
@@ -790,23 +757,6 @@
                 </div>
               </div>
 
-              <div class="ai-key-card" data-profile="syra-ultra-plus">
-                <div class="ai-key-head">
-                  <strong>syra-ultra-plus · ultra+</strong>
-                  <span class="ai-key-provider">AgentRouter · claude-opus-5</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-ultra-plus-price-in">$15.00</b>/1M</span>
-                  <span>out <b id="agent-ultra-plus-price-out">$75.00</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://agentrouter.org/api/v1</code>
-                <div class="form-group">
-                  <label for="agent-ultra-plus-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-ultra-plus-key" placeholder="AgentRouter API key" autocomplete="off">
-                  <span class="hint" id="agent-ultra-plus-key-hint">Use only for code generation. Testing and previews use nano.</span>
-                </div>
-              </div>
-
               <div class="ai-key-card" data-profile="syra-subagent">
                 <div class="ai-key-head">
                   <strong>syra-subagent</strong>
@@ -829,11 +779,9 @@
                   <label for="agent-default-profile">Default profile</label>
                   <select id="agent-default-profile">
                     <option value="syra-nano">syra-nano · nano</option>
-                    <option value="syra-base">syra-base · base</option>
-                    <option value="syra-kimi">syra-kimi · K3</option>
                     <option value="syra-havy">syra-havy · pro</option>
                     <option value="syra-ultra">syra-ultra · ultra</option>
-                    <option value="syra-ultra-plus">syra-ultra-plus · ultra+ (Opus 5)</option>
+                    <option value="syra-solar">syra-solar · Solar (Qwen 2.5 Coder 7B)</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -871,14 +819,28 @@
                 <p class="hint block">Keys resolve from saved settings first, then process env. Values are masked.</p>
                 <div class="ai-env-grid" id="ai-provider-key-status">
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
-                  <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek · base</span></div>
-                  <div class="ai-env-row"><code>SYRA_KIMI_API_KEY</code><span>ChinaAPI · Kimi K3</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
                   <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
+                  <div class="ai-env-row"><code>LOCAL_OLLAMA</code><span>Solar VM · Qwen 2.5 Coder 7B</span></div>
                 </div>
               </details>
 
               <div id="agent-runtime-status" class="hint"></div>
+              </div>
+
+              <div id="ai-panel-solar" class="hidden" role="tabpanel" aria-labelledby="ai-tab-solar">
+                <div class="solar-setup-card">
+                  <div class="ai-key-head">
+                    <strong>Solar model on this VM</strong>
+                    <span class="solar-status-badge" id="solar-status-badge">not configured</span>
+                  </div>
+                  <p class="hint block">Install Ollama, download Qwen 2.5 Coder 7B, and start its local OpenAI-compatible API for AI chat.</p>
+                  <div class="solar-model-meta"><span>Model</span><code>qwen2.5-coder:7b</code></div>
+                  <div class="solar-model-meta"><span>API</span><code>http://127.0.0.1:11434/v1</code></div>
+                  <p class="hint" id="solar-status-message">Solar is not installed.</p>
+                  <button type="button" class="btn-pill btn-primary" id="setup-solar-btn"><i data-lucide="download"></i><span>Install and start Solar</span></button>
+                </div>
+              </div>
             </div>
             <div class="ai-settings-foot">
               <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>

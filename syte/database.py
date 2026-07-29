@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 AGENT_SETTING_MIGRATIONS = (
     ("agent_default_model_profile", "continue_default_model_profile"),
     ("agent_syra_nano_api_key", "continue_syra_nano_api_key"),
-    ("agent_syra_base_api_key", "continue_syra_base_api_key"),
     ("agent_syra_havy_api_key", "continue_syra_havy_api_key"),
 )
 

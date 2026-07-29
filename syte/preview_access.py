@@ -127,6 +127,9 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
             c = _parse(candidate)
             if c:
                 allowed_hosts.add(c[1])
+        preview_parsed = _parse(preview_url)
+        preview_host = preview_parsed[1] if preview_parsed else ""
+        preview_port = preview_parsed[0].port if preview_parsed else None
 
         # Exact URL match still allowed for configured custom URLs.
         exact = {u for u in candidates if u}
@@ -146,8 +149,9 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
                 or ip.is_multicast
                 or ip.is_unspecified
             ):
-                # Allow only if one of the preview hosts is that same host.
-                if host not in allowed_hosts:
+                # The active local preview is intentionally reachable; a
+                # custom URL must never override the blocklist.
+                if host != preview_host or (preview_port and p.port != preview_port):
                     return False
         except ValueError:
             # Hostname — resolve and reject private destinations unless preview host.
@@ -171,7 +175,7 @@ def _is_allowed_url(url: str, preview_url: str, custom_urls: list[str]) -> bool:
                     or ip.is_reserved
                     or ip.is_multicast
                     or ip.is_unspecified
-                ) and host not in allowed_hosts:
+                ) and (host != preview_host or (preview_port and p.port != preview_port)):
                     return False
         return True
     except Exception:

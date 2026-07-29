@@ -147,7 +147,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "id": "b6f2b6b6c2e94e2e9e3e4b6c2e94e2e9",
                 "project_id": "myapp-a1b2c3",
                 "session_number": 1,
-                "model_profile": "syra-base",
+                "model_profile": "syra-solar",
                 "status": "open | completed | failed | cancelled | stopped",
                 "ended_at": "ISO timestamp when the turn finished (null while open)",
                 "created_at": "2026-07-15T12:00:00+00:00",
@@ -172,7 +172,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "request_completed",
                 "request_failed",
             ],
-            "model_profiles": ["syra-nano", "syra-base", "syra-havy", "syra-ultra"],
+            "model_profiles": ["syra-solar", "syra-nano", "syra-havy", "syra-ultra"],
             "legacy_sync": "POST agent_change with wait:true for blocking reply",
         },
         "errors": {
@@ -456,7 +456,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                     "body": {
                         "uuid": "string (required)",
                         "message": "string (required)",
-                        "model_profile": "syra-nano | syra-base | syra-havy | syra-ultra (optional)",
+                        "model_profile": "syra-solar | syra-nano | syra-havy | syra-ultra (optional)",
                         "wait": "bool (default false) — set true for blocking legacy mode",
                     },
                 },

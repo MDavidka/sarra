@@ -708,6 +708,21 @@ def mask_secret(value: str, *, keep: int = 4) -> str:
 async def resolve_profile_api_key(profile: str) -> dict[str, str]:
     """Return the effective key plus where it came from (settings | env | none)."""
     spec = profile_provider(profile)
+    if spec.get("local"):
+        return {
+            "profile": profile,
+            "setting_key": spec["setting_key"],
+            "secret_env": spec["secret_env"],
+            # Ollama accepts any bearer token; the local profile never needs a
+            # user-supplied credential.
+            "api_key": "ollama",
+            "source": "local",
+            "settings_set": "",
+            "env_set": "",
+            "settings_hint": "local",
+            "env_hint": "",
+            "api_key_hint": "local",
+        }
     setting_key = spec["setting_key"]
     secret_env = spec["secret_env"]
     from_settings = (await get_setting(setting_key, "")).strip()
@@ -745,84 +760,8 @@ async def resolve_profile_api_key(profile: str) -> dict[str, str]:
 
 
 async def migrate_provider_lineup_keys() -> dict[str, Any]:
-    """Remap keys after the DeepSeek-base / Aliyun-ultra lineup swap.
-
-    v3: move non-``sk-`` base keys to ultra when ultra is empty (legacy Aliyun
-    keys that did not look like DeepSeek).
-
-    v4: also move Aliyun Token Plan (``sk-sp-``) keys off base onto ultra when
-    ultra is empty or still holding a leftover OpenRouter (``sk-or-``) key.
-    OpenRouter keys are never valid for Aliyun Token Plan / DashScope.
-    """
-    from syte.ai_providers import (
-        looks_like_aliyun_token_plan_key,
-        looks_like_openrouter_key,
-    )
-
-    v3 = (await get_setting("agent_provider_lineup_v3_migrated", "")).strip()
-    v4 = (await get_setting("agent_provider_lineup_v4_migrated", "")).strip()
-    if v3 == "1" and v4 == "1":
-        return {"migrated": False, "reason": "already_done"}
-
-    base_key = (await get_setting("agent_syra_base_api_key", "")).strip()
-    ultra_key = (await get_setting("agent_syra_ultra_api_key", "")).strip()
-    moved = False
-    cleared_base = False
-    cleared_openrouter_ultra = False
-    notes: list[str] = []
-
-    if v3 != "1":
-        # Original heuristic: non-sk base keys were treated as Aliyun leftovers.
-        looks_like_deepseek = base_key.lower().startswith("sk-")
-        if base_key and not ultra_key and not looks_like_deepseek:
-            await set_setting("agent_syra_ultra_api_key", base_key)
-            await set_setting("agent_syra_base_api_key", "")
-            moved = True
-            cleared_base = True
-            base_key = ""
-            ultra_key = (await get_setting("agent_syra_ultra_api_key", "")).strip()
-            notes.append(
-                "Aliyun key moved from syra-base → syra-ultra. "
-                "Add a DeepSeek API key for syra-base."
-            )
-        await set_setting("agent_provider_lineup_v3_migrated", "1")
-
-    if v4 != "1":
-        # Token Plan keys left on base after the swap must move to ultra.
-        if looks_like_aliyun_token_plan_key(base_key) and (
-            not ultra_key or looks_like_openrouter_key(ultra_key)
-        ):
-            if looks_like_openrouter_key(ultra_key):
-                await set_setting("agent_openrouter_api_key_legacy", ultra_key)
-                cleared_openrouter_ultra = True
-                notes.append(
-                    "Removed leftover OpenRouter key from syra-ultra "
-                    "(saved as agent_openrouter_api_key_legacy)."
-                )
-            await set_setting("agent_syra_ultra_api_key", base_key)
-            await set_setting("agent_syra_base_api_key", "")
-            moved = True
-            cleared_base = True
-            notes.append(
-                "Aliyun Token Plan key (sk-sp-) moved from syra-base → syra-ultra. "
-                "Add a DeepSeek API key for syra-base."
-            )
-        elif looks_like_openrouter_key(ultra_key):
-            # Do not delete the user's key silently if we have nothing better —
-            # Connection debug / probe will explain it must be replaced with sk-sp-.
-            notes.append(
-                "syra-ultra still has an OpenRouter key (sk-or-…). "
-                "Replace it with an Aliyun Token Plan key (sk-sp-…) or Model Studio sk- key."
-            )
-        await set_setting("agent_provider_lineup_v4_migrated", "1")
-
-    return {
-        "migrated": True,
-        "moved_base_to_ultra": moved,
-        "cleared_base": cleared_base,
-        "cleared_openrouter_ultra": cleared_openrouter_ultra,
-        "note": " ".join(notes) if notes else "No key remap needed.",
-    }
+    """Keep the provider migration hook safe for installations upgrading to Solar."""
+    return {"migrated": False, "reason": "solar_lineup"}
 
 
 async def provider_key_status() -> list[dict[str, str | bool]]:
@@ -890,18 +829,14 @@ async def bridge_settings() -> dict[str, Any]:
         "builder_profile": default_profile,
         "thinker_profile": None,
         "syra_nano_model": profiles["syra-nano"]["model"],
-        "syra_base_model": profiles["syra-base"]["model"],
-        "syra_kimi_model": profiles["syra-kimi"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
         "syra_ultra_model": profiles["syra-ultra"]["model"],
-        "syra_ultra_plus_model": profiles["syra-ultra-plus"]["model"],
+        "syra_solar_model": profiles["syra-solar"]["model"],
         "syra_subagent_model": profiles["syra-subagent"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
-        "syra_base_api_key": profiles["syra-base"]["api_key"],
-        "syra_kimi_api_key": profiles["syra-kimi"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
-        "syra_ultra_plus_api_key": profiles["syra-ultra-plus"]["api_key"],
+        "syra_solar_api_key": profiles["syra-solar"]["api_key"],
         "syra_subagent_api_key": profiles["syra-subagent"]["api_key"],
         "provider_keys": [
             {
@@ -1747,7 +1682,7 @@ async def update_agent_settings(
     project_id: str, *, model_profile: str | None = None, include_status: bool = True
 ) -> dict[str, Any]:
     if model_profile is not None:
-        profile = model_profile.strip() or "syra-base"
+        profile = model_profile.strip() or "syra-solar"
         if profile not in PROFILE_PROVIDERS:
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
@@ -3432,8 +3367,7 @@ async def _provider_completion(
             api_base = str(model.get("api_base") or "").lower()
             if "deepseek.com" in api_base or str(label).lower() == "deepseek":
                 hint = (
-                    " syra-base now requires a DeepSeek key "
-                    "(https://platform.deepseek.com/). Old Aliyun keys belong on syra-ultra."
+                    " Configure the selected provider in AI settings."
                 )
             elif "maas.aliyuncs.com" in api_base or "dashscope.aliyuncs.com" in api_base or str(label).lower() == "aliyun":
                 hint = (
@@ -5905,12 +5839,9 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
         }
     try:
         if model_profile:
-            profile = model_profile.strip() or "syra-base"
+            profile = model_profile.strip() or "syra-solar"
             if profile not in PROFILE_PROVIDERS:
                 raise ValueError(f"Unknown model profile: {profile}")
-            if profile == "syra-ultra-plus":
-                # The probe endpoint is never a code-generation request.
-                profile = "syra-nano"
             project = {**project, "agent_model_profile": profile}
         else:
             # Connectivity tests and preview warmups must stay cheap; Opus is code-generation only.
