@@ -87,7 +87,7 @@ async def solar_status() -> dict[str, Any]:
         "ok": True,
         "profile": "syra-solar",
         "model": SOLAR_MODEL,
-        "display_model": "Qwen 2.5 Coder 7B",
+        "display_model": "Qwen 2.5 Coder 3B",
         "api_base": OLLAMA_API_BASE,
         "installed": installed,
         "reachable": reachable,

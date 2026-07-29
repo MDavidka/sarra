@@ -725,7 +725,7 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
       'syra-nano': 'nano',
       'syra-havy': 'pro',
       'syra-ultra': 'ultra',
-      'syra-solar': 'solar · Qwen 2.5 Coder 7B',
+      'syra-solar': 'solar · Qwen 2.5 Coder 3B',
       'syra-subagent': 'subagent',
     })[profile] || profile;
     if (short && active && isWorking) {
@@ -4538,7 +4538,7 @@ document.getElementById('debug-chat-profile')?.addEventListener('change', () => 
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';
-    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-solar': 'solar · Qwen 2.5 Coder 7B', 'syra-subagent': 'subagent' })[profile] || profile;
+    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-solar': 'solar · Qwen 2.5 Coder 3B', 'syra-subagent': 'subagent' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
       modelEl.textContent = short;

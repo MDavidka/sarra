@@ -394,7 +394,7 @@
                         <option value="syra-nano">nano</option>
                         <option value="syra-havy">pro</option>
                         <option value="syra-ultra">ultra</option>
-                        <option value="syra-solar">solar · Qwen 2.5 Coder 7B</option>
+                        <option value="syra-solar">solar · Qwen 2.5 Coder 3B</option>
                       </select>
                     </label>
                   </div>
@@ -661,7 +661,7 @@
               </select>
               <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
                 <option value="syra-nano">nano</option>
-                <option value="syra-solar" selected>solar · Qwen 2.5 Coder 7B</option>
+                <option value="syra-solar" selected>solar · Qwen 2.5 Coder 3B</option>
                 <option value="syra-havy">pro</option>
                 <option value="syra-ultra">ultra</option>
                 <option value="syra-subagent">subagent · GLM 5.2</option>
@@ -704,7 +704,7 @@
                 <button type="button" class="ai-settings-tab" id="ai-tab-solar" role="tab" aria-selected="false" aria-controls="ai-panel-solar">Setup Solar model</button>
               </div>
               <div id="ai-panel-providers" role="tabpanel" aria-labelledby="ai-tab-providers">
-              <p class="hint block">Main chat profiles think and build. Solar runs locally on this VM using Qwen 2.5 Coder 7B. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for delegated work. Prices are estimated USD per 1M tokens.</p>
+              <p class="hint block">Main chat profiles think and build. Solar runs locally on this VM using Qwen 2.5 Coder 3B. The <strong>subagent</strong> provider (NVIDIA NIM · GLM 5.2) is used only for delegated work. Prices are estimated USD per 1M tokens.</p>
 
               <div class="ai-key-card" data-profile="syra-nano">
                 <div class="ai-key-head">
@@ -781,7 +781,7 @@
                     <option value="syra-nano">syra-nano · nano</option>
                     <option value="syra-havy">syra-havy · pro</option>
                     <option value="syra-ultra">syra-ultra · ultra</option>
-                    <option value="syra-solar">syra-solar · Solar (Qwen 2.5 Coder 7B)</option>
+                    <option value="syra-solar">syra-solar · Solar (Qwen 2.5 Coder 3B)</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -821,7 +821,7 @@
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
                   <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
-                  <div class="ai-env-row"><code>LOCAL_OLLAMA</code><span>Solar VM · Qwen 2.5 Coder 7B</span></div>
+                  <div class="ai-env-row"><code>LOCAL_OLLAMA</code><span>Solar VM · Qwen 2.5 Coder 3B</span></div>
                 </div>
               </details>
 
@@ -834,8 +834,8 @@
                     <strong>Solar model on this VM</strong>
                     <span class="solar-status-badge" id="solar-status-badge">not configured</span>
                   </div>
-                  <p class="hint block">Install Ollama, download Qwen 2.5 Coder 7B, and start its local OpenAI-compatible API for AI chat.</p>
-                  <div class="solar-model-meta"><span>Model</span><code>qwen2.5-coder:7b</code></div>
+                  <p class="hint block">Install Ollama, download Qwen 2.5 Coder 3B, and start its local OpenAI-compatible API for AI chat.</p>
+                  <div class="solar-model-meta"><span>Model</span><code>qwen2.5-coder:3b</code></div>
                   <div class="solar-model-meta"><span>API</span><code>http://127.0.0.1:11434/v1</code></div>
                   <p class="hint" id="solar-status-message">Solar is not installed.</p>
                   <button type="button" class="btn-pill btn-primary" id="setup-solar-btn"><i data-lucide="download"></i><span>Install and start Solar</span></button>
