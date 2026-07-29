@@ -42,7 +42,7 @@ _SUBAGENT_IMPL_PATTERNS = [
 # falling back — but the dedicated profile itself is preferred when its key is set).
 _PROFILE_COST_RANK = {
     "syra-nano": 0,
-    "syra-base": 1,
+    "syra-solar": 1,
     "syra-subagent": 1,
     "syra-havy": 2,
     "syra-ultra": 3,
@@ -76,7 +76,7 @@ def suggest_model_profile(
     Automatic downgrade/upgrade applies only when both are omitted / auto.
     """
     text = (message or "").strip()
-    suggested = "syra-base"
+    suggested = "syra-solar"
     reason = "default balanced edits"
     explicit = normalize_explicit_profile(explicit_profile)
 
@@ -84,8 +84,8 @@ def suggest_model_profile(
         suggested = "syra-havy"
         reason = "screenshot-based design remake"
     elif any(p.search(text) for p in _CODEGEN_PATTERNS):
-        suggested = "syra-ultra-plus"
-        reason = "code generation uses the ultra+ Opus profile"
+        suggested = "syra-solar"
+        reason = "code generation uses the local Solar coding model"
     elif any(p.search(text) for p in _HAVY_PATTERNS):
         suggested = "syra-havy"
         reason = "full page / multi-file build signal"
@@ -167,15 +167,15 @@ def normalize_plan_steps(
 
 def _cap_profile(profile: str, parent_profile: str | None) -> str:
     """Never route a fallback subagent above the parent's cost tier."""
-    parent = (parent_profile or "syra-base").strip() or "syra-base"
+    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
     want_rank = _PROFILE_COST_RANK.get(profile, 1)
     parent_rank = _PROFILE_COST_RANK.get(parent, 1)
     if want_rank <= parent_rank:
-        return profile if profile in _PROFILE_COST_RANK else "syra-base"
+        return profile if profile in _PROFILE_COST_RANK else "syra-solar"
     for name, rank in sorted(_PROFILE_COST_RANK.items(), key=lambda item: -item[1]):
         if rank <= parent_rank:
             return name
-    return "syra-base"
+    return "syra-solar"
 
 
 def suggest_subagent_profile(
@@ -190,15 +190,15 @@ def suggest_subagent_profile(
     missing — this function only picks the preferred profile id.
     """
     resolved_mode = infer_subagent_mode(task, mode)
-    parent = (parent_profile or "syra-base").strip() or "syra-base"
+    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
 
     # Dedicated NVIDIA GLM 5.2 provider is the primary subagent model.
     suggested = SUBAGENT_PROFILE
     reason = "dedicated NVIDIA NIM GLM 5.2 subagent provider"
     fallbacks = (
-        ["syra-nano", "syra-base"]
+        ["syra-nano", "syra-solar"]
         if resolved_mode == "research"
-        else ["syra-base", "syra-nano"]
+        else ["syra-solar", "syra-nano"]
     )
     # Cap non-dedicated fallbacks to parent tier later in resolution.
     effective = suggested
@@ -221,12 +221,12 @@ def fallback_subagent_profile(
     available_profiles: set[str] | frozenset[str],
 ) -> tuple[str, str]:
     """Pick the best available profile when ``preferred`` has no API key."""
-    parent = (parent_profile or "syra-base").strip() or "syra-base"
+    parent = (parent_profile or "syra-solar").strip() or "syra-solar"
     chain = [preferred]
     if mode == "research":
-        chain.extend(["syra-nano", "syra-base", parent])
+        chain.extend(["syra-nano", "syra-solar", parent])
     else:
-        chain.extend(["syra-base", "syra-nano", parent])
+        chain.extend(["syra-solar", "syra-nano", parent])
     seen: set[str] = set()
     for name in chain:
         if not name or name in seen:

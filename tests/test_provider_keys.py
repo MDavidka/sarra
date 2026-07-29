@@ -27,29 +27,24 @@ async def test_profile_api_key_falls_back_to_env(
     from syte.database import init_db
 
     await init_db()
-    monkeypatch.setenv("SYRA_BASE_API_KEY", "sk-env-deepseek-123456")
-    resolved = await resolve_profile_api_key("syra-base")
+    monkeypatch.setenv("SYRA_NANO_API_KEY", "vertex-env-key-123456")
+    resolved = await resolve_profile_api_key("syra-nano")
     assert resolved["source"] == "env"
-    assert resolved["api_key"] == "sk-env-deepseek-123456"
+    assert resolved["api_key"] == "vertex-env-key-123456"
     assert resolved["env_set"]
     assert not resolved["settings_set"]
-    assert await profile_api_key("syra-base") == "sk-env-deepseek-123456"
+    assert await profile_api_key("syra-nano") == "vertex-env-key-123456"
 
 
 @pytest.mark.asyncio
-async def test_kimi_profile_api_key_falls_back_to_env(
-    tmp_data_dir: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_solar_profile_uses_local_runtime_credential(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import resolve_profile_api_key
     from syte.database import init_db
 
     await init_db()
-    monkeypatch.setenv("SYRA_KIMI_API_KEY", "chinaapi-kimi-test-key")
-    resolved = await resolve_profile_api_key("syra-kimi")
-    assert resolved["source"] == "env"
-    assert resolved["api_key"] == "chinaapi-kimi-test-key"
-    assert resolved["env_set"]
+    resolved = await resolve_profile_api_key("syra-solar")
+    assert resolved["source"] == "local"
+    assert resolved["api_key"] == "ollama"
 
 
 @pytest.mark.asyncio
@@ -71,46 +66,6 @@ async def test_settings_key_wins_over_env(
 
 
 @pytest.mark.asyncio
-async def test_migrate_moves_aliyun_base_key_to_ultra(tmp_data_dir: Path) -> None:
-    from syte.cloud_agent import migrate_provider_lineup_keys, resolve_profile_api_key
-    from syte.database import get_setting, init_db, set_setting
-
-    await init_db()
-    await set_setting("agent_syra_base_api_key", "aliyun-old-builder-key")
-    await set_setting("agent_syra_ultra_api_key", "")
-
-    result = await migrate_provider_lineup_keys()
-    assert result["migrated"] is True
-    assert result["moved_base_to_ultra"] is True
-    assert await get_setting("agent_syra_base_api_key") == ""
-    assert await get_setting("agent_syra_ultra_api_key") == "aliyun-old-builder-key"
-    assert await get_setting("agent_provider_lineup_v3_migrated") == "1"
-
-    ultra = await resolve_profile_api_key("syra-ultra")
-    base = await resolve_profile_api_key("syra-base")
-    assert ultra["api_key"] == "aliyun-old-builder-key"
-    assert base["api_key"] == ""
-
-    # Idempotent.
-    again = await migrate_provider_lineup_keys()
-    assert again["migrated"] is False
-
-
-@pytest.mark.asyncio
-async def test_migrate_keeps_deepseek_looking_base_key(tmp_data_dir: Path) -> None:
-    from syte.cloud_agent import migrate_provider_lineup_keys
-    from syte.database import get_setting, init_db, set_setting
-
-    await init_db()
-    await set_setting("agent_syra_base_api_key", "sk-deepseek-already-set")
-    await set_setting("agent_syra_ultra_api_key", "")
-    result = await migrate_provider_lineup_keys()
-    assert result["migrated"] is True
-    assert result["moved_base_to_ultra"] is False
-    assert await get_setting("agent_syra_base_api_key") == "sk-deepseek-already-set"
-    assert await get_setting("agent_syra_ultra_api_key") == ""
-
-
 @pytest.mark.asyncio
 async def test_provider_key_status_and_settings_payload(tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from syte.cloud_agent import provider_key_status

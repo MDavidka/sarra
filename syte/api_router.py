@@ -111,7 +111,7 @@ class AgentSettingsRequest(BaseModel):
 class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
-    model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-kimi | syra-havy | syra-ultra | syra-ultra-plus")
+    model_profile: str | None = Field(None, description="syra-solar | syra-nano | syra-havy | syra-ultra")
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
     )
@@ -122,7 +122,7 @@ class AgentCommunicateRequest(BaseModel):
 class AgentChangeRequest(BaseModel):
     uuid: str
     message: str = Field(..., description="Change request from sycord.com user")
-    model_profile: str | None = Field(None, description="Model profile alias (syra-nano/base/kimi/havy/ultra)")
+    model_profile: str | None = Field(None, description="Model profile alias (syra-solar/nano/havy/ultra)")
     model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
     thinking_level: int | None = Field(
         None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"

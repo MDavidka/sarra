@@ -2,11 +2,9 @@
 
 Each main profile is a full think+build model — there is no separate thinker.
 - ``syra-nano`` — Vertex AI Gemini 3.1 Flash Lite (fast)
-- ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
 - ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
-- ``syra-kimi`` — ChinaAPI Kimi K3 (kimi-k3, cost-capped)
-- ``syra-ultra-plus`` — AgentRouter Claude Opus 5 (code generation only, cost-capped)
+- ``syra-solar`` — local Ollama Solar runtime (Qwen 2.5 Coder 7B)
 - ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
 """
 
@@ -26,39 +24,32 @@ ALIYUN_MAAS_API_BASE = (
 )
 # Pay-as-you-go DashScope OpenAI-compat (standard ``sk-`` Aliyun keys — not Token Plan).
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-AGENTROUTER_API_BASE = "https://agentrouter.org/api/v1"
-DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
-# ChinaAPI dashboard: https://dash.chinaapi.ai/
-CHINAAPI_API_BASE = "https://api.chinaapi.ai/v1"
+OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"
 
 PROFILE_ORDER = (
     "syra-nano",
-    "syra-base",
-    "syra-kimi",
     "syra-havy",
     "syra-ultra",
-    "syra-ultra-plus",
+    "syra-solar",
     "syra-subagent",
 )
 
 # Default / legacy aliases (selected model handles both thinking and building).
-DEFAULT_PROFILE = "syra-base"
+DEFAULT_PROFILE = "syra-solar"
 BUILDER_PROFILE = DEFAULT_PROFILE
 THINKER_PROFILE = DEFAULT_PROFILE  # deprecated — no separate thinker
 # Dedicated subagent profile (NVIDIA NIM GLM 5.2) — not the default chat builder.
 SUBAGENT_PROFILE = "syra-subagent"
 
 NANO_MODEL = "gemini-3.1-flash-lite"
-BASE_MODEL = "deepseek-v4-flash"
 PRO_MODEL = "gemini-3.6-flash"
 ULTRA_MODEL = "qwen3.7-plus"
-ULTRA_PLUS_MODEL = "claude-opus-5"
+SOLAR_MODEL = "qwen2.5-coder:7b"
 SUBAGENT_MODEL = "z-ai/glm-5.2"
-KIMI_MODEL = "kimi-k3"
 NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
 # Backward-compat aliases used by older tests/docs.
-BUILDER_MODEL = BASE_MODEL
+BUILDER_MODEL = SOLAR_MODEL
 THINKER_MODEL = ULTRA_MODEL
 
 # ---------------------------------------------------------------------------
@@ -108,7 +99,8 @@ class ProfileProvider(TypedDict):
     model: str
     setting_key: str
     secret_env: str
-    role: NotRequired[str]  # "fast" | "build" | "kimi" | "pro" | "ultra"
+    role: NotRequired[str]  # "fast" | "pro" | "ultra" | "local" | "subagent"
+    local: NotRequired[bool]
     # Estimated USD per 1M tokens (public list prices; for UI guidance only).
     input_price_per_mtok: NotRequired[float]
     output_price_per_mtok: NotRequired[float]
@@ -132,41 +124,6 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "output_price_per_mtok": 1.50,
         "setting_key": "agent_syra_nano_api_key",
         "secret_env": "SYRA_NANO_API_KEY",
-    },
-    "syra-base": {
-        "profile": "syra-base",
-        "label": "DeepSeek",
-        "display_name": "base",
-        "provider": "openai",
-        "api_base": DEEPSEEK_API_BASE,
-        "model": BASE_MODEL,
-        "role": "build",
-        "input_price_per_mtok": 0.14,
-        "output_price_per_mtok": 0.28,
-        # Default builder: keep completions + tool dumps bounded.
-        "max_tokens": 8192,
-        "max_history_messages": 48,
-        "max_tool_result_chars": 8000,
-        "setting_key": "agent_syra_base_api_key",
-        "secret_env": "SYRA_BASE_API_KEY",
-    },
-    "syra-kimi": {
-        "profile": "syra-kimi",
-        "label": "ChinaAPI",
-        "display_name": "kimi",
-        "provider": "openai",
-        "api_base": CHINAAPI_API_BASE,
-        "model": KIMI_MODEL,
-        "role": "kimi",
-        "input_price_per_mtok": 3.1995,
-        "output_price_per_mtok": 15.9974,
-        # Keep agent turns bounded while retaining K3's large context window.
-        "max_tokens": 8192,
-        "max_history_messages": 48,
-        "max_tool_result_chars": 8000,
-        "completion_token_param": "max_completion_tokens",
-        "setting_key": "agent_syra_kimi_api_key",
-        "secret_env": "SYRA_KIMI_API_KEY",
     },
     "syra-havy": {
         "profile": "syra-havy",
@@ -198,21 +155,22 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
     },
-    "syra-ultra-plus": {
-        "profile": "syra-ultra-plus",
-        "label": "AgentRouter",
-        "display_name": "ultra+",
-        "provider": "openai",
-        "api_base": AGENTROUTER_API_BASE,
-        "model": ULTRA_PLUS_MODEL,
-        "role": "ultra+",
-        "input_price_per_mtok": 15.0,
-        "output_price_per_mtok": 75.0,
-        "max_tokens": 2048,
-        "max_history_messages": 24,
-        "max_tool_result_chars": 4000,
-        "setting_key": "agent_syra_ultra_plus_api_key",
-        "secret_env": "SYRA_ULTRA_PLUS_API_KEY",
+    "syra-solar": {
+        "profile": "syra-solar",
+        "label": "Solar VM",
+        "display_name": "solar",
+        "provider": "ollama",
+        "api_base": OLLAMA_API_BASE,
+        "model": SOLAR_MODEL,
+        "role": "local",
+        "local": True,
+        "input_price_per_mtok": 0.0,
+        "output_price_per_mtok": 0.0,
+        "max_tokens": 8192,
+        "max_history_messages": 48,
+        "max_tool_result_chars": 8000,
+        "setting_key": "agent_syra_solar_api_key",
+        "secret_env": "OLLAMA_API_KEY",
     },
     "syra-subagent": {
         "profile": "syra-subagent",
@@ -355,13 +313,8 @@ def key_mismatch_hint(profile: str, api_key: str | None) -> str:
             "syra-ultra expects an Aliyun key: Token Plan sk-sp-… or Model Studio sk-… "
             "(not an OpenRouter / DeepSeek / Gemini key)."
         )
-    if profile == "syra-base":
-        if looks_like_aliyun_token_plan_key(key) or looks_like_openrouter_key(key):
-            return (
-                "This key is not a DeepSeek key. syra-base needs a DeepSeek API key "
-                "(https://platform.deepseek.com/). Put Aliyun Token Plan keys on syra-ultra."
-            )
-        return ""
+    if profile == "syra-solar":
+        return "Solar runs locally on this VM; install it from the Solar setup tab."
     if profile in {"syra-nano", "syra-havy"}:
         lower = key.lower()
         if lower.startswith("sk-") or looks_like_openrouter_key(key):
@@ -420,6 +373,8 @@ def provider_catalog() -> list[dict[str, str | int | float]]:
         }
         if spec.get("role"):
             entry["role"] = str(spec["role"])
+        if spec.get("local"):
+            entry["local"] = True
         if "input_price_per_mtok" in spec:
             entry["input_price_per_mtok"] = float(spec["input_price_per_mtok"])
             entry["input_price_label"] = format_price_per_mtok(

@@ -145,11 +145,8 @@ class SettingsRequest(BaseModel):
     preview_wildcard_tls: str | None = None
     agent_default_model_profile: str | None = None
     agent_syra_nano_api_key: str | None = None
-    agent_syra_base_api_key: str | None = None
-    agent_syra_kimi_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
-    agent_syra_ultra_plus_api_key: str | None = None
     agent_syra_subagent_api_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
@@ -310,20 +307,16 @@ async def get_settings():
         "cloudflare_tls": cf_status,
         "agent_default_model_profile": bridge["default_profile"],
         "agent_syra_nano_model": bridge["syra_nano_model"],
-        "agent_syra_base_model": bridge["syra_base_model"],
-        "agent_syra_kimi_model": bridge["syra_kimi_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
         "agent_syra_ultra_model": bridge["syra_ultra_model"],
-        "agent_syra_ultra_plus_model": bridge["syra_ultra_plus_model"],
+        "agent_syra_solar_model": bridge["syra_solar_model"],
         "agent_syra_subagent_model": bridge["syra_subagent_model"],
         "agent_builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
         "agent_thinker_profile": bridge.get("thinker_profile"),
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
-        "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
-        "agent_syra_kimi_api_key_set": bool(bridge["syra_kimi_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
-        "agent_syra_ultra_plus_api_key_set": bool(bridge["syra_ultra_plus_api_key"]),
+        "agent_syra_solar_running": (await _solar_status())["running"],
         "agent_syra_subagent_api_key_set": bool(bridge["syra_subagent_api_key"]),
         "ai_providers": provider_catalog(),
         "provider_keys": key_status,
@@ -351,6 +344,24 @@ async def get_settings():
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
         "version": __version__,
     }
+
+
+async def _solar_status() -> dict[str, Any]:
+    from syte.solar_runtime import solar_status
+
+    return await solar_status()
+
+
+@app.get("/api/ai/solar/status")
+async def get_solar_status():
+    return await _solar_status()
+
+
+@app.post("/api/ai/solar/setup")
+async def setup_solar_model():
+    from syte.solar_runtime import start_solar_setup
+
+    return await start_solar_setup()
 
 
 @app.put("/api/settings")
@@ -442,7 +453,7 @@ async def save_settings(body: SettingsRequest):
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import PROFILE_PROVIDERS
 
-        profile = body.agent_default_model_profile.strip() or "syra-base"
+        profile = body.agent_default_model_profile.strip() or "syra-solar"
         if profile not in PROFILE_PROVIDERS:
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
@@ -453,21 +464,6 @@ async def save_settings(body: SettingsRequest):
             "syra-nano (Vertex AI · gemini-3.1-flash-lite) API key saved."
             if body.agent_syra_nano_api_key.strip()
             else "syra-nano API key cleared."
-        )
-    if body.agent_syra_base_api_key is not None:
-        await set_setting("agent_syra_base_api_key", body.agent_syra_base_api_key.strip())
-        messages.append(
-            "syra-base (DeepSeek · deepseek-v4-flash) API key saved."
-            if body.agent_syra_base_api_key.strip()
-            else "syra-base API key cleared."
-        )
-    if body.agent_syra_kimi_api_key is not None:
-        kimi_key = body.agent_syra_kimi_api_key.strip()
-        await set_setting("agent_syra_kimi_api_key", kimi_key)
-        messages.append(
-            "syra-kimi (ChinaAPI · kimi-k3) API key saved."
-            if kimi_key
-            else "syra-kimi API key cleared."
         )
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
@@ -490,10 +486,6 @@ async def save_settings(body: SettingsRequest):
             if ultra_key
             else "syra-ultra API key cleared."
         )
-    if body.agent_syra_ultra_plus_api_key is not None:
-        opus_key = body.agent_syra_ultra_plus_api_key.strip()
-        await set_setting("agent_syra_ultra_plus_api_key", opus_key)
-        messages.append("syra-ultra-plus (AgentRouter · claude-opus-5) API key saved." if opus_key else "syra-ultra-plus API key cleared.")
     if body.agent_syra_subagent_api_key is not None:
         sub_key = body.agent_syra_subagent_api_key.strip()
         await set_setting("agent_syra_subagent_api_key", sub_key)

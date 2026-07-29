@@ -2,15 +2,13 @@
 
 from syte.ai_providers import (
     ALIYUN_MAAS_API_BASE,
-    BASE_MODEL,
-    CHINAAPI_API_BASE,
-    DEEPSEEK_API_BASE,
     DEFAULT_PROFILE,
     NANO_MODEL,
+    OLLAMA_API_BASE,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
     PRO_MODEL,
-    KIMI_MODEL,
+    SOLAR_MODEL,
     ULTRA_MODEL,
     VERTEX_API_BASE,
     format_price_per_mtok,
@@ -50,38 +48,8 @@ def test_provider_api_base_normalization_does_not_change_other_hosts() -> None:
     assert provider_chat_completion_url(base) == f"{base}/chat/completions"
 
 
-def test_base_deepseek_v4_flash() -> None:
-    assert DEFAULT_PROFILE == "syra-base"
-    base = PROFILE_PROVIDERS["syra-base"]
-    assert base["label"] == "DeepSeek"
-    assert base["api_base"] == DEEPSEEK_API_BASE
-    assert base["model"] == BASE_MODEL == "deepseek-v4-flash"
-    assert base["role"] == "build"
-    assert base["input_price_per_mtok"] == 0.14
-    assert base["output_price_per_mtok"] == 0.28
-    assert base["setting_key"] == "agent_syra_base_api_key"
-    assert base["secret_env"] == "SYRA_BASE_API_KEY"
-    assert base["max_tokens"] == 8192
-    assert profile_provider("syra-base")["model"] == BASE_MODEL
-
-
-def test_kimi_chinaapi_profile() -> None:
-    kimi = PROFILE_PROVIDERS["syra-kimi"]
-    assert kimi["label"] == "ChinaAPI"
-    assert kimi["api_base"] == CHINAAPI_API_BASE == "https://api.chinaapi.ai/v1"
-    assert kimi["model"] == KIMI_MODEL == "kimi-k3"
-    assert kimi["role"] == "kimi"
-    assert kimi["input_price_per_mtok"] == 3.1995
-    assert kimi["output_price_per_mtok"] == 15.9974
-    assert kimi["setting_key"] == "agent_syra_kimi_api_key"
-    assert kimi["secret_env"] == "SYRA_KIMI_API_KEY"
-    assert kimi["completion_token_param"] == "max_completion_tokens"
-
-
 def test_pro_vertex_gemini_36_flash() -> None:
     assert "syra-havy" in PROFILE_ORDER
-    assert "syra-ultra-plus" in PROFILE_ORDER
-    assert PROFILE_PROVIDERS["syra-ultra-plus"]["model"] == "claude-opus-5"
     pro = PROFILE_PROVIDERS["syra-havy"]
     assert pro["display_name"] == "pro"
     assert pro["label"] == "Vertex AI"
@@ -108,6 +76,16 @@ def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
     assert ultra["role"] != "think"
 
 
+def test_solar_local_qwen_coder_profile() -> None:
+    assert DEFAULT_PROFILE == "syra-solar"
+    solar = PROFILE_PROVIDERS["syra-solar"]
+    assert solar["label"] == "Solar VM"
+    assert solar["api_base"] == OLLAMA_API_BASE
+    assert solar["model"] == SOLAR_MODEL == "qwen2.5-coder:7b"
+    assert solar["role"] == "local"
+    assert solar["local"] is True
+
+
 def test_subagent_nvidia_glm() -> None:
     from syte.ai_providers import NVIDIA_NIM_API_BASE, SUBAGENT_MODEL, SUBAGENT_PROFILE
 
@@ -123,17 +101,13 @@ def test_subagent_nvidia_glm() -> None:
 
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 7
+    assert len(catalog) == 5
     by_profile = {row["profile"]: row for row in catalog}
     assert by_profile["syra-nano"]["input_price_label"] == "$0.25"
     assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
-    assert by_profile["syra-base"]["model"] == "deepseek-v4-flash"
-    assert by_profile["syra-kimi"]["model"] == "kimi-k3"
-    assert by_profile["syra-kimi"]["api_base"] == CHINAAPI_API_BASE
-    assert by_profile["syra-kimi"]["input_price_label"] == "$3.20"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
-    assert by_profile["syra-ultra-plus"]["display_name"] == "ultra+"
+    assert by_profile["syra-solar"]["model"] == "qwen2.5-coder:7b"
     assert by_profile["syra-subagent"]["model"] == "z-ai/glm-5.2"
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
