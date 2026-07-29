@@ -105,6 +105,7 @@ async def test_agent_settings_use_cloud_namespace(
         agent_default_model_profile="syra-ultra",
         agent_syra_nano_api_key="nano-key",
         agent_syra_base_api_key="deepseek-base-key",
+        agent_syra_kimi_api_key="chinaapi-kimi-key",
         agent_syra_havy_api_key="havy-key",
         agent_syra_ultra_api_key="aliyun-ultra-key",
     ))
@@ -112,6 +113,7 @@ async def test_agent_settings_use_cloud_namespace(
     assert res["ok"] is True
     assert await get_setting("agent_default_model_profile") == "syra-ultra"
     assert await get_setting("agent_syra_base_api_key") == "deepseek-base-key"
+    assert await get_setting("agent_syra_kimi_api_key") == "chinaapi-kimi-key"
     assert await get_setting("agent_syra_ultra_api_key") == "aliyun-ultra-key"
     assert "Syte cloud" in " ".join(res["messages"])
     assert any("syra-ultra" in m or "Qwen" in m for m in res["messages"])

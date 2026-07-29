@@ -142,7 +142,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
             {"method": "POST", "path": "/api/agent_stop", "auth": True, "body": {"uuid": "str"}},
             {"method": "POST", "path": "/api/agent_restart", "auth": True, "body": {"uuid": "str"}},
-            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-havy|syra-ultra"}},
+            {"method": "POST", "path": "/api/agent_settings", "auth": True, "body": {"uuid": "str", "model_profile": "syra-nano|syra-base|syra-kimi|syra-havy|syra-ultra"}},
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "Syte cloud runtime log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
@@ -186,13 +186,14 @@ def build_ai_spec(base_url: str = "") -> dict:
             "model_profiles": {
                 "syra-nano": "Fast — Vertex AI Gemini 3.1 Flash Lite",
                 "syra-base": "Default — DeepSeek V4 Flash (think + build)",
+                "syra-kimi": "Kimi — ChinaAPI Kimi K3 (kimi-k3, native reasoning)",
                 "syra-havy": "Pro — Vertex AI Gemini 3.6 Flash",
                 "syra-ultra": "Ultra — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)",
                 "syra-ultra-plus": "Ultra+ — AgentRouter Claude Opus 5 (code generation only)",
             },
             "thinking_level": thinking_levels_spec(),
             "gui_configuration": (
-                "Syte GUI → AI tab — internal secret, per-profile Vertex AI / DeepSeek / Aliyun API keys, "
+                "Syte GUI → AI tab — internal secret, per-profile Vertex AI / DeepSeek / ChinaAPI / Aliyun API keys, "
                 "estimated in/out token prices, and turso_database_url / turso_auth_token for durable session storage"
             ),
             "metrics": {

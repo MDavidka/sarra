@@ -724,6 +724,7 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
       auto: 'auto',
       'syra-nano': 'nano',
       'syra-base': 'base',
+      'syra-kimi': 'kimi · K3',
       'syra-havy': 'pro',
       'syra-ultra': 'ultra',
       'syra-ultra-plus': 'ultra+',
@@ -2917,7 +2918,7 @@ function showView(name) {
   refreshIcons();
 }
 
-let aiApiConfigured = { nano: false, base: false, havy: false, ultra: false, ultraPlus: false, subagent: false };
+let aiApiConfigured = { nano: false, base: false, kimi: false, havy: false, ultra: false, ultraPlus: false, subagent: false };
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -2962,6 +2963,7 @@ function applyAiProviderCatalog(providers) {
   const priceIds = {
     'syra-nano': ['agent-nano-price-in', 'agent-nano-price-out'],
     'syra-base': ['agent-base-price-in', 'agent-base-price-out'],
+    'syra-kimi': ['agent-kimi-price-in', 'agent-kimi-price-out'],
     'syra-havy': ['agent-havy-price-in', 'agent-havy-price-out'],
     'syra-ultra': ['agent-ultra-price-in', 'agent-ultra-price-out'],
     'syra-ultra-plus': ['agent-ultra-plus-price-in', 'agent-ultra-plus-price-out'],
@@ -2992,6 +2994,7 @@ function updateAiApiWarning() {
   const keyForProfile = {
     'syra-nano': 'agent-nano-key',
     'syra-base': 'agent-base-key',
+    'syra-kimi': 'agent-kimi-key',
     'syra-havy': 'agent-havy-key',
     'syra-ultra': 'agent-ultra-key',
     'syra-ultra-plus': 'agent-ultra-plus-key',
@@ -3000,6 +3003,7 @@ function updateAiApiWarning() {
   const savedForProfile = {
     'syra-nano': aiApiConfigured.nano,
     'syra-base': aiApiConfigured.base,
+    'syra-kimi': aiApiConfigured.kimi,
     'syra-havy': aiApiConfigured.havy,
     'syra-ultra': aiApiConfigured.ultra,
     'syra-ultra-plus': aiApiConfigured.ultraPlus,
@@ -3861,6 +3865,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const btn = document.getElementById('save-ai-settings-btn');
   const nanoKey = document.getElementById('agent-nano-key')?.value?.trim() || '';
   const baseKey = document.getElementById('agent-base-key')?.value?.trim() || '';
+  const kimiKey = document.getElementById('agent-kimi-key')?.value?.trim() || '';
   const havyKey = document.getElementById('agent-havy-key')?.value?.trim() || '';
   const ultraKey = document.getElementById('agent-ultra-key')?.value?.trim() || '';
   const ultraPlusKey = document.getElementById('agent-ultra-plus-key')?.value?.trim() || '';
@@ -3871,9 +3876,10 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const tursoAuthToken = document.getElementById('turso-auth-token')?.value?.trim() || '';
   const needNano = !nanoKey && !aiApiConfigured.nano;
   const needBase = !baseKey && !aiApiConfigured.base;
+  const needKimi = !kimiKey && !aiApiConfigured.kimi;
   const needHavy = !havyKey && !aiApiConfigured.havy;
   const needUltra = !ultraKey && !aiApiConfigured.ultra;
-  if (!nanoKey && !baseKey && !havyKey && !ultraKey && !subagentKey && needNano && needBase && needHavy && needUltra && !aiApiConfigured.subagent) {
+  if (!nanoKey && !baseKey && !kimiKey && !havyKey && !ultraKey && !subagentKey && needNano && needBase && needKimi && needHavy && needUltra && !aiApiConfigured.subagent) {
     return toast('Enter at least one model API key');
   }
   const body = {
@@ -3881,6 +3887,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   };
   if (nanoKey) body.agent_syra_nano_api_key = nanoKey;
   if (baseKey) body.agent_syra_base_api_key = baseKey;
+  if (kimiKey) body.agent_syra_kimi_api_key = kimiKey;
   if (havyKey) body.agent_syra_havy_api_key = havyKey;
   if (ultraKey) {
     if (ultraKey.toLowerCase().startsWith('sk-or-')) {
@@ -3901,6 +3908,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     toast(Array.isArray(res.messages) ? res.messages.join(' ') : 'Provider settings saved');
     if (nanoKey) document.getElementById('agent-nano-key').value = '';
     if (baseKey) document.getElementById('agent-base-key').value = '';
+    if (kimiKey) document.getElementById('agent-kimi-key').value = '';
     if (havyKey) document.getElementById('agent-havy-key').value = '';
     if (ultraKey) document.getElementById('agent-ultra-key').value = '';
     if (subagentKey) document.getElementById('agent-subagent-key').value = '';
@@ -4098,6 +4106,7 @@ async function loadSettings() {
     const keyFields = [
       ['agent-nano-key', 'agent-nano-key-hint', s.agent_syra_nano_api_key_set, 'Vertex AI nano key saved', 'Vertex AI API key required'],
       ['agent-base-key', 'agent-base-key-hint', s.agent_syra_base_api_key_set, 'DeepSeek base key saved', 'DeepSeek API key required'],
+      ['agent-kimi-key', 'agent-kimi-key-hint', s.agent_syra_kimi_api_key_set, 'ChinaAPI Kimi K3 key saved', 'ChinaAPI Kimi K3 API key required'],
       ['agent-havy-key', 'agent-havy-key-hint', s.agent_syra_havy_api_key_set, 'Vertex AI pro key saved', 'Vertex AI API key required'],
       ['agent-ultra-key', 'agent-ultra-key-hint', s.agent_syra_ultra_api_key_set, 'Aliyun ultra key saved (sk-sp- Token Plan or Model Studio sk-)', 'Aliyun Token Plan sk-sp-… key required'],
       ['agent-ultra-plus-key', 'agent-ultra-plus-key-hint', s.agent_syra_ultra_plus_api_key_set, 'AgentRouter Opus 5 key saved', 'AgentRouter API key required for code generation'],
@@ -4119,6 +4128,7 @@ async function loadSettings() {
     aiApiConfigured = {
       nano: Boolean(s.agent_syra_nano_api_key_set),
       base: Boolean(s.agent_syra_base_api_key_set),
+      kimi: Boolean(s.agent_syra_kimi_api_key_set),
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
       ultraPlus: Boolean(s.agent_syra_ultra_plus_api_key_set),
@@ -4140,6 +4150,7 @@ async function loadSettings() {
       parts.push(`default: ${defaultProfile}`);
       parts.push(s.agent_syra_nano_api_key_set ? 'nano key saved' : 'no nano key');
       parts.push(s.agent_syra_base_api_key_set ? 'base key saved' : 'no base key');
+      parts.push(s.agent_syra_kimi_api_key_set ? 'Kimi K3 key saved' : 'no Kimi K3 key');
       parts.push(s.agent_syra_havy_api_key_set ? 'pro key saved' : 'no pro key');
       parts.push(s.agent_syra_ultra_api_key_set ? 'ultra key saved' : 'no ultra key');
       parts.push(s.agent_syra_subagent_api_key_set ? 'subagent GLM key saved' : 'no subagent key');
@@ -4214,7 +4225,7 @@ async function loadAiDashboard() {
       li.classList.toggle('done', !!onboard[step]);
     });
     const hint = document.getElementById('ai-onboard-hint');
-    const keysConfigured = [onboard.ai_models, aiApiConfigured.nano, aiApiConfigured.base, aiApiConfigured.havy].some(Boolean);
+    const keysConfigured = [onboard.ai_models, aiApiConfigured.nano, aiApiConfigured.base, aiApiConfigured.kimi, aiApiConfigured.havy].some(Boolean);
     if (hint) {
       hint.textContent = onboard.complete
         ? 'Ready for sycord.com agent requests'
@@ -4493,7 +4504,7 @@ document.getElementById('debug-chat-profile')?.addEventListener('change', () => 
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';
-    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-base': 'base', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-subagent': 'subagent' })[profile] || profile;
+    const short = ({ auto: 'auto', 'syra-nano': 'nano', 'syra-base': 'base', 'syra-kimi': 'kimi · K3', 'syra-havy': 'pro', 'syra-ultra': 'ultra', 'syra-subagent': 'subagent' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
       modelEl.textContent = short;

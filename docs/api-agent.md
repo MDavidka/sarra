@@ -38,7 +38,8 @@ workspace text search — prefer it over unbounded `list_files` / shell grep.
 ```
 
 Omit `model_profile` or set it to `auto` to let Syte pick `syra-nano` /
-`syra-base` / `syra-havy` from the message. Explicit profiles still win.
+`syra-base` / `syra-havy` from the message. Explicit profiles, including
+`syra-kimi` for ChinaAPI Kimi K3, still win.
 
 Optional visual feedback fields:
 

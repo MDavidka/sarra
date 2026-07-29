@@ -37,6 +37,22 @@ async def test_profile_api_key_falls_back_to_env(
 
 
 @pytest.mark.asyncio
+async def test_kimi_profile_api_key_falls_back_to_env(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.cloud_agent import resolve_profile_api_key
+    from syte.database import init_db
+
+    await init_db()
+    monkeypatch.setenv("SYRA_KIMI_API_KEY", "chinaapi-kimi-test-key")
+    resolved = await resolve_profile_api_key("syra-kimi")
+    assert resolved["source"] == "env"
+    assert resolved["api_key"] == "chinaapi-kimi-test-key"
+    assert resolved["env_set"]
+
+
+@pytest.mark.asyncio
 async def test_settings_key_wins_over_env(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

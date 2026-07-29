@@ -5,6 +5,7 @@ Each main profile is a full think+build model — there is no separate thinker.
 - ``syra-base`` — DeepSeek V4 Flash (default)
 - ``syra-havy`` (pro) — Vertex AI Gemini 3.6 Flash
 - ``syra-ultra`` — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)
+- ``syra-kimi`` — ChinaAPI Kimi K3 (kimi-k3, cost-capped)
 - ``syra-ultra-plus`` — AgentRouter Claude Opus 5 (code generation only, cost-capped)
 - ``syra-subagent`` — NVIDIA NIM GLM 5.2 (``z-ai/glm-5.2``) for delegated subagent work only
 """
@@ -27,8 +28,18 @@ ALIYUN_MAAS_API_BASE = (
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 AGENTROUTER_API_BASE = "https://agentrouter.org/api/v1"
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
+# ChinaAPI dashboard: https://dash.chinaapi.ai/
+CHINAAPI_API_BASE = "https://api.chinaapi.ai/v1"
 
-PROFILE_ORDER = ("syra-nano", "syra-base", "syra-havy", "syra-ultra", "syra-ultra-plus", "syra-subagent")
+PROFILE_ORDER = (
+    "syra-nano",
+    "syra-base",
+    "syra-kimi",
+    "syra-havy",
+    "syra-ultra",
+    "syra-ultra-plus",
+    "syra-subagent",
+)
 
 # Default / legacy aliases (selected model handles both thinking and building).
 DEFAULT_PROFILE = "syra-base"
@@ -43,6 +54,7 @@ PRO_MODEL = "gemini-3.6-flash"
 ULTRA_MODEL = "qwen3.7-plus"
 ULTRA_PLUS_MODEL = "claude-opus-5"
 SUBAGENT_MODEL = "z-ai/glm-5.2"
+KIMI_MODEL = "kimi-k3"
 NVIDIA_NIM_API_BASE = "https://integrate.api.nvidia.com/v1"
 
 # Backward-compat aliases used by older tests/docs.
@@ -96,12 +108,13 @@ class ProfileProvider(TypedDict):
     model: str
     setting_key: str
     secret_env: str
-    role: NotRequired[str]  # "fast" | "build" | "pro" | "ultra"
+    role: NotRequired[str]  # "fast" | "build" | "kimi" | "pro" | "ultra"
     # Estimated USD per 1M tokens (public list prices; for UI guidance only).
     input_price_per_mtok: NotRequired[float]
     output_price_per_mtok: NotRequired[float]
     # Optional cost caps — omit to use Syte global defaults.
     max_tokens: NotRequired[int]
+    completion_token_param: NotRequired[str]
     max_history_messages: NotRequired[int]
     max_tool_result_chars: NotRequired[int]
 
@@ -136,6 +149,24 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tool_result_chars": 8000,
         "setting_key": "agent_syra_base_api_key",
         "secret_env": "SYRA_BASE_API_KEY",
+    },
+    "syra-kimi": {
+        "profile": "syra-kimi",
+        "label": "ChinaAPI",
+        "display_name": "kimi",
+        "provider": "openai",
+        "api_base": CHINAAPI_API_BASE,
+        "model": KIMI_MODEL,
+        "role": "kimi",
+        "input_price_per_mtok": 3.1995,
+        "output_price_per_mtok": 15.9974,
+        # Keep agent turns bounded while retaining K3's large context window.
+        "max_tokens": 8192,
+        "max_history_messages": 48,
+        "max_tool_result_chars": 8000,
+        "completion_token_param": "max_completion_tokens",
+        "setting_key": "agent_syra_kimi_api_key",
+        "secret_env": "SYRA_KIMI_API_KEY",
     },
     "syra-havy": {
         "profile": "syra-havy",
@@ -401,6 +432,8 @@ def provider_catalog() -> list[dict[str, str | int | float]]:
             )
         if "max_tokens" in spec:
             entry["max_tokens"] = int(spec["max_tokens"])
+        if "completion_token_param" in spec:
+            entry["completion_token_param"] = str(spec["completion_token_param"])
         if "max_history_messages" in spec:
             entry["max_history_messages"] = int(spec["max_history_messages"])
         if "max_tool_result_chars" in spec:

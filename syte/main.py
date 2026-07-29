@@ -146,6 +146,7 @@ class SettingsRequest(BaseModel):
     agent_default_model_profile: str | None = None
     agent_syra_nano_api_key: str | None = None
     agent_syra_base_api_key: str | None = None
+    agent_syra_kimi_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
     agent_syra_ultra_plus_api_key: str | None = None
@@ -310,6 +311,7 @@ async def get_settings():
         "agent_default_model_profile": bridge["default_profile"],
         "agent_syra_nano_model": bridge["syra_nano_model"],
         "agent_syra_base_model": bridge["syra_base_model"],
+        "agent_syra_kimi_model": bridge["syra_kimi_model"],
         "agent_syra_havy_model": bridge["syra_havy_model"],
         "agent_syra_ultra_model": bridge["syra_ultra_model"],
         "agent_syra_ultra_plus_model": bridge["syra_ultra_plus_model"],
@@ -318,6 +320,7 @@ async def get_settings():
         "agent_thinker_profile": bridge.get("thinker_profile"),
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_base_api_key_set": bool(bridge["syra_base_api_key"]),
+        "agent_syra_kimi_api_key_set": bool(bridge["syra_kimi_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
         "agent_syra_ultra_plus_api_key_set": bool(bridge["syra_ultra_plus_api_key"]),
@@ -457,6 +460,14 @@ async def save_settings(body: SettingsRequest):
             "syra-base (DeepSeek · deepseek-v4-flash) API key saved."
             if body.agent_syra_base_api_key.strip()
             else "syra-base API key cleared."
+        )
+    if body.agent_syra_kimi_api_key is not None:
+        kimi_key = body.agent_syra_kimi_api_key.strip()
+        await set_setting("agent_syra_kimi_api_key", kimi_key)
+        messages.append(
+            "syra-kimi (ChinaAPI · kimi-k3) API key saved."
+            if kimi_key
+            else "syra-kimi API key cleared."
         )
     if body.agent_syra_havy_api_key is not None:
         await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())

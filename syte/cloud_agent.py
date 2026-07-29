@@ -891,12 +891,14 @@ async def bridge_settings() -> dict[str, Any]:
         "thinker_profile": None,
         "syra_nano_model": profiles["syra-nano"]["model"],
         "syra_base_model": profiles["syra-base"]["model"],
+        "syra_kimi_model": profiles["syra-kimi"]["model"],
         "syra_havy_model": profiles["syra-havy"]["model"],
         "syra_ultra_model": profiles["syra-ultra"]["model"],
         "syra_ultra_plus_model": profiles["syra-ultra-plus"]["model"],
         "syra_subagent_model": profiles["syra-subagent"]["model"],
         "syra_nano_api_key": profiles["syra-nano"]["api_key"],
         "syra_base_api_key": profiles["syra-base"]["api_key"],
+        "syra_kimi_api_key": profiles["syra-kimi"]["api_key"],
         "syra_havy_api_key": profiles["syra-havy"]["api_key"],
         "syra_ultra_api_key": profiles["syra-ultra"]["api_key"],
         "syra_ultra_plus_api_key": profiles["syra-ultra-plus"]["api_key"],
@@ -934,7 +936,7 @@ def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any
         "key_source": spec.get("key_source") or ("settings" if spec.get("api_key") else "none"),
         "api_key_hint": spec.get("api_key_hint") or mask_secret(str(spec.get("api_key") or "")),
     }
-    for key in ("max_tokens", "max_history_messages", "max_tool_result_chars"):
+    for key in ("max_tokens", "completion_token_param", "max_history_messages", "max_tool_result_chars"):
         if key in spec and spec[key] is not None:
             meta[key] = int(spec[key])
     return meta
@@ -3365,7 +3367,10 @@ async def _provider_completion(
     }
     max_tokens = _model_max_tokens(model)
     if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
+        if str(model.get("completion_token_param") or "") == "max_completion_tokens":
+            payload["max_completion_tokens"] = max_tokens
+        else:
+            payload["max_tokens"] = max_tokens
     if use_tools:
         payload["tools"] = use_tools
         payload["tool_choice"] = "auto"
@@ -3441,6 +3446,11 @@ async def _provider_completion(
                     " Use a Google Cloud Vertex AI Express Mode API key "
                     "(Cloud Console → Credentials). Syte calls "
                     "aiplatform.googleapis.com/v1/publishers/google/models/…:generateContent."
+                )
+            elif "chinaapi.ai" in api_base or "chinaapi" in str(label).lower():
+                hint = (
+                    " Use the ChinaAPI key from https://dash.chinaapi.ai/. "
+                    "The API endpoint is https://api.chinaapi.ai/v1."
                 )
             source_bits = [f"source={key_source}"]
             if secret_env:

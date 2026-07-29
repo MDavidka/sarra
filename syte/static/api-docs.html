@@ -1391,7 +1391,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
         <section class="section">
           <h2 class="section-title">Agent (token API)</h2>
           <p class="section-desc">Manage a project agent from an external page. Base <code>/api</code>, header <code>X-API-Key</code>. Session-auth mirrors live at <code>/api/projects/{uuid}/agent/*</code>.</p>
-<div class="note">Profiles: <code>syra-nano</code>, <code>syra-base</code>, <code>syra-havy</code>, <code>syra-ultra</code>. Subagent-only: <code>syra-subagent</code>. Configure keys in Settings → AI. Prefer <code>agent_change</code> (background) for external UIs; <code>agent_communicate</code> waits for the turn.</div>
+<div class="note">Profiles: <code>syra-nano</code>, <code>syra-base</code>, <code>syra-kimi</code>, <code>syra-havy</code>, <code>syra-ultra</code>. Subagent-only: <code>syra-subagent</code>. Configure keys in Settings → AI. Prefer <code>agent_change</code> (background) for external UIs; <code>agent_communicate</code> waits for the turn.</div>
 
 
           <div class="endpoint" id="agent-status" data-ep="agent-status">
@@ -1612,7 +1612,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
                     <span class="field-type">string</span>
                   </div>
                   
-                  <div class="field-desc"><code>syra-nano|syra-base|syra-havy|syra-ultra</code></div>
+                  <div class="field-desc"><code>syra-nano|syra-base|syra-kimi|syra-havy|syra-ultra</code></div>
                 </div>
               </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;model_profile&quot;:&quot;syra-base&quot;}</pre>
             </div>
@@ -1927,7 +1927,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,�
                     <span class="field-type">string</span>
                   </div>
                   
-                  <div class="field-desc">syra-nano | syra-base | syra-havy | syra-ultra</div>
+                  <div class="field-desc">syra-nano | syra-base | syra-kimi | syra-havy | syra-ultra</div>
                 </div>                <div class="field">
                   <div class="field-head">
                     <span class="field-name">thinking_level<span class="opt">?</span></span>

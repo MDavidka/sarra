@@ -22,12 +22,13 @@ OpenAI-compatible endpoints:
 
 - `syra-nano`: Vertex AI Gemini Flash Lite (fast)
 - `syra-base`: DeepSeek V4 Flash (default)
+- `syra-kimi`: ChinaAPI Kimi K3 (`https://api.chinaapi.ai/v1`, model `kimi-k3`; dashboard: `https://dash.chinaapi.ai/`)
 - `syra-havy`: Vertex AI Gemini 3.6 Flash (pro)
 - `syra-ultra`: Aliyun Qwen3.7-Plus (`https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-plus`; cost caps: `max_tokens=4096`, history 40, tool results 6k chars)
 - `syra-subagent`: NVIDIA NIM GLM 5.2 (`https://integrate.api.nvidia.com/v1`, model `z-ai/glm-5.2`) — used only for delegated subagent work
 
 Main chat profiles are full think+build models with their own API keys
-(`SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, `SYRA_HAVY_API_KEY`, `SYRA_ULTRA_API_KEY`).
+(`SYRA_NANO_API_KEY`, `SYRA_BASE_API_KEY`, `SYRA_KIMI_API_KEY`, `SYRA_HAVY_API_KEY`, `SYRA_ULTRA_API_KEY`).
 The subagent key is `SYRA_SUBAGENT_API_KEY` (NVIDIA `nvapi-…` from build.nvidia.com).
 
 Token efficiency: tool/CLI output is filtered before it re-enters context; listings

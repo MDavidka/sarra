@@ -393,6 +393,7 @@
                         <option value="auto" selected>auto</option>
                         <option value="syra-nano">nano</option>
                         <option value="syra-base">base</option>
+                        <option value="syra-kimi">kimi · K3</option>
                         <option value="syra-havy">pro</option>
                         <option value="syra-ultra">ultra</option>
                         <option value="syra-ultra-plus">ultra+</option>
@@ -663,6 +664,7 @@
               <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
                 <option value="syra-nano">nano</option>
                 <option value="syra-base" selected>base</option>
+                <option value="syra-kimi">kimi · K3</option>
                 <option value="syra-havy">pro</option>
                 <option value="syra-ultra">ultra</option>
                 <option value="syra-ultra-plus">ultra+</option>
@@ -734,6 +736,23 @@
                   <label for="agent-base-key">API key <span class="req-mark">*</span></label>
                   <input type="password" id="agent-base-key" placeholder="DeepSeek API key" autocomplete="off">
                   <span class="hint" id="agent-base-key-hint">Required for base profile (default).</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card" data-profile="syra-kimi">
+                <div class="ai-key-head">
+                  <strong>syra-kimi · K3</strong>
+                  <span class="ai-key-provider">ChinaAPI · kimi-k3</span>
+                </div>
+                <div class="ai-key-price" aria-label="Estimated price">
+                  <span>in <b id="agent-kimi-price-in">$3.20</b>/1M</span>
+                  <span>out <b id="agent-kimi-price-out">$16.00</b>/1M</span>
+                </div>
+                <code class="ai-key-url">https://api.chinaapi.ai/v1</code>
+                <div class="form-group">
+                  <label for="agent-kimi-key">API key <span class="req-mark">*</span></label>
+                  <input type="password" id="agent-kimi-key" placeholder="ChinaAPI key from dash.chinaapi.ai" autocomplete="off">
+                  <span class="hint" id="agent-kimi-key-hint">Kimi K3 always runs in thinking mode. Get a key at dash.chinaapi.ai.</span>
                 </div>
               </div>
 
@@ -811,6 +830,7 @@
                   <select id="agent-default-profile">
                     <option value="syra-nano">syra-nano · nano</option>
                     <option value="syra-base">syra-base · base</option>
+                    <option value="syra-kimi">syra-kimi · K3</option>
                     <option value="syra-havy">syra-havy · pro</option>
                     <option value="syra-ultra">syra-ultra · ultra</option>
                     <option value="syra-ultra-plus">syra-ultra-plus · ultra+ (Opus 5)</option>
@@ -852,6 +872,7 @@
                 <div class="ai-env-grid" id="ai-provider-key-status">
                   <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Vertex AI · nano</span></div>
                   <div class="ai-env-row"><code>SYRA_BASE_API_KEY</code><span>DeepSeek · base</span></div>
+                  <div class="ai-env-row"><code>SYRA_KIMI_API_KEY</code><span>ChinaAPI · Kimi K3</span></div>
                   <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>Vertex AI · pro</span></div>
                   <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · ultra</span></div>
                 </div>
