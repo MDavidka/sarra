@@ -4,6 +4,8 @@ import pytest
 
 from syte.ai_providers import DEFAULT_PROFILE
 from syte.thinking_levels import (
+    build_model_thinking_params,
+    model_supports_native_thinking,
     normalize_thinking_level,
     resolve_thinking_config,
     thinking_levels_spec,
@@ -76,3 +78,19 @@ def test_resolve_includes_top_p() -> None:
     assert cfg["reasoning_effort"] == "low"
     assert cfg["builder_profile"] == "syra-base"
     assert cfg["thinker_profile"] is None
+
+
+def test_kimi_k3_uses_supported_reasoning_effort_values() -> None:
+    assert model_supports_native_thinking(
+        provider="openai",
+        model="kimi-k3",
+        api_base="https://api.chinaapi.ai/v1",
+    )
+    params = build_model_thinking_params(
+        {"thinking_enabled": True, "reasoning_effort": "medium"},
+        provider="openai",
+        model="kimi-k3",
+        api_base="https://api.chinaapi.ai/v1",
+    )
+    assert params["reasoning_effort"] == "high"
+    assert params["thinking_applied"] is True

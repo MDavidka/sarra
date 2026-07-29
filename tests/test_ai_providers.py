@@ -3,12 +3,14 @@
 from syte.ai_providers import (
     ALIYUN_MAAS_API_BASE,
     BASE_MODEL,
+    CHINAAPI_API_BASE,
     DEEPSEEK_API_BASE,
     DEFAULT_PROFILE,
     NANO_MODEL,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
     PRO_MODEL,
+    KIMI_MODEL,
     ULTRA_MODEL,
     VERTEX_API_BASE,
     format_price_per_mtok,
@@ -63,6 +65,19 @@ def test_base_deepseek_v4_flash() -> None:
     assert profile_provider("syra-base")["model"] == BASE_MODEL
 
 
+def test_kimi_chinaapi_profile() -> None:
+    kimi = PROFILE_PROVIDERS["syra-kimi"]
+    assert kimi["label"] == "ChinaAPI"
+    assert kimi["api_base"] == CHINAAPI_API_BASE == "https://api.chinaapi.ai/v1"
+    assert kimi["model"] == KIMI_MODEL == "kimi-k3"
+    assert kimi["role"] == "kimi"
+    assert kimi["input_price_per_mtok"] == 3.1995
+    assert kimi["output_price_per_mtok"] == 15.9974
+    assert kimi["setting_key"] == "agent_syra_kimi_api_key"
+    assert kimi["secret_env"] == "SYRA_KIMI_API_KEY"
+    assert kimi["completion_token_param"] == "max_completion_tokens"
+
+
 def test_pro_vertex_gemini_36_flash() -> None:
     assert "syra-havy" in PROFILE_ORDER
     assert "syra-ultra-plus" in PROFILE_ORDER
@@ -108,11 +123,14 @@ def test_subagent_nvidia_glm() -> None:
 
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 6
+    assert len(catalog) == 7
     by_profile = {row["profile"]: row for row in catalog}
     assert by_profile["syra-nano"]["input_price_label"] == "$0.25"
     assert by_profile["syra-nano"]["output_price_label"] == "$1.50"
     assert by_profile["syra-base"]["model"] == "deepseek-v4-flash"
+    assert by_profile["syra-kimi"]["model"] == "kimi-k3"
+    assert by_profile["syra-kimi"]["api_base"] == CHINAAPI_API_BASE
+    assert by_profile["syra-kimi"]["input_price_label"] == "$3.20"
     assert by_profile["syra-havy"]["display_name"] == "pro"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
     assert by_profile["syra-ultra-plus"]["display_name"] == "ultra+"

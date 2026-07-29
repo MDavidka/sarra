@@ -172,6 +172,7 @@ def model_supports_native_thinking(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
+    is_kimi = "kimi" in model_l or "chinaapi.ai" in api_l
     is_gemini = (
         "gemini" in model_l
         or "generativelanguage.googleapis.com" in api_l
@@ -183,6 +184,7 @@ def model_supports_native_thinking(
         or is_anthropic
         or is_openai_reasoning
         or is_nemotron
+        or is_kimi
         or is_gemini
         or is_qwen
     )
@@ -228,6 +230,7 @@ def build_model_thinking_params(
     is_anthropic = "anthropic" in provider_l or "claude" in model_l
     is_openai_reasoning = any(x in model_l for x in ("o1", "o3", "o4", "gpt-5"))
     is_nemotron = "nemotron" in model_l
+    is_kimi = "kimi" in model_l or "chinaapi.ai" in api_l
     is_openrouter = "openrouter.ai" in api_l
     is_gemini = (
         "gemini" in model_l
@@ -257,6 +260,16 @@ def build_model_thinking_params(
         if effort:
             params["reasoning_effort"] = effort
             params["thinking_applied"] = True
+
+    # Kimi K3 always thinks and accepts only low/high/max effort values.
+    # Syte's shared slider uses "medium", so map that level to K3's high tier.
+    if is_kimi and enabled:
+        effort = str(cfg.get("reasoning_effort") or "max").strip().lower()
+        effort = {"medium": "high"}.get(effort, effort)
+        if effort not in {"low", "high", "max"}:
+            effort = "max"
+        params["reasoning_effort"] = effort
+        params["thinking_applied"] = True
 
     # Nemotron via OpenRouter: prefer reasoning_effort when thinking is on.
     if is_nemotron and is_openrouter and enabled:
