@@ -1,0 +1,3625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syte API Reference</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
+  <style>
+
+    :root {
+      --bg: #ffffff;
+      --bg-sidebar: #fafafa;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f4f4f5;
+      --bg-input: #f8fafc;
+      --border: #e4e4e7;
+      --border-subtle: #f4f4f5;
+      --text: #09090b;
+      --text-muted: #71717a;
+      --text-dim: #a1a1aa;
+      --accent-blue: #2563eb;
+      --accent-green: #16a34a;
+      --accent-orange: #ca8a04;
+      --accent-red: #dc2626;
+      --shadow-drawer: 8px 0 32px rgba(0, 0, 0, 0.12);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --sidebar-w: 280px;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-subtle);
+      position: fixed;
+      top: 0; left: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-top { padding: 1rem 1rem 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+    .sidebar-back {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      color: var(--text-muted); text-decoration: none; font-size: 12px; margin-bottom: 0.75rem;
+    }
+    .sidebar-back:hover { color: var(--text); }
+    .sidebar-brand {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.85rem 1rem; display: flex; align-items: flex-start; gap: 0.65rem; position: relative;
+    }
+    .brand-icon {
+      width: 32px; height: 32px; background: #f4f4f5; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 13px; color: var(--accent-blue); flex-shrink: 0;
+    }
+    .brand-title { font-weight: 600; font-size: 14px; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 0.15rem; line-height: 1.4; }
+    .brand-chevron {
+      margin-left: auto; color: var(--text-dim); font-size: 12px; flex-shrink: 0;
+      align-self: center; opacity: 0.6; display: none;
+    }
+    .sidebar-nav {
+      padding: 0.5rem 0.6rem 2rem; flex: 1; display: flex; flex-direction: column; gap: 2px;
+    }
+    .nav-cat {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.55rem 0.85rem; border-radius: 8px;
+      color: var(--text-muted); text-decoration: none; font-size: 14px;
+      transition: background 0.12s, color 0.12s; cursor: pointer;
+      border: none; background: none; width: 100%; text-align: left; font-family: var(--font);
+    }
+    .nav-cat svg { width: 18px; height: 18px; stroke-width: 2; flex-shrink: 0; opacity: 0.85; }
+    .nav-cat:hover { background: var(--bg-card); color: var(--text); }
+    .nav-cat.active { background: var(--bg-card); color: var(--text); font-weight: 500; }
+    .nav-mini {
+      display: none; flex-direction: column; gap: 1px;
+      margin: 0 0 0.35rem 0.35rem; padding: 0.15rem 0 0.35rem 0.85rem;
+      border-left: 2px solid var(--border);
+    }
+    .nav-mini.open { display: flex; }
+    .nav-mini a {
+      display: block; padding: 0.28rem 0.55rem; border-radius: 5px;
+      color: var(--text-muted); text-decoration: none; font-size: 12px;
+      font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .nav-mini a:hover { background: var(--bg-card); color: var(--text); }
+    .nav-mini a.active { background: var(--bg-card); color: var(--accent-blue); font-weight: 500; }
+    .mobile-toolbar, .sidebar-backdrop, .sidebar-utils { display: none; }
+    .util-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border: none; border-radius: 8px;
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      text-decoration: none; flex-shrink: 0; padding: 0;
+    }
+    .util-btn:hover { background: var(--bg-card); color: var(--text); }
+    .util-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .cat-panel { display: none; }
+    .cat-panel.active { display: block; }
+    .main { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
+    .main-inner { max-width: 820px; padding: 2rem 2.5rem 4rem; }
+    .page-header { margin-bottom: 1.25rem; }
+    .page-header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .page-header p { color: var(--text-muted); font-size: 14px; }
+    .page-header a { color: var(--accent-blue); text-decoration: none; }
+    .page-header a:hover { text-decoration: underline; }
+    .mini-tabs {
+      display: none; gap: 0.35rem; flex-wrap: wrap;
+      margin: 0 0 1.5rem; padding-bottom: 0.85rem;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky; top: 0; z-index: 40; background: var(--bg);
+      padding-top: 0.5rem;
+    }
+    .mini-tabs.visible { display: flex; }
+    .mini-tab {
+      font-family: var(--mono); font-size: 11px; padding: 0.3rem 0.55rem;
+      border-radius: 5px; border: 1px solid var(--border); background: var(--bg-card);
+      color: var(--text-muted); cursor: pointer; text-decoration: none; white-space: nowrap;
+    }
+    .mini-tab:hover { color: var(--text); background: var(--bg-card-hover); }
+    .mini-tab.active { color: var(--accent-blue); border-color: #bfdbfe; background: #eff6ff; font-weight: 500; }
+    .section { margin-bottom: 2.5rem; scroll-margin-top: 1.5rem; }
+    .section-title {
+      font-size: 1.25rem; font-weight: 600; margin-bottom: 0.35rem;
+      padding-bottom: 0.65rem; border-bottom: 1px solid var(--border-subtle);
+    }
+    .section-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 1.25rem; }
+    .endpoint {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 1.25rem; overflow: hidden;
+      scroll-margin-top: 4.5rem;
+    }
+    .endpoint.hidden-ep { display: none; }
+    .endpoint-header { padding: 1rem 1.15rem; border-bottom: 1px solid var(--border-subtle); }
+    .endpoint-base { font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-bottom: 0.5rem; }
+    .endpoint-row { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+    .method {
+      font-size: 12px; font-weight: 700; font-family: var(--mono);
+      padding: 0.2rem 0.5rem; border-radius: 4px; flex-shrink: 0;
+    }
+    .method.post { color: var(--accent-blue); }
+    .method.get { color: var(--accent-green); }
+    .method.sse { color: var(--accent-orange); }
+    .endpoint-path { font-family: var(--mono); font-size: 14px; font-weight: 500; flex: 1; word-break: break-all; }
+    .endpoint-name { font-size: 13px; color: var(--text-muted); margin-top: 0.35rem; }
+    .endpoint-body { padding: 0 1.15rem 1.15rem; }
+    .panel { border-top: 1px solid var(--border-subtle); padding-top: 0.85rem; margin-top: 0.85rem; }
+    .panel-title {
+      font-size: 13px; font-weight: 600; margin-bottom: 0.65rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    }
+    .panel-meta { font-size: 11px; color: var(--text-dim); font-weight: 400; font-family: var(--mono); }
+    .field { margin-bottom: 0.85rem; }
+    .field-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.25rem; }
+    .field-name { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+    .field-name .req { color: var(--accent-red); margin-left: 1px; }
+    .field-name .opt { color: var(--text-dim); font-weight: 400; }
+    .field-type { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+    .badge {
+      display: inline-block; font-size: 10px; font-family: var(--mono);
+      padding: 0.1rem 0.45rem; border-radius: 4px; border: 1px solid var(--border);
+      background: var(--bg-input); color: var(--text-muted); margin-right: 0.25rem; margin-top: 0.2rem;
+    }
+    .field-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    .field-desc code, .section-desc code, .note code, .flow-step code, li code, p code {
+      font-family: var(--mono); font-size: 11px; background: var(--bg-input);
+      padding: 0.1rem 0.3rem; border-radius: 3px; color: var(--accent-blue);
+    }
+    pre {
+      background: var(--bg-input); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm); padding: 0.85rem 1rem;
+      font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+      overflow-x: auto; color: #334155; margin-top: 0.5rem;
+    }
+    .note {
+      font-size: 12px; color: var(--text-muted); padding: 0.65rem 0.85rem;
+      background: var(--bg-input); border-radius: var(--radius-sm);
+      border-left: 3px solid var(--accent-orange); margin: 0.65rem 0; line-height: 1.5;
+    }
+    .note strong { color: var(--text); font-weight: 500; }
+    .info-grid { display: grid; gap: 0.5rem; margin: 0.75rem 0; }
+    .info-row {
+      display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem;
+      font-size: 12px; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-key { color: var(--text-dim); font-family: var(--mono); }
+    .info-val { color: var(--text-muted); }
+    .info-val code { font-family: var(--mono); font-size: 11px; color: var(--accent-blue); }
+    .flow-list { list-style: none; counter-reset: flow; margin: 1rem 0; }
+    .flow-step {
+      counter-increment: flow; position: relative;
+      padding: 0.75rem 0.85rem 0.75rem 2.75rem;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      margin-bottom: 0.55rem; background: var(--bg-card); font-size: 13px; color: var(--text-muted);
+    }
+    .flow-step::before {
+      content: counter(flow); position: absolute; left: 0.75rem; top: 0.7rem;
+      width: 1.4rem; height: 1.4rem; border-radius: 6px; background: #eff6ff; color: var(--accent-blue);
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .flow-step strong { color: var(--text); font-weight: 500; display: block; margin-bottom: 0.2rem; }
+    .seg-label {
+      font-size: 11px; font-family: var(--mono); color: var(--text-dim);
+      margin-top: 0.75rem; margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .nav-cat .lbl-short { display: none; }
+    @media (max-width: 768px) {
+      body { font-size: 13px; }
+      body.drawer-open { overflow: hidden; }
+      .mobile-toolbar {
+        display: flex; align-items: center; gap: 0.5rem; position: sticky; top: 0; z-index: 120;
+        padding: 0.5rem 0.75rem; padding-top: calc(0.5rem + env(safe-area-inset-top, 0));
+        background: var(--bg); border-bottom: 1px solid var(--border-subtle);
+      }
+      .mobile-toolbar-title { font-weight: 600; font-size: 15px; flex: 1; }
+      .sidebar-backdrop {
+        display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+        backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+        z-index: 180; opacity: 0; pointer-events: none; transition: opacity 0.22s ease;
+      }
+      body.drawer-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
+      .layout { flex-direction: column; min-height: 100dvh; }
+      .sidebar {
+        position: fixed; top: 0; left: 0; width: min(300px, 88vw); height: 100dvh; max-height: 100dvh;
+        transform: translateX(-105%); transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 200; border-right: 1px solid var(--border-subtle); box-shadow: var(--shadow-drawer);
+        padding-top: env(safe-area-inset-top, 0);
+      }
+      body.drawer-open .sidebar { transform: translateX(0); }
+      .sidebar-utils {
+        display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0.85rem 0.25rem;
+      }
+      .utils-right { display: flex; gap: 0.25rem; }
+      .sidebar-top { padding: 0.35rem 0.85rem 0.75rem; border-bottom: none; }
+      .sidebar-back { display: none; }
+      .brand-chevron { display: block; }
+      .sidebar-nav {
+        flex-direction: column; overflow-x: hidden; overflow-y: auto;
+        padding: 0.35rem 0.65rem calc(1.5rem + env(safe-area-inset-bottom, 0));
+        gap: 2px; -webkit-overflow-scrolling: touch;
+      }
+      .nav-cat {
+        width: 100%; white-space: normal; flex-shrink: 0; padding: 0.7rem 0.9rem;
+        font-size: 15px; min-height: 48px;
+      }
+      .main { margin-left: 0; width: 100%; }
+      .main-inner { padding: 1rem 0.85rem calc(2rem + env(safe-area-inset-bottom, 0)); max-width: 100%; }
+      .page-header h1 { font-size: 1.35rem; }
+      .mini-tabs { top: 49px; overflow-x: auto; flex-wrap: nowrap; }
+      .endpoint { scroll-margin-top: 6.5rem; }
+      .info-row { grid-template-columns: 1fr; gap: 0.15rem; }
+      pre { font-size: 10.5px; padding: 0.7rem 0.75rem; }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+  <div class="layout">
+    <header class="mobile-toolbar">
+      <button type="button" class="util-btn" id="drawer-open" aria-label="Open menu">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+      </button>
+      <span class="mobile-toolbar-title">API</span>
+      <a href="/" class="util-btn" aria-label="Syte GUI">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      </a>
+    </header>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-utils">
+        <a href="/" class="util-btn" aria-label="Syte GUI">
+          <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </a>
+        <div class="utils-right">
+          <button type="button" class="util-btn" id="drawer-close" aria-label="Close menu">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-top">
+        <a href="/" class="sidebar-back">← syte gui</a>
+        <div class="sidebar-brand">
+          <div class="brand-icon">&lt;/&gt;</div>
+          <div>
+            <div class="brand-title">API</div>
+            <div class="brand-sub">Token API reference for external pages &amp; agents</div>
+          </div>
+          <span class="brand-chevron" aria-hidden="true">⇅</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <button type="button" class="nav-cat" data-cat="overview">
+          <i data-lucide="book-open"></i><span class="lbl-full">Overview</span><span class="lbl-short">Guide</span>
+        </button>
+        <div class="nav-mini" data-mini-for="overview">
+          <a href="#overview/overview-flow" data-cat="overview" data-ep="overview-flow">External page flow</a>
+          <a href="#overview/overview-hotpath" data-cat="overview" data-ep="overview-hotpath">Saving / streaming hot path</a>
+          <a href="#overview/overview-mirrors" data-cat="overview" data-ep="overview-mirrors">Session-auth mirrors</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="auth">
+          <i data-lucide="shield"></i><span class="lbl-full">Authentication</span><span class="lbl-short">Auth</span>
+        </button>
+        <div class="nav-mini" data-mini-for="auth">
+          <a href="#auth/auth-token" data-cat="auth" data-ep="auth-token">POST /tokens</a>
+          <a href="#auth/auth-header" data-cat="auth" data-ep="auth-header">X-API-Key</a>
+          <a href="#auth/auth-errors" data-cat="auth" data-ep="auth-errors">Errors</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="project">
+          <i data-lucide="folder"></i><span>Project</span>
+        </button>
+        <div class="nav-mini" data-mini-for="project">
+          <a href="#project/project-create" data-cat="project" data-ep="project-create">create_project</a>
+          <a href="#project/project-delete" data-cat="project" data-ep="project-delete">delete_project</a>
+          <a href="#project/project-start" data-cat="project" data-ep="project-start">start_service</a>
+          <a href="#project/project-stop" data-cat="project" data-ep="project-stop">stop_service</a>
+          <a href="#project/project-get" data-cat="project" data-ep="project-get">workspace_get</a>
+          <a href="#project/project-list" data-cat="project" data-ep="project-list">workspace_list</a>
+          <a href="#project/project-domain" data-cat="project" data-ep="project-domain">set_domain</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="workspace">
+          <i data-lucide="files"></i><span>Workspace</span>
+        </button>
+        <div class="nav-mini" data-mini-for="workspace">
+          <a href="#workspace/workspace-list" data-cat="workspace" data-ep="workspace-list">list_files</a>
+          <a href="#workspace/workspace-read" data-cat="workspace" data-ep="workspace-read">read_file</a>
+          <a href="#workspace/workspace-write" data-cat="workspace" data-ep="workspace-write">write_file</a>
+          <a href="#workspace/workspace-upload" data-cat="workspace" data-ep="workspace-upload">upload_file</a>
+          <a href="#workspace/workspace-delete" data-cat="workspace" data-ep="workspace-delete">delete_file</a>
+          <a href="#workspace/workspace-execute" data-cat="workspace" data-ep="workspace-execute">execute_command</a>
+          <a href="#workspace/workspace-execute-many" data-cat="workspace" data-ep="workspace-execute-many">execute_commands</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="deploy">
+          <i data-lucide="rocket"></i><span class="lbl-full">Deploy / Preview / Env</span><span class="lbl-short">Deploy</span>
+        </button>
+        <div class="nav-mini" data-mini-for="deploy">
+          <a href="#deploy/deploy-issue" data-cat="deploy" data-ep="deploy-issue">issue_deploy</a>
+          <a href="#deploy/deploy-cancel" data-cat="deploy" data-ep="deploy-cancel">deploy_cancel</a>
+          <a href="#deploy/deploy-logs" data-cat="deploy" data-ep="deploy-logs">get_logs</a>
+          <a href="#deploy/deploy-stream" data-cat="deploy" data-ep="deploy-stream">logs/stream</a>
+          <a href="#deploy/preview-start" data-cat="deploy" data-ep="preview-start">start_preview</a>
+          <a href="#deploy/preview-status" data-cat="deploy" data-ep="preview-status">preview_status</a>
+          <a href="#deploy/preview-stop" data-cat="deploy" data-ep="preview-stop">stop_preview</a>
+          <a href="#deploy/env-set" data-cat="deploy" data-ep="env-set">set_env</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="agent">
+          <i data-lucide="bot"></i><span>Agent</span>
+        </button>
+        <div class="nav-mini" data-mini-for="agent">
+          <a href="#agent/agent-status" data-cat="agent" data-ep="agent-status">agent_status</a>
+          <a href="#agent/agent-warm" data-cat="agent" data-ep="agent-warm">agent_warm</a>
+          <a href="#agent/agent-start" data-cat="agent" data-ep="agent-start">agent_start</a>
+          <a href="#agent/agent-stop" data-cat="agent" data-ep="agent-stop">agent_stop</a>
+          <a href="#agent/agent-interrupt" data-cat="agent" data-ep="agent-interrupt">agent_interrupt</a>
+          <a href="#agent/agent-cancel" data-cat="agent" data-ep="agent-cancel">agent_cancel</a>
+          <a href="#agent/agent-restart" data-cat="agent" data-ep="agent-restart">agent_restart</a>
+          <a href="#agent/agent-settings" data-cat="agent" data-ep="agent-settings">agent_settings</a>
+          <a href="#agent/agent-logs" data-cat="agent" data-ep="agent-logs">agent_logs</a>
+          <a href="#agent/agent-activity" data-cat="agent" data-ep="agent-activity">agent_activity</a>
+          <a href="#agent/agent-activity-stream" data-cat="agent" data-ep="agent-activity-stream">agent_activity/stream</a>
+          <a href="#agent/agent-sessions" data-cat="agent" data-ep="agent-sessions">agent_sessions</a>
+          <a href="#agent/agent-session" data-cat="agent" data-ep="agent-session">agent_session/{id}</a>
+          <a href="#agent/agent-turso-sync" data-cat="agent" data-ep="agent-turso-sync">agent_turso_sync</a>
+          <a href="#agent/agent-turso-debug" data-cat="agent" data-ep="agent-turso-debug">agent_turso_debug</a>
+          <a href="#agent/agent-communicate" data-cat="agent" data-ep="agent-communicate">agent_communicate</a>
+          <a href="#agent/agent-change" data-cat="agent" data-ep="agent-change">agent_change</a>
+          <a href="#agent/agent-questions" data-cat="agent" data-ep="agent-questions">questions</a>
+          <a href="#agent/agent-answer" data-cat="agent" data-ep="agent-answer">answer_question</a>
+          <a href="#agent/agent-screenshots" data-cat="agent" data-ep="agent-screenshots">screenshots</a>
+          <a href="#agent/agent-plans" data-cat="agent" data-ep="agent-plans">plans</a>
+          <a href="#agent/agent-stops" data-cat="agent" data-ep="agent-stops">stops</a>
+          <a href="#agent/agent-mcp" data-cat="agent" data-ep="agent-mcp">MCP</a>
+          <a href="#agent/agent-skills" data-cat="agent" data-ep="agent-skills">skills</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="stream">
+          <i data-lucide="radio"></i><span>Stream</span>
+        </button>
+        <div class="nav-mini" data-mini-for="stream">
+          <a href="#stream/stream-connect" data-cat="stream" data-ep="stream-connect">Connect SSE</a>
+          <a href="#stream/stream-hotpath" data-cat="stream" data-ep="stream-hotpath">Hot path</a>
+          <a href="#stream/request-started" data-cat="stream" data-ep="request-started">request_started</a>
+          <a href="#stream/processing" data-cat="stream" data-ep="processing">processing</a>
+          <a href="#stream/status" data-cat="stream" data-ep="status">status</a>
+          <a href="#stream/agent-started" data-cat="stream" data-ep="agent-started">agent_started</a>
+          <a href="#stream/agent-stopped" data-cat="stream" data-ep="agent-stopped">agent_stopped</a>
+          <a href="#stream/agent-restarted" data-cat="stream" data-ep="agent-restarted">agent_restarted</a>
+          <a href="#stream/thinking" data-cat="stream" data-ep="thinking">thinking</a>
+          <a href="#stream/thinking-delta" data-cat="stream" data-ep="thinking-delta">thinking_delta</a>
+          <a href="#stream/plan" data-cat="stream" data-ep="plan">plan</a>
+          <a href="#stream/token-delta" data-cat="stream" data-ep="token-delta">token_delta</a>
+          <a href="#stream/message-snapshot" data-cat="stream" data-ep="message-snapshot">message_snapshot</a>
+          <a href="#stream/assistant-message" data-cat="stream" data-ep="assistant-message">assistant_message</a>
+          <a href="#stream/user-message" data-cat="stream" data-ep="user-message">user_message</a>
+          <a href="#stream/tool-call-started" data-cat="stream" data-ep="tool-call-started">tool_call_started</a>
+          <a href="#stream/tool-call-finished" data-cat="stream" data-ep="tool-call-finished">tool_call_finished</a>
+          <a href="#stream/tool-error" data-cat="stream" data-ep="tool-error">tool_error</a>
+          <a href="#stream/tool-call" data-cat="stream" data-ep="tool-call">tool_call</a>
+          <a href="#stream/file-created" data-cat="stream" data-ep="file-created">file_created</a>
+          <a href="#stream/file-modified" data-cat="stream" data-ep="file-modified">file_modified</a>
+          <a href="#stream/file-deleted" data-cat="stream" data-ep="file-deleted">file_deleted</a>
+          <a href="#stream/file-read" data-cat="stream" data-ep="file-read">file_read</a>
+          <a href="#stream/file-search" data-cat="stream" data-ep="file-search">file_search</a>
+          <a href="#stream/file-changed" data-cat="stream" data-ep="file-changed">file_changed</a>
+          <a href="#stream/command-run" data-cat="stream" data-ep="command-run">command_run</a>
+          <a href="#stream/command-output" data-cat="stream" data-ep="command-output">command_output</a>
+          <a href="#stream/screenshot" data-cat="stream" data-ep="screenshot">screenshot</a>
+          <a href="#stream/question" data-cat="stream" data-ep="question">question</a>
+          <a href="#stream/question-answered" data-cat="stream" data-ep="question-answered">question_answered</a>
+          <a href="#stream/subagent-scope" data-cat="stream" data-ep="subagent-scope">subagent_scope</a>
+          <a href="#stream/subagent-started" data-cat="stream" data-ep="subagent-started">subagent_started</a>
+          <a href="#stream/subagent-completed" data-cat="stream" data-ep="subagent-completed">subagent_completed</a>
+          <a href="#stream/subagent-failed" data-cat="stream" data-ep="subagent-failed">subagent_failed</a>
+          <a href="#stream/request-completed" data-cat="stream" data-ep="request-completed">request_completed</a>
+          <a href="#stream/request-failed" data-cat="stream" data-ep="request-failed">request_failed</a>
+          <a href="#stream/session-stopped" data-cat="stream" data-ep="session-stopped">session_stopped</a>
+          <a href="#stream/usage" data-cat="stream" data-ep="usage">usage</a>
+          <a href="#stream/service-action" data-cat="stream" data-ep="service-action">service_action</a>
+          <a href="#stream/error-sse" data-cat="stream" data-ep="error-sse">error</a>
+          <a href="#stream/heartbeat" data-cat="stream" data-ep="heartbeat">heartbeat</a>
+        </div>
+        <button type="button" class="nav-cat" data-cat="turso">
+          <i data-lucide="database"></i><span>Turso</span>
+        </button>
+        <div class="nav-mini" data-mini-for="turso">
+          <a href="#turso/turso-overview" data-cat="turso" data-ep="turso-overview">Overview</a>
+          <a href="#turso/turso-tables" data-cat="turso" data-ep="turso-tables">Tables</a>
+          <a href="#turso/turso-config" data-cat="turso" data-ep="turso-config">Config</a>
+          <a href="#turso/turso-sync" data-cat="turso" data-ep="turso-sync">Brain / sync</a>
+          <a href="#turso/turso-poll" data-cat="turso" data-ep="turso-poll">Poll session</a>
+          <a href="#turso/turso-examples" data-cat="turso" data-ep="turso-examples">Write examples</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <header class="page-header">
+          <h1>Syte API</h1>
+          <p>v__VERSION__ · Machine-readable: <a href="/api/ai.json">/api/ai.json</a> · Sycord: <a href="/sycord/api/">/sycord/api/</a> · Hash routes like <code>#agent/agent-change</code></p>
+        </header>
+
+      <div class="mini-tabs" id="tabs-overview" data-tabs-for="overview">
+        <a class="mini-tab" href="#overview/overview-flow" data-cat="overview" data-ep="overview-flow">External page flow</a>
+        <a class="mini-tab" href="#overview/overview-hotpath" data-cat="overview" data-ep="overview-hotpath">Saving / streaming hot path</a>
+        <a class="mini-tab" href="#overview/overview-mirrors" data-cat="overview" data-ep="overview-mirrors">Session-auth mirrors</a>
+      </div>
+      <div class="mini-tabs" id="tabs-auth" data-tabs-for="auth">
+        <a class="mini-tab" href="#auth/auth-token" data-cat="auth" data-ep="auth-token">POST /tokens</a>
+        <a class="mini-tab" href="#auth/auth-header" data-cat="auth" data-ep="auth-header">X-API-Key</a>
+        <a class="mini-tab" href="#auth/auth-errors" data-cat="auth" data-ep="auth-errors">Errors</a>
+      </div>
+      <div class="mini-tabs" id="tabs-project" data-tabs-for="project">
+        <a class="mini-tab" href="#project/project-create" data-cat="project" data-ep="project-create">create_project</a>
+        <a class="mini-tab" href="#project/project-delete" data-cat="project" data-ep="project-delete">delete_project</a>
+        <a class="mini-tab" href="#project/project-start" data-cat="project" data-ep="project-start">start_service</a>
+        <a class="mini-tab" href="#project/project-stop" data-cat="project" data-ep="project-stop">stop_service</a>
+        <a class="mini-tab" href="#project/project-get" data-cat="project" data-ep="project-get">workspace_get</a>
+        <a class="mini-tab" href="#project/project-list" data-cat="project" data-ep="project-list">workspace_list</a>
+        <a class="mini-tab" href="#project/project-domain" data-cat="project" data-ep="project-domain">set_domain</a>
+      </div>
+      <div class="mini-tabs" id="tabs-workspace" data-tabs-for="workspace">
+        <a class="mini-tab" href="#workspace/workspace-list" data-cat="workspace" data-ep="workspace-list">list_files</a>
+        <a class="mini-tab" href="#workspace/workspace-read" data-cat="workspace" data-ep="workspace-read">read_file</a>
+        <a class="mini-tab" href="#workspace/workspace-write" data-cat="workspace" data-ep="workspace-write">write_file</a>
+        <a class="mini-tab" href="#workspace/workspace-upload" data-cat="workspace" data-ep="workspace-upload">upload_file</a>
+        <a class="mini-tab" href="#workspace/workspace-delete" data-cat="workspace" data-ep="workspace-delete">delete_file</a>
+        <a class="mini-tab" href="#workspace/workspace-execute" data-cat="workspace" data-ep="workspace-execute">execute_command</a>
+        <a class="mini-tab" href="#workspace/workspace-execute-many" data-cat="workspace" data-ep="workspace-execute-many">execute_commands</a>
+      </div>
+      <div class="mini-tabs" id="tabs-deploy" data-tabs-for="deploy">
+        <a class="mini-tab" href="#deploy/deploy-issue" data-cat="deploy" data-ep="deploy-issue">issue_deploy</a>
+        <a class="mini-tab" href="#deploy/deploy-cancel" data-cat="deploy" data-ep="deploy-cancel">deploy_cancel</a>
+        <a class="mini-tab" href="#deploy/deploy-logs" data-cat="deploy" data-ep="deploy-logs">get_logs</a>
+        <a class="mini-tab" href="#deploy/deploy-stream" data-cat="deploy" data-ep="deploy-stream">logs/stream</a>
+        <a class="mini-tab" href="#deploy/preview-start" data-cat="deploy" data-ep="preview-start">start_preview</a>
+        <a class="mini-tab" href="#deploy/preview-status" data-cat="deploy" data-ep="preview-status">preview_status</a>
+        <a class="mini-tab" href="#deploy/preview-stop" data-cat="deploy" data-ep="preview-stop">stop_preview</a>
+        <a class="mini-tab" href="#deploy/env-set" data-cat="deploy" data-ep="env-set">set_env</a>
+      </div>
+      <div class="mini-tabs" id="tabs-agent" data-tabs-for="agent">
+        <a class="mini-tab" href="#agent/agent-status" data-cat="agent" data-ep="agent-status">agent_status</a>
+        <a class="mini-tab" href="#agent/agent-warm" data-cat="agent" data-ep="agent-warm">agent_warm</a>
+        <a class="mini-tab" href="#agent/agent-start" data-cat="agent" data-ep="agent-start">agent_start</a>
+        <a class="mini-tab" href="#agent/agent-stop" data-cat="agent" data-ep="agent-stop">agent_stop</a>
+        <a class="mini-tab" href="#agent/agent-interrupt" data-cat="agent" data-ep="agent-interrupt">agent_interrupt</a>
+        <a class="mini-tab" href="#agent/agent-cancel" data-cat="agent" data-ep="agent-cancel">agent_cancel</a>
+        <a class="mini-tab" href="#agent/agent-restart" data-cat="agent" data-ep="agent-restart">agent_restart</a>
+        <a class="mini-tab" href="#agent/agent-settings" data-cat="agent" data-ep="agent-settings">agent_settings</a>
+        <a class="mini-tab" href="#agent/agent-logs" data-cat="agent" data-ep="agent-logs">agent_logs</a>
+        <a class="mini-tab" href="#agent/agent-activity" data-cat="agent" data-ep="agent-activity">agent_activity</a>
+        <a class="mini-tab" href="#agent/agent-activity-stream" data-cat="agent" data-ep="agent-activity-stream">agent_activity/stream</a>
+        <a class="mini-tab" href="#agent/agent-sessions" data-cat="agent" data-ep="agent-sessions">agent_sessions</a>
+        <a class="mini-tab" href="#agent/agent-session" data-cat="agent" data-ep="agent-session">agent_session/{id}</a>
+        <a class="mini-tab" href="#agent/agent-turso-sync" data-cat="agent" data-ep="agent-turso-sync">agent_turso_sync</a>
+        <a class="mini-tab" href="#agent/agent-turso-debug" data-cat="agent" data-ep="agent-turso-debug">agent_turso_debug</a>
+        <a class="mini-tab" href="#agent/agent-communicate" data-cat="agent" data-ep="agent-communicate">agent_communicate</a>
+        <a class="mini-tab" href="#agent/agent-change" data-cat="agent" data-ep="agent-change">agent_change</a>
+        <a class="mini-tab" href="#agent/agent-questions" data-cat="agent" data-ep="agent-questions">questions</a>
+        <a class="mini-tab" href="#agent/agent-answer" data-cat="agent" data-ep="agent-answer">answer_question</a>
+        <a class="mini-tab" href="#agent/agent-screenshots" data-cat="agent" data-ep="agent-screenshots">screenshots</a>
+        <a class="mini-tab" href="#agent/agent-plans" data-cat="agent" data-ep="agent-plans">plans</a>
+        <a class="mini-tab" href="#agent/agent-stops" data-cat="agent" data-ep="agent-stops">stops</a>
+        <a class="mini-tab" href="#agent/agent-mcp" data-cat="agent" data-ep="agent-mcp">MCP</a>
+        <a class="mini-tab" href="#agent/agent-skills" data-cat="agent" data-ep="agent-skills">skills</a>
+      </div>
+      <div class="mini-tabs" id="tabs-stream" data-tabs-for="stream">
+        <a class="mini-tab" href="#stream/stream-connect" data-cat="stream" data-ep="stream-connect">Connect SSE</a>
+        <a class="mini-tab" href="#stream/stream-hotpath" data-cat="stream" data-ep="stream-hotpath">Hot path</a>
+        <a class="mini-tab" href="#stream/request-started" data-cat="stream" data-ep="request-started">request_started</a>
+        <a class="mini-tab" href="#stream/processing" data-cat="stream" data-ep="processing">processing</a>
+        <a class="mini-tab" href="#stream/status" data-cat="stream" data-ep="status">status</a>
+        <a class="mini-tab" href="#stream/agent-started" data-cat="stream" data-ep="agent-started">agent_started</a>
+        <a class="mini-tab" href="#stream/agent-stopped" data-cat="stream" data-ep="agent-stopped">agent_stopped</a>
+        <a class="mini-tab" href="#stream/agent-restarted" data-cat="stream" data-ep="agent-restarted">agent_restarted</a>
+        <a class="mini-tab" href="#stream/thinking" data-cat="stream" data-ep="thinking">thinking</a>
+        <a class="mini-tab" href="#stream/thinking-delta" data-cat="stream" data-ep="thinking-delta">thinking_delta</a>
+        <a class="mini-tab" href="#stream/plan" data-cat="stream" data-ep="plan">plan</a>
+        <a class="mini-tab" href="#stream/token-delta" data-cat="stream" data-ep="token-delta">token_delta</a>
+        <a class="mini-tab" href="#stream/message-snapshot" data-cat="stream" data-ep="message-snapshot">message_snapshot</a>
+        <a class="mini-tab" href="#stream/assistant-message" data-cat="stream" data-ep="assistant-message">assistant_message</a>
+        <a class="mini-tab" href="#stream/user-message" data-cat="stream" data-ep="user-message">user_message</a>
+        <a class="mini-tab" href="#stream/tool-call-started" data-cat="stream" data-ep="tool-call-started">tool_call_started</a>
+        <a class="mini-tab" href="#stream/tool-call-finished" data-cat="stream" data-ep="tool-call-finished">tool_call_finished</a>
+        <a class="mini-tab" href="#stream/tool-error" data-cat="stream" data-ep="tool-error">tool_error</a>
+        <a class="mini-tab" href="#stream/tool-call" data-cat="stream" data-ep="tool-call">tool_call</a>
+        <a class="mini-tab" href="#stream/file-created" data-cat="stream" data-ep="file-created">file_created</a>
+        <a class="mini-tab" href="#stream/file-modified" data-cat="stream" data-ep="file-modified">file_modified</a>
+        <a class="mini-tab" href="#stream/file-deleted" data-cat="stream" data-ep="file-deleted">file_deleted</a>
+        <a class="mini-tab" href="#stream/file-read" data-cat="stream" data-ep="file-read">file_read</a>
+        <a class="mini-tab" href="#stream/file-search" data-cat="stream" data-ep="file-search">file_search</a>
+        <a class="mini-tab" href="#stream/file-changed" data-cat="stream" data-ep="file-changed">file_changed</a>
+        <a class="mini-tab" href="#stream/command-run" data-cat="stream" data-ep="command-run">command_run</a>
+        <a class="mini-tab" href="#stream/command-output" data-cat="stream" data-ep="command-output">command_output</a>
+        <a class="mini-tab" href="#stream/screenshot" data-cat="stream" data-ep="screenshot">screenshot</a>
+        <a class="mini-tab" href="#stream/question" data-cat="stream" data-ep="question">question</a>
+        <a class="mini-tab" href="#stream/question-answered" data-cat="stream" data-ep="question-answered">question_answered</a>
+        <a class="mini-tab" href="#stream/subagent-scope" data-cat="stream" data-ep="subagent-scope">subagent_scope</a>
+        <a class="mini-tab" href="#stream/subagent-started" data-cat="stream" data-ep="subagent-started">subagent_started</a>
+        <a class="mini-tab" href="#stream/subagent-completed" data-cat="stream" data-ep="subagent-completed">subagent_completed</a>
+        <a class="mini-tab" href="#stream/subagent-failed" data-cat="stream" data-ep="subagent-failed">subagent_failed</a>
+        <a class="mini-tab" href="#stream/request-completed" data-cat="stream" data-ep="request-completed">request_completed</a>
+        <a class="mini-tab" href="#stream/request-failed" data-cat="stream" data-ep="request-failed">request_failed</a>
+        <a class="mini-tab" href="#stream/session-stopped" data-cat="stream" data-ep="session-stopped">session_stopped</a>
+        <a class="mini-tab" href="#stream/usage" data-cat="stream" data-ep="usage">usage</a>
+        <a class="mini-tab" href="#stream/service-action" data-cat="stream" data-ep="service-action">service_action</a>
+        <a class="mini-tab" href="#stream/error-sse" data-cat="stream" data-ep="error-sse">error</a>
+        <a class="mini-tab" href="#stream/heartbeat" data-cat="stream" data-ep="heartbeat">heartbeat</a>
+      </div>
+      <div class="mini-tabs" id="tabs-turso" data-tabs-for="turso">
+        <a class="mini-tab" href="#turso/turso-overview" data-cat="turso" data-ep="turso-overview">Overview</a>
+        <a class="mini-tab" href="#turso/turso-tables" data-cat="turso" data-ep="turso-tables">Tables</a>
+        <a class="mini-tab" href="#turso/turso-config" data-cat="turso" data-ep="turso-config">Config</a>
+        <a class="mini-tab" href="#turso/turso-sync" data-cat="turso" data-ep="turso-sync">Brain / sync</a>
+        <a class="mini-tab" href="#turso/turso-poll" data-cat="turso" data-ep="turso-poll">Poll session</a>
+        <a class="mini-tab" href="#turso/turso-examples" data-cat="turso" data-ep="turso-examples">Write examples</a>
+      </div>
+
+
+        <div class="cat-panel" id="panel-overview" data-cat="overview">
+        <section class="section">
+          <h2 class="section-title">External page integration</h2>
+          <p class="section-desc">Minimal flow to drive a Syte cloud agent from an external site (token API under <code>/api</code>).</p>
+
+          <div class="endpoint" id="overview-flow" data-ep="overview-flow">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Integration flow</span></div>
+              <div class="endpoint-name">Six steps from token to live turn</div>
+            </div>
+            <div class="endpoint-body">
+              <ol class="flow-list">
+                <li class="flow-step"><strong>Create token</strong> <code>POST /api/tokens</code> (or GUI key menu). Send <code>X-API-Key</code> on every call.</li>
+                <li class="flow-step"><strong>Warm runtime</strong> <code>POST /api/agent_warm</code> with <code>{"uuid"}</code>, then poll <code>GET /api/agent_status?uuid=</code> until <code>agent_status="running"</code> and <code>agent_healthy=true</code>. Running-since = <code>agent_last_started_at</code> (not a stream event).</li>
+                <li class="flow-step"><strong>Send work</strong> <code>POST /api/agent_change</code> (preferred for external pages — background). Response includes <code>turso_session_id</code> + <code>request_id</code>.</li>
+                <li class="flow-step"><strong>Follow progress</strong> Open SSE <code>GET /api/agent_activity/stream?uuid=&amp;since_id=</code> and/or poll durable <code>GET /api/agent_session/{turso_session_id}?since_id=N</code>.</li>
+                <li class="flow-step"><strong>Answer questions</strong> On <code>question</code> events, call <code>POST /api/agent_answer_question</code>.</li>
+                <li class="flow-step"><strong>Interrupt / stop</strong> <code>POST /api/agent_interrupt</code> or <code>/agent_cancel</code> for the turn; <code>/agent_stop</code> for the runtime.</li>
+              </ol>
+<pre>curl -s -X POST https://host/api/agent_change \
+  -H &quot;X-API-Key: $TOKEN&quot; -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;uuid&quot;:&quot;my-site&quot;,&quot;message&quot;:&quot;Add a pricing page&quot;}&#x27;
+
+# → { &quot;ok&quot;: true, &quot;request_id&quot;: &quot;req_…&quot;, &quot;turso_session_id&quot;: &quot;sess_…&quot;, &quot;status&quot;: &quot;accepted&quot; }</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="overview-hotpath" data-ep="overview-hotpath">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Saving &amp; streaming hot path</span></div>
+            </div>
+            <div class="endpoint-body">
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">Hot events</span><span class="info-val"><code>token_delta</code>, <code>thinking_delta</code> — skip Turso; slim wire only</span></div>
+                <div class="info-row"><span class="info-key">Minimal delta</span><span class="info-val">Fields: <code>id</code>, <code>event_type</code>, <code>detail</code>, <code>payload.{delta,request_id,session,agent}</code></span></div>
+                <div class="info-row"><span class="info-key">Batching</span><span class="info-val">16–32 tokens or 300–500 chars before one SSE frame (~80ms idle flush)</span></div>
+                <div class="info-row"><span class="info-key">Compression</span><span class="info-val">SSE body may be <code>gzip</code>/<code>br</code> when <code>Accept-Encoding</code> allows</span></div>
+                <div class="info-row"><span class="info-key">Cold events</span><span class="info-val">Full JSON; mirrored to Turso <code>agent_session_event</code> in background</span></div>
+                <div class="info-row"><span class="info-key">Durable poll</span><span class="info-val"><code>GET /api/agent_session/{id}?since_id=N</code></span></div>
+              </div>
+<div class="seg-label">Slim hot SSE frame</div>
+<pre>id: 130
+event: token_delta
+data: {&quot;id&quot;:130,&quot;event_type&quot;:&quot;token_delta&quot;,&quot;detail&quot;:&quot;I&#x27;ll add a pricing&quot;,&quot;payload&quot;:{&quot;delta&quot;:&quot;I&#x27;ll add a pricing&quot;,&quot;request_id&quot;:&quot;req_8f2a&quot;,&quot;session&quot;:3,&quot;agent&quot;:&quot;main&quot;}}</pre>
+<div class="seg-label">Full cold SSE frame</div>
+<pre>id: 150
+event: tool_call_started
+data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&quot;role&quot;:&quot;assistant&quot;,&quot;title&quot;:&quot;write_file&quot;,&quot;detail&quot;:&quot;app/app/pricing/page.tsx&quot;,&quot;payload&quot;:{&quot;tool&quot;:&quot;write_file&quot;,&quot;tool_call_id&quot;:&quot;call_91&quot;,&quot;request_id&quot;:&quot;req_8f2a&quot;,&quot;session&quot;:3,&quot;agent&quot;:&quot;main&quot;},&quot;source&quot;:&quot;agent&quot;,&quot;created_at&quot;:&quot;2026-07-25T21:00:10Z&quot;}</pre>
+<div class="seg-label">Heartbeat</div>
+<pre>: heartbeat</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="overview-mirrors" data-ep="overview-mirrors">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Session-auth mirrors</span></div>
+            </div>
+            <div class="endpoint-body">
+              <p class="field-desc">GUI / cookie session uses the same capabilities under <code>/api/projects/{uuid}/agent/*</code>. External pages should prefer the flat token API (<code>/api/agent_*</code>) with <code>X-API-Key</code>.</p>
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">Status</span><span class="info-val"><code>GET /api/projects/{uuid}/agent</code> ↔ <code>GET /api/agent_status</code></span></div>
+                <div class="info-row"><span class="info-key">Warm / start / stop</span><span class="info-val"><code>…/agent/warm|start|stop|interrupt|restart</code></span></div>
+                <div class="info-row"><span class="info-key">Activity SSE</span><span class="info-val"><code>GET …/agent/activity/stream</code> ↔ <code>/api/agent_activity/stream</code></span></div>
+                <div class="info-row"><span class="info-key">Sessions</span><span class="info-val"><code>GET …/agent/sessions</code> ↔ <code>/api/agent_sessions</code></span></div>
+                <div class="info-row"><span class="info-key">Chat (GUI)</span><span class="info-val"><code>POST …/agent/chat</code> ↔ <code>/api/agent_communicate</code> / <code>agent_change</code></span></div>
+                <div class="info-row"><span class="info-key">Machine specs</span><span class="info-val"><a href="/api/ai.json">/api/ai.json</a> · <a href="/sycord/api/">/sycord/api/</a></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-auth" data-cat="auth">
+        <section class="section">
+          <h2 class="section-title">Authentication</h2>
+          <p class="section-desc">All endpoints require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
+
+          <div class="endpoint" id="auth-token" data-ep="auth-token">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/tokens</span>
+              </div>
+              <div class="endpoint-name">Create API token</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Label for this token (shown in GUI).</div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;token&quot;: &quot;syte_abc123…&quot;,
+  &quot;prefix&quot;: &quot;syte_abc…&quot;
+}</pre><div class="note"><strong>Token shown once.</strong> Save it immediately. Create via GUI: <strong>key</strong> in navbar.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="auth-header" data-ep="auth-header">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">—</span>
+                <span class="endpoint-path">All authenticated endpoints</span>
+              </div>
+              <div class="endpoint-name">Send the API key</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Authorization <span class="panel-meta">x-api-key</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">X-API-Key<span class="opt">?</span></span>
+                    <span class="field-type">header</span>
+                  </div>
+                  <span class="badge">In: header</span>
+                  <div class="field-desc">Preferred for external pages.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">Authorization<span class="opt">?</span></span>
+                    <span class="field-type">header</span>
+                  </div>
+                  <span class="badge">In: header</span>
+                  <div class="field-desc">Alternative: <code>Bearer syte_your_token_here</code>.</div>
+                </div>
+              </div><pre>curl -H &quot;X-API-Key: syte_…&quot; https://host/api/agent_status?uuid=my-site</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="auth-errors" data-ep="auth-errors">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Errors</span></div>
+            </div>
+            <div class="endpoint-body">
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">401 missing_api_key</span><span class="info-val">No X-API-Key or Bearer header</span></div>
+                <div class="info-row"><span class="info-key">401 invalid_api_key</span><span class="info-val">Token wrong or revoked</span></div>
+                <div class="info-row"><span class="info-key">400 invalid_path</span><span class="info-val">Path escapes workspace</span></div>
+                <div class="info-row"><span class="info-key">400 create_failed</span><span class="info-val">Duplicate uuid or validation error</span></div>
+                <div class="info-row"><span class="info-key">400 preview_failed</span><span class="info-val">Dev server failed to start</span></div>
+                <div class="info-row"><span class="info-key">404 not_found</span><span class="info-val">Project or session UUID missing</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-project" data-cat="project">
+        <section class="section">
+          <h2 class="section-title">Project</h2>
+          <p class="section-desc">Create, delete, start, and stop deployment projects.</p>
+
+          <div class="endpoint" id="project-create" data-ep="project-create">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/create_project</span>
+              </div>
+              <div class="endpoint-name">Create project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Display name.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Custom project ID; auto-generated if omitted.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_url<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Cloned on issue_deploy, not required at create.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">git_provider<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Shorthand: <code>github.com/user/repo.git</code></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">branch<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Default <code>main</code>.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">start_command<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Shell fallback when no Dockerfile.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Custom HTTPS production domain.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="opt">?</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  
+                  <div class="field-desc">Initial environment variables.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">deploy<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  
+                  <div class="field-desc">Default <code>false</code>. Prefer <code>issue_deploy</code>.</div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;uuid&quot;: &quot;my-site-a1b2c3&quot;,
+  &quot;status&quot;: &quot;created&quot;
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-delete" data-ep="project-delete">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_project</span>
+              </div>
+              <div class="endpoint-name">Delete project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Stops container and removes workspace.</div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site-a1b2c3&quot;}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-start" data-ep="project-start">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_service</span>
+              </div>
+              <div class="endpoint-name">Start service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Start existing container without rebuilding.</div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;uuid&quot;:&quot;…&quot;,&quot;running&quot;:true}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-stop" data-ep="project-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_service</span>
+              </div>
+              <div class="endpoint-name">Stop service</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Stop production container.</div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;uuid&quot;:&quot;…&quot;,&quot;running&quot;:false}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-get" data-ep="project-get">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_get?uuid=</span>
+              </div>
+              <div class="endpoint-name">Get project</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Returns URLs, env, git, preview, stream URLs.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-list" data-ep="project-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/workspace_list</span>
+              </div>
+              <div class="endpoint-name">List projects</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">All projects with uuid, url, port, status, running.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="project-domain" data-ep="project-domain">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_domain</span>
+              </div>
+              <div class="endpoint-name">Set domain</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">domain<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Production HTTPS domain. Auto TLS via Caddy.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-workspace" data-cat="workspace">
+        <section class="section">
+          <h2 class="section-title">Workspace</h2>
+          <p class="section-desc">List, read, write, and execute inside the project workspace.</p>
+
+          <div class="endpoint" id="workspace-list" data-ep="workspace-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/list_files?uuid=&amp;path=</span>
+              </div>
+              <div class="endpoint-name">List files</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">path<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Relative to workspace root (default: root).</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-read" data-ep="workspace-read">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/read_file</span>
+              </div>
+              <div class="endpoint-name">Read file</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">path<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">e.g. <code>app/package.json</code>. UTF-8 or base64 for binary.</div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;path&quot;:&quot;app/package.json&quot;,&quot;content&quot;:&quot;{…}&quot;,&quot;encoding&quot;:&quot;utf-8&quot;}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-write" data-ep="workspace-write">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/write_file</span>
+              </div>
+              <div class="endpoint-name">Write file</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">path<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">content<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Full file body (overwrite).</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-upload" data-ep="workspace-upload">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/upload_file</span>
+              </div>
+              <div class="endpoint-name">Upload file</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Multipart: <code>uuid</code>, <code>path</code>, <code>file</code>.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-delete" data-ep="workspace-delete">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/delete_file</span>
+              </div>
+              <div class="endpoint-name">Delete file</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">path<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-execute" data-ep="workspace-execute">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_command</span>
+              </div>
+              <div class="endpoint-name">Execute command</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note"><strong>npm run build is blocked.</strong> Use <code>issue_deploy</code> for production builds.</div>              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">command<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Shell command (npm install, lint, scaffolding).</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">cwd<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Default <code>app</code>.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">timeout<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  <span class="badge">Default 300</span>
+                  <div class="field-desc">Default 300, max 1800.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env<span class="opt">?</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  
+                  <div class="field-desc">Extra env for this run only.</div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;exit_code&quot;:0,&quot;output&quot;:&quot;…&quot;,&quot;command&quot;:&quot;npm run lint&quot;}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="workspace-execute-many" data-ep="workspace-execute-many">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/execute_commands</span>
+              </div>
+              <div class="endpoint-name">Execute command sequence</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">commands<span class="req">*</span></span>
+                    <span class="field-type">array</span>
+                  </div>
+                  
+                  <div class="field-desc">Steps with <code>command</code>, optional <code>cwd</code>, <code>timeout</code>, <code>stop_on_error</code>.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env<span class="opt">?</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  
+                  <div class="field-desc">Shared env for the batch.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-deploy" data-cat="deploy">
+        <section class="section">
+          <h2 class="section-title">Deploy / Preview / Env</h2>
+          <p class="section-desc">Production deploy, fast HMR preview, and environment variables.</p>
+
+          <div class="endpoint" id="deploy-issue" data-ep="deploy-issue">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/issue_deploy</span>
+              </div>
+              <div class="endpoint-name">Issue deploy</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note"><strong>The only way to build and deploy.</strong> Git pull (if configured) + Docker build + container restart.</div>              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;uuid&quot;:&quot;…&quot;,&quot;stream_url&quot;:&quot;/api/projects/…/logs/stream?live=1&quot;}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="deploy-cancel" data-ep="deploy-cancel">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/deploy_cancel</span>
+              </div>
+              <div class="endpoint-name">Cancel deploy</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="deploy-logs" data-ep="deploy-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/get_logs?uuid=&amp;lines=200</span>
+              </div>
+              <div class="endpoint-name">Get logs (snapshot)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Snapshot of build + runtime logs.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="deploy-stream" data-ep="deploy-stream">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET</span>
+                <span class="endpoint-path">/projects/{uuid}/logs/stream?live=1</span>
+              </div>
+              <div class="endpoint-name">Deploy logs (SSE)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Live deploy log stream. Optional <code>api_key</code> query param.</div><pre>{&quot;type&quot;:&quot;build&quot;,&quot;text&quot;:&quot;Step 1/21 …&quot;}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-start" data-ep="preview-start">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/start_preview</span>
+              </div>
+              <div class="endpoint-name">Start preview</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note"><strong>preview_url uses the domain, not the IP</strong> when GUI domain is set.</div>              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Requires package.json with a <code>dev</code> script.</div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;preview_url&quot;: &quot;https://previewk-mysite.example.com&quot;,
+  &quot;preview_ready&quot;: true,
+  &quot;preview_running&quot;: true
+}</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-status" data-ep="preview-status">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/preview_status?uuid=</span>
+              </div>
+              <div class="endpoint-name">Preview status</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Poll until <code>preview_ready: true</code>.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="preview-stop" data-ep="preview-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/stop_preview</span>
+              </div>
+              <div class="endpoint-name">Stop preview</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Stops dev server and Caddy preview route.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="env-set" data-ep="env-set">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/set_env</span>
+              </div>
+              <div class="endpoint-name">Set env</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">env_vars<span class="req">*</span></span>
+                    <span class="field-type">object</span>
+                  </div>
+                  
+                  <div class="field-desc">e.g. <code>{"NODE_ENV":"production"}</code></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">merge<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  
+                  <div class="field-desc">Default <code>true</code> — merge; <code>false</code> replaces all.</div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;…&quot;,&quot;env_vars&quot;:{&quot;NODE_ENV&quot;:&quot;production&quot;},&quot;merge&quot;:true}</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-agent" data-cat="agent">
+        <section class="section">
+          <h2 class="section-title">Agent (token API)</h2>
+          <p class="section-desc">Manage a project agent from an external page. Base <code>/api</code>, header <code>X-API-Key</code>. Session-auth mirrors live at <code>/api/projects/{uuid}/agent/*</code>.</p>
+<div class="note">Profiles: <code>syra-nano</code>, <code>syra-base</code>, <code>syra-kimi</code>, <code>syra-havy</code>, <code>syra-ultra</code>. Subagent-only: <code>syra-subagent</code>. Configure keys in Settings → AI. Prefer <code>agent_change</code> (background) for external UIs; <code>agent_communicate</code> waits for the turn.</div>
+
+
+          <div class="endpoint" id="agent-status" data-ep="agent-status">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_status?uuid=</span>
+              </div>
+              <div class="endpoint-name">Agent status</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Project UUID.</div>
+                </div>
+              </div><div class="field-desc"><code>agent_last_started_at</code> is the "running since" timestamp — it is <strong>not</strong> a stream event. <code>agent_turso_sync</code> drives the brain indicator.</div><pre>{
+  &quot;ok&quot;: true,
+  &quot;uuid&quot;: &quot;my-site&quot;,
+  &quot;agent_status&quot;: &quot;running&quot;,
+  &quot;agent_running&quot;: true,
+  &quot;agent_busy&quot;: false,
+  &quot;agent_healthy&quot;: true,
+  &quot;agent_last_started_at&quot;: &quot;2026-07-25T20:59:50Z&quot;,
+  &quot;agent_last_error&quot;: &quot;&quot;,
+  &quot;agent_turso_sync&quot;: {
+    &quot;turso_configured&quot;: true,
+    &quot;session&quot;: 3,
+    &quot;turso_session_id&quot;: &quot;sess_9c1e…&quot;,
+    &quot;total_messages&quot;: 12,
+    &quot;synced_messages&quot;: 12,
+    &quot;all_saved&quot;: true
+  },
+  &quot;agent_model&quot;: {&quot;profile&quot;: &quot;syra-base&quot;, &quot;model&quot;: &quot;…&quot;}
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-warm" data-ep="agent-warm">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_warm</span>
+              </div>
+              <div class="endpoint-name">Warm agent (non-blocking)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note"><strong>Recommended.</strong> Returns immediately while runtime starts. Poll status or listen for <code>agent_started</code>.</div>              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;ok&quot;:true,&quot;status&quot;:&quot;warming&quot;,&quot;already_warming&quot;:false}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-start" data-ep="agent-start">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_start</span>
+              </div>
+              <div class="endpoint-name">Start agent (blocking ready)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Waits until runtime is ready. Prefer warm for UX.</div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-stop" data-ep="agent-stop">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_stop</span>
+              </div>
+              <div class="endpoint-name">Stop agent runtime</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-interrupt" data-ep="agent-interrupt">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_interrupt</span>
+              </div>
+              <div class="endpoint-name">Interrupt active turn</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Cancels the in-flight job/turn.</div>
+                </div>
+              </div><div class="note">Alias behavior matches cancel — stops the current turn without a new message.</div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-cancel" data-ep="agent-cancel">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_cancel</span>
+              </div>
+              <div class="endpoint-name">Cancel active turn</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Cancel without submitting a new message.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-restart" data-ep="agent-restart">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_restart</span>
+              </div>
+              <div class="endpoint-name">Restart agent</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-settings" data-ep="agent-settings">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_settings</span>
+              </div>
+              <div class="endpoint-name">Update agent settings</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">model_profile<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"><code>syra-nano|syra-base|syra-kimi|syra-havy|syra-ultra</code></div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;model_profile&quot;:&quot;syra-base&quot;}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-logs" data-ep="agent-logs">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_logs?uuid=&amp;lines=200</span>
+              </div>
+              <div class="endpoint-name">Agent logs</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">lines<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1–2000, default 200.</div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;uuid&quot;:&quot;…&quot;,&quot;logs&quot;:&quot;…&quot;,&quot;stream_url&quot;:&quot;/api/projects/…/agent/logs/stream?live=1&quot;}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-activity" data-ep="agent-activity">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_activity?uuid=&amp;since_id=&amp;session=</span>
+              </div>
+              <div class="endpoint-name">Local activity snapshot</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">since_id<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  <span class="badge">Default 0</span>
+                  <div class="field-desc">Return events with id &gt; since_id.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1–2000, default 200.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">session<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"><code>last</code> or session number — filter that session only.</div>
+                </div>
+              </div><div class="note">For the durable UUID-addressable trail use <code>GET /api/agent_session/{{id}}</code>.</div><pre>{
+  &quot;ok&quot;: true,
+  &quot;events&quot;: […],
+  &quot;sessions_url&quot;: &quot;/api/agent_sessions?uuid=…&quot;,
+  &quot;stream_url&quot;: &quot;/api/agent_activity/stream?uuid=…&amp;since_id=0&quot;
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-activity-stream" data-ep="agent-activity-stream">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET</span>
+                <span class="endpoint-path">/agent_activity/stream?uuid=&amp;since_id=</span>
+              </div>
+              <div class="endpoint-name">Live activity SSE (token API)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note"><strong>NEW token API.</strong> Hot <code>token_delta</code>/<code>thinking_delta</code> are minimal-delta; body may be gzip/brotli. Heartbeat <code>: heartbeat</code> ~15s.</div>              <div class="panel">
+                <div class="panel-title">Query / headers <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">since_id<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">Replay backlog after this id.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">session<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Optional filter: <code>last</code> or session number.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">Accept-Encoding<span class="opt">?</span></span>
+                    <span class="field-type">header</span>
+                  </div>
+                  
+                  <div class="field-desc">Send <code>gzip, br</code> for compressed SSE.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">X-API-Key<span class="req">*</span></span>
+                    <span class="field-type">header</span>
+                  </div>
+                  
+                  <div class="field-desc">Required.</div>
+                </div>
+              </div><pre>GET /api/agent_activity/stream?uuid=my-site&amp;since_id=0
+X-API-Key: syte_…
+Accept: text/event-stream
+Accept-Encoding: gzip, br</pre><div class="seg-label">Example frames</div><pre>id: 130
+event: token_delta
+data: {&quot;id&quot;:130,&quot;event_type&quot;:&quot;token_delta&quot;,&quot;detail&quot;:&quot;Hello&quot;,&quot;payload&quot;:{&quot;delta&quot;:&quot;Hello&quot;,&quot;request_id&quot;:&quot;req_1&quot;,&quot;session&quot;:1,&quot;agent&quot;:&quot;main&quot;}}
+
+: heartbeat
+
+id: 150
+event: tool_call_started
+data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,…}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-sessions" data-ep="agent-sessions">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_sessions?uuid=&amp;limit=&amp;resume=</span>
+              </div>
+              <div class="endpoint-name">List Turso sessions</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1–500, default 50.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">resume<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">0|1 — include resume hints.</div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;turso_configured&quot;: true,
+  &quot;sessions&quot;: [{{&quot;id&quot;:&quot;sess_…&quot;,&quot;session_url&quot;:&quot;/api/agent_session/sess_…&quot;}}],
+  &quot;open_session&quot;: &quot;sess_…&quot;,
+  &quot;resume_session&quot;: &quot;sess_…&quot;
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-session" data-ep="agent-session">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_session/{session_id}?since_id=</span>
+              </div>
+              <div class="endpoint-name">Poll durable session</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">session_id<span class="req">*</span></span>
+                    <span class="field-type">path</span>
+                  </div>
+                  
+                  <div class="field-desc">Turso session UUID from agent_change.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">since_id<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">Incremental poll cursor.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Optional project check (or <code>project_id</code>).</div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;id&quot;: &quot;sess_9c1e…&quot;,
+  &quot;project_id&quot;: &quot;my-site&quot;,
+  &quot;status&quot;: &quot;open&quot;,
+  &quot;events&quot;: [{{&quot;id&quot;: 12, &quot;event_type&quot;: &quot;assistant_message&quot;, …}}],
+  &quot;next_since_id&quot;: 12
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-turso-sync" data-ep="agent-turso-sync">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_turso_sync?uuid=</span>
+              </div>
+              <div class="endpoint-name">Turso message sync (brain)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc"><code>all_saved: true</code> → green brain; <code>false</code> → red (unsynced local messages).</div><pre>{
+  &quot;ok&quot;: true,
+  &quot;turso_configured&quot;: true,
+  &quot;session&quot;: 3,
+  &quot;turso_session_id&quot;: &quot;sess_…&quot;,
+  &quot;total_messages&quot;: 12,
+  &quot;synced_messages&quot;: 12,
+  &quot;all_saved&quot;: true
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-turso-debug" data-ep="agent-turso-debug">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_turso_debug?uuid=</span>
+              </div>
+              <div class="endpoint-name">Turso connectivity debug</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Diagnose why the brain stays red — live connectivity + schema check.</div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-communicate" data-ep="agent-communicate">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_communicate</span>
+              </div>
+              <div class="endpoint-name">Communicate (waits for turn)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">message<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">model_profile<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">syra-nano | syra-base | syra-kimi | syra-havy | syra-ultra</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">thinking_level<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1 Instant … 5 Max (per-request).</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">improve_from_screenshot<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">visual_analysis_id<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;request_id&quot;: &quot;req_…&quot;,
+  &quot;turso_session_id&quot;: &quot;sess_…&quot;,
+  &quot;reply&quot;: &quot;…&quot;,
+  &quot;status&quot;: &quot;completed&quot;
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-change" data-ep="agent-change">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_change</span>
+              </div>
+              <div class="endpoint-name">Change request (background — preferred)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note">External pages: fire-and-forget. Poll SSE or Turso session for progress.</div>              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">message<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Change request text.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">model_profile<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Alias also accepted as <code>model_name</code>.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">thinking_level<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1–5.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">idempotency_key<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Retries return the same request_id.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">improve_from_screenshot<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">visual_analysis_id<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div><pre>{
+  &quot;ok&quot;: true,
+  &quot;request_id&quot;: &quot;req_8f2a&quot;,
+  &quot;turso_session_id&quot;: &quot;sess_9c1e…&quot;,
+  &quot;status&quot;: &quot;accepted&quot;,
+  &quot;change_applied&quot;: null
+}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-questions" data-ep="agent-questions">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_questions?uuid=&amp;status=</span>
+              </div>
+              <div class="endpoint-name">List questions</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">status<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Filter e.g. pending.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div><pre>{&quot;ok&quot;:true,&quot;questions&quot;:[{{&quot;id&quot;:&quot;q_7&quot;,&quot;prompt&quot;:&quot;Which tiers?&quot;,&quot;status&quot;:&quot;pending&quot;,&quot;options&quot;:[…]}}]}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-answer" data-ep="agent-answer">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/agent_answer_question</span>
+              </div>
+              <div class="endpoint-name">Answer a question</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">question_id<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">answer<span class="req">*</span></span>
+                    <span class="field-type">string|number|array|object</span>
+                  </div>
+                  
+                  <div class="field-desc">User answer.</div>
+                </div>
+              </div><pre>{&quot;uuid&quot;:&quot;my-site&quot;,&quot;question_id&quot;:&quot;q_7&quot;,&quot;answer&quot;:&quot;Free / Pro / Enterprise&quot;}</pre>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-screenshots" data-ep="agent-screenshots">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_screenshots?uuid=</span>
+              </div>
+              <div class="endpoint-name">List screenshots</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">1–200.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-plans" data-ep="agent-plans">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_plans?uuid=</span>
+              </div>
+              <div class="endpoint-name">List plans</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-stops" data-ep="agent-stops">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/agent_stops?uuid=</span>
+              </div>
+              <div class="endpoint-name">List session stops</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">limit<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-mcp" data-ep="agent-mcp">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET/POST</span>
+                <span class="endpoint-path">/agent_mcp*</span>
+              </div>
+              <div class="endpoint-name">MCP addons (brief)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Token API mirrors of GUI MCP management.</div><div class="info-grid"><div class="info-row"><span class="info-key">GET /agent_mcp</span><span class="info-val">List addons</span></div><div class="info-row"><span class="info-key">POST /agent_mcp_register</span><span class="info-val">name, command, args, env, transport</span></div><div class="info-row"><span class="info-key">POST /agent_mcp_connect</span><span class="info-val">uuid + addon</span></div><div class="info-row"><span class="info-key">POST /agent_mcp_call</span><span class="info-val">uuid, addon, tool, arguments</span></div><div class="info-row"><span class="info-key">POST /agent_mcp_update</span><span class="info-val">Update addon config</span></div><div class="info-row"><span class="info-key">POST /agent_mcp_disconnect</span><span class="info-val">Disconnect addon</span></div></div><div class="note">Session-auth: <code>/api/projects/{{uuid}}/agent/mcp</code> (+ connect/call).</div>
+            </div>
+          </div>
+
+
+          <div class="endpoint" id="agent-skills" data-ep="agent-skills">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET/POST</span>
+                <span class="endpoint-path">/agent_skills*</span>
+              </div>
+              <div class="endpoint-name">Skills (brief)</div>
+            </div>
+            <div class="endpoint-body">
+<div class="info-grid"><div class="info-row"><span class="info-key">GET /agent_skills</span><span class="info-val">List project skills</span></div><div class="info-row"><span class="info-key">POST /agent_skills_add</span><span class="info-val">name, content, description, parameters, enable</span></div><div class="info-row"><span class="info-key">POST /agent_skills_update</span><span class="info-val">skill_id + fields</span></div><div class="info-row"><span class="info-key">POST /agent_skills_enable</span><span class="info-val">skill_id + parameters</span></div><div class="info-row"><span class="info-key">POST /agent_skills_disable</span><span class="info-val">skill_id</span></div><div class="info-row"><span class="info-key">POST /agent_skills_delete</span><span class="info-val">skill_id</span></div></div><div class="note">Session-auth: <code>/api/projects/{{uuid}}/agent/skills</code>.</div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-stream" data-cat="stream">
+        <section class="section">
+          <h2 class="section-title">Stream events</h2>
+          <p class="section-desc">Every activity event key emitted on <code>/api/agent_activity/stream</code>. Use mini-tabs to jump. Hot keys are slim; everything else is full cold JSON.</p>
+
+          <div class="endpoint" id="stream-connect" data-ep="stream-connect">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET</span>
+                <span class="endpoint-path">/agent_activity/stream?uuid=</span>
+              </div>
+              <div class="endpoint-name">Connect to SSE</div>
+            </div>
+            <div class="endpoint-body">
+<div class="note">Token API. Also available as session-auth <code>/api/projects/{{uuid}}/agent/activity/stream</code> and Sycord <code>/sycord/api/agent_activity/stream</code>.</div>              <div class="panel">
+                <div class="panel-title">Query <span class="panel-meta"></span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc"></div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">since_id<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  
+                  <div class="field-desc">Replay after this local event id.</div>
+                </div>                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">session<span class="opt">?</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  
+                  <div class="field-desc">Optional filter.</div>
+                </div>
+              </div><div class="field-desc">Each frame: <code>id:</code> + <code>event:</code> + <code>data:</code> JSON. Idle connections receive comment heartbeats.</div>
+            </div>
+          </div>
+          <div class="endpoint" id="stream-hotpath" data-ep="stream-hotpath">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Hot path rules</span></div>
+            </div>
+            <div class="endpoint-body">
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">Hot types</span><span class="info-val"><code>token_delta</code>, <code>thinking_delta</code></span></div>
+                <div class="info-row"><span class="info-key">Wire shape</span><span class="info-val"><code>id</code>, <code>event_type</code>, <code>detail</code>, tiny <code>payload</code></span></div>
+                <div class="info-row"><span class="info-key">Batch</span><span class="info-val">16–32 tokens or 300–500 chars; ~80ms idle flush</span></div>
+                <div class="info-row"><span class="info-key">Turso</span><span class="info-val">Hot events skip Turso; cold events mirror in background</span></div>
+                <div class="info-row"><span class="info-key">Encoding</span><span class="info-val"><code>Content-Encoding: gzip|br</code> when accepted</span></div>
+                <div class="info-row"><span class="info-key">Running since</span><span class="info-val">From <code>agent_status.agent_last_started_at</code> — not a stream key</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="endpoint" id="request-started" data-ep="request-started">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">request_started</span>
+              </div>
+              <div class="endpoint-name">Turn accepted — durable request row opened.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Turn accepted — durable request row opened.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 101,
+  &quot;event_type&quot;: &quot;request_started&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Request started&quot;,
+  &quot;detail&quot;: &quot;Build a pricing page&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;turso_session_id&quot;: &quot;sess_9c1e…&quot;
+  },
+  &quot;source&quot;: &quot;api&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: request_started
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="processing" data-ep="processing">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">processing</span>
+              </div>
+              <div class="endpoint-name">Agent is working on the active turn.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Agent is working on the active turn.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 102,
+  &quot;event_type&quot;: &quot;processing&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Processing&quot;,
+  &quot;detail&quot;: &quot;Planning layout&quot;,
+  &quot;payload&quot;: {&quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:01Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: processing
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="status" data-ep="status">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">status</span>
+              </div>
+              <div class="endpoint-name">Generic status line for UI banners.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Generic status line for UI banners.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 103,
+  &quot;event_type&quot;: &quot;status&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Status&quot;,
+  &quot;detail&quot;: &quot;Waiting for preview&quot;,
+  &quot;payload&quot;: {&quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;, &quot;level&quot;: &quot;info&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:02Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: status
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="agent-started" data-ep="agent-started">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">agent_started</span>
+              </div>
+              <div class="endpoint-name">Cloud runtime became ready.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Cloud runtime became ready.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 10,
+  &quot;event_type&quot;: &quot;agent_started&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Cloud agent ready&quot;,
+  &quot;detail&quot;: &quot;VM-native Syte cloud runtime is ready&quot;,
+  &quot;payload&quot;: {&quot;runtime&quot;: &quot;syte-cloud&quot;},
+  &quot;source&quot;: &quot;syte-cloud&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T20:59:50Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: agent_started
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="agent-stopped" data-ep="agent-stopped">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">agent_stopped</span>
+              </div>
+              <div class="endpoint-name">Runtime stopped.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Runtime stopped.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 400,
+  &quot;event_type&quot;: &quot;agent_stopped&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Agent stopped&quot;,
+  &quot;detail&quot;: &quot;Runtime shut down&quot;,
+  &quot;payload&quot;: {},
+  &quot;source&quot;: &quot;api&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T22:00:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: agent_stopped
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="agent-restarted" data-ep="agent-restarted">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">agent_restarted</span>
+              </div>
+              <div class="endpoint-name">Runtime restarted (crash recovery or explicit restart).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Runtime restarted (crash recovery or explicit restart).</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 50,
+  &quot;event_type&quot;: &quot;agent_restarted&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Cloud session restarted&quot;,
+  &quot;detail&quot;: &quot;&quot;,
+  &quot;payload&quot;: {},
+  &quot;source&quot;: &quot;syte-cloud&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:10:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: agent_restarted
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="thinking" data-ep="thinking">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">thinking</span>
+              </div>
+              <div class="endpoint-name">Cold thinking snapshot (full text).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Cold thinking snapshot (full text).</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 110,
+  &quot;event_type&quot;: &quot;thinking&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;Thinking&quot;,
+  &quot;detail&quot;: &quot;I should inspect the existing layout before editing…&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;content&quot;: &quot;I should inspect the existing layout before editing…&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:03Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: thinking
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="thinking-delta" data-ep="thinking-delta">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">thinking_delta</span>
+              </div>
+              <div class="endpoint-name">Hot path — minimal-delta only (batched).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Hot path — minimal-delta only (batched).</div><div class="note">Hot event — minimal-delta wire. Batched before emit. Not mirrored to Turso.</div><div class="seg-label">SSE frame</div><pre>id: …
+event: thinking_delta
+data: {
+  &quot;id&quot;: 111,
+  &quot;event_type&quot;: &quot;thinking_delta&quot;,
+  &quot;detail&quot;: &quot; before editing&quot;,
+  &quot;payload&quot;: {
+    &quot;delta&quot;: &quot; before editing&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  }
+}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="plan" data-ep="plan">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">plan</span>
+              </div>
+              <div class="endpoint-name">Structured plan artifact published.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Structured plan artifact published.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 120,
+  &quot;event_type&quot;: &quot;plan&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;Plan&quot;,
+  &quot;detail&quot;: &quot;1. Audit home 2. Add pricing section 3. Wire CTA&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;plan_id&quot;: &quot;plan_12&quot;,
+    &quot;steps&quot;: [
+      {&quot;id&quot;: &quot;s1&quot;, &quot;text&quot;: &quot;Audit home&quot;, &quot;status&quot;: &quot;done&quot;},
+      {&quot;id&quot;: &quot;s2&quot;, &quot;text&quot;: &quot;Add pricing section&quot;, &quot;status&quot;: &quot;running&quot;},
+      {&quot;id&quot;: &quot;s3&quot;, &quot;text&quot;: &quot;Wire CTA&quot;, &quot;status&quot;: &quot;pending&quot;}
+    ]
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:05Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: plan
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="token-delta" data-ep="token-delta">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">token_delta</span>
+              </div>
+              <div class="endpoint-name">Hot path — assistant text chunk (batched, slim wire).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Hot path — assistant text chunk (batched, slim wire).</div><div class="note">Hot event — minimal-delta wire. Batched before emit. Not mirrored to Turso.</div><div class="seg-label">SSE frame</div><pre>id: …
+event: token_delta
+data: {
+  &quot;id&quot;: 130,
+  &quot;event_type&quot;: &quot;token_delta&quot;,
+  &quot;detail&quot;: &quot;I&#x27;ll add a pricing&quot;,
+  &quot;payload&quot;: {
+    &quot;delta&quot;: &quot;I&#x27;ll add a pricing&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  }
+}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="message-snapshot" data-ep="message-snapshot">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">message_snapshot</span>
+              </div>
+              <div class="endpoint-name">Full assistant message so far (reconnect-friendly).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Full assistant message so far (reconnect-friendly).</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 140,
+  &quot;event_type&quot;: &quot;message_snapshot&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;Assistant&quot;,
+  &quot;detail&quot;: &quot;I&#x27;ll add a pricing section with three tiers…&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;content&quot;: &quot;I&#x27;ll add a pricing section with three tiers…&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:08Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: message_snapshot
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="assistant-message" data-ep="assistant-message">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">assistant_message</span>
+              </div>
+              <div class="endpoint-name">Final assistant message for the turn (cold).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Final assistant message for the turn (cold).</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 200,
+  &quot;event_type&quot;: &quot;assistant_message&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;Assistant&quot;,
+  &quot;detail&quot;: &quot;Done — pricing section is live on /pricing.&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;content&quot;: &quot;Done — pricing section is live on /pricing.&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:01:20Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: assistant_message
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="user-message" data-ep="user-message">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">user_message</span>
+              </div>
+              <div class="endpoint-name">User prompt recorded.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">User prompt recorded.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 100,
+  &quot;event_type&quot;: &quot;user_message&quot;,
+  &quot;role&quot;: &quot;user&quot;,
+  &quot;title&quot;: &quot;User&quot;,
+  &quot;detail&quot;: &quot;Build a pricing page&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;content&quot;: &quot;Build a pricing page&quot;
+  },
+  &quot;source&quot;: &quot;external_api&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: user_message
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="tool-call-started" data-ep="tool-call-started">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">tool_call_started</span>
+              </div>
+              <div class="endpoint-name">Tool invocation began.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Tool invocation began.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 150,
+  &quot;event_type&quot;: &quot;tool_call_started&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;write_file&quot;,
+  &quot;detail&quot;: &quot;app/app/pricing/page.tsx&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;tool&quot;: &quot;write_file&quot;,
+    &quot;tool_call_id&quot;: &quot;call_91&quot;,
+    &quot;args&quot;: {&quot;path&quot;: &quot;app/app/pricing/page.tsx&quot;}
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:10Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: tool_call_started
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="tool-call-finished" data-ep="tool-call-finished">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">tool_call_finished</span>
+              </div>
+              <div class="endpoint-name">Tool finished successfully.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Tool finished successfully.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 151,
+  &quot;event_type&quot;: &quot;tool_call_finished&quot;,
+  &quot;role&quot;: &quot;tool&quot;,
+  &quot;title&quot;: &quot;write_file&quot;,
+  &quot;detail&quot;: &quot;wrote 1842 bytes&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;tool&quot;: &quot;write_file&quot;,
+    &quot;tool_call_id&quot;: &quot;call_91&quot;,
+    &quot;ok&quot;: true,
+    &quot;result&quot;: {&quot;bytes&quot;: 1842}
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:11Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: tool_call_finished
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="tool-error" data-ep="tool-error">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">tool_error</span>
+              </div>
+              <div class="endpoint-name">Tool failed.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Tool failed.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 152,
+  &quot;event_type&quot;: &quot;tool_error&quot;,
+  &quot;role&quot;: &quot;tool&quot;,
+  &quot;title&quot;: &quot;execute_command&quot;,
+  &quot;detail&quot;: &quot;exit 1&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;tool&quot;: &quot;execute_command&quot;,
+    &quot;tool_call_id&quot;: &quot;call_92&quot;,
+    &quot;ok&quot;: false,
+    &quot;error&quot;: &quot;npm ERR! Missing script: lint&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:15Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: tool_error
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="tool-call" data-ep="tool-call">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">tool_call</span>
+              </div>
+              <div class="endpoint-name">Legacy/combined tool_call event.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Legacy/combined tool_call event.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 153,
+  &quot;event_type&quot;: &quot;tool_call&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;read_file&quot;,
+  &quot;detail&quot;: &quot;app/package.json&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;tool&quot;: &quot;read_file&quot;,
+    &quot;path&quot;: &quot;app/package.json&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:06Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: tool_call
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-created" data-ep="file-created">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_created</span>
+              </div>
+              <div class="endpoint-name">File created in workspace.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">File created in workspace.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 160,
+  &quot;event_type&quot;: &quot;file_created&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Created file&quot;,
+  &quot;detail&quot;: &quot;app/app/pricing/page.tsx&quot;,
+  &quot;payload&quot;: {&quot;path&quot;: &quot;app/app/pricing/page.tsx&quot;, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:11Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_created
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-modified" data-ep="file-modified">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_modified</span>
+              </div>
+              <div class="endpoint-name">File overwritten/edited.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">File overwritten/edited.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 161,
+  &quot;event_type&quot;: &quot;file_modified&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Modified file&quot;,
+  &quot;detail&quot;: &quot;app/components/Header.tsx&quot;,
+  &quot;payload&quot;: {&quot;path&quot;: &quot;app/components/Header.tsx&quot;, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:12Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_modified
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-deleted" data-ep="file-deleted">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_deleted</span>
+              </div>
+              <div class="endpoint-name">File removed.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">File removed.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 162,
+  &quot;event_type&quot;: &quot;file_deleted&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Deleted file&quot;,
+  &quot;detail&quot;: &quot;app/app/old-promo/page.tsx&quot;,
+  &quot;payload&quot;: {&quot;path&quot;: &quot;app/app/old-promo/page.tsx&quot;, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:13Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_deleted
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-read" data-ep="file-read">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_read</span>
+              </div>
+              <div class="endpoint-name">File contents read by agent.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">File contents read by agent.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 163,
+  &quot;event_type&quot;: &quot;file_read&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Read file&quot;,
+  &quot;detail&quot;: &quot;app/package.json&quot;,
+  &quot;payload&quot;: {&quot;path&quot;: &quot;app/package.json&quot;, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:04Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_read
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-search" data-ep="file-search">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_search</span>
+              </div>
+              <div class="endpoint-name">Workspace search.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Workspace search.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 164,
+  &quot;event_type&quot;: &quot;file_search&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Search&quot;,
+  &quot;detail&quot;: &quot;pricing&quot;,
+  &quot;payload&quot;: {&quot;query&quot;: &quot;pricing&quot;, &quot;hits&quot;: 4, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:04Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_search
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="file-changed" data-ep="file-changed">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">file_changed</span>
+              </div>
+              <div class="endpoint-name">Generic file change notification.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Generic file change notification.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 165,
+  &quot;event_type&quot;: &quot;file_changed&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;File changed&quot;,
+  &quot;detail&quot;: &quot;app/app/page.tsx&quot;,
+  &quot;payload&quot;: {&quot;path&quot;: &quot;app/app/page.tsx&quot;, &quot;op&quot;: &quot;modify&quot;, &quot;request_id&quot;: &quot;req_8f2a&quot;, &quot;session&quot;: 3, &quot;agent&quot;: &quot;main&quot;},
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:14Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: file_changed
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="command-run" data-ep="command-run">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">command_run</span>
+              </div>
+              <div class="endpoint-name">Shell command started/finished summary.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Shell command started/finished summary.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 170,
+  &quot;event_type&quot;: &quot;command_run&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Command&quot;,
+  &quot;detail&quot;: &quot;npm install lucide-react&quot;,
+  &quot;payload&quot;: {
+    &quot;command&quot;: &quot;npm install lucide-react&quot;,
+    &quot;cwd&quot;: &quot;app&quot;,
+    &quot;exit_code&quot;: 0,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:16Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: command_run
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="command-output" data-ep="command-output">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">command_output</span>
+              </div>
+              <div class="endpoint-name">Incremental command stdout/stderr.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Incremental command stdout/stderr.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 171,
+  &quot;event_type&quot;: &quot;command_output&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Output&quot;,
+  &quot;detail&quot;: &quot;added 1 package in 1s&quot;,
+  &quot;payload&quot;: {
+    &quot;command&quot;: &quot;npm install lucide-react&quot;,
+    &quot;stream&quot;: &quot;stdout&quot;,
+    &quot;chunk&quot;: &quot;added 1 package in 1s&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:16Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: command_output
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="screenshot" data-ep="screenshot">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">screenshot</span>
+              </div>
+              <div class="endpoint-name">Preview screenshot captured.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Preview screenshot captured.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 180,
+  &quot;event_type&quot;: &quot;screenshot&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Screenshot&quot;,
+  &quot;detail&quot;: &quot;Homepage&quot;,
+  &quot;payload&quot;: {
+    &quot;screenshot_id&quot;: &quot;ss_44&quot;,
+    &quot;url&quot;: &quot;/api/agent_screenshots?uuid=my-site…&quot;,
+    &quot;preview_url&quot;: &quot;https://previewk-mysite.example.com&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:40Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: screenshot
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="question" data-ep="question">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">question</span>
+              </div>
+              <div class="endpoint-name">Agent asked the user a clarifying question.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Agent asked the user a clarifying question.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 190,
+  &quot;event_type&quot;: &quot;question&quot;,
+  &quot;role&quot;: &quot;assistant&quot;,
+  &quot;title&quot;: &quot;Question&quot;,
+  &quot;detail&quot;: &quot;Which pricing tiers should we show?&quot;,
+  &quot;payload&quot;: {
+    &quot;question_id&quot;: &quot;q_7&quot;,
+    &quot;prompt&quot;: &quot;Which pricing tiers should we show?&quot;,
+    &quot;options&quot;: [&quot;Free / Pro / Enterprise&quot;, &quot;Starter / Growth / Scale&quot;],
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:20Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: question
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="question-answered" data-ep="question-answered">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">question_answered</span>
+              </div>
+              <div class="endpoint-name">User answered via agent_answer_question.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">User answered via agent_answer_question.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 191,
+  &quot;event_type&quot;: &quot;question_answered&quot;,
+  &quot;role&quot;: &quot;user&quot;,
+  &quot;title&quot;: &quot;Answer&quot;,
+  &quot;detail&quot;: &quot;Free / Pro / Enterprise&quot;,
+  &quot;payload&quot;: {
+    &quot;question_id&quot;: &quot;q_7&quot;,
+    &quot;answer&quot;: &quot;Free / Pro / Enterprise&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;external_api&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:45Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: question_answered
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="subagent-scope" data-ep="subagent-scope">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">subagent_scope</span>
+              </div>
+              <div class="endpoint-name">File scope reserved before delegation.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">File scope reserved before delegation.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 210,
+  &quot;event_type&quot;: &quot;subagent_scope&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Subagent scope&quot;,
+  &quot;detail&quot;: &quot;Reserved 2 files&quot;,
+  &quot;payload&quot;: {
+    &quot;task_id&quot;: &quot;sub_3&quot;,
+    &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;, &quot;app/lib/plans.ts&quot;],
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:25Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: subagent_scope
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="subagent-started" data-ep="subagent-started">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">subagent_started</span>
+              </div>
+              <div class="endpoint-name">Delegated subagent began work.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Delegated subagent began work.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 211,
+  &quot;event_type&quot;: &quot;subagent_started&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Subagent started&quot;,
+  &quot;detail&quot;: &quot;Implement PricingCard&quot;,
+  &quot;payload&quot;: {
+    &quot;task_id&quot;: &quot;sub_3&quot;,
+    &quot;task&quot;: &quot;Implement PricingCard&quot;,
+    &quot;mode&quot;: &quot;build&quot;,
+    &quot;profile&quot;: &quot;syra-subagent&quot;,
+    &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;],
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;subagent&quot;,
+    &quot;subagent_task_id&quot;: &quot;sub_3&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:26Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: subagent_started
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="subagent-completed" data-ep="subagent-completed">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">subagent_completed</span>
+              </div>
+              <div class="endpoint-name">Subagent finished successfully.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Subagent finished successfully.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 220,
+  &quot;event_type&quot;: &quot;subagent_completed&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Subagent completed&quot;,
+  &quot;detail&quot;: &quot;PricingCard ready&quot;,
+  &quot;payload&quot;: {
+    &quot;task_id&quot;: &quot;sub_3&quot;,
+    &quot;ok&quot;: true,
+    &quot;result&quot;: &quot;PricingCard ready&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;subagent&quot;,
+    &quot;subagent_task_id&quot;: &quot;sub_3&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:55Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: subagent_completed
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="subagent-failed" data-ep="subagent-failed">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">subagent_failed</span>
+              </div>
+              <div class="endpoint-name">Subagent failed or cancelled.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Subagent failed or cancelled.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 221,
+  &quot;event_type&quot;: &quot;subagent_failed&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Subagent failed&quot;,
+  &quot;detail&quot;: &quot;timeout&quot;,
+  &quot;payload&quot;: {
+    &quot;task_id&quot;: &quot;sub_4&quot;,
+    &quot;ok&quot;: false,
+    &quot;error&quot;: &quot;subagent_timeout&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;subagent&quot;,
+    &quot;subagent_task_id&quot;: &quot;sub_4&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:01:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: subagent_failed
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="request-completed" data-ep="request-completed">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">request_completed</span>
+              </div>
+              <div class="endpoint-name">Turn finished successfully.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Turn finished successfully.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 230,
+  &quot;event_type&quot;: &quot;request_completed&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Completed&quot;,
+  &quot;detail&quot;: &quot;Done — pricing section is live on /pricing.&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;turso_session_id&quot;: &quot;sess_9c1e…&quot;,
+    &quot;status&quot;: &quot;completed&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:01:21Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: request_completed
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="request-failed" data-ep="request-failed">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">request_failed</span>
+              </div>
+              <div class="endpoint-name">Turn failed.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Turn failed.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 231,
+  &quot;event_type&quot;: &quot;request_failed&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Failed&quot;,
+  &quot;detail&quot;: &quot;provider_error&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;error&quot;: &quot;provider_error&quot;,
+    &quot;message&quot;: &quot;Upstream 429&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:01:21Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: request_failed
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="session-stopped" data-ep="session-stopped">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">session_stopped</span>
+              </div>
+              <div class="endpoint-name">Session stop marker recorded.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Session stop marker recorded.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 240,
+  &quot;event_type&quot;: &quot;session_stopped&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Session stopped&quot;,
+  &quot;detail&quot;: &quot;User stopped session 3&quot;,
+  &quot;payload&quot;: {&quot;session&quot;: 3, &quot;reason&quot;: &quot;user&quot;},
+  &quot;source&quot;: &quot;api&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T22:00:00Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: session_stopped
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="usage" data-ep="usage">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">usage</span>
+              </div>
+              <div class="endpoint-name">Token/cost accounting for the turn.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Token/cost accounting for the turn.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 229,
+  &quot;event_type&quot;: &quot;usage&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Usage&quot;,
+  &quot;detail&quot;: &quot;12.4k tokens · $0.042&quot;,
+  &quot;payload&quot;: {
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;,
+    &quot;input_tokens&quot;: 8200,
+    &quot;output_tokens&quot;: 3100,
+    &quot;thinking_tokens&quot;: 1100,
+    &quot;total_tokens&quot;: 12400,
+    &quot;cost_usd&quot;: 0.042,
+    &quot;cost_label&quot;: &quot;$0.042&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:01:20Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: usage
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="service-action" data-ep="service-action">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">service_action</span>
+              </div>
+              <div class="endpoint-name">Preview/deploy/service side-effect.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Preview/deploy/service side-effect.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
+  &quot;id&quot;: 175,
+  &quot;event_type&quot;: &quot;service_action&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;title&quot;: &quot;Preview started&quot;,
+  &quot;detail&quot;: &quot;https://previewk-mysite.example.com&quot;,
+  &quot;payload&quot;: {
+    &quot;action&quot;: &quot;start_preview&quot;,
+    &quot;preview_url&quot;: &quot;https://previewk-mysite.example.com&quot;,
+    &quot;request_id&quot;: &quot;req_8f2a&quot;,
+    &quot;session&quot;: 3,
+    &quot;agent&quot;: &quot;main&quot;
+  },
+  &quot;source&quot;: &quot;agent&quot;,
+  &quot;created_at&quot;: &quot;2026-07-25T21:00:35Z&quot;
+}</pre><div class="seg-label">SSE frame</div><pre>id: …
+event: service_action
+data: {…}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="error-sse" data-ep="error-sse">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">error</span>
+              </div>
+              <div class="endpoint-name">Synthetic SSE error frame (connection/stream failure).</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Synthetic SSE error frame (connection/stream failure).</div><div class="seg-label">Synthetic SSE error</div><pre>event: error
+data: {&quot;event_type&quot;:&quot;error&quot;,&quot;error&quot;:&quot;stream_failed&quot;,&quot;message&quot;:&quot;…&quot;}</pre>
+            </div>
+          </div>
+          <div class="endpoint" id="heartbeat" data-ep="heartbeat">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method sse">SSE</span>
+                <span class="endpoint-path">heartbeat</span>
+              </div>
+              <div class="endpoint-name">Comment heartbeat every ~15s while idle — keep connection alive.</div>
+            </div>
+            <div class="endpoint-body">
+<div class="field-desc">Comment heartbeat every ~15s while idle — keep connection alive.</div><div class="seg-label">Comment line (not JSON)</div><pre>: heartbeat</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        <div class="cat-panel" id="panel-turso" data-cat="turso">
+        <section class="section">
+          <h2 class="section-title">Turso persistence</h2>
+          <p class="section-desc">Durable cross-host storage for sessions, events, messages, requests, and subagents. Hot stream deltas never write here.</p>
+
+          <div class="endpoint" id="turso-overview" data-ep="turso-overview">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Write sequence</span></div>
+            </div>
+            <div class="endpoint-body">
+              <ol class="flow-list">
+                <li class="flow-step"><strong>Open session</strong> On turn start Syte opens/reuses an <code>agent_session</code> and returns <code>turso_session_id</code> from <code>agent_change</code> / <code>agent_communicate</code>.</li>
+                <li class="flow-step"><strong>record_request</strong> Inserts <code>agent_request</code> (status <code>running</code>, cost null).</li>
+                <li class="flow-step"><strong>Cold events</strong> Background mirror into <code>agent_session_event</code>. Chat rows go to <code>agent_message</code>.</li>
+                <li class="flow-step"><strong>Subagents</strong> <code>record_subagent_task</code> → activity lines → <code>finalize_subagent_task</code>.</li>
+                <li class="flow-step"><strong>finalize_request</strong> Closes the request with reply, usage, cost, activity_count.</li>
+              </ol>
+<div class="note">If Turso is unset, sessions still open locally on the deployer so clients always get a pollable id.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="turso-tables" data-ep="turso-tables">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Tables</span></div>
+            </div>
+            <div class="endpoint-body">
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">agent_session</span><span class="info-val">Session UUID, project_id, status, created/updated/ended</span></div>
+                <div class="info-row"><span class="info-key">agent_session_event</span><span class="info-val">Cold activity trail (poll via agent_session)</span></div>
+                <div class="info-row"><span class="info-key">agent_message</span><span class="info-val">Chat rows mirrored from local store (brain sync)</span></div>
+                <div class="info-row"><span class="info-key">agent_request</span><span class="info-val">Per-turn request + usage/cost</span></div>
+                <div class="info-row"><span class="info-key">agent_subagent_task</span><span class="info-val">Delegated task + file scope + cost</span></div>
+                <div class="info-row"><span class="info-key">agent_subagent_activity</span><span class="info-val">Subagent-only activity lines</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="turso-config" data-ep="turso-config">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Config</span></div>
+            </div>
+            <div class="endpoint-body">
+              <p class="field-desc">Settings → <strong>AI</strong>: set <code>turso_database_url</code> and <code>turso_auth_token</code>. Without them, local fallback keeps sessions on the host disk.</p>
+<pre>// Settings → AI
+turso_database_url = &quot;libsql://your-db.turso.io&quot;
+turso_auth_token   = &quot;eyJ…&quot;</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="turso-sync" data-ep="turso-sync">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Brain indicator</span></div>
+            </div>
+            <div class="endpoint-body">
+              <p class="field-desc"><code>GET /api/agent_turso_sync?uuid=</code> (also nested in <code>agent_status.agent_turso_sync</code>).</p>
+              <div class="info-grid">
+                <div class="info-row"><span class="info-key">all_saved: true</span><span class="info-val">Green — every local message for the session mirrored</span></div>
+                <div class="info-row"><span class="info-key">all_saved: false</span><span class="info-val">Red — at least one unsynced message</span></div>
+                <div class="info-row"><span class="info-key">not configured</span><span class="info-val"><code>turso_configured: false</code> and <code>all_saved: true</code> (local-only OK)</span></div>
+              </div>
+<div class="note">Debug with <code>GET /api/agent_turso_debug?uuid=</code>.</div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="turso-poll" data-ep="turso-poll">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Poll durable trail</span></div>
+            </div>
+            <div class="endpoint-body">
+<pre>GET /api/agent_session/sess_9c1e…?since_id=0
+X-API-Key: syte_…
+
+# then
+GET /api/agent_session/sess_9c1e…?since_id=42</pre>
+            </div>
+          </div>
+
+          <div class="endpoint" id="turso-examples" data-ep="turso-examples">
+            <div class="endpoint-header">
+              <div class="endpoint-row"><span class="endpoint-path">Write examples</span></div>
+            </div>
+            <div class="endpoint-body">
+<div class="seg-label">record_request (start of turn)</div>
+<pre>{
+  &quot;request_id&quot;: &quot;req_8f2a&quot;,
+  &quot;session_id&quot;: &quot;sess_9c1e…&quot;,
+  &quot;project_id&quot;: &quot;my-site&quot;,
+  &quot;session_number&quot;: 3,
+  &quot;source&quot;: &quot;sycord&quot;,
+  &quot;model_profile&quot;: &quot;syra-base&quot;,
+  &quot;request&quot;: &quot;Build a pricing page&quot;,
+  &quot;status&quot;: &quot;running&quot;,
+  &quot;started_at&quot;: &quot;2026-07-25T21:00:00Z&quot;
+}</pre>
+<div class="seg-label">record_subagent_task</div>
+<pre>{
+  &quot;task_id&quot;: &quot;sub_3&quot;,
+  &quot;session_id&quot;: &quot;sess_9c1e…&quot;,
+  &quot;project_id&quot;: &quot;my-site&quot;,
+  &quot;parent_request_id&quot;: &quot;req_8f2a&quot;,
+  &quot;task&quot;: &quot;Implement PricingCard&quot;,
+  &quot;mode&quot;: &quot;build&quot;,
+  &quot;profile&quot;: &quot;syra-subagent&quot;,
+  &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;],
+  &quot;status&quot;: &quot;running&quot;
+}</pre>
+<div class="seg-label">finalize_request</div>
+<pre>{
+  &quot;request_id&quot;: &quot;req_8f2a&quot;,
+  &quot;status&quot;: &quot;completed&quot;,
+  &quot;reply&quot;: &quot;Done — pricing section is live.&quot;,
+  &quot;activity_count&quot;: 28,
+  &quot;subagent_count&quot;: 1,
+  &quot;input_tokens&quot;: 8200,
+  &quot;output_tokens&quot;: 3100,
+  &quot;total_tokens&quot;: 12400,
+  &quot;cost_usd&quot;: 0.042,
+  &quot;ended_at&quot;: &quot;2026-07-25T21:01:21Z&quot;
+}</pre>
+            </div>
+          </div>
+        </section>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+
+    (function () {
+      const cats = document.querySelectorAll('.nav-cat');
+      const panels = document.querySelectorAll('.cat-panel');
+      const valid = new Set([...cats].map(b => b.dataset.cat));
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const drawerOpen = document.getElementById('drawer-open');
+      const drawerClose = document.getElementById('drawer-close');
+      const DEFAULT_CAT = 'overview';
+      const DEFAULT_EP = {
+        overview: 'overview-flow',
+        auth: 'auth-token',
+        project: 'project-create',
+        workspace: 'workspace-list',
+        deploy: 'deploy-issue',
+        agent: 'agent-status',
+        stream: 'stream-connect',
+        turso: 'turso-overview',
+      };
+
+      function isMobile() {
+        return window.matchMedia('(max-width: 768px)').matches;
+      }
+      function openDrawer() {
+        if (!isMobile()) return;
+        document.body.classList.add('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'false');
+      }
+      function closeDrawer() {
+        document.body.classList.remove('drawer-open');
+        backdrop.setAttribute('aria-hidden', 'true');
+      }
+
+      function parseHash() {
+        const raw = (location.hash || '').replace(/^#/, '');
+        if (!raw) return { cat: DEFAULT_CAT, ep: null };
+        const parts = raw.split('/');
+        const cat = valid.has(parts[0]) ? parts[0] : DEFAULT_CAT;
+        const ep = parts[1] || null;
+        return { cat, ep };
+      }
+
+      function showEndpoint(cat, epId, { push } = { push: true }) {
+        const panel = document.getElementById('panel-' + cat);
+        if (!panel) return;
+        const endpoints = panel.querySelectorAll('.endpoint[data-ep]');
+        const ids = [...endpoints].map(e => e.dataset.ep);
+        let target = epId && ids.includes(epId) ? epId : (DEFAULT_EP[cat] || ids[0]);
+
+        endpoints.forEach(el => {
+          const on = el.dataset.ep === target;
+          el.classList.toggle('hidden-ep', !on);
+          if (on) el.scrollIntoView({ block: 'nearest' });
+        });
+
+        document.querySelectorAll('.mini-tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.cat === cat && t.dataset.ep === target);
+        });
+        document.querySelectorAll('.nav-mini a').forEach(a => {
+          a.classList.toggle('active', a.dataset.cat === cat && a.dataset.ep === target);
+        });
+
+        const hash = '#' + cat + '/' + target;
+        if (push) history.replaceState(null, '', hash);
+      }
+
+      function safeIcons() {
+        try {
+          if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        } catch (_) { /* same-origin vendor; ignore icon paint failures */ }
+      }
+
+      function showCat(cat, epId, { push } = { push: true }) {
+        const id = valid.has(cat) ? cat : DEFAULT_CAT;
+        cats.forEach(b => b.classList.toggle('active', b.dataset.cat === id));
+        panels.forEach(p => p.classList.toggle('active', p.dataset.cat === id));
+        document.querySelectorAll('.nav-mini').forEach(m => {
+          m.classList.toggle('open', m.dataset.miniFor === id);
+        });
+        document.querySelectorAll('.mini-tabs').forEach(t => {
+          t.classList.toggle('visible', t.dataset.tabsFor === id);
+        });
+        showEndpoint(id, epId, { push: false });
+        if (push) {
+          const ep = epId || DEFAULT_EP[id];
+          history.replaceState(null, '', '#' + id + (ep ? '/' + ep : ''));
+        }
+        window.scrollTo(0, 0);
+        closeDrawer();
+        safeIcons();
+      }
+
+      function applyHash() {
+        const { cat, ep } = parseHash();
+        showCat(cat, ep, { push: false });
+      }
+
+      cats.forEach(b => b.addEventListener('click', () => showCat(b.dataset.cat, DEFAULT_EP[b.dataset.cat])));
+
+      document.querySelectorAll('.mini-tab, .nav-mini a').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          showCat(a.dataset.cat, a.dataset.ep);
+        });
+      });
+
+      drawerOpen?.addEventListener('click', openDrawer);
+      drawerClose?.addEventListener('click', closeDrawer);
+      backdrop?.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+      window.addEventListener('resize', () => { if (!isMobile()) closeDrawer(); });
+      window.addEventListener('hashchange', applyHash);
+
+      applyHash();
+      safeIcons();
+    })();
+
+  </script>
+</body>
+</html>
