@@ -62,7 +62,55 @@ def build_ai_spec(base_url: str = "") -> dict:
             "5. GET /api/projects/{uuid}/preview/logs/stream?live=1 → dev server logs",
             "6. POST /api/stop_preview {uuid} when finished",
         ],
-        "preview_api": {
+            "mcp_stdio_client": {
+                "description": (
+                    "External MCP clients (IDE plugins, agent UIs, automation) connect via stdio "
+                    "by spawning ``python3 -m syte.mcp_stdio``. The server exposes JSON-RPC "
+                    "(initialize, tools/list, tools/call) over stdin/stdout with Content-Length framing."
+                ),
+                "connection": [
+                    "1. Resolve the project UUID from the Syte GUI or API.",
+                    "2. Set environment variables: SYTE_PROJECT_ID (project UUID), SYTE_API_BASE (Syte server URL).",
+                    "3. Spawn ``python3 -m syte.mcp_stdio`` with stdio attached.",
+                    "4. Call initialize, then tools/list to discover tools.",
+                    "5. Call tools/call with name + arguments to invoke a tool.",
+                ],
+                "spawn_command_example": "SYTE_PROJECT_ID=<uuid> SYTE_API_BASE=<url> python3 -m syte.mcp_stdio",
+                "available_tools": [
+                    "syte_service — control service + preview (status, preview_start, preview_stop, run, logs, preview_logs)",
+                    "syte_access — preview access (status, url, fetch, read, logs, screenshot)",
+                    "syte_info — discover project routes + spawn command",
+                ],
+                "builtin_gui_equivalent": "The built-in 'syte' MCP addon in /api/projects/{id}/agent/mcp exposes the same tools via HTTP.",
+                "notes": [
+                    "Production start/stop/deploy/update actions are blocked for agent safety (only preview/dev ops allowed).",
+                    "No extra dependencies beyond Python stdlib — uses urllib for HTTP, sys.stdin/stdout for JSON-RPC.",
+                ],
+            },
+            "model_stream": {
+                "endpoint": "GET /api/agent_models/stream",
+                "auth": "X-API-Key or Authorization: Bearer",
+                "format": "text/event-stream (SSE)",
+                "description": "Stream available AI model profiles by name. Emits a single snapshot event on connect, then periodic heartbeats.",
+                "snapshot_event": {
+                    "event": "snapshot",
+                    "data": {
+                        "ok": True,
+                        "source": "provider_catalog",
+                        "models": [
+                            {"name": "syra-nano", "display": "Go — Gemini 2.5 Flash"},
+                            {"name": "syra-ultra", "display": "Air — Aliyun Qwen3.7-Plus (qwen3.7-plus, cost-capped)"},
+                            {"name": "syra-havy", "display": "Metal — VyceAI Claude Sonnet 4.6 (claude-sonnet-4-6)"},
+                        ],
+                    },
+                },
+                "heartbeat_event": {
+                    "event": "heartbeat",
+                    "data": {"ok": True},
+                },
+                "use_case": "Populate model selector dropdowns in agent UIs without polling the full /api/ai.json spec.",
+            },
+            "preview_api": {
             "description": "Fast live preview — auto-detects stack (Next/Vite HMR, CRA, Astro/Nuxt/SvelteKit/Remix, Express, FastAPI/Flask, static HTML) on wildcard GUI zone",
             "domain_format": "preview{random_letter}-{appname}.sycord.site (e.g. previewk-mysite.sycord.site)",
             "domain_rules": {
@@ -137,6 +185,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "POST", "path": "/api/delete_project", "auth": True, "body": {"uuid": "str"}},
             {"method": "GET", "path": "/api/get_logs?uuid=&lines=200", "auth": True, "description": "Snapshot of deploy/runtime logs"},
             {"method": "GET", "path": "/api/projects/{uuid}/logs/stream?live=1", "auth": "optional", "description": "SSE live deploy logs"},
+            {"method": "GET", "path": "/api/agent_models/stream", "auth": True, "description": "SSE stream of available AI model profiles (snapshot + heartbeats)"},
             {"method": "GET", "path": "/api/agent_status?uuid=", "auth": True, "description": "Syte cloud agent status + agent_proxy_url"},
             {"method": "POST", "path": "/api/agent_warm", "auth": True, "body": {"uuid": "str"}, "description": "Non-blocking, deduplicated runtime prewarm for instant chat"},
             {"method": "POST", "path": "/api/agent_start", "auth": True, "body": {"uuid": "str"}, "description": "Start Syte cloud runtime"},
