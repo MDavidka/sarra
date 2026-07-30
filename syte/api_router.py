@@ -217,6 +217,37 @@ class AgentSkillDeleteBody(BaseModel):
     skill_id: str
 
 
+class AgentProfileBody(BaseModel):
+    uuid: str
+    name: str = ""
+    icon: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentMcpCredentialBody(BaseModel):
+    uuid: str
+    service_name: str
+    display_name: str = ""
+    description: str = ""
+    api_key: str = ""
+    api_url: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentMcpCredentialBatchBody(BaseModel):
+    """Exact accepted JSON for an external service to bulk-save credentials + profile."""
+    uuid: str
+    name: str = ""
+    icon: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    credentials: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AgentMcpCredentialDeleteBody(BaseModel):
+    uuid: str
+    service_name: str
+
+
 def _http_error(status: int, error: str, message: str):
     raise HTTPException(status, detail={"error": error, "message": message})
 
@@ -1282,3 +1313,147 @@ async def api_preview_status(
     if not meta:
         _http_error(404, "not_found", message)
     return {"ok": True, **meta}
+
+
+# ---------------------------------------------------------------------------
+# Project profile (Turso) — user-facing name + icon
+# ---------------------------------------------------------------------------
+
+
+@router.get("/agent_profile")
+async def api_agent_profile_get(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.turso_store import get_project_profile
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    profile = await get_project_profile(uuid)
+    if not profile:
+        return {"ok": True, "uuid": uuid, "profile": None, "note": "No Turso profile saved yet"}
+    return {"ok": True, "uuid": uuid, "profile": profile}
+
+
+@router.post("/agent_profile")
+async def api_agent_profile_upsert(
+    body: AgentProfileBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.turso_store import upsert_project_profile
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    profile = await upsert_project_profile(
+        body.uuid,
+        name=body.name,
+        icon=body.icon,
+        metadata=body.metadata,
+    )
+    if not profile:
+        _http_error(503, "turso_unavailable", "Turso is not configured — cannot save profile.")
+    return {"ok": True, "uuid": body.uuid, "profile": profile}
+
+
+# ---------------------------------------------------------------------------
+# MCP credentials (Turso) — external service API keys the agent can use
+# ---------------------------------------------------------------------------
+
+
+@router.get("/agent_credentials")
+async def api_agent_credentials_list(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.turso_store import list_mcp_credentials
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    creds = await list_mcp_credentials(uuid)
+    return {"ok": True, "uuid": uuid, "credentials": creds}
+
+
+@router.post("/agent_credentials")
+async def api_agent_credential_save(
+    body: AgentMcpCredentialBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.turso_store import save_mcp_credential
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    result = await save_mcp_credential(
+        body.uuid,
+        service_name=body.service_name,
+        display_name=body.display_name,
+        description=body.description,
+        api_key=body.api_key,
+        api_url=body.api_url,
+        metadata=body.metadata,
+    )
+    if not result:
+        _http_error(503, "turso_unavailable", "Turso is not configured — cannot save credential.")
+    return {"ok": True, **result}
+
+
+@router.post("/agent_credentials_batch")
+async def api_agent_credential_batch(
+    body: AgentMcpCredentialBatchBody,
+    _token: dict = Depends(verify_api_token),
+):
+    """Accepted JSON for an external service to bulk-save credentials and profile.
+
+    Exact accepted JSON schema — see docs/turso-persistence.md.
+    """
+    from syte.turso_store import save_mcp_credential, upsert_project_profile
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+
+    results: dict[str, Any] = {"ok": True, "uuid": body.uuid, "profile": None, "credentials": []}
+
+    if body.name or body.icon or body.metadata:
+        profile = await upsert_project_profile(
+            body.uuid,
+            name=body.name,
+            icon=body.icon,
+            metadata=body.metadata,
+        )
+        results["profile"] = profile
+
+    for cred in body.credentials:
+        svc = str(cred.get("service_name") or "").strip()
+        if not svc:
+            continue
+        saved = await save_mcp_credential(
+            body.uuid,
+            service_name=svc,
+            display_name=str(cred.get("display_name") or svc),
+            description=str(cred.get("description") or ""),
+            api_key=str(cred.get("api_key") or ""),
+            api_url=str(cred.get("api_url") or ""),
+            metadata=cred.get("metadata") if isinstance(cred.get("metadata"), dict) else {},
+        )
+        if saved:
+            results["credentials"].append(saved)
+
+    return results
+
+
+@router.post("/agent_credentials_delete")
+async def api_agent_credential_delete(
+    body: AgentMcpCredentialDeleteBody,
+    _token: dict = Depends(verify_api_token),
+):
+    from syte.turso_store import delete_mcp_credential
+
+    project = await get_project(body.uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    ok = await delete_mcp_credential(body.uuid, body.service_name)
+    return {"ok": ok, "uuid": body.uuid, "service_name": body.service_name}

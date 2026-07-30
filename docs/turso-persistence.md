@@ -18,6 +18,8 @@ fallback in `syte.local_session_store`; the rollup tables below are remote-only.
 | `agent_request` | **One row per request**: the request text, its timestamp, how much activity it caused, and its final cost | `record_request`, `finalize_request` |
 | `agent_subagent_task` | **One row per delegation**: task text, declared file scope, start time, outcome, cost | `record_subagent_task`, `finalize_subagent_task` |
 | `agent_subagent_activity` | Activity produced *by a subagent* (its own chat tab feed) | `record_subagent_activity` |
+| `project_profile` | Per-project user-facing metadata (name, icon) | `upsert_project_profile` |
+| `user_mcp_credentials` | External service API keys the agent can use (GitHub, Jira, Slack, etc.) | `save_mcp_credential`, `delete_mcp_credential` |
 
 `agent_request.cost_usd` is deliberately `NULL` until generation finishes —
 token usage (and therefore price) is only known at the end of the turn.
@@ -213,3 +215,193 @@ FROM agent_subagent_task WHERE session_id = ?;
   (`_resync_unsynced_messages`).
 - SSE endpoints negotiate `gzip` / `br` via `Accept-Encoding` so external
   pages can keep the live feed cheap while Turso remains the durable store.
+
+## Project profile
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `project_id` | TEXT PK | Syte project UUID |
+| `name` | TEXT | Human-readable display name (max 200 chars) |
+| `icon` | TEXT | URL or data-URI for project icon (max 2000 chars) |
+| `metadata` | TEXT (JSON) | Arbitrary key/value pairs |
+| `created_at` | TEXT | ISO-8601 timestamp |
+| `updated_at` | TEXT | ISO-8601 timestamp |
+
+One row per project. Upserted via `upsert_project_profile` — an external service
+can set a project's name and icon in Turso so every Syte instance shows the
+same profile.
+
+## User MCP credentials
+
+Stores API keys, tokens, and endpoint URLs for external services the agent is
+allowed to call on behalf of the user (GitHub, Jira, Slack, Linear, etc.).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | Auto-increment row id |
+| `project_id` | TEXT | Syte project UUID |
+| `service_name` | TEXT | Machine-readable slug, e.g. `github`, `jira`, `slack` (max 120 chars) |
+| `display_name` | TEXT | Human-readable label, e.g. `GitHub` (max 200 chars) |
+| `description` | TEXT | Free-text description of what this credential is for (max 1000 chars) |
+| `api_key` | TEXT | The secret API key/token (max 2000 chars) |
+| `api_url` | TEXT | Base URL for the service API, e.g. `https://api.github.com` (max 2000 chars) |
+| `metadata` | TEXT (JSON) | Arbitrary key/value pairs (rate limits, org slug, etc.) |
+| `status` | TEXT | `active` or `revoked` |
+| `created_at` | TEXT | ISO-8601 timestamp |
+| `updated_at` | TEXT | ISO-8601 timestamp |
+
+Unique constraint: `(project_id, service_name)`.
+
+**Security:** API keys stored at rest in Turso (TLS-encrypted). The agent tool
+`mcp_credentials` returns masked keys (`••••XXXX` — only last 4 chars visible).
+Only the server-side `call_external_api` tool reads the real key and uses it
+for outbound requests. Keys are **never** echoed into LLM prompts.
+
+## Accepted JSON format (external service batch save)
+
+An external service saves project profile + credentials in a single batch call.
+This is the exact accepted JSON schema.
+
+### Endpoint
+
+```
+POST /api/projects/{project_id}/agent/credentials/batch
+```
+
+### Request body
+
+```json
+{
+  "name": "My Project",
+  "icon": "https://cdn.example.com/projects/proj-42/icon.png",
+  "metadata": {
+    "org_slug": "my-org",
+    "region": "us-east-1"
+  },
+  "credentials": [
+    {
+      "service_name": "github",
+      "display_name": "GitHub (org-bot)",
+      "description": "Read/write access to my-org repos",
+      "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "api_url": "https://api.github.com",
+      "metadata": {
+        "owner": "my-org",
+        "scopes": ["repo", "read:org"]
+      }
+    },
+    {
+      "service_name": "jira",
+      "display_name": "Jira Cloud",
+      "description": "Project management and ticketing",
+      "api_key": "ATATT3xFfGF0...",
+      "api_url": "https://mycompany.atlassian.net",
+      "metadata": {
+        "email": "bot@mycompany.com",
+        "project_key": "PROJ"
+      }
+    },
+    {
+      "service_name": "slack",
+      "display_name": "Slack Bot",
+      "description": "Post notifications to #deploys",
+      "api_key": "xoxb-...",
+      "api_url": "https://slack.com/api",
+      "metadata": {
+        "default_channel": "#deploys"
+      }
+    }
+  ]
+}
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "project_id": "proj-42",
+  "profile": {
+    "project_id": "proj-42",
+    "name": "My Project",
+    "icon": "https://cdn.example.com/projects/proj-42/icon.png",
+    "metadata": { "org_slug": "my-org", "region": "us-east-1" },
+    "created_at": "2026-07-30T21:30:00.000Z",
+    "updated_at": "2026-07-30T21:30:00.000Z"
+  },
+  "credentials": [
+    {
+      "project_id": "proj-42",
+      "service_name": "github",
+      "display_name": "GitHub (org-bot)",
+      "description": "Read/write access to my-org repos",
+      "api_key_masked": "••••xxxx",
+      "api_url": "https://api.github.com",
+      "metadata": { "owner": "my-org", "scopes": ["repo", "read:org"] },
+      "status": "active",
+      "created_at": "2026-07-30T21:30:00.000Z",
+      "updated_at": "2026-07-30T21:30:00.000Z"
+    }
+  ]
+}
+```
+
+### Field reference
+
+| Field | Required | Type | Notes |
+|-------|----------|------|-------|
+| `name` | no | string | Project display name (max 200 chars) |
+| `icon` | no | string | Project icon URL or data-URI (max 2000 chars) |
+| `metadata` | no | object | Arbitrary project-level key/value pairs |
+| `credentials` | no | array | List of credential objects to save |
+| `credentials[].service_name` | **yes** | string | Machine slug, unique per project (max 120 chars) |
+| `credentials[].display_name` | no | string | Human label (max 200 chars) |
+| `credentials[].description` | no | string | Free-text (max 1000 chars) |
+| `credentials[].api_key` | no | string | Secret API key/token (max 2000 chars) |
+| `credentials[].api_url` | no | string | Service base URL (max 2000 chars) |
+| `credentials[].metadata` | no | object | Arbitrary credential-level key/value pairs |
+
+### Token API mirror
+
+Authenticate with `X-API-Key: syte_…` or `Authorization: Bearer syte_…`.
+
+```
+POST /api/agent_credentials_batch
+{
+  "uuid": "proj-42",
+  "name": "My Project",
+  "icon": "...",
+  "credentials": [...]
+}
+```
+
+## Agent tools
+
+The cloud agent exposes two tools for working with stored credentials:
+
+### `mcp_credentials`
+
+Lists all active MCP credentials for the current project. Returns service names,
+display names, descriptions, API base URLs, and **masked** keys. The agent
+calls this first before attempting any external API work.
+
+```
+→ mcp_credentials()
+← { "ok": true, "credentials": [{ "service_name": "github", "api_key_masked": "••••xxxx", ... }] }
+```
+
+### `call_external_api`
+
+Makes an authenticated HTTP request using a stored credential. The agent passes
+the `service_name` (from `mcp_credentials`), HTTP method, URL path (appended to
+the stored `api_url`), optional JSON body, and optional extra headers. The
+server looks up the real key, attaches it as a `Bearer` token, and makes the
+request.
+
+```
+→ call_external_api(service_name="github", method="GET", path="/repos/my-org/my-repo/issues")
+← { "ok": true, "status": 200, "service": "github", "data": [...] }
+```
+
+The auth header is automatically set to `Authorization: Bearer <stored_api_key>`.
+Additional headers provided by the agent are merged on top.

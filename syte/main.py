@@ -1150,6 +1150,32 @@ class AgentSkillUpdateRequest(BaseModel):
     parameters: dict[str, str] | None = None
 
 
+class AgentProfileRequest(BaseModel):
+    name: str = ""
+    icon: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentMcpCredentialRequest(BaseModel):
+    service_name: str
+    display_name: str = ""
+    description: str = ""
+    api_key: str = ""
+    api_url: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentMcpCredentialBatchRequest(BaseModel):
+    """Accepted JSON for an external service to bulk-save credentials + profile.
+
+    This is the exact accepted format documented in docs/turso-persistence.md.
+    """
+    name: str = ""
+    icon: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    credentials: list[dict[str, Any]] = Field(default_factory=list)
+
+
 @app.get("/api/projects/{project_id}/agent/service")
 async def api_agent_service_capabilities(project_id: str):
     from syte.agent_service import list_service_capabilities
@@ -1449,6 +1475,145 @@ async def api_agent_mcp_disconnect(project_id: str, addon_id: str):
     if not result.get("ok"):
         raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
     return result
+
+
+# ---------------------------------------------------------------------------
+# Project profile (Turso) — user-facing name + icon
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/projects/{project_id}/agent/profile")
+async def api_agent_profile_get(project_id: str):
+    from syte.turso_store import get_project_profile
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    profile = await get_project_profile(project_id)
+    if not profile:
+        return {"ok": True, "project_id": project_id, "profile": None, "note": "No Turso profile saved yet"}
+    return {"ok": True, "project_id": project_id, "profile": profile}
+
+
+@app.put("/api/projects/{project_id}/agent/profile")
+async def api_agent_profile_upsert(project_id: str, body: AgentProfileRequest):
+    from syte.turso_store import upsert_project_profile
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    profile = await upsert_project_profile(
+        project_id,
+        name=body.name,
+        icon=body.icon,
+        metadata=body.metadata,
+    )
+    if not profile:
+        return {
+            "ok": False,
+            "error": "turso_unavailable",
+            "message": "Turso is not configured — cannot save profile.",
+        }
+    return {"ok": True, "project_id": project_id, "profile": profile}
+
+
+# ---------------------------------------------------------------------------
+# MCP credentials (Turso) — external service API keys the agent can use
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/projects/{project_id}/agent/credentials")
+async def api_agent_credentials_list(project_id: str):
+    from syte.turso_store import list_mcp_credentials
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    creds = await list_mcp_credentials(project_id)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "credentials": creds,
+        "documentation": "docs/turso-persistence.md#user-mcp-credentials",
+    }
+
+
+@app.post("/api/projects/{project_id}/agent/credentials")
+async def api_agent_credential_save(project_id: str, body: AgentMcpCredentialRequest):
+    from syte.turso_store import save_mcp_credential
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await save_mcp_credential(
+        project_id,
+        service_name=body.service_name,
+        display_name=body.display_name,
+        description=body.description,
+        api_key=body.api_key,
+        api_url=body.api_url,
+        metadata=body.metadata,
+    )
+    if not result:
+        return {
+            "ok": False,
+            "error": "turso_unavailable",
+            "message": "Turso is not configured — cannot save credential.",
+        }
+    return {"ok": True, **result}
+
+
+@app.post("/api/projects/{project_id}/agent/credentials/batch")
+async def api_agent_credential_batch(project_id: str, body: AgentMcpCredentialBatchRequest):
+    """Accepted JSON for an external service to bulk-save credentials and profile.
+
+    Exact accepted JSON schema — see docs/turso-persistence.md.
+    """
+    from syte.turso_store import save_mcp_credential, upsert_project_profile
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    results: dict[str, Any] = {"ok": True, "project_id": project_id, "profile": None, "credentials": []}
+
+    if body.name or body.icon or body.metadata:
+        profile = await upsert_project_profile(
+            project_id,
+            name=body.name,
+            icon=body.icon,
+            metadata=body.metadata,
+        )
+        results["profile"] = profile
+
+    for cred in body.credentials:
+        svc = str(cred.get("service_name") or "").strip()
+        if not svc:
+            continue
+        saved = await save_mcp_credential(
+            project_id,
+            service_name=svc,
+            display_name=str(cred.get("display_name") or svc),
+            description=str(cred.get("description") or ""),
+            api_key=str(cred.get("api_key") or ""),
+            api_url=str(cred.get("api_url") or ""),
+            metadata=cred.get("metadata") if isinstance(cred.get("metadata"), dict) else {},
+        )
+        if saved:
+            results["credentials"].append(saved)
+
+    return results
+
+
+@app.delete("/api/projects/{project_id}/agent/credentials/{service_name}")
+async def api_agent_credential_delete(project_id: str, service_name: str):
+    from syte.turso_store import delete_mcp_credential
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    ok = await delete_mcp_credential(project_id, service_name)
+    return {"ok": ok, "project_id": project_id, "service_name": service_name}
 
 
 @app.get("/api/projects/{project_id}/agent/skills")

@@ -482,3 +482,135 @@ async def internal_agent_proxy(
         "The per-project agent server API was removed. Use Syte agent communicate, "
         "change, activity, and lifecycle routes.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Project profile (Turso) — internal service mirror
+# ---------------------------------------------------------------------------
+
+
+@router.get("/projects/{project_id}/agent/profile")
+async def internal_agent_profile_get(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import get_project_profile
+
+    await _require_project(project_id)
+    profile = await get_project_profile(project_id)
+    if not profile:
+        return {"ok": True, "project_id": project_id, "profile": None}
+    return {"ok": True, "project_id": project_id, "profile": profile}
+
+
+@router.put("/projects/{project_id}/agent/profile")
+async def internal_agent_profile_upsert(
+    project_id: str,
+    body: dict[str, Any],
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import upsert_project_profile
+
+    await _require_project(project_id)
+    profile = await upsert_project_profile(
+        project_id,
+        name=str(body.get("name") or ""),
+        icon=str(body.get("icon") or ""),
+        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+    )
+    if not profile:
+        raise HTTPException(503, "Turso is not configured")
+    return {"ok": True, "project_id": project_id, "profile": profile}
+
+
+# ---------------------------------------------------------------------------
+# MCP credentials (Turso) — internal service mirror
+# ---------------------------------------------------------------------------
+
+
+@router.get("/projects/{project_id}/agent/credentials")
+async def internal_agent_credentials_list(
+    project_id: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import list_mcp_credentials
+
+    await _require_project(project_id)
+    creds = await list_mcp_credentials(project_id)
+    return {"ok": True, "project_id": project_id, "credentials": creds}
+
+
+@router.post("/projects/{project_id}/agent/credentials")
+async def internal_agent_credential_save(
+    project_id: str,
+    body: dict[str, Any],
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import save_mcp_credential
+
+    await _require_project(project_id)
+    result = await save_mcp_credential(
+        project_id,
+        service_name=str(body.get("service_name") or ""),
+        display_name=str(body.get("display_name") or ""),
+        description=str(body.get("description") or ""),
+        api_key=str(body.get("api_key") or ""),
+        api_url=str(body.get("api_url") or ""),
+        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+    )
+    if not result:
+        raise HTTPException(503, "Turso is not configured")
+    return {"ok": True, **result}
+
+
+@router.post("/projects/{project_id}/agent/credentials/batch")
+async def internal_agent_credential_batch(
+    project_id: str,
+    body: dict[str, Any],
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import save_mcp_credential, upsert_project_profile
+
+    await _require_project(project_id)
+
+    results: dict[str, Any] = {"ok": True, "project_id": project_id, "profile": None, "credentials": []}
+
+    name = str(body.get("name") or "")
+    icon = str(body.get("icon") or "")
+    meta = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+    if name or icon or meta:
+        profile = await upsert_project_profile(project_id, name=name, icon=icon, metadata=meta)
+        results["profile"] = profile
+
+    for cred in (body.get("credentials") or []):
+        if not isinstance(cred, dict):
+            continue
+        svc = str(cred.get("service_name") or "").strip()
+        if not svc:
+            continue
+        saved = await save_mcp_credential(
+            project_id,
+            service_name=svc,
+            display_name=str(cred.get("display_name") or svc),
+            description=str(cred.get("description") or ""),
+            api_key=str(cred.get("api_key") or ""),
+            api_url=str(cred.get("api_url") or ""),
+            metadata=cred.get("metadata") if isinstance(cred.get("metadata"), dict) else {},
+        )
+        if saved:
+            results["credentials"].append(saved)
+
+    return results
+
+
+@router.delete("/projects/{project_id}/agent/credentials/{service_name}")
+async def internal_agent_credential_delete(
+    project_id: str,
+    service_name: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import delete_mcp_credential
+
+    await _require_project(project_id)
+    ok = await delete_mcp_credential(project_id, service_name)
+    return {"ok": ok, "project_id": project_id, "service_name": service_name}
