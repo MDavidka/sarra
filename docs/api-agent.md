@@ -283,6 +283,74 @@ activity events have aged out of the replay window.
 `cancelled`. Rows left at `running` by a restart are swept to `cancelled` the
 next time the project's agent is warmed.
 
+## MCP stdio client
+
+External MCP clients (IDE plugins, agent chat UIs, automation scripts) can connect to Syte
+via stdio by spawning the built-in MCP server. The server implements JSON-RPC 2.0 over
+stdin/stdout with Content-Length framing (no extra dependencies).
+
+### Spawn command
+
+```bash
+SYTE_PROJECT_ID=<project-uuid> SYTE_API_BASE=https://syte.example.com python3 -m syte.mcp_stdio
+```
+
+### Connection flow
+
+1. Resolve the project UUID from the Syte GUI or API.
+2. Set `SYTE_PROJECT_ID` and `SYTE_API_BASE` environment variables.
+3. Spawn the process with stdio attached.
+4. Send `initialize`, then `tools/list` to discover tools.
+5. Send `tools/call` with `name` + `arguments` to invoke a tool.
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `syte_service` | Control service + preview (status, preview_start, preview_stop, run, logs, preview_logs). Production start/stop/deploy/update are blocked for agent safety. |
+| `syte_access` | Preview access (status, url, fetch, read, logs, screenshot) |
+| `syte_info` | Return project routes, API base, spawn command, and docs links |
+
+### Example: list tools
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+```
+
+### Example: call a tool
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"syte_service","arguments":{"action":"status"}}}
+```
+
+Responses include `isError` and the tool result as JSON text in `content[0].text`.
+
+## Model stream
+
+### GET `/api/agent_models/stream`
+
+Stream available AI model profiles for agent UIs. Requires `X-API-Key` or
+`Authorization: Bearer` authentication.
+
+**Headers:** `Accept: text/event-stream`
+
+The server sends one `snapshot` event on connect, then periodic `heartbeat` events.
+
+```json
+event: snapshot
+data: {"ok": true, "source": "provider_catalog", "models": [
+  {"name": "syra-nano", "display": "Go — Gemini 2.5 Flash"},
+  {"name": "syra-ultra", "display": "Air — Aliyun Qwen3.7-Plus"},
+  {"name": "syra-havy", "display": "Metal — VyceAI Claude Sonnet 4.6"}
+]}
+
+event: heartbeat
+data: {"ok": true}
+```
+
+Use this endpoint to populate model selector dropdowns without polling the full
+`/api/ai.json` spec.
+
 ## Token API mirrors
 
 Authenticate with `X-API-Key: syte_…` or `Authorization: Bearer syte_…`.

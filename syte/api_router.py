@@ -1,6 +1,10 @@
 """Syte external API (token-authenticated) — for AI agents and automation."""
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from syte import deployment, process_manager
@@ -566,6 +570,67 @@ async def api_agent_activity_stream(
             yield frame
 
     return sse_stream_response(request, _gen())
+
+
+@router.get("/agent_models/stream")
+async def api_agent_models_stream(request: Request, _token: dict = Depends(verify_api_token)):
+    """SSE stream of available AI models by name.
+
+    Emits a JSON array snapshot of all configured models on connect, then
+    heartbeats every 15 seconds. Clients can use this to populate model
+    selectors without parsing the full ``/api/settings`` payload.
+
+    Frame shape:
+    - ``data: {"type":"snapshot","models":[...]}`` — initial full list
+    - ``data: {"type":"heartbeat"}`` — periodic keep-alive
+    - ``data: {"type":"error","message":"..."}`` — on stream failure
+    """
+    from syte.ai_providers import provider_catalog
+
+    catalog = provider_catalog()
+    model_names = [
+        {
+            "profile": entry.get("profile"),
+            "model": entry.get("model"),
+            "label": entry.get("label"),
+            "display_name": entry.get("display_name"),
+            "role": entry.get("role"),
+        }
+        for entry in catalog
+    ]
+
+    async def _gen():
+        try:
+            yield f"data: {json.dumps({'type': 'snapshot', 'models': model_names})}\n\n"
+        except Exception:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'stream_failed'})}\n\n"
+            return
+        try:
+            while True:
+                try:
+                    if await request.is_disconnected():
+                        break
+                except Exception:
+                    break
+                yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            try:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'stream_failed'})}\n\n"
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/agent_failures")

@@ -1,4 +1,26 @@
-"""Minimal MCP stdio server exposing Syte project tools (no extra deps)."""
+"""Minimal MCP stdio server exposing Syte project tools (no extra deps).
+
+The Syte MCP stdio server is the bridge between external MCP clients (IDE
+plugins, agent chat UIs, automation scripts) and the Syte project API. A client
+connects by spawning this script with ``SYTE_PROJECT_ID`` and ``SYTE_API_BASE``
+set; the server then forwards tool calls to the project-scoped HTTP API.
+
+Typical client connection flow:
+1. Resolve the project UUID from the Syte GUI or API.
+2. Set environment variables:
+   - ``SYTE_PROJECT_ID`` — the project UUID
+   - ``SYTE_API_BASE`` — the Syte server base URL (e.g. ``http://127.0.0.1:8787``)
+   - ``PYTHONPATH`` — path to the ``syte`` package (only needed when spawning
+     ``python3 -m syte.mcp_stdio`` directly)
+3. Spawn the process with stdio (JSON-RPC over stdin/stdout).
+4. Call ``initialize``, then ``tools/list`` to discover available tools.
+5. Call ``tools/call`` with ``name`` + ``arguments`` to invoke a tool.
+
+The built-in ``syte`` MCP addon in the Syte GUI exposes the same two tools
+(``syte_service`` and ``syte_access``) through the HTTP API at
+``/api/projects/{id}/agent/mcp``. This stdio server is the equivalent for
+external MCP clients.
+"""
 
 from __future__ import annotations
 
@@ -41,35 +63,90 @@ def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "error": "http_error", "message": raw[:2000]}
 
 
+def _get(path: str) -> dict[str, Any]:
+    url = f"{_api_base()}{path}"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "http_error", "message": raw[:2000]}
+
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "syte_service",
-        "description": "Control Syte project services: start/stop/deploy/preview/run/logs",
+        "description": (
+            "Control a Syte project service and dev preview. Actions: "
+            "status (project + preview status), preview_start, preview_stop, "
+            "run (shell command in workspace), logs, preview_logs. "
+            "Production start/stop/deploy/update are blocked for agent safety."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "status|start|stop|deploy|preview_start|preview_stop|update|run|logs|preview_logs",
+                    "enum": ["status", "preview_start", "preview_stop", "run", "logs", "preview_logs"],
+                    "description": "Service action to perform.",
                 },
-                "command": {"type": "string", "description": "Shell command for action=run"},
-                "cwd": {"type": "string", "description": "Working dir relative to workspace (default app)"},
-                "lines": {"type": "integer", "description": "Log lines for logs actions"},
+                "command": {
+                    "type": "string",
+                    "description": "Shell command for action=run (e.g. 'npm run lint').",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory relative to workspace root (default: app).",
+                },
+                "lines": {
+                    "type": "integer",
+                    "description": "Number of log lines for logs/preview_logs (default: 200).",
+                },
             },
             "required": ["action"],
         },
     },
     {
         "name": "syte_access",
-        "description": "Preview URL access: fetch HTML, logs, screenshot, status",
+        "description": (
+            "Access the project preview: check status, get URL, fetch page HTML/text, "
+            "read page content, tail preview logs, or capture a screenshot."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "description": "status|url|fetch|read|logs|screenshot"},
-                "url": {"type": "string"},
-                "lines": {"type": "integer"},
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "url", "fetch", "read", "logs", "screenshot"],
+                    "description": "Preview access action.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Optional full URL override (must be an allowed preview URL).",
+                },
+                "lines": {
+                    "type": "integer",
+                    "description": "Log lines for logs action (default: 200).",
+                },
             },
             "required": ["action"],
+        },
+    },
+    {
+        "name": "syte_info",
+        "description": (
+            "Return Syte MCP server configuration: project routes, API base, "
+            "project ID, and documentation links. Useful for clients that need to "
+            "discover available HTTP endpoints or build direct API calls."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
         },
     },
 ]
@@ -93,6 +170,26 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if arguments.get("lines") is not None:
             body["lines"] = arguments["lines"]
         return _post(f"/api/projects/{pid}/agent/access", body)
+    if name == "syte_info":
+        return {
+            "ok": True,
+            "project_id": pid,
+            "api_base": _api_base(),
+            "project_routes": {
+                "mcp_list": f"{_api_base()}/api/projects/{pid}/agent/mcp",
+                "mcp_connect": f"{_api_base()}/api/projects/{pid}/agent/mcp/connect",
+                "mcp_call": f"{_api_base()}/api/projects/{pid}/agent/mcp/call",
+                "skills": f"{_api_base()}/api/projects/{pid}/agent/skills",
+                "service": f"{_api_base()}/api/projects/{pid}/agent/service",
+                "access": f"{_api_base()}/api/projects/{pid}/agent/access",
+                "logs_stream": f"{_api_base()}/api/projects/{pid}/agent/logs/stream?live=1",
+                "activity_stream": f"{_api_base()}/api/projects/{pid}/agent/activity/stream",
+                "status": f"{_api_base()}/api/projects/{pid}/agent",
+            },
+            "documentation": f"{_api_base()}/api/",
+            "ai_spec": f"{_api_base()}/api/ai.json",
+            "mcp_stdio_command": f"SYTE_PROJECT_ID={pid} SYTE_API_BASE={_api_base()} python3 -m syte.mcp_stdio",
+        }
     return {"ok": False, "error": "unknown_tool", "message": name}
 
 
