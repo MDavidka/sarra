@@ -1079,7 +1079,9 @@ def _build_static_instruction(
         "ask_question "
         "(interactive user input: answer/input/slider/choice/multi_choice); env_get/env_set/request_env "
         "(project env vars — request_env asks the user when a secret/value is missing); "
-        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); web_search (find current web "
+        "list_mcp_addons/connect_mcp/call_mcp (available MCP addons); "
+        "mcp_credentials/call_external_api (stored external service credentials — check what APIs "
+        "are available before asking the user for keys); web_search (find current web "
         "info); fetch_url (READ any public page/API you found — docs, references, changelogs); "
         "browse_url (real headless Chromium against any URL incl. the dev server on 127.0.0.1: "
         "console logs, page exceptions, failed requests); shadcn_registry "
@@ -1661,7 +1663,8 @@ async def get_agent_status(
             "terminal", "file_editor", "preview_control", "skills", "provider_retries",
             "planning", "plan_persistence", "subagents", "visible_thinking",
             "screenshot_preview", "inspect_preview", "vision_screenshots", "interactive_questions",
-            "env_access", "mcp_addons", "session_stop_markers", "any_code_type",
+            "env_access", "mcp_addons", "mcp_credentials", "call_external_api",
+            "session_stop_markers", "any_code_type",
             "shadcn_websites", "agent_memory", "visual_analyses", "design_profiles",
             "workspace_index", "activity_sse", "model_routing", "web_search",
             "semantic_search", "prompt_caching", "circuit_breaker", "skill_keywords",
@@ -1777,6 +1780,27 @@ TOOLS: list[dict[str, Any]] = [
          "tool": {"type": "string"},
          "arguments": {"type": "object"},
      }, "required": ["addon", "tool"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "mcp_credentials", "description": (
+        "List stored MCP credentials (API keys for external services like GitHub, Jira, "
+        "Slack, etc.) that an external service saved for this project. Returns service names, "
+        "display names, descriptions, API base URLs, and masked keys. Use this FIRST when the "
+        "user asks you to interact with an external service — never ask the user for API keys "
+        "that may already be stored. After confirming a credential exists, call call_external_api "
+        "with that service_name to make an authenticated request."),
+     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "call_external_api", "description": (
+        "Make an authenticated HTTP request to an external service using stored MCP credentials. "
+        "Call mcp_credentials first to see available services. The service_name must match a "
+        "saved credential. The stored api_key is automatically attached as a Bearer token "
+        "(Authorization header). Use this for any external API the user has configured — "
+        "GitHub, Jira, Slack, Linear, etc. Do NOT hardcode API keys or pass them in prompts."),
+     "parameters": {"type": "object", "properties": {
+         "service_name": {"type": "string", "description": "The stored service name from mcp_credentials list"},
+         "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method, default GET"},
+         "path": {"type": "string", "description": "URL path appended to the stored api_url, e.g. /repos/owner/repo/issues"},
+         "body": {"type": "object", "description": "JSON request body for POST/PUT/PATCH"},
+         "headers": {"type": "object", "description": "Additional headers merged with the auth header"},
+     }, "required": ["service_name"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "web_search", "description": (
         "Search the web for current information, docs, product/image ideas, or news. "
         "Prefer this over guessing when the user asks for latest/current facts."),
@@ -1889,7 +1913,7 @@ TOOLS: list[dict[str, Any]] = [
 _SUBAGENT_MUTATING_TOOLS = frozenset({
     "write_file", "delete_file", "run_command", "service", "update_plan",
     "env_set", "connect_mcp", "call_mcp", "ask_question", "request_env",
-    "delegate_task", "await_subagent",
+    "delegate_task", "await_subagent", "call_external_api",
 })
 
 SUBAGENT_TOOLS = [
@@ -2218,6 +2242,19 @@ async def _execute_tool(
                 str(args.get("tool") or ""),
                 args.get("arguments") if isinstance(args.get("arguments"), dict) else {},
             )
+        if name == "mcp_credentials":
+            from syte.turso_store import list_mcp_credentials
+
+            creds = await list_mcp_credentials(project_id)
+            if not creds:
+                return {
+                    "ok": True,
+                    "credentials": [],
+                    "note": "No stored MCP credentials for this project. An external service can save credentials via the API.",
+                }
+            return {"ok": True, "credentials": creds}
+        if name == "call_external_api":
+            return await _tool_call_external_api(project_id, args)
         if name == "web_search":
             from syte.web_search import web_search as do_web_search
 
@@ -2934,6 +2971,85 @@ async def _tool_env_set(project_id: str, args: dict[str, Any]) -> dict[str, Any]
     merge = bool(args["merge"]) if args.get("merge") is not None else True
     ok, message = await set_env_vars(project_id, clean, merge=merge)
     return {"ok": ok, "message": message, "keys": sorted(clean.keys()), "merge": merge}
+
+
+async def _tool_call_external_api(
+    project_id: str, args: dict[str, Any]
+) -> dict[str, Any]:
+    """Make an authenticated HTTP request to an external service using stored credentials."""
+    from syte.turso_store import get_mcp_credential, list_mcp_credentials
+    import httpx
+
+    service_name = str(args.get("service_name") or "").strip().lower()
+    if not service_name:
+        return {"ok": False, "error": "invalid_service", "message": "service_name is required"}
+
+    cred = await get_mcp_credential(project_id, service_name, include_key=True)
+    if not cred:
+        available = await list_mcp_credentials(project_id)
+        names = [c["service_name"] for c in available]
+        return {
+            "ok": False,
+            "error": "credential_not_found",
+            "message": f"No stored credential for '{service_name}'. Available: {names or 'none'}",
+        }
+
+    method = str(args.get("method") or "GET").upper()
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+        method = "GET"
+
+    path = str(args.get("path") or "").strip()
+    base_url = str(cred.get("api_url") or "").rstrip("/")
+    url = f"{base_url}{'/' + path.lstrip('/') if path else ''}"
+
+    body = args.get("body") if isinstance(args.get("body"), dict) else None
+    extra_headers = args.get("headers") if isinstance(args.get("headers"), dict) else {}
+
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {cred['api_key']}",
+        "Accept": "application/json",
+        **{str(k): str(v) for k, v in extra_headers.items()},
+    }
+    if body is not None:
+        headers.setdefault("Content-Type", "application/json")
+
+    try:
+        timeout = httpx.Timeout(45.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            kwargs: dict[str, Any] = {"headers": headers}
+            if body is not None:
+                kwargs["json"] = body
+            if method == "GET":
+                resp = await client.get(url, **kwargs)
+            elif method == "POST":
+                resp = await client.post(url, **kwargs)
+            elif method == "PUT":
+                resp = await client.put(url, **kwargs)
+            elif method == "PATCH":
+                resp = await client.patch(url, **kwargs)
+            elif method == "DELETE":
+                resp = await client.delete(url, **kwargs)
+            else:
+                return {"ok": False, "error": "bad_method", "message": f"Unknown HTTP method: {method}"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "timeout", "message": f"Request to {url} timed out"}
+    except Exception as exc:
+        return {"ok": False, "error": "request_failed", "message": str(exc)[:500]}
+
+    is_json = "application/json" in (resp.headers.get("content-type") or "")
+    try:
+        data = resp.json() if is_json else resp.text[:50_000]
+    except Exception:
+        data = resp.text[:50_000]
+
+    return {
+        "ok": resp.is_success,
+        "status": resp.status_code,
+        "service": service_name,
+        "method": method,
+        "url": url,
+        "data": data,
+    }
 
 
 async def _tool_request_env(

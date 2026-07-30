@@ -215,6 +215,50 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "ON agent_subagent_activity(task_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_agent_subagent_activity_session "
     "ON agent_subagent_activity(session_id, id)",
+    # ------------------------------------------------------------------
+    # Project profile: per-project user-facing metadata (name, icon)
+    # persisted in Turso so an external service can set/update it and
+    # every Syte instance sees the same profile. Only one row per
+    # project_id.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS project_profile (
+        project_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        icon TEXT NOT NULL DEFAULT '',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # ------------------------------------------------------------------
+    # User MCP credentials: API keys / tokens / endpoint URLs for
+    # external services the agent is allowed to call on behalf of the
+    # user. An external service saves these rows into Turso; the agent
+    # reads them via the ``mcp_credentials`` tool and uses them (through
+    # ``call_external_api``) when the user asks for work that involves
+    # that service. Keys are stored at rest (Turso is TLS-encrypted) and
+    # are **never** echoed in full to the LLM — the agent tool returns
+    # masked values (last 4 chars). Only the ``call_external_api`` tool
+    # (server-side) decrypts and uses the real key.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS user_mcp_credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        service_name TEXT NOT NULL,
+        display_name TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        api_key TEXT NOT NULL DEFAULT '',
+        api_url TEXT NOT NULL DEFAULT '',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_mcp_credentials_svc "
+    "ON user_mcp_credentials(project_id, service_name)",
 )
 
 # One cached client + schema-ready flag per (url, token) pair so settings
@@ -1416,3 +1460,296 @@ async def list_subagent_activity(
             item["payload"] = {}
         rows.append(item)
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Project profile — user-facing metadata persisted in Turso
+# ---------------------------------------------------------------------------
+
+
+async def upsert_project_profile(
+    project_id: str,
+    *,
+    name: str = "",
+    icon: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Create or update the project profile in Turso.
+
+    Returns the row that was written, or ``None`` when Turso is unavailable.
+    """
+    if not project_id:
+        return None
+    client = await get_turso_client()
+    if client is None:
+        return None
+    now = _now()
+    try:
+        await client.execute(
+            "INSERT INTO project_profile "
+            "(project_id, name, icon, metadata, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(project_id) DO UPDATE SET "
+            "name = excluded.name, icon = excluded.icon, "
+            "metadata = excluded.metadata, updated_at = excluded.updated_at",
+            [
+                project_id,
+                (name or "")[:200],
+                (icon or "")[:2000],
+                json.dumps(metadata or {}, ensure_ascii=False),
+                now,
+                now,
+            ],
+        )
+        return {
+            "project_id": project_id,
+            "name": (name or "")[:200],
+            "icon": (icon or "")[:2000],
+            "metadata": metadata or {},
+            "created_at": now,
+            "updated_at": now,
+        }
+    except Exception:
+        logger.exception("Failed to upsert project profile for %s", project_id)
+        return None
+
+
+async def get_project_profile(project_id: str) -> dict[str, Any] | None:
+    """Read the project profile from Turso."""
+    if not project_id:
+        return None
+    client = await get_turso_client()
+    if client is None:
+        return None
+    try:
+        rs = await client.execute(
+            "SELECT project_id, name, icon, metadata, created_at, updated_at "
+            "FROM project_profile WHERE project_id = ?",
+            [project_id],
+        )
+    except Exception:
+        logger.exception("Failed to get project profile for %s", project_id)
+        return None
+    if not rs.rows:
+        return None
+    row = rs.rows[0]
+    meta_raw = _row_value(row, "metadata") or "{}"
+    try:
+        meta = json.loads(meta_raw)
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    return {
+        "project_id": _row_value(row, "project_id"),
+        "name": _row_value(row, "name") or "",
+        "icon": _row_value(row, "icon") or "",
+        "metadata": meta,
+        "created_at": _row_value(row, "created_at"),
+        "updated_at": _row_value(row, "updated_at"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# User MCP credentials — external service API keys stored in Turso
+# ---------------------------------------------------------------------------
+
+
+def _mask_api_key(key: str) -> str:
+    """Return a display-safe version — only the last 4 chars are visible."""
+    if not key:
+        return ""
+    if len(key) <= 4:
+        return "*" * len(key)
+    return "\u2022\u2022\u2022\u2022" + key[-4:]
+
+
+async def save_mcp_credential(
+    project_id: str,
+    *,
+    service_name: str,
+    display_name: str = "",
+    description: str = "",
+    api_key: str = "",
+    api_url: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Insert or replace an MCP credential row in Turso.
+
+    ``service_name`` + ``project_id`` is the unique key.  Pass an existing
+    ``service_name`` to rotate the key / update the URL.
+    """
+    if not project_id or not service_name:
+        return None
+    client = await get_turso_client()
+    if client is None:
+        return None
+    now = _now()
+    svc = (service_name or "").strip().lower()[:120]
+    if not svc:
+        return None
+    try:
+        await client.execute(
+            "INSERT INTO user_mcp_credentials "
+            "(project_id, service_name, display_name, description, api_key, "
+            "api_url, metadata, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) "
+            "ON CONFLICT(project_id, service_name) DO UPDATE SET "
+            "display_name = excluded.display_name, "
+            "description = excluded.description, "
+            "api_key = excluded.api_key, "
+            "api_url = excluded.api_url, "
+            "metadata = excluded.metadata, "
+            "status = 'active', "
+            "updated_at = excluded.updated_at",
+            [
+                project_id,
+                svc,
+                (display_name or svc)[:200],
+                (description or "")[:1000],
+                (api_key or "")[:2000],
+                (api_url or "")[:2000],
+                json.dumps(metadata or {}, ensure_ascii=False),
+                now,
+                now,
+            ],
+        )
+        return {
+            "project_id": project_id,
+            "service_name": svc,
+            "display_name": display_name or svc,
+            "description": description or "",
+            "api_key_masked": _mask_api_key(api_key),
+            "api_url": api_url or "",
+            "metadata": metadata or {},
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        }
+    except Exception:
+        logger.exception(
+            "Failed to save MCP credential %s/%s", project_id, svc,
+        )
+        return None
+
+
+async def list_mcp_credentials(
+    project_id: str,
+    *,
+    include_keys: bool = False,
+) -> list[dict[str, Any]]:
+    """List all MCP credentials for a project.
+
+    By default API keys are masked.  Set ``include_keys=True``
+    only server-side when the real value is needed for an outbound API call.
+    """
+    if not project_id:
+        return []
+    client = await get_turso_client()
+    if client is None:
+        return []
+    try:
+        rs = await client.execute(
+            "SELECT id, project_id, service_name, display_name, description, "
+            "api_key, api_url, metadata, status, created_at, updated_at "
+            "FROM user_mcp_credentials WHERE project_id = ? AND status = 'active' "
+            "ORDER BY id ASC",
+            [project_id],
+        )
+    except Exception:
+        logger.exception("Failed to list MCP credentials for %s", project_id)
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in rs.rows:
+        key_raw = _row_value(row, "api_key") or ""
+        meta_raw = _row_value(row, "metadata") or "{}"
+        try:
+            meta = json.loads(meta_raw)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        rows.append({
+            "id": _row_value(row, "id"),
+            "project_id": _row_value(row, "project_id"),
+            "service_name": _row_value(row, "service_name"),
+            "display_name": _row_value(row, "display_name") or "",
+            "description": _row_value(row, "description") or "",
+            "api_key": key_raw if include_keys else _mask_api_key(key_raw),
+            "api_key_masked": _mask_api_key(key_raw),
+            "api_url": _row_value(row, "api_url") or "",
+            "metadata": meta,
+            "status": _row_value(row, "status") or "active",
+            "created_at": _row_value(row, "created_at"),
+            "updated_at": _row_value(row, "updated_at"),
+        })
+    return rows
+
+
+async def get_mcp_credential(
+    project_id: str,
+    service_name: str,
+    *,
+    include_key: bool = False,
+) -> dict[str, Any] | None:
+    """Look up a single MCP credential by service name."""
+    if not project_id or not service_name:
+        return None
+    client = await get_turso_client()
+    if client is None:
+        return None
+    svc = (service_name or "").strip().lower()[:120]
+    try:
+        rs = await client.execute(
+            "SELECT id, project_id, service_name, display_name, description, "
+            "api_key, api_url, metadata, status, created_at, updated_at "
+            "FROM user_mcp_credentials "
+            "WHERE project_id = ? AND service_name = ? AND status = 'active'",
+            [project_id, svc],
+        )
+    except Exception:
+        logger.exception("Failed to get MCP credential %s/%s", project_id, svc)
+        return None
+    if not rs.rows:
+        return None
+    row = rs.rows[0]
+    key_raw = _row_value(row, "api_key") or ""
+    meta_raw = _row_value(row, "metadata") or "{}"
+    try:
+        meta = json.loads(meta_raw)
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    return {
+        "id": _row_value(row, "id"),
+        "project_id": _row_value(row, "project_id"),
+        "service_name": _row_value(row, "service_name"),
+        "display_name": _row_value(row, "display_name") or "",
+        "description": _row_value(row, "description") or "",
+        "api_key": key_raw if include_key else _mask_api_key(key_raw),
+        "api_key_masked": _mask_api_key(key_raw),
+        "api_url": _row_value(row, "api_url") or "",
+        "metadata": meta,
+        "status": _row_value(row, "status") or "active",
+        "created_at": _row_value(row, "created_at"),
+        "updated_at": _row_value(row, "updated_at"),
+    }
+
+
+async def delete_mcp_credential(
+    project_id: str,
+    service_name: str,
+) -> bool:
+    """Soft-delete an MCP credential (sets status = 'revoked')."""
+    if not project_id or not service_name:
+        return False
+    client = await get_turso_client()
+    if client is None:
+        return False
+    svc = (service_name or "").strip().lower()[:120]
+    now = _now()
+    try:
+        await client.execute(
+            "UPDATE user_mcp_credentials SET status = 'revoked', updated_at = ? "
+            "WHERE project_id = ? AND service_name = ?",
+            [now, project_id, svc],
+        )
+        return True
+    except Exception:
+        logger.exception("Failed to delete MCP credential %s/%s", project_id, svc)
+        return False

@@ -274,6 +274,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "update_plan", "screenshot_preview", "inspect_preview", "ask_question", "env_get", "env_set",
                 "request_env", "list_mcp_addons", "connect_mcp", "call_mcp", "delegate_task",
                 "await_subagent", "web_search", "semantic_search", "search_code",
+                "mcp_credentials", "call_external_api",
             ],
             "code_policy": {
                 "any_code": "Agent builds libraries, CLIs, APIs, scripts, backends, mobile, data jobs, or websites — not website-only",
