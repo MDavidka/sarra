@@ -603,6 +603,19 @@ async def internal_agent_credential_batch(
     return results
 
 
+@router.get("/projects/{project_id}/agent/credentials/{service_name}")
+async def internal_agent_credential_get(
+    project_id: str,
+    service_name: str,
+    _auth: dict = Depends(verify_internal_service_request),
+):
+    from syte.turso_store import get_mcp_credential
+
+    await _require_project(project_id)
+    cred = await get_mcp_credential(project_id, service_name)
+    return {"ok": True, "project_id": project_id, "service_name": service_name, "credential": cred}
+
+
 @router.delete("/projects/{project_id}/agent/credentials/{service_name}")
 async def internal_agent_credential_delete(
     project_id: str,

@@ -463,3 +463,38 @@ async def test_record_message_not_configured_is_noop(monkeypatch: pytest.MonkeyP
     assert await turso_store.record_message("missing", "proj-1", "user", "hi") is None
     assert await turso_store.list_messages("missing") == []
     assert await turso_store.count_messages("missing") == 0
+
+
+@pytest.mark.asyncio
+async def test_get_mcp_credential_masks_key_and_supports_include_key(turso_local) -> None:
+    """``get_mcp_credential`` returns masked keys by default and the real key
+    only when ``include_key=True``; missing services return ``None``."""
+    from syte import turso_store
+
+    saved = await turso_store.save_mcp_credential(
+        "proj-cred",
+        service_name="github",
+        display_name="GitHub (org-bot)",
+        description="Read/write access to my-org repos",
+        api_key="ghp_secrettoken1234",
+        api_url="https://api.github.com",
+        metadata={"owner": "my-org"},
+    )
+    assert saved is not None
+    assert saved["service_name"] == "github"
+
+    masked = await turso_store.get_mcp_credential("proj-cred", "github")
+    assert masked is not None
+    assert masked["api_key"] == "••••1234"
+    assert masked["api_key_masked"] == "••••1234"
+    assert masked["api_url"] == "https://api.github.com"
+    assert masked["status"] == "active"
+
+    real = await turso_store.get_mcp_credential("proj-cred", "github", include_key=True)
+    assert real is not None
+    assert real["api_key"] == "ghp_secrettoken1234"
+    assert real["api_key_masked"] == "••••1234"
+
+    missing = await turso_store.get_mcp_credential("proj-cred", "does-not-exist")
+    assert missing is None
+

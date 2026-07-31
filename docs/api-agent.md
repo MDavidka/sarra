@@ -381,6 +381,47 @@ Built-in MCP tools (`syte` / `web_search`) validate arguments before dispatch.
 Invalid shapes return `{ "ok": false, "error": "invalid_arguments", "message": "…" }`
 without executing the underlying action.
 
+### MCP credentials
+
+Per-project credential store for external service API keys (GitHub, Jira, Slack,
+etc.) that the agent may call via the `call_external_api` tool. Keys are stored
+at rest in Turso (TLS-encrypted) and are **never** returned unmasked over these
+routes — only the last 4 chars are exposed (`api_key_masked`); the real secret is
+read server-side by `call_external_api` alone.
+
+| Action | Endpoint |
+|--------|----------|
+| List | `GET /api/agent_credentials?uuid=` |
+| Get one | `GET /api/agent_credentials/{service_name}?uuid=` |
+| Save | `POST /api/agent_credentials` |
+| Batch save | `POST /api/agent_credentials_batch` |
+| Delete (revoke) | `POST /api/agent_credentials_delete` |
+
+Save body: `{ "uuid", "service_name", "display_name?", "description?", "api_key", "api_url?", "metadata?" }`  
+Get-one path param `service_name` matches the stored slug. Get-one returns 404
+when no credential exists for the service on the project.
+
+```json
+// GET /api/agent_credentials/github?uuid=proj-42
+{
+  "ok": true,
+  "uuid": "proj-42",
+  "service_name": "github",
+  "credential": {
+    "service_name": "github",
+    "display_name": "GitHub (org-bot)",
+    "description": "Read/write access to my-org repos",
+    "api_key": "••••xxxx",
+    "api_key_masked": "••••xxxx",
+    "api_url": "https://api.github.com",
+    "metadata": { "owner": "my-org" },
+    "status": "active",
+    "created_at": "2026-07-30T21:30:00.000Z",
+    "updated_at": "2026-07-30T21:30:00.000Z"
+  }
+}
+```
+
 ### Skills
 
 | Action | Endpoint |
