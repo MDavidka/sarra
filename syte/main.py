@@ -1605,6 +1605,24 @@ async def api_agent_credential_batch(project_id: str, body: AgentMcpCredentialBa
     return results
 
 
+@app.get("/api/projects/{project_id}/agent/credentials/{service_name}")
+async def api_agent_credential_get(project_id: str, service_name: str):
+    from syte.turso_store import get_mcp_credential
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    cred = await get_mcp_credential(project_id, service_name)
+    if not cred:
+        raise HTTPException(404, f"Credential not found for service '{service_name}'")
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "service_name": service_name,
+        "credential": cred,
+    }
+
+
 @app.delete("/api/projects/{project_id}/agent/credentials/{service_name}")
 async def api_agent_credential_delete(project_id: str, service_name: str):
     from syte.turso_store import delete_mcp_credential

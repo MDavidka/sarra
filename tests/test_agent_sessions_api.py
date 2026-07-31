@@ -132,3 +132,46 @@ async def test_api_router_agent_sessions_project_not_found(tmp_data_dir: Path) -
     with pytest.raises(HTTPException) as exc_info:
         await api_router.api_agent_sessions(uuid="does-not-exist", limit=50, _token={})
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_api_router_agent_credentials_get_masks_and_404s(
+    tmp_data_dir: Path,
+    turso_local,
+) -> None:
+    from fastapi import HTTPException
+
+    from syte import api_router
+    from syte.database import create_project, init_db
+
+    await init_db()
+    await create_project({"id": "proj-cred", "name": "Cred", "port": 3045, "start_command": ""})
+    await turso_local.save_mcp_credential(
+        "proj-cred",
+        service_name="github",
+        display_name="GitHub",
+        api_key="ghp_secret1234",
+        api_url="https://api.github.com",
+    )
+
+    got = await api_router.api_agent_credentials_get(
+        service_name="github", uuid="proj-cred", _token={}
+    )
+    assert got["ok"] is True
+    cred = got["credential"]
+    assert cred["service_name"] == "github"
+    assert cred["api_key"] == "••••1234"
+    assert cred["api_url"] == "https://api.github.com"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await api_router.api_agent_credentials_get(
+            service_name="missing", uuid="proj-cred", _token={}
+        )
+    assert exc_info.value.status_code == 404
+
+    with pytest.raises(HTTPException) as exc_info:
+        await api_router.api_agent_credentials_get(
+            service_name="github", uuid="nope", _token={}
+        )
+    assert exc_info.value.status_code == 404
+

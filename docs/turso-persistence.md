@@ -19,7 +19,7 @@ fallback in `syte.local_session_store`; the rollup tables below are remote-only.
 | `agent_subagent_task` | **One row per delegation**: task text, declared file scope, start time, outcome, cost | `record_subagent_task`, `finalize_subagent_task` |
 | `agent_subagent_activity` | Activity produced *by a subagent* (its own chat tab feed) | `record_subagent_activity` |
 | `project_profile` | Per-project user-facing metadata (name, icon) | `upsert_project_profile` |
-| `user_mcp_credentials` | External service API keys the agent can use (GitHub, Jira, Slack, etc.) | `save_mcp_credential`, `delete_mcp_credential` |
+| `user_mcp_credentials` | External service API keys the agent can use (GitHub, Jira, Slack, etc.) | `save_mcp_credential`, `get_mcp_credential`, `delete_mcp_credential` |
 
 `agent_request.cost_usd` is deliberately `NULL` until generation finishes —
 token usage (and therefore price) is only known at the end of the turn.
@@ -374,6 +374,24 @@ POST /api/agent_credentials_batch
   "credentials": [...]
 }
 ```
+
+### Reading credentials
+
+Credentials are never returned with the full secret over any API route. API keys
+are always masked (`••••XXXX` — only the last 4 chars are visible). The real
+key is only read server-side by the `call_external_api` agent tool.
+
+| Action | Token API | GUI (browser session) |
+|--------|-----------|-----------------------|
+| List all | `GET /api/agent_credentials?uuid=` | `GET /api/projects/{project_id}/agent/credentials` |
+| Get one | `GET /api/agent_credentials/{service_name}?uuid=` | `GET /api/projects/{project_id}/agent/credentials/{service_name}` |
+| Batch save | `POST /api/agent_credentials_batch` | `POST /api/projects/{project_id}/agent/credentials/batch` |
+
+`GET /api/agent_credentials/{service_name}?uuid=` returns 404 when no
+credential exists for that `service_name` on the project. The single-credential
+object has the same shape used by `mcp_credentials` / `call_external_api`
+(`service_name`, `display_name`, `description`, `api_key` (masked),
+`api_url`, `metadata`, `status`, `created_at`, `updated_at`).
 
 ## Agent tools
 

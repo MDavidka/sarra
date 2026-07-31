@@ -1373,9 +1373,32 @@ async def api_agent_credentials_list(
 
     project = await get_project(uuid)
     if not project:
-        _http_error(404, "not_found", "Project not found")
+        _http_error(404, "not_found", f"Project not found: {uuid}")
     creds = await list_mcp_credentials(uuid)
     return {"ok": True, "uuid": uuid, "credentials": creds}
+
+
+@router.get("/agent_credentials/{service_name}")
+async def api_agent_credentials_get(
+    service_name: str,
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Fetch a single MCP connection credential by ``service_name``.
+
+    API keys are returned masked (last 4 chars only). The real secret is never
+    exposed over this API — it is only read server-side by the
+    ``call_external_api`` agent tool.
+    """
+    from syte.turso_store import get_mcp_credential
+
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", f"Project not found: {uuid}")
+    cred = await get_mcp_credential(uuid, service_name)
+    if not cred:
+        _http_error(404, "not_found", f"Credential not found for service '{service_name}'")
+    return {"ok": True, "uuid": uuid, "service_name": service_name, "credential": cred}
 
 
 @router.post("/agent_credentials")
