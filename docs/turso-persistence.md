@@ -377,21 +377,100 @@ POST /api/agent_credentials_batch
 
 ### Reading credentials
 
-Credentials are never returned with the full secret over any API route. API keys
-are always masked (`••••XXXX` — only the last 4 chars are visible). The real
-key is only read server-side by the `call_external_api` agent tool.
+Credentials are never returned with the full secret over any route. API keys are
+always masked (`••••XXXX` — only the last 4 chars are visible). The real key is
+only read server-side by the `call_external_api` agent tool.
 
-| Action | Token API | GUI (browser session) |
-|--------|-----------|-----------------------|
-| List all | `GET /api/agent_credentials?uuid=` | `GET /api/projects/{project_id}/agent/credentials` |
-| Get one | `GET /api/agent_credentials/{service_name}?uuid=` | `GET /api/projects/{project_id}/agent/credentials/{service_name}` |
-| Batch save | `POST /api/agent_credentials_batch` | `POST /api/projects/{project_id}/agent/credentials/batch` |
+| Action | Token API | GUI (browser session) | Internal (sycord runtime) |
+|--------|-----------|-----------------------|--------------------------|
+| List all | `GET /api/agent_credentials?uuid=` | `GET /api/projects/{project_id}/agent/credentials` | `GET /projects/{project_id}/agent/credentials` |
+| **Get one** | `GET /api/agent_credentials/{service_name}?uuid=` | `GET /api/projects/{project_id}/agent/credentials/{service_name}` | `GET /projects/{project_id}/agent/credentials/{service_name}` |
+| Save | `POST /api/agent_credentials` | `POST /api/projects/{project_id}/agent/credentials` | `POST /projects/{project_id}/agent/credentials` |
+| Batch save | `POST /api/agent_credentials_batch` | `POST /api/projects/{project_id}/agent/credentials/batch` | `POST /projects/{project_id}/agent/credentials/batch` |
+| Revoke | `POST /api/agent_credentials_delete` | `DELETE /api/projects/{project_id}/agent/credentials/{service_name}` | `DELETE /projects/{project_id}/agent/credentials/{service_name}` |
 
-`GET /api/agent_credentials/{service_name}?uuid=` returns 404 when no
-credential exists for that `service_name` on the project. The single-credential
-object has the same shape used by `mcp_credentials` / `call_external_api`
-(`service_name`, `display_name`, `description`, `api_key` (masked),
-`api_url`, `metadata`, `status`, `created_at`, `updated_at`).
+`service_name` is lowercased on write and is the join key for every read.
+
+#### Get-one: `GET /api/agent_credentials/{service_name}?uuid=`
+
+Returns a single credential. The `api_key` field is masked; `api_key_masked`
+contains the same masked value.
+
+`GET /api/projects/{project_id}/agent/credentials/{service_name}` (GUI) and
+`GET /projects/{project_id}/agent/credentials/{service_name}` (internal) return
+the same object under the `credential` key (plus `project_id`/`service_name`).
+
+**200 OK**
+
+```json
+{
+  "ok": true,
+  "uuid": "proj-42",
+  "service_name": "github",
+  "credential": {
+    "id": 7,
+    "project_id": "proj-42",
+    "service_name": "github",
+    "display_name": "GitHub (org-bot)",
+    "description": "Read/write access to my-org repos",
+    "api_key": "••••xxxx",
+    "api_key_masked": "••••xxxx",
+    "api_url": "https://api.github.com",
+    "metadata": { "owner": "my-org", "scopes": ["repo", "read:org"] },
+    "status": "active",
+    "created_at": "2026-07-30T21:30:00.000Z",
+    "updated_at": "2026-07-30T21:30:00.000Z"
+  }
+}
+```
+
+**404 Not Found** — returned by the token and GUI routes when the project UUID
+does not exist, or no `active` credential is stored for that `service_name`.
+When remote Turso is not configured, `get_mcp_credential` resolves to `None`,
+so get-one surfaces as a 404 rather than a 503 (the list route instead returns
+an empty `credentials: []`).
+
+```json
+{ "ok": false, "error": "not_found",
+  "message": "Credential not found for service 'github'" }
+```
+
+#### Credential object fields
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | integer | Row id |
+| `project_id` | string | Project UUID |
+| `service_name` | string | Lowercased slug |
+| `display_name` | string | Human label |
+| `description` | string | Free-text |
+| `api_key` | string | **Masked** (`••••XXXX`) |
+| `api_key_masked` | string | Masked alias of `api_key` |
+| `api_url` | string | Service base URL |
+| `metadata` | object | Arbitrary key/value pairs |
+| `status` | string | `active` or `revoked` |
+| `created_at` | string | ISO-8601 |
+| `updated_at` | string | ISO-8601 |
+
+#### Save / batch / revoke error behaviour
+
+When remote Turso is **not configured** (`turso_database_url` unset), writes
+fail gracefully rather than raising a 500:
+
+- **Token upsert** (`POST /api/agent_credentials`) and the **internal** route
+  return HTTP **503** `{ "ok": false, "error": "turso_unavailable", … }`.
+- The **GUI** single-save route returns HTTP **200** with
+  `{ "ok": false, "error": "turso_unavailable", "message": "Turso is not configured — cannot save credential." }`
+  (it never raises).
+- The **batch** route returns HTTP **200** with an empty `credentials: []`
+  list (each `save_mcp_credential` call resolves to `None` and is skipped).
+
+Get-one never returns 503: when Turso is unavailable, `get_mcp_credential`
+resolves to `None`, which the routes surface as a **404** (see above).
+Revocation of a missing/non-existent `service_name` is a no-op that returns
+`ok: true`.
+
+
 
 ## Agent tools
 

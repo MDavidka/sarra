@@ -383,23 +383,47 @@ without executing the underlying action.
 
 ### MCP credentials
 
-Per-project credential store for external service API keys (GitHub, Jira, Slack,
-etc.) that the agent may call via the `call_external_api` tool. Keys are stored
-at rest in Turso (TLS-encrypted) and are **never** returned unmasked over these
-routes — only the last 4 chars are exposed (`api_key_masked`); the real secret is
-read server-side by `call_external_api` alone.
+Per-project credential store for external service API keys (GitHub, Jira,
+Slack, etc.) that the agent may call via the `call_external_api` tool. Keys are
+stored at rest in Turso (TLS-encrypted) and are **never** returned unmasked over
+any route — only the last 4 chars are exposed (`api_key_masked`, e.g.
+`••••xxxx`); the real secret is read server-side by `call_external_api` alone.
 
-| Action | Endpoint |
-|--------|----------|
-| List | `GET /api/agent_credentials?uuid=` |
-| Get one | `GET /api/agent_credentials/{service_name}?uuid=` |
-| Save | `POST /api/agent_credentials` |
-| Batch save | `POST /api/agent_credentials_batch` |
-| Delete (revoke) | `POST /api/agent_credentials_delete` |
+Authenticate with `X-API-Key: syte_…` or `Authorization: Bearer syte_…`.
 
-Save body: `{ "uuid", "service_name", "display_name?", "description?", "api_key", "api_url?", "metadata?" }`  
-Get-one path param `service_name` matches the stored slug. Get-one returns 404
-when no credential exists for the service on the project.
+| Action | Endpoint | Request body | Returns |
+|--------|----------|--------------|---------|
+| List | `GET /api/agent_credentials?uuid=` | — | `{ ok, uuid, credentials[] }` |
+| **Get one** | `GET /api/agent_credentials/{service_name}?uuid=` | — | `{ ok, uuid, service_name, credential }` |
+| Save | `POST /api/agent_credentials` | `AgentMcpCredentialBody` | `{ ok, …credential }` |
+| Batch save | `POST /api/agent_credentials_batch` | `AgentMcpCredentialBatchBody` | `{ ok, uuid, profile, credentials[] }` |
+| Revoke | `POST /api/agent_credentials_delete` | `{ "uuid", "service_name" }` | `{ ok, uuid, service_name }` |
+
+> `service_name` is lowercased on write and is the join key for every
+> read/get/update/delete call. The get-one path param matches the stored slug
+> exactly (case-insensitive).
+
+#### `AgentMcpCredentialBody`
+
+| Field | Required | Type | Notes |
+|-------|----------|------|-------|
+| `uuid` | **yes** | string | Project UUID |
+| `service_name` | **yes** | string | Machine slug, e.g. `github` (max 120 chars; lowercased) |
+| `display_name` | no | string | Human label (max 200 chars) |
+| `description` | no | string | Free-text (max 1000 chars) |
+| `api_key` | no | string | Secret (max 2000 chars) |
+| `api_url` | no | string | Service base URL (max 2000 chars) |
+| `metadata` | no | object | Arbitrary key/value pairs |
+
+Save (upsert) is idempotent on `(project_id, service_name)`: re-saving rotates
+the key/URL and keeps the same row.
+
+#### GET `GET /api/agent_credentials/{service_name}?uuid=`
+
+Returns a single credential for `service_name` on the project. The API key is
+**masked** — only the last 4 characters are returned.
+
+**200 — credential found**
 
 ```json
 // GET /api/agent_credentials/github?uuid=proj-42
@@ -408,19 +432,79 @@ when no credential exists for the service on the project.
   "uuid": "proj-42",
   "service_name": "github",
   "credential": {
+    "id": 7,
+    "project_id": "proj-42",
     "service_name": "github",
     "display_name": "GitHub (org-bot)",
     "description": "Read/write access to my-org repos",
     "api_key": "••••xxxx",
     "api_key_masked": "••••xxxx",
     "api_url": "https://api.github.com",
-    "metadata": { "owner": "my-org" },
+    "metadata": { "owner": "my-org", "scopes": ["repo", "read:org"] },
     "status": "active",
     "created_at": "2026-07-30T21:30:00.000Z",
     "updated_at": "2026-07-30T21:30:00.000Z"
   }
 }
 ```
+
+**404 — not found**
+
+Returned when the project UUID does not exist **or** no credential is stored for
+that `service_name` on the project (this also covers the case where remote Turso
+is not configured, since `get_mcp_credential` then resolves to `None`):
+
+```json
+{
+  "ok": false,
+  "error": "not_found",
+  "message": "Credential not found for service 'github'"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | integer | Row id in `user_mcp_credentials` |
+| `project_id` | string | Project UUID |
+| `service_name` | string | Lowercased slug |
+| `display_name` | string | Human label |
+| `description` | string | Free-text |
+| `api_key` | string | **Masked** (`••••XXXX`) |
+| `api_key_masked` | string | Masked (alias of `api_key`) |
+| `api_url` | string | Service base URL |
+| `metadata` | object | Arbitrary key/value pairs |
+| `status` | string | `active` or `revoked` |
+| `created_at` | string | ISO-8601 |
+| `updated_at` | string | ISO-8601 |
+
+#### Batch save `POST /api/agent_credentials_batch`
+
+Exact accepted JSON schema for an external service to bulk-save credentials and
+profile in one call — see `docs/turso-persistence.md` for the full worked example.
+The `credentials` array items accept the same fields as `AgentMcpCredentialBody`
+(minus `uuid`):
+
+```json
+// POST /api/agent_credentials_batch
+{
+  "uuid": "proj-42",
+  "name": "My Project",
+  "icon": "https://cdn.example.com/projects/proj-42/icon.png",
+  "metadata": { "org_slug": "my-org", "region": "us-east-1" },
+  "credentials": [
+    {
+      "service_name": "github",
+      "display_name": "GitHub (org-bot)",
+      "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "api_url": "https://api.github.com",
+      "metadata": { "owner": "my-org", "scopes": ["repo", "read:org"] }
+    }
+  ]
+}
+```
+
+Response: `{ "ok": true, "uuid": "proj-42", "profile": {…}, "credentials": [ {…masked…} ] }`.
+
 
 ### Skills
 
