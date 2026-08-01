@@ -910,12 +910,51 @@
                   </button>
                 </div>
                 <p class="hint" id="syte-update-source">Checking update source…</p>
-                <div id="update-result" class="result-box hidden"></div>
-              </div>
+<div id="update-result" class="result-box hidden"></div>
             </div>
           </div>
-        </section>
-      </main>
+
+          <div class="projects-card panel-form" id="new-feature-card">
+            <div class="projects-title-block mb">
+              <i data-lucide="sparkles" class="projects-icon"></i>
+              <div><h1>New feature?</h1></div>
+            </div>
+            <div class="form-inner">
+              <p class="hint block">Describe what you want to build or change. The system agent uses the selected AI model, can read and write system files, and will trigger an auto-update when finished.</p>
+              <div class="version-row">
+                <div>
+                  <span class="version-label">Current version</span>
+                  <span class="version-value" id="new-feature-version">—</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="new-feature-model">Model profile</label>
+                <select id="new-feature-model" class="debug-chat-profile" aria-label="Model profile for new feature agent">
+                  <option value="auto" selected>auto</option>
+                  <option value="syra-nano">Go · Gemini 2.5 Flash</option>
+                  <option value="syra-ultra">Air · Aliyun Qwen</option>
+                  <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="new-feature-input">Agent instruction</label>
+                <textarea id="new-feature-input" class="svc-env-textarea" rows="4" placeholder="e.g. Add a new API endpoint for user management"></textarea>
+              </div>
+              <div class="svc-panel-actions">
+                <button type="button" class="btn-pill btn-primary" id="new-feature-run-btn">
+                  <i data-lucide="zap"></i><span>Run agent</span>
+                </button>
+                <button type="button" class="btn-pill btn-ghost" id="new-feature-clear-btn">
+                  <i data-lucide="x"></i><span>Clear</span>
+                </button>
+              </div>
+              <div id="new-feature-status" class="hint"></div>
+              <div id="new-feature-result" class="result-box hidden"></div>
+              <div class="logs-panel logs-terminal logs-terminal-dark hidden" id="new-feature-log"></div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
