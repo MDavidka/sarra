@@ -4037,6 +4037,63 @@ document.getElementById('update-syte-btn')?.addEventListener('click', async () =
   }
 });
 
+document.getElementById('new-feature-run-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('new-feature-run-btn');
+  const input = document.getElementById('new-feature-input');
+  const status = document.getElementById('new-feature-status');
+  const result = document.getElementById('new-feature-result');
+  const logPanel = document.getElementById('new-feature-log');
+  const model = document.getElementById('new-feature-model')?.value || 'auto';
+  const message = input?.value.trim();
+  if (!message) return toast('Enter an instruction for the agent');
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Running…'; }
+  if (status) { status.textContent = 'Agent starting…'; status.classList.remove('hidden'); }
+  if (result) result.classList.add('hidden');
+  if (logPanel) logPanel.classList.remove('hidden');
+  try {
+    const res = await api('/settings/new-feature/agent', {
+      method: 'POST',
+      body: JSON.stringify({ message, model_profile: model === 'auto' ? null : model }),
+    });
+    if (logPanel) logPanel.innerHTML = '';
+    if (res.ok) {
+      if (result) {
+        result.innerHTML = `<strong>Agent response:</strong><br><pre>${esc(res.response || '')}</pre>`;
+        result.classList.remove('hidden');
+      }
+      if (status) status.textContent = `Done — current version: v${res.current_version || '?'}${res.triggered_update ? ' — auto-update triggered' : ''}`;
+      toast('Agent finished' + (res.triggered_update ? ' — update started' : ''));
+      if (res.triggered_update) {
+        await loadUpdateInfo();
+        await loadSettings();
+      }
+    } else {
+      if (result) {
+        result.innerHTML = `<strong>Error:</strong> ${esc(res.message || res.error || 'Unknown error')}`;
+        result.classList.remove('hidden');
+      }
+      if (status) status.textContent = 'Agent failed';
+      toast('Agent failed: ' + (res.message || res.error));
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Agent request failed';
+    toast('Agent request failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Run agent'; }
+  }
+});
+
+document.getElementById('new-feature-clear-btn')?.addEventListener('click', () => {
+  const input = document.getElementById('new-feature-input');
+  const status = document.getElementById('new-feature-status');
+  const result = document.getElementById('new-feature-result');
+  const logPanel = document.getElementById('new-feature-log');
+  if (input) input.value = '';
+  if (status) { status.textContent = ''; status.classList.add('hidden'); }
+  if (result) result.classList.add('hidden');
+  if (logPanel) logPanel.classList.add('hidden');
+});
+
 async function waitForServerRestart(maxAttempts = 30, intervalMs = 2000) {
   await new Promise((resolve) => setTimeout(resolve, 3000));
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -4163,6 +4220,8 @@ async function loadSettings() {
     if (directUrl && s.direct_url) directUrl.textContent = s.direct_url;
     if (guiUrl) guiUrl.textContent = s.domain_url || 'not configured';
     if (ver && s.version) ver.textContent = 'v' + s.version;
+    const newFeatureVer = document.getElementById('new-feature-version');
+    if (newFeatureVer && s.version) newFeatureVer.textContent = 'v' + s.version;
     updateAiApiWarning();
     await loadUpdateInfo();
   } catch { /* */ }
