@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +25,10 @@ from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
 from syte.self_update import update_syte
+from syte.new_feature_agent import run_new_feature_agent
+from syte.settings_tabs import get_registered_tabs
 from syte import auth
+from syte.auth import verify_api_token
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
@@ -546,6 +549,44 @@ async def api_update_syte():
     if not ok:
         raise HTTPException(500, message)
     return {"ok": True, "message": message}
+
+
+@app.get("/api/settings/new-feature/info")
+async def api_new_feature_info(_token: dict = Depends(verify_api_token)):
+    """Return info for the new feature tab: current version, update target, and registered tabs."""
+    from syte.new_feature_agent import get_current_version, get_update_target_info
+
+    return {
+        "ok": True,
+        "version": get_current_version(),
+        "update_target": get_update_target_info(),
+        "tabs": get_registered_tabs(),
+    }
+
+
+class NewFeatureAgentRequest(BaseModel):
+    message: str = Field(..., description="Message to the system agent")
+    model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
+
+
+@app.post("/api/settings/new-feature/agent")
+async def api_new_feature_agent(
+    body: NewFeatureAgentRequest,
+    _token: dict = Depends(verify_api_token),
+):
+    """Run the new-feature system agent with file access.
+
+    After the agent finishes, an auto-update is triggered automatically.
+    """
+    result = await run_new_feature_agent(
+        message=body.message,
+        model_profile=body.model_profile,
+    )
+    if result.get("ok"):
+        ok, update_message = update_syte()
+        result["triggered_update"] = True
+        result["update_message"] = update_message
+    return result
 
 
 def _running(project: dict) -> bool:
