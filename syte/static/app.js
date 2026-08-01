@@ -4058,7 +4058,7 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
     if (logPanel) logPanel.innerHTML = '';
     if (res.ok) {
       if (result) {
-        result.innerHTML = `<strong>Agent response:</strong><br><pre>${esc(res.response || '')}</pre>`;
+        result.innerHTML = `<strong>Agent response:</strong><br><pre>${esc(res.reply || res.response || '')}</pre>`;
         result.classList.remove('hidden');
       }
       if (status) status.textContent = `Done — current version: v${res.current_version || '?'}${res.triggered_update ? ' — auto-update triggered' : ''}`;
