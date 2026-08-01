@@ -28,6 +28,7 @@ from syte.self_update import update_syte
 from syte.new_feature_agent import run_new_feature_agent
 from syte.settings_tabs import get_registered_tabs
 from syte import auth
+from syte.auth import verify_api_token
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
