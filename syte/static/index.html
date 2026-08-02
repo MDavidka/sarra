@@ -628,14 +628,18 @@
               </div>
               <div class="syra-urls" id="syra-urls">
                 <div class="syra-url-row">
+                  <span class="syra-url-label">Web GUI</span>
+                  <code class="syra-url-value" id="syra-gui-url">https://api.sycord.site/</code>
+                </div>
+                <div class="syra-url-row">
                   <span class="syra-url-label">Public API</span>
                   <code class="syra-url-value" id="syra-api-url">https://api.sycord.site/v1</code>
                 </div>
                 <div class="syra-url-row">
                   <span class="syra-url-label">Public surface</span>
-                  <code class="syra-url-value">/v1/* only</code>
+                  <code class="syra-url-value">GUI + /v1/*</code>
                 </div>
-                <p class="hint" id="syra-dns-hint">The LiteLLM Admin UI and management endpoints remain private to this server.</p>
+                <p class="hint" id="syra-dns-hint">Start prepares AlmaLinux packages, Docker, Caddy, firewalld, DNS, TLS, LiteLLM, and this web GUI. LiteLLM administration remains private to the server.</p>
               </div>
             </div>
 
@@ -653,7 +657,7 @@
                   <span class="hint" id="syra-unlock-hint">Enter the server’s system bootstrap key once. Sarra stores only a secure, temporary browser session — never this key.</span>
                 </div>
                 <button type="button" class="btn-pill" id="syra-lock-btn" hidden>Lock Syra</button>
-                <p class="hint block">Sarra deploys the public OpenAI-compatible endpoint at <code>https://api.sycord.site/v1</code>. It forwards only <code>/v1/*</code> through Caddy; LiteLLM administration stays on the server.</p>
+                <p class="hint block">Sarra serves this GUI at <code>https://api.sycord.site/</code> and the public OpenAI-compatible API at <code>https://api.sycord.site/v1</code>. LiteLLM administration remains private to the server.</p>
                 <div class="form-group">
                   <label for="syra-master-key">Master key</label>
                   <input type="password" id="syra-master-key" placeholder="sk-…" autocomplete="off">
@@ -804,7 +808,7 @@
                 <div class="form-group">
                   <label for="litellm-database-url">PostgreSQL database URL</label>
                   <input type="url" id="litellm-database-url" placeholder="optional — postgresql://user:password@host:5432/database" autocomplete="off">
-                  <span class="hint">Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
+                  <span class="hint">Use a direct PostgreSQL URL or Supabase session pooler on port <code>5432</code>; do not use Supabase transaction pooler port <code>6543</code> because LiteLLM Prisma migrations require advisory locks. Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
                 </div>
               </div>
 

@@ -175,6 +175,7 @@ async def test_get_settings_reports_turso_configuration(
     from syte.main import get_settings
 
     res = await get_settings()
-    assert res["turso_database_url"] == "libsql://example.turso.io"
+    assert res["turso_database_url_set"] is True
+    assert "turso_database_url" not in res
     assert res["turso_auth_token_set"] is True
     assert res["turso_configured"] is True

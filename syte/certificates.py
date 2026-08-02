@@ -207,7 +207,7 @@ async def async_generate_caddyfile() -> str:
             "",
         ])
 
-    if gui_domain:
+    if gui_domain and gui_domain != LITELLM_PUBLIC_HOST:
         if gui_domain == host_zone(gui_domain) or not use_wildcard_tls:
             lines.extend([
                 f"{gui_domain} {{",
@@ -225,7 +225,7 @@ async def async_generate_caddyfile() -> str:
             ])
     else:
         lines.extend([
-            f"# GUI direct access: http://{public_ip}:{settings.port}",
+            f"# GUI: https://{LITELLM_PUBLIC_HOST}/",
             "",
         ])
 
@@ -234,6 +234,7 @@ async def async_generate_caddyfile() -> str:
             LITELLM_PUBLIC_HOST,
             LITELLM_HOST_PORT,
             use_wildcard_tls=use_wildcard_tls,
+            gui_port=settings.port,
         )
     )
 
@@ -290,19 +291,22 @@ async def apply_proxy_config() -> tuple[bool, str]:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
     for cmd in (
-        ["systemctl", "reload", "caddy"],
         ["systemctl", "restart", "caddy"],
+        ["systemctl", "reload", "caddy"],
         ["caddy", "reload", "--config", str(written)],
     ):
         code, out = await asyncio.to_thread(_run, cmd)
         if code == 0:
-            await asyncio.to_thread(ensure_caddy)
+            caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
+            if not caddy_ok:
+                return False, f"Caddy command succeeded but Caddy is not active: {caddy_message}{extra}"
             return True, "Proxy configuration applied (production + preview SSL)." + extra
 
-    await asyncio.to_thread(ensure_caddy)
+    caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
+    if not caddy_ok:
+        return False, f"Caddy configuration saved but Caddy could not be started: {caddy_message}{extra}"
     return True, (
-        f"Caddy config saved to {written}. "
-        "Run: sudo systemctl restart caddy" + extra
+        f"Caddy config saved to {written}; {caddy_message}" + extra
     )
 
 

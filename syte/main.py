@@ -48,6 +48,8 @@ from syte import supervisor
 
 logger = logging.getLogger("syte")
 
+_SYRA_START_LOCK = asyncio.Lock()
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 NO_CACHE = "no-cache, no-store, must-revalidate"
 
@@ -436,7 +438,7 @@ async def get_settings():
         ],
         "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
-        "turso_database_url": turso_database_url,
+        "turso_database_url_set": bool(turso_database_url),
         "turso_auth_token_set": turso_auth_token_set,
         "turso_configured": bool(turso_database_url),
         "preview_dns_hint": (
@@ -742,10 +744,11 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
         "health": health,
         "proxy_url": LITELLM_PUBLIC_API_URL,
         "public_api_url": LITELLM_PUBLIC_API_URL,
+        "web_gui_url": f"https://{LITELLM_PUBLIC_HOST}/",
         "public_host": LITELLM_PUBLIC_HOST,
         "ssl": ssl,
         "dns_hint": (
-            f"Point the {LITELLM_PUBLIC_HOST} A record to this server and keep ports 80/443 open."
+            f"Start prepares AlmaLinux, Docker, Caddy, firewalld, DNS, and TLS for {LITELLM_PUBLIC_HOST}."
         ),
         "master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
         "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
@@ -775,26 +778,69 @@ async def _deploy_litellm_public_proxy_from(lifecycle: Any) -> dict[str, Any]:
     return await _deploy_litellm_public_proxy(await lifecycle())
 
 
+async def _start_syra_stack() -> dict[str, Any]:
+    """Prepare the AlmaLinux host, start LiteLLM, and publish the combined host."""
+    async with _SYRA_START_LOCK:
+        return await _start_syra_stack_locked()
+
+
+async def _start_syra_stack_locked() -> dict[str, Any]:
+    from syte.host_setup import prepare_syra_host
+    from syte.litellm_manager import start_litellm
+
+    host_setup = await prepare_syra_host()
+    if not host_setup["ok"]:
+        return {
+            "ok": False,
+            "running": False,
+            "message": host_setup["message"],
+            "host_setup": host_setup,
+        }
+    result = await _deploy_litellm_public_proxy_from(start_litellm)
+    result["host_setup"] = host_setup
+    return result
+
+
+async def _restart_syra_stack() -> dict[str, Any]:
+    """Prepare the host, restart LiteLLM, and publish the combined host."""
+    async with _SYRA_START_LOCK:
+        return await _restart_syra_stack_locked()
+
+
+async def _restart_syra_stack_locked() -> dict[str, Any]:
+    from syte.host_setup import prepare_syra_host
+    from syte.litellm_manager import restart_litellm
+
+    host_setup = await prepare_syra_host()
+    if not host_setup["ok"]:
+        return {
+            "ok": False,
+            "running": False,
+            "message": host_setup["message"],
+            "host_setup": host_setup,
+        }
+    result = await _deploy_litellm_public_proxy_from(restart_litellm)
+    result["host_setup"] = host_setup
+    return result
+
+
 async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]:
-    """Apply Caddy's API-only public route after a LiteLLM lifecycle action."""
+    """Apply Caddy's combined GUI/API public route after a LiteLLM lifecycle action."""
     if not result.get("ok"):
         return result
     proxy_ok, proxy_message = await apply_proxy_config()
     result["proxy_configured"] = proxy_ok
     result["proxy_message"] = proxy_message
     if not proxy_ok:
+        result["ok"] = False
         result["message"] = f"{result.get('message', 'Action completed.')} Caddy route failed: {proxy_message}"
     return result
 
 
 @app.post("/api/settings/syra/start")
 async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Start LiteLLM and deploy its restricted public HTTPS route."""
-    from syte.litellm_manager import start_litellm
-
-    return await _syra_action(
-        "start", lambda: _deploy_litellm_public_proxy_from(start_litellm)
-    )
+    """Prepare the AlmaLinux host, start LiteLLM, and publish https://api.sycord.site/."""
+    return await _syra_action("start", _start_syra_stack)
 
 
 @app.post("/api/settings/syra/stop")
@@ -807,12 +853,8 @@ async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_sess
 
 @app.post("/api/settings/syra/restart")
 async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Restart LiteLLM and re-apply its restricted public HTTPS route."""
-    from syte.litellm_manager import restart_litellm
-
-    return await _syra_action(
-        "restart", lambda: _deploy_litellm_public_proxy_from(restart_litellm)
-    )
+    """Prepare the AlmaLinux host, restart LiteLLM, and publish https://api.sycord.site/."""
+    return await _syra_action("restart", _restart_syra_stack)
 
 
 @app.get("/api/settings/syra/logs")

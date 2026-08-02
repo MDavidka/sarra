@@ -5,9 +5,9 @@ LLM providers. This module manages the container lifecycle: start, stop, status,
 and configuration.
 
 The proxy is private to the host and exposes its public OpenAI-compatible
-API through Caddy at https://api.sycord.site/v1. LiteLLM administration remains
-loopback-only; client traffic must use scoped virtual keys rather than the
-LiteLLM master key.
+API through Caddy at https://api.sycord.site/v1. The Syte web GUI is served at
+https://api.sycord.site/ and LiteLLM administration remains loopback-only;
+client traffic must use scoped virtual keys rather than the LiteLLM master key.
 """
 
 from __future__ import annotations
@@ -52,6 +52,15 @@ def validate_litellm_database_url(value: str) -> str:
             "LiteLLM database URL must be a PostgreSQL URL such as "
             "postgresql://user:password@host:5432/database. "
             "Turso libsql:// URLs belong in the separate Turso database field."
+        )
+    if (
+        parsed.hostname
+        and parsed.hostname.endswith(".pooler.supabase.com")
+        and parsed.port == 6543
+    ):
+        raise ValueError(
+            "Supabase transaction pooler port 6543 cannot run LiteLLM Prisma migrations. "
+            "Use the direct database URL or Supabase session pooler port 5432."
         )
     return value
 
@@ -283,6 +292,21 @@ async def _ensure_litellm_database() -> tuple[bool, str, str, str]:
     return False, "", "LiteLLM PostgreSQL database did not become ready within 30 seconds", ""
 
 
+async def _wait_for_litellm_health() -> dict[str, Any]:
+    """Wait for LiteLLM migrations and HTTP readiness after container start."""
+    last_health: dict[str, Any] = {
+        "ok": False,
+        "healthy": False,
+        "message": "LiteLLM health check has not run yet",
+    }
+    for _ in range(60):
+        last_health = await litellm_health()
+        if last_health.get("healthy"):
+            return last_health
+        await asyncio.sleep(2.0)
+    return last_health
+
+
 async def start_litellm(
     *,
     port: int | None = None,
@@ -338,9 +362,19 @@ async def start_litellm(
             await litellm_is_loopback_bound()
             and await litellm_is_postgres_configured(database_url)
         ):
+            health = await _wait_for_litellm_health()
+            if not health.get("healthy"):
+                return {
+                    "ok": False,
+                    **status,
+                    "health": health,
+                    "message": f"LiteLLM is running but not ready: {health.get('message', 'health check failed')}",
+                    "preview_migration": preview_migration,
+                }
             return {
                 "ok": True,
                 **status,
+                "health": health,
                 "message": "LiteLLM is already running on the private loopback port",
                 "preview_migration": preview_migration,
             }
@@ -426,9 +460,18 @@ async def start_litellm(
     # Verify it's running
     status = await litellm_status()
     if status["running"]:
+        health = await _wait_for_litellm_health()
+        if not health.get("healthy"):
+            return {
+                "ok": False,
+                **status,
+                "health": health,
+                "message": f"Container is running but LiteLLM is not ready: {health.get('message', 'health check failed')}",
+            }
         return {
             "ok": True,
             **status,
+            "health": health,
             "message": (
                 f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}"
                 if rebound_legacy_container
