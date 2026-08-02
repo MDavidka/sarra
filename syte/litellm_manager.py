@@ -17,7 +17,7 @@ import json
 import logging
 import os
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from syte.database import get_setting, set_setting
 from syte.litellm_config import (
@@ -39,6 +39,21 @@ LITELLM_DB_DATA_DIR = "/var/lib/syte/litellm-postgres"
 LITELLM_DB_NAME = "litellm"
 LITELLM_DB_USER = "litellm"
 LITELLM_NETWORK = "syte-litellm"
+
+
+def validate_litellm_database_url(value: str) -> str:
+    """Validate a custom LiteLLM database URL without exposing credentials."""
+    value = value.strip()
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if parsed.scheme != "postgresql" or not parsed.netloc:
+        raise ValueError(
+            "LiteLLM database URL must be a PostgreSQL URL such as "
+            "postgresql://user:password@host:5432/database. "
+            "Turso libsql:// URLs belong in the separate Turso database field."
+        )
+    return value
 
 
 async def _run_docker(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
@@ -174,8 +189,8 @@ async def litellm_is_loopback_bound() -> bool:
     )
 
 
-async def litellm_is_postgres_configured() -> bool:
-    """Return whether LiteLLM uses the managed PostgreSQL database network."""
+async def litellm_is_postgres_configured(expected_database_url: str = "") -> bool:
+    """Return whether the running LiteLLM container uses the expected PostgreSQL URL."""
     exit_code, env_output = await _run_docker([
         "inspect",
         "--format", "{{json .Config.Env}}",
@@ -193,26 +208,29 @@ async def litellm_is_postgres_configured() -> bool:
     ):
         return False
 
-    exit_code, network_output = await _run_docker([
-        "inspect",
-        "--format", "{{json .NetworkSettings.Networks}}",
-        LITELLM_CONTAINER_NAME,
-    ])
-    if exit_code != 0 or not network_output:
+    database_values = [
+        item.removeprefix("DATABASE_URL=")
+        for item in environment
+        if isinstance(item, str) and item.startswith("DATABASE_URL=")
+    ]
+    if not database_values or not database_values[0].startswith("postgresql://"):
         return False
-    try:
-        networks = json.loads(network_output)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(networks, dict) and LITELLM_NETWORK in networks
+    return not expected_database_url or database_values[0] == expected_database_url
 
 
-async def _ensure_litellm_database() -> tuple[bool, str, str]:
-    """Start the PostgreSQL sidecar required by current LiteLLM releases."""
+async def _ensure_litellm_database() -> tuple[bool, str, str, str]:
+    """Use a configured PostgreSQL URL or start the managed PostgreSQL sidecar."""
+    configured_url = (await get_setting("litellm_database_url", "")).strip()
+    if configured_url:
+        try:
+            return True, validate_litellm_database_url(configured_url), "", ""
+        except ValueError as error:
+            return False, "", str(error), ""
+
     try:
         os.makedirs(LITELLM_DB_DATA_DIR, exist_ok=True)
     except OSError as error:
-        return False, "", f"Could not create LiteLLM database directory {LITELLM_DB_DATA_DIR}: {error}"
+        return False, "", f"Could not create LiteLLM database directory {LITELLM_DB_DATA_DIR}: {error}", ""
 
     database_password = (await get_setting("litellm_db_password", "")).strip()
     if not database_password:
@@ -227,7 +245,7 @@ async def _ensure_litellm_database() -> tuple[bool, str, str]:
             "network", "create", LITELLM_NETWORK,
         ])
         if network_code != 0:
-            return False, "", f"Failed to create LiteLLM Docker network: {network_output}"
+            return False, "", f"Failed to create LiteLLM Docker network: {network_output}", ""
 
     inspect_code, _ = await _run_docker(["inspect", LITELLM_DB_CONTAINER_NAME])
     if inspect_code != 0:
@@ -243,11 +261,11 @@ async def _ensure_litellm_database() -> tuple[bool, str, str]:
             LITELLM_DB_IMAGE,
         ], timeout=60.0)
         if start_code != 0:
-            return False, "", f"Failed to start LiteLLM PostgreSQL database: {start_output}"
+            return False, "", f"Failed to start LiteLLM PostgreSQL database: {start_output}", ""
     else:
         start_code, start_output = await _run_docker(["start", LITELLM_DB_CONTAINER_NAME])
         if start_code != 0 and "already running" not in start_output.lower():
-            return False, "", f"Failed to start LiteLLM PostgreSQL database: {start_output}"
+            return False, "", f"Failed to start LiteLLM PostgreSQL database: {start_output}", ""
 
     for _ in range(30):
         ready_code, _ = await _run_docker([
@@ -259,10 +277,10 @@ async def _ensure_litellm_database() -> tuple[bool, str, str]:
                 f"postgresql://{LITELLM_DB_USER}:{quote(database_password, safe='')}"
                 f"@{LITELLM_DB_CONTAINER_NAME}:5432/{LITELLM_DB_NAME}"
             )
-            return True, database_url, ""
+            return True, database_url, "", LITELLM_NETWORK
         await asyncio.sleep(1.0)
 
-    return False, "", "LiteLLM PostgreSQL database did not become ready within 30 seconds"
+    return False, "", "LiteLLM PostgreSQL database did not become ready within 30 seconds", ""
 
 
 async def start_litellm(
@@ -305,7 +323,7 @@ async def start_litellm(
             "preview_migration": preview_migration,
         }
 
-    database_ready, database_url, database_message = await _ensure_litellm_database()
+    database_ready, database_url, database_message, database_network = await _ensure_litellm_database()
     if not database_ready:
         return {
             "ok": False,
@@ -318,7 +336,7 @@ async def start_litellm(
     if status["running"]:
         if (
             await litellm_is_loopback_bound()
-            and await litellm_is_postgres_configured()
+            and await litellm_is_postgres_configured(database_url)
         ):
             return {
                 "ok": True,
@@ -380,7 +398,10 @@ async def start_litellm(
         "run",
         "-d",
         "--name", LITELLM_CONTAINER_NAME,
-        "--network", LITELLM_NETWORK,
+    ]
+    if database_network:
+        args.extend(["--network", database_network])
+    args.extend([
         "-p", f"127.0.0.1:{port}:{LITELLM_CONTAINER_PORT}",
         "-v", f"{LITELLM_DATA_DIR}:/app/litellm",
         "-e", f"LITELLM_MASTER_KEY={master_key}",
@@ -388,7 +409,7 @@ async def start_litellm(
         "-e", f"DATABASE_URL={database_url}",
         "--restart", "unless-stopped",
         LITELLM_IMAGE,
-    ]
+    ])
     
     exit_code, output = await _run_docker(args, timeout=60.0)
     
