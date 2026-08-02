@@ -91,8 +91,30 @@ async def litellm_status() -> dict[str, Any]:
         return result
     
     try:
-        # Docker ps --format json returns one JSON object per line
-        containers = [json.loads(line) for line in output.strip().split("\n") if line.strip()]
+        # Docker normally returns one JSON object per line, but some versions
+        # return a single top-level JSON array for --format json.
+        try:
+            parsed: Any = json.loads(output)
+        except json.JSONDecodeError:
+            # Fall back to Docker's JSON-lines format.
+            parsed_records: list[Any] = []
+            for line in output.splitlines():
+                if not line.strip():
+                    continue
+                line_value = json.loads(line)
+                if isinstance(line_value, list):
+                    parsed_records.extend(line_value)
+                else:
+                    parsed_records.append(line_value)
+            parsed = parsed_records
+
+        if isinstance(parsed, dict):
+            containers = [parsed]
+        elif isinstance(parsed, list) and all(isinstance(item, dict) for item in parsed):
+            containers = parsed
+        else:
+            raise ValueError("Docker output must contain container objects")
+
         if not containers:
             result["message"] = "LiteLLM container not found"
             return result
@@ -113,7 +135,7 @@ async def litellm_status() -> dict[str, Any]:
         else:
             result["message"] = f"Container state: {state}"
             
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, ValueError) as e:
         result["message"] = f"Failed to parse docker output: {e}"
     
     return result
@@ -370,8 +392,15 @@ async def litellm_models() -> dict[str, Any]:
             )
             
             if resp.status_code == 200:
-                data = resp.json()
-                models = data.get("data", [])
+                payload = resp.json()
+                if isinstance(payload, list):
+                    models = payload
+                elif isinstance(payload, dict):
+                    models = payload.get("data", [])
+                else:
+                    models = []
+                if not isinstance(models, list):
+                    models = []
                 return {
                     "ok": True,
                     "models": models,
