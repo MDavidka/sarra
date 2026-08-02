@@ -4044,6 +4044,7 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
   const result = document.getElementById('new-feature-result');
   const logPanel = document.getElementById('new-feature-log');
   const model = document.getElementById('new-feature-model')?.value || 'auto';
+  const apiKey = document.getElementById('new-feature-api-key')?.value || '';
   const message = input?.value.trim();
   if (!message) return toast('Enter an instruction for the agent');
   if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Running…'; }
@@ -4053,7 +4054,7 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
   try {
     const res = await api('/settings/new-feature/agent', {
       method: 'POST',
-      body: JSON.stringify({ message, model_profile: model === 'auto' ? null : model }),
+      body: JSON.stringify({ message, model_profile: model === 'auto' ? null : model, request_api_key: apiKey || null }),
     });
     if (logPanel) logPanel.innerHTML = '';
     if (res.ok) {
@@ -4085,10 +4086,12 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
 
 document.getElementById('new-feature-clear-btn')?.addEventListener('click', () => {
   const input = document.getElementById('new-feature-input');
+  const apiKey = document.getElementById('new-feature-api-key');
   const status = document.getElementById('new-feature-status');
   const result = document.getElementById('new-feature-result');
   const logPanel = document.getElementById('new-feature-log');
   if (input) input.value = '';
+  if (apiKey) apiKey.value = '';
   if (status) { status.textContent = ''; status.classList.add('hidden'); }
   if (result) result.classList.add('hidden');
   if (logPanel) logPanel.classList.add('hidden');

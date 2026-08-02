@@ -883,6 +883,27 @@ async def model_metadata_for_profile(profile: str | None) -> dict[str, Any]:
     return _metadata_from_bridge(bridge, (profile or DEFAULT_PROFILE).strip() or DEFAULT_PROFILE)
 
 
+def _apply_api_key_override(
+    model: dict[str, Any],
+    override_api_key: str,
+) -> dict[str, Any]:
+    """Return a copy of *model* with the provider API key replaced by *override_api_key*.
+
+    Also corrects ``api_base`` for Aliyun profiles so Token Plan (``sk-sp-``)
+    and DashScope PAYG (``sk-``) keys route to the right endpoint.
+    """
+    from syte.ai_providers import aliyun_api_base_for_key
+
+    updated = dict(model)
+    updated["api_key"] = override_api_key
+    updated["key_source"] = "request"
+    updated["api_key_hint"] = mask_secret(override_api_key)
+    profile = str(updated.get("profile") or "")
+    if profile == "syra-ultra":
+        updated["api_base"] = aliyun_api_base_for_key(override_api_key)
+    return updated
+
+
 def _model_history_limit(model: dict[str, Any] | None) -> int:
     if model and model.get("max_history_messages"):
         return max(8, int(model["max_history_messages"]))
@@ -3784,6 +3805,7 @@ async def _resolve_subagent_model(
     task: str,
     *,
     mode: str | None = None,
+    override_api_key: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Prefer NVIDIA GLM subagent; fall back to nano/base/parent when needed."""
     from syte.model_routing import fallback_subagent_profile, suggest_subagent_profile
@@ -3807,6 +3829,8 @@ async def _resolve_subagent_model(
             meta = await model_metadata_for_profile(profile)
         except Exception:
             continue
+        if override_api_key and override_api_key.strip():
+            meta = _apply_api_key_override(meta, override_api_key.strip())
         metas[profile] = meta
         if (meta.get("api_key") or "").strip():
             available.add(profile)
@@ -3829,8 +3853,9 @@ async def _resolve_subagent_model(
                 else f"{routing.get('reason')}; using {chosen} ({source})"
             ),
         }
-        return meta, routing
-
+        return dict(meta), routing
+    if chosen == str(parent_model.get("profile") or "") and (override_api_key and override_api_key.strip()):
+        return _apply_api_key_override(dict(parent_model), override_api_key.strip()), routing
     # Last resort: parent model metadata already in hand.
     routing = {
         **routing,
@@ -3947,6 +3972,7 @@ async def _tool_delegate_task(
 
     sub_model, routing = await _resolve_subagent_model(
         model, task, mode=str(args.get("mode") or "") or None,
+        override_api_key=(context or {}).get("override_api_key"),
     )
     mode = str(routing.get("mode") or "research")
     timeout_s = (
@@ -4796,6 +4822,7 @@ async def communicate_with_agent(
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
     idempotency_key: str | None = None,
+    override_api_key: str | None = None,
 ) -> dict[str, Any]:
     from syte.model_routing import normalize_explicit_profile, suggest_model_profile
 
@@ -4819,6 +4846,7 @@ async def communicate_with_agent(
             source=source,
             auto_start=auto_start,
             idempotency_key=idempotency_key,
+            override_api_key=override_api_key,
         )
         return {**result, "model_routing": routing}
     from syte.agent_jobs import new_request_id, project_agent_lock
@@ -4830,6 +4858,7 @@ async def communicate_with_agent(
             auto_start=auto_start, request_id=request_id,
             improve_from_screenshot=improve_from_screenshot,
             visual_analysis_id=visual_analysis_id,
+            override_api_key=override_api_key,
         )
         return {**result, "model_routing": routing}
 
@@ -4844,6 +4873,7 @@ async def _communicate_with_agent_impl(
     turso_session_id: str | None = None,
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
+    override_api_key: str | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
@@ -4875,6 +4905,8 @@ async def _communicate_with_agent_impl(
         if not ok:
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
+    if override_api_key and override_api_key.strip():
+        model = _apply_api_key_override(model, override_api_key.strip())
     # Selected profile handles both planning and the tool/code loop.
     if not model["api_key"]:
         secret_env = model.get("secret_env") or profile_provider(model.get("profile") or DEFAULT_PROFILE)["secret_env"]
@@ -5302,6 +5334,7 @@ async def _communicate_with_agent_impl(
         "plan_submitted": bool(plan_already_seeded),
         "model": model,
         "max_tool_result_chars": tool_result_chars,
+        "override_api_key": override_api_key,
     }
 
     max_tool_steps = int(gen.get("max_tool_steps") or 48)
