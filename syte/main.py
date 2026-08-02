@@ -567,6 +567,7 @@ async def api_new_feature_info(_token: dict = Depends(verify_api_token)):
 class NewFeatureAgentRequest(BaseModel):
     message: str = Field(..., description="Message to the system agent")
     model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
+    request_api_key: str | None = Field(None, description="Provider API key supplied by the requesting user")
 
 
 @app.post("/api/settings/new-feature/agent")
@@ -581,6 +582,7 @@ async def api_new_feature_agent(
     result = await run_new_feature_agent(
         message=body.message,
         model_profile=body.model_profile,
+        request_api_key=body.request_api_key,
     )
     if result.get("ok"):
         ok, update_message = update_syte()

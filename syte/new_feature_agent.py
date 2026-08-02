@@ -67,12 +67,17 @@ async def _ensure_system_project() -> str:
 async def run_new_feature_agent(
     message: str,
     model_profile: str | None = None,
+    request_api_key: str | None = None,
 ) -> dict[str, Any]:
     """Run the new-feature agent using Syte's general agent API.
 
     Uses communicate_with_agent so the agent has full access to
     system file tools and the selected model. After the agent finishes,
     an auto-update is triggered automatically.
+
+    ``request_api_key`` — an optional provider API key supplied by the
+    requesting user. When provided, Syte uses it for the turn instead of
+    requiring a pre-configured key in settings or environment variables.
     """
     if not message.strip():
         return {
@@ -90,6 +95,7 @@ async def run_new_feature_agent(
         thinking_level=3,
         source="settings_new_feature",
         auto_start=True,
+        override_api_key=request_api_key,
     )
 
     if not result.get("ok"):
