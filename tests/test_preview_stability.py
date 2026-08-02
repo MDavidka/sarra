@@ -69,11 +69,11 @@ async def test_ensure_preview_address_assigns_once(
     first_domain = project["preview_domain"]
     assert first_domain.startswith("preview")
     assert first_domain.endswith(".sycord.site")
-    assert project["preview_port"] == 4000
+    assert project["preview_port"] == 4001
 
     project = await ensure_preview_address(project)
     assert project["preview_domain"] == first_domain
-    assert project["preview_port"] == 4000
+    assert project["preview_port"] == 4001
 
 
 @pytest.mark.asyncio

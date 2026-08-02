@@ -75,14 +75,15 @@ def test_ultra_aliyun_qwen_plus_cost_caps() -> None:
 
 def test_provider_catalog_includes_prices() -> None:
     catalog = provider_catalog()
-    assert len(catalog) == 3
+    assert len(catalog) == 4
     by_profile = {row["profile"]: row for row in catalog}
     assert by_profile["syra-nano"]["display_name"] == "go"
     assert by_profile["syra-nano"]["model"] == "gemini-2.5-flash"
     assert by_profile["syra-havy"]["display_name"] == "metal"
     assert by_profile["syra-ultra"]["api_base"] == ALIYUN_MAAS_API_BASE
     assert by_profile["syra-ultra"]["display_name"] == "Air"
-    assert set(by_profile) == {"syra-nano", "syra-ultra", "syra-havy"}
+    assert by_profile["syra-litellm"]["api_base"] == "http://127.0.0.1:4000/v1"
+    assert set(by_profile) == {"syra-nano", "syra-ultra", "syra-havy", "syra-litellm"}
     assert format_price_per_mtok(0.14) == "$0.14"
     assert format_price_per_mtok(7.5) == "$7.50"
 
@@ -90,4 +91,4 @@ def test_provider_catalog_includes_prices() -> None:
 def test_no_separate_thinker_role() -> None:
     roles = {spec.get("role") for spec in PROFILE_PROVIDERS.values()}
     assert "think" not in roles
-    assert roles == {"fast", "metal", "ultra"}
+    assert roles == {"fast", "metal", "ultra", "proxy"}

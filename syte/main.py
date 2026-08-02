@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,11 +24,12 @@ from syte.database import (
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
+from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
 from syte.self_update import update_syte
 from syte.new_feature_agent import run_new_feature_agent
 from syte.settings_tabs import get_registered_tabs
 from syte import auth
-from syte.auth import verify_api_token
+from syte.auth import verify_operator_token
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
@@ -150,14 +151,19 @@ class SettingsRequest(BaseModel):
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
-    agent_litellm_api_key: str | None = None
     litellm_proxy_url: str | None = None
-    litellm_master_key: str | None = None
-    litellm_salt_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
     turso_auth_token: str | None = None
+
+
+class SyraSecretsRequest(BaseModel):
+    """Protected server-side LiteLLM credentials and Syra virtual key."""
+
+    master_key: str | None = None
+    salt_key: str | None = None
+    agent_api_key: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -201,13 +207,16 @@ async def sycord_api_documentation():
 
 
 @app.get("/api/tokens")
-async def list_tokens():
+async def list_tokens(_operator: dict[str, Any] = Depends(verify_operator_token)):
     tokens = await auth.list_tokens()
     return {"tokens": tokens}
 
 
 @app.post("/api/tokens")
-async def create_token(body: CreateTokenRequest):
+async def create_token(
+    body: CreateTokenRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_token),
+):
     row = await auth.create_token(body.name)
     return {
         "ok": True,
@@ -220,7 +229,10 @@ async def create_token(body: CreateTokenRequest):
 
 
 @app.delete("/api/tokens/{token_id}")
-async def revoke_token(token_id: str):
+async def revoke_token(
+    token_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_token),
+):
     ok = await auth.revoke_token(token_id)
     if not ok:
         raise HTTPException(404, "Token not found")
@@ -321,7 +333,8 @@ async def get_settings():
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
         "agent_litellm_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
-        "litellm_proxy_url": (await get_setting("litellm_proxy_url", "http://localhost:4000")).strip(),
+        "litellm_proxy_url": LITELLM_PUBLIC_API_URL,
+        "litellm_public_api_url": LITELLM_PUBLIC_API_URL,
         "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
         "litellm_salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
         "ai_providers": provider_catalog(),
@@ -494,31 +507,16 @@ async def save_settings(body: SettingsRequest):
             if ultra_key
             else "syra-ultra API key cleared."
         )
-    if body.agent_litellm_api_key is not None:
-        await set_setting("agent_litellm_api_key", body.agent_litellm_api_key.strip())
-        messages.append(
-            "LiteLLM API key saved."
-            if body.agent_litellm_api_key.strip()
-            else "LiteLLM API key cleared."
-        )
     if body.litellm_proxy_url is not None:
-        url = body.litellm_proxy_url.strip() or "http://localhost:4000"
-        await set_setting("litellm_proxy_url", url)
-        messages.append(f"LiteLLM proxy URL set to {url}")
-    if body.litellm_master_key is not None:
-        await set_setting("litellm_master_key", body.litellm_master_key.strip())
-        messages.append(
-            "LiteLLM master key saved."
-            if body.litellm_master_key.strip()
-            else "LiteLLM master key cleared."
-        )
-    if body.litellm_salt_key is not None:
-        await set_setting("litellm_salt_key", body.litellm_salt_key.strip())
-        messages.append(
-            "LiteLLM salt key saved."
-            if body.litellm_salt_key.strip()
-            else "LiteLLM salt key cleared."
-        )
+        requested_url = body.litellm_proxy_url.strip().rstrip("/")
+        if requested_url and requested_url != LITELLM_PUBLIC_API_URL:
+            raise HTTPException(
+                400,
+                f"LiteLLM is deployed at {LITELLM_PUBLIC_API_URL}; custom proxy URLs are not supported.",
+            )
+        await set_setting("litellm_proxy_url", LITELLM_PUBLIC_API_URL)
+        proxy_updated = True
+        messages.append(f"LiteLLM public API URL: {LITELLM_PUBLIC_API_URL}")
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))
         await set_setting("agent_max_count", str(count))
@@ -564,6 +562,32 @@ async def save_settings(body: SettingsRequest):
     return {"ok": ok, "messages": messages, "cloudflare_tls": cf_status}
 
 
+async def _save_syra_secrets(body: SyraSecretsRequest) -> dict[str, Any]:
+    """Persist protected LiteLLM credentials without returning their values."""
+    messages: list[str] = []
+    if body.master_key is not None:
+        await set_setting("litellm_master_key", body.master_key.strip())
+        messages.append("LiteLLM master key saved." if body.master_key.strip() else "LiteLLM master key cleared.")
+    if body.salt_key is not None:
+        await set_setting("litellm_salt_key", body.salt_key.strip())
+        messages.append("LiteLLM salt key saved." if body.salt_key.strip() else "LiteLLM salt key cleared.")
+    if body.agent_api_key is not None:
+        await set_setting("agent_litellm_api_key", body.agent_api_key.strip())
+        messages.append("LiteLLM virtual API key saved." if body.agent_api_key.strip() else "LiteLLM virtual API key cleared.")
+    if not messages:
+        raise HTTPException(400, "Provide at least one LiteLLM credential to update.")
+    return {"ok": True, "messages": messages}
+
+
+@app.put("/api/settings/syra/secrets")
+async def api_syra_save_secrets(
+    body: SyraSecretsRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_token),
+):
+    """Save server-side LiteLLM credentials using an operator API token."""
+    return await _save_syra_secrets(body)
+
+
 @app.get("/api/system/update-info")
 async def api_update_info():
     from syte.self_update import get_update_info
@@ -603,34 +627,54 @@ async def api_new_feature_info():
 
 
 @app.get("/api/settings/syra/status")
-async def api_syra_status():
+async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_token)):
     """Get LiteLLM proxy status and configuration."""
     from syte.litellm_manager import litellm_health, litellm_status
+    from syte.ssl_status import litellm_api_ssl_status
 
     status = await litellm_status()
     health = await litellm_health() if status["running"] else {"healthy": False}
+    ssl = litellm_api_ssl_status()
     
     return {
         "ok": True,
         **status,
         "health": health,
-        "proxy_url": (await get_setting("litellm_proxy_url", "http://localhost:4000")).strip(),
+        "proxy_url": LITELLM_PUBLIC_API_URL,
+        "public_api_url": LITELLM_PUBLIC_API_URL,
+        "public_host": LITELLM_PUBLIC_HOST,
+        "ssl": ssl,
+        "dns_hint": (
+            f"Point the {LITELLM_PUBLIC_HOST} A record to this server and keep ports 80/443 open."
+        ),
         "master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
         "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
+        "agent_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
     }
 
 
-@app.post("/api/settings/syra/start")
-async def api_syra_start():
-    """Start the LiteLLM proxy container."""
-    from syte.litellm_manager import start_litellm
-
-    result = await start_litellm()
+async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]:
+    """Apply Caddy's API-only public route after a LiteLLM lifecycle action."""
+    if not result.get("ok"):
+        return result
+    proxy_ok, proxy_message = await apply_proxy_config()
+    result["proxy_configured"] = proxy_ok
+    result["proxy_message"] = proxy_message
+    if not proxy_ok:
+        result["message"] = f"{result['message']} Caddy route failed: {proxy_message}"
     return result
 
 
+@app.post("/api/settings/syra/start")
+async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_token)):
+    """Start LiteLLM and deploy its restricted public HTTPS route."""
+    from syte.litellm_manager import start_litellm
+
+    return await _deploy_litellm_public_proxy(await start_litellm())
+
+
 @app.post("/api/settings/syra/stop")
-async def api_syra_stop():
+async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_token)):
     """Stop the LiteLLM proxy container."""
     from syte.litellm_manager import stop_litellm
 
@@ -639,16 +683,18 @@ async def api_syra_stop():
 
 
 @app.post("/api/settings/syra/restart")
-async def api_syra_restart():
-    """Restart the LiteLLM proxy container."""
+async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_token)):
+    """Restart LiteLLM and re-apply its restricted public HTTPS route."""
     from syte.litellm_manager import restart_litellm
 
-    result = await restart_litellm()
-    return result
+    return await _deploy_litellm_public_proxy(await restart_litellm())
 
 
 @app.get("/api/settings/syra/logs")
-async def api_syra_logs(lines: int = 100):
+async def api_syra_logs(
+    lines: int = 100,
+    _operator: dict[str, Any] = Depends(verify_operator_token),
+):
     """Get logs from the LiteLLM proxy container."""
     from syte.litellm_manager import litellm_logs
 
@@ -657,7 +703,7 @@ async def api_syra_logs(lines: int = 100):
 
 
 @app.get("/api/settings/syra/models")
-async def api_syra_models():
+async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_token)):
     """Get list of configured models from LiteLLM."""
     from syte.litellm_manager import litellm_models
 

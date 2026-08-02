@@ -111,3 +111,18 @@ def project_ssl_summary(project: dict) -> dict:
         "badge": badge,
         "badge_label": badge_label,
     }
+
+
+
+def litellm_api_ssl_status() -> dict:
+    """Return certificate status for the public Syra LiteLLM API endpoint."""
+    from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
+
+    active = _caddy_has_cert(LITELLM_PUBLIC_HOST)
+    return {
+        "configured": True,
+        "active": active,
+        "domain": LITELLM_PUBLIC_HOST,
+        "url": LITELLM_PUBLIC_API_URL,
+        "label": "HTTPS" if active else "SSL pending",
+    }

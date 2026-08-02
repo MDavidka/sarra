@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
+from syte.litellm_config import LITELLM_INTERNAL_API_URL
+
 VERTEX_API_BASE = "https://aiplatform.googleapis.com/v1"
 # Legacy alias kept for imports/migrations.
 VERTED_API_BASE = VERTEX_API_BASE
@@ -25,7 +27,7 @@ ALIYUN_MAAS_API_BASE = (
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 VYCEAI_API_BASE = "https://vyceai.com/v1"
 
-LITELLM_API_BASE = "http://localhost:4000/v1"
+LITELLM_API_BASE = LITELLM_INTERNAL_API_URL
 
 PROFILE_ORDER = (
     "syra-nano",
