@@ -12,7 +12,7 @@ def build_ai_spec(base_url: str = "") -> dict:
         "header": "X-API-Key",
         "alternative": "Authorization: Bearer <token>",
         "token_prefix": "syte_",
-        "create_token": "POST /api/tokens with {\"name\": \"my-agent\"} — no auth required (GUI/local). Token shown once.",
+        "create_token": "POST /api/tokens with {\"name\": \"my-agent\"} — requires an existing API/bootstrap token, or an unlocked same-origin operator session with CSRF. Token shown once.",
         "example_header": "X-API-Key: syte_xxxxxxxxxxxxxxxx",
     }
     design = build_design_contract_spec()
@@ -35,7 +35,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             "404_not_found": "Project UUID does not exist",
         },
         "workflow_create_website_from_git": [
-            "1. POST /api/tokens → save token",
+            "1. Unlock the Syte GUI, then POST /api/tokens → save token",
             "2. POST /api/create_project {name, git_url, branch} → uuid (do NOT set deploy:true)",
             "3. POST /api/issue_deploy {uuid} → git pull + docker build + start",
             "4. GET /api/projects/{uuid}/logs/stream?live=1 (SSE) → watch deploy",
@@ -223,7 +223,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/projects/{uuid}/agent/mcp", "auth": False, "description": "GUI mirror — list/add/connect/call/update/disconnect MCP"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/skills", "auth": False, "description": "GUI mirror — list/add/enable/disable/edit/delete skills"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE Syte cloud agent logs"},
-            {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
+            {"method": "POST", "path": "/api/tokens", "auth": True, "body": {"name": "str"}, "description": "Create API key; requires an existing API/bootstrap credential or an unlocked same-origin operator session with CSRF."},
         ],
         "agent_session": {
             "description": (

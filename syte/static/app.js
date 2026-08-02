@@ -55,6 +55,7 @@ let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
 let syraCsrfToken = '';
+let operatorSessionRestorePromise = null;
 
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
@@ -3092,6 +3093,29 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+async function restoreOperatorSession() {
+  if (syraCsrfToken) return true;
+  if (operatorSessionRestorePromise) return operatorSessionRestorePromise;
+
+  let restorePromise;
+  restorePromise = api('/operator/session')
+    .then((session) => {
+      // Do not overwrite a newly-created session if an earlier restore finishes late.
+      if (operatorSessionRestorePromise !== restorePromise) return Boolean(syraCsrfToken);
+      syraCsrfToken = session.authenticated ? (session.csrf_token || '') : '';
+      return Boolean(syraCsrfToken);
+    })
+    .catch(() => {
+      if (operatorSessionRestorePromise === restorePromise) syraCsrfToken = '';
+      return false;
+    })
+    .finally(() => {
+      if (operatorSessionRestorePromise === restorePromise) operatorSessionRestorePromise = null;
+    });
+  operatorSessionRestorePromise = restorePromise;
+  return restorePromise;
+}
+
 function toast(msg) {
   const el = document.getElementById('toast');
   if (!el) return;
@@ -4426,6 +4450,10 @@ function esc(s) {
 async function loadTokens() {
   const list = document.getElementById('tokens-list');
   if (!list) return;
+  if (!await restoreOperatorSession()) {
+    list.innerHTML = '<p class="hint">Unlock Syra to manage API keys.</p>';
+    return;
+  }
   try {
     const res = await api('/tokens');
     if (!res.tokens?.length) {
@@ -4446,6 +4474,9 @@ async function loadTokens() {
 
 async function revokeToken(id) {
   if (!confirm('Revoke this API token?')) return;
+  if (!await restoreOperatorSession()) {
+    return toast('Unlock Syra to manage API keys');
+  }
   try {
     await api(`/tokens/${id}`, { method: 'DELETE' });
     toast('token revoked');
@@ -4457,6 +4488,9 @@ async function revokeToken(id) {
 
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
+  if (!await restoreOperatorSession()) {
+    return toast('Unlock Syra to manage API keys');
+  }
   try {
     const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
     const box = document.getElementById('new-token-box');
@@ -4795,6 +4829,7 @@ async function unlockSyra() {
       method: 'POST',
       body: JSON.stringify({ bootstrap_token: bootstrapToken }),
     });
+    operatorSessionRestorePromise = null;
     syraCsrfToken = session.csrf_token || '';
     if (!syraCsrfToken) throw new Error('Operator session was not created');
     if (input) input.value = '';
@@ -4812,6 +4847,7 @@ async function lockSyra() {
   if (button) button.disabled = true;
   try {
     await api('/operator/session', { method: 'DELETE' });
+    operatorSessionRestorePromise = null;
     syraCsrfToken = '';
     setSyraSessionState(false);
     toast('Syra session locked');
@@ -4826,9 +4862,7 @@ async function lockSyra() {
 // once for an HttpOnly session cookie and is never saved in JavaScript storage.
 async function initSyraTab() {
   try {
-    const session = await api('/operator/session');
-    syraCsrfToken = session.authenticated ? (session.csrf_token || '') : '';
-    const unlocked = Boolean(syraCsrfToken);
+    const unlocked = await restoreOperatorSession();
     setSyraSessionState(unlocked);
     if (!unlocked) {
       const statusLabel = document.getElementById('syra-status-label');
