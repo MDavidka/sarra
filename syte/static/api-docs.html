@@ -584,7 +584,7 @@
             </div>
             <div class="endpoint-body">
               <ol class="flow-list">
-                <li class="flow-step"><strong>Create token</strong> <code>POST /api/tokens</code> (or GUI key menu). Send <code>X-API-Key</code> on every call.</li>
+                <li class="flow-step"><strong>Create token</strong> In the GUI, unlock Syra and use Users → Create token; programmatic callers must send an existing operator credential to <code>POST /api/tokens</code>. Send <code>X-API-Key</code> on every later call.</li>
                 <li class="flow-step"><strong>Warm runtime</strong> <code>POST /api/agent_warm</code> with <code>{"uuid"}</code>, then poll <code>GET /api/agent_status?uuid=</code> until <code>agent_status="running"</code> and <code>agent_healthy=true</code>. Running-since = <code>agent_last_started_at</code> (not a stream event).</li>
                 <li class="flow-step"><strong>Send work</strong> <code>POST /api/agent_change</code> (preferred for external pages — background). Response includes <code>turso_session_id</code> + <code>request_id</code>.</li>
                 <li class="flow-step"><strong>Follow progress</strong> Open SSE <code>GET /api/agent_activity/stream?uuid=&amp;since_id=</code> and/or poll durable <code>GET /api/agent_session/{turso_session_id}?since_id=N</code>.</li>
@@ -647,7 +647,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
         <div class="cat-panel" id="panel-auth" data-cat="auth">
         <section class="section">
           <h2 class="section-title">Authentication</h2>
-          <p class="section-desc">All endpoints require an API key except <code>POST /api/tokens</code> and <code>GET /api/health</code>.</p>
+          <p class="section-desc">All external API endpoints require an API key, except <code>GET /api/health</code>. Token management additionally accepts an unlocked same-origin operator session.</p>
 
           <div class="endpoint" id="auth-token" data-ep="auth-token">
             <div class="endpoint-header">
@@ -673,7 +673,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
   &quot;ok&quot;: true,
   &quot;token&quot;: &quot;syte_abc123…&quot;,
   &quot;prefix&quot;: &quot;syte_abc…&quot;
-}</pre><div class="note"><strong>Token shown once.</strong> Save it immediately. Create via GUI: <strong>key</strong> in navbar.</div>
+}</pre><div class="note"><strong>Token shown once.</strong> In the GUI, unlock Syra first; external callers must use an existing API token or the server bootstrap credential. Save the new token immediately.</div>
             </div>
           </div>
 
