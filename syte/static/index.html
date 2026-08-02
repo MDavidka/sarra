@@ -804,7 +804,7 @@
                 <div class="form-group">
                   <label for="litellm-database-url">PostgreSQL database URL</label>
                   <input type="url" id="litellm-database-url" placeholder="optional — postgresql://user:password@host:5432/database" autocomplete="off">
-                  <span class="hint">Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
+                  <span class="hint">Use a direct PostgreSQL URL or Supabase session pooler on port <code>5432</code>; do not use Supabase transaction pooler port <code>6543</code> because LiteLLM Prisma migrations require advisory locks. Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
                 </div>
               </div>
 

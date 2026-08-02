@@ -53,6 +53,15 @@ def validate_litellm_database_url(value: str) -> str:
             "postgresql://user:password@host:5432/database. "
             "Turso libsql:// URLs belong in the separate Turso database field."
         )
+    if (
+        parsed.hostname
+        and parsed.hostname.endswith(".pooler.supabase.com")
+        and parsed.port == 6543
+    ):
+        raise ValueError(
+            "Supabase transaction pooler port 6543 cannot run LiteLLM Prisma migrations. "
+            "Use the direct database URL or Supabase session pooler port 5432."
+        )
     return value
 
 
