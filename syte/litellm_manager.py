@@ -230,7 +230,15 @@ async def start_litellm(
         await set_setting("litellm_salt_key", salt_key)
     
     # Ensure data directory exists
-    os.makedirs(LITELLM_DATA_DIR, exist_ok=True)
+    try:
+        os.makedirs(LITELLM_DATA_DIR, exist_ok=True)
+    except OSError as error:
+        return {
+            "ok": False,
+            "message": f"Could not create LiteLLM data directory {LITELLM_DATA_DIR}: {error}",
+            "running": False,
+            "preview_migration": preview_migration,
+        }
     
     # Remove old container if exists (stopped)
     await _run_docker(["rm", "-f", LITELLM_CONTAINER_NAME])
@@ -277,8 +285,8 @@ async def start_litellm(
     else:
         return {
             "ok": False,
-            "message": f"Container started but not running: {status.get('message', 'unknown')}",
             **status,
+            "message": f"Container started but not running: {status.get('message', 'unknown')}",
         }
 
 

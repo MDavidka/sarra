@@ -104,6 +104,14 @@ async def next_preview_port() -> int:
     raise RuntimeError("No preview ports available (4000-4999 exhausted or reserved)")
 
 
+def _stored_preview_port(project: dict[str, object]) -> int:
+    """Read a persisted preview port defensively — the column may hold junk."""
+    try:
+        return int(project.get("preview_port") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def relocate_litellm_preview_conflicts() -> dict[str, object]:
     """Move stable previews away from LiteLLM's reserved loopback port.
 
@@ -115,7 +123,7 @@ async def relocate_litellm_preview_conflicts() -> dict[str, object]:
     projects = await list_projects()
     conflicts = [
         project for project in projects
-        if int(project.get("preview_port") or 0) in PREVIEW_RESERVED_PORTS
+        if _stored_preview_port(project) in PREVIEW_RESERVED_PORTS
     ]
     if not conflicts:
         return {"ok": True, "moved": [], "message": "No preview port conflicts."}
@@ -127,16 +135,28 @@ async def relocate_litellm_preview_conflicts() -> dict[str, object]:
         if was_running:
             stop_preview(project_id)
 
-        new_port = await next_preview_port()
-        await update_project(project_id, {
-            "preview_port": new_port,
-            "preview_status": "stopped",
-            "preview_started_at": None,
-        })
+        # A migration failure must not abort the caller (LiteLLM start) with an
+        # opaque 500 — report it as a normal unsuccessful result instead.
+        try:
+            new_port = await next_preview_port()
+            await update_project(project_id, {
+                "preview_port": new_port,
+                "preview_status": "stopped",
+                "preview_started_at": None,
+            })
+        except Exception as error:
+            return {
+                "ok": False,
+                "moved": moved,
+                "message": f"Could not move preview {project_id} off port {LITELLM_HOST_PORT}: {error}",
+            }
         moved.append({"project_id": project_id, "port": new_port, "restarted": was_running})
 
         if was_running:
-            restarted, message, _meta = await start_preview(project_id)
+            try:
+                restarted, message, _meta = await start_preview(project_id)
+            except Exception as error:
+                restarted, message = False, str(error)
             if not restarted:
                 return {
                     "ok": False,
@@ -146,7 +166,14 @@ async def relocate_litellm_preview_conflicts() -> dict[str, object]:
 
     from syte.certificates import apply_proxy_config
 
-    await apply_proxy_config()
+    try:
+        await apply_proxy_config()
+    except Exception as error:
+        return {
+            "ok": False,
+            "moved": moved,
+            "message": f"Moved {len(moved)} preview(s) but could not reapply Caddy routes: {error}",
+        }
     return {
         "ok": True,
         "moved": moved,
