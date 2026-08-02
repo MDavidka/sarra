@@ -817,6 +817,14 @@ async def bridge_settings() -> dict[str, Any]:
         if name == "syra-ultra" and resolved["api_key"]:
             entry["api_base"] = aliyun_api_base_for_key(str(resolved["api_key"]))
         profiles[name] = entry
+    # Syra: when the local LiteLLM proxy is enabled + healthy, route every
+    # profile through it (single OpenAI-compatible gateway on 127.0.0.1).
+    try:
+        from syte.litellm_proxy import apply_proxy_routing
+
+        await apply_proxy_routing(profiles)
+    except Exception:  # pragma: no cover - routing must never break resolution
+        logger.debug("Syra proxy routing skipped", exc_info=True)
     active = profiles[default_profile]
     return {
         "default_profile": default_profile,

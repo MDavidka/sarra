@@ -362,6 +362,60 @@ async def delete_solar_model():
     return await delete_solar()
 
 
+class SyraRoutingRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/ai/litellm/status")
+async def get_litellm_status():
+    """Syra LiteLLM proxy status + masked generated config preview."""
+    from syte import litellm_proxy
+
+    status = await litellm_proxy.proxy_status()
+    try:
+        preview = await litellm_proxy.config_preview()
+    except Exception as exc:  # config generation should never 500 the tab
+        preview = f"# Unable to render config: {exc}"
+    return {
+        **status,
+        "config_preview": preview,
+        "log_tail": litellm_proxy.proxy_log_tail(120),
+    }
+
+
+@app.post("/api/ai/litellm/start")
+async def start_litellm_proxy():
+    from syte import litellm_proxy
+
+    result = await litellm_proxy.start_proxy()
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error") or "Failed to start Syra proxy")
+    return result
+
+
+@app.post("/api/ai/litellm/stop")
+async def stop_litellm_proxy():
+    from syte import litellm_proxy
+
+    return await litellm_proxy.stop_proxy()
+
+
+@app.post("/api/ai/litellm/routing")
+async def set_litellm_routing(body: SyraRoutingRequest):
+    from syte import litellm_proxy
+
+    await litellm_proxy.set_routing_enabled(body.enabled)
+    status = await litellm_proxy.proxy_status()
+    msg = (
+        "Agent traffic now routes through the Syra proxy."
+        if body.enabled
+        else "Agent traffic routes directly to providers."
+    )
+    if body.enabled and not status["healthy"]:
+        msg += " Start the proxy for routing to take effect."
+    return {"ok": True, "message": msg, "status": status}
+
+
 @app.put("/api/settings")
 async def save_settings(body: SettingsRequest):
     from syte.certificates import cloudflare_tls_status

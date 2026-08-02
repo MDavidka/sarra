@@ -2897,7 +2897,7 @@ function showView(name) {
   if (name === 'dashboard') activeServiceId = null;
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); loadSyraProxy(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
   if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
@@ -4259,6 +4259,93 @@ function renderAiTestProjects() {
   if (current) sel.value = current;
 }
 
+function renderSyraProxy(data) {
+  if (!data) return;
+  const dot = document.getElementById('syra-proxy-dot');
+  const state = document.getElementById('syra-proxy-state');
+  const sub = document.getElementById('syra-proxy-sub');
+  const endpoint = document.getElementById('syra-proxy-endpoint');
+  const profilesEl = document.getElementById('syra-proxy-profiles');
+  const configEl = document.getElementById('syra-proxy-config');
+  const toggle = document.getElementById('syra-routing-toggle');
+  const startBtn = document.getElementById('syra-proxy-start');
+  const stopBtn = document.getElementById('syra-proxy-stop');
+
+  const running = !!data.running;
+  const healthy = !!data.healthy;
+  let label = 'stopped';
+  let cls = 'off';
+  if (running && healthy) { label = 'running'; cls = 'ok'; }
+  else if (running) { label = 'starting'; cls = 'warn'; }
+  else if (!data.installed) { label = 'not installed'; cls = 'warn'; }
+
+  if (dot) dot.className = `syra-proxy-dot ${cls}`;
+  if (state) { state.textContent = label; state.className = `syra-proxy-badge ${cls}`; }
+  if (sub) {
+    sub.textContent = data.installed
+      ? 'Loads LiteLLM and fronts your model profiles on a single local endpoint.'
+      : "LiteLLM isn't installed on this server — run: pip install 'litellm[proxy]'";
+  }
+  if (endpoint) endpoint.textContent = data.base_url || '—';
+  if (profilesEl) {
+    const list = data.configured_profiles || [];
+    profilesEl.textContent = list.length ? list.join(', ') : 'no keys configured';
+  }
+  if (configEl) configEl.textContent = data.config_preview || '—';
+  if (toggle) toggle.checked = !!data.routing_enabled;
+  if (startBtn) startBtn.disabled = (running && healthy) || !data.installed;
+  if (stopBtn) stopBtn.disabled = !running;
+  refreshIcons();
+}
+
+async function loadSyraProxy() {
+  try {
+    const data = await api('/ai/litellm/status');
+    renderSyraProxy(data);
+  } catch (e) {
+    const state = document.getElementById('syra-proxy-state');
+    if (state) { state.textContent = 'unavailable'; state.className = 'syra-proxy-badge warn'; }
+  }
+}
+
+async function startSyraProxy() {
+  const state = document.getElementById('syra-proxy-state');
+  if (state) { state.textContent = 'starting…'; state.className = 'syra-proxy-badge warn'; }
+  try {
+    const res = await api('/ai/litellm/start', { method: 'POST', body: '{}' });
+    if (res.status) renderSyraProxy(res.status);
+    toast(res.message || 'Syra proxy started');
+  } catch (e) {
+    toast(e.message);
+  }
+  await loadSyraProxy();
+}
+
+async function stopSyraProxy() {
+  try {
+    const res = await api('/ai/litellm/stop', { method: 'POST', body: '{}' });
+    if (res.status) renderSyraProxy(res.status);
+    toast(res.message || 'Syra proxy stopped');
+  } catch (e) {
+    toast(e.message);
+  }
+  await loadSyraProxy();
+}
+
+async function setSyraRouting(enabled) {
+  try {
+    const res = await api('/ai/litellm/routing', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+    if (res.status) renderSyraProxy(res.status);
+    toast(res.message || 'Routing updated');
+  } catch (e) {
+    toast(e.message);
+    await loadSyraProxy();
+  }
+}
+
 async function loadAiDashboard() {
   renderAiTestProjects();
   try {
@@ -4594,6 +4681,13 @@ document.getElementById('ai-settings-close')?.addEventListener('click', closeAiS
 document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-tab-providers')?.addEventListener('click', () => setAiSettingsTab('providers'));
 document.getElementById('delete-solar-btn')?.addEventListener('click', deleteLegacySolar);
+
+document.getElementById('syra-proxy-start')?.addEventListener('click', startSyraProxy);
+document.getElementById('syra-proxy-stop')?.addEventListener('click', stopSyraProxy);
+document.getElementById('syra-proxy-refresh')?.addEventListener('click', loadSyraProxy);
+document.getElementById('syra-routing-toggle')?.addEventListener('change', (e) => {
+  setSyraRouting(e.target.checked);
+});
 
 document.getElementById('ai-test-profile')?.addEventListener('change', () => {
   updateAiApiWarning();

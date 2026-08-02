@@ -74,7 +74,7 @@
                 <i data-lucide="scroll-text"></i><span>Logs</span>
               </button>
               <button type="button" class="nav-sublink" data-view="ai">
-                <i data-lucide="sparkles"></i><span>AI</span>
+                <i data-lucide="sparkles"></i><span>Syra</span>
               </button>
               <div class="nav-api-group" id="nav-api-group">
                 <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
@@ -600,8 +600,8 @@
             <div class="ai-channel-top">
               <div class="ai-dash-header">
                 <div>
-                  <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span></h1>
-                  <p class="projects-sub ai-dash-sub">Syte cloud agents — sycord.com routes by UUID</p>
+                  <h1 class="ai-dash-title">Meet <span class="ai-accent">Syra</span></h1>
+                  <p class="projects-sub ai-dash-sub">Local LiteLLM proxy — one OpenAI-compatible gateway for every Syte model profile</p>
                 </div>
               </div>
 
@@ -653,6 +653,53 @@
                 <span>Add the API key for the profile you want to test — open settings.</span>
               </div>
             </div>
+
+            <section class="syra-proxy" id="syra-proxy" aria-labelledby="syra-proxy-title">
+              <div class="syra-proxy-head">
+                <div class="syra-proxy-heading">
+                  <span class="syra-proxy-dot" id="syra-proxy-dot" title="Proxy status"></span>
+                  <h2 id="syra-proxy-title">Syra proxy</h2>
+                  <span class="syra-proxy-badge" id="syra-proxy-state">checking…</span>
+                </div>
+                <div class="syra-proxy-actions">
+                  <button type="button" class="btn-pill btn-primary btn-sm" id="syra-proxy-start">
+                    <i data-lucide="play"></i><span>Start</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-proxy-stop">
+                    <i data-lucide="square"></i><span>Stop</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-proxy-refresh" aria-label="Refresh proxy status">
+                    <i data-lucide="refresh-cw"></i>
+                  </button>
+                </div>
+              </div>
+
+              <p class="hint syra-proxy-sub" id="syra-proxy-sub">Loads LiteLLM and fronts your model profiles on a single local endpoint.</p>
+
+              <div class="syra-proxy-meta">
+                <div class="syra-proxy-metric">
+                  <span class="syra-proxy-metric-label">Endpoint</span>
+                  <code id="syra-proxy-endpoint">—</code>
+                </div>
+                <div class="syra-proxy-metric">
+                  <span class="syra-proxy-metric-label">Profiles routed</span>
+                  <span id="syra-proxy-profiles">—</span>
+                </div>
+              </div>
+
+              <label class="syra-proxy-toggle" for="syra-routing-toggle">
+                <input type="checkbox" id="syra-routing-toggle">
+                <span>
+                  <strong>Route agent traffic through Syra</strong>
+                  <span class="hint">All chat completions flow through the local LiteLLM gateway with retries and cross-profile fallbacks.</span>
+                </span>
+              </label>
+
+              <details class="syra-proxy-config">
+                <summary>Generated LiteLLM config</summary>
+                <pre class="syra-proxy-config-pre" id="syra-proxy-config">—</pre>
+              </details>
+            </section>
 
             <div class="ai-test-bar">
               <select id="ai-test-project" class="toolbar-select ai-test-select" aria-label="Project">
