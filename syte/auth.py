@@ -9,7 +9,9 @@ project UUID on that host. Tenant isolation is expected at the host boundary
 import hashlib
 import hmac
 import secrets
+import time
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
@@ -26,6 +28,10 @@ from syte.database import (
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 BEARER_PREFIX = "Bearer "
+OPERATOR_SESSION_COOKIE = "__Host-syte-operator"
+OPERATOR_CSRF_HEADER = "X-Syte-CSRF"
+OPERATOR_SESSION_TTL_SECONDS = 8 * 60 * 60
+_operator_sessions: dict[str, tuple[float, str]] = {}
 
 
 def hash_token(token: str) -> str:
@@ -94,6 +100,115 @@ async def verify_api_token(
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key is invalid"})
     await touch_api_token(row["id"])
     return row
+
+
+def require_same_origin_if_present(request: Request) -> None:
+    """Reject cross-origin browser requests that could carry a GUI cookie.
+
+    Secure host-only cookies already prevent sibling hosts from receiving the
+    session. This check additionally prevents permissive global CORS settings
+    from exposing the session's CSRF value to a different allowed origin.
+    """
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return
+    origin_host = urlsplit(origin).netloc.lower()
+    request_host = request.headers.get("host", "").lower()
+    if not origin_host or not request_host or not hmac.compare_digest(origin_host, request_host):
+        raise HTTPException(
+            403,
+            detail={"error": "cross_origin_operator_request", "message": "Operator sessions are same-origin only."},
+        )
+
+
+def _prune_operator_sessions(now: float | None = None) -> None:
+    now = now if now is not None else time.time()
+    for session_id, (expires_at, _csrf_token) in tuple(_operator_sessions.items()):
+        if expires_at <= now:
+            _operator_sessions.pop(session_id, None)
+
+
+def create_bootstrap_operator_session(bootstrap_token: str) -> dict[str, str | int]:
+    """Create a short-lived GUI session after an explicit bootstrap-key unlock.
+
+    The bootstrap key remains server configuration: only a random HttpOnly
+    session id goes into the cookie, while the CSRF value is returned to the
+    same page for unsafe same-origin requests.
+    """
+    expected = settings.bootstrap_api_token.strip()
+    if not expected:
+        raise HTTPException(
+            503,
+            detail={
+                "error": "bootstrap_session_unavailable",
+                "message": "SYTE_BOOTSTRAP_API_TOKEN is not configured.",
+            },
+        )
+    if not hmac.compare_digest((bootstrap_token or "").strip(), expected):
+        raise HTTPException(401, detail={"error": "invalid_operator_key", "message": "Invalid operator key."})
+
+    _prune_operator_sessions()
+    session_id = secrets.token_urlsafe(32)
+    csrf_token = secrets.token_urlsafe(32)
+    _operator_sessions[session_id] = (time.time() + OPERATOR_SESSION_TTL_SECONDS, csrf_token)
+    return {
+        "session_id": session_id,
+        "csrf_token": csrf_token,
+        "max_age": OPERATOR_SESSION_TTL_SECONDS,
+    }
+
+
+def operator_session_status(request: Request) -> dict[str, str | int | bool]:
+    """Read the current operator session without accepting browser-supplied keys."""
+    require_same_origin_if_present(request)
+    _prune_operator_sessions()
+    session_id = request.cookies.get(OPERATOR_SESSION_COOKIE, "")
+    entry = _operator_sessions.get(session_id)
+    if not entry:
+        return {"authenticated": False}
+    expires_at, csrf_token = entry
+    if expires_at <= time.time():
+        _operator_sessions.pop(session_id, None)
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "csrf_token": csrf_token,
+        "expires_in": max(0, int(expires_at - time.time())),
+    }
+
+
+def revoke_operator_session(request: Request) -> None:
+    """Revoke this browser's operator session, if one is present."""
+    session_id = request.cookies.get(OPERATOR_SESSION_COOKIE, "")
+    if session_id:
+        _operator_sessions.pop(session_id, None)
+
+
+async def verify_operator_session_or_token(
+    request: Request,
+    x_api_key: str | None = Security(API_KEY_HEADER),
+) -> dict[str, Any]:
+    """Allow explicit operator tokens or a secure same-origin GUI session."""
+    token = _extract_token(x_api_key, request.headers.get("authorization"))
+    if token:
+        return await verify_operator_token(request, x_api_key)
+
+    session = operator_session_status(request)
+    if not session.get("authenticated"):
+        raise HTTPException(
+            401,
+            detail={"error": "operator_session_required", "message": "Unlock the Syra web UI first."},
+        )
+
+    if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        csrf_token = str(session["csrf_token"])
+        supplied = request.headers.get(OPERATOR_CSRF_HEADER, "")
+        if not supplied or not hmac.compare_digest(supplied, csrf_token):
+            raise HTTPException(
+                403,
+                detail={"error": "invalid_csrf_token", "message": "Refresh the Syra web UI and retry."},
+            )
+    return {"id": "gui-session", "name": "gui-session", "auth": "session"}
 
 
 async def verify_operator_token(

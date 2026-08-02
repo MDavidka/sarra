@@ -4251,3 +4251,23 @@ body.ai-settings-open { overflow: hidden; }
     text-align: left;
   }
 }
+
+
+
+.syra-unlock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.syra-unlock-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .syra-unlock-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -644,11 +644,15 @@
                 Configuration
               </summary>
               <div class="form-inner">
-                <div class="form-group">
-                  <label for="syra-operator-api-key">Operator API key <span class="req-mark">*</span></label>
-                  <input type="password" id="syra-operator-api-key" placeholder="syte_…" autocomplete="off">
-                  <span class="hint">Required to control this proxy. Paste an existing token or the server-only <code>SYTE_BOOTSTRAP_API_TOKEN</code>; after authentication you can create additional tokens in Users.</span>
+                <div class="form-group" id="syra-unlock-panel">
+                  <label for="syra-bootstrap-key">Unlock Syra</label>
+                  <div class="syra-unlock-row">
+                    <input type="password" id="syra-bootstrap-key" placeholder="System bootstrap API key" autocomplete="off">
+                    <button type="button" class="btn-pill btn-primary" id="syra-unlock-btn">Unlock</button>
+                  </div>
+                  <span class="hint" id="syra-unlock-hint">Enter the server’s system bootstrap key once. Sarra stores only a secure, temporary browser session — never this key.</span>
                 </div>
+                <button type="button" class="btn-pill" id="syra-lock-btn" hidden>Lock Syra</button>
                 <p class="hint block">Sarra deploys the public OpenAI-compatible endpoint at <code>https://api.sycord.site/v1</code>. It forwards only <code>/v1/*</code> through Caddy; LiteLLM administration stays on the server.</p>
                 <div class="form-group">
                   <label for="syra-master-key">Master key</label>
