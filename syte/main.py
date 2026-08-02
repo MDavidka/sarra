@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -552,7 +552,7 @@ async def api_update_syte():
 
 
 @app.get("/api/settings/new-feature/info")
-async def api_new_feature_info(_token: dict = Depends(verify_api_token)):
+async def api_new_feature_info():
     """Return info for the new feature tab: current version, update target, and registered tabs."""
     from syte.new_feature_agent import get_current_version, get_update_target_info
 
@@ -571,10 +571,7 @@ class NewFeatureAgentRequest(BaseModel):
 
 
 @app.post("/api/settings/new-feature/agent")
-async def api_new_feature_agent(
-    body: NewFeatureAgentRequest,
-    _token: dict = Depends(verify_api_token),
-):
+async def api_new_feature_agent(body: NewFeatureAgentRequest):
     """Run the new-feature system agent with file access.
 
     After the agent finishes, an auto-update is triggered automatically.
