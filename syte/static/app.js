@@ -75,6 +75,7 @@ function shouldAttachApiKey(path) {
   if (!key) return false;
   // GUI routes are public on same-origin — a stale/revoked stored token breaks SSE and history.
   if (typeof window !== 'undefined' && window.location?.origin) {
+    if (path.startsWith('/settings/syra') || path.startsWith('/tokens')) return true;
     const guiPrefixes = [
       '/projects/',
       '/agent_dashboard',
@@ -2901,7 +2902,7 @@ function showView(name) {
   if (name === 'syra') { initSyraTab(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
-  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
+  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai' && name !== 'syra');
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
@@ -4680,57 +4681,79 @@ window.addEventListener('resize', () => {
 async function loadSyraStatus() {
   const statusDot = document.getElementById('syra-status-dot');
   const statusLabel = document.getElementById('syra-status-label');
+  const publicStatus = document.getElementById('syra-public-status');
+  const apiUrl = document.getElementById('syra-api-url');
+  const dnsHint = document.getElementById('syra-dns-hint');
   const startBtn = document.getElementById('syra-start-btn');
   const stopBtn = document.getElementById('syra-stop-btn');
   const restartBtn = document.getElementById('syra-restart-btn');
-  const adminLink = document.getElementById('syra-admin-link');
 
   try {
-    const res = await api('/api/settings/syra/status');
-    
+    const res = await api('/settings/syra/status');
+    if (apiUrl && res.public_api_url) apiUrl.textContent = res.public_api_url;
+    if (dnsHint && res.dns_hint) dnsHint.textContent = `${res.dns_hint} Admin routes remain private.`;
+    if (publicStatus) {
+      const sslReady = res.ssl?.active;
+      publicStatus.classList.toggle('is-ready', Boolean(sslReady));
+      publicStatus.classList.toggle('is-pending', !sslReady);
+      publicStatus.textContent = sslReady
+        ? `${res.public_api_url} · HTTPS active`
+        : `${res.public_api_url} · ${res.ssl?.label || 'SSL pending'}`;
+    }
+
     if (res.running) {
       statusDot?.classList.remove('stopped', 'error');
       statusDot?.classList.add('running');
-      statusLabel.textContent = res.health?.healthy ? 'Running (healthy)' : 'Running (unhealthy)';
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      restartBtn.disabled = false;
-      adminLink?.classList.remove('hidden');
+      if (statusLabel) statusLabel.textContent = res.health?.healthy ? 'Running (healthy)' : 'Running (unhealthy)';
+      if (startBtn) startBtn.disabled = true;
+      if (stopBtn) stopBtn.disabled = false;
+      if (restartBtn) restartBtn.disabled = false;
     } else {
       statusDot?.classList.remove('running', 'error');
       statusDot?.classList.add('stopped');
-      statusLabel.textContent = res.message || 'Stopped';
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      restartBtn.disabled = true;
-      adminLink?.classList.add('hidden');
+      if (statusLabel) statusLabel.textContent = res.message || 'Stopped';
+      if (startBtn) startBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+      if (restartBtn) restartBtn.disabled = true;
     }
   } catch (e) {
     statusDot?.classList.remove('running', 'stopped');
     statusDot?.classList.add('error');
-    statusLabel.textContent = 'Error: ' + e.message;
+    if (statusLabel) statusLabel.textContent = 'Error: ' + e.message;
+    if (publicStatus) {
+      publicStatus.classList.remove('is-ready');
+      publicStatus.classList.add('is-pending');
+      publicStatus.textContent = 'Unable to check the public API endpoint.';
+    }
   }
 }
 
 async function loadSyraConfig() {
   try {
-    const res = await api('/api/settings');
-    const proxyUrl = document.getElementById('syra-proxy-url');
+    const res = await api('/settings');
     const masterKey = document.getElementById('syra-master-key');
     const saltKey = document.getElementById('syra-salt-key');
-    
-    if (proxyUrl && res.litellm_proxy_url) proxyUrl.value = res.litellm_proxy_url;
-    if (masterKey && res.litellm_master_key) masterKey.value = res.litellm_master_key;
-    if (saltKey && res.litellm_salt_key) saltKey.value = res.litellm_salt_key;
+    const agentKey = document.getElementById('syra-agent-api-key');
+
+    if (masterKey) masterKey.placeholder = res.litellm_master_key_set ? 'saved — leave empty to keep' : 'sk-…';
+    if (saltKey) saltKey.placeholder = res.litellm_salt_key_set ? 'saved — leave empty to keep' : '32-char hex string';
+    if (agentKey) agentKey.placeholder = res.agent_litellm_api_key_set ? 'saved — leave empty to keep' : 'sk-…';
   } catch (e) {
     console.error('Failed to load Syra config:', e);
   }
 }
 
+function syncSyraOperatorKey() {
+  const field = document.getElementById('syra-operator-api-key');
+  const key = field?.value.trim() || '';
+  if (key) setApiKey(key);
+  return Boolean(getApiKey());
+}
+
 async function loadSyraLogs() {
   const logsEl = document.getElementById('syra-logs');
   try {
-    const res = await api('/api/settings/syra/logs?lines=100');
+    const res = await api('/settings/syra/logs?lines=100');
     if (res.ok && logsEl) {
       logsEl.textContent = res.logs || 'No logs available';
       logsEl.scrollTop = logsEl.scrollHeight;
@@ -4743,17 +4766,17 @@ async function loadSyraLogs() {
 async function loadSyraModels() {
   const modelsEl = document.getElementById('syra-models-list');
   try {
-    const res = await api('/api/settings/syra/models');
+    const res = await api('/settings/syra/models');
     if (res.ok && modelsEl) {
       if (res.models && res.models.length > 0) {
         modelsEl.innerHTML = res.models.map(m => `
           <div class="syra-model-card">
-            <span class="syra-model-name">${m.id || m}</span>
-            <span class="syra-model-provider">${m.owned_by || 'litellm'}</span>
+            <span class="syra-model-name">${esc(String(m.id || m))}</span>
+            <span class="syra-model-provider">${esc(String(m.owned_by || 'litellm'))}</span>
           </div>
         `).join('');
       } else {
-        modelsEl.innerHTML = '<p class="hint">No models configured. Open Admin UI to add providers.</p>';
+        modelsEl.innerHTML = '<p class="hint">No models configured. Configure a provider and virtual key through your private LiteLLM administration access.</p>';
       }
     }
   } catch (e) {
@@ -4763,17 +4786,32 @@ async function loadSyraModels() {
 
 // Initialize Syra tab when view is shown
 function initSyraTab() {
+  const operatorKey = document.getElementById('syra-operator-api-key');
+  if (operatorKey && !operatorKey.value) operatorKey.value = getApiKey();
+  if (!syncSyraOperatorKey()) {
+    const statusLabel = document.getElementById('syra-status-label');
+    const publicStatus = document.getElementById('syra-public-status');
+    if (statusLabel) statusLabel.textContent = 'Operator API key required';
+    if (publicStatus) {
+      publicStatus.classList.remove('is-ready');
+      publicStatus.classList.add('is-pending');
+      publicStatus.textContent = 'Paste an operator API key to manage the public endpoint.';
+    }
+    return;
+  }
   loadSyraStatus();
   loadSyraConfig();
+  loadSettings();
 }
 
 document.getElementById('syra-start-btn')?.addEventListener('click', async () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
   const btn = document.getElementById('syra-start-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
   statusLabel.textContent = 'Starting…';
   try {
-    const res = await api('/api/settings/syra/start', { method: 'POST' });
+    const res = await api('/settings/syra/start', { method: 'POST' });
     if (res.ok) {
       toast('LiteLLM started');
     } else {
@@ -4788,12 +4826,13 @@ document.getElementById('syra-start-btn')?.addEventListener('click', async () =>
 });
 
 document.getElementById('syra-stop-btn')?.addEventListener('click', async () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
   const btn = document.getElementById('syra-stop-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
   statusLabel.textContent = 'Stopping…';
   try {
-    const res = await api('/api/settings/syra/stop', { method: 'POST' });
+    const res = await api('/settings/syra/stop', { method: 'POST' });
     if (res.ok) {
       toast('LiteLLM stopped');
     } else {
@@ -4807,12 +4846,13 @@ document.getElementById('syra-stop-btn')?.addEventListener('click', async () => 
 });
 
 document.getElementById('syra-restart-btn')?.addEventListener('click', async () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
   const btn = document.getElementById('syra-restart-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
   statusLabel.textContent = 'Restarting…';
   try {
-    const res = await api('/api/settings/syra/restart', { method: 'POST' });
+    const res = await api('/settings/syra/restart', { method: 'POST' });
     if (res.ok) {
       toast('LiteLLM restarted');
     } else {
@@ -4827,34 +4867,54 @@ document.getElementById('syra-restart-btn')?.addEventListener('click', async () 
 });
 
 document.getElementById('syra-save-config-btn')?.addEventListener('click', async () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
   const btn = document.getElementById('syra-save-config-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   try {
-    const proxyUrl = document.getElementById('syra-proxy-url')?.value || '';
-    const masterKey = document.getElementById('syra-master-key')?.value || '';
-    const saltKey = document.getElementById('syra-salt-key')?.value || '';
-    
-    const res = await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        litellm_proxy_url: proxyUrl,
-        litellm_master_key: masterKey,
-        litellm_salt_key: saltKey,
-      }),
+    const masterKey = document.getElementById('syra-master-key')?.value.trim() || '';
+    const saltKey = document.getElementById('syra-salt-key')?.value.trim() || '';
+    const agentApiKey = document.getElementById('syra-agent-api-key')?.value.trim() || '';
+    const body = {};
+    // Blank secret fields mean "leave the server value unchanged". Private
+    // values are never returned to or prefilled in the browser.
+    if (masterKey) body.master_key = masterKey;
+    if (saltKey) body.salt_key = saltKey;
+    if (agentApiKey) body.agent_api_key = agentApiKey;
+
+    if (!Object.keys(body).length) {
+      toast('No secret changes to save');
+      return;
+    }
+
+    const res = await api('/settings/syra/secrets', {
+      method: 'PUT',
+      body: JSON.stringify(body),
     });
-    
+
     if (res.ok) {
-      toast('Configuration saved');
+      document.getElementById('syra-master-key').value = '';
+      document.getElementById('syra-salt-key').value = '';
+      document.getElementById('syra-agent-api-key').value = '';
+      toast('Server-only LiteLLM credentials saved');
+      await loadSyraConfig();
     } else {
       toast(res.message || 'Failed to save configuration');
     }
   } catch (e) {
     toast('Error: ' + e.message);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 });
 
-document.getElementById('syra-logs-refresh')?.addEventListener('click', loadSyraLogs);
-
-document.getElementById('syra-models-refresh')?.addEventListener('click', loadSyraModels);
+document.getElementById('syra-logs-refresh')?.addEventListener('click', () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  loadSyraLogs();
+});
+document.getElementById('syra-models-refresh')?.addEventListener('click', () => {
+  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  loadSyraModels();
+});
+document.getElementById('syra-operator-api-key')?.addEventListener('change', () => {
+  if (syncSyraOperatorKey()) initSyraTab();
+});

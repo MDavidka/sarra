@@ -3,10 +3,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from syte.caddy_routes import host_zone, render_all_service_routes
+from syte.caddy_routes import (
+    host_zone,
+    render_all_service_routes,
+    render_litellm_api_route,
+)
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import normalize_domain
+from syte.litellm_config import LITELLM_HOST_PORT, LITELLM_PUBLIC_HOST
 from syte.preview_domains import preview_frame_ancestors_csp
 
 CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
@@ -206,6 +211,14 @@ async def async_generate_caddyfile() -> str:
             f"# GUI direct access: http://{public_ip}:{settings.port}",
             "",
         ])
+
+    lines.extend(
+        render_litellm_api_route(
+            LITELLM_PUBLIC_HOST,
+            LITELLM_HOST_PORT,
+            use_wildcard_tls=use_wildcard_tls,
+        )
+    )
 
     projects = await list_projects()
     lines.extend(

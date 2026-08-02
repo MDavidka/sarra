@@ -4223,3 +4223,31 @@ body.ai-settings-open { overflow: hidden; }
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+
+
+.syra-public-status {
+  max-width: 22rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.syra-public-status.is-ready {
+  color: #16a34a;
+}
+
+.syra-public-status.is-pending {
+  color: #d97706;
+}
+
+#syra-dns-hint {
+  margin: 0.75rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .syra-public-status {
+    max-width: none;
+    text-align: left;
+  }
+}

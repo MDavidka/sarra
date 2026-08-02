@@ -4,10 +4,10 @@ LiteLLM runs as a Docker container providing a unified API gateway to multiple
 LLM providers. This module manages the container lifecycle: start, stop, status,
 and configuration.
 
-The proxy exposes:
-- Admin UI at http://localhost:4000/ui
-- OpenAI-compatible API at http://localhost:4000/v1
-- Virtual key management and spend tracking
+The proxy is private to the host and exposes its public OpenAI-compatible
+API through Caddy at https://api.sycord.site/v1. LiteLLM administration remains
+loopback-only; client traffic must use scoped virtual keys rather than the
+LiteLLM master key.
 """
 
 from __future__ import annotations
@@ -19,12 +19,18 @@ import os
 from typing import Any
 
 from syte.database import get_setting, set_setting
+from syte.litellm_config import (
+    LITELLM_CONTAINER_PORT,
+    LITELLM_HOST_PORT,
+    LITELLM_INTERNAL_ORIGIN,
+    LITELLM_PUBLIC_API_URL,
+)
 
 logger = logging.getLogger(__name__)
 
 LITELLM_CONTAINER_NAME = "syte-litellm"
 LITELLM_IMAGE = "ghcr.io/berriai/litellm:main-latest"
-LITELLM_DEFAULT_PORT = 4000
+LITELLM_DEFAULT_PORT = LITELLM_HOST_PORT
 LITELLM_DATA_DIR = "/var/lib/syte/litellm"
 
 
@@ -55,8 +61,7 @@ async def litellm_status() -> dict[str, Any]:
     - running: bool
     - healthy: bool
     - port: int
-    - admin_url: str
-    - api_url: str
+    - public_api_url: str
     - container_id: str
     - uptime_seconds: int
     """
@@ -71,8 +76,7 @@ async def litellm_status() -> dict[str, Any]:
         "running": False,
         "healthy": False,
         "port": LITELLM_DEFAULT_PORT,
-        "admin_url": f"http://localhost:{LITELLM_DEFAULT_PORT}/ui",
-        "api_url": f"http://localhost:{LITELLM_DEFAULT_PORT}/v1",
+        "public_api_url": LITELLM_PUBLIC_API_URL,
         "container_id": "",
         "uptime_seconds": 0,
         "message": "",
@@ -115,6 +119,32 @@ async def litellm_status() -> dict[str, Any]:
     return result
 
 
+async def litellm_is_loopback_bound() -> bool:
+    """Return whether the existing container is bound only to the loopback port."""
+    exit_code, output = await _run_docker([
+        "inspect",
+        "--format", "{{json .HostConfig.PortBindings}}",
+        LITELLM_CONTAINER_NAME,
+    ])
+    if exit_code != 0 or not output:
+        return False
+    try:
+        bindings = json.loads(output)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(bindings, dict):
+        return False
+    published = bindings.get(f"{LITELLM_CONTAINER_PORT}/tcp") or []
+    if not isinstance(published, list):
+        return False
+    return bool(published) and all(
+        isinstance(binding, dict)
+        and binding.get("HostIp") == "127.0.0.1"
+        and binding.get("HostPort") == str(LITELLM_HOST_PORT)
+        for binding in published
+    )
+
+
 async def start_litellm(
     *,
     port: int | None = None,
@@ -124,24 +154,65 @@ async def start_litellm(
     """Start the LiteLLM Docker container.
     
     Parameters:
-    - port: Port to expose (default 4000)
-    - master_key: Master key for admin access (required for UI)
+    - port: Reserved loopback port for Caddy (default 4000)
+    - master_key: Private LiteLLM administration key (not exposed to clients)
     - salt_key: Salt key for encrypting provider keys
     
     Returns status dict with ok, message, and container info.
     """
-    # Check if already running
     status = await litellm_status()
-    if status["running"]:
-        return {
-            "ok": True,
-            "message": "LiteLLM is already running",
-            **status,
-        }
-    
-    # Get configuration from settings if not provided
+
     if port is None:
         port = LITELLM_DEFAULT_PORT
+    if port != LITELLM_HOST_PORT:
+        return {
+            "ok": False,
+            "message": (
+                f"LiteLLM must use reserved loopback port {LITELLM_HOST_PORT} "
+                "so Caddy can publish api.sycord.site."
+            ),
+            "running": False,
+        }
+
+    from syte.preview_manager import relocate_litellm_preview_conflicts
+
+    preview_migration = await relocate_litellm_preview_conflicts()
+    if not preview_migration["ok"]:
+        return {
+            "ok": False,
+            "message": str(preview_migration["message"]),
+            "running": False,
+            "preview_migration": preview_migration,
+        }
+
+    rebound_legacy_container = False
+    if status["running"]:
+        if await litellm_is_loopback_bound():
+            return {
+                "ok": True,
+                **status,
+                "message": "LiteLLM is already running on the private loopback port",
+                "preview_migration": preview_migration,
+            }
+        stop_code, stop_output = await _run_docker(["stop", LITELLM_CONTAINER_NAME])
+        if stop_code != 0:
+            return {
+                "ok": False,
+                "message": f"Failed to stop publicly exposed LiteLLM container: {stop_output}",
+                "running": True,
+                "preview_migration": preview_migration,
+            }
+        remove_code, remove_output = await _run_docker(["rm", LITELLM_CONTAINER_NAME])
+        if remove_code != 0:
+            return {
+                "ok": False,
+                "message": f"Failed to remove legacy LiteLLM container: {remove_output}",
+                "running": False,
+                "preview_migration": preview_migration,
+            }
+        rebound_legacy_container = True
+
+    # Get configuration from settings if not provided
     if master_key is None:
         master_key = (await get_setting("litellm_master_key", "")).strip()
     if salt_key is None:
@@ -169,7 +240,7 @@ async def start_litellm(
         "run",
         "-d",
         "--name", LITELLM_CONTAINER_NAME,
-        "-p", f"{port}:4000",
+        "-p", f"127.0.0.1:{port}:{LITELLM_CONTAINER_PORT}",
         "-v", f"{LITELLM_DATA_DIR}:/app/litellm",
         "-e", f"LITELLM_MASTER_KEY={master_key}",
         "-e", f"LITELLM_SALT_KEY={salt_key}",
@@ -195,9 +266,13 @@ async def start_litellm(
     if status["running"]:
         return {
             "ok": True,
-            "message": f"LiteLLM started successfully on port {port}",
-            "master_key": master_key,
             **status,
+            "message": (
+                f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}"
+                if rebound_legacy_container
+                else f"LiteLLM started successfully; public API: {LITELLM_PUBLIC_API_URL}"
+            ),
+            "preview_migration": preview_migration,
         }
     else:
         return {
@@ -282,7 +357,7 @@ async def litellm_models() -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
-                f"http://localhost:{LITELLM_DEFAULT_PORT}/models",
+                f"{LITELLM_INTERNAL_ORIGIN}/models",
                 headers={"Authorization": f"Bearer {master_key}"},
             )
             
@@ -322,7 +397,7 @@ async def litellm_health() -> dict[str, Any]:
     
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"http://localhost:{LITELLM_DEFAULT_PORT}/health")
+            resp = await client.get(f"{LITELLM_INTERNAL_ORIGIN}/health")
             
             if resp.status_code == 200:
                 return {

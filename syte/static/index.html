@@ -605,10 +605,7 @@
                   <p class="projects-sub">LiteLLM proxy gateway — unified access to multiple LLM providers</p>
                 </div>
               </div>
-              <a href="http://localhost:4000/ui" target="_blank" rel="noopener" class="btn-create" id="syra-admin-link" style="text-decoration:none">
-                <i data-lucide="external-link"></i>
-                <span>Admin UI</span>
-              </a>
+              <div class="syra-public-status" id="syra-public-status">Checking HTTPS endpoint…</div>
             </div>
 
             <div class="syra-status-card" id="syra-status-card">
@@ -631,13 +628,14 @@
               </div>
               <div class="syra-urls" id="syra-urls">
                 <div class="syra-url-row">
-                  <span class="syra-url-label">API endpoint</span>
-                  <code class="syra-url-value" id="syra-api-url">http://localhost:4000/v1</code>
+                  <span class="syra-url-label">Public API</span>
+                  <code class="syra-url-value" id="syra-api-url">https://api.sycord.site/v1</code>
                 </div>
                 <div class="syra-url-row">
-                  <span class="syra-url-label">Admin UI</span>
-                  <code class="syra-url-value" id="syra-admin-url">http://localhost:4000/ui</code>
+                  <span class="syra-url-label">Public surface</span>
+                  <code class="syra-url-value">/v1/* only</code>
                 </div>
+                <p class="hint" id="syra-dns-hint">The LiteLLM Admin UI and management endpoints remain private to this server.</p>
               </div>
             </div>
 
@@ -647,19 +645,25 @@
               </summary>
               <div class="form-inner">
                 <div class="form-group">
-                  <label for="syra-proxy-url">Proxy URL</label>
-                  <input type="text" id="syra-proxy-url" placeholder="http://localhost:4000" autocomplete="off">
-                  <span class="hint">Base URL for LiteLLM proxy. Default: http://localhost:4000</span>
+                  <label for="syra-operator-api-key">Operator API key <span class="req-mark">*</span></label>
+                  <input type="password" id="syra-operator-api-key" placeholder="syte_…" autocomplete="off">
+                  <span class="hint">Required to control this proxy. Paste an existing token or the server-only <code>SYTE_BOOTSTRAP_API_TOKEN</code>; after authentication you can create additional tokens in Users.</span>
                 </div>
+                <p class="hint block">Sarra deploys the public OpenAI-compatible endpoint at <code>https://api.sycord.site/v1</code>. It forwards only <code>/v1/*</code> through Caddy; LiteLLM administration stays on the server.</p>
                 <div class="form-group">
                   <label for="syra-master-key">Master key</label>
                   <input type="password" id="syra-master-key" placeholder="sk-…" autocomplete="off">
-                  <span class="hint">Auto-generated if empty. Used for Admin UI login and API auth.</span>
+                  <span class="hint">Optional. Leave empty to keep the existing server-only master key; never use it as a client API key.</span>
                 </div>
                 <div class="form-group">
                   <label for="syra-salt-key">Salt key</label>
                   <input type="password" id="syra-salt-key" placeholder="32-char hex string" autocomplete="off">
-                  <span class="hint">Encrypts provider API keys. Auto-generated if empty. Never change after setup.</span>
+                  <span class="hint">Optional. Leave empty to keep the existing encryption salt. Never change it after provider keys are stored.</span>
+                </div>
+                <div class="form-group">
+                  <label for="syra-agent-api-key">Syra LiteLLM virtual key</label>
+                  <input type="password" id="syra-agent-api-key" placeholder="sk-…" autocomplete="off">
+                  <span class="hint">Scoped virtual key used by the <code>syra-litellm</code> model profile. Never paste the LiteLLM master key here.</span>
                 </div>
                 <div class="svc-panel-actions">
                   <button type="button" class="btn-pill btn-primary" id="syra-save-config-btn">

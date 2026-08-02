@@ -164,6 +164,44 @@ def render_host_block(
     return lines
 
 
+def render_litellm_api_route(
+    hostname: str,
+    port: int,
+    *,
+    use_wildcard_tls: bool,
+) -> list[str]:
+    """Render the public, API-only LiteLLM route.
+
+    The container stays on loopback. Only OpenAI-compatible ``/v1/*`` paths
+    are forwarded; LiteLLM's admin UI and management endpoints remain private.
+    """
+    hostname = normalize_domain(hostname)
+    if not hostname or not is_safe_caddy_hostname(hostname):
+        return []
+
+    lines = [
+        "# Syra LiteLLM public API — virtual-key authentication is enforced by LiteLLM",
+        f"{hostname} {{",
+    ]
+    if use_wildcard_tls:
+        lines.extend([
+            "    tls {",
+            "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
+            "    }",
+        ])
+    lines.extend([
+        "    handle /v1/* {",
+        f"        reverse_proxy 127.0.0.1:{port}",
+        "    }",
+        "    handle {",
+        '        respond "Not found" 404',
+        "    }",
+        "}",
+        "",
+    ])
+    return lines
+
+
 def render_wildcard_zone(
     zone: str,
     routes: list[CaddyRoute],

@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
+from syte.config import settings
 from syte.database import (
     create_api_token,
     delete_api_token,
@@ -93,6 +94,23 @@ async def verify_api_token(
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key is invalid"})
     await touch_api_token(row["id"])
     return row
+
+
+async def verify_operator_token(
+    request: Request,
+    x_api_key: str | None = Security(API_KEY_HEADER),
+) -> dict[str, Any]:
+    """Require an existing API token or the server's bootstrap operator token.
+
+    ``SYTE_BOOTSTRAP_API_TOKEN`` is intentionally environment-only. It lets an
+    administrator create the first stored API token without exposing a public,
+    unauthenticated token-minting route.
+    """
+    token = _extract_token(x_api_key, request.headers.get("authorization"))
+    bootstrap_token = settings.bootstrap_api_token.strip()
+    if bootstrap_token and token and hmac.compare_digest(token, bootstrap_token):
+        return {"id": "bootstrap", "name": "bootstrap", "auth": "bootstrap"}
+    return await verify_api_token(request, x_api_key)
 
 
 async def verify_api_token_from_request(request: Request) -> dict[str, Any]:
