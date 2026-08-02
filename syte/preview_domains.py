@@ -97,6 +97,9 @@ def build_preview_urls(project: dict) -> dict:
     """Primary preview_url uses HTTPS domain when configured and TLS is up."""
     from syte.preview_iframe import probe_https_available
 
+    # Guard against list input (shouldn't happen but prevents crash)
+    if isinstance(project, list):
+        project = project[0] if project else {}
     preview_port = project.get("preview_port")
     domain = normalize_domain(project.get("preview_domain") or "")
     ip = settings.resolved_public_ip

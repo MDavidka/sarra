@@ -596,6 +596,9 @@ def get_preview_logs(project_id: str, lines: int = 200) -> str:
 
 
 def preview_meta(project: dict) -> dict:
+    # Guard against list input (shouldn't happen but prevents crash)
+    if isinstance(project, list):
+        project = project[0] if project else {}
     preview_port = project.get("preview_port")
     running = is_preview_running(project["id"])
     ready = running and preview_port and _port_listening(int(preview_port))
