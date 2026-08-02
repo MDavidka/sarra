@@ -4743,6 +4743,7 @@ async function loadSyraStatus() {
   const statusLabel = document.getElementById('syra-status-label');
   const publicStatus = document.getElementById('syra-public-status');
   const apiUrl = document.getElementById('syra-api-url');
+  const guiUrl = document.getElementById('syra-gui-url');
   const dnsHint = document.getElementById('syra-dns-hint');
   const startBtn = document.getElementById('syra-start-btn');
   const stopBtn = document.getElementById('syra-stop-btn');
@@ -4751,7 +4752,8 @@ async function loadSyraStatus() {
   try {
     const res = await api('/settings/syra/status');
     if (apiUrl && res.public_api_url) apiUrl.textContent = res.public_api_url;
-    if (dnsHint && res.dns_hint) dnsHint.textContent = `${res.dns_hint} Admin routes remain private.`;
+    if (guiUrl && res.web_gui_url) guiUrl.textContent = res.web_gui_url;
+    if (dnsHint && res.dns_hint) dnsHint.textContent = `${res.dns_hint} LiteLLM admin endpoints remain private.`;
     if (publicStatus) {
       const sslReady = res.ssl?.active;
       publicStatus.classList.toggle('is-ready', Boolean(sslReady));
@@ -4938,10 +4940,16 @@ document.getElementById('syra-start-btn')?.addEventListener('click', async () =>
   statusLabel.textContent = 'Starting…';
   try {
     const res = await api('/settings/syra/start', { method: 'POST' });
+    const setupSummary = Array.isArray(res.host_setup?.steps)
+      ? res.host_setup.steps.join(' ')
+      : '';
+    const resultMessage = [res.message, res.proxy_message, setupSummary]
+      .filter(Boolean)
+      .join(' ');
     if (res.ok) {
-      toast('LiteLLM started');
+      toast(`Syra ready: ${resultMessage || 'https://api.sycord.site/'}`);
     } else {
-      toast(res.message || 'Failed to start LiteLLM');
+      toast(resultMessage || 'Failed to prepare and start Syra');
     }
     await loadSyraStatus();
     await loadSyraModels();

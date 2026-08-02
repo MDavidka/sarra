@@ -169,11 +169,13 @@ def render_litellm_api_route(
     port: int,
     *,
     use_wildcard_tls: bool,
+    gui_port: int | None = None,
 ) -> list[str]:
-    """Render the public, API-only LiteLLM route.
+    """Render the combined Syte GUI and public LiteLLM API host.
 
     The container stays on loopback. Only OpenAI-compatible ``/v1/*`` paths
-    are forwarded; LiteLLM's admin UI and management endpoints remain private.
+    are forwarded to LiteLLM; all other paths go to the Syte GUI when
+    ``gui_port`` is provided, keeping LiteLLM admin endpoints private.
     """
     hostname = normalize_domain(hostname)
     if not hostname or not is_safe_caddy_hostname(hostname):
@@ -190,11 +192,16 @@ def render_litellm_api_route(
             "    }",
         ])
     lines.extend([
-        "    handle /v1/* {",
+        "    handle /v1 /v1/* {",
         f"        reverse_proxy 127.0.0.1:{port}",
         "    }",
         "    handle {",
-        '        respond "Not found" 404',
+    ])
+    if gui_port is not None:
+        lines.append(f"        reverse_proxy 127.0.0.1:{gui_port}")
+    else:
+        lines.append('        respond "Not found" 404')
+    lines.extend([
         "    }",
         "}",
         "",
