@@ -54,6 +54,7 @@ let statsPollTimer = null;
 let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
+let syraCsrfToken = '';
 
 const STACK_META = {
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
@@ -75,13 +76,13 @@ function shouldAttachApiKey(path) {
   if (!key) return false;
   // GUI routes are public on same-origin — a stale/revoked stored token breaks SSE and history.
   if (typeof window !== 'undefined' && window.location?.origin) {
-    if (path.startsWith('/settings/syra') || path.startsWith('/tokens')) return true;
     const guiPrefixes = [
       '/projects/',
       '/agent_dashboard',
       '/settings',
       '/system',
       '/tokens',
+      '/operator/',
     ];
     if (guiPrefixes.some(prefix => path.startsWith(prefix))) return false;
   }
@@ -3065,12 +3066,24 @@ function setAiSettingsTab(tab) {
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
-  let res = await fetch(API + path, { headers, ...opts });
+  const method = (opts.method || 'GET').toUpperCase();
+  const isOperatorAction = (
+    (path.startsWith('/settings/syra') || path.startsWith('/tokens') || (path === '/operator/session' && method === 'DELETE'))
+    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  );
+  if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
+  let res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
   if (res.status === 401 && getApiKey()) {
     setApiKey('');
     const retryHeaders = { ...headers };
     delete retryHeaders['X-API-Key'];
-    res = await fetch(API + path, { headers: retryHeaders, ...opts });
+    res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+  }
+  if (res.status === 401 && (
+    path.startsWith('/settings/syra') || path.startsWith('/tokens') || path === '/operator/session'
+  )) {
+    syraCsrfToken = '';
+    setSyraSessionState(false);
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -4743,11 +4756,97 @@ async function loadSyraConfig() {
   }
 }
 
-function syncSyraOperatorKey() {
-  const field = document.getElementById('syra-operator-api-key');
-  const key = field?.value.trim() || '';
-  if (key) setApiKey(key);
-  return Boolean(getApiKey());
+function setSyraSessionState(unlocked) {
+  const unlockPanel = document.getElementById('syra-unlock-panel');
+  const unlockHint = document.getElementById('syra-unlock-hint');
+  const lockButton = document.getElementById('syra-lock-btn');
+  unlockPanel?.classList.toggle('hidden', unlocked);
+  if (lockButton) lockButton.hidden = !unlocked;
+  if (unlockHint && unlocked) unlockHint.textContent = 'Operator session active for this browser.';
+
+  [
+    'syra-start-btn', 'syra-stop-btn', 'syra-restart-btn', 'syra-save-config-btn',
+    'syra-logs-refresh', 'syra-models-refresh', 'syra-master-key', 'syra-salt-key',
+    'syra-agent-api-key',
+  ].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.disabled = !unlocked;
+  });
+}
+
+function syraSessionReady() {
+  if (syraCsrfToken) return true;
+  toast('Unlock Syra to continue');
+  document.getElementById('syra-bootstrap-key')?.focus();
+  return false;
+}
+
+async function unlockSyra() {
+  if (window.location.protocol !== 'https:') {
+    return toast('Syra unlock requires HTTPS. Open the configured GUI domain.');
+  }
+  const input = document.getElementById('syra-bootstrap-key');
+  const button = document.getElementById('syra-unlock-btn');
+  const bootstrapToken = input?.value.trim() || '';
+  if (!bootstrapToken) return toast('Enter the system bootstrap API key');
+  if (button) button.disabled = true;
+  try {
+    const session = await api('/operator/session', {
+      method: 'POST',
+      body: JSON.stringify({ bootstrap_token: bootstrapToken }),
+    });
+    syraCsrfToken = session.csrf_token || '';
+    if (!syraCsrfToken) throw new Error('Operator session was not created');
+    if (input) input.value = '';
+    toast('Syra unlocked for this browser');
+    await initSyraTab();
+  } catch (e) {
+    toast('Unlock failed: ' + e.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function lockSyra() {
+  const button = document.getElementById('syra-lock-btn');
+  if (button) button.disabled = true;
+  try {
+    await api('/operator/session', { method: 'DELETE' });
+    syraCsrfToken = '';
+    setSyraSessionState(false);
+    toast('Syra session locked');
+  } catch (e) {
+    toast('Unable to lock Syra: ' + e.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+// Initialize Syra tab when view is shown. The bootstrap token is exchanged
+// once for an HttpOnly session cookie and is never saved in JavaScript storage.
+async function initSyraTab() {
+  try {
+    const session = await api('/operator/session');
+    syraCsrfToken = session.authenticated ? (session.csrf_token || '') : '';
+    const unlocked = Boolean(syraCsrfToken);
+    setSyraSessionState(unlocked);
+    if (!unlocked) {
+      const statusLabel = document.getElementById('syra-status-label');
+      const publicStatus = document.getElementById('syra-public-status');
+      if (statusLabel) statusLabel.textContent = 'Unlock required';
+      if (publicStatus) {
+        publicStatus.classList.remove('is-ready');
+        publicStatus.classList.add('is-pending');
+        publicStatus.textContent = 'Unlock Syra to manage the public endpoint.';
+      }
+      return;
+    }
+    await Promise.all([loadSyraStatus(), loadSyraConfig(), loadSettings(), loadTokens()]);
+  } catch (e) {
+    syraCsrfToken = '';
+    setSyraSessionState(false);
+    toast('Unable to restore Syra session: ' + e.message);
+  }
 }
 
 async function loadSyraLogs() {
@@ -4784,28 +4883,8 @@ async function loadSyraModels() {
   }
 }
 
-// Initialize Syra tab when view is shown
-function initSyraTab() {
-  const operatorKey = document.getElementById('syra-operator-api-key');
-  if (operatorKey && !operatorKey.value) operatorKey.value = getApiKey();
-  if (!syncSyraOperatorKey()) {
-    const statusLabel = document.getElementById('syra-status-label');
-    const publicStatus = document.getElementById('syra-public-status');
-    if (statusLabel) statusLabel.textContent = 'Operator API key required';
-    if (publicStatus) {
-      publicStatus.classList.remove('is-ready');
-      publicStatus.classList.add('is-pending');
-      publicStatus.textContent = 'Paste an operator API key to manage the public endpoint.';
-    }
-    return;
-  }
-  loadSyraStatus();
-  loadSyraConfig();
-  loadSettings();
-}
-
 document.getElementById('syra-start-btn')?.addEventListener('click', async () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   const btn = document.getElementById('syra-start-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
@@ -4826,7 +4905,7 @@ document.getElementById('syra-start-btn')?.addEventListener('click', async () =>
 });
 
 document.getElementById('syra-stop-btn')?.addEventListener('click', async () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   const btn = document.getElementById('syra-stop-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
@@ -4846,7 +4925,7 @@ document.getElementById('syra-stop-btn')?.addEventListener('click', async () => 
 });
 
 document.getElementById('syra-restart-btn')?.addEventListener('click', async () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   const btn = document.getElementById('syra-restart-btn');
   const statusLabel = document.getElementById('syra-status-label');
   btn.disabled = true;
@@ -4867,7 +4946,7 @@ document.getElementById('syra-restart-btn')?.addEventListener('click', async () 
 });
 
 document.getElementById('syra-save-config-btn')?.addEventListener('click', async () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   const btn = document.getElementById('syra-save-config-btn');
   if (btn) btn.disabled = true;
   try {
@@ -4908,13 +4987,18 @@ document.getElementById('syra-save-config-btn')?.addEventListener('click', async
 });
 
 document.getElementById('syra-logs-refresh')?.addEventListener('click', () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   loadSyraLogs();
 });
 document.getElementById('syra-models-refresh')?.addEventListener('click', () => {
-  if (!syncSyraOperatorKey()) return toast('Paste an operator API key first');
+  if (!syraSessionReady()) return;
   loadSyraModels();
 });
-document.getElementById('syra-operator-api-key')?.addEventListener('change', () => {
-  if (syncSyraOperatorKey()) initSyraTab();
+document.getElementById('syra-unlock-btn')?.addEventListener('click', unlockSyra);
+document.getElementById('syra-lock-btn')?.addEventListener('click', lockSyra);
+document.getElementById('syra-bootstrap-key')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    unlockSyra();
+  }
 });

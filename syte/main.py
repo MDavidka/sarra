@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -29,7 +29,14 @@ from syte.self_update import update_syte
 from syte.new_feature_agent import run_new_feature_agent
 from syte.settings_tabs import get_registered_tabs
 from syte import auth
-from syte.auth import verify_operator_token
+from syte.auth import (
+    OPERATOR_SESSION_COOKIE,
+    create_bootstrap_operator_session,
+    operator_session_status,
+    require_same_origin_if_present,
+    revoke_operator_session,
+    verify_operator_session_or_token,
+)
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
@@ -125,6 +132,10 @@ class CreateTokenRequest(BaseModel):
     name: str = "default"
 
 
+class OperatorSessionRequest(BaseModel):
+    bootstrap_token: str
+
+
 class CreateServiceRequest(BaseModel):
     name: str
     git_url: str | None = None
@@ -206,8 +217,58 @@ async def sycord_api_documentation():
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
 
 
+@app.get("/api/operator/session")
+async def get_operator_session(request: Request):
+    """Report whether this browser has an active operator session."""
+    return JSONResponse(operator_session_status(request), headers={"Cache-Control": NO_CACHE})
+
+
+@app.post("/api/operator/session")
+async def start_operator_session(body: OperatorSessionRequest, request: Request):
+    """Unlock the operator UI without ever returning the bootstrap key."""
+    require_same_origin_if_present(request)
+    session = create_bootstrap_operator_session(body.bootstrap_token)
+    response = JSONResponse(
+        {
+            "ok": True,
+            "csrf_token": session["csrf_token"],
+            "expires_in": session["max_age"],
+            "message": "Operator session unlocked.",
+        },
+        headers={"Cache-Control": NO_CACHE},
+    )
+    response.set_cookie(
+        key=OPERATOR_SESSION_COOKIE,
+        value=str(session["session_id"]),
+        max_age=int(session["max_age"]),
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    return response
+
+
+@app.delete("/api/operator/session")
+async def end_operator_session(
+    request: Request,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """End the current browser's operator session."""
+    revoke_operator_session(request)
+    response = JSONResponse({"ok": True, "message": "Operator session locked."}, headers={"Cache-Control": NO_CACHE})
+    response.delete_cookie(
+        key=OPERATOR_SESSION_COOKIE,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    return response
+
+
 @app.get("/api/tokens")
-async def list_tokens(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def list_tokens(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     tokens = await auth.list_tokens()
     return {"tokens": tokens}
 
@@ -215,7 +276,7 @@ async def list_tokens(_operator: dict[str, Any] = Depends(verify_operator_token)
 @app.post("/api/tokens")
 async def create_token(
     body: CreateTokenRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_token),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     row = await auth.create_token(body.name)
     return {
@@ -231,7 +292,7 @@ async def create_token(
 @app.delete("/api/tokens/{token_id}")
 async def revoke_token(
     token_id: str,
-    _operator: dict[str, Any] = Depends(verify_operator_token),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     ok = await auth.revoke_token(token_id)
     if not ok:
@@ -582,7 +643,7 @@ async def _save_syra_secrets(body: SyraSecretsRequest) -> dict[str, Any]:
 @app.put("/api/settings/syra/secrets")
 async def api_syra_save_secrets(
     body: SyraSecretsRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_token),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Save server-side LiteLLM credentials using an operator API token."""
     return await _save_syra_secrets(body)
@@ -627,7 +688,7 @@ async def api_new_feature_info():
 
 
 @app.get("/api/settings/syra/status")
-async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Get LiteLLM proxy status and configuration."""
     from syte.litellm_manager import litellm_health, litellm_status
     from syte.ssl_status import litellm_api_ssl_status
@@ -666,7 +727,7 @@ async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]
 
 
 @app.post("/api/settings/syra/start")
-async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Start LiteLLM and deploy its restricted public HTTPS route."""
     from syte.litellm_manager import start_litellm
 
@@ -674,7 +735,7 @@ async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_tok
 
 
 @app.post("/api/settings/syra/stop")
-async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Stop the LiteLLM proxy container."""
     from syte.litellm_manager import stop_litellm
 
@@ -683,7 +744,7 @@ async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_toke
 
 
 @app.post("/api/settings/syra/restart")
-async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Restart LiteLLM and re-apply its restricted public HTTPS route."""
     from syte.litellm_manager import restart_litellm
 
@@ -693,7 +754,7 @@ async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_t
 @app.get("/api/settings/syra/logs")
 async def api_syra_logs(
     lines: int = 100,
-    _operator: dict[str, Any] = Depends(verify_operator_token),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Get logs from the LiteLLM proxy container."""
     from syte.litellm_manager import litellm_logs
@@ -703,7 +764,7 @@ async def api_syra_logs(
 
 
 @app.get("/api/settings/syra/models")
-async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_token)):
+async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Get list of configured models from LiteLLM."""
     from syte.litellm_manager import litellm_models
 
