@@ -797,6 +797,19 @@
 
               <div class="ai-key-card">
                 <div class="ai-key-head">
+                  <strong>LiteLLM database</strong>
+                  <span class="ai-key-provider">PostgreSQL — virtual keys and spend tracking</span>
+                </div>
+                <p class="hint block">Optional. Enter an external PostgreSQL connection URL for LiteLLM. Leave blank to use Syte’s managed local PostgreSQL sidecar. Do not enter a <code>libsql://</code> Turso URL here.</p>
+                <div class="form-group">
+                  <label for="litellm-database-url">PostgreSQL database URL</label>
+                  <input type="url" id="litellm-database-url" placeholder="optional — postgresql://user:password@host:5432/database" autocomplete="off">
+                  <span class="hint">Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
+                </div>
+              </div>
+
+              <div class="ai-key-card">
+                <div class="ai-key-head">
                   <strong>Turso (agent sessions)</strong>
                   <span class="ai-key-provider">libSQL — durable activity storage</span>
                 </div>

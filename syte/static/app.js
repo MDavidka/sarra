@@ -3941,6 +3941,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   const maxRaw = document.getElementById('agent-max-count')?.value?.trim();
   const tursoDatabaseUrl = document.getElementById('turso-database-url')?.value?.trim() || '';
   const tursoAuthToken = document.getElementById('turso-auth-token')?.value?.trim() || '';
+  const litellmDatabaseUrl = document.getElementById('litellm-database-url')?.value?.trim() || '';
   const body = {
     agent_default_model_profile: document.getElementById('agent-default-profile')?.value || 'syra-nano',
   };
@@ -3956,6 +3957,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
   if (maxRaw) body.agent_max_count = parseInt(maxRaw, 10);
   if (document.getElementById('turso-database-url')) body.turso_database_url = tursoDatabaseUrl;
   if (tursoAuthToken) body.turso_auth_token = tursoAuthToken;
+  if (litellmDatabaseUrl) body.litellm_database_url = litellmDatabaseUrl;
   btn.disabled = true;
   btn.textContent = 'saving…';
   try {
@@ -3966,6 +3968,7 @@ document.getElementById('save-ai-settings-btn')?.addEventListener('click', async
     if (ultraKey) document.getElementById('agent-ultra-key').value = '';
     if (internalSecret) document.getElementById('syra-internal-secret').value = '';
     if (tursoAuthToken) document.getElementById('turso-auth-token').value = '';
+    if (litellmDatabaseUrl) document.getElementById('litellm-database-url').value = '';
     await loadSettings();
     await loadAiDashboard();
     closeAiSettings();
@@ -4171,6 +4174,7 @@ async function loadSettings() {
     const syraInternalSecret = document.getElementById('syra-internal-secret');
     const tursoDatabaseUrl = document.getElementById('turso-database-url');
     const tursoAuthToken = document.getElementById('turso-auth-token');
+    const litellmDatabaseUrl = document.getElementById('litellm-database-url');
     if (ip && s.public_ip) ip.value = s.public_ip;
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -4249,6 +4253,11 @@ async function loadSettings() {
         ? 'auth token saved — enter new value to replace'
         : 'turso auth token';
     }
+    if (litellmDatabaseUrl) {
+      litellmDatabaseUrl.placeholder = s.litellm_database_url_set
+        ? 'custom PostgreSQL URL saved — enter new value to replace'
+        : 'optional — postgresql://user:password@host:5432/database';
+    }
     if (agentRuntimeStatus) {
       const parts = [];
       parts.push(`default: ${defaultProfile}`);
@@ -4257,6 +4266,7 @@ async function loadSettings() {
       parts.push(s.agent_syra_havy_api_key_set ? 'Metal key saved' : 'no Metal key');
       parts.push(s.syra_internal_secret_set ? 'internal secret saved' : 'no internal secret');
       parts.push(s.turso_configured ? 'Turso configured' : 'Turso not configured');
+      parts.push(s.litellm_database_url_set ? 'LiteLLM custom PostgreSQL' : 'LiteLLM managed PostgreSQL');
       agentRuntimeStatus.textContent = parts.join(' · ');
     }
     const directUrl = document.getElementById('direct-url');

@@ -185,6 +185,7 @@ class SettingsRequest(BaseModel):
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
     litellm_proxy_url: str | None = None
+    litellm_database_url: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -420,6 +421,7 @@ async def get_settings():
         "litellm_public_api_url": LITELLM_PUBLIC_API_URL,
         "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
         "litellm_salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
+        "litellm_database_url_set": bool((await get_setting("litellm_database_url", "")).strip()),
         "ai_providers": provider_catalog(),
         "provider_keys": key_status,
         "provider_envs": [
@@ -600,6 +602,21 @@ async def save_settings(body: SettingsRequest):
         await set_setting("litellm_proxy_url", LITELLM_PUBLIC_API_URL)
         proxy_updated = True
         messages.append(f"LiteLLM public API URL: {LITELLM_PUBLIC_API_URL}")
+    if body.litellm_database_url is not None:
+        from syte.litellm_manager import validate_litellm_database_url
+
+        requested_database_url = body.litellm_database_url.strip()
+        try:
+            validated_database_url = validate_litellm_database_url(requested_database_url)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        await set_setting("litellm_database_url", validated_database_url)
+        proxy_updated = True
+        messages.append(
+            "Custom LiteLLM PostgreSQL database URL saved; restart LiteLLM to apply it."
+            if validated_database_url
+            else "Custom LiteLLM database URL cleared; the managed PostgreSQL database will be used."
+        )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))
         await set_setting("agent_max_count", str(count))
