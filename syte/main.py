@@ -150,6 +150,10 @@ class SettingsRequest(BaseModel):
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
     agent_syra_ultra_api_key: str | None = None
+    agent_litellm_api_key: str | None = None
+    litellm_proxy_url: str | None = None
+    litellm_master_key: str | None = None
+    litellm_salt_key: str | None = None
     agent_max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
@@ -316,6 +320,10 @@ async def get_settings():
         "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
+        "agent_litellm_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
+        "litellm_proxy_url": (await get_setting("litellm_proxy_url", "http://localhost:4000")).strip(),
+        "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
+        "litellm_salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
         "ai_providers": provider_catalog(),
         "provider_keys": key_status,
         "provider_envs": [
@@ -486,6 +494,31 @@ async def save_settings(body: SettingsRequest):
             if ultra_key
             else "syra-ultra API key cleared."
         )
+    if body.agent_litellm_api_key is not None:
+        await set_setting("agent_litellm_api_key", body.agent_litellm_api_key.strip())
+        messages.append(
+            "LiteLLM API key saved."
+            if body.agent_litellm_api_key.strip()
+            else "LiteLLM API key cleared."
+        )
+    if body.litellm_proxy_url is not None:
+        url = body.litellm_proxy_url.strip() or "http://localhost:4000"
+        await set_setting("litellm_proxy_url", url)
+        messages.append(f"LiteLLM proxy URL set to {url}")
+    if body.litellm_master_key is not None:
+        await set_setting("litellm_master_key", body.litellm_master_key.strip())
+        messages.append(
+            "LiteLLM master key saved."
+            if body.litellm_master_key.strip()
+            else "LiteLLM master key cleared."
+        )
+    if body.litellm_salt_key is not None:
+        await set_setting("litellm_salt_key", body.litellm_salt_key.strip())
+        messages.append(
+            "LiteLLM salt key saved."
+            if body.litellm_salt_key.strip()
+            else "LiteLLM salt key cleared."
+        )
     if body.agent_max_count is not None:
         count = max(1, int(body.agent_max_count))
         await set_setting("agent_max_count", str(count))
@@ -562,6 +595,74 @@ async def api_new_feature_info():
         "update_target": get_update_target_info(),
         "tabs": get_registered_tabs(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Syra / LiteLLM proxy management
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/settings/syra/status")
+async def api_syra_status():
+    """Get LiteLLM proxy status and configuration."""
+    from syte.litellm_manager import litellm_health, litellm_status
+
+    status = await litellm_status()
+    health = await litellm_health() if status["running"] else {"healthy": False}
+    
+    return {
+        "ok": True,
+        **status,
+        "health": health,
+        "proxy_url": (await get_setting("litellm_proxy_url", "http://localhost:4000")).strip(),
+        "master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
+        "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
+    }
+
+
+@app.post("/api/settings/syra/start")
+async def api_syra_start():
+    """Start the LiteLLM proxy container."""
+    from syte.litellm_manager import start_litellm
+
+    result = await start_litellm()
+    return result
+
+
+@app.post("/api/settings/syra/stop")
+async def api_syra_stop():
+    """Stop the LiteLLM proxy container."""
+    from syte.litellm_manager import stop_litellm
+
+    result = await stop_litellm()
+    return result
+
+
+@app.post("/api/settings/syra/restart")
+async def api_syra_restart():
+    """Restart the LiteLLM proxy container."""
+    from syte.litellm_manager import restart_litellm
+
+    result = await restart_litellm()
+    return result
+
+
+@app.get("/api/settings/syra/logs")
+async def api_syra_logs(lines: int = 100):
+    """Get logs from the LiteLLM proxy container."""
+    from syte.litellm_manager import litellm_logs
+
+    result = await litellm_logs(lines=max(1, min(lines, 500)))
+    return result
+
+
+@app.get("/api/settings/syra/models")
+async def api_syra_models():
+    """Get list of configured models from LiteLLM."""
+    from syte.litellm_manager import litellm_models
+
+    result = await litellm_models()
+    return result
 
 
 class NewFeatureAgentRequest(BaseModel):

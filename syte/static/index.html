@@ -73,8 +73,8 @@
               <button type="button" class="nav-sublink" data-view="logs">
                 <i data-lucide="scroll-text"></i><span>Logs</span>
               </button>
-              <button type="button" class="nav-sublink" data-view="ai">
-                <i data-lucide="sparkles"></i><span>AI</span>
+              <button type="button" class="nav-sublink" data-view="syra">
+                <i data-lucide="sparkles"></i><span>Syra</span>
               </button>
               <div class="nav-api-group" id="nav-api-group">
                 <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
@@ -595,93 +595,105 @@
           </div>
         </section>
 
-        <section id="view-ai" class="view">
-          <div class="ai-channel">
-            <div class="ai-channel-top">
-              <div class="ai-dash-header">
+        <section id="view-syra" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="sparkles" class="projects-icon"></i>
                 <div>
-                  <h1 class="ai-dash-title">It's time to <span class="ai-accent">automate</span></h1>
-                  <p class="projects-sub ai-dash-sub">Syte cloud agents — sycord.com routes by UUID</p>
+                  <h1>Syra</h1>
+                  <p class="projects-sub">LiteLLM proxy gateway — unified access to multiple LLM providers</p>
                 </div>
               </div>
+              <a href="http://localhost:4000/ui" target="_blank" rel="noopener" class="btn-create" id="syra-admin-link" style="text-decoration:none">
+                <i data-lucide="external-link"></i>
+                <span>Admin UI</span>
+              </a>
+            </div>
 
-              <div class="ai-stat-row ai-stat-row-compact" id="ai-stat-row">
-                <div class="ai-stat-card">
-                  <span class="ai-stat-value" id="ai-stat-online">0</span>
-                  <span class="ai-stat-label">online</span>
+            <div class="syra-status-card" id="syra-status-card">
+              <div class="syra-status-row">
+                <div class="syra-status-indicator">
+                  <span class="syra-status-dot" id="syra-status-dot"></span>
+                  <span class="syra-status-label" id="syra-status-label">Checking…</span>
                 </div>
-                <div class="ai-stat-card">
-                  <span class="ai-stat-value" id="ai-stat-incoming">0</span>
-                  <span class="ai-stat-label">requests 30d</span>
-                </div>
-                <div class="ai-stat-card">
-                  <span class="ai-stat-value" id="ai-stat-failed">0</span>
-                  <span class="ai-stat-label">failed</span>
+                <div class="syra-actions">
+                  <button type="button" class="btn-pill btn-primary" id="syra-start-btn">
+                    <i data-lucide="play"></i><span>Start</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost" id="syra-stop-btn" disabled>
+                    <i data-lucide="square"></i><span>Stop</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost" id="syra-restart-btn" disabled>
+                    <i data-lucide="refresh-cw"></i><span>Restart</span>
+                  </button>
                 </div>
               </div>
-
-              <div class="ai-meter-block ai-meter-compact">
-                <div class="ai-meter">
-                  <div class="ai-meter-head">
-                    <span class="ai-meter-label" title="Dedicated Performance For Agents">DPFA</span>
-                    <span class="ai-meter-pct" id="ai-dpfa-pct">0%</span>
-                  </div>
-                  <div class="ai-meter-track"><div class="ai-meter-fill" id="ai-dpfa-fill" style="width:0%"></div></div>
+              <div class="syra-urls" id="syra-urls">
+                <div class="syra-url-row">
+                  <span class="syra-url-label">API endpoint</span>
+                  <code class="syra-url-value" id="syra-api-url">http://localhost:4000/v1</code>
                 </div>
-                <div class="ai-meter">
-                  <div class="ai-meter-head">
-                    <span class="ai-meter-label" title="Maximum Number Of Agents">MNOA</span>
-                    <span class="ai-meter-pct" id="ai-mnoa-pct">0%</span>
-                  </div>
-                  <div class="ai-meter-track"><div class="ai-meter-fill ai-meter-fill-alt" id="ai-mnoa-fill" style="width:0%"></div></div>
+                <div class="syra-url-row">
+                  <span class="syra-url-label">Admin UI</span>
+                  <code class="syra-url-value" id="syra-admin-url">http://localhost:4000/ui</code>
                 </div>
-              </div>
-
-              <details class="ai-onboard-details">
-                <summary class="ai-onboard-summary">Onboarding <span class="ai-onboard-badge" id="ai-onboard-badge">—</span></summary>
-                <ul class="ai-checklist" id="ai-checklist">
-                  <li data-step="internal_api"><span class="ai-check-box"></span><span>Internal API secret</span></li>
-                  <li data-step="ai_models"><span class="ai-check-box"></span><span>At least one model API key</span></li>
-                  <li data-step="provider"><span class="ai-check-box"></span><span>Provider keys ready</span></li>
-                  <li data-step="cloud_runtime"><span class="ai-check-box"></span><span>Syte cloud runtime ready</span></li>
-                </ul>
-                <p class="hint" id="ai-onboard-hint">Open settings (top right) to configure provider API</p>
-              </details>
-
-              <div class="ai-api-warning hidden" id="ai-api-warning">
-                <i data-lucide="alert-triangle"></i>
-                <span>Add the API key for the profile you want to test — open settings.</span>
               </div>
             </div>
 
-            <div class="ai-test-bar">
-              <select id="ai-test-project" class="toolbar-select ai-test-select" aria-label="Project">
-                <option value="">Project…</option>
-              </select>
-              <select id="ai-test-profile" class="toolbar-select ai-test-profile" aria-label="Model profile">
-                <option value="syra-nano" selected>Go · Gemini 2.5 Flash</option>
-                <option value="syra-ultra">Air · Aliyun Qwen</option>
-                <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
-              </select>
-              <button type="button" class="btn-pill btn-primary ai-test-btn" id="ai-test-agent-btn">
-                <i data-lucide="zap"></i>
-                <span>Test</span>
-              </button>
-              <div id="ai-test-status" class="hint ai-test-status"></div>
-            </div>
-
-            <details class="ai-debug-panel" id="ai-debug-panel" open>
+            <details class="ai-debug-panel" id="syra-config-panel" open>
               <summary class="ai-debug-summary">
-                Connection debug
-                <button type="button" class="btn-pill btn-ghost btn-sm ai-debug-refresh" id="ai-debug-refresh">Refresh</button>
+                Configuration
               </summary>
-              <div id="ai-debug-content" class="ai-debug-content">
-                <p class="hint">Select a project and click Refresh to run diagnostics.</p>
+              <div class="form-inner">
+                <div class="form-group">
+                  <label for="syra-proxy-url">Proxy URL</label>
+                  <input type="text" id="syra-proxy-url" placeholder="http://localhost:4000" autocomplete="off">
+                  <span class="hint">Base URL for LiteLLM proxy. Default: http://localhost:4000</span>
+                </div>
+                <div class="form-group">
+                  <label for="syra-master-key">Master key</label>
+                  <input type="password" id="syra-master-key" placeholder="sk-…" autocomplete="off">
+                  <span class="hint">Auto-generated if empty. Used for Admin UI login and API auth.</span>
+                </div>
+                <div class="form-group">
+                  <label for="syra-salt-key">Salt key</label>
+                  <input type="password" id="syra-salt-key" placeholder="32-char hex string" autocomplete="off">
+                  <span class="hint">Encrypts provider API keys. Auto-generated if empty. Never change after setup.</span>
+                </div>
+                <div class="svc-panel-actions">
+                  <button type="button" class="btn-pill btn-primary" id="syra-save-config-btn">
+                    <i data-lucide="save"></i><span>Save configuration</span>
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            <details class="ai-debug-panel" id="syra-logs-panel">
+              <summary class="ai-debug-summary">
+                Logs
+                <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-logs-refresh">Refresh</button>
+              </summary>
+              <div class="logs-panel">
+                <div class="logs-terminal logs-terminal-dark" id="syra-logs">LiteLLM logs will appear here…</div>
+              </div>
+            </details>
+
+            <details class="ai-debug-panel" id="syra-models-panel">
+              <summary class="ai-debug-summary">
+                Available models
+                <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-models-refresh">Refresh</button>
+              </summary>
+              <div id="syra-models-list" class="syra-models-list">
+                <p class="hint">Start LiteLLM to see available models.</p>
               </div>
             </details>
 
             <footer class="ai-footer">
-              <a href="/api/#agent" class="ai-footer-link"><i data-lucide="book-open"></i> API documentation</a>
+              <a href="https://docs.litellm.ai/docs/proxy/docker_quick_start" target="_blank" rel="noopener" class="ai-footer-link">
+                <i data-lucide="book-open"></i> LiteLLM documentation
+              </a>
+              <a href="/api/#agent" class="ai-footer-link"><i data-lucide="file-code-2"></i> Syte API</a>
             </footer>
           </div>
         </section>
@@ -760,6 +772,7 @@
                     <option value="syra-nano">Go · Gemini 2.5 Flash</option>
                     <option value="syra-ultra">Air · Aliyun Qwen</option>
                     <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
+                    <option value="syra-litellm">Syra · LiteLLM Proxy</option>
                   </select>
                 </div>
                 <div class="form-group">

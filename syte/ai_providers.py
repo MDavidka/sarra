@@ -4,6 +4,7 @@ Each public profile is a full think+build model — there is no separate thinker
 - ``syra-nano`` — Go / Gemini 2.5 Flash
 - ``syra-ultra`` — Air / Aliyun Qwen
 - ``syra-havy`` — Metal / VyceAI Claude Sonnet 4.6
+- ``syra-litellm`` — Proxy / LiteLLM Gateway (Docker container on port 4000)
 """
 
 from __future__ import annotations
@@ -24,10 +25,13 @@ ALIYUN_MAAS_API_BASE = (
 ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 VYCEAI_API_BASE = "https://vyceai.com/v1"
 
+LITELLM_API_BASE = "http://localhost:4000/v1"
+
 PROFILE_ORDER = (
     "syra-nano",
     "syra-ultra",
     "syra-havy",
+    "syra-litellm",
 )
 
 # Default / legacy aliases (selected model handles both thinking and building).
@@ -145,6 +149,19 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
         "max_tool_result_chars": 6000,
         "setting_key": "agent_syra_ultra_api_key",
         "secret_env": "SYRA_ULTRA_API_KEY",
+    },
+    "syra-litellm": {
+        "profile": "syra-litellm",
+        "label": "LiteLLM",
+        "display_name": "proxy",
+        "provider": "openai",
+        "api_base": LITELLM_API_BASE,
+        "model": "gpt-4o",  # Default model, can be changed via LiteLLM UI
+        "role": "proxy",
+        "input_price_per_mtok": 0.0,
+        "output_price_per_mtok": 0.0,
+        "setting_key": "agent_litellm_api_key",
+        "secret_env": "LITELLM_API_KEY",
     },
 }
 
