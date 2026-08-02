@@ -24,6 +24,22 @@ def _command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
+def _systemd_unit_loaded(unit: str) -> bool:
+    """Return whether systemd knows a usable unit, not merely a CLI binary."""
+    if not _command_exists("systemctl"):
+        return False
+    code, output = _run(
+        ["systemctl", "show", unit, "--property=LoadState", "--value"],
+        timeout=20.0,
+    )
+    return code == 0 and output.strip() == "loaded"
+
+
+def _docker_unit_loaded() -> bool:
+    """Check for the Docker engine unit separately from the Docker CLI."""
+    return _systemd_unit_loaded("docker.service")
+
+
 def _run(command: list[str], timeout: float = 120.0) -> tuple[int, str]:
     try:
         result = subprocess.run(
@@ -79,7 +95,10 @@ def _ensure_almalinux_packages() -> tuple[bool, list[str]]:
             return False, [detail]
         messages.append("curl installed.")
 
-    if not _command_exists("docker"):
+    docker_ready = _command_exists("docker") and _docker_unit_loaded()
+    if not docker_ready:
+        if _command_exists("docker"):
+            messages.append("Docker CLI found but docker.service is missing; installing Docker CE engine.")
         commands: list[tuple[list[str], str]] = [
             (["dnf", "-y", "install", "dnf-plugins-core"], "Docker prerequisites"),
         ]
