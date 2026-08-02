@@ -2898,6 +2898,7 @@ function showView(name) {
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
+  if (name === 'syra') { initSyraTab(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
   if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
@@ -4669,3 +4670,191 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('resize', () => {
   if (!window.matchMedia('(max-width: 768px)').matches) closeDrawer();
 });
+
+
+
+// ---------------------------------------------------------------------------
+// Syra / LiteLLM proxy management
+// ---------------------------------------------------------------------------
+
+async function loadSyraStatus() {
+  const statusDot = document.getElementById('syra-status-dot');
+  const statusLabel = document.getElementById('syra-status-label');
+  const startBtn = document.getElementById('syra-start-btn');
+  const stopBtn = document.getElementById('syra-stop-btn');
+  const restartBtn = document.getElementById('syra-restart-btn');
+  const adminLink = document.getElementById('syra-admin-link');
+
+  try {
+    const res = await api('/api/settings/syra/status');
+    
+    if (res.running) {
+      statusDot?.classList.remove('stopped', 'error');
+      statusDot?.classList.add('running');
+      statusLabel.textContent = res.health?.healthy ? 'Running (healthy)' : 'Running (unhealthy)';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      restartBtn.disabled = false;
+      adminLink?.classList.remove('hidden');
+    } else {
+      statusDot?.classList.remove('running', 'error');
+      statusDot?.classList.add('stopped');
+      statusLabel.textContent = res.message || 'Stopped';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      restartBtn.disabled = true;
+      adminLink?.classList.add('hidden');
+    }
+  } catch (e) {
+    statusDot?.classList.remove('running', 'stopped');
+    statusDot?.classList.add('error');
+    statusLabel.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadSyraConfig() {
+  try {
+    const res = await api('/api/settings');
+    const proxyUrl = document.getElementById('syra-proxy-url');
+    const masterKey = document.getElementById('syra-master-key');
+    const saltKey = document.getElementById('syra-salt-key');
+    
+    if (proxyUrl && res.litellm_proxy_url) proxyUrl.value = res.litellm_proxy_url;
+    if (masterKey && res.litellm_master_key) masterKey.value = res.litellm_master_key;
+    if (saltKey && res.litellm_salt_key) saltKey.value = res.litellm_salt_key;
+  } catch (e) {
+    console.error('Failed to load Syra config:', e);
+  }
+}
+
+async function loadSyraLogs() {
+  const logsEl = document.getElementById('syra-logs');
+  try {
+    const res = await api('/api/settings/syra/logs?lines=100');
+    if (res.ok && logsEl) {
+      logsEl.textContent = res.logs || 'No logs available';
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+  } catch (e) {
+    if (logsEl) logsEl.textContent = 'Error loading logs: ' + e.message;
+  }
+}
+
+async function loadSyraModels() {
+  const modelsEl = document.getElementById('syra-models-list');
+  try {
+    const res = await api('/api/settings/syra/models');
+    if (res.ok && modelsEl) {
+      if (res.models && res.models.length > 0) {
+        modelsEl.innerHTML = res.models.map(m => `
+          <div class="syra-model-card">
+            <span class="syra-model-name">${m.id || m}</span>
+            <span class="syra-model-provider">${m.owned_by || 'litellm'}</span>
+          </div>
+        `).join('');
+      } else {
+        modelsEl.innerHTML = '<p class="hint">No models configured. Open Admin UI to add providers.</p>';
+      }
+    }
+  } catch (e) {
+    if (modelsEl) modelsEl.innerHTML = '<p class="hint">Error loading models: ' + e.message + '</p>';
+  }
+}
+
+// Initialize Syra tab when view is shown
+function initSyraTab() {
+  loadSyraStatus();
+  loadSyraConfig();
+}
+
+document.getElementById('syra-start-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('syra-start-btn');
+  const statusLabel = document.getElementById('syra-status-label');
+  btn.disabled = true;
+  statusLabel.textContent = 'Starting…';
+  try {
+    const res = await api('/api/settings/syra/start', { method: 'POST' });
+    if (res.ok) {
+      toast('LiteLLM started');
+    } else {
+      toast(res.message || 'Failed to start LiteLLM');
+    }
+    await loadSyraStatus();
+    await loadSyraModels();
+  } catch (e) {
+    toast('Error: ' + e.message);
+    await loadSyraStatus();
+  }
+});
+
+document.getElementById('syra-stop-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('syra-stop-btn');
+  const statusLabel = document.getElementById('syra-status-label');
+  btn.disabled = true;
+  statusLabel.textContent = 'Stopping…';
+  try {
+    const res = await api('/api/settings/syra/stop', { method: 'POST' });
+    if (res.ok) {
+      toast('LiteLLM stopped');
+    } else {
+      toast(res.message || 'Failed to stop LiteLLM');
+    }
+    await loadSyraStatus();
+  } catch (e) {
+    toast('Error: ' + e.message);
+    await loadSyraStatus();
+  }
+});
+
+document.getElementById('syra-restart-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('syra-restart-btn');
+  const statusLabel = document.getElementById('syra-status-label');
+  btn.disabled = true;
+  statusLabel.textContent = 'Restarting…';
+  try {
+    const res = await api('/api/settings/syra/restart', { method: 'POST' });
+    if (res.ok) {
+      toast('LiteLLM restarted');
+    } else {
+      toast(res.message || 'Failed to restart LiteLLM');
+    }
+    await loadSyraStatus();
+    await loadSyraModels();
+  } catch (e) {
+    toast('Error: ' + e.message);
+    await loadSyraStatus();
+  }
+});
+
+document.getElementById('syra-save-config-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('syra-save-config-btn');
+  btn.disabled = true;
+  try {
+    const proxyUrl = document.getElementById('syra-proxy-url')?.value || '';
+    const masterKey = document.getElementById('syra-master-key')?.value || '';
+    const saltKey = document.getElementById('syra-salt-key')?.value || '';
+    
+    const res = await api('/api/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        litellm_proxy_url: proxyUrl,
+        litellm_master_key: masterKey,
+        litellm_salt_key: saltKey,
+      }),
+    });
+    
+    if (res.ok) {
+      toast('Configuration saved');
+    } else {
+      toast(res.message || 'Failed to save configuration');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('syra-logs-refresh')?.addEventListener('click', loadSyraLogs);
+
+document.getElementById('syra-models-refresh')?.addEventListener('click', loadSyraModels);
