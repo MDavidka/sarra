@@ -1310,9 +1310,15 @@ async def _build_syte_instruction(
     return f"{static}\n\n{dynamic}" if dynamic else static
 
 
-async def write_agent_config(project: dict[str, Any]) -> Path:
+async def write_agent_config(
+    project: dict[str, Any],
+    *,
+    override_api_key: str | None = None,
+) -> Path:
     project = await ensure_agent_runtime(project)
     model = await selected_model_metadata(project)
+    if override_api_key and override_api_key.strip():
+        model = _apply_api_key_override(model, override_api_key.strip())
     if not model["api_key"]:
         raise RuntimeError(
             f"No API key configured for active profile {model['profile']}. "
@@ -1337,14 +1343,18 @@ async def write_agent_config(project: dict[str, Any]) -> Path:
     return path
 
 
-async def start_agent(project_id: str) -> tuple[bool, str, dict[str, Any]]:
+async def start_agent(
+    project_id: str,
+    *,
+    override_api_key: str | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
     async with _lifecycle_locks[project_id]:
         project = await get_project(project_id)
         if not project:
             return False, "Project not found", {}
         already_running = project.get("agent_status") == "running"
         try:
-            await write_agent_config(project)
+            await write_agent_config(project, override_api_key=override_api_key)
         except RuntimeError as exc:
             await update_project(project_id, {"agent_status": "error", "agent_last_error": str(exc)})
             return False, str(exc), await get_agent_status(project_id, check_backend=False)
@@ -4901,7 +4911,7 @@ async def _communicate_with_agent_impl(
         project = {**project, "agent_model_profile": turn_profile}
 
     if auto_start and project.get("agent_status") != "running":
-        ok, start_message, _ = await start_agent(project_id)
+        ok, start_message, _ = await start_agent(project_id, override_api_key=override_api_key)
         if not ok:
             return {"ok": False, "error": "agent_start_failed", "message": start_message, "request_id": request_id}
     model = await selected_model_metadata(project)
