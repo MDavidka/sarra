@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     agent_port_end: int = 5999
     public_ip: str = ""
     admin_email: str = "admin@localhost"
-    bootstrap_api_token: str = ""
+    bootstrap_api_token: str = "syra123"
     # Per-container caps for production docker run (DoS / noisy-neighbor guard).
     # Set any value to "0" / "none" / "unlimited" to disable that limit.
     docker_memory: str = "1g"
