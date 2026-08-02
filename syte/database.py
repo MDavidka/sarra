@@ -104,7 +104,9 @@ async def get_setting(key: str, default: str = "") -> str:
             "SELECT value FROM system_settings WHERE key = ?", (key,)
         ) as cursor:
             row = await cursor.fetchone()
-            return row["value"] if row else default
+            if not row or row["value"] is None:
+                return default
+            return row["value"]
 
 
 async def set_setting(key: str, value: str) -> None:

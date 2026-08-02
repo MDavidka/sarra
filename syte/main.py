@@ -120,6 +120,28 @@ app.add_middleware(
 )
 app.add_middleware(RateLimitMiddleware)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return a diagnosable JSON error instead of a bare text/plain 500.
+
+    Starlette's default handler emits ``Internal Server Error`` as plain text,
+    which the GUI can only render as "Request failed". Surfacing the exception
+    type and message keeps operator actions debuggable from the browser.
+    """
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "ok": False,
+            "detail": {
+                "error": "internal_error",
+                "message": f"{type(exc).__name__}: {exc}".strip(),
+                "path": request.url.path,
+            },
+        },
+    )
+
 app.include_router(api_router.router, prefix="/api")
 app.include_router(internal_api.router, prefix="/api/internal")
 
@@ -714,6 +736,28 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
     }
 
 
+async def _syra_action(action: str, operation: Any) -> dict[str, Any]:
+    """Run a Syra lifecycle action, reporting failures as readable JSON.
+
+    Docker, Caddy, and preview migration all touch the host, so an unexpected
+    error must not reach the browser as an opaque 500.
+    """
+    try:
+        return await operation()
+    except Exception as error:  # noqa: BLE001 - surfaced to the operator UI
+        logger.exception("Syra %s failed", action)
+        return {
+            "ok": False,
+            "running": False,
+            "message": f"Syra {action} failed — {type(error).__name__}: {error}",
+        }
+
+
+async def _deploy_litellm_public_proxy_from(lifecycle: Any) -> dict[str, Any]:
+    """Run a LiteLLM lifecycle call, then publish its Caddy route."""
+    return await _deploy_litellm_public_proxy(await lifecycle())
+
+
 async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]:
     """Apply Caddy's API-only public route after a LiteLLM lifecycle action."""
     if not result.get("ok"):
@@ -722,7 +766,7 @@ async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]
     result["proxy_configured"] = proxy_ok
     result["proxy_message"] = proxy_message
     if not proxy_ok:
-        result["message"] = f"{result['message']} Caddy route failed: {proxy_message}"
+        result["message"] = f"{result.get('message', 'Action completed.')} Caddy route failed: {proxy_message}"
     return result
 
 
@@ -731,7 +775,9 @@ async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_ses
     """Start LiteLLM and deploy its restricted public HTTPS route."""
     from syte.litellm_manager import start_litellm
 
-    return await _deploy_litellm_public_proxy(await start_litellm())
+    return await _syra_action(
+        "start", lambda: _deploy_litellm_public_proxy_from(start_litellm)
+    )
 
 
 @app.post("/api/settings/syra/stop")
@@ -739,8 +785,7 @@ async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_sess
     """Stop the LiteLLM proxy container."""
     from syte.litellm_manager import stop_litellm
 
-    result = await stop_litellm()
-    return result
+    return await _syra_action("stop", stop_litellm)
 
 
 @app.post("/api/settings/syra/restart")
@@ -748,7 +793,9 @@ async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_s
     """Restart LiteLLM and re-apply its restricted public HTTPS route."""
     from syte.litellm_manager import restart_litellm
 
-    return await _deploy_litellm_public_proxy(await restart_litellm())
+    return await _syra_action(
+        "restart", lambda: _deploy_litellm_public_proxy_from(restart_litellm)
+    )
 
 
 @app.get("/api/settings/syra/logs")

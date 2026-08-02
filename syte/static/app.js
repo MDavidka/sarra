@@ -98,13 +98,16 @@ function normalizeFetchError(message) {
   return msg;
 }
 
-function parseApiErrorPayload(err, statusText) {
-  if (!err) return statusText || 'Request failed';
+function parseApiErrorPayload(err, statusText, status) {
+  // HTTP/2 responses have an empty statusText, and gateway/plain-text errors
+  // have no JSON body — without the status code those become a blank failure.
+  const fallback = statusText || (status ? `HTTP ${status}` : 'Request failed');
+  if (!err) return fallback;
   const detail = err.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) return detail.map(d => d.msg || d).join(', ');
-  if (detail && typeof detail === 'object') return detail.message || detail.error || statusText || 'Request failed';
-  return err.message || statusText || 'Request failed';
+  if (detail && typeof detail === 'object') return detail.message || detail.error || fallback;
+  return err.message || fallback;
 }
 
 function setApiKey(key) {
@@ -3088,7 +3091,7 @@ async function api(path, opts = {}) {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(normalizeFetchError(parseApiErrorPayload(err, res.statusText)));
+    throw new Error(normalizeFetchError(parseApiErrorPayload(err, res.statusText, res.status)));
   }
   return res.json();
 }

@@ -18,13 +18,22 @@ CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
 CADDY_DROPIN_FILE = CADDY_DROPIN_DIR / "syte-cloudflare.conf"
 
 
-def _run(cmd: list[str]) -> tuple[int, str]:
+def _run(cmd: list[str], timeout: float = 60.0) -> tuple[int, str]:
+    """Run a command, converting every failure into an inspectable result.
+
+    Any uncaught OSError here would surface as an opaque HTTP 500 in the GUI,
+    and a missing timeout could hang an operator request indefinitely.
+    """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         output = (result.stdout or "") + (result.stderr or "")
         return result.returncode, output.strip()
     except FileNotFoundError:
         return 127, f"Command not found: {cmd[0]}"
+    except subprocess.TimeoutExpired:
+        return 124, f"Command timed out after {timeout:g}s: {' '.join(cmd)}"
+    except OSError as error:
+        return 1, f"Could not run {' '.join(cmd)}: {error}"
 
 
 def ensure_caddy() -> tuple[bool, str]:
@@ -49,9 +58,17 @@ def ensure_caddy() -> tuple[bool, str]:
     fallback = settings.data_dir / "Caddyfile"
     cfg = config if config.exists() else fallback
     if cfg.exists():
-        code, out = _run(["caddy", "run", "--config", str(cfg), "--adapter", "caddyfile"])
-        if code == 0:
+        # `caddy run` stays in the foreground; never wait on it inside a request.
+        try:
+            subprocess.Popen(
+                ["caddy", "start", "--config", str(cfg), "--adapter", "caddyfile"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
             return True, "Caddy started."
+        except OSError as error:
+            messages.append(f"Could not start Caddy directly: {error}")
 
     return False, "; ".join(messages) or "Could not start Caddy."
 
