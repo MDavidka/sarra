@@ -2069,6 +2069,39 @@ code {
   color: var(--text-muted);
 }
 
+/* Status indicator styles for desktop and mobile */
+.debug-chat-activity {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.debug-chat-activity[data-status="working"] {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.debug-chat-activity[data-status="idle"] {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.debug-chat-activity[data-status="error"] {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.debug-chat-activity .logs-live-dot {
+  transition: background-color 0.2s ease;
+}
+
+.debug-chat-activity .logs-live-dot.working {
+  background: #3b82f6;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.debug-chat-activity .logs-live-dot.idle {
+  background: #22c55e;
+}
+
 .debug-chat-messages-wrap {
   position: relative;
   flex: 1;
@@ -3391,41 +3424,130 @@ body.ai-settings-open { overflow: hidden; }
 @media (max-width: 560px) {
   .debug-chat-header {
     align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .debug-chat-header h2 {
+    font-size: 0.95rem;
+    margin: 0;
+  }
+
+  .debug-chat-header p {
+    font-size: 0.72rem;
+    margin: 0.1rem 0 0;
+  }
+
+  .debug-chat-profile-label {
+    font-size: 0.65rem;
+    gap: 0.25rem;
   }
 
   .debug-chat-profile {
-    min-width: 4.75rem;
+    min-width: 4rem;
+    height: 28px;
+    padding: 0 1.4rem 0 0.4rem;
+    font-size: 0.72rem;
   }
 
   .debug-chat-messages {
-    min-height: 340px;
+    min-height: 280px;
+    max-height: min(45vh, 420px);
+    padding: 0.6rem;
+    gap: 0.5rem;
   }
 
   .debug-chat-bubble {
     max-width: 96%;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.8rem;
   }
 
+  /* Enhanced activity status bar for mobile */
   .debug-chat-activity {
-    align-items: flex-start;
+    align-items: center;
+    min-height: 28px;
+    padding: 0.4rem 0.5rem;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Status indicators for working vs idle */
+  .debug-chat-activity[data-status="working"] {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+  }
+
+  .debug-chat-activity[data-status="idle"] {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+  }
+
+  .debug-chat-activity[data-status="error"] {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+  }
+
+  .debug-chat-activity-label {
+    font-size: 0.72rem;
+    font-weight: 600;
   }
 
   .debug-chat-activity-detail {
     white-space: normal;
     line-height: 1.3;
+    font-size: 0.7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  /* Animated status dot */
+  .debug-chat-activity .logs-live-dot {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+  }
+
+  .debug-chat-activity .logs-live-dot.working {
+    background: #3b82f6;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .debug-chat-activity .logs-live-dot.idle {
+    background: #22c55e;
   }
 
   .debug-chat-composer {
     align-items: stretch;
     flex-direction: column;
+    padding: 0.4rem;
+    gap: 0.4rem;
+  }
+
+  .debug-chat-input {
+    min-height: 40px;
+    padding: 0.5rem;
+    font-size: 0.85rem;
   }
 
   .debug-chat-composer-actions {
     width: 100%;
     justify-content: flex-end;
+    gap: 0.35rem;
+  }
+
+  .debug-chat-button {
+    min-height: 32px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
   }
 
   .debug-chat-send,
   .debug-chat-cancel {
-    min-width: 88px;
+    min-width: 72px;
   }
 }

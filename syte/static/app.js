@@ -221,8 +221,32 @@ function setDebugChatActivity(label, detail = '', icon = 'loader', active = true
   bar.classList.remove('hidden');
   const labelEl = bar.querySelector('.debug-chat-activity-label');
   const detailEl = bar.querySelector('.debug-chat-activity-detail');
+  const dot = bar.querySelector('.logs-live-dot');
   const nextLabel = active && label ? label : debugChatIdleStatus;
   debugChatActivityLabel = nextLabel;
+
+  // Determine status for visual indicators
+  let status = 'idle';
+  if (active) {
+    const lowerLabel = label.toLowerCase();
+    if (lowerLabel.includes('fail') || lowerLabel.includes('error')) {
+      status = 'error';
+    } else if (lowerLabel.includes('plan') || lowerLabel.includes('work') || lowerLabel.includes('writ') || lowerLabel.includes('send')) {
+      status = 'working';
+    } else {
+      status = 'idle';
+    }
+  }
+
+  // Set data-status for CSS styling
+  bar.dataset.status = status;
+
+  // Update dot indicator
+  if (dot) {
+    dot.classList.remove('working', 'idle');
+    dot.classList.add(status === 'working' ? 'working' : (status === 'idle' ? 'idle' : ''));
+  }
+
   if (labelEl) labelEl.textContent = nextLabel;
   if (detailEl) detailEl.textContent = active ? detail : '';
 }
