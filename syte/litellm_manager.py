@@ -17,7 +17,7 @@ import json
 import logging
 import os
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from syte.database import get_setting, set_setting
 from syte.litellm_config import (
@@ -41,10 +41,7 @@ LITELLM_DB_CONTAINER_NAME = "syte-litellm-db"
 LITELLM_DB_IMAGE = "postgres:16-alpine"
 LITELLM_DB_DATA_DIR = "/var/lib/syte/litellm-postgres"
 LITELLM_DB_NAME = "litellm"
-LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL = (
-    'ALTER TABLE IF EXISTS "LiteLLM_MCPServerTable" '
-    'ADD COLUMN IF NOT EXISTS "instructions" TEXT;'
-)
+LITELLM_MCP_SERVER_TABLE = "LiteLLM_MCPServerTable"
 LITELLM_DB_USER = "litellm"
 LITELLM_NETWORK = "syte-litellm"
 
@@ -71,6 +68,63 @@ def validate_litellm_database_url(value: str) -> str:
             "Use the direct database URL or Supabase session pooler port 5432."
         )
     return value
+
+
+def _quote_postgres_identifier(value: str) -> str:
+    """Quote one PostgreSQL identifier for an internally generated statement."""
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _quote_postgres_literal(value: str) -> str:
+    """Quote one PostgreSQL string literal for an internally generated statement."""
+    return f"'{value.replace(chr(39), chr(39) * 2)}'"
+
+
+def _litellm_prisma_schema(database_url: str) -> tuple[str, str]:
+    """Return the Prisma schema and a libpq-compatible database URL.
+
+    Prisma accepts ``?schema=name`` while libpq (and therefore psql) does not.
+    Strip that Prisma-only query parameter before executing the compatibility
+    statement and use it to qualify the table name instead.
+    """
+    parsed = urlsplit(database_url)
+    schema = "public"
+    libpq_query: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        if key == "schema":
+            if value:
+                schema = value
+            continue
+        libpq_query.append((key, value))
+    return schema, urlunsplit(parsed._replace(query=urlencode(libpq_query)))
+
+
+def _litellm_mcp_instructions_compat_sql(schema: str) -> str:
+    """Build an atomic MCP column repair and physical-schema verification."""
+    qualified_table = (
+        f"{_quote_postgres_identifier(schema)}."
+        f"{_quote_postgres_identifier(LITELLM_MCP_SERVER_TABLE)}"
+    )
+    table_literal = _quote_postgres_literal(qualified_table)
+    schema_literal = _quote_postgres_literal(schema)
+    return (
+        "BEGIN; "
+        f"ALTER TABLE IF EXISTS {qualified_table} "
+        'ADD COLUMN IF NOT EXISTS "instructions" TEXT; '
+        "DO $$ BEGIN "
+        f"IF to_regclass({table_literal}) IS NULL THEN "
+        f"RAISE EXCEPTION 'LiteLLM MCP table is missing from schema %', {schema_literal}; "
+        "END IF; "
+        "IF NOT EXISTS (SELECT 1 FROM pg_attribute "
+        f"WHERE attrelid = to_regclass({table_literal}) "
+        "AND attname = 'instructions' AND NOT attisdropped) THEN "
+        f"RAISE EXCEPTION 'LiteLLM MCP instructions column is missing from schema %', {schema_literal}; "
+        "END IF; "
+        "END $$; COMMIT;"
+    )
+
+
+LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL = _litellm_mcp_instructions_compat_sql("public")
 
 
 async def _run_docker(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
@@ -214,18 +268,20 @@ async def _repair_litellm_mcp_schema(
 
     LiteLLM's Prisma migration history can say this migration was applied even
     when the physical column is missing. Run the repair against the same
-    database before Prisma so both fresh and existing databases are safe.
+    database and Prisma schema before migrations so both fresh and existing
+    databases are safe.
     """
+    schema, repair_database_url = _litellm_prisma_schema(database_url)
     args = ["run", "--rm"]
     if database_network:
         args.extend(["--network", database_network])
     args.extend([
         "--entrypoint", "sh",
-        "-e", f"DATABASE_URL={database_url}",
+        "-e", f"DATABASE_URL={repair_database_url}",
         LITELLM_DB_IMAGE,
         "-ec",
         'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c '
-        f"'{LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL}'",
+        f"'{_litellm_mcp_instructions_compat_sql(schema)}'",
     ])
     exit_code, output = await _run_docker(args, timeout=60.0)
     if exit_code != 0:

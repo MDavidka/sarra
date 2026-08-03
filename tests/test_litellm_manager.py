@@ -30,6 +30,7 @@ async def test_litellm_migrations_use_documented_pinned_image(monkeypatch) -> No
     ]
     assert litellm_manager.LITELLM_DB_IMAGE in initial_repair_args
     assert litellm_manager.LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL in " ".join(initial_repair_args)
+    assert "to_regclass" in " ".join(initial_repair_args)
 
     args, timeout = calls[1]
     assert timeout == 300.0
@@ -119,3 +120,16 @@ def test_litellm_proxy_uses_documented_pinned_image() -> None:
     assert litellm_manager.LITELLM_IMAGE == (
         "docker.litellm.ai/berriai/litellm:1.92.1"
     )
+
+
+def test_litellm_mcp_repair_targets_prisma_schema() -> None:
+    schema, repair_url = litellm_manager._litellm_prisma_schema(
+        "postgresql://litellm:secret@db:5432/litellm?schema=syra&sslmode=require"
+    )
+
+    assert schema == "syra"
+    assert repair_url == "postgresql://litellm:secret@db:5432/litellm?sslmode=require"
+    sql = litellm_manager._litellm_mcp_instructions_compat_sql(schema)
+    assert 'ALTER TABLE IF EXISTS "syra"."LiteLLM_MCPServerTable"' in sql
+    assert "to_regclass" in sql
+    assert "instructions column is missing" in sql
