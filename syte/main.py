@@ -208,12 +208,19 @@ class ModelProviderSetupRequest(BaseModel):
 
 class ModelConfigurationRequest(BaseModel):
     model_name: str = Field(min_length=1, max_length=200)
+    provider: str = Field(default="9Router", min_length=1, max_length=100)
     thinking_levels: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    thinking_level: str = Field(default="medium", min_length=1, max_length=20)
     enabled: bool = True
 
 
 class BulkModelConfigurationRequest(BaseModel):
     models: list[ModelConfigurationRequest] = Field(min_length=1, max_length=100)
+
+
+class ModelPlaygroundRequest(BaseModel):
+    model_profile: str = Field(min_length=1, max_length=240)
+    prompt: str = Field(min_length=1, max_length=12000)
 
 
 class UpdateProjectRequest(BaseModel):
@@ -521,12 +528,35 @@ async def _save_model_records(records: list[dict[str, Any]]) -> None:
 
 def _checked_model(body: ModelConfigurationRequest) -> dict[str, Any]:
     name = body.model_name.strip()
+    provider = " ".join(body.provider.split())
     if not name:
         raise HTTPException(400, "Enter a model name.")
+    if not provider:
+        raise HTTPException(400, "Enter a provider name.")
     levels = sorted(set(body.thinking_levels))
     if not levels or any(level < 1 or level > 5 for level in levels):
         raise HTTPException(400, "Choose one or more thinking levels between 1 and 5.")
-    return {"name": name, "thinking_levels": levels, "enabled": body.enabled}
+    thinking_level = body.thinking_level.strip().lower()
+    if thinking_level not in {"minimal", "low", "medium", "high", "max", "xhigh"}:
+        raise HTTPException(400, "Choose Minimal, Low, Medium, High, Max, or Xhigh thinking.")
+    return {
+        "name": name,
+        "provider": provider,
+        "thinking_levels": levels,
+        "thinking_level": thinking_level,
+        "enabled": body.enabled,
+    }
+
+
+def _same_provider_model(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    from syte.model_catalog import normalize_provider
+
+    return (
+        normalize_provider(str(left.get("provider") or ""))
+        == normalize_provider(str(right.get("provider") or ""))
+        and str(left.get("name") or "").strip().casefold()
+        == str(right.get("name") or "").strip().casefold()
+    )
 
 
 async def _require_provider_key_if_enabled(records: list[dict[str, Any]]) -> None:
@@ -540,9 +570,9 @@ async def add_model(body: ModelConfigurationRequest):
 
     record = _checked_model(body)
     records = await configured_models()
-    record["id"] = new_model_id(record["name"])
-    if any(item["id"] == record["id"] for item in records):
-        raise HTTPException(400, "That model is already in the list.")
+    record["id"] = new_model_id(record["name"], record["provider"])
+    if any(_same_provider_model(item, record) for item in records):
+        raise HTTPException(400, "That provider already has this model in the list.")
     records.append(record)
     await _require_provider_key_if_enabled(records)
     await _save_model_records(records)
@@ -554,14 +584,12 @@ async def add_models_bulk(body: BulkModelConfigurationRequest):
     from syte.model_catalog import configured_models, new_model_id
 
     records = await configured_models()
-    existing = {item["id"] for item in records}
     added = 0
     for item in body.models:
         record = _checked_model(item)
-        record["id"] = new_model_id(record["name"])
-        if record["id"] not in existing:
+        record["id"] = new_model_id(record["name"], record["provider"])
+        if not any(_same_provider_model(existing, record) for existing in records):
             records.append(record)
-            existing.add(record["id"])
             added += 1
     if not added:
         raise HTTPException(400, "All submitted models are already in the list.")
@@ -578,6 +606,11 @@ async def update_model(model_id: str, body: ModelConfigurationRequest):
     record = _checked_model(body)
     for index, existing in enumerate(records):
         if existing["id"] == model_id:
+            if any(
+                other["id"] != model_id and _same_provider_model(other, record)
+                for other in records
+            ):
+                raise HTTPException(400, "That provider already has this model in the list.")
             records[index] = {**record, "id": model_id}
             break
     else:
@@ -601,6 +634,36 @@ async def save_default_model(body: ModelConfigurationRequest):
     await _require_provider_key_if_enabled(records)
     await _save_model_records(records)
     return {"ok": True, "message": "Model saved.", **(await _model_configuration())}
+
+
+@app.post("/api/models/playground")
+async def run_model_playground(body: ModelPlaygroundRequest):
+    """Run a short, tool-free prompt with one enabled catalog model."""
+    from syte.cloud_agent import _provider_completion, is_catalog_model_profile, model_metadata_for_profile
+    from syte.thinking_levels import resolve_thinking_config
+
+    profile = body.model_profile.strip()
+    if not await is_catalog_model_profile(profile):
+        raise HTTPException(400, "Choose an enabled model from the Models tab.")
+    model = await model_metadata_for_profile(profile)
+    if not str(model.get("api_key") or "").strip():
+        raise HTTPException(400, "Update the provider API key before using this model.")
+    response = await _provider_completion(
+        model,
+        [
+            {"role": "system", "content": "You are the Sarra model playground. Answer directly and concisely."},
+            {"role": "user", "content": body.prompt.strip()},
+        ],
+        tools=[],
+        thinking_config=resolve_thinking_config(3, fallback_profile=profile),
+    )
+    return {
+        "ok": True,
+        "model": model.get("model") or "",
+        "provider": model.get("label") or "",
+        "response": str(response.get("content") or ""),
+        "usage": response.get("_usage") or {},
+    }
 
 
 async def _solar_status() -> dict[str, Any]:
@@ -1030,7 +1093,7 @@ async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_se
 
 class NewFeatureAgentRequest(BaseModel):
     message: str = Field(..., description="Message to the system agent")
-    model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
+    model_profile: str = Field(..., min_length=1, description="Enabled model profile from the Models tab")
     request_api_key: str | None = Field(None, description="Provider API key supplied by the requesting user")
 
 
@@ -1040,6 +1103,10 @@ async def api_new_feature_agent(body: NewFeatureAgentRequest):
 
     After the agent finishes, an auto-update is triggered automatically.
     """
+    from syte.cloud_agent import is_catalog_model_profile
+
+    if not await is_catalog_model_profile(body.model_profile):
+        raise HTTPException(400, "Choose an enabled model from the Models tab.")
     result = await run_new_feature_agent(
         message=body.message,
         model_profile=body.model_profile,

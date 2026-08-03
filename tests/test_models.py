@@ -97,7 +97,9 @@ async def test_bulk_catalog_only_exposes_enabled_models(tmp_data_dir: Path) -> N
         "id": saved["models"][0]["id"],
         "profile": saved["models"][0]["profile"],
         "name": "deepseek/deepseek-r1",
+        "provider": "9Router",
         "thinking_levels": [3],
+        "thinking_level": "medium",
     }]
     bridge = await bridge_settings()
     assert available["models"][0]["profile"] in bridge["profiles"]
@@ -105,3 +107,28 @@ async def test_bulk_catalog_only_exposes_enabled_models(tmp_data_dir: Path) -> N
     selected = await model_metadata_for_profile(available["models"][0]["profile"])
     assert selected["model"] == "deepseek/deepseek-r1"
     assert selected["api_key"] == "9router-test-key"
+
+
+@pytest.mark.asyncio
+async def test_same_model_can_be_added_once_per_provider(tmp_data_dir: Path) -> None:
+    from fastapi import HTTPException
+    from syte.database import init_db
+    from syte.main import ModelConfigurationRequest, add_model, save_model_provider, ModelProviderSetupRequest
+
+    await init_db()
+    await save_model_provider(ModelProviderSetupRequest(api_key="9router-test-key"))
+    first = await add_model(ModelConfigurationRequest(
+        provider="OpenAI", model_name="gpt-4.1", thinking_level="xhigh",
+    ))
+    assert first["models"][0]["provider"] == "OpenAI"
+    assert first["models"][0]["thinking_level"] == "xhigh"
+
+    with pytest.raises(HTTPException, match="already has this model"):
+        await add_model(ModelConfigurationRequest(
+            provider="openai", model_name="GPT-4.1",
+        ))
+
+    second = await add_model(ModelConfigurationRequest(
+        provider="Gateway B", model_name="gpt-4.1",
+    ))
+    assert [row["provider"] for row in second["models"]] == ["OpenAI", "Gateway B"]
