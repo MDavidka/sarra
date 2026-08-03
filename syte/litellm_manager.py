@@ -41,6 +41,10 @@ LITELLM_DB_CONTAINER_NAME = "syte-litellm-db"
 LITELLM_DB_IMAGE = "postgres:16-alpine"
 LITELLM_DB_DATA_DIR = "/var/lib/syte/litellm-postgres"
 LITELLM_DB_NAME = "litellm"
+LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL = (
+    'ALTER TABLE IF EXISTS "LiteLLM_MCPServerTable" '
+    'ADD COLUMN IF NOT EXISTS "instructions" TEXT;'
+)
 LITELLM_DB_USER = "litellm"
 LITELLM_NETWORK = "syte-litellm"
 
@@ -202,11 +206,47 @@ async def litellm_is_loopback_bound() -> bool:
     )
 
 
+async def _repair_litellm_mcp_schema(
+    database_url: str,
+    database_network: str = "",
+) -> tuple[bool, str]:
+    """Repair the MCP schema drift that older LiteLLM databases can contain.
+
+    LiteLLM's Prisma migration history can say this migration was applied even
+    when the physical column is missing. Run the repair against the same
+    database before Prisma so both fresh and existing databases are safe.
+    """
+    args = ["run", "--rm"]
+    if database_network:
+        args.extend(["--network", database_network])
+    args.extend([
+        "--entrypoint", "sh",
+        "-e", f"DATABASE_URL={database_url}",
+        LITELLM_DB_IMAGE,
+        "-ec",
+        'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c '
+        f"'{LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL}'",
+    ])
+    exit_code, output = await _run_docker(args, timeout=60.0)
+    if exit_code != 0:
+        return False, (
+            "LiteLLM PostgreSQL MCP schema repair failed. The proxy was not "
+            f"started; repair the database and retry Start. {output or 'no repair output'}"
+        )
+    return True, "LiteLLM PostgreSQL MCP schema verified."
+
+
 async def _run_litellm_migrations(
     database_url: str,
     database_network: str = "",
 ) -> tuple[bool, str]:
-    """Apply LiteLLM's bundled Prisma migrations before the proxy starts."""
+    """Repair schema drift and apply LiteLLM's Prisma migrations."""
+    schema_ok, schema_message = await _repair_litellm_mcp_schema(
+        database_url, database_network
+    )
+    if not schema_ok:
+        return False, schema_message
+
     args = ["run", "--rm"]
     if database_network:
         args.extend(["--network", database_network])

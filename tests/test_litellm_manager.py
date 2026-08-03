@@ -22,7 +22,16 @@ async def test_litellm_migrations_use_documented_pinned_image(monkeypatch) -> No
 
     assert ok is True
     assert message == "LiteLLM PostgreSQL migrations applied."
-    args, timeout = calls[0]
+    assert len(calls) == 2
+    repair_args, repair_timeout = calls[0]
+    assert repair_timeout == 60.0
+    assert repair_args[:5] == [
+        "run", "--rm", "--network", litellm_manager.LITELLM_NETWORK, "--entrypoint"
+    ]
+    assert litellm_manager.LITELLM_DB_IMAGE in repair_args
+    assert litellm_manager.LITELLM_MCP_INSTRUCTIONS_COMPAT_SQL in " ".join(repair_args)
+
+    args, timeout = calls[1]
     assert timeout == 300.0
     assert args[:5] == ["run", "--rm", "--network", litellm_manager.LITELLM_NETWORK, "--entrypoint"]
     assert litellm_manager.LITELLM_PRISMA_BIN in args
@@ -37,8 +46,33 @@ async def test_litellm_migrations_use_documented_pinned_image(monkeypatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_litellm_migration_failure_blocks_startup(monkeypatch) -> None:
+async def test_litellm_schema_repair_failure_blocks_migrations(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
     async def fake_run_docker(args: list[str], timeout: float = 30.0):
+        calls.append(args)
+        return 1, "permission denied"
+
+    monkeypatch.setattr(litellm_manager, "_run_docker", fake_run_docker)
+
+    ok, message = await litellm_manager._run_litellm_migrations(
+        "postgresql://litellm:secret@db:5432/litellm"
+    )
+
+    assert ok is False
+    assert len(calls) == 1
+    assert "schema repair failed" in message
+    assert "proxy was not started" in message
+
+
+@pytest.mark.asyncio
+async def test_litellm_migration_failure_blocks_startup(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    async def fake_run_docker(args: list[str], timeout: float = 30.0):
+        calls.append(args)
+        if len(calls) == 1:
+            return 0, "schema verified"
         return 1, "The column instructions does not exist"
 
     monkeypatch.setattr(litellm_manager, "_run_docker", fake_run_docker)
@@ -48,6 +82,7 @@ async def test_litellm_migration_failure_blocks_startup(monkeypatch) -> None:
     )
 
     assert ok is False
+    assert len(calls) == 2
     assert "migrations failed" in message
     assert "proxy was not started" in message
     assert "instructions does not exist" in message
