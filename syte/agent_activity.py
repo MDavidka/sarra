@@ -698,6 +698,83 @@ async def record_agent_event(
     return event
 
 
+async def get_latest_session_metadata(project_id: str) -> dict[str, Any] | None:
+    """Get metadata for the latest session: start time, end time, status, error count."""
+    await ensure_agent_events_table()
+    from syte.agent_failures import list_failures
+    
+    # Get the latest session number
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+        async with db.execute(
+            "SELECT payload, created_at FROM agent_events WHERE project_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (project_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    
+    if not row:
+        return None
+    
+    payload_raw, created_at = row
+    try:
+        payload = json.loads(payload_raw or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    
+    session_num = _payload_session_number(payload)
+    
+    # Get session events to calculate duration
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+        # Find all events in this session
+        async with db.execute(
+            "SELECT MIN(created_at), MAX(created_at) FROM agent_events "
+            "WHERE project_id = ? AND json_extract(payload, '$.session') = ?",
+            (project_id, session_num or 0),
+        ) as cur:
+            time_row = await cur.fetchone()
+    
+    start_time = time_row[0] if time_row and time_row[0] else created_at
+    end_time = time_row[1] if time_row and time_row[1] else created_at
+    
+    # Count failures in this session
+    failures = await list_failures(project_id, session=session_num or 0, limit=5000)
+    error_count = len(failures) if failures else 0
+    
+    # Determine status based on events
+    status = "running"
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        from syte.sqlite_utils import configure_sqlite
+
+        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
+        async with db.execute(
+            "SELECT event_type FROM agent_events WHERE project_id = ? "
+            "AND json_extract(payload, '$.session') = ? ORDER BY id DESC LIMIT 1",
+            (project_id, session_num or 0),
+        ) as cur:
+            last_event = await cur.fetchone()
+    
+    if last_event:
+        event_type = last_event[0]
+        if event_type in ("agent_stopped", "session_stopped", "request_failed"):
+            status = "error" if event_type == "request_failed" else "stopped"
+        elif event_type == "request_completed":
+            status = "complete"
+    
+    return {
+        "session_number": session_num,
+        "start_time": start_time,
+        "end_time": end_time,
+        "status": status,
+        "error_count": error_count,
+    }
+
+
 async def list_agent_events(
     project_id: str,
     *,
