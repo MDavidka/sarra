@@ -165,17 +165,24 @@ async def internal_agent_activity(
     project_id: str,
     since_id: int = 0,
     limit: int = 200,
+    latest: bool = False,
     _auth: dict = Depends(verify_internal_service_request),
 ):
     from syte.agent_activity import list_agent_events
 
     await _require_project(project_id)
-    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        project_id,
+        since_id=since_id,
+        limit=limit,
+        latest=latest,
+    )
     return {
         "ok": True,
         "project_id": project_id,
         "events": events,
         "since_id": since_id,
+        "latest": latest,
         "stream_url": f"/api/internal/projects/{project_id}/agent/activity/stream?live=1",
         "tagged_stream_url": (
             f"/api/internal/projects/{project_id}/agent/activity/stream"
@@ -272,11 +279,11 @@ async def internal_agent_communicate(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     await _require_project(project_id)
-    profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
         project_id,
         body.message,
-        model_profile=profile,
+        model_profile=body.model_profile,
+        model_name=body.model_name,
         source="internal",
     )
     if not result.get("ok"):
@@ -292,11 +299,11 @@ async def internal_agent_change(
 ):
     """sycord.com → Syte: request an OpenHands workspace change by UUID."""
     await _require_project(project_id)
-    profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
         project_id,
         body.message,
-        model_profile=profile,
+        model_profile=body.model_profile,
+        model_name=body.model_name,
         source="sycord",
         background=True,
     )

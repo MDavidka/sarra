@@ -7,6 +7,7 @@ import pytest
 from syte.agent_activity import (
     _map_tool_event,
     extract_events_from_openhands_event,
+    list_agent_events,
     record_agent_event,
 )
 
@@ -174,3 +175,69 @@ async def test_record_and_list_events(tmp_path, monkeypatch: pytest.MonkeyPatch)
     listed = await agent_activity.list_agent_events("proj-1")
     assert len(listed) == 1
     assert listed[0]["detail"] == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_list_agent_events_latest_returns_only_newest_request(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "latest-only.db"
+    monkeypatch.setattr(
+        "syte.agent_activity.settings",
+        SimpleNamespace(resolved_db_path=db_path),
+    )
+
+    await record_agent_event(
+        "proj-latest",
+        "request_started",
+        role="user",
+        title="Request",
+        detail="first",
+        payload={"request_id": "req-old"},
+    )
+    await record_agent_event(
+        "proj-latest",
+        "request_completed",
+        role="assistant",
+        title="Completed",
+        detail="done old",
+        payload={"request_id": "req-old"},
+    )
+    await record_agent_event(
+        "proj-latest",
+        "request_started",
+        role="user",
+        title="Request",
+        detail="second",
+        payload={"request_id": "req-new"},
+    )
+    await record_agent_event(
+        "proj-latest",
+        "assistant_message",
+        role="assistant",
+        title="Assistant",
+        detail="working new",
+        payload={"request_id": "req-new"},
+    )
+    await record_agent_event(
+        "proj-latest",
+        "request_completed",
+        role="assistant",
+        title="Completed",
+        detail="done new",
+        payload={"request_id": "req-new"},
+    )
+
+    listed = await list_agent_events("proj-latest", latest=True)
+
+    assert [event["payload"]["request_id"] for event in listed] == [
+        "req-new",
+        "req-new",
+        "req-new",
+    ]
+    assert [event["detail"] for event in listed] == [
+        "second",
+        "working new",
+        "done new",
+    ]

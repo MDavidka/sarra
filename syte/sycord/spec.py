@@ -110,8 +110,8 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "2. POST /sycord/api/upload {uuid, path, file} — add or update files",
             "3. POST /sycord/api/preview_start {uuid} — fast dev preview with HMR (~5s)",
             "4. GET /sycord/api/preview_status?uuid= — poll until preview_ready=true",
-            "5. POST /sycord/api/agent_change {uuid, message} — async AI code change; returns request_id",
-            "6. GET /api/projects/{uuid}/agent/activity/stream?live=1 — SSE token_delta, file edits, completion",
+            "5. POST /sycord/api/agent_change {uuid, message, model_profile?, model_name?} — async AI code change; returns request_id",
+            "6. GET /api/projects/{uuid}/agent/activity/stream?live=1 or GET /sycord/api/agent_activity?uuid=&latest=1 — stream or fetch the newest session",
             "7. POST /sycord/api/issue_deployment {uuid} — docker build + deploy",
             "8. GET /sycord/api/container_get?uuid= — poll until running=true",
             "9. POST /sycord/api/domain {uuid, domain} — optional custom hostname",
@@ -121,7 +121,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
             "status": f"{prefix}/agent_status?uuid=",
             "warm": "POST /api/agent_warm {uuid} — non-blocking and deduplicated",
             "submit": f"POST {prefix}/agent_change",
-            "activity_snapshot": f"GET {prefix}/agent_activity?uuid=&since_id=",
+            "activity_snapshot": f"GET {prefix}/agent_activity?uuid=&since_id=&latest=",
             "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
             "stream_formats": [
                 "default (SSE JSON)",
@@ -149,6 +149,8 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "request_failed",
             ],
             "model_profiles": ["syra-nano", "syra-base", "syra-havy"],
+            "router_base_url": "https://9router.sycord.api/v1",
+            "model_name": "Optional raw upstream model id routed through the Sycord router",
             "legacy_sync": "POST agent_change with wait:true for blocking reply",
         },
         "errors": {
@@ -362,7 +364,14 @@ def build_sycord_spec(base_url: str = "") -> dict:
                 "path": f"{prefix}/agent_activity",
                 "auth": True,
                 "summary": "Agent activity snapshot (incremental with since_id)",
-                "request": {"query": {"uuid": "string (required)", "since_id": "integer (default 0)", "limit": "integer (default 200)"}},
+                "request": {
+                    "query": {
+                        "uuid": "string (required)",
+                        "since_id": "integer (default 0)",
+                        "limit": "integer (default 200)",
+                        "latest": "boolean (optional) — return only the newest request/session slice",
+                    }
+                },
                 "response": {
                     "example": {
                         "ok": True,
@@ -399,6 +408,7 @@ def build_sycord_spec(base_url: str = "") -> dict:
                         "uuid": "string (required)",
                         "message": "string (required)",
                         "model_profile": "syra-nano | syra-base | syra-havy (optional)",
+                        "model_name": "raw upstream model id via https://9router.sycord.api/v1 (optional)",
                         "wait": "bool (default false) — set true for blocking legacy mode",
                     },
                 },

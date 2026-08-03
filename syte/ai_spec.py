@@ -139,9 +139,9 @@ def build_ai_spec(base_url: str = "") -> dict:
             {"method": "GET", "path": "/api/agent_logs?uuid=&lines=200", "auth": True, "description": "OpenHands Agent Server log snapshot"},
             {"method": "GET", "path": "/api/agent_dashboard", "auth": True, "description": "DPFA/MNOA metrics + onboarding state"},
             {"method": "POST", "path": "/api/agent_test", "auth": True, "body": {"uuid": "str"}, "description": "Probe CLI + bridge + communicate"},
-            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional"}},
-            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
-            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0", "auth": True, "description": "Agent activity snapshot (incremental with since_id)"},
+            {"method": "POST", "path": "/api/agent_communicate", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional raw router model id"}},
+            {"method": "POST", "path": "/api/agent_change", "auth": True, "body": {"uuid": "str", "message": "str", "model_profile": "optional", "model_name": "optional raw router model id"}, "description": "Async code change — returns request_id immediately; use activity stream for live updates"},
+            {"method": "GET", "path": "/api/agent_activity?uuid=&since_id=0&latest=1", "auth": True, "description": "Agent activity snapshot (incremental with since_id, or latest request/session only with latest=1)"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/activity/stream?live=1&since_id=0", "auth": "optional", "description": "SSE real-time agent activity — format=sse|tagged|text|jsonl, types= filter"},
             {"method": "GET", "path": "/api/projects/{uuid}/agent/logs/stream?live=1", "auth": "optional", "description": "SSE OpenHands agent logs"},
             {"method": "POST", "path": "/api/tokens", "auth": False, "body": {"name": "str"}, "description": "Create API key (GUI)"},
@@ -157,6 +157,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "syra-base": "Balanced — DeepSeek chat class",
                 "syra-havy": "Capable — Gemini Pro class",
             },
+            "router_base_url": "https://9router.sycord.api/v1",
             "gui_configuration": "Syte GUI → AI tab — internal secret + per-profile Verted/DeepSeek API keys",
             "metrics": {
                 "dpfa": "Dedicated Performance For Agents — CPU percent on VM",
@@ -164,7 +165,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             },
             "async_change_request": {
                 "description": "Default for sycord.com and POST /api/agent_change — non-blocking",
-                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?}",
+                "submit": "POST /api/agent_change or POST /sycord/api/agent_change {uuid, message, model_profile?, model_name?}",
                 "immediate_response": {
                     "ok": True,
                     "request_id": "req_abc123def456",
@@ -184,7 +185,7 @@ def build_ai_spec(base_url: str = "") -> dict:
             ],
             "activity_api": {
                 "description": "Real-time Cursor-like chat feed — structured events, not raw logs",
-                "snapshot": "GET /api/agent_activity?uuid=&since_id=0",
+                "snapshot": "GET /api/agent_activity?uuid=&since_id=0&latest=1",
                 "stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0",
                 "stream_formats": {
                     "default": "SSE data: {\"type\":\"activity\",\"event\":{...}}",
@@ -192,7 +193,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "text": "?format=text — plain token deltas and [assistant]/[file]/[cmd] lines",
                     "jsonl": "?format=jsonl — one JSON object per line for CLI consumers",
                 },
-                "sycord_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0",
+                "sycord_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0&latest=1",
                 "sycord_status": "GET /sycord/api/agent_status?uuid=",
                 "internal_snapshot": "GET /api/internal/projects/{uuid}/agent/activity?since_id=0",
                 "internal_stream": "GET /api/internal/projects/{uuid}/agent/activity/stream?live=1",
@@ -232,7 +233,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 "3. POST /api/agent_change {uuid, message} — async; save request_id from response",
                 "4. GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0 — stream token_delta + tool events",
                 "5. POST /api/agent_settings {uuid, model_profile} — switch profile mid-session",
-                "6. GET /api/agent_activity?uuid=&since_id=N — poll snapshot if SSE unavailable",
+                "6. GET /api/agent_activity?uuid=&since_id=N or ...&latest=1 — poll snapshot if SSE unavailable",
                 "7. POST /api/agent_stop {uuid} only when continuous warm service is no longer wanted",
             ],
             "status_fields": [
@@ -333,8 +334,8 @@ def build_ai_spec(base_url: str = "") -> dict:
             "agent_integration": {
                 "description": "Sycord backend uses same API token as other /sycord/api routes",
                 "status": "GET /sycord/api/agent_status?uuid=",
-                "submit_change": "POST /sycord/api/agent_change {uuid, message, model_profile?, wait?}",
-                "activity_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0",
+                "submit_change": "POST /sycord/api/agent_change {uuid, message, model_profile?, model_name?, wait?}",
+                "activity_snapshot": "GET /sycord/api/agent_activity?uuid=&since_id=0&latest=1",
                 "activity_stream": "GET /api/projects/{uuid}/agent/activity/stream?live=1&since_id=0 (SSE; api_key query optional)",
                 "async_response": {"ok": True, "request_id": "req_…", "status": "accepted", "stream_url": "/api/projects/{uuid}/agent/activity/stream?live=1"},
             },
@@ -351,7 +352,7 @@ def build_ai_spec(base_url: str = "") -> dict:
                 {"method": "POST", "path": "/sycord/api/preview_stop", "auth": True},
                 {"method": "GET", "path": "/sycord/api/agent_status?uuid=", "auth": True},
                 {"method": "POST", "path": "/sycord/api/agent_change", "auth": True, "description": "Async code change — returns request_id"},
-                {"method": "GET", "path": "/sycord/api/agent_activity?uuid=&since_id=", "auth": True},
+                {"method": "GET", "path": "/sycord/api/agent_activity?uuid=&since_id=&latest=", "auth": True},
                 {"method": "POST", "path": "/sycord/api/domain", "auth": True},
                 {"method": "POST", "path": "/sycord/api/issue_deployment", "auth": True},
                 {"method": "GET", "path": "/sycord/api/spec.json", "auth": False},

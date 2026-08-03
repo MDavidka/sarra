@@ -368,6 +368,7 @@ def _step_agent_change(api: str, base: str) -> dict:
                 "uuid": "myapp-a1b2c3",
                 "message": "Add a dark mode toggle to the navbar",
                 "model_profile": "syra-base",
+                "model_name": "openai/gpt-4.1-mini",
                 "wait": False,
             },
             "body_fields": {
@@ -377,6 +378,11 @@ def _step_agent_change(api: str, base: str) -> dict:
                     "type": "string",
                     "required": False,
                     "enum": ["syra-nano", "syra-base", "syra-havy"],
+                },
+                "model_name": {
+                    "type": "string",
+                    "required": False,
+                    "description": "Raw upstream model id routed through https://9router.sycord.api/v1",
                 },
                 "wait": {
                     "type": "boolean",
@@ -407,6 +413,7 @@ def _step_agent_change(api: str, base: str) -> dict:
             "  uuid: project.syte_uuid,\n"
             "  message: userMessage,\n"
             "  model_profile: 'syra-base',\n"
+            "  model_name: 'openai/gpt-4.1-mini',\n"
             "});\n"
             "openAgentStream(project.syte_uuid, res.request_id, lastEventId);"
         ),
@@ -422,7 +429,7 @@ def _step_agent_stream(api: str, base: str) -> dict:
         "when_to_call": (
             "Prewarm with POST /api/agent_warm when the user opens the project. "
             "Open this stream before or right after agent_change. Reconnect with since_id=last event id. "
-            "Alternative: poll GET /sycord/api/agent_activity."
+            "Alternative: poll GET /sycord/api/agent_activity?uuid=&latest=1."
         ),
         "request": {
             "method": "GET",

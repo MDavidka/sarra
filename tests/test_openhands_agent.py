@@ -91,6 +91,33 @@ async def test_write_agent_config_creates_private_server_config(tmp_data_dir: Pa
 
 
 @pytest.mark.asyncio
+async def test_selected_model_metadata_accepts_raw_model_override(tmp_data_dir: Path) -> None:
+    from syte.database import create_project, get_project, init_db, set_setting, update_project
+    from syte.openhands_agent import selected_model_metadata
+
+    await init_db()
+    await set_setting("agent_syra_base_api_key", "base-key")
+    await create_project({
+        "id": "proj-model-override",
+        "name": "Model Override",
+        "port": 3002,
+        "start_command": "",
+    })
+    await update_project("proj-model-override", {"agent_model_profile": "syra-base"})
+
+    project = await get_project("proj-model-override")
+    model = await selected_model_metadata(
+        project or {},
+        model_name="openai/gpt-4.1-mini",
+    )
+
+    assert model["profile"] == "syra-base"
+    assert model["model"] == "openai/gpt-4.1-mini"
+    assert model["requested_model"] == "openai/gpt-4.1-mini"
+    assert model["api_base"] == "https://9router.sycord.api/v1"
+
+
+@pytest.mark.asyncio
 async def test_start_agent_reports_missing_server(
     tmp_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -282,19 +282,30 @@ async def ensure_agent_runtime(project: dict[str, Any]) -> dict[str, Any]:
     return project
 
 
-async def selected_model_metadata(project: dict[str, Any]) -> dict[str, str]:
+def _normalize_requested_model_name(model_name: str | None) -> str:
+    return (model_name or "").strip()
+
+
+async def selected_model_metadata(
+    project: dict[str, Any],
+    *,
+    model_profile: str | None = None,
+    model_name: str | None = None,
+) -> dict[str, str]:
     bridge = await bridge_settings()
     profile = (
-        project.get("agent_model_profile") or bridge["default_profile"] or "syra-base"
+        model_profile or project.get("agent_model_profile") or bridge["default_profile"] or "syra-base"
     ).strip()
     spec = bridge["profiles"].get(profile, bridge["profiles"]["syra-base"])
+    requested_model = _normalize_requested_model_name(model_name)
     return {
         "profile": profile,
         "provider": spec["provider"],
         "provider_label": spec["label"],
-        "model": spec["model"],
+        "model": requested_model or spec["model"],
         "api_base": spec["api_base"],
         "api_key": spec["api_key"],
+        "requested_model": requested_model,
     }
 
 
@@ -1693,6 +1704,7 @@ async def communicate_with_agent(
     message: str,
     *,
     model_profile: str | None = None,
+    model_name: str | None = None,
     source: str = "api",
     auto_start: bool = True,
     emit_request_started: bool = True,
@@ -1705,6 +1717,7 @@ async def communicate_with_agent(
             project_id,
             message,
             model_profile=model_profile,
+            model_name=model_name,
             source=source,
             auto_start=auto_start,
         )
@@ -1719,6 +1732,7 @@ async def communicate_with_agent(
                 project_id,
                 message,
                 model_profile=model_profile,
+                model_name=model_name,
                 source=source,
                 auto_start=auto_start,
                 emit_request_started=emit_request_started,
@@ -1728,7 +1742,7 @@ async def communicate_with_agent(
         await log_agent_request(
             project_id,
             source=source,
-            model_profile=model_profile,
+            model_profile=model_name or model_profile,
             message=message,
             status="error",
             error=error,
@@ -1760,6 +1774,7 @@ async def _communicate_with_agent_impl(
     message: str,
     *,
     model_profile: str | None = None,
+    model_name: str | None = None,
     source: str = "api",
     auto_start: bool = True,
     emit_request_started: bool = True,
@@ -1784,7 +1799,7 @@ async def _communicate_with_agent_impl(
             await log_agent_request(
                 project_id,
                 source=source,
-                model_profile=model_profile,
+                model_profile=model_name or model_profile,
                 message=message,
                 status="error",
                 error=error_text,
@@ -1829,6 +1844,7 @@ async def _communicate_with_agent_impl(
             payload={
                 "message": message,
                 "model_profile": model_profile,
+                "model_name": _normalize_requested_model_name(model_name),
                 "request_id": request_id or "",
                 "runtime": OPENHANDS_RUNTIME,
             },
@@ -1854,7 +1870,11 @@ async def _communicate_with_agent_impl(
         project = await get_project(project_id) or project
 
     project = await ensure_agent_runtime(project)
-    model = await selected_model_metadata(project)
+    model = await selected_model_metadata(
+        project,
+        model_profile=model_profile,
+        model_name=model_name,
+    )
     if not model["api_key"]:
         text = (
             f"No API key configured for active profile {model['profile']}. "
@@ -2057,7 +2077,7 @@ async def _communicate_with_agent_impl(
         await log_agent_request(
             project_id,
             source=source,
-            model_profile=model.get("profile"),
+            model_profile=model.get("requested_model") or model.get("profile"),
             message=message,
             status="ok",
         )
@@ -2070,6 +2090,7 @@ async def _communicate_with_agent_impl(
             payload={
                 "reply": reply,
                 "model_profile": model.get("profile"),
+                "model_name": model.get("model"),
                 "request_id": request_id or "",
                 "conversation_id": conversation_id,
                 "execution_status": execution_status,
@@ -2084,6 +2105,7 @@ async def _communicate_with_agent_impl(
             "model_profile": model.get("profile"),
             "model": model.get("model"),
             "provider": model.get("provider"),
+            "requested_model": model.get("requested_model") or None,
             "message": message,
             "reply": reply,
             "state": {
@@ -2117,6 +2139,7 @@ async def _communicate_with_agent_impl(
                     project_id,
                     message,
                     model_profile=model_profile,
+                    model_name=model_name,
                     source=source,
                     auto_start=auto_start,
                     emit_request_started=False,

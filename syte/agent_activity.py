@@ -171,15 +171,33 @@ async def list_agent_events(
         from syte.sqlite_utils import configure_sqlite
 
         await configure_sqlite(db, db_path=str(settings.resolved_db_path))
-        order = "DESC" if latest and since_id == 0 else "ASC"
+        latest_only = latest and since_id == 0
+        order = "DESC" if latest_only else "ASC"
+        query_limit = 2000 if latest_only else limit
         async with db.execute(
             "SELECT id, project_id, event_type, role, title, detail, payload, source, created_at "
             f"FROM agent_events WHERE project_id = ? AND id > ? ORDER BY id {order} LIMIT ?",
-            (project_id, since_id, limit),
+            (project_id, since_id, query_limit),
         ) as cur:
             rows = await cur.fetchall()
     events = [_event_row_to_dict(row) for row in rows]
-    return list(reversed(events)) if latest and since_id == 0 else events
+    if not latest_only:
+        return events
+
+    latest_request_id = ""
+    for event in events:
+        latest_request_id = str((event.get("payload") or {}).get("request_id") or "").strip()
+        if latest_request_id:
+            break
+    if not latest_request_id:
+        return list(reversed(events[-limit:]))
+
+    latest_events = [
+        event
+        for event in events
+        if str((event.get("payload") or {}).get("request_id") or "").strip() == latest_request_id
+    ]
+    return list(reversed(latest_events[-limit:]))
 
 
 def subscribe_agent_activity(project_id: str) -> asyncio.Queue[dict[str, Any]]:

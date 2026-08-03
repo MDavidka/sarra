@@ -27,6 +27,7 @@ async def submit_agent_request(
     message: str,
     *,
     model_profile: str | None = None,
+    model_name: str | None = None,
     source: str = "api",
     auto_start: bool = True,
 ) -> dict[str, Any]:
@@ -41,6 +42,7 @@ async def submit_agent_request(
         payload={
             "message": message,
             "model_profile": model_profile,
+            "model_name": model_name,
             "request_id": request_id,
         },
         source=source,
@@ -52,6 +54,7 @@ async def submit_agent_request(
             request_id,
             message,
             model_profile=model_profile,
+            model_name=model_name,
             source=source,
             auto_start=auto_start,
         )
@@ -90,6 +93,7 @@ async def _run_job(
     message: str,
     *,
     model_profile: str | None,
+    model_name: str | None,
     source: str,
     auto_start: bool,
 ) -> dict[str, Any]:
@@ -101,6 +105,7 @@ async def _run_job(
                 project_id,
                 message,
                 model_profile=model_profile,
+                model_name=model_name,
                 source=source,
                 auto_start=auto_start,
                 emit_request_started=False,

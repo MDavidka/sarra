@@ -110,6 +110,7 @@ class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
     model_profile: str | None = Field(None, description="syra-nano | syra-base | syra-havy")
+    model_name: str | None = Field(None, description="Raw upstream model id to send through the Sycord router")
 
 
 class AgentChangeRequest(BaseModel):
@@ -397,6 +398,7 @@ async def api_agent_activity(
     uuid: str = Query(...),
     since_id: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=2000),
+    latest: bool = Query(False),
     _token: dict = Depends(verify_api_token),
 ):
     from syte.agent_activity import list_agent_events
@@ -404,12 +406,18 @@ async def api_agent_activity(
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    events = await list_agent_events(uuid, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        uuid,
+        since_id=since_id,
+        limit=limit,
+        latest=latest,
+    )
     return {
         "ok": True,
         "uuid": uuid,
         "events": events,
         "since_id": since_id,
+        "latest": latest,
         "stream_url": f"/api/projects/{uuid}/agent/activity/stream?live=1",
         "tagged_stream_url": (
             f"/api/projects/{uuid}/agent/activity/stream?live=1&format=tagged"
@@ -438,6 +446,7 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
         body.uuid,
         body.message,
         model_profile=body.model_profile,
+        model_name=body.model_name,
         source="api",
     )
     if not result.get("ok"):
@@ -447,11 +456,11 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
 
 @router.post("/agent_change")
 async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(verify_api_token)):
-    profile = body.model_profile or body.model_name
     result = await communicate_with_agent(
         body.uuid,
         body.message,
-        model_profile=profile,
+        model_profile=body.model_profile,
+        model_name=body.model_name,
         source="sycord",
         background=True,
     )

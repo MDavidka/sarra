@@ -200,16 +200,28 @@ async def agent_status(project_id: str, *, request_base: str = "") -> dict | Non
     }
 
 
-async def agent_activity(project_id: str, *, since_id: int = 0, limit: int = 200) -> dict | None:
+async def agent_activity(
+    project_id: str,
+    *,
+    since_id: int = 0,
+    limit: int = 200,
+    latest: bool = False,
+) -> dict | None:
     from syte.agent_activity import list_agent_events
 
     project = await get_project(project_id)
     if not project:
         return None
-    events = await list_agent_events(project_id, since_id=since_id, limit=limit)
+    events = await list_agent_events(
+        project_id,
+        since_id=since_id,
+        limit=limit,
+        latest=latest,
+    )
     return {
         "uuid": project_id,
         "since_id": since_id,
+        "latest": latest,
         "events": events,
         "stream_url": f"/api/projects/{project_id}/agent/activity/stream?live=1&since_id={since_id}",
         "tagged_stream_url": (
@@ -224,6 +236,7 @@ async def agent_change(
     message: str,
     *,
     model_profile: str | None = None,
+    model_name: str | None = None,
     wait: bool = False,
 ) -> dict:
     from syte.openhands_agent import communicate_with_agent
@@ -235,6 +248,7 @@ async def agent_change(
         project_id,
         message,
         model_profile=model_profile,
+        model_name=model_name,
         source="sycord",
         background=not wait,
     )

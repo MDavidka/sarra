@@ -54,6 +54,7 @@ async def test_sycord_agent_change_async(tmp_data_dir: Path, monkeypatch: pytest
         assert message == "Add footer"
         assert kwargs["source"] == "sycord"
         assert kwargs["background"] is True
+        assert kwargs["model_name"] == "openai/gpt-4.1-mini"
         return {
             "ok": True,
             "request_id": "req_test123",
@@ -63,7 +64,12 @@ async def test_sycord_agent_change_async(tmp_data_dir: Path, monkeypatch: pytest
 
     monkeypatch.setattr("syte.openhands_agent.communicate_with_agent", fake_communicate)
 
-    result = await service.agent_change("sycord-proj", "Add footer", model_profile="syra-base")
+    result = await service.agent_change(
+        "sycord-proj",
+        "Add footer",
+        model_profile="syra-base",
+        model_name="openai/gpt-4.1-mini",
+    )
     assert result["ok"] is True
     assert result["request_id"] == "req_test123"
     assert result["status"] == "accepted"

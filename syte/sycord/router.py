@@ -159,10 +159,16 @@ async def api_agent_activity(
     uuid: str = Query(..., description="Project UUID"),
     since_id: int = Query(0, description="Last event id for incremental fetch"),
     limit: int = Query(200, ge=1, le=2000),
+    latest: bool = Query(False, description="If true, return only the newest request/session slice"),
     _token: dict = Depends(verify_api_token),
 ):
     """Agent activity snapshot — use SSE stream for live token/tool/file events."""
-    payload = await service.agent_activity(uuid, since_id=since_id, limit=limit)
+    payload = await service.agent_activity(
+        uuid,
+        since_id=since_id,
+        limit=limit,
+        latest=latest,
+    )
     if not payload:
         _err(404, "not_found", "Project not found")
     return {"ok": True, **payload}
@@ -174,11 +180,11 @@ async def api_agent_change(body: AgentChangeBody, _token: dict = Depends(verify_
     Request a code change via the workspace agent.
     Returns immediately with request_id — subscribe to activity stream for live updates.
     """
-    profile = body.model_profile or body.model_name
     result = await service.agent_change(
         body.uuid,
         body.message,
-        model_profile=profile,
+        model_profile=body.model_profile,
+        model_name=body.model_name,
         wait=body.wait,
     )
     if not result.get("ok"):

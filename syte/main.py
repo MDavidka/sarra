@@ -831,6 +831,7 @@ async def api_agent_activity_stream(
 class AgentChatRequest(BaseModel):
     message: str
     model_profile: str | None = None
+    model_name: str | None = None
 
 
 class AgentTestRequest(BaseModel):
@@ -1007,6 +1008,7 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool
             project_id,
             body.message.strip(),
             model_profile=body.model_profile,
+            model_name=body.model_name,
             source="gui",
             background=not wait,
         )
