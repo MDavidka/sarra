@@ -1,7 +1,10 @@
 import asyncio
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 from syte.caddy_routes import (
     host_zone,
@@ -25,7 +28,13 @@ def _run(cmd: list[str], timeout: float = 60.0) -> tuple[int, str]:
     and a missing timeout could hang an operator request indefinitely.
     """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
         output = (result.stdout or "") + (result.stderr or "")
         return result.returncode, output.strip()
     except FileNotFoundError:
@@ -85,7 +94,7 @@ def ensure_caddy_cloudflare_plugin() -> tuple[bool, str]:
         return False, "Caddy not installed."
     if caddy_has_cloudflare_plugin():
         return True, "Caddy Cloudflare DNS plugin is installed."
-    code, out = _run(["caddy", "add-package", "github.com/caddy-dns/cloudflare"])
+    code, _out = _run(["caddy", "add-package", "github.com/caddy-dns/cloudflare"])
     if code == 0 and caddy_has_cloudflare_plugin():
         return True, "Installed Caddy Cloudflare DNS plugin."
     return (
@@ -259,21 +268,6 @@ async def apply_proxy_config() -> tuple[bool, str]:
     fallback = settings.data_dir / "Caddyfile"
     env_path = await _write_caddy_env()
 
-    written = None
-    write_errors: list[str] = []
-    for target in (config_path, fallback):
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(config)
-            written = target
-            break
-        except OSError as exc:
-            write_errors.append(f"{target}: {exc}")
-            continue
-    if written is None:
-        detail = "; ".join(write_errors) or "permission denied"
-        return False, f"Could not write Caddy configuration ({detail})."
-
     extra = ""
     if env_path:
         extra = f" Wildcard SSL env: {env_path}."
@@ -281,32 +275,85 @@ async def apply_proxy_config() -> tuple[bool, str]:
         extra += " " + " ".join(cf_messages)
 
     if not shutil.which("caddy"):
-        return True, (
-            f"Caddy config saved to {written}. "
-            "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
+        return False, (
+            "Caddy is not installed; the active proxy configuration was not changed. "
+            "Install Caddy before publishing HTTPS routes." + extra
         )
 
-    code, out = await asyncio.to_thread(_run, ["caddy", "validate", "--config", str(written)])
-    if code != 0:
-        return False, f"Invalid Caddy config: {out or 'validation failed'}"
+    written: Path | None = None
+    write_errors: list[str] = []
+    for target in (config_path, fallback):
+        candidate = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_text(config)
+            if target.exists():
+                target_stat = target.stat()
+                os.chown(candidate, target_stat.st_uid, target_stat.st_gid)
+                candidate.chmod(stat.S_IMODE(target_stat.st_mode))
 
+            code, out = await asyncio.to_thread(
+                _run,
+                [
+                    "caddy",
+                    "validate",
+                    "--config",
+                    str(candidate),
+                    "--adapter",
+                    "caddyfile",
+                ],
+            )
+            if code != 0:
+                return False, (
+                    "Invalid Caddy config; the active configuration was preserved: "
+                    f"{out or 'validation failed'}"
+                )
+
+            candidate.replace(target)
+            written = target
+            break
+        except OSError as exc:
+            write_errors.append(f"{target}: {exc}")
+        finally:
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    if written is None:
+        detail = "; ".join(write_errors) or "permission denied"
+        return False, f"Could not write Caddy configuration ({detail})."
+
+    command_errors: list[str] = []
     for cmd in (
-        ["systemctl", "restart", "caddy"],
+        [
+            "caddy",
+            "reload",
+            "--config",
+            str(written),
+            "--adapter",
+            "caddyfile",
+        ],
         ["systemctl", "reload", "caddy"],
-        ["caddy", "reload", "--config", str(written)],
+        ["systemctl", "restart", "caddy"],
     ):
         code, out = await asyncio.to_thread(_run, cmd)
-        if code == 0:
-            caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
-            if not caddy_ok:
-                return False, f"Caddy command succeeded but Caddy is not active: {caddy_message}{extra}"
-            return True, "Proxy configuration applied (production + preview SSL)." + extra
+        if code != 0:
+            command_errors.append(f"{' '.join(cmd)}: {out or f'exit {code}'}")
+            continue
 
-    caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
-    if not caddy_ok:
-        return False, f"Caddy configuration saved but Caddy could not be started: {caddy_message}{extra}"
-    return True, (
-        f"Caddy config saved to {written}; {caddy_message}" + extra
+        caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
+        if not caddy_ok:
+            return False, (
+                "Caddy command succeeded but Caddy is not active: "
+                f"{caddy_message}{extra}"
+            )
+        return True, "Proxy configuration applied (production + preview SSL)." + extra
+
+    detail = "; ".join(command_errors)
+    return False, (
+        f"Caddy configuration saved to {written}, but reload and restart failed"
+        f" ({detail}).{extra}"
     )
 
 
