@@ -2299,6 +2299,93 @@ code {
   padding: 0.12rem 0.45rem;
 }
 
+/* Session header card - shows status, duration, and error count */
+.debug-chat-session-header {
+  padding: 0.8rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.debug-chat-session-header.hidden {
+  display: none;
+}
+
+.session-header-card {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  width: 100%;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-badge.status-running {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-badge.status-complete {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.status-stopped {
+  background: #fed7aa;
+  color: #92400e;
+}
+
+.status-badge.status-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.session-duration {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.session-error-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4rem;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.session-time {
+  font-size: 0.7rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
 /* "Brain" indicator — green when every message in the current chat session
    has been durably saved to Turso (see GET .../agent/turso_sync), red when
    at least one message has not synced yet or Turso is unreachable. Gray
@@ -4227,8 +4314,11 @@ body.ai-settings-open { overflow: hidden; }
 /* User-managed 9Router model setup. */
 .models-content { max-width: 640px; }
 .models-tabs { display: flex; gap: .35rem; margin: 0 0 .65rem; border-bottom: 1px solid #e4e4e7; }
+.models-tabs.segmented-control { background: #f3f4f6; border: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; border-radius: 8px; padding: .3rem; gap: 0; }
+.models-tabs.segmented-control .models-tab { border-bottom: 0; border-radius: 6px; padding: .4rem .65rem; background: transparent; transition: background 0.2s ease, color 0.2s ease; }
 .models-tab { border: 0; border-bottom: 2px solid transparent; padding: .4rem .55rem; background: transparent; color: #71717a; cursor: pointer; font: inherit; font-size: .78rem; }
 .models-tab.is-active { border-bottom-color: #18181b; color: #18181b; font-weight: 600; }
+.models-tabs.segmented-control .models-tab.is-active { border-bottom-color: transparent; background: #fff; color: #18181b; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 .model-setup-card { border: 1px solid #e4e4e7; border-radius: 12px; padding: .85rem; background: #fff; }
 .model-setup-card + .model-setup-card { margin-top: .7rem; }
 .model-setup-card h2 { margin: 0 0 .25rem; font-size: .94rem; }
@@ -4250,8 +4340,15 @@ body.ai-settings-open { overflow: hidden; }
 .model-list-row strong, .model-list-row .hint { display: block; }
 .model-list-row strong { font-size: .82rem; }
 .model-list-row .hint { margin-top: .1rem; font-size: .72rem; }
+.model-row-actions { display: flex; gap: .3rem; }
 .model-list-row .btn-pill { font-size: .72rem; min-height: 30px; }
+.model-delete-btn { border-color: #fecaca !important; color: #991b1b !important; }
+.model-delete-btn:hover { background: #fee2e2 !important; }
 .model-playground-result { white-space: pre-wrap; margin-top: .7rem; padding: .65rem; max-height: 280px; overflow: auto; background: #f4f4f5; border-radius: 8px; font-size: .8rem; line-height: 1.45; }
+.provider-config-card { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .55rem .6rem; border: 1px solid #e4e4e7; border-radius: 8px; }
+.provider-info h3 { margin: 0; font-size: .82rem; }
+.provider-info { min-width: 0; }
+.providers-list { display: grid; gap: .4rem; }
 
 @media (max-width: 560px) {
   .model-provider-card { display: block; }

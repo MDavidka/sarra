@@ -620,6 +620,26 @@ async def update_model(model_id: str, body: ModelConfigurationRequest):
     return {"ok": True, "message": "Model updated.", **(await _model_configuration())}
 
 
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a model from the catalog globally."""
+    from syte.model_catalog import configured_models
+
+    records = await configured_models()
+    found = False
+    for index, existing in enumerate(records):
+        if existing["id"] == model_id:
+            records.pop(index)
+            found = True
+            break
+    
+    if not found:
+        raise HTTPException(404, "Model not found.")
+    
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model deleted.", **(await _model_configuration())}
+
+
 @app.put("/api/models/default")
 async def save_default_model(body: ModelConfigurationRequest):
     """Compatibility endpoint: create or update the first catalog model."""

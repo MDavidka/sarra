@@ -3856,6 +3856,19 @@ async def _provider_completion(
             },
         )
     record_circuit_failure(model.get("provider") or "", base_model_id)
+    
+    # Enhance error message with provider context for better debugging
+    provider_name = str(model.get("provider") or "Unknown Provider").title()
+    model_name = str(model.get("model") or "Unknown Model")
+    if not error or error == "Provider request failed":
+        error = f"{provider_name} API request failed for model {model_name}. Check provider status and API key configuration."
+    elif "timeout" in error.lower():
+        error = f"{provider_name} request timeout. The provider took too long to respond. Retry in a moment or use a different model profile."
+    elif "connection" in error.lower():
+        error = f"Could not connect to {provider_name} API. Check your network connection and provider API endpoint."
+    elif "authentication" in error.lower() or "unauthorized" in error.lower() or "invalid" in error.lower():
+        error = f"{provider_name} API authentication failed. Verify your API key is correct and active in provider settings."
+    
     raise RuntimeError(error)
 
 

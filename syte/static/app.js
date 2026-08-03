@@ -1974,10 +1974,60 @@ async function syncDebugChatHistory(projectId) {
   }
 }
 
+async function renderDebugChatSessionHeader(metadata) {
+  if (!metadata) return;
+  const headerEl = document.getElementById('debug-chat-session-header');
+  if (!headerEl) return;
+  
+  const startDate = new Date(metadata.start_time);
+  const endDate = new Date(metadata.end_time);
+  const duration = Math.floor((endDate - startDate) / 1000);
+  const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+  
+  const statusColors = {
+    'running': 'status-running',
+    'complete': 'status-complete',
+    'stopped': 'status-stopped',
+    'error': 'status-error',
+  };
+  const statusLabel = {
+    'running': 'Running',
+    'complete': 'Complete',
+    'stopped': 'Stopped',
+    'error': 'Error',
+  };
+  
+  const statusClass = statusColors[metadata.status] || 'status-running';
+  const statusText = statusLabel[metadata.status] || 'Unknown';
+  const errorBadge = metadata.error_count > 0 ? `<span class="session-error-badge">${metadata.error_count}</span>` : '';
+  
+  headerEl.innerHTML = `
+    <div class="session-header-card">
+      <div class="session-status">
+        <span class="status-badge ${statusClass}">${statusText}</span>
+        <span class="session-duration">${durationStr}</span>
+        ${errorBadge}
+      </div>
+      <div class="session-time">${startDate.toLocaleTimeString()}</div>
+    </div>
+  `;
+  headerEl.classList.remove('hidden');
+}
+
 async function loadDebugChatHistory(projectId) {
   debugChatReplayingHistory = true;
   updateDebugChatControls();
   try {
+    // Load latest session metadata first
+    let metadata = null;
+    try {
+      const metadataRes = await api(`/projects/${projectId}/agent/activity/latest`);
+      metadata = metadataRes.metadata;
+      renderDebugChatSessionHeader(metadata);
+    } catch (e) {
+      console.log('[v0] Could not load session metadata:', e.message);
+    }
+    
     // Only the latest [sessionN] block is loaded on open; earlier sessions are
     // already saved and never re-fetched. New live sessions arrive over the stream.
     const res = await api(`/projects/${projectId}/agent/activity?since_id=0&limit=500&session=last`);
@@ -2924,7 +2974,7 @@ function showView(name) {
 let aiApiConfigured = { nano: false, havy: false, ultra: false };
 let catalogModels = [];
 let modelsTabData = null;
-let modelsSubtab = 'catalog';
+let modelsSubtab = 'models'; // 'models', 'playground', 'providers', 'add'
 
 const MODEL_THINKING_LABELS = {
   minimal: 'Minimal',
@@ -2995,9 +3045,14 @@ function renderModelGroups() {
       <div class="model-list">${models.map((model) => `
         <div class="model-list-row ${model.enabled ? '' : 'is-disabled'}">
           <div><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${esc(MODEL_THINKING_LABELS[model.thinking_level] || 'Medium')} · ${model.enabled ? 'Available to agents' : 'Disabled'}</span></div>
-          <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
-            <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
-          </button>
+          <div class="model-row-actions">
+            <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
+              <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
+            </button>
+            <button type="button" class="btn-pill btn-ghost model-delete-btn" data-model-id="${esc(model.id)}" title="Delete model">
+              <i data-lucide="trash-2"></i><span>Delete</span>
+            </button>
+          </div>
         </div>`).join('')}</div>
     </section>`).join('') : '<p class="hint">No models match this search.</p>';
   refreshIcons();
@@ -3011,33 +3066,84 @@ function renderModelsTab(data) {
   modelsTabData = data;
   catalogModels = models;
   syncCustomModelOptions(data.available_models);
-  const tabBar = `<div class="models-tabs" role="tablist" aria-label="Models"><button type="button" class="models-tab ${modelsSubtab === 'catalog' ? 'is-active' : ''}" data-models-subtab="catalog" role="tab" aria-selected="${modelsSubtab === 'catalog'}">Models</button><button type="button" class="models-tab ${modelsSubtab === 'playground' ? 'is-active' : ''}" data-models-subtab="playground" role="tab" aria-selected="${modelsSubtab === 'playground'}">Playground</button></div>`;
-  const providerCard = `
-    <div class="model-setup-card model-provider-card">
-      <div><h2>9Router provider</h2><p class="hint block">${provider.api_key_set ? 'API key saved. Enter a new value to replace it.' : 'Connect the provider before enabling models.'}</p><code class="model-provider-url">${esc(provider.api_base || '')}</code></div>
-      <div class="model-provider-key"><label for="model-provider-api-key">API key</label><input id="model-provider-api-key" type="password" autocomplete="off" placeholder="${provider.api_key_set ? 'Key saved — enter a new value to replace' : 'Paste API key'}"><button type="button" class="btn-pill btn-ghost" id="save-model-provider-btn"><i data-lucide="key-round"></i><span>${provider.api_key_set ? 'Update key' : 'Save key'}</span></button></div>
-    </div>`;
+  
+  // Segmented tabs: Models, Playground, Providers, Add Model
+  const tabBar = `<div class="models-tabs segmented-control" role="tablist" aria-label="Models">
+    <button type="button" class="models-tab ${modelsSubtab === 'models' ? 'is-active' : ''}" data-models-subtab="models" role="tab" aria-selected="${modelsSubtab === 'models'}">Models</button>
+    <button type="button" class="models-tab ${modelsSubtab === 'playground' ? 'is-active' : ''}" data-models-subtab="playground" role="tab" aria-selected="${modelsSubtab === 'playground'}">Playground</button>
+    <button type="button" class="models-tab ${modelsSubtab === 'providers' ? 'is-active' : ''}" data-models-subtab="providers" role="tab" aria-selected="${modelsSubtab === 'providers'}">Providers</button>
+    <button type="button" class="models-tab ${modelsSubtab === 'add' ? 'is-active' : ''}" data-models-subtab="add" role="tab" aria-selected="${modelsSubtab === 'add'}">Add Model</button>
+  </div>`;
+  
+  let tabContent = '';
+  
   if (modelsSubtab === 'playground') {
     const options = (data.available_models || []).map((model) => `<option value="${esc(model.profile)}">${esc(model.provider || '9Router')} · ${esc(model.name)}</option>`).join('');
-    content.innerHTML = `${tabBar}${providerCard}<div class="model-setup-card model-playground-card"><h2>Model playground</h2><p class="hint block">Send a short, tool-free prompt to an enabled model without starting an agent.</p><div class="form-group"><label for="playground-model">Model</label><select id="playground-model" ${options ? '' : 'disabled'}><option value="">${options ? 'Select a model' : 'Enable a model first'}</option>${options}</select></div><div class="form-group"><label for="playground-prompt">Prompt</label><textarea id="playground-prompt" rows="5" placeholder="Ask this model anything…" ${options ? '' : 'disabled'}></textarea></div><div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="run-model-playground-btn" ${options ? '' : 'disabled'}><i data-lucide="play"></i><span>Run prompt</span></button></div><div id="model-playground-result" class="model-playground-result hidden" aria-live="polite"></div></div>`;
-  } else {
-    content.innerHTML = `${tabBar}${providerCard}
-      <div class="model-setup-card">
-        <div class="model-catalog-head"><div><h2>Configured models</h2><p class="hint block">Enabled models are the only models available to Sarra’s built-in agent and the model API.</p></div><input id="model-search" type="search" placeholder="Search models or providers" aria-label="Search models"></div>
-        <div id="model-catalog-list"></div>
+    tabContent = `<div class="model-setup-card model-playground-card">
+      <h2>Model playground</h2>
+      <p class="hint block">Send a short, tool-free prompt to an enabled model without starting an agent.</p>
+      <div class="form-group"><label for="playground-model">Model</label><select id="playground-model" ${options ? '' : 'disabled'}><option value="">${options ? 'Select a model' : 'Enable a model first'}</option>${options}</select></div>
+      <div class="form-group"><label for="playground-prompt">Prompt</label><textarea id="playground-prompt" rows="5" placeholder="Ask this model anything…" ${options ? '' : 'disabled'}></textarea></div>
+      <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="run-model-playground-btn" ${options ? '' : 'disabled'}><i data-lucide="play"></i><span>Run prompt</span></button></div>
+      <div id="model-playground-result" class="model-playground-result hidden" aria-live="polite"></div>
+    </div>`;
+  } else if (modelsSubtab === 'providers') {
+    const providersList = (data.providers || []).map(p => `
+      <div class="provider-config-card">
+        <div class="provider-info">
+          <h3>${esc(p.name)}</h3>
+          <p class="hint">${p.enabled ? 'Enabled' : 'Disabled'}</p>
+        </div>
+        <button type="button" class="btn-pill ${p.enabled ? 'btn-ghost' : 'btn-primary'} provider-toggle-btn" data-provider-name="${esc(p.name)}">
+          <i data-lucide="${p.enabled ? 'check' : 'x'}"></i><span>${p.enabled ? 'Disable' : 'Enable'}</span>
+        </button>
       </div>
+    `).join('');
+    tabContent = `<div class="model-setup-card">
+      <h2>Configured providers</h2>
+      <p class="hint block">Manage which AI providers are available for model selection.</p>
+      <div class="providers-list">${providersList || '<p class="hint">No providers configured yet.</p>'}</div>
+    </div>`;
+  } else if (modelsSubtab === 'add') {
+    tabContent = `
       <div class="model-setup-card">
-        <h2>Add a model</h2><p class="hint block">A provider can contain a model name only once.</p>
-        <div class="form-row"><div class="form-group"><label for="model-provider">Provider</label><input id="model-provider" placeholder="e.g. DeepSeek" autocomplete="off"></div><div class="form-group"><label for="model-name">Model name</label><input id="model-name" placeholder="e.g. deepseek-r1" autocomplete="off"></div></div>
+        <h2>Add a model</h2>
+        <p class="hint block">A provider can contain a model name only once.</p>
+        <div class="form-row">
+          <div class="form-group"><label for="model-provider">Provider</label><input id="model-provider" placeholder="e.g. DeepSeek" autocomplete="off"></div>
+          <div class="form-group"><label for="model-name">Model name</label><input id="model-name" placeholder="e.g. deepseek-r1" autocomplete="off"></div>
+        </div>
         <div class="form-group"><label for="model-thinking">Default thinking</label>${modelThinkingSelect()}</div>
-        <label class="model-status"><input id="model-enabled" type="checkbox" checked> Enable this model for agents</label><div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="add-model-btn"><i data-lucide="plus"></i><span>Add model</span></button></div>
+        <label class="model-status"><input id="model-enabled" type="checkbox" checked> Enable this model for agents</label>
+        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="add-model-btn"><i data-lucide="plus"></i><span>Add model</span></button></div>
       </div>
       <div class="model-setup-card">
-        <h2>Bulk add models</h2><p class="hint block">Add model names for the same provider, one per line. Duplicate names are skipped.</p>
-        <div class="form-group"><label for="bulk-model-provider">Provider</label><input id="bulk-model-provider" placeholder="e.g. OpenAI" autocomplete="off"></div><div class="form-group"><label for="bulk-model-names">Model names</label><textarea id="bulk-model-names" rows="4" placeholder="gpt-4.1\ngpt-4.1-mini"></textarea></div><div class="svc-panel-actions"><button type="button" class="btn-pill btn-ghost" id="bulk-add-models-btn"><i data-lucide="list-plus"></i><span>Bulk add</span></button></div>
+        <h2>Bulk add models</h2>
+        <p class="hint block">Add model names for the same provider, one per line. Duplicate names are skipped.</p>
+        <div class="form-group"><label for="bulk-model-provider">Provider</label><input id="bulk-model-provider" placeholder="e.g. OpenAI" autocomplete="off"></div>
+        <div class="form-group"><label for="bulk-model-names">Model names</label><textarea id="bulk-model-names" rows="4" placeholder="gpt-4.1\ngpt-4.1-mini"></textarea></div>
+        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-ghost" id="bulk-add-models-btn"><i data-lucide="list-plus"></i><span>Bulk add</span></button></div>
       </div>`;
+  } else {
+    // Models tab (default)
+    tabContent = `
+      <div class="model-setup-card">
+        <div class="model-catalog-head">
+          <div><h2>Configured models</h2><p class="hint block">Enabled models are the only models available to Sarra's built-in agent and the model API.</p></div>
+          <input id="model-search" type="search" placeholder="Search models or providers" aria-label="Search models">
+        </div>
+        <div id="model-catalog-list"></div>
+      </div>`;
+  }
+  
+  content.innerHTML = `${tabBar}${tabContent}`;
+  
+  if (modelsSubtab === 'models') {
     renderModelGroups();
   }
+  
+  refreshIcons();
+}
   refreshIcons();
 }
 
@@ -4784,8 +4890,11 @@ document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDraw
 document.addEventListener('click', async (event) => {
   const modelsTabButton = event.target.closest('[data-models-subtab]');
   if (modelsTabButton && modelsTabData) {
-    modelsSubtab = modelsTabButton.dataset.modelsSubtab === 'playground' ? 'playground' : 'catalog';
-    renderModelsTab(modelsTabData);
+    const subTab = modelsTabButton.dataset.modelsSubtab;
+    if (['models', 'playground', 'providers', 'add'].includes(subTab)) {
+      modelsSubtab = subTab;
+      renderModelsTab(modelsTabData);
+    }
     return;
   }
   const providerButton = event.target.closest('#save-model-provider-btn');
@@ -4793,8 +4902,9 @@ document.addEventListener('click', async (event) => {
   const bulkButton = event.target.closest('#bulk-add-models-btn');
   const toggleButton = event.target.closest('.model-toggle-btn');
   const playgroundButton = event.target.closest('#run-model-playground-btn');
-  if (!providerButton && !addButton && !bulkButton && !toggleButton && !playgroundButton) return;
-  const button = providerButton || addButton || bulkButton || toggleButton || playgroundButton;
+  const deleteButton = event.target.closest('.model-delete-btn');
+  if (!providerButton && !addButton && !bulkButton && !toggleButton && !playgroundButton && !deleteButton) return;
+  const button = providerButton || addButton || bulkButton || toggleButton || playgroundButton || deleteButton;
   button.disabled = true;
   try {
     if (providerButton) {
@@ -4831,6 +4941,16 @@ document.addEventListener('click', async (event) => {
       if (!model) throw new Error('Model could not be found. Refresh and try again.');
       await api(`/models/${encodeURIComponent(model.id)}`, { method: 'PUT', body: JSON.stringify({ model_name: model.name, provider: model.provider || '9Router', thinking_levels: model.thinking_levels, thinking_level: model.thinking_level || 'medium', enabled: !model.enabled }) });
       toast(`Model ${model.enabled ? 'disabled' : 'enabled'}.`);
+    } else if (deleteButton) {
+      const model = catalogModels.find((item) => item.id === deleteButton.dataset.modelId);
+      if (!model) throw new Error('Model could not be found. Refresh and try again.');
+      const confirmed = confirm(`Delete model "${model.name}"? This cannot be undone.`);
+      if (!confirmed) {
+        button.disabled = false;
+        return;
+      }
+      await api(`/models/${encodeURIComponent(model.id)}`, { method: 'DELETE' });
+      toast('Model deleted.');
     } else if (playgroundButton) {
       const profile = document.getElementById('playground-model')?.value || '';
       const prompt = document.getElementById('playground-prompt')?.value?.trim() || '';

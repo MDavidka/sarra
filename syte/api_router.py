@@ -605,6 +605,69 @@ async def api_agent_activity_stream(
     return sse_stream_response(request, _gen())
 
 
+@router.get("/agent_activity/latest")
+async def api_agent_activity_latest(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    """Get metadata for the latest agent session with error count.
+    
+    Returns session start/end times, status (running/complete/error/stopped), 
+    and error count for the most recent session.
+    """
+    from syte.agent_activity import get_latest_session_metadata, list_agent_events
+    
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    
+    metadata = await get_latest_session_metadata(uuid)
+    if not metadata:
+        return {
+            "ok": True,
+            "uuid": uuid,
+            "metadata": None,
+            "events": [],
+        }
+    
+    # Load events for latest session
+    events = await list_agent_events(uuid, session="last", limit=500)
+    
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "metadata": metadata,
+        "events": events,
+    }
+
+
+@router.get("/agent_state")
+async def api_agent_state(
+    uuid: str = Query(...),
+    _token: dict = Depends(verify_api_token),
+):
+    """Get current agent state: idle, starting, running, stopping, stopped, error.
+    
+    Used by the UI to poll during control operations (stop, restart) to show real-time
+    status feedback instead of just a loading spinner.
+    """
+    from syte.cloud_agent import get_agent_status
+    
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", "Project not found")
+    
+    status = await get_agent_status(uuid)
+    
+    return {
+        "ok": True,
+        "uuid": uuid,
+        "status": status.get("status", "unknown"),
+        "running": status.get("status") == "running",
+        "last_error": project.get("agent_last_error") or None,
+    }
+
+
 @router.get("/agent_models/stream")
 async def api_agent_models_stream(request: Request, _token: dict = Depends(verify_api_token)):
     """SSE stream of available AI models by name.
