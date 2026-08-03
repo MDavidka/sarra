@@ -1,7 +1,10 @@
 import asyncio
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 from syte.caddy_routes import (
     host_zone,
@@ -16,16 +19,28 @@ from syte.preview_domains import preview_frame_ancestors_csp
 
 CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
 CADDY_DROPIN_FILE = CADDY_DROPIN_DIR / "syte-cloudflare.conf"
+_CADDY_APPLY_LOCK = asyncio.Lock()
 
 
-def _run(cmd: list[str], timeout: float = 60.0) -> tuple[int, str]:
+def _run(
+    cmd: list[str],
+    timeout: float = 60.0,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str]:
     """Run a command, converting every failure into an inspectable result.
 
     Any uncaught OSError here would surface as an opaque HTTP 500 in the GUI,
     and a missing timeout could hang an operator request indefinitely.
     """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=env,
+        )
         output = (result.stdout or "") + (result.stderr or "")
         return result.returncode, output.strip()
     except FileNotFoundError:
@@ -85,7 +100,7 @@ def ensure_caddy_cloudflare_plugin() -> tuple[bool, str]:
         return False, "Caddy not installed."
     if caddy_has_cloudflare_plugin():
         return True, "Caddy Cloudflare DNS plugin is installed."
-    code, out = _run(["caddy", "add-package", "github.com/caddy-dns/cloudflare"])
+    code, _out = _run(["caddy", "add-package", "github.com/caddy-dns/cloudflare"])
     if code == 0 and caddy_has_cloudflare_plugin():
         return True, "Installed Caddy Cloudflare DNS plugin."
     return (
@@ -252,27 +267,65 @@ async def async_generate_caddyfile() -> str:
     return "\n".join(lines)
 
 
+def _caddy_config_command(action: str, config_path: Path) -> list[str]:
+    return [
+        "caddy",
+        action,
+        "--config",
+        str(config_path),
+        "--adapter",
+        "caddyfile",
+    ]
+
+
+def _caddy_environment(env_path: str | None) -> dict[str, str] | None:
+    """Load Caddy placeholders without exposing secret values in command arguments."""
+    if not env_path:
+        return None
+    environment = os.environ.copy()
+    for line in Path(env_path).read_text().splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        environment[key] = value
+    return environment
+
+
+def _restore_caddy_config(
+    target: Path,
+    previous_content: bytes | None,
+    previous_stat: os.stat_result | None,
+) -> str:
+    """Restore the pre-update file after every activation path has failed."""
+    if previous_content is None:
+        target.unlink(missing_ok=True)
+        return "the newly created config was removed"
+
+    rollback = target.with_name(f".{target.name}.{uuid4().hex}.rollback")
+    try:
+        rollback.write_bytes(previous_content)
+        if previous_stat is not None:
+            os.chown(rollback, previous_stat.st_uid, previous_stat.st_gid)
+            rollback.chmod(stat.S_IMODE(previous_stat.st_mode))
+        rollback.replace(target)
+    finally:
+        rollback.unlink(missing_ok=True)
+    return "the previous config was restored"
+
+
 async def apply_proxy_config() -> tuple[bool, str]:
+    """Validate, atomically install, and activate a complete Caddy config."""
+    async with _CADDY_APPLY_LOCK:
+        return await _apply_proxy_config_locked()
+
+
+async def _apply_proxy_config_locked() -> tuple[bool, str]:
     cf_messages = await apply_cloudflare_integration()
     config = await async_generate_caddyfile()
     config_path = settings.caddy_config_path
     fallback = settings.data_dir / "Caddyfile"
     env_path = await _write_caddy_env()
-
-    written = None
-    write_errors: list[str] = []
-    for target in (config_path, fallback):
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(config)
-            written = target
-            break
-        except OSError as exc:
-            write_errors.append(f"{target}: {exc}")
-            continue
-    if written is None:
-        detail = "; ".join(write_errors) or "permission denied"
-        return False, f"Could not write Caddy configuration ({detail})."
+    caddy_env = _caddy_environment(env_path)
 
     extra = ""
     if env_path:
@@ -281,32 +334,113 @@ async def apply_proxy_config() -> tuple[bool, str]:
         extra += " " + " ".join(cf_messages)
 
     if not shutil.which("caddy"):
-        return True, (
-            f"Caddy config saved to {written}. "
-            "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
+        return False, (
+            "Caddy is not installed; the active proxy configuration was not changed. "
+            "Install Caddy before publishing HTTPS routes." + extra
         )
 
-    code, out = await asyncio.to_thread(_run, ["caddy", "validate", "--config", str(written)])
-    if code != 0:
-        return False, f"Invalid Caddy config: {out or 'validation failed'}"
+    written: Path | None = None
+    previous_content: bytes | None = None
+    previous_stat: os.stat_result | None = None
+    write_errors: list[str] = []
+    for target in (config_path, fallback):
+        candidate = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_text(config)
+            if target.exists():
+                previous_content = target.read_bytes()
+                previous_stat = target.stat()
+                os.chown(candidate, previous_stat.st_uid, previous_stat.st_gid)
+                candidate.chmod(stat.S_IMODE(previous_stat.st_mode))
+            else:
+                previous_content = None
+                previous_stat = None
 
-    for cmd in (
-        ["systemctl", "restart", "caddy"],
-        ["systemctl", "reload", "caddy"],
-        ["caddy", "reload", "--config", str(written)],
-    ):
-        code, out = await asyncio.to_thread(_run, cmd)
-        if code == 0:
-            caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
-            if not caddy_ok:
-                return False, f"Caddy command succeeded but Caddy is not active: {caddy_message}{extra}"
+            code, out = await asyncio.to_thread(
+                _run,
+                _caddy_config_command("validate", candidate),
+                60.0,
+                caddy_env,
+            )
+            if code != 0:
+                return False, (
+                    "Invalid Caddy config; the active configuration was preserved: "
+                    f"{out or 'validation failed'}"
+                )
+
+            candidate.replace(target)
+            written = target
+            break
+        except OSError as exc:
+            write_errors.append(f"{target}: {exc}")
+        finally:
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    if written is None:
+        detail = "; ".join(write_errors) or "permission denied"
+        return False, f"Could not write Caddy configuration ({detail})."
+
+    reload_command = _caddy_config_command("reload", written)
+    code, out = await asyncio.to_thread(
+        _run, reload_command, 60.0, caddy_env
+    )
+    command_errors = [
+        f"{' '.join(reload_command)}: {out or f'exit {code}'}"
+    ] if code != 0 else []
+    if code == 0:
+        return True, "Proxy configuration applied (production + preview SSL)." + extra
+
+    if written == config_path:
+        recovery_commands = (
+            ["systemctl", "reload", "caddy"],
+            ["systemctl", "restart", "caddy"],
+        )
+    else:
+        recovery_commands = (_caddy_config_command("start", written),)
+
+    for command in recovery_commands:
+        command_env = caddy_env if command[0] == "caddy" else None
+        recovery_code, recovery_out = await asyncio.to_thread(
+            _run, command, 60.0, command_env
+        )
+        if recovery_code != 0:
+            command_errors.append(
+                f"{' '.join(command)}: {recovery_out or f'exit {recovery_code}'}"
+            )
+            continue
+
+        if command[1] == "start":
             return True, "Proxy configuration applied (production + preview SSL)." + extra
 
-    caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
-    if not caddy_ok:
-        return False, f"Caddy configuration saved but Caddy could not be started: {caddy_message}{extra}"
-    return True, (
-        f"Caddy config saved to {written}; {caddy_message}" + extra
+        # A systemd command may use a service-specific config path. Confirm the
+        # exact file written above is what the running Caddy instance accepts.
+        retry_code, retry_out = await asyncio.to_thread(
+            _run, reload_command, 60.0, caddy_env
+        )
+        if retry_code == 0:
+            return True, "Proxy configuration applied (production + preview SSL)." + extra
+        command_errors.append(
+            f"post-{' '.join(command)} {' '.join(reload_command)}: "
+            f"{retry_out or f'exit {retry_code}'}"
+        )
+
+    try:
+        rollback_message = _restore_caddy_config(
+            written,
+            previous_content,
+            previous_stat,
+        )
+    except OSError as error:
+        rollback_message = f"rollback also failed: {error}"
+
+    detail = "; ".join(command_errors)
+    return False, (
+        "Caddy rejected every activation attempt; "
+        f"{rollback_message} ({detail}).{extra}"
     )
 
 

@@ -773,13 +773,48 @@ async def _syra_action(action: str, operation: Any) -> dict[str, Any]:
         }
 
 
-async def _deploy_litellm_public_proxy_from(lifecycle: Any) -> dict[str, Any]:
-    """Run a LiteLLM lifecycle call, then publish its Caddy route."""
-    return await _deploy_litellm_public_proxy(await lifecycle())
+async def _run_litellm_after_gui_publish(
+    lifecycle: Any,
+    *,
+    action: str,
+    preflight_running: bool | None = False,
+) -> dict[str, Any]:
+    """Publish the combined host before running a LiteLLM lifecycle action."""
+    proxy_ok, proxy_message = await apply_proxy_config()
+    proxy_fields = {
+        "proxy_configured": proxy_ok,
+        "proxy_message": proxy_message,
+        "gui_published": proxy_ok,
+        "web_gui_url": f"https://{LITELLM_PUBLIC_HOST}/",
+    }
+    if not proxy_ok:
+        return {
+            "ok": False,
+            "running": preflight_running,
+            "message": f"Caddy route failed: {proxy_message}",
+            **proxy_fields,
+        }
+
+    try:
+        result = await lifecycle()
+    except Exception as error:
+        logger.exception("LiteLLM %s failed after publishing the Syte GUI", action)
+        return {
+            "ok": False,
+            "running": preflight_running,
+            "message": (
+                f"LiteLLM {action} failed — {type(error).__name__}: {error}. "
+                "The Syte GUI route remains published."
+            ),
+            **proxy_fields,
+        }
+
+    result.update(proxy_fields)
+    return result
 
 
 async def _start_syra_stack() -> dict[str, Any]:
-    """Prepare the AlmaLinux host, start LiteLLM, and publish the combined host."""
+    """Prepare the host, publish the Syte GUI, then start LiteLLM."""
     async with _SYRA_START_LOCK:
         return await _start_syra_stack_locked()
 
@@ -795,51 +830,62 @@ async def _start_syra_stack_locked() -> dict[str, Any]:
             "running": False,
             "message": host_setup["message"],
             "host_setup": host_setup,
+            "proxy_configured": False,
+            "proxy_message": "Host preparation failed before Caddy route publication.",
+            "gui_published": False,
+            "web_gui_url": f"https://{LITELLM_PUBLIC_HOST}/",
         }
-    result = await _deploy_litellm_public_proxy_from(start_litellm)
+    result = await _run_litellm_after_gui_publish(start_litellm, action="start")
     result["host_setup"] = host_setup
     return result
 
 
+async def _litellm_running_or_unknown(status_call: Any) -> bool | None:
+    """Read current LiteLLM state without turning status errors into false state."""
+    try:
+        status = await status_call()
+    except Exception:
+        logger.exception("Could not read LiteLLM status before restart")
+        return None
+    running = status.get("running")
+    return running if isinstance(running, bool) else None
+
+
 async def _restart_syra_stack() -> dict[str, Any]:
-    """Prepare the host, restart LiteLLM, and publish the combined host."""
+    """Prepare the host, publish the Syte GUI, then restart LiteLLM."""
     async with _SYRA_START_LOCK:
         return await _restart_syra_stack_locked()
 
 
 async def _restart_syra_stack_locked() -> dict[str, Any]:
     from syte.host_setup import prepare_syra_host
-    from syte.litellm_manager import restart_litellm
+    from syte.litellm_manager import litellm_status, restart_litellm
 
+    preflight_running = await _litellm_running_or_unknown(litellm_status)
     host_setup = await prepare_syra_host()
     if not host_setup["ok"]:
         return {
             "ok": False,
-            "running": False,
+            "running": preflight_running,
             "message": host_setup["message"],
             "host_setup": host_setup,
+            "proxy_configured": False,
+            "proxy_message": "Host preparation failed before Caddy route publication.",
+            "gui_published": False,
+            "web_gui_url": f"https://{LITELLM_PUBLIC_HOST}/",
         }
-    result = await _deploy_litellm_public_proxy_from(restart_litellm)
+    result = await _run_litellm_after_gui_publish(
+        restart_litellm,
+        action="restart",
+        preflight_running=preflight_running,
+    )
     result["host_setup"] = host_setup
-    return result
-
-
-async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]:
-    """Apply Caddy's combined GUI/API public route after a LiteLLM lifecycle action."""
-    if not result.get("ok"):
-        return result
-    proxy_ok, proxy_message = await apply_proxy_config()
-    result["proxy_configured"] = proxy_ok
-    result["proxy_message"] = proxy_message
-    if not proxy_ok:
-        result["ok"] = False
-        result["message"] = f"{result.get('message', 'Action completed.')} Caddy route failed: {proxy_message}"
     return result
 
 
 @app.post("/api/settings/syra/start")
 async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Prepare the AlmaLinux host, start LiteLLM, and publish https://api.sycord.site/."""
+    """Prepare the host, publish the GUI, then start LiteLLM."""
     return await _syra_action("start", _start_syra_stack)
 
 
@@ -853,7 +899,7 @@ async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_sess
 
 @app.post("/api/settings/syra/restart")
 async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Prepare the AlmaLinux host, restart LiteLLM, and publish https://api.sycord.site/."""
+    """Prepare the host, publish the GUI, then restart LiteLLM."""
     return await _syra_action("restart", _restart_syra_stack)
 
 
