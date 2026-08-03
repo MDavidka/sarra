@@ -726,10 +726,13 @@ async def resolve_profile_api_key(profile: str) -> dict[str, str]:
     secret_env = spec["secret_env"]
     from_settings = (await get_setting(setting_key, "")).strip()
     from_env = (os.environ.get(secret_env) or "").strip()
-    if profile == "9router" and (await get_setting("agent_9router_enabled", "0")).strip() != "1":
-        # A disabled custom model must never be selected by the runtime.
-        from_settings = ""
-        from_env = ""
+    if profile == "9router":
+        from syte.model_catalog import configured_models
+
+        if not any(row["enabled"] for row in await configured_models()):
+            # A disabled custom model must never be selected by the runtime.
+            from_settings = ""
+            from_env = ""
     # Legacy shared OpenRouter setting (pre-split ultra key).
     legacy = ""
     if profile == "syra-ultra" and not from_settings:
@@ -796,15 +799,16 @@ async def provider_key_status() -> list[dict[str, str | bool]]:
 
 async def bridge_settings() -> dict[str, Any]:
     from syte.ai_providers import aliyun_api_base_for_key
+    from syte.model_catalog import configured_models, model_profile
 
     await migrate_provider_lineup_keys()
     default_profile = (
         await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
     ).strip() or DEFAULT_PROFILE
-    if default_profile not in PROFILE_PROVIDERS:
-        default_profile = DEFAULT_PROFILE
     resolved_keys = await asyncio.gather(*[resolve_profile_api_key(name) for name in PROFILE_ORDER])
-    profiles: dict[str, dict[str, str | int | float]] = {}
+    profiles: dict[str, dict[str, Any]] = {}
+    custom_models = await configured_models()
+    enabled_custom_models = [row for row in custom_models if row["enabled"]]
     for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
         entry: dict[str, str | int | float] = {
@@ -821,10 +825,25 @@ async def bridge_settings() -> dict[str, Any]:
         if name == "syra-ultra" and resolved["api_key"]:
             entry["api_base"] = aliyun_api_base_for_key(str(resolved["api_key"]))
         if name == "9router":
-            entry["model"] = (await get_setting("agent_9router_model_name", "")).strip()
-            entry["enabled"] = (await get_setting("agent_9router_enabled", "0")).strip() == "1"
-            entry["thinking_levels"] = (await get_setting("agent_9router_thinking_levels", "1,2,3,4,5")).strip()
+            primary = enabled_custom_models[0] if enabled_custom_models else None
+            entry["model"] = primary["name"] if primary else ""
+            entry["enabled"] = bool(primary)
+            entry["thinking_levels"] = ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5"
         profiles[name] = entry
+    # Each enabled catalog record is a selectable agent profile. Disabled models
+    # are deliberately omitted so stale requests cannot route to them.
+    base_custom = profiles["9router"]
+    for row in enabled_custom_models:
+        profile = model_profile(row["id"])
+        profiles[profile] = {
+            **base_custom,
+            "profile": profile,
+            "model": row["name"],
+            "enabled": True,
+            "thinking_levels": ",".join(map(str, row["thinking_levels"])),
+        }
+    if default_profile not in profiles:
+        default_profile = DEFAULT_PROFILE
     active = profiles[default_profile]
     return {
         "default_profile": default_profile,
@@ -859,10 +878,15 @@ async def bridge_settings() -> dict[str, Any]:
 
 
 def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any]:
-    resolved = profile if profile in PROFILE_PROVIDERS else DEFAULT_PROFILE
-    spec = bridge["profiles"].get(resolved, bridge["profiles"][DEFAULT_PROFILE])
+    resolved = profile if profile in bridge["profiles"] else DEFAULT_PROFILE
+    if profile.startswith("9router:") and profile not in bridge["profiles"]:
+        # Do not fall through to a default provider if a catalog model was
+        # disabled or removed after a project selected it.
+        spec = {**bridge["profiles"]["9router"], "profile": profile, "model": "", "api_key": ""}
+    else:
+        spec = bridge["profiles"].get(resolved, bridge["profiles"][DEFAULT_PROFILE])
     meta: dict[str, Any] = {
-        "profile": resolved,
+        "profile": str(spec.get("profile") or resolved),
         "provider": spec["provider"],
         "label": spec.get("label") or "",
         "provider_label": spec.get("label") or "",
@@ -878,6 +902,14 @@ def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any
         if key in spec and spec[key] is not None:
             meta[key] = int(spec[key])
     return meta
+
+
+async def is_available_model_profile(profile: str) -> bool:
+    """Whether a static or enabled catalog profile may be selected by an agent."""
+    if profile in PROFILE_PROVIDERS and profile != "9router":
+        return True
+    bridge = await bridge_settings()
+    return profile in bridge["profiles"] and bool(bridge["profiles"][profile].get("enabled", True))
 
 
 async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
@@ -1720,7 +1752,7 @@ async def update_agent_settings(
 ) -> dict[str, Any]:
     if model_profile is not None:
         profile = model_profile.strip() or DEFAULT_PROFILE
-        if profile not in PROFILE_PROVIDERS:
+        if not await is_available_model_profile(profile):
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
         project = await get_project(project_id)
@@ -6002,7 +6034,7 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
     try:
         if model_profile:
             profile = model_profile.strip() or DEFAULT_PROFILE
-            if profile not in PROFILE_PROVIDERS:
+            if not await is_available_model_profile(profile):
                 raise ValueError(f"Unknown model profile: {profile}")
             project = {**project, "agent_model_profile": profile}
         else:
