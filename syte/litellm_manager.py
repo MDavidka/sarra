@@ -30,7 +30,11 @@ from syte.litellm_config import (
 logger = logging.getLogger(__name__)
 
 LITELLM_CONTAINER_NAME = "syte-litellm"
-LITELLM_IMAGE = "ghcr.io/berriai/litellm:main-latest"
+# Pin the runtime image so the Prisma client and migration catalog remain
+# compatible with the persistent LiteLLM PostgreSQL database.
+LITELLM_IMAGE = "docker.litellm.ai/berriai/litellm:1.92.1"
+LITELLM_PRISMA_BIN = "/opt/prisma/binaries/node_modules/.bin/prisma"
+LITELLM_SCHEMA_PATH = "/app/litellm-proxy-extras/schema.prisma"
 LITELLM_DEFAULT_PORT = LITELLM_HOST_PORT
 LITELLM_DATA_DIR = "/var/lib/syte/litellm"
 LITELLM_DB_CONTAINER_NAME = "syte-litellm-db"
@@ -77,11 +81,11 @@ async def _run_docker(args: list[str], timeout: float = 30.0) -> tuple[int, str]
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         output = stdout.decode("utf-8", errors="replace").strip()
         return proc.returncode or 0, output
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return 1, f"Docker command timed out: {' '.join(args)}"
     except FileNotFoundError:
         return 1, "Docker is not installed or not in PATH"
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         return 1, f"Docker command failed: {e}"
 
 
@@ -198,6 +202,30 @@ async def litellm_is_loopback_bound() -> bool:
     )
 
 
+async def _run_litellm_migrations(
+    database_url: str,
+    database_network: str = "",
+) -> tuple[bool, str]:
+    """Apply LiteLLM's bundled Prisma migrations before the proxy starts."""
+    args = ["run", "--rm"]
+    if database_network:
+        args.extend(["--network", database_network])
+    args.extend([
+        "--entrypoint", LITELLM_PRISMA_BIN,
+        "-e", f"DATABASE_URL={database_url}",
+        LITELLM_IMAGE,
+        "migrate", "deploy",
+        "--schema", LITELLM_SCHEMA_PATH,
+    ])
+    exit_code, output = await _run_docker(args, timeout=300.0)
+    if exit_code != 0:
+        return False, (
+            "LiteLLM PostgreSQL migrations failed. The proxy was not started; "
+            f"repair the database and retry Start. {output or 'no migration output'}"
+        )
+    return True, "LiteLLM PostgreSQL migrations applied."
+
+
 async def litellm_is_postgres_configured(expected_database_url: str = "") -> bool:
     """Return whether the running LiteLLM container uses the expected PostgreSQL URL."""
     exit_code, env_output = await _run_docker([
@@ -293,7 +321,7 @@ async def _ensure_litellm_database() -> tuple[bool, str, str, str]:
 
 
 async def _wait_for_litellm_health() -> dict[str, Any]:
-    """Wait for LiteLLM migrations and HTTP readiness after container start."""
+    """Wait for LiteLLM's readiness endpoint after migrations and container start."""
     last_health: dict[str, Any] = {
         "ok": False,
         "healthy": False,
@@ -358,31 +386,13 @@ async def start_litellm(
 
     rebound_legacy_container = False
     if status["running"]:
-        if (
-            await litellm_is_loopback_bound()
-            and await litellm_is_postgres_configured(database_url)
-        ):
-            health = await _wait_for_litellm_health()
-            if not health.get("healthy"):
-                return {
-                    "ok": False,
-                    **status,
-                    "health": health,
-                    "message": f"LiteLLM is running but not ready: {health.get('message', 'health check failed')}",
-                    "preview_migration": preview_migration,
-                }
-            return {
-                "ok": True,
-                **status,
-                "health": health,
-                "message": "LiteLLM is already running on the private loopback port",
-                "preview_migration": preview_migration,
-            }
+        # Do not migrate a database while the proxy is querying it. Stop and
+        # remove every running instance before applying Prisma migrations.
         stop_code, stop_output = await _run_docker(["stop", LITELLM_CONTAINER_NAME])
         if stop_code != 0:
             return {
                 "ok": False,
-                "message": f"Failed to stop publicly exposed LiteLLM container: {stop_output}",
+                "message": f"Failed to stop LiteLLM before PostgreSQL migrations: {stop_output}",
                 "running": True,
                 "preview_migration": preview_migration,
             }
@@ -390,11 +400,23 @@ async def start_litellm(
         if remove_code != 0:
             return {
                 "ok": False,
-                "message": f"Failed to remove legacy LiteLLM container: {remove_output}",
+                "message": f"Failed to remove LiteLLM before PostgreSQL migrations: {remove_output}",
                 "running": False,
                 "preview_migration": preview_migration,
             }
         rebound_legacy_container = True
+
+    migrations_ok, migrations_message = await _run_litellm_migrations(
+        database_url, database_network
+    )
+    if not migrations_ok:
+        return {
+            "ok": False,
+            "message": migrations_message,
+            "running": False,
+            "migration_message": migrations_message,
+            "preview_migration": preview_migration,
+        }
 
     # Get configuration from settings if not provided
     if master_key is None:
@@ -441,6 +463,7 @@ async def start_litellm(
         "-e", f"LITELLM_MASTER_KEY={master_key}",
         "-e", f"LITELLM_SALT_KEY={salt_key}",
         "-e", f"DATABASE_URL={database_url}",
+        "-e", "DISABLE_SCHEMA_UPDATE=true",
         "--restart", "unless-stopped",
         LITELLM_IMAGE,
     ])
@@ -473,11 +496,12 @@ async def start_litellm(
             **status,
             "health": health,
             "message": (
-                f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}"
+                f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}; {migrations_message}"
                 if rebound_legacy_container
-                else f"LiteLLM started successfully; public API: {LITELLM_PUBLIC_API_URL}"
+                else f"LiteLLM started successfully; public API: {LITELLM_PUBLIC_API_URL}; {migrations_message}"
             ),
             "preview_migration": preview_migration,
+            "migration_message": migrations_message,
         }
     else:
         return {
@@ -587,7 +611,7 @@ async def litellm_models() -> dict[str, Any]:
                     "message": f"Failed to fetch models: HTTP {resp.status_code}",
                     "models": [],
                 }
-    except Exception as e:
+    except (httpx.HTTPError, ValueError) as e:
         return {
             "ok": False,
             "message": f"Error fetching models: {e}",
@@ -609,7 +633,7 @@ async def litellm_health() -> dict[str, Any]:
     
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{LITELLM_INTERNAL_ORIGIN}/health")
+            resp = await client.get(f"{LITELLM_INTERNAL_ORIGIN}/health/readiness")
             
             if resp.status_code == 200:
                 return {
@@ -623,7 +647,7 @@ async def litellm_health() -> dict[str, Any]:
                     "healthy": False,
                     "message": f"Health check failed: HTTP {resp.status_code}",
                 }
-    except Exception as e:
+    except httpx.HTTPError as e:
         return {
             "ok": False,
             "healthy": False,
