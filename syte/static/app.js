@@ -3144,8 +3144,6 @@ function renderModelsTab(data) {
   
   refreshIcons();
 }
-  refreshIcons();
-}
 
 async function loadModelsTab() {
   const content = document.getElementById('models-content');
