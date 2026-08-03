@@ -912,6 +912,15 @@ async def is_available_model_profile(profile: str) -> bool:
     return profile in bridge["profiles"] and bool(bridge["profiles"][profile].get("enabled", True))
 
 
+async def is_catalog_model_profile(profile: str) -> bool:
+    """Whether an enabled entry from the user-managed Models tab was selected."""
+    candidate = (profile or "").strip()
+    if not candidate.startswith("9router:"):
+        return False
+    bridge = await bridge_settings()
+    return bool(bridge["profiles"].get(candidate, {}).get("enabled"))
+
+
 async def selected_model_metadata(project: dict[str, Any]) -> dict[str, Any]:
     bridge = await bridge_settings()
     profile = str(project.get("agent_model_profile") or bridge["default_profile"])

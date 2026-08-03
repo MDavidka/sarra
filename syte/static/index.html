@@ -866,13 +866,11 @@
                 </div>
               </div>
               <div class="form-group">
-                <label for="new-feature-model">Model profile</label>
+                <label for="new-feature-model">Built-in agent model</label>
                 <select id="new-feature-model" class="debug-chat-profile" aria-label="Model profile for new feature agent">
-                  <option value="auto" selected>auto</option>
-                  <option value="syra-nano">Go · Gemini 2.5 Flash</option>
-                  <option value="syra-ultra">Air · Aliyun Qwen</option>
-                  <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
+                  <option value="" selected disabled>Select a model from the Models tab</option>
                 </select>
+                <span class="hint">Only enabled models configured in the Models tab can run this built-in agent.</span>
               </div>
               <div class="form-group">
                 <label for="new-feature-input">Agent instruction</label>

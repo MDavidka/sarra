@@ -10,6 +10,18 @@ from syte.database import get_setting
 
 
 MODEL_CATALOG_SETTING = "agent_9router_models"
+DEFAULT_MODEL_PROVIDER = "9Router"
+
+
+def normalize_provider(value: str) -> str:
+    """Return a comparison-safe provider name."""
+    return " ".join((value or "").split()).casefold()
+
+
+def inferred_provider(name: str) -> str:
+    """Keep older ``provider/model`` entries grouped usefully in the UI."""
+    prefix = (name or "").strip().split("/", 1)[0].strip()
+    return prefix.title() if prefix else DEFAULT_MODEL_PROVIDER
 
 
 def model_profile(model_id: str) -> str:
@@ -17,9 +29,10 @@ def model_profile(model_id: str) -> str:
     return f"9router:{model_id}"
 
 
-def new_model_id(name: str) -> str:
+def new_model_id(name: str, provider: str = "") -> str:
     """Create a stable, opaque identifier without exposing model names in IDs."""
-    return hashlib.sha256(name.strip().encode()).hexdigest()[:16]
+    source = f"{normalize_provider(provider)}\0{name.strip().casefold()}"
+    return hashlib.sha256(source.encode()).hexdigest()[:16]
 
 
 def _levels(value: Any) -> list[int]:
@@ -47,7 +60,9 @@ async def configured_models() -> list[dict[str, Any]]:
                 rows.append({
                     "id": model_id,
                     "name": name,
+                    "provider": str(item.get("provider") or inferred_provider(name)).strip(),
                     "thinking_levels": _levels(item.get("thinking_levels")),
+                    "thinking_level": str(item.get("thinking_level") or "medium").strip().lower(),
                     "enabled": bool(item.get("enabled")),
                 })
     if rows:
@@ -61,7 +76,9 @@ async def configured_models() -> list[dict[str, Any]]:
     return [{
         "id": "legacy",
         "name": legacy_name,
+        "provider": inferred_provider(legacy_name),
         "thinking_levels": _levels(legacy_levels),
+        "thinking_level": "medium",
         "enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
     }]
 
@@ -72,5 +89,7 @@ def enabled_model_options(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "id": row["id"],
         "profile": model_profile(row["id"]),
         "name": row["name"],
+        "provider": row.get("provider") or inferred_provider(row["name"]),
         "thinking_levels": list(row["thinking_levels"]),
+        "thinking_level": row.get("thinking_level") or "medium",
     } for row in models if row.get("enabled")]

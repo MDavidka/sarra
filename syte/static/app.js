@@ -2923,10 +2923,21 @@ function showView(name) {
 
 let aiApiConfigured = { nano: false, havy: false, ultra: false };
 let catalogModels = [];
+let modelsTabData = null;
+let modelsSubtab = 'catalog';
+
+const MODEL_THINKING_LABELS = {
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  max: 'Max',
+  xhigh: 'Xhigh',
+};
 
 function syncCustomModelOptions(models) {
   const available = Array.isArray(models) ? models : [];
-  document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile, #new-feature-model').forEach((select) => {
+  document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile').forEach((select) => {
     const previous = select.value;
     select.querySelectorAll('option[data-custom-model]').forEach((option) => option.remove());
     available.forEach((model) => {
@@ -2940,6 +2951,18 @@ function syncCustomModelOptions(models) {
       select.value = select.querySelector('option[value="auto"]') ? 'auto' : 'syra-nano';
     }
   });
+  const builtInAgent = document.getElementById('new-feature-model');
+  if (builtInAgent) {
+    const previous = builtInAgent.value;
+    builtInAgent.innerHTML = '<option value="" disabled selected>Select a model from the Models tab</option>';
+    available.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model.profile;
+      option.textContent = `${model.provider || '9Router'} · ${model.name}`;
+      builtInAgent.appendChild(option);
+    });
+    if (available.some((model) => model.profile === previous)) builtInAgent.value = previous;
+  }
 }
 
 async function loadAvailableModels() {
@@ -2949,9 +2972,35 @@ async function loadAvailableModels() {
   } catch { /* provider setup may not be complete yet */ }
 }
 
-function modelThinkingCheckbox(level, selected) {
-  const labels = { 1: 'Instant', 2: 'Fast', 3: 'Balanced', 4: 'Deep', 5: 'Max' };
-  return `<label><input type="checkbox" name="model-thinking" value="${level}" ${selected.includes(level) ? 'checked' : ''}> ${labels[level]}</label>`;
+function modelThinkingSelect(selected = 'medium') {
+  return `<select id="model-thinking" aria-label="Thinking setting">${Object.entries(MODEL_THINKING_LABELS).map(([value, label]) => `<option value="${value}" ${value === selected ? 'selected' : ''}>Thinking: ${label}</option>`).join('')}</select>`;
+}
+
+function renderModelGroups() {
+  const list = document.getElementById('model-catalog-list');
+  if (!list) return;
+  const query = (document.getElementById('model-search')?.value || '').trim().toLowerCase();
+  const groups = new Map();
+  catalogModels.filter((model) => {
+    const text = `${model.provider || ''} ${model.name || ''}`.toLowerCase();
+    return !query || text.includes(query);
+  }).forEach((model) => {
+    const provider = model.provider || '9Router';
+    if (!groups.has(provider)) groups.set(provider, []);
+    groups.get(provider).push(model);
+  });
+  list.innerHTML = groups.size ? [...groups.entries()].map(([provider, models]) => `
+    <section class="model-provider-group">
+      <h3>${esc(provider)} <span>${models.length}</span></h3>
+      <div class="model-list">${models.map((model) => `
+        <div class="model-list-row ${model.enabled ? '' : 'is-disabled'}">
+          <div><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${esc(MODEL_THINKING_LABELS[model.thinking_level] || 'Medium')} · ${model.enabled ? 'Available to agents' : 'Disabled'}</span></div>
+          <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
+            <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
+          </button>
+        </div>`).join('')}</div>
+    </section>`).join('') : '<p class="hint">No models match this search.</p>';
+  refreshIcons();
 }
 
 function renderModelsTab(data) {
@@ -2959,45 +3008,35 @@ function renderModelsTab(data) {
   if (!content) return;
   const provider = data.provider || {};
   const models = Array.isArray(data.models) ? data.models : [];
+  modelsTabData = data;
   catalogModels = models;
   syncCustomModelOptions(data.available_models);
-  if (!provider.api_key_set) {
-    content.innerHTML = `
-      <div class="model-setup-card">
-        <h2>Connect 9Router</h2>
-        <p class="hint block">First-time setup: add your 9Router API key. Sarra stores the key securely and never displays it again.</p>
-        <code class="model-provider-url">https://9router.sycord.site/v1</code>
-        <div class="form-group"><label for="model-provider-api-key">9Router API key</label><input id="model-provider-api-key" type="password" autocomplete="off" placeholder="Paste API key"></div>
-        <button type="button" class="btn-pill btn-primary" id="save-model-provider-btn"><i data-lucide="key-round"></i><span>Continue</span></button>
-      </div>`;
+  const tabBar = `<div class="models-tabs" role="tablist" aria-label="Models"><button type="button" class="models-tab ${modelsSubtab === 'catalog' ? 'is-active' : ''}" data-models-subtab="catalog" role="tab" aria-selected="${modelsSubtab === 'catalog'}">Models</button><button type="button" class="models-tab ${modelsSubtab === 'playground' ? 'is-active' : ''}" data-models-subtab="playground" role="tab" aria-selected="${modelsSubtab === 'playground'}">Playground</button></div>`;
+  const providerCard = `
+    <div class="model-setup-card model-provider-card">
+      <div><h2>9Router provider</h2><p class="hint block">${provider.api_key_set ? 'API key saved. Enter a new value to replace it.' : 'Connect the provider before enabling models.'}</p><code class="model-provider-url">${esc(provider.api_base || '')}</code></div>
+      <div class="model-provider-key"><label for="model-provider-api-key">API key</label><input id="model-provider-api-key" type="password" autocomplete="off" placeholder="${provider.api_key_set ? 'Key saved — enter a new value to replace' : 'Paste API key'}"><button type="button" class="btn-pill btn-ghost" id="save-model-provider-btn"><i data-lucide="key-round"></i><span>${provider.api_key_set ? 'Update key' : 'Save key'}</span></button></div>
+    </div>`;
+  if (modelsSubtab === 'playground') {
+    const options = (data.available_models || []).map((model) => `<option value="${esc(model.profile)}">${esc(model.provider || '9Router')} · ${esc(model.name)}</option>`).join('');
+    content.innerHTML = `${tabBar}${providerCard}<div class="model-setup-card model-playground-card"><h2>Model playground</h2><p class="hint block">Send a short, tool-free prompt to an enabled model without starting an agent.</p><div class="form-group"><label for="playground-model">Model</label><select id="playground-model" ${options ? '' : 'disabled'}><option value="">${options ? 'Select a model' : 'Enable a model first'}</option>${options}</select></div><div class="form-group"><label for="playground-prompt">Prompt</label><textarea id="playground-prompt" rows="5" placeholder="Ask this model anything…" ${options ? '' : 'disabled'}></textarea></div><div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="run-model-playground-btn" ${options ? '' : 'disabled'}><i data-lucide="play"></i><span>Run prompt</span></button></div><div id="model-playground-result" class="model-playground-result hidden" aria-live="polite"></div></div>`;
   } else {
-    const rows = models.length ? models.map((model) => `
-      <div class="model-list-row">
-        <div><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${model.thinking_levels.join(', ')}</span></div>
-        <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
-          <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
-        </button>
-      </div>`).join('') : '<p class="hint">No models have been added yet.</p>';
-    content.innerHTML = `
+    content.innerHTML = `${tabBar}${providerCard}
       <div class="model-setup-card">
-        <h2>Configured models</h2>
-        <p class="hint block">Only enabled models are available to your agents through the Syte API.</p>
-        <div class="model-list">${rows}</div>
+        <div class="model-catalog-head"><div><h2>Configured models</h2><p class="hint block">Enabled models are the only models available to Sarra’s built-in agent and the model API.</p></div><input id="model-search" type="search" placeholder="Search models or providers" aria-label="Search models"></div>
+        <div id="model-catalog-list"></div>
       </div>
       <div class="model-setup-card">
-        <h2>Add a model</h2>
-        <p class="hint block">9Router endpoint: <code>https://9router.sycord.site/v1</code></p>
-        <div class="form-group"><label for="model-name">Model name</label><input id="model-name" placeholder="e.g. deepseek/deepseek-r1" autocomplete="off"></div>
-        <div class="form-group"><label>Available thinking settings</label><div class="model-thinking-options">${[1, 2, 3, 4, 5].map((level) => modelThinkingCheckbox(level, [1, 2, 3, 4, 5])).join('')}</div></div>
-        <label class="model-status"><input id="model-enabled" type="checkbox" checked> Enable this model for agents</label>
-        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="add-model-btn"><i data-lucide="plus"></i><span>Add model</span></button></div>
+        <h2>Add a model</h2><p class="hint block">A provider can contain a model name only once.</p>
+        <div class="form-row"><div class="form-group"><label for="model-provider">Provider</label><input id="model-provider" placeholder="e.g. DeepSeek" autocomplete="off"></div><div class="form-group"><label for="model-name">Model name</label><input id="model-name" placeholder="e.g. deepseek-r1" autocomplete="off"></div></div>
+        <div class="form-group"><label for="model-thinking">Default thinking</label>${modelThinkingSelect()}</div>
+        <label class="model-status"><input id="model-enabled" type="checkbox" checked> Enable this model for agents</label><div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="add-model-btn"><i data-lucide="plus"></i><span>Add model</span></button></div>
       </div>
       <div class="model-setup-card">
-        <h2>Bulk add models</h2>
-        <p class="hint block">Add one model name per line. New models start enabled and use the selected thinking settings above.</p>
-        <div class="form-group"><label for="bulk-model-names">Model names</label><textarea id="bulk-model-names" rows="5" placeholder="deepseek/deepseek-r1\nqwen/qwen3\nopenai/gpt-4.1"></textarea></div>
-        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-ghost" id="bulk-add-models-btn"><i data-lucide="list-plus"></i><span>Bulk add</span></button></div>
+        <h2>Bulk add models</h2><p class="hint block">Add model names for the same provider, one per line. Duplicate names are skipped.</p>
+        <div class="form-group"><label for="bulk-model-provider">Provider</label><input id="bulk-model-provider" placeholder="e.g. OpenAI" autocomplete="off"></div><div class="form-group"><label for="bulk-model-names">Model names</label><textarea id="bulk-model-names" rows="4" placeholder="gpt-4.1\ngpt-4.1-mini"></textarea></div><div class="svc-panel-actions"><button type="button" class="btn-pill btn-ghost" id="bulk-add-models-btn"><i data-lucide="list-plus"></i><span>Bulk add</span></button></div>
       </div>`;
+    renderModelGroups();
   }
   refreshIcons();
 }
@@ -4177,10 +4216,11 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
   const status = document.getElementById('new-feature-status');
   const result = document.getElementById('new-feature-result');
   const logPanel = document.getElementById('new-feature-log');
-  const model = document.getElementById('new-feature-model')?.value || 'auto';
+  const model = document.getElementById('new-feature-model')?.value || '';
   const apiKey = document.getElementById('new-feature-api-key')?.value || '';
   const message = input?.value.trim();
   if (!message) return toast('Enter an instruction for the agent');
+  if (!model.startsWith('9router:')) return toast('Choose an enabled model from the Models tab');
   if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Running…'; }
   if (status) { status.textContent = 'Agent starting…'; status.classList.remove('hidden'); }
   if (result) result.classList.add('hidden');
@@ -4188,7 +4228,7 @@ document.getElementById('new-feature-run-btn')?.addEventListener('click', async 
   try {
     const res = await api('/settings/new-feature/agent', {
       method: 'POST',
-      body: JSON.stringify({ message, model_profile: model === 'auto' ? null : model, request_api_key: apiKey || null }),
+      body: JSON.stringify({ message, model_profile: model, request_api_key: apiKey || null }),
     });
     if (logPanel) logPanel.innerHTML = '';
     if (res.ok) {
@@ -4742,51 +4782,82 @@ document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer)
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 
 document.addEventListener('click', async (event) => {
+  const modelsTabButton = event.target.closest('[data-models-subtab]');
+  if (modelsTabButton && modelsTabData) {
+    modelsSubtab = modelsTabButton.dataset.modelsSubtab === 'playground' ? 'playground' : 'catalog';
+    renderModelsTab(modelsTabData);
+    return;
+  }
   const providerButton = event.target.closest('#save-model-provider-btn');
   const addButton = event.target.closest('#add-model-btn');
   const bulkButton = event.target.closest('#bulk-add-models-btn');
   const toggleButton = event.target.closest('.model-toggle-btn');
-  if (!providerButton && !addButton && !bulkButton && !toggleButton) return;
-  const button = providerButton || addButton || bulkButton || toggleButton;
+  const playgroundButton = event.target.closest('#run-model-playground-btn');
+  if (!providerButton && !addButton && !bulkButton && !toggleButton && !playgroundButton) return;
+  const button = providerButton || addButton || bulkButton || toggleButton || playgroundButton;
   button.disabled = true;
   try {
     if (providerButton) {
       const apiKey = document.getElementById('model-provider-api-key')?.value?.trim();
       if (!apiKey) throw new Error('Paste your 9Router API key first.');
       await api('/models/provider', { method: 'PUT', body: JSON.stringify({ api_key: apiKey }) });
-      toast('9Router connected. Choose your model.');
+      toast('9Router API key saved.');
     } else if (addButton) {
       const modelName = document.getElementById('model-name')?.value?.trim();
-      const thinkingLevels = [...document.querySelectorAll('input[name="model-thinking"]:checked')]
-        .map((input) => Number(input.value));
+      const provider = document.getElementById('model-provider')?.value?.trim();
+      const thinkingLevel = document.getElementById('model-thinking')?.value || 'medium';
       if (!modelName) throw new Error('Enter a model name.');
+      if (!provider) throw new Error('Enter a provider name.');
       await api('/models', {
         method: 'POST',
         body: JSON.stringify({
           model_name: modelName,
-          thinking_levels: thinkingLevels,
+          provider,
+          thinking_level: thinkingLevel,
           enabled: Boolean(document.getElementById('model-enabled')?.checked),
         }),
       });
       toast('Model added.');
     } else if (bulkButton) {
       const names = (document.getElementById('bulk-model-names')?.value || '').split('\n').map((name) => name.trim()).filter(Boolean);
+      const provider = document.getElementById('bulk-model-provider')?.value?.trim();
       if (!names.length) throw new Error('Enter one or more model names.');
-      const thinkingLevels = [...document.querySelectorAll('input[name="model-thinking"]:checked')].map((input) => Number(input.value));
-      await api('/models/bulk', { method: 'POST', body: JSON.stringify({ models: names.map((model_name) => ({ model_name, thinking_levels: thinkingLevels, enabled: true })) }) });
+      if (!provider) throw new Error('Enter a provider name.');
+      const thinkingLevel = document.getElementById('model-thinking')?.value || 'medium';
+      await api('/models/bulk', { method: 'POST', body: JSON.stringify({ models: names.map((model_name) => ({ model_name, provider, thinking_level: thinkingLevel, enabled: true })) }) });
       toast(`${names.length} models submitted.`);
     } else if (toggleButton) {
       const model = catalogModels.find((item) => item.id === toggleButton.dataset.modelId);
       if (!model) throw new Error('Model could not be found. Refresh and try again.');
-      await api(`/models/${encodeURIComponent(model.id)}`, { method: 'PUT', body: JSON.stringify({ model_name: model.name, thinking_levels: model.thinking_levels, enabled: !model.enabled }) });
+      await api(`/models/${encodeURIComponent(model.id)}`, { method: 'PUT', body: JSON.stringify({ model_name: model.name, provider: model.provider || '9Router', thinking_levels: model.thinking_levels, thinking_level: model.thinking_level || 'medium', enabled: !model.enabled }) });
       toast(`Model ${model.enabled ? 'disabled' : 'enabled'}.`);
+    } else if (playgroundButton) {
+      const profile = document.getElementById('playground-model')?.value || '';
+      const prompt = document.getElementById('playground-prompt')?.value?.trim() || '';
+      if (!profile) throw new Error('Choose an enabled model.');
+      if (!prompt) throw new Error('Enter a prompt.');
+      const result = document.getElementById('model-playground-result');
+      if (result) {
+        result.textContent = 'Running…';
+        result.classList.remove('hidden');
+      }
+      const response = await api('/models/playground', { method: 'POST', body: JSON.stringify({ model_profile: profile, prompt }) });
+      if (result) result.textContent = response.response || 'The model returned no text.';
+      toast('Playground response ready.');
+      button.disabled = false;
     }
-    await loadModelsTab();
-    await loadSettings();
+    if (!playgroundButton) {
+      await loadModelsTab();
+      await loadSettings();
+    }
   } catch (error) {
     toast(`Error: ${error.message}`);
     button.disabled = false;
   }
+});
+
+document.addEventListener('input', (event) => {
+  if (event.target.id === 'model-search') renderModelGroups();
 });
 
 document.getElementById('ai-header-settings-btn')?.addEventListener('click', openAiSettings);
