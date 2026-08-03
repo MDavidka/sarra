@@ -240,7 +240,14 @@ async def _run_litellm_migrations(
     database_url: str,
     database_network: str = "",
 ) -> tuple[bool, str]:
-    """Repair schema drift and apply LiteLLM's Prisma migrations."""
+    """Apply migrations and leave the MCP table compatible with the runtime.
+
+    The repair has to happen both before and after Prisma runs.  Older
+    databases can record a migration as applied without its physical column,
+    while a migration can also recreate the MCP table after the initial
+    repair.  Repairing the final schema prevents the proxy from starting only
+    to fail its background MCP reload with a missing ``instructions`` column.
+    """
     schema_ok, schema_message = await _repair_litellm_mcp_schema(
         database_url, database_network
     )
@@ -263,7 +270,17 @@ async def _run_litellm_migrations(
             "LiteLLM PostgreSQL migrations failed. The proxy was not started; "
             f"repair the database and retry Start. {output or 'no migration output'}"
         )
-    return True, "LiteLLM PostgreSQL migrations applied."
+
+    final_schema_ok, final_schema_message = await _repair_litellm_mcp_schema(
+        database_url, database_network
+    )
+    if not final_schema_ok:
+        return False, (
+            "LiteLLM PostgreSQL MCP schema verification failed after migrations. "
+            "The proxy was not started; repair the database and retry Start. "
+            f"{final_schema_message}"
+        )
+    return True, "LiteLLM PostgreSQL migrations applied and MCP schema verified."
 
 
 async def litellm_is_postgres_configured(expected_database_url: str = "") -> bool:
