@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+from time import monotonic
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -34,7 +35,16 @@ LITELLM_CONTAINER_NAME = "syte-litellm"
 # compatible with the persistent LiteLLM PostgreSQL database.
 LITELLM_IMAGE = "docker.litellm.ai/berriai/litellm:1.92.1"
 LITELLM_PRISMA_BIN = "/opt/prisma/binaries/node_modules/.bin/prisma"
-LITELLM_SCHEMA_PATH = "/app/litellm-proxy-extras/schema.prisma"
+LITELLM_SCHEMA_PATH = (
+    "/app/.venv/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma"
+)
+# LiteLLM 1.92.1 defines this field as an optional Prisma String (PostgreSQL
+# TEXT). The additive repair covers databases whose migration history says the
+# change ran even though the physical column is absent.
+LITELLM_MCP_INSTRUCTIONS_REPAIR_SQL = (
+    'ALTER TABLE "LiteLLM_MCPServerTable" '
+    'ADD COLUMN IF NOT EXISTS "instructions" TEXT;'
+)
 LITELLM_DEFAULT_PORT = LITELLM_HOST_PORT
 LITELLM_DATA_DIR = "/var/lib/syte/litellm"
 LITELLM_DB_CONTAINER_NAME = "syte-litellm-db"
@@ -43,6 +53,8 @@ LITELLM_DB_DATA_DIR = "/var/lib/syte/litellm-postgres"
 LITELLM_DB_NAME = "litellm"
 LITELLM_DB_USER = "litellm"
 LITELLM_NETWORK = "syte-litellm"
+LITELLM_READINESS_TIMEOUT_SECONDS = 120.0
+LITELLM_READINESS_POLL_SECONDS = 2.0
 
 
 def validate_litellm_database_url(value: str) -> str:
@@ -226,6 +238,35 @@ async def _run_litellm_migrations(
     return True, "LiteLLM PostgreSQL migrations applied."
 
 
+async def _repair_litellm_schema(
+    database_url: str,
+    database_network: str = "",
+) -> tuple[bool, str]:
+    """Add the known missing nullable MCP instructions column idempotently."""
+    repair_command = (
+        'printf "%s\\n" "$LITELLM_SCHEMA_REPAIR_SQL" | '
+        f'{LITELLM_PRISMA_BIN} db execute --stdin --schema "{LITELLM_SCHEMA_PATH}"'
+    )
+    args = ["run", "--rm"]
+    if database_network:
+        args.extend(["--network", database_network])
+    args.extend([
+        "--entrypoint", "sh",
+        "-e", f"DATABASE_URL={database_url}",
+        "-e", f"LITELLM_SCHEMA_REPAIR_SQL={LITELLM_MCP_INSTRUCTIONS_REPAIR_SQL}",
+        LITELLM_IMAGE,
+        "-c", repair_command,
+    ])
+    exit_code, output = await _run_docker(args, timeout=300.0)
+    if exit_code != 0:
+        return False, (
+            "LiteLLM schema repair failed for "
+            "LiteLLM_MCPServerTable.instructions. The proxy was not started; "
+            f"verify database permissions and retry Start. {output or 'no repair output'}"
+        )
+    return True, "LiteLLM MCP instructions schema verified."
+
+
 async def litellm_is_postgres_configured(expected_database_url: str = "") -> bool:
     """Return whether the running LiteLLM container uses the expected PostgreSQL URL."""
     exit_code, env_output = await _run_docker([
@@ -320,18 +361,41 @@ async def _ensure_litellm_database() -> tuple[bool, str, str, str]:
     return False, "", "LiteLLM PostgreSQL database did not become ready within 30 seconds", ""
 
 
-async def _wait_for_litellm_health() -> dict[str, Any]:
-    """Wait for LiteLLM's readiness endpoint after migrations and container start."""
+async def _wait_for_litellm_health(
+    timeout_seconds: float = LITELLM_READINESS_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Wait for readiness without exceeding one total startup deadline."""
+    deadline = monotonic() + max(0.0, timeout_seconds)
     last_health: dict[str, Any] = {
         "ok": False,
         "healthy": False,
         "message": "LiteLLM health check has not run yet",
     }
-    for _ in range(60):
-        last_health = await litellm_health()
+    while (remaining := deadline - monotonic()) > 0:
+        try:
+            last_health = await asyncio.wait_for(
+                litellm_health(),
+                timeout=remaining,
+            )
+        except TimeoutError:
+            last_health = {
+                "ok": False,
+                "healthy": False,
+                "message": "LiteLLM readiness probe timed out",
+            }
+            break
         if last_health.get("healthy"):
             return last_health
-        await asyncio.sleep(2.0)
+
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        await asyncio.sleep(min(LITELLM_READINESS_POLL_SECONDS, remaining))
+
+    last_health["message"] = (
+        f"{last_health.get('message', 'health check failed')}; "
+        f"readiness deadline of {timeout_seconds:g} seconds reached"
+    )
     return last_health
 
 
@@ -418,6 +482,19 @@ async def start_litellm(
             "preview_migration": preview_migration,
         }
 
+    schema_ok, schema_message = await _repair_litellm_schema(
+        database_url, database_network
+    )
+    if not schema_ok:
+        return {
+            "ok": False,
+            "message": schema_message,
+            "running": False,
+            "migration_message": migrations_message,
+            "schema_message": schema_message,
+            "preview_migration": preview_migration,
+        }
+
     # Get configuration from settings if not provided
     if master_key is None:
         master_key = (await get_setting("litellm_master_key", "")).strip()
@@ -463,6 +540,7 @@ async def start_litellm(
         "-e", f"LITELLM_MASTER_KEY={master_key}",
         "-e", f"LITELLM_SALT_KEY={salt_key}",
         "-e", f"DATABASE_URL={database_url}",
+        "-e", "DISABLE_SCHEMA_UPDATE=true",
         "--restart", "unless-stopped",
         LITELLM_IMAGE,
     ])
@@ -495,12 +573,15 @@ async def start_litellm(
             **status,
             "health": health,
             "message": (
-                f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}; {migrations_message}"
+                f"LiteLLM rebound to the private loopback port; public API: {LITELLM_PUBLIC_API_URL}; "
+                f"{migrations_message} {schema_message}"
                 if rebound_legacy_container
-                else f"LiteLLM started successfully; public API: {LITELLM_PUBLIC_API_URL}; {migrations_message}"
+                else f"LiteLLM started successfully; public API: {LITELLM_PUBLIC_API_URL}; "
+                f"{migrations_message} {schema_message}"
             ),
             "preview_migration": preview_migration,
             "migration_message": migrations_message,
+            "schema_message": schema_message,
         }
     else:
         return {
