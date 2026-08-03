@@ -73,6 +73,7 @@ async def submit_agent_request(
     source: str = "api",
     auto_start: bool = True,
     idempotency_key: str | None = None,
+    override_api_key: str | None = None,
 ) -> dict[str, Any]:
     """Admit a durable agent request and return immediately.
 
@@ -168,6 +169,7 @@ async def submit_agent_request(
             session_number=session_number,
             message_index_start=1,
             turso_session_id=turso_session_id,
+            override_api_key=override_api_key,
         )
     )
     _running[project_id] = task
@@ -237,6 +239,7 @@ async def _run_job(
     session_number: int | None = None,
     message_index_start: int = 0,
     turso_session_id: str | None = None,
+    override_api_key: str | None = None,
 ) -> dict[str, Any]:
     from syte.cloud_agent import _communicate_with_agent_impl
 
@@ -256,6 +259,7 @@ async def _run_job(
                 session_number=session_number,
                 message_index_start=message_index_start,
                 turso_session_id=turso_session_id,
+                override_api_key=override_api_key,
             )
             await mark_request(
                 request_id,

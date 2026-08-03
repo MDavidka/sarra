@@ -47,6 +47,44 @@ async def test_submit_agent_request_returns_immediately(tmp_data_dir: Path, monk
 
 
 @pytest.mark.asyncio
+async def test_submit_agent_request_forwards_transient_api_key(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Background jobs must pass a per-request provider key to the worker."""
+    from syte.agent_jobs import submit_agent_request
+    from syte.cloud_agent_store import get_request
+    from syte.database import create_project, init_db
+    from syte.local_session_store import reset_local_session_cache
+
+    reset_local_session_cache()
+    await init_db()
+    await create_project({
+        "id": "job-api-key",
+        "name": "Transient API key",
+        "port": 3023,
+        "start_command": "",
+    })
+    received: dict[str, object] = {}
+
+    async def fake_run(*_args: object, **kwargs: object) -> dict[str, bool]:
+        received.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr("syte.agent_jobs._run_job", fake_run)
+
+    result = await submit_agent_request(
+        "job-api-key", "hello", source="test", override_api_key="test-key",
+    )
+    await asyncio.sleep(0)
+
+    assert received["override_api_key"] == "test-key"
+    stored = await get_request(result["request_id"])
+    assert stored is not None
+    assert "test-key" not in str(stored)
+    reset_local_session_cache()
+
+
+@pytest.mark.asyncio
 async def test_submit_agent_request_idempotent_replay_includes_turso_session(
     tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
