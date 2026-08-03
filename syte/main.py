@@ -202,6 +202,16 @@ class SyraSecretsRequest(BaseModel):
     agent_api_key: str | None = None
 
 
+class ModelProviderSetupRequest(BaseModel):
+    api_key: str = Field(min_length=1)
+
+
+class ModelConfigurationRequest(BaseModel):
+    model_name: str = Field(min_length=1, max_length=200)
+    thinking_levels: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    enabled: bool = True
+
+
 class UpdateProjectRequest(BaseModel):
     name: str | None = None
     git_url: str | None = None
@@ -419,6 +429,9 @@ async def get_settings():
         "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
         "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
         "agent_litellm_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
+        "agent_9router_api_key_set": bool((await get_setting("agent_9router_api_key", "")).strip()),
+        "agent_9router_model_name": (await get_setting("agent_9router_model_name", "")).strip(),
+        "agent_9router_enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
         "litellm_proxy_url": LITELLM_PUBLIC_API_URL,
         "litellm_public_api_url": LITELLM_PUBLIC_API_URL,
         "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
@@ -450,6 +463,47 @@ async def get_settings():
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
         "version": __version__,
     }
+
+
+async def _model_configuration() -> dict[str, Any]:
+    """Return the single user-managed 9Router model without exposing its key."""
+    key_set = bool((await get_setting("agent_9router_api_key", "")).strip())
+    model_name = (await get_setting("agent_9router_model_name", "")).strip()
+    raw_levels = (await get_setting("agent_9router_thinking_levels", "1,2,3,4,5")).strip()
+    levels = [int(value) for value in raw_levels.split(",") if value.isdigit() and 1 <= int(value) <= 5]
+    return {
+        "provider": {"name": "9Router", "api_base": "https://9router.sycord.site/v1", "api_key_set": key_set},
+        "model": {
+            "profile": "9router",
+            "name": model_name,
+            "thinking_levels": levels or [1, 2, 3, 4, 5],
+            "enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
+        } if model_name else None,
+    }
+
+
+@app.get("/api/models")
+async def get_models():
+    return await _model_configuration()
+
+
+@app.put("/api/models/provider")
+async def save_model_provider(body: ModelProviderSetupRequest):
+    await set_setting("agent_9router_api_key", body.api_key.strip())
+    return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
+
+
+@app.put("/api/models/default")
+async def save_default_model(body: ModelConfigurationRequest):
+    levels = sorted(set(body.thinking_levels))
+    if not levels or any(level < 1 or level > 5 for level in levels):
+        raise HTTPException(400, "Choose one or more thinking levels between 1 and 5.")
+    if body.enabled and not (await get_setting("agent_9router_api_key", "")).strip():
+        raise HTTPException(400, "Save the 9Router API key before enabling this model.")
+    await set_setting("agent_9router_model_name", body.model_name.strip())
+    await set_setting("agent_9router_thinking_levels", ",".join(str(level) for level in levels))
+    await set_setting("agent_9router_enabled", "1" if body.enabled else "0")
+    return {"ok": True, "message": "Model saved.", **(await _model_configuration())}
 
 
 async def _solar_status() -> dict[str, Any]:

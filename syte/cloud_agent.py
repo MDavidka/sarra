@@ -726,6 +726,10 @@ async def resolve_profile_api_key(profile: str) -> dict[str, str]:
     secret_env = spec["secret_env"]
     from_settings = (await get_setting(setting_key, "")).strip()
     from_env = (os.environ.get(secret_env) or "").strip()
+    if profile == "9router" and (await get_setting("agent_9router_enabled", "0")).strip() != "1":
+        # A disabled custom model must never be selected by the runtime.
+        from_settings = ""
+        from_env = ""
     # Legacy shared OpenRouter setting (pre-split ultra key).
     legacy = ""
     if profile == "syra-ultra" and not from_settings:
@@ -816,6 +820,10 @@ async def bridge_settings() -> dict[str, Any]:
         # Match Aliyun endpoint to the key billing mode (Token Plan vs DashScope PAYG).
         if name == "syra-ultra" and resolved["api_key"]:
             entry["api_base"] = aliyun_api_base_for_key(str(resolved["api_key"]))
+        if name == "9router":
+            entry["model"] = (await get_setting("agent_9router_model_name", "")).strip()
+            entry["enabled"] = (await get_setting("agent_9router_enabled", "0")).strip() == "1"
+            entry["thinking_levels"] = (await get_setting("agent_9router_thinking_levels", "1,2,3,4,5")).strip()
         profiles[name] = entry
     active = profiles[default_profile]
     return {

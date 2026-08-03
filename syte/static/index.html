@@ -73,8 +73,8 @@
               <button type="button" class="nav-sublink" data-view="logs">
                 <i data-lucide="scroll-text"></i><span>Logs</span>
               </button>
-              <button type="button" class="nav-sublink" data-view="syra">
-                <i data-lucide="sparkles"></i><span>Syra</span>
+              <button type="button" class="nav-sublink" data-view="models">
+                <i data-lucide="bot"></i><span>Models</span>
               </button>
               <div class="nav-api-group" id="nav-api-group">
                 <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
@@ -595,118 +595,18 @@
           </div>
         </section>
 
-        <section id="view-syra" class="view">
+        <section id="view-models" class="view">
           <div class="projects-card">
             <div class="projects-header">
               <div class="projects-title-block">
-                <i data-lucide="sparkles" class="projects-icon"></i>
+                <i data-lucide="bot" class="projects-icon"></i>
                 <div>
-                  <h1>Syra</h1>
-                  <p class="projects-sub">LiteLLM proxy gateway — unified access to multiple LLM providers</p>
+                  <h1>Models</h1>
+                  <p class="projects-sub">Set up your model provider, then choose the model and thinking levels your agents can use.</p>
                 </div>
-              </div>
-              <div class="syra-public-status" id="syra-public-status">Checking HTTPS endpoint…</div>
-            </div>
-
-            <div class="syra-status-card" id="syra-status-card">
-              <div class="syra-status-row">
-                <div class="syra-status-indicator">
-                  <span class="syra-status-dot" id="syra-status-dot"></span>
-                  <span class="syra-status-label" id="syra-status-label">Checking…</span>
-                </div>
-                <div class="syra-actions">
-                  <button type="button" class="btn-pill btn-primary" id="syra-start-btn">
-                    <i data-lucide="play"></i><span>Start</span>
-                  </button>
-                  <button type="button" class="btn-pill btn-ghost" id="syra-stop-btn" disabled>
-                    <i data-lucide="square"></i><span>Stop</span>
-                  </button>
-                  <button type="button" class="btn-pill btn-ghost" id="syra-restart-btn" disabled>
-                    <i data-lucide="refresh-cw"></i><span>Restart</span>
-                  </button>
-                </div>
-              </div>
-              <div class="syra-urls" id="syra-urls">
-                <div class="syra-url-row">
-                  <span class="syra-url-label">Web GUI</span>
-                  <code class="syra-url-value" id="syra-gui-url">https://api.sycord.site/</code>
-                </div>
-                <div class="syra-url-row">
-                  <span class="syra-url-label">Public API</span>
-                  <code class="syra-url-value" id="syra-api-url">https://api.sycord.site/v1</code>
-                </div>
-                <div class="syra-url-row">
-                  <span class="syra-url-label">Public surface</span>
-                  <code class="syra-url-value">GUI + /v1/*</code>
-                </div>
-                <p class="hint" id="syra-dns-hint">Start prepares AlmaLinux packages, Docker, Caddy, firewalld, DNS, TLS, LiteLLM, and this web GUI. LiteLLM administration remains private to the server.</p>
               </div>
             </div>
-
-            <details class="ai-debug-panel" id="syra-config-panel" open>
-              <summary class="ai-debug-summary">
-                Configuration
-              </summary>
-              <div class="form-inner">
-                <div class="form-group" id="syra-unlock-panel">
-                  <label for="syra-bootstrap-key">Unlock Syra</label>
-                  <div class="syra-unlock-row">
-                    <input type="password" id="syra-bootstrap-key" placeholder="System bootstrap API key" autocomplete="off">
-                    <button type="button" class="btn-pill btn-primary" id="syra-unlock-btn">Unlock</button>
-                  </div>
-                  <span class="hint" id="syra-unlock-hint">Enter the server’s system bootstrap key once. Sarra stores only a secure, temporary browser session — never this key.</span>
-                </div>
-                <button type="button" class="btn-pill" id="syra-lock-btn" hidden>Lock Syra</button>
-                <p class="hint block">Sarra serves this GUI at <code>https://api.sycord.site/</code> and the public OpenAI-compatible API at <code>https://api.sycord.site/v1</code>. LiteLLM administration remains private to the server.</p>
-                <div class="form-group">
-                  <label for="syra-master-key">Master key</label>
-                  <input type="password" id="syra-master-key" placeholder="sk-…" autocomplete="off">
-                  <span class="hint">Optional. Leave empty to keep the existing server-only master key; never use it as a client API key.</span>
-                </div>
-                <div class="form-group">
-                  <label for="syra-salt-key">Salt key</label>
-                  <input type="password" id="syra-salt-key" placeholder="32-char hex string" autocomplete="off">
-                  <span class="hint">Optional. Leave empty to keep the existing encryption salt. Never change it after provider keys are stored.</span>
-                </div>
-                <div class="form-group">
-                  <label for="syra-agent-api-key">Syra LiteLLM virtual key</label>
-                  <input type="password" id="syra-agent-api-key" placeholder="sk-…" autocomplete="off">
-                  <span class="hint">Scoped virtual key used by the <code>syra-litellm</code> model profile. Never paste the LiteLLM master key here.</span>
-                </div>
-                <div class="svc-panel-actions">
-                  <button type="button" class="btn-pill btn-primary" id="syra-save-config-btn">
-                    <i data-lucide="save"></i><span>Save configuration</span>
-                  </button>
-                </div>
-              </div>
-            </details>
-
-            <details class="ai-debug-panel" id="syra-logs-panel">
-              <summary class="ai-debug-summary">
-                Logs
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-logs-refresh">Refresh</button>
-              </summary>
-              <div class="logs-panel">
-                <div class="logs-terminal logs-terminal-dark" id="syra-logs">LiteLLM logs will appear here…</div>
-              </div>
-            </details>
-
-            <details class="ai-debug-panel" id="syra-models-panel">
-              <summary class="ai-debug-summary">
-                Available models
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="syra-models-refresh">Refresh</button>
-              </summary>
-              <div id="syra-models-list" class="syra-models-list">
-                <p class="hint">Start LiteLLM to see available models.</p>
-              </div>
-            </details>
-
-            <footer class="ai-footer">
-              <a href="https://docs.litellm.ai/docs/proxy/docker_quick_start" target="_blank" rel="noopener" class="ai-footer-link">
-                <i data-lucide="book-open"></i> LiteLLM documentation
-              </a>
-              <a href="/api/#agent" class="ai-footer-link"><i data-lucide="file-code-2"></i> Syte API</a>
-            </footer>
+            <div id="models-content" class="models-content" aria-live="polite"></div>
           </div>
         </section>
 
