@@ -24,6 +24,8 @@ from syte.turso_store import open_session as open_turso_session
 
 _project_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _running: dict[str, asyncio.Task[Any]] = {}
+_TRANSIENT_RETRY_ATTEMPTS = 2
+_TRANSIENT_RETRY_DELAY_SECONDS = 0.75
 
 
 def new_request_id() -> str:
@@ -180,6 +182,7 @@ async def submit_agent_request(
         "turso_session_id": turso_session_id,
         "status": "accepted",
         "project_id": project_id,
+        "model_profile": model_profile,
         "thinking_level": thinking_level,
         "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
@@ -209,6 +212,7 @@ async def _idempotent_replay_payload(
         "session": session_number or None,
         "turso_session_id": turso_session_id or None,
         "idempotent_replay": True,
+        "model_profile": existing.get("model_profile"),
         "thinking_level": thinking_level,
         "session_url": (
             f"/api/agent_session/{turso_session_id}" if turso_session_id else None
@@ -227,6 +231,66 @@ async def _store_request_turso_session(request_id: str, turso_session_id: str) -
         pass
 
 
+async def _run_agent_attempt(
+    project_id: str,
+    message: str,
+    *,
+    model_profile: str | None,
+    source: str,
+    auto_start: bool,
+    thinking_level: int | str | None,
+    request_id: str,
+    session_number: int | None,
+    message_index_start: int,
+    turso_session_id: str | None,
+    override_api_key: str | None,
+) -> dict[str, Any]:
+    """Run the provider call and retry one transient external-API failure."""
+    from syte.cloud_agent import _communicate_with_agent_impl, _failure_metadata
+
+    for attempt in range(1, _TRANSIENT_RETRY_ATTEMPTS + 1):
+        try:
+            return await _communicate_with_agent_impl(
+                project_id,
+                message,
+                model_profile=model_profile,
+                thinking_level=thinking_level,
+                source=source,
+                auto_start=auto_start,
+                emit_request_started=False,
+                request_id=request_id,
+                session_number=session_number,
+                message_index_start=message_index_start,
+                turso_session_id=turso_session_id,
+                override_api_key=override_api_key,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            failure = _failure_metadata(exc)
+            if not failure.get("retryable") or attempt >= _TRANSIENT_RETRY_ATTEMPTS:
+                raise
+            await record_agent_event(
+                project_id,
+                "status",
+                title="Retrying provider request",
+                detail="The external model request failed temporarily. Retrying once.",
+                payload={
+                    "request_id": request_id,
+                    "model_profile": model_profile,
+                    "attempt": attempt + 1,
+                    "max_attempts": _TRANSIENT_RETRY_ATTEMPTS,
+                    "status": "retrying",
+                    "error_type": failure.get("error_type"),
+                },
+                source=source,
+                turso_session_id=turso_session_id,
+            )
+            await asyncio.sleep(_TRANSIENT_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError("Agent request retry loop exited unexpectedly")
+
+
 async def _run_job(
     project_id: str,
     request_id: str,
@@ -241,20 +305,17 @@ async def _run_job(
     turso_session_id: str | None = None,
     override_api_key: str | None = None,
 ) -> dict[str, Any]:
-    from syte.cloud_agent import _communicate_with_agent_impl
-
     terminal_status: str | None = None
     async with project_agent_lock(project_id):
         try:
             await mark_request(request_id, "running")
-            result = await _communicate_with_agent_impl(
+            result = await _run_agent_attempt(
                 project_id,
                 message,
                 model_profile=model_profile,
                 thinking_level=thinking_level,
                 source=source,
                 auto_start=auto_start,
-                emit_request_started=False,
                 request_id=request_id,
                 session_number=session_number,
                 message_index_start=message_index_start,
@@ -279,6 +340,7 @@ async def _run_job(
                     "request_id": request_id,
                     "error": "cancelled",
                     "session": session_number,
+                    "model_profile": model_profile,
                     "mark_status": "d",
                     "mark_kind": "error",
                 },
@@ -306,6 +368,7 @@ async def _run_job(
                     "message": error,
                     "retry_message": message[:4000],
                     "session": session_number,
+                    "model_profile": model_profile,
                     "mark_status": "d",
                     "mark_kind": "error",
                     **failure["detail"],
@@ -321,6 +384,7 @@ async def _run_job(
                 "message": error,
                 "error_type": failure["error_type"],
                 "retryable": failure["retryable"],
+                "model_profile": model_profile,
                 **failure["detail"],
             }
         finally:
