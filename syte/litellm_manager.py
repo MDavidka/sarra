@@ -463,7 +463,6 @@ async def start_litellm(
         "-e", f"LITELLM_MASTER_KEY={master_key}",
         "-e", f"LITELLM_SALT_KEY={salt_key}",
         "-e", f"DATABASE_URL={database_url}",
-        "-e", "DISABLE_SCHEMA_UPDATE=true",
         "--restart", "unless-stopped",
         LITELLM_IMAGE,
     ])
