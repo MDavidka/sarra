@@ -4224,6 +4224,16 @@ body.ai-settings-open { overflow: hidden; }
   color: var(--text-muted);
 }
 
+/* User-managed 9Router model setup. */
+.models-content { max-width: 720px; }
+.model-setup-card { border: 1px solid #e4e4e7; border-radius: 16px; padding: 1.25rem; background: #fff; }
+.model-setup-card + .model-setup-card { margin-top: 1rem; }
+.model-setup-card h2 { margin: 0 0 .35rem; font-size: 1.05rem; }
+.model-provider-url { display: inline-block; margin: .45rem 0 1rem; color: #52525b; }
+.model-thinking-options { display: flex; flex-wrap: wrap; gap: .5rem; margin: .4rem 0 1rem; }
+.model-thinking-options label { display: inline-flex; align-items: center; gap: .35rem; padding: .38rem .55rem; border: 1px solid #e4e4e7; border-radius: 8px; font-size: .82rem; }
+.model-status { font-size: .82rem; color: #52525b; }
+
 
 
 .syra-public-status {

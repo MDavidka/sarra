@@ -2904,10 +2904,10 @@ function showView(name) {
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
-  if (name === 'syra') { initSyraTab(); }
+  if (name === 'models') { loadModelsTab(); }
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
-  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai' && name !== 'syra');
+  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
@@ -2922,6 +2922,70 @@ function showView(name) {
 }
 
 let aiApiConfigured = { nano: false, havy: false, ultra: false };
+
+function syncCustomModelOptions(model) {
+  document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile, #new-feature-model').forEach((select) => {
+    const existing = select.querySelector('option[value="9router"]');
+    if (model?.enabled && model?.name) {
+      const label = `Model · ${model.name}`;
+      if (existing) existing.textContent = label;
+      else {
+        const option = document.createElement('option');
+        option.value = '9router';
+        option.textContent = label;
+        select.appendChild(option);
+      }
+    } else if (existing) {
+      if (select.value === '9router') select.value = 'auto';
+      existing.remove();
+    }
+  });
+}
+
+function modelThinkingCheckbox(level, selected) {
+  const labels = { 1: 'Instant', 2: 'Fast', 3: 'Balanced', 4: 'Deep', 5: 'Max' };
+  return `<label><input type="checkbox" name="model-thinking" value="${level}" ${selected.includes(level) ? 'checked' : ''}> ${labels[level]}</label>`;
+}
+
+function renderModelsTab(data) {
+  const content = document.getElementById('models-content');
+  if (!content) return;
+  const provider = data.provider || {};
+  const model = data.model;
+  syncCustomModelOptions(model);
+  if (!provider.api_key_set) {
+    content.innerHTML = `
+      <div class="model-setup-card">
+        <h2>Connect 9Router</h2>
+        <p class="hint block">First-time setup: add your 9Router API key. Sarra stores the key securely and never displays it again.</p>
+        <code class="model-provider-url">https://9router.sycord.site/v1</code>
+        <div class="form-group"><label for="model-provider-api-key">9Router API key</label><input id="model-provider-api-key" type="password" autocomplete="off" placeholder="Paste API key"></div>
+        <button type="button" class="btn-pill btn-primary" id="save-model-provider-btn"><i data-lucide="key-round"></i><span>Continue</span></button>
+      </div>`;
+  } else {
+    const levels = model?.thinking_levels || [1, 2, 3, 4, 5];
+    content.innerHTML = `
+      <div class="model-setup-card">
+        <h2>${model ? 'Model settings' : 'Create a model'}</h2>
+        <p class="hint block">This model uses 9Router at <code>https://9router.sycord.site/v1</code>. Enable it to make it available in agent model menus.</p>
+        <div class="form-group"><label for="model-name">Model name</label><input id="model-name" value="${esc(model?.name || '')}" placeholder="e.g. deepseek/deepseek-r1" autocomplete="off"></div>
+        <div class="form-group"><label>Available thinking settings</label><div class="model-thinking-options">${[1, 2, 3, 4, 5].map((level) => modelThinkingCheckbox(level, levels)).join('')}</div></div>
+        <label class="model-status"><input id="model-enabled" type="checkbox" ${model?.enabled !== false ? 'checked' : ''}> Enable this model for agents</label>
+        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="save-model-btn"><i data-lucide="save"></i><span>Save model</span></button></div>
+      </div>`;
+  }
+  refreshIcons();
+}
+
+async function loadModelsTab() {
+  const content = document.getElementById('models-content');
+  if (content) content.innerHTML = '<p class="hint">Loading model setup…</p>';
+  try {
+    renderModelsTab(await api('/models'));
+  } catch (error) {
+    if (content) content.innerHTML = `<p class="hint">Could not load model setup: ${esc(error.message)}</p>`;
+  }
+}
 
 function aiKeySaved(id) {
   return document.getElementById(id)?.placeholder?.includes('saved');
@@ -4242,6 +4306,10 @@ async function loadSettings() {
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
     };
+    syncCustomModelOptions(s.agent_9router_model_name ? {
+      name: s.agent_9router_model_name,
+      enabled: Boolean(s.agent_9router_enabled),
+    } : null);
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
         ? 'internal secret saved — enter new value to replace'
@@ -4650,6 +4718,41 @@ bindDebugChatComposer();
 
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
+
+document.addEventListener('click', async (event) => {
+  const providerButton = event.target.closest('#save-model-provider-btn');
+  const modelButton = event.target.closest('#save-model-btn');
+  if (!providerButton && !modelButton) return;
+  const button = providerButton || modelButton;
+  button.disabled = true;
+  try {
+    if (providerButton) {
+      const apiKey = document.getElementById('model-provider-api-key')?.value?.trim();
+      if (!apiKey) throw new Error('Paste your 9Router API key first.');
+      await api('/models/provider', { method: 'PUT', body: JSON.stringify({ api_key: apiKey }) });
+      toast('9Router connected. Choose your model.');
+    } else {
+      const modelName = document.getElementById('model-name')?.value?.trim();
+      const thinkingLevels = [...document.querySelectorAll('input[name="model-thinking"]:checked')]
+        .map((input) => Number(input.value));
+      if (!modelName) throw new Error('Enter a model name.');
+      await api('/models/default', {
+        method: 'PUT',
+        body: JSON.stringify({
+          model_name: modelName,
+          thinking_levels: thinkingLevels,
+          enabled: Boolean(document.getElementById('model-enabled')?.checked),
+        }),
+      });
+      toast('Model saved.');
+    }
+    await loadModelsTab();
+    await loadSettings();
+  } catch (error) {
+    toast(`Error: ${error.message}`);
+    button.disabled = false;
+  }
+});
 
 document.getElementById('ai-header-settings-btn')?.addEventListener('click', openAiSettings);
 document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
