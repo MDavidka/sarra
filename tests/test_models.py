@@ -69,3 +69,39 @@ async def test_disabled_9router_model_is_not_available_to_runtime(tmp_data_dir: 
     bridge = await bridge_settings()
     assert bridge["profiles"]["9router"]["enabled"] is False
     assert bridge["profiles"]["9router"]["api_key"] == ""
+
+
+@pytest.mark.asyncio
+async def test_bulk_catalog_only_exposes_enabled_models(tmp_data_dir: Path) -> None:
+    from syte.cloud_agent import bridge_settings, model_metadata_for_profile
+    from syte.database import init_db
+    from syte.main import (
+        BulkModelConfigurationRequest,
+        ModelConfigurationRequest,
+        ModelProviderSetupRequest,
+        add_models_bulk,
+        get_available_models,
+        save_model_provider,
+    )
+
+    await init_db()
+    await save_model_provider(ModelProviderSetupRequest(api_key="9router-test-key"))
+    saved = await add_models_bulk(BulkModelConfigurationRequest(models=[
+        ModelConfigurationRequest(model_name="deepseek/deepseek-r1", thinking_levels=[3], enabled=True),
+        ModelConfigurationRequest(model_name="qwen/qwen3", thinking_levels=[1, 2], enabled=False),
+    ]))
+
+    assert [row["name"] for row in saved["models"]] == ["deepseek/deepseek-r1", "qwen/qwen3"]
+    available = await get_available_models()
+    assert available["models"] == [{
+        "id": saved["models"][0]["id"],
+        "profile": saved["models"][0]["profile"],
+        "name": "deepseek/deepseek-r1",
+        "thinking_levels": [3],
+    }]
+    bridge = await bridge_settings()
+    assert available["models"][0]["profile"] in bridge["profiles"]
+    assert saved["models"][1]["profile"] not in bridge["profiles"]
+    selected = await model_metadata_for_profile(available["models"][0]["profile"])
+    assert selected["model"] == "deepseek/deepseek-r1"
+    assert selected["api_key"] == "9router-test-key"

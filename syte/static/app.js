@@ -2922,24 +2922,31 @@ function showView(name) {
 }
 
 let aiApiConfigured = { nano: false, havy: false, ultra: false };
+let catalogModels = [];
 
-function syncCustomModelOptions(model) {
+function syncCustomModelOptions(models) {
+  const available = Array.isArray(models) ? models : [];
   document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile, #new-feature-model').forEach((select) => {
-    const existing = select.querySelector('option[value="9router"]');
-    if (model?.enabled && model?.name) {
-      const label = `Model · ${model.name}`;
-      if (existing) existing.textContent = label;
-      else {
-        const option = document.createElement('option');
-        option.value = '9router';
-        option.textContent = label;
-        select.appendChild(option);
-      }
-    } else if (existing) {
-      if (select.value === '9router') select.value = 'auto';
-      existing.remove();
+    const previous = select.value;
+    select.querySelectorAll('option[data-custom-model]').forEach((option) => option.remove());
+    available.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model.profile;
+      option.textContent = `Model · ${model.name}`;
+      option.dataset.customModel = '1';
+      select.appendChild(option);
+    });
+    if (previous.startsWith('9router:') && !available.some((model) => model.profile === previous)) {
+      select.value = select.querySelector('option[value="auto"]') ? 'auto' : 'syra-nano';
     }
   });
+}
+
+async function loadAvailableModels() {
+  try {
+    const data = await api('/models/available');
+    syncCustomModelOptions(data.models);
+  } catch { /* provider setup may not be complete yet */ }
 }
 
 function modelThinkingCheckbox(level, selected) {
@@ -2951,8 +2958,9 @@ function renderModelsTab(data) {
   const content = document.getElementById('models-content');
   if (!content) return;
   const provider = data.provider || {};
-  const model = data.model;
-  syncCustomModelOptions(model);
+  const models = Array.isArray(data.models) ? data.models : [];
+  catalogModels = models;
+  syncCustomModelOptions(data.available_models);
   if (!provider.api_key_set) {
     content.innerHTML = `
       <div class="model-setup-card">
@@ -2963,15 +2971,32 @@ function renderModelsTab(data) {
         <button type="button" class="btn-pill btn-primary" id="save-model-provider-btn"><i data-lucide="key-round"></i><span>Continue</span></button>
       </div>`;
   } else {
-    const levels = model?.thinking_levels || [1, 2, 3, 4, 5];
+    const rows = models.length ? models.map((model) => `
+      <div class="model-list-row">
+        <div><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${model.thinking_levels.join(', ')}</span></div>
+        <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
+          <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
+        </button>
+      </div>`).join('') : '<p class="hint">No models have been added yet.</p>';
     content.innerHTML = `
       <div class="model-setup-card">
-        <h2>${model ? 'Model settings' : 'Create a model'}</h2>
-        <p class="hint block">This model uses 9Router at <code>https://9router.sycord.site/v1</code>. Enable it to make it available in agent model menus.</p>
-        <div class="form-group"><label for="model-name">Model name</label><input id="model-name" value="${esc(model?.name || '')}" placeholder="e.g. deepseek/deepseek-r1" autocomplete="off"></div>
-        <div class="form-group"><label>Available thinking settings</label><div class="model-thinking-options">${[1, 2, 3, 4, 5].map((level) => modelThinkingCheckbox(level, levels)).join('')}</div></div>
-        <label class="model-status"><input id="model-enabled" type="checkbox" ${model?.enabled !== false ? 'checked' : ''}> Enable this model for agents</label>
-        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="save-model-btn"><i data-lucide="save"></i><span>Save model</span></button></div>
+        <h2>Configured models</h2>
+        <p class="hint block">Only enabled models are available to your agents through the Syte API.</p>
+        <div class="model-list">${rows}</div>
+      </div>
+      <div class="model-setup-card">
+        <h2>Add a model</h2>
+        <p class="hint block">9Router endpoint: <code>https://9router.sycord.site/v1</code></p>
+        <div class="form-group"><label for="model-name">Model name</label><input id="model-name" placeholder="e.g. deepseek/deepseek-r1" autocomplete="off"></div>
+        <div class="form-group"><label>Available thinking settings</label><div class="model-thinking-options">${[1, 2, 3, 4, 5].map((level) => modelThinkingCheckbox(level, [1, 2, 3, 4, 5])).join('')}</div></div>
+        <label class="model-status"><input id="model-enabled" type="checkbox" checked> Enable this model for agents</label>
+        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-primary" id="add-model-btn"><i data-lucide="plus"></i><span>Add model</span></button></div>
+      </div>
+      <div class="model-setup-card">
+        <h2>Bulk add models</h2>
+        <p class="hint block">Add one model name per line. New models start enabled and use the selected thinking settings above.</p>
+        <div class="form-group"><label for="bulk-model-names">Model names</label><textarea id="bulk-model-names" rows="5" placeholder="deepseek/deepseek-r1\nqwen/qwen3\nopenai/gpt-4.1"></textarea></div>
+        <div class="svc-panel-actions"><button type="button" class="btn-pill btn-ghost" id="bulk-add-models-btn"><i data-lucide="list-plus"></i><span>Bulk add</span></button></div>
       </div>`;
   }
   refreshIcons();
@@ -4306,10 +4331,7 @@ async function loadSettings() {
       havy: Boolean(s.agent_syra_havy_api_key_set),
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
     };
-    syncCustomModelOptions(s.agent_9router_model_name ? {
-      name: s.agent_9router_model_name,
-      enabled: Boolean(s.agent_9router_enabled),
-    } : null);
+    await loadAvailableModels();
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
         ? 'internal secret saved — enter new value to replace'
@@ -4721,9 +4743,11 @@ document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDraw
 
 document.addEventListener('click', async (event) => {
   const providerButton = event.target.closest('#save-model-provider-btn');
-  const modelButton = event.target.closest('#save-model-btn');
-  if (!providerButton && !modelButton) return;
-  const button = providerButton || modelButton;
+  const addButton = event.target.closest('#add-model-btn');
+  const bulkButton = event.target.closest('#bulk-add-models-btn');
+  const toggleButton = event.target.closest('.model-toggle-btn');
+  if (!providerButton && !addButton && !bulkButton && !toggleButton) return;
+  const button = providerButton || addButton || bulkButton || toggleButton;
   button.disabled = true;
   try {
     if (providerButton) {
@@ -4731,20 +4755,31 @@ document.addEventListener('click', async (event) => {
       if (!apiKey) throw new Error('Paste your 9Router API key first.');
       await api('/models/provider', { method: 'PUT', body: JSON.stringify({ api_key: apiKey }) });
       toast('9Router connected. Choose your model.');
-    } else {
+    } else if (addButton) {
       const modelName = document.getElementById('model-name')?.value?.trim();
       const thinkingLevels = [...document.querySelectorAll('input[name="model-thinking"]:checked')]
         .map((input) => Number(input.value));
       if (!modelName) throw new Error('Enter a model name.');
-      await api('/models/default', {
-        method: 'PUT',
+      await api('/models', {
+        method: 'POST',
         body: JSON.stringify({
           model_name: modelName,
           thinking_levels: thinkingLevels,
           enabled: Boolean(document.getElementById('model-enabled')?.checked),
         }),
       });
-      toast('Model saved.');
+      toast('Model added.');
+    } else if (bulkButton) {
+      const names = (document.getElementById('bulk-model-names')?.value || '').split('\n').map((name) => name.trim()).filter(Boolean);
+      if (!names.length) throw new Error('Enter one or more model names.');
+      const thinkingLevels = [...document.querySelectorAll('input[name="model-thinking"]:checked')].map((input) => Number(input.value));
+      await api('/models/bulk', { method: 'POST', body: JSON.stringify({ models: names.map((model_name) => ({ model_name, thinking_levels: thinkingLevels, enabled: true })) }) });
+      toast(`${names.length} models submitted.`);
+    } else if (toggleButton) {
+      const model = catalogModels.find((item) => item.id === toggleButton.dataset.modelId);
+      if (!model) throw new Error('Model could not be found. Refresh and try again.');
+      await api(`/models/${encodeURIComponent(model.id)}`, { method: 'PUT', body: JSON.stringify({ model_name: model.name, thinking_levels: model.thinking_levels, enabled: !model.enabled }) });
+      toast(`Model ${model.enabled ? 'disabled' : 'enabled'}.`);
     }
     await loadModelsTab();
     await loadSettings();

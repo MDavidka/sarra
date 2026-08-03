@@ -212,6 +212,10 @@ class ModelConfigurationRequest(BaseModel):
     enabled: bool = True
 
 
+class BulkModelConfigurationRequest(BaseModel):
+    models: list[ModelConfigurationRequest] = Field(min_length=1, max_length=100)
+
+
 class UpdateProjectRequest(BaseModel):
     name: str | None = None
     git_url: str | None = None
@@ -466,19 +470,24 @@ async def get_settings():
 
 
 async def _model_configuration() -> dict[str, Any]:
-    """Return the single user-managed 9Router model without exposing its key."""
+    """Return the user-managed 9Router catalog without exposing its key."""
+    from syte.model_catalog import configured_models, enabled_model_options, model_profile
+
     key_set = bool((await get_setting("agent_9router_api_key", "")).strip())
-    model_name = (await get_setting("agent_9router_model_name", "")).strip()
-    raw_levels = (await get_setting("agent_9router_thinking_levels", "1,2,3,4,5")).strip()
-    levels = [int(value) for value in raw_levels.split(",") if value.isdigit() and 1 <= int(value) <= 5]
+    models = await configured_models()
+    available_models = enabled_model_options(models)
+    # Keep the former field while callers move to the catalog response.
+    primary = models[0] if models else None
     return {
         "provider": {"name": "9Router", "api_base": "https://9router.sycord.site/v1", "api_key_set": key_set},
         "model": {
             "profile": "9router",
-            "name": model_name,
-            "thinking_levels": levels or [1, 2, 3, 4, 5],
-            "enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
-        } if model_name else None,
+            "name": primary["name"],
+            "thinking_levels": primary["thinking_levels"],
+            "enabled": primary["enabled"],
+        } if primary else None,
+        "models": [{**row, "profile": model_profile(row["id"])} for row in models],
+        "available_models": available_models,
     }
 
 
@@ -487,22 +496,110 @@ async def get_models():
     return await _model_configuration()
 
 
+@app.get("/api/models/available")
+async def get_available_models():
+    """Enabled 9Router models suitable for agent model pickers."""
+    return {"models": (await _model_configuration())["available_models"]}
+
+
 @app.put("/api/models/provider")
 async def save_model_provider(body: ModelProviderSetupRequest):
     await set_setting("agent_9router_api_key", body.api_key.strip())
     return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
 
 
-@app.put("/api/models/default")
-async def save_default_model(body: ModelConfigurationRequest):
+async def _save_model_records(records: list[dict[str, Any]]) -> None:
+    """Persist catalog and retain single-model settings for old installations."""
+    import json
+
+    await set_setting("agent_9router_models", json.dumps(records, separators=(",", ":")))
+    primary = records[0] if records else None
+    await set_setting("agent_9router_model_name", primary["name"] if primary else "")
+    await set_setting("agent_9router_thinking_levels", ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5")
+    await set_setting("agent_9router_enabled", "1" if primary and primary["enabled"] else "0")
+
+
+def _checked_model(body: ModelConfigurationRequest) -> dict[str, Any]:
+    name = body.model_name.strip()
+    if not name:
+        raise HTTPException(400, "Enter a model name.")
     levels = sorted(set(body.thinking_levels))
     if not levels or any(level < 1 or level > 5 for level in levels):
         raise HTTPException(400, "Choose one or more thinking levels between 1 and 5.")
-    if body.enabled and not (await get_setting("agent_9router_api_key", "")).strip():
+    return {"name": name, "thinking_levels": levels, "enabled": body.enabled}
+
+
+async def _require_provider_key_if_enabled(records: list[dict[str, Any]]) -> None:
+    if any(record["enabled"] for record in records) and not (await get_setting("agent_9router_api_key", "")).strip():
         raise HTTPException(400, "Save the 9Router API key before enabling this model.")
-    await set_setting("agent_9router_model_name", body.model_name.strip())
-    await set_setting("agent_9router_thinking_levels", ",".join(str(level) for level in levels))
-    await set_setting("agent_9router_enabled", "1" if body.enabled else "0")
+
+
+@app.post("/api/models")
+async def add_model(body: ModelConfigurationRequest):
+    from syte.model_catalog import configured_models, new_model_id
+
+    record = _checked_model(body)
+    records = await configured_models()
+    record["id"] = new_model_id(record["name"])
+    if any(item["id"] == record["id"] for item in records):
+        raise HTTPException(400, "That model is already in the list.")
+    records.append(record)
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model added.", **(await _model_configuration())}
+
+
+@app.post("/api/models/bulk")
+async def add_models_bulk(body: BulkModelConfigurationRequest):
+    from syte.model_catalog import configured_models, new_model_id
+
+    records = await configured_models()
+    existing = {item["id"] for item in records}
+    added = 0
+    for item in body.models:
+        record = _checked_model(item)
+        record["id"] = new_model_id(record["name"])
+        if record["id"] not in existing:
+            records.append(record)
+            existing.add(record["id"])
+            added += 1
+    if not added:
+        raise HTTPException(400, "All submitted models are already in the list.")
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": f"{added} models added.", **(await _model_configuration())}
+
+
+@app.put("/api/models/{model_id}")
+async def update_model(model_id: str, body: ModelConfigurationRequest):
+    from syte.model_catalog import configured_models
+
+    records = await configured_models()
+    record = _checked_model(body)
+    for index, existing in enumerate(records):
+        if existing["id"] == model_id:
+            records[index] = {**record, "id": model_id}
+            break
+    else:
+        raise HTTPException(404, "Model not found.")
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model updated.", **(await _model_configuration())}
+
+
+@app.put("/api/models/default")
+async def save_default_model(body: ModelConfigurationRequest):
+    """Compatibility endpoint: create or update the first catalog model."""
+    from syte.model_catalog import configured_models, new_model_id
+
+    records = await configured_models()
+    record = _checked_model(body)
+    if records:
+        records[0] = {**record, "id": records[0]["id"]}
+    else:
+        records.append({**record, "id": new_model_id(record["name"])})
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
     return {"ok": True, "message": "Model saved.", **(await _model_configuration())}
 
 
@@ -611,12 +708,11 @@ async def save_settings(body: SettingsRequest):
         messages.append(f"Preview wildcard TLS mode: {mode}")
 
     if body.agent_default_model_profile is not None:
-        from syte.ai_providers import PROFILE_PROVIDERS
-
         from syte.ai_providers import DEFAULT_PROFILE
+        from syte.cloud_agent import is_available_model_profile
 
         profile = body.agent_default_model_profile.strip() or DEFAULT_PROFILE
-        if profile not in PROFILE_PROVIDERS:
+        if not await is_available_model_profile(profile):
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
         messages.append(f"Default Syte cloud model profile: {profile}")
