@@ -206,7 +206,8 @@ async def api_model(
     if not project:
         _err(404, "not_found", "Project not found")
     model = await selected_model_metadata(project)
-    return {"ok": True, "uuid": uuid, "model": model}
+    available = await get_available_models()
+    return {"ok": True, "uuid": uuid, "model": model, "available_models": available["models"]}
 
 
 @router.get("/agent_activity")
@@ -351,7 +352,8 @@ async def api_list_visual_analyses(
 @router.post("/visual_analyze")
 async def api_visual_analyze(body: VisualAnalyzeBody, _token: dict = Depends(verify_api_token)):
     """Capture preview screenshots (optional) and store structured visual_analyses."""
-    from syte.cloud_agent import selected_model_metadata
+from syte.cloud_agent import selected_model_metadata
+from syte.main import get_available_models
     from syte.visual_analysis import analyze_and_store
 
     project = await get_project(body.uuid)
