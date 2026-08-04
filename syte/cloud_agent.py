@@ -26,6 +26,7 @@ import httpx
 from syte.agent_activity import record_agent_event
 from syte.ai_providers import (
     DEFAULT_PROFILE,
+    NINE_ROUTER_PROFILE_SPEC,
     PROFILE_ORDER,
     PROFILE_PROVIDERS,
     provider_chat_completion_url,
@@ -824,12 +825,23 @@ async def bridge_settings() -> dict[str, Any]:
         # Match Aliyun endpoint to the key billing mode (Token Plan vs DashScope PAYG).
         if name == "syra-ultra" and resolved["api_key"]:
             entry["api_base"] = aliyun_api_base_for_key(str(resolved["api_key"]))
-        if name == "9router":
-            primary = enabled_custom_models[0] if enabled_custom_models else None
-            entry["model"] = primary["name"] if primary else ""
-            entry["enabled"] = bool(primary)
-            entry["thinking_levels"] = ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5"
         profiles[name] = entry
+    # Build the 9Router profile from the dynamic spec + catalog models.
+    router_resolved = await resolve_profile_api_key("9router")
+    primary = enabled_custom_models[0] if enabled_custom_models else None
+    profiles["9router"] = {
+        **NINE_ROUTER_PROFILE_SPEC,
+        "api_key": router_resolved["api_key"],
+        "key_source": router_resolved["source"],
+        "api_key_hint": router_resolved["api_key_hint"],
+        "settings_set": bool(router_resolved["settings_set"]),
+        "env_set": bool(router_resolved["env_set"]),
+        "settings_hint": router_resolved["settings_hint"],
+        "env_hint": router_resolved["env_hint"],
+        "model": primary["name"] if primary else "",
+        "enabled": bool(primary),
+        "thinking_levels": ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5",
+    }
     # Each enabled catalog record is a selectable agent profile. Disabled models
     # are deliberately omitted so stale requests cannot route to them.
     base_custom = profiles["9router"]
@@ -906,7 +918,7 @@ def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any
 
 async def is_available_model_profile(profile: str) -> bool:
     """Whether a static or enabled catalog profile may be selected by an agent."""
-    if profile in PROFILE_PROVIDERS and profile != "9router":
+    if profile in PROFILE_PROVIDERS:
         return True
     bridge = await bridge_settings()
     return profile in bridge["profiles"] and bool(bridge["profiles"][profile].get("enabled", True))
@@ -3877,7 +3889,6 @@ async def _resolve_subagent_model(
     task: str,
     *,
     mode: str | None = None,
-    override_api_key: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Prefer NVIDIA GLM subagent; fall back to nano/base/parent when needed."""
     from syte.model_routing import fallback_subagent_profile, suggest_subagent_profile
@@ -3901,8 +3912,6 @@ async def _resolve_subagent_model(
             meta = await model_metadata_for_profile(profile)
         except Exception:
             continue
-        if override_api_key and override_api_key.strip():
-            meta = _apply_api_key_override(meta, override_api_key.strip())
         metas[profile] = meta
         if (meta.get("api_key") or "").strip():
             available.add(profile)
@@ -3926,8 +3935,6 @@ async def _resolve_subagent_model(
             ),
         }
         return dict(meta), routing
-    if chosen == str(parent_model.get("profile") or "") and (override_api_key and override_api_key.strip()):
-        return _apply_api_key_override(dict(parent_model), override_api_key.strip()), routing
     # Last resort: parent model metadata already in hand.
     routing = {
         **routing,
@@ -4044,7 +4051,6 @@ async def _tool_delegate_task(
 
     sub_model, routing = await _resolve_subagent_model(
         model, task, mode=str(args.get("mode") or "") or None,
-        override_api_key=(context or {}).get("override_api_key"),
     )
     mode = str(routing.get("mode") or "research")
     timeout_s = (

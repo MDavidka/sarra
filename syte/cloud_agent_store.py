@@ -220,7 +220,8 @@ async def current_session_number(project_id: str) -> int:
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT session_counter FROM agent_sessions WHERE project_id = ?",
+            "SELECT session_counter FROM agent_sessions WHERE project_id = ? "
+            "ORDER BY session_counter DESC LIMIT 1",
             (project_id,),
         ) as cur:
             row = await cur.fetchone()
