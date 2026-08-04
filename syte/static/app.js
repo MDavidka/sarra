@@ -3369,7 +3369,7 @@ function renderModelGroups() {
   const groups = new Map();
   catalogModels.filter((model) => {
     const text = `${model.provider || ''} ${model.name || ''}`.toLowerCase();
-    return !query || text.includes(query);
+    return model.enabled && (!query || text.includes(query));
   }).forEach((model) => {
     const provider = model.provider || '9Router';
     if (!groups.has(provider)) groups.set(provider, []);
