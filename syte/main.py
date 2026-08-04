@@ -496,9 +496,10 @@ async def _model_configuration() -> dict[str, Any]:
     curated = await configured_models()
     router_models = router_models_cached()
     # `models` stays the curated catalog because the Models tab CRUD routes
-    # address rows by their stored id. Router models are additive and only ever
-    # offered for selection.
-    available_models = enabled_model_options(merge_router_models(curated, router_models))
+    # address rows by their stored id. Only explicitly enabled curated models are
+    # offered in the picker — the live router catalog is not injected here so the
+    # agent model picker stays in sync with what the user enabled in the Models tab.
+    available_models = enabled_model_options(curated)
     # Keep the former field while callers move to the catalog response.
     primary = curated[0] if curated else None
     return {
