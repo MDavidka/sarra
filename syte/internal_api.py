@@ -27,7 +27,8 @@ class InternalAgentChangeRequest(BaseModel):
     message: str = Field(..., description="User change request from sycord.com")
     model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
     model_name: str | None = Field(None, description="Alias used by sycord.com")
-    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    model_id: str | None = Field(None, description="9Router model id — resolves to 9router:{model_id} profile")
+    thinking_level: int | None = Field(None, ge=1, le=6, description="1 minimal … 6 xhigh")
     idempotency_key: str | None = Field(
         None, description="Optional client key — retries return the same request_id"
     )
@@ -37,7 +38,8 @@ class InternalAgentCommunicateRequest(BaseModel):
     message: str
     model_profile: str | None = None
     model_name: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    model_id: str | None = Field(None, description="9Router model id — resolves to 9router:{model_id} profile")
+    thinking_level: int | None = Field(None, ge=1, le=6, description="1 minimal … 6 xhigh")
 
 
 class InternalQuestionAnswerRequest(BaseModel):
@@ -409,7 +411,14 @@ async def internal_agent_communicate(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     await _require_project(project_id)
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+
     profile = body.model_profile or body.model_name
+    if not profile and body.model_id:
+        for row in await configured_models():
+            if row.get("id") == body.model_id:
+                profile = catalog_model_profile(row["id"])
+                break
     result = await communicate_with_agent(
         project_id,
         body.message,
@@ -430,7 +439,14 @@ async def internal_agent_change(
 ):
     """sycord.com → Syte: request a Syte cloud workspace change by UUID."""
     await _require_project(project_id)
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+
     profile = body.model_profile or body.model_name
+    if not profile and body.model_id:
+        for row in await configured_models():
+            if row.get("id") == body.model_id:
+                profile = catalog_model_profile(row["id"])
+                break
     result = await communicate_with_agent(
         project_id,
         body.message,
