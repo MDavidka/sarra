@@ -2989,18 +2989,34 @@ function syncCustomModelOptions(models) {
   const available = Array.isArray(models) ? models : [];
   document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile').forEach((select) => {
     const previous = select.value;
-    select.querySelectorAll('option[data-custom-model]').forEach((option) => option.remove());
+
+    // Remove all options except 'auto' (if it exists)
+    select.querySelectorAll('option').forEach((option) => {
+      if (option.value !== 'auto') {
+        option.remove();
+      }
+    });
+
     available.forEach((model) => {
       const option = document.createElement('option');
       option.value = model.profile;
-      option.textContent = `Model · ${model.name}`;
+      option.textContent = `${model.provider || '9Router'} · ${model.name}`;
       option.dataset.customModel = '1';
       select.appendChild(option);
     });
-    if (previous.startsWith('9router:') && !available.some((model) => model.profile === previous)) {
-      select.value = select.querySelector('option[value="auto"]') ? 'auto' : 'syra-nano';
+
+    if (available.some((model) => model.profile === previous) || previous === 'auto') {
+      select.value = previous;
+    } else {
+      const autoOption = select.querySelector('option[value="auto"]');
+      if (autoOption) {
+        select.value = 'auto';
+      } else if (available.length > 0) {
+        select.value = available[0].profile;
+      }
     }
   });
+
   const builtInAgent = document.getElementById('new-feature-model');
   if (builtInAgent) {
     const previous = builtInAgent.value;
@@ -3011,7 +3027,9 @@ function syncCustomModelOptions(models) {
       option.textContent = `${model.provider || '9Router'} · ${model.name}`;
       builtInAgent.appendChild(option);
     });
-    if (available.some((model) => model.profile === previous)) builtInAgent.value = previous;
+    if (available.some((model) => model.profile === previous)) {
+      builtInAgent.value = previous;
+    }
   }
 }
 
