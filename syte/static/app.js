@@ -3308,7 +3308,7 @@ const STATIC_MODEL_PROFILES = [
 
 function syncCustomModelOptions(models) {
   const available = Array.isArray(models) ? models : [];
-  const selectable = [...STATIC_MODEL_PROFILES, ...available];
+  const selectable = [...available];
   document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile').forEach((select) => {
     const previous = select.value;
 

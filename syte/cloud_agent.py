@@ -802,18 +802,16 @@ async def bridge_settings() -> dict[str, Any]:
     from syte.ai_providers import aliyun_api_base_for_key
     from syte.model_catalog import configured_models, model_profile
 
-    from syte.model_catalog import merge_router_models, router_models_cached
-
     await migrate_provider_lineup_keys()
     default_profile = (
         await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
     ).strip() or DEFAULT_PROFILE
     resolved_keys = await asyncio.gather(*[resolve_profile_api_key(name) for name in PROFILE_ORDER])
     profiles: dict[str, dict[str, Any]] = {}
-    # Models offered by the router's live /v1/models list are selectable too, so
-    # the chat picker does not need every model registered by hand first. Read
-    # from cache only — never make a network call on the agent hot path.
-    custom_models = merge_router_models(await configured_models(), router_models_cached())
+    # Only user-enabled curated models from the Models tab are selectable.
+    # Router live models are NOT merged here so the agent profile list stays
+    # in sync with what the user explicitly enabled.
+    custom_models = await configured_models()
     enabled_custom_models = [row for row in custom_models if row["enabled"]]
     for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
