@@ -15,6 +15,7 @@ from syte import workspace_api
 from syte.workspace import workspace_path
 
 router = APIRouter(tags=["Sycord API"])
+from syte.cloud_agent import selected_model_metadata
 
 
 def _err(status: int, code: str, message: str):
@@ -193,6 +194,19 @@ async def api_agent_status(
     if not payload:
         _err(404, "not_found", "Project not found")
     return {"ok": True, **payload}
+
+
+@router.get("/model")
+async def api_model(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict = Depends(verify_api_token),
+):
+    """Return model metadata for the given project, same as used by the agent."""
+    project = await get_project(uuid)
+    if not project:
+        _err(404, "not_found", "Project not found")
+    model = await selected_model_metadata(project)
+    return {"ok": True, "uuid": uuid, "model": model}
 
 
 @router.get("/agent_activity")
