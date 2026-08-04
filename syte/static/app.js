@@ -15,6 +15,21 @@ let agentActivityEventSource = null;
 let debugChatResumeSession = null;
 let agentActivityPollInFlight = false;
 const AGENT_ACTIVITY_POLL_INTERVAL_MS = 2000;
+// SSE recovery. A dropped connection used to fall back to 2s polling forever,
+// so the chat "lost signal" for the rest of the session after one blip. Now the
+// stream is re-opened with exponential backoff and polling only covers the gap.
+let agentActivityReconnectTimer = null;
+let agentActivityReconnectAttempts = 0;
+let agentActivityStreamProjectId = null;
+let agentActivityStallTimer = null;
+let agentActivityLastFrameAt = 0;
+const AGENT_ACTIVITY_RECONNECT_BASE_MS = 1000;
+const AGENT_ACTIVITY_RECONNECT_MAX_MS = 15000;
+// The server sends a heartbeat every 10s, so silence well past that means the
+// connection is dead even though the browser has not reported an error yet
+// (common on mobile networks and after backgrounding a tab).
+const AGENT_ACTIVITY_STALL_TIMEOUT_MS = 35000;
+const AGENT_ACTIVITY_STALL_CHECK_MS = 5000;
 let debugChatBrainPollTimer = null;
 let debugChatBrainPollInFlight = false;
 const DEBUG_CHAT_BRAIN_POLL_INTERVAL_MS = 3000;
@@ -37,6 +52,9 @@ let debugChatRequestStartedAt = 0;
 let debugChatSendInFlight = false;
 let debugChatConnectionState = 'disconnected';
 let debugChatTerminalRequestIds = new Set();
+// Turns the user explicitly stopped, so a terminal event arriving afterwards is
+// reported as "Response stopped" rather than "Response failed".
+let debugChatStoppedRequestIds = new Set();
 let debugChatIdleStatus = 'Agent ready';
 let debugChatActivityLabel = '';
 let debugChatResourceMode = '';
@@ -136,15 +154,32 @@ function stopPreviewStream() {
   setPreviewLogsLiveIndicator(false);
 }
 
-function stopAgentActivityStream() {
+function stopAgentActivityPollFallback() {
   if (agentActivityPollTimer) {
     clearInterval(agentActivityPollTimer);
     agentActivityPollTimer = null;
   }
+}
+
+function stopAgentActivityStream() {
+  stopAgentActivityPollFallback();
+  if (agentActivityReconnectTimer) {
+    clearTimeout(agentActivityReconnectTimer);
+    agentActivityReconnectTimer = null;
+  }
+  if (agentActivityStallTimer) {
+    clearInterval(agentActivityStallTimer);
+    agentActivityStallTimer = null;
+  }
   if (agentActivityEventSource) {
+    agentActivityEventSource.onerror = null;
+    agentActivityEventSource.onopen = null;
     agentActivityEventSource.close();
     agentActivityEventSource = null;
   }
+  agentActivityStreamProjectId = null;
+  agentActivityReconnectAttempts = 0;
+  agentActivityLastFrameAt = 0;
   agentActivityPollInFlight = false;
   setDebugChatConnectionState('disconnected');
   stopDebugChatBrainPoll();
@@ -1278,6 +1313,36 @@ function finalizeDebugChatStream(requestId, finalText = '') {
   scrollDebugChatToBottom(false, 'main');
 }
 
+// Single place that ends a turn in the UI: closes the streaming bubble, clears
+// the watchdog, unlocks the composer and reports the outcome. Every terminal
+// path (live event, duplicate delivery, stop, watchdog) funnels through here so
+// the composer can never stay locked on a request that already finished.
+function releaseDebugChatTurn(event, requestId, { finalizeStream = true } = {}) {
+  const eventType = String(event?.event_type || '');
+  const wasStopping = debugChatStopping
+    || eventType === 'agent_stopped'
+    || debugChatStoppedRequestIds.has(requestId || debugChatActiveRequestId);
+  if (finalizeStream) {
+    const finalText = eventType === 'request_completed' ? debugChatDetailText(event) : '';
+    finalizeDebugChatStream(requestId || debugChatActiveRequestId, finalText);
+  }
+  setDebugChatTyping(false);
+  clearDebugChatRequestWatchdog();
+  setDebugChatBusy(false);
+  debugChatActiveRequestId = '';
+  setDebugChatActivity(
+    eventType === 'request_completed'
+      ? 'Response ready'
+      : (wasStopping || eventType === 'agent_stopped'
+        ? 'Response stopped'
+        : 'Response failed'),
+    '',
+    eventType === 'request_completed' ? 'check-circle-2' : 'circle-alert',
+  );
+  dismissDebugChatActivitySoon();
+  void updateDebugChatAgentStatus();
+}
+
 function finalizeAllDebugChatStreams() {
   for (const [requestId, text] of [...debugChatStreamBuffers.entries()]) {
     finalizeDebugChatStream(requestId, text);
@@ -1506,6 +1571,39 @@ function debugChatDetailText(event) {
   return '';
 }
 
+// A long session can accumulate thousands of bubbles. On low-memory phones an
+// unbounded transcript is enough on its own to crash the tab, so keep only a
+// recent window in the DOM. Older turns remain available via session history.
+// Kept above the 500-event history fetch limit so opening the panel never trims
+// the very session it just loaded (the cursor is monotonic, so trimmed history
+// would not come back on the next sync).
+const DEBUG_CHAT_MAX_BUBBLES = 900;
+
+function trimDebugChatBubbles(messagesEl) {
+  if (!messagesEl) return;
+  // childElementCount is O(1); only pay for a subtree query once over the cap.
+  if (messagesEl.childElementCount <= DEBUG_CHAT_MAX_BUBBLES) return;
+  const bubbles = messagesEl.querySelectorAll('.debug-chat-bubble');
+  let excess = bubbles.length - DEBUG_CHAT_MAX_BUBBLES;
+  if (excess <= 0) return;
+  const heightBefore = messagesEl.scrollHeight;
+  for (let i = 0; i < bubbles.length && excess > 0; i += 1) {
+    const node = bubbles[i];
+    // Never drop the bubble currently receiving streamed tokens.
+    if (node.classList.contains('debug-chat-streaming')) continue;
+    node.remove();
+    excess -= 1;
+  }
+  // Nodes were removed above the viewport. Without compensating scrollTop the
+  // content the user is reading jumps, and the smaller scrollHeight can make
+  // updateDebugChatScrollState think we are at the bottom and re-enable
+  // auto-scroll.
+  const removedHeight = heightBefore - messagesEl.scrollHeight;
+  if (removedHeight > 0) {
+    messagesEl.scrollTop = Math.max(0, messagesEl.scrollTop - removedHeight);
+  }
+}
+
 function appendDebugChatBubble(event) {
   const lane = event ? debugChatLaneForEvent(event) : 'main';
   debugChatRenderLane = lane;
@@ -1528,6 +1626,7 @@ function appendDebugChatBubble(event) {
   if (role === 'action') {
     // Rendered as a collapsed, openable summary row instead of a long line.
     appendDebugChatActionRow(event, messagesEl, lane);
+    trimDebugChatBubbles(messagesEl);
     return;
   }
   // Any non-action bubble ends the current collapsed group.
@@ -1645,6 +1744,7 @@ function appendDebugChatBubble(event) {
 
   if (role === 'error') addDebugChatErrorActions(bubble, event, errorPresentation);
   messagesEl.appendChild(bubble);
+  trimDebugChatBubbles(messagesEl);
   // Full-document Lucide passes during history replay are extremely expensive
   // (hundreds of createIcons scans) and have caused mobile tab freezes/"Script error".
   if (!debugChatReplayingHistory) refreshIcons(bubble);
@@ -1782,7 +1882,24 @@ function handleDebugChatActivity(event) {
     || event.event_type === 'request_failed'
     || event.event_type === 'agent_stopped';
   if (isTerminal && eventRequestId) {
-    if (debugChatTerminalRequestIds.has(eventRequestId)) return;
+    if (debugChatTerminalRequestIds.has(eventRequestId)) {
+      // This turn's ending was already rendered, so don't render it twice — but
+      // a repeat delivery (poll after SSE, or a history replay that ran before
+      // the composer was unlocked) must still release the composer. Returning
+      // early here is what left finished tasks marked as "working".
+      //
+      // Only for the turn we are actually holding: an overlapping poll can
+      // re-deliver an older turn's terminal event after a newer turn started,
+      // and releasing on that would unlock the composer mid-response.
+      if (
+        !debugChatReplayingHistory
+        && !debugChatSendInFlight
+        && eventRequestId === debugChatActiveRequestId
+      ) {
+        releaseDebugChatTurn(event, eventRequestId, { finalizeStream: false });
+      }
+      return;
+    }
     debugChatTerminalRequestIds.add(eventRequestId);
   }
   const eventId = event.id;
@@ -1863,29 +1980,16 @@ function handleDebugChatActivity(event) {
     finalizeDebugChatThinking(requestId);
     const isActiveRequest = !debugChatActiveRequestId
       || (Boolean(eventRequestId) && eventRequestId === debugChatActiveRequestId);
-    const finalText = event.event_type === 'request_completed'
-      ? debugChatDetailText(event)
-      : '';
     // During history replay, bubbles are rendered via appendDebugChatBubble —
     // don't create streaming "Agent" placeholders (avoids duplicate/[object Object] artifacts).
-    if (!debugChatReplayingHistory && isActiveRequest) {
-      finalizeDebugChatStream(requestId, finalText);
-      const wasStopping = debugChatStopping || event.event_type === 'agent_stopped';
-      setDebugChatTyping(false);
-      clearDebugChatRequestWatchdog();
-      setDebugChatBusy(false);
-      debugChatActiveRequestId = '';
-      setDebugChatActivity(
-        event.event_type === 'request_completed'
-          ? 'Response ready'
-          : (wasStopping || event.event_type === 'agent_stopped'
-            ? 'Response stopped'
-            : 'Response failed'),
-        '',
-        event.event_type === 'request_completed' ? 'check-circle-2' : 'circle-alert',
-      );
-      dismissDebugChatActivitySoon();
-      void updateDebugChatAgentStatus();
+    if (!debugChatReplayingHistory) {
+      if (isActiveRequest) {
+        releaseDebugChatTurn(event, requestId);
+      } else {
+        // A terminal event for some other request id must not silently leave
+        // the composer locked — ask the server whether anything is still running.
+        void reconcileDebugChatBusyState(activeServiceId);
+      }
     }
   }
   if (event.event_type === 'agent_started' && !debugChatReplayingHistory) {
@@ -1962,16 +2066,58 @@ async function onDebugChatWorkspaceChange() {
   }
 }
 
+// Guards against overlapping history reads. Two reads spanning a cursor advance
+// re-deliver the same terminal event, which used to unlock the composer.
+let debugChatSyncInFlight = false;
+
 async function syncDebugChatHistory(projectId) {
+  if (debugChatSyncInFlight) return false;
+  debugChatSyncInFlight = true;
   try {
-    const res = await api(`/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=500`);
+    // `session=last` is required: without it a sync from cursor 0 (a freshly
+    // opened panel) replays *every* session into the transcript.
+    const res = await api(
+      `/projects/${projectId}/agent/activity?since_id=${debugChatSinceId}&limit=500&session=last`,
+    );
     for (const event of res.events || []) {
       handleDebugChatActivity(event);
     }
     return true;
   } catch {
     return false;
+  } finally {
+    debugChatSyncInFlight = false;
   }
+}
+
+// Last-resort guard against a stuck composer: ask the server whether the agent
+// is actually busy and release the UI when it is not. Terminal events can be
+// missed (dropped frame, request id mismatch, event without a session mark),
+// and without this the chat shows "Working…" for a finished turn and the Stop
+// button stays the only way out.
+async function reconcileDebugChatBusyState(projectId) {
+  if (!projectId || projectId !== activeServiceId) return;
+  if (!debugChatBusy || debugChatSendInFlight) return;
+  // Snapshot the turn being judged. A response issued for an earlier turn must
+  // never unlock a newer one that started while this request was in flight.
+  const judgedRequestId = debugChatActiveRequestId;
+  let res;
+  try {
+    res = await api(`/projects/${projectId}/agent`);
+  } catch {
+    return;
+  }
+  if (projectId !== activeServiceId || debugChatSendInFlight) return;
+  if (debugChatActiveRequestId !== judgedRequestId) return;
+  if (res.agent_busy) return;
+  finalizeAllDebugChatStreams();
+  finalizeDebugChatThinking(debugChatActiveRequestId);
+  clearDebugChatRequestWatchdog();
+  setDebugChatTyping(false);
+  setDebugChatBusy(false);
+  debugChatActiveRequestId = '';
+  setDebugChatActivity('Response ready', '', 'check-circle-2');
+  dismissDebugChatActivitySoon();
 }
 
 async function renderDebugChatSessionHeader(metadata) {
@@ -2087,6 +2233,9 @@ async function loadDebugChatHistory(projectId) {
     await loadDebugChatFailures(projectId, { render: false });
     for (const laneEl of getDebugChatLaneEls()) refreshIcons(laneEl);
     updateDebugChatSubagentBadge();
+    // Replay appends with force=false, so a loaded transcript could otherwise
+    // sit parked mid-scroll. Opening a chat must show the newest message.
+    scrollDebugChatToBottom(true, debugChatActiveLane);
     if (!debugChatActiveRequestId && !debugChatSendInFlight) {
       setDebugChatBusy(false);
     } else {
@@ -2124,6 +2273,11 @@ const DEBUG_CHAT_SSE_EVENT_TYPES = [
 ];
 
 function handleAgentActivitySseFrame(evt) {
+  agentActivityLastFrameAt = Date.now();
+  // A stream for a previously opened project can still be draining when the
+  // user switches projects. Its frames must not land in the new transcript.
+  if (agentActivityStreamProjectId !== activeServiceId) return;
+  agentActivityReconnectAttempts = 0;
   try {
     const event = JSON.parse(evt.data || '{}');
     if (event && event.event_type) {
@@ -2134,11 +2288,33 @@ function handleAgentActivitySseFrame(evt) {
   }
 }
 
+// Keep-alive frame: proves the connection is alive without touching the
+// transcript. Used by the stall watchdog below.
+function handleAgentActivityHeartbeat() {
+  agentActivityLastFrameAt = Date.now();
+  // Reset backoff only once the connection has proven it can carry traffic. A
+  // proxy that accepts the request and immediately drops it fires onopen every
+  // time, which would otherwise pin the retry delay at its minimum forever.
+  agentActivityReconnectAttempts = 0;
+  setDebugChatConnectionState('connected');
+}
+
+// The server dropped events for this subscriber under backpressure. Backfill
+// from history so the transcript has no hole.
+function handleAgentActivityStreamGap() {
+  agentActivityLastFrameAt = Date.now();
+  if (agentActivityStreamProjectId) {
+    void syncDebugChatHistory(agentActivityStreamProjectId);
+  }
+}
+
 function bindAgentActivityEventSource(es) {
   es.onmessage = handleAgentActivitySseFrame;
   for (const type of DEBUG_CHAT_SSE_EVENT_TYPES) {
     es.addEventListener(type, handleAgentActivitySseFrame);
   }
+  es.addEventListener('heartbeat', handleAgentActivityHeartbeat);
+  es.addEventListener('stream_gap', handleAgentActivityStreamGap);
 }
 
 function startAgentActivityPollFallback(projectId) {
@@ -2152,29 +2328,102 @@ function startAgentActivityPollFallback(projectId) {
   }, AGENT_ACTIVITY_POLL_INTERVAL_MS);
 }
 
+function agentActivityStreamIsCurrent(projectId) {
+  return activeSvcTab === 'debug-chat'
+    && activeServiceId === projectId
+    && agentActivityStreamProjectId === projectId;
+}
+
+// Re-open the stream with exponential backoff. Polling runs in the meantime so
+// no activity is missed while the stream is down.
+function scheduleAgentActivityReconnect(projectId) {
+  if (agentActivityReconnectTimer) return;
+  if (!agentActivityStreamIsCurrent(projectId)) return;
+  startAgentActivityPollFallback(projectId);
+  const delay = Math.min(
+    AGENT_ACTIVITY_RECONNECT_BASE_MS * (2 ** agentActivityReconnectAttempts),
+    AGENT_ACTIVITY_RECONNECT_MAX_MS,
+  );
+  agentActivityReconnectAttempts += 1;
+  agentActivityReconnectTimer = setTimeout(() => {
+    agentActivityReconnectTimer = null;
+    if (!agentActivityStreamIsCurrent(projectId)) return;
+    openAgentActivityEventSource(projectId);
+  }, delay);
+}
+
+function openAgentActivityEventSource(projectId) {
+  if (agentActivityEventSource) {
+    agentActivityEventSource.onerror = null;
+    agentActivityEventSource.onopen = null;
+    agentActivityEventSource.close();
+    agentActivityEventSource = null;
+  }
+  setDebugChatConnectionState(agentActivityReconnectAttempts ? 'reconnecting' : 'connecting');
+  agentActivityLastFrameAt = Date.now();
+  let es;
+  try {
+    const url = `${API}/projects/${projectId}/agent/activity/stream`
+      + `?session=last&since_id=${encodeURIComponent(debugChatSinceId || 0)}`;
+    es = new EventSource(url);
+  } catch (_) {
+    scheduleAgentActivityReconnect(projectId);
+    return;
+  }
+  agentActivityEventSource = es;
+  const isReconnect = agentActivityReconnectAttempts > 0;
+  es.onopen = () => {
+    if (agentActivityEventSource !== es) return;
+    agentActivityLastFrameAt = Date.now();
+    setDebugChatConnectionState('connected');
+    // The stream is authoritative again; polling is no longer needed.
+    stopAgentActivityPollFallback();
+    // Only after a drop: the stream replays its own backlog from since_id, so
+    // syncing here on a first connect would be a third redundant read of the
+    // same window (and overlapping reads can re-deliver terminal events).
+    if (isReconnect) void syncDebugChatHistory(projectId);
+  };
+  bindAgentActivityEventSource(es);
+  es.onerror = () => {
+    if (agentActivityEventSource !== es) return;
+    setDebugChatConnectionState('reconnecting');
+    es.onerror = null;
+    es.onopen = null;
+    es.close();
+    agentActivityEventSource = null;
+    scheduleAgentActivityReconnect(projectId);
+  };
+}
+
+// Browsers do not always fire `onerror` for a connection that has gone quiet
+// (backgrounded mobile tab, dead proxy). Heartbeat silence is the reliable
+// signal, so force a reconnect when frames stop arriving.
+function startAgentActivityStallWatchdog(projectId) {
+  if (agentActivityStallTimer) clearInterval(agentActivityStallTimer);
+  agentActivityStallTimer = setInterval(() => {
+    if (!agentActivityStreamIsCurrent(projectId)) {
+      stopAgentActivityStream();
+      return;
+    }
+    if (!agentActivityEventSource || agentActivityReconnectTimer) return;
+    if (Date.now() - agentActivityLastFrameAt < AGENT_ACTIVITY_STALL_TIMEOUT_MS) return;
+    setDebugChatConnectionState('reconnecting');
+    agentActivityEventSource.onerror = null;
+    agentActivityEventSource.onopen = null;
+    agentActivityEventSource.close();
+    agentActivityEventSource = null;
+    scheduleAgentActivityReconnect(projectId);
+  }, AGENT_ACTIVITY_STALL_CHECK_MS);
+}
+
 function startAgentActivityStream(projectId) {
   stopAgentActivityStream();
-  setDebugChatConnectionState('connecting');
+  agentActivityStreamProjectId = projectId;
+  agentActivityReconnectAttempts = 0;
   void loadDebugChatResumeSession(projectId);
   void pollAgentActivityOnce(projectId);
-
-  try {
-    const url = `${API}/projects/${projectId}/agent/activity/stream?session=last&since_id=${encodeURIComponent(debugChatSinceId || 0)}`;
-    agentActivityEventSource = new EventSource(url);
-    agentActivityEventSource.onopen = () => setDebugChatConnectionState('connected');
-    bindAgentActivityEventSource(agentActivityEventSource);
-    agentActivityEventSource.onerror = () => {
-      setDebugChatConnectionState('reconnecting');
-      if (agentActivityEventSource) {
-        agentActivityEventSource.close();
-        agentActivityEventSource = null;
-      }
-      // Fall back to polling if SSE drops.
-      startAgentActivityPollFallback(projectId);
-    };
-  } catch (_) {
-    startAgentActivityPollFallback(projectId);
-  }
+  openAgentActivityEventSource(projectId);
+  startAgentActivityStallWatchdog(projectId);
   startDebugChatBrainPoll(projectId);
 }
 
@@ -2293,6 +2542,13 @@ function armDebugChatRequestWatchdog(projectId, requestId) {
     await syncDebugChatHistory(projectId);
     if (debugChatActiveRequestId !== requestId) return;
 
+    // If the terminal event never arrived, fall back to authoritative server
+    // state so the turn cannot stay "working" indefinitely.
+    if (Date.now() - debugChatRequestStartedAt > 6000) {
+      await reconcileDebugChatBusyState(projectId);
+      if (debugChatActiveRequestId !== requestId) return;
+    }
+
     const delay = debugChatConnectionState === 'connected' ? 8000 : 3000;
     debugChatRequestWatchdogTimer = setTimeout(checkRequest, delay);
   };
@@ -2319,28 +2575,40 @@ async function cancelDebugChatRequest() {
   debugChatStopping = true;
   setDebugChatBusy(true);
   setDebugChatActivity('Stopping response', 'Interrupting the Syte cloud turn', 'square');
+  const projectId = activeServiceId;
+  const stoppingRequestId = debugChatActiveRequestId;
+  if (stoppingRequestId) {
+    debugChatStoppedRequestIds.add(stoppingRequestId);
+    if (debugChatStoppedRequestIds.size > 64) {
+      debugChatStoppedRequestIds = new Set([...debugChatStoppedRequestIds].slice(-32));
+    }
+  }
   try {
-    const res = await api(`/projects/${activeServiceId}/agent/interrupt`, { method: 'POST' });
+    const res = await api(`/projects/${projectId}/agent/interrupt`, { method: 'POST' });
     if (!res.ok) throw new Error(formatAgentChatError(res));
     setDebugChatTyping(false);
-    if ((res.message || '').startsWith('No active')) {
-      finalizeDebugChatStream(debugChatActiveRequestId);
-      clearDebugChatRequestWatchdog();
-      setDebugChatBusy(false);
-      debugChatActiveRequestId = '';
-      setDebugChatActivity('Response stopped', 'Conversation history is preserved', 'square');
-      dismissDebugChatActivitySoon();
-    } else {
-      setDebugChatActivity('Stopping response', 'Waiting for the agent to finish cancelling', 'square');
-      setTimeout(() => {
-        if (activeServiceId) void syncDebugChatHistory(activeServiceId);
-      }, 1000);
+    // The endpoint cancels the durable job before returning, so the turn is
+    // over either way. Release the composer immediately instead of waiting for
+    // a terminal event that may never arrive, then backfill the transcript.
+    finalizeAllDebugChatStreams();
+    finalizeDebugChatThinking(debugChatActiveRequestId);
+    clearDebugChatRequestWatchdog();
+    setDebugChatBusy(false);
+    debugChatActiveRequestId = '';
+    setDebugChatActivity('Response stopped', 'Conversation history is preserved', 'square');
+    dismissDebugChatActivitySoon();
+    if (projectId === activeServiceId) {
+      void syncDebugChatHistory(projectId);
+      void updateDebugChatAgentStatus();
     }
   } catch (e) {
     debugChatStopping = false;
-    setDebugChatBusy(true);
     toast('Could not stop response: ' + normalizeFetchError(e.message));
     if (cancel) cancel.disabled = false;
+    // Never strand the user with a locked composer because Stop failed: verify
+    // against server state and unlock if nothing is actually running.
+    await reconcileDebugChatBusyState(projectId);
+    updateDebugChatControls();
   }
 }
 
@@ -2546,10 +2814,22 @@ function warmProjectAgent(projectId) {
     .catch(() => {});
 }
 
+let modelOptionsLoadedAt = 0;
+const MODEL_OPTIONS_TTL_MS = 300000;
+
+// The chat picker must be usable without first visiting the Models tab.
+async function ensureDebugChatModelOptions() {
+  const select = document.getElementById('debug-chat-profile');
+  const hasModels = Boolean(select?.querySelector('option[data-custom-model]'));
+  if (hasModels && Date.now() - modelOptionsLoadedAt < MODEL_OPTIONS_TTL_MS) return;
+  if (await loadAvailableModels()) modelOptionsLoadedAt = Date.now();
+}
+
 async function openDebugChatTab() {
   if (!activeServiceId) return;
   const projectId = activeServiceId;
   warmProjectAgent(projectId);
+  void ensureDebugChatModelOptions();
   const projectChanged = debugChatLoadedProjectId !== activeServiceId;
   if (projectChanged) {
     clearDebugChatRequestWatchdog();
@@ -2994,34 +3274,60 @@ const MODEL_THINKING_LABELS = {
   xhigh: 'Xhigh',
 };
 
+// Group options by provider so long router catalogs stay navigable.
+function appendModelOptionGroups(select, models) {
+  const groups = new Map();
+  models.forEach((model) => {
+    const provider = model.provider || '9Router';
+    if (!groups.has(provider)) groups.set(provider, []);
+    groups.get(provider).push(model);
+  });
+  for (const [provider, rows] of groups) {
+    const group = document.createElement('optgroup');
+    group.label = provider;
+    rows.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model.profile;
+      option.textContent = model.name;
+      option.dataset.customModel = '1';
+      group.appendChild(option);
+    });
+    select.appendChild(group);
+  }
+}
+
+// Always-present built-in profiles. These are resolved server-side by
+// PROFILE_PROVIDERS and are not part of the 9Router catalog, so they must be
+// added explicitly — otherwise a fresh install with no configured models and an
+// unreachable router would offer nothing but "auto".
+const STATIC_MODEL_PROFILES = [
+  { profile: 'syra-nano', provider: 'Syte', name: 'Go · Gemini 2.5 Flash' },
+  { profile: 'syra-ultra', provider: 'Syte', name: 'Air · Aliyun Qwen' },
+  { profile: 'syra-havy', provider: 'Syte', name: 'Metal · Claude Sonnet 4.6' },
+];
+
 function syncCustomModelOptions(models) {
   const available = Array.isArray(models) ? models : [];
+  const selectable = [...STATIC_MODEL_PROFILES, ...available];
   document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile').forEach((select) => {
     const previous = select.value;
 
-    // Remove all options except 'auto' (if it exists)
-    select.querySelectorAll('option').forEach((option) => {
-      if (option.value !== 'auto') {
-        option.remove();
-      }
+    // Remove everything except 'auto' (if present), including stale optgroups.
+    select.querySelectorAll('option, optgroup').forEach((node) => {
+      if (node.tagName === 'OPTION' && node.value === 'auto' && node.parentElement === select) return;
+      node.remove();
     });
 
-    available.forEach((model) => {
-      const option = document.createElement('option');
-      option.value = model.profile;
-      option.textContent = `${model.provider || '9Router'} · ${model.name}`;
-      option.dataset.customModel = '1';
-      select.appendChild(option);
-    });
+    appendModelOptionGroups(select, selectable);
 
-    if (available.some((model) => model.profile === previous) || previous === 'auto') {
+    if (selectable.some((model) => model.profile === previous) || previous === 'auto') {
       select.value = previous;
     } else {
       const autoOption = select.querySelector('option[value="auto"]');
       if (autoOption) {
         select.value = 'auto';
-      } else if (available.length > 0) {
-        select.value = available[0].profile;
+      } else if (selectable.length > 0) {
+        select.value = selectable[0].profile;
       }
     }
   });
@@ -3030,23 +3336,25 @@ function syncCustomModelOptions(models) {
   if (builtInAgent) {
     const previous = builtInAgent.value;
     builtInAgent.innerHTML = '<option value="" disabled selected>Select a model from the Models tab</option>';
-    available.forEach((model) => {
-      const option = document.createElement('option');
-      option.value = model.profile;
-      option.textContent = `${model.provider || '9Router'} · ${model.name}`;
-      builtInAgent.appendChild(option);
-    });
+    appendModelOptionGroups(builtInAgent, available);
     if (available.some((model) => model.profile === previous)) {
       builtInAgent.value = previous;
     }
   }
 }
 
+// The chat model picker is populated from the Models tab response, which merges
+// the curated catalog with the live 9Router /v1/models list. The <select> in
+// index.html intentionally ships with only the "auto" option.
 async function loadAvailableModels() {
   try {
     const data = await api('/models/available');
     syncCustomModelOptions(data.models);
-  } catch { /* provider setup may not be complete yet */ }
+    return data;
+  } catch {
+    /* provider setup may not be complete yet */
+    return null;
+  }
 }
 
 function modelThinkingSelect(selected = 'medium') {

@@ -389,11 +389,10 @@
                     </div>
                     <label class="debug-chat-profile-label" for="debug-chat-profile">
                       <span>Model</span>
+                      <!-- Options are populated from the Models tab / router
+                           catalog by syncCustomModelOptions() in app.js. -->
                       <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
                         <option value="auto" selected>auto</option>
-                        <option value="syra-nano">Go · Gemini 2.5 Flash</option>
-                        <option value="syra-ultra">Air · Aliyun Qwen</option>
-                        <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
                       </select>
                     </label>
                   </div>
@@ -900,7 +899,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/agent-chat-fixes.js?v=__VERSION__"></script>
   <script src="/static/app.js?v=__VERSION__"></script>
 </body>
 </html>

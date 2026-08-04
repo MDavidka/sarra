@@ -54,16 +54,43 @@ def is_agent_job_running(project_id: str) -> bool:
     return bool(task and not task.done())
 
 
+_CANCEL_DRAIN_TIMEOUT_SECONDS = 2.0
+# Projects whose current turn was stopped by the user rather than superseded by
+# a newer message. Read by _run_job's cancellation handler so the transcript
+# says "Stopped" instead of "Superseded by a newer request".
+_user_cancelled: set[str] = set()
+
+
 async def cancel_agent_job(project_id: str) -> tuple[bool, str]:
-    """Cancel the in-flight agent job for a project (if any)."""
+    """Cancel the in-flight agent job for a project (if any).
+
+    Always reports success: once this returns, no turn is running for the
+    project, which is the only guarantee a Stop action needs. ``interrupt_agent``
+    already returned True on every branch, so the previous code could leave the
+    durable job task running while telling the caller the turn was stopped.
+    """
     from syte.cloud_agent import interrupt_agent
 
-    ok, message = await interrupt_agent(project_id)
+    _ok, message = await interrupt_agent(project_id)
     task = _running.pop(project_id, None)
     if task and not task.done():
+        _user_cancelled.add(project_id)
         task.cancel()
+        # Wait briefly for _run_job's cancellation handler so the terminal
+        # event, request status and Turso session close *before* the caller
+        # reads agent status — otherwise it still reports "processing".
+        #
+        # asyncio.wait (not wait_for) is deliberate: wait_for cancels what it is
+        # waiting on when it times out, which would re-cancel a task already
+        # part-way through writing its terminal event and lose that event.
+        try:
+            await asyncio.wait({task}, timeout=_CANCEL_DRAIN_TIMEOUT_SECONDS)
+        except Exception:
+            pass
+        finally:
+            _user_cancelled.discard(project_id)
         return True, "Agent job cancellation requested."
-    return ok, message
+    return True, message or "No active cloud-agent turn."
 
 
 async def submit_agent_request(
@@ -330,12 +357,17 @@ async def _run_job(
             terminal_status = "completed" if result.get("ok") else "failed"
             return result
         except asyncio.CancelledError:
-            await mark_request(request_id, "cancelled", error="Superseded by a newer request")
+            stopped_by_user = project_id in _user_cancelled
+            reason = (
+                "Stopped by the user"
+                if stopped_by_user else "Superseded by a newer request"
+            )
+            await mark_request(request_id, "cancelled", error=reason)
             await record_agent_event(
                 project_id,
-                "request_failed",
-                title="Cancelled",
-                detail="Superseded by a newer request",
+                "agent_stopped" if stopped_by_user else "request_failed",
+                title="Stopped" if stopped_by_user else "Cancelled",
+                detail=reason,
                 payload={
                     "request_id": request_id,
                     "error": "cancelled",

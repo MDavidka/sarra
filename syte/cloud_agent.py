@@ -802,13 +802,18 @@ async def bridge_settings() -> dict[str, Any]:
     from syte.ai_providers import aliyun_api_base_for_key
     from syte.model_catalog import configured_models, model_profile
 
+    from syte.model_catalog import merge_router_models, router_models_cached
+
     await migrate_provider_lineup_keys()
     default_profile = (
         await get_setting("agent_default_model_profile", DEFAULT_PROFILE)
     ).strip() or DEFAULT_PROFILE
     resolved_keys = await asyncio.gather(*[resolve_profile_api_key(name) for name in PROFILE_ORDER])
     profiles: dict[str, dict[str, Any]] = {}
-    custom_models = await configured_models()
+    # Models offered by the router's live /v1/models list are selectable too, so
+    # the chat picker does not need every model registered by hand first. Read
+    # from cache only — never make a network call on the agent hot path.
+    custom_models = merge_router_models(await configured_models(), router_models_cached())
     enabled_custom_models = [row for row in custom_models if row["enabled"]]
     for name, resolved in zip(PROFILE_ORDER, resolved_keys, strict=True):
         spec = PROFILE_PROVIDERS[name]
@@ -916,12 +921,26 @@ def _metadata_from_bridge(bridge: dict[str, Any], profile: str) -> dict[str, Any
     return meta
 
 
+def _profile_selectable(bridge: dict[str, Any], profile: str) -> bool:
+    return profile in bridge["profiles"] and bool(bridge["profiles"][profile].get("enabled", True))
+
+
 async def is_available_model_profile(profile: str) -> bool:
-    """Whether a static or enabled catalog profile may be selected by an agent."""
+    """Whether a static, catalog or live router profile may be selected."""
     if profile in PROFILE_PROVIDERS:
         return True
     bridge = await bridge_settings()
-    return profile in bridge["profiles"] and bool(bridge["profiles"][profile].get("enabled", True))
+    if _profile_selectable(bridge, profile):
+        return True
+    if profile.startswith("9router:"):
+        # The router catalog cache may be cold or stale (for example the picker
+        # was populated by another browser session). Refresh once before
+        # rejecting a model the router does actually serve.
+        from syte.model_catalog import fetch_router_models
+
+        if await fetch_router_models():
+            return _profile_selectable(await bridge_settings(), profile)
+    return False
 
 
 async def is_catalog_model_profile(profile: str) -> bool:

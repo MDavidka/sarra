@@ -4158,30 +4158,110 @@ body.ai-settings-open { overflow: hidden; }
   .ai-env-row { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 560px) {
-  .debug-chat-header {
-    align-items: flex-start;
+/* ---------------------------------------------------------------------------
+   Agent chat — responsive layout.
+
+   All agent-chat breakpoints live here. They used to be split between this
+   file and a stylesheet injected at runtime by agent-chat-fixes.js, which set
+   competing min-height/max-height values on .debug-chat-messages at a
+   different breakpoint (720px vs 560px) and produced the cramped, double
+   scrolling layout on phones.
+   --------------------------------------------------------------------------- */
+
+/* Long model ids, URLs and stack traces must never widen the layout. */
+.debug-chat-bubble-body,
+.debug-chat-bubble-head {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .debug-chat-panel {
+    /* Fill the viewport and scroll inside the message list instead of
+       scrolling the whole page behind a fixed-height box. */
+    min-height: 0;
+    height: calc(100dvh - 132px);
   }
 
-  .debug-chat-profile {
-    min-width: 4.75rem;
+  .debug-chat-header {
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .debug-chat-header p {
+    display: none;
+  }
+
+  .debug-chat-header-actions {
+    flex-wrap: wrap;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .debug-chat-lanes {
+    min-height: 0;
   }
 
   .debug-chat-messages {
-    min-height: 340px;
+    /* Flex-driven height: no fixed min/max fighting the viewport. */
+    min-height: 0;
+    max-height: none;
+    padding: 0.65rem;
+    -webkit-overflow-scrolling: touch;
   }
 
   .debug-chat-bubble {
-    max-width: 96%;
+    max-width: 100%;
+    font-size: 0.88rem;
   }
 
   .debug-chat-activity {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .debug-chat-activity-detail {
     white-space: normal;
     line-height: 1.3;
+  }
+
+  .debug-chat-composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    /* No backdrop-filter: blurring a sticky element over a list that repaints
+       on every streamed token caused dropped frames and tab crashes. */
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .debug-chat-input {
+    /* 16px minimum stops iOS Safari from zooming in when the field is focused. */
+    font-size: 16px;
+    min-height: 46px;
+  }
+
+  /* Comfortable touch targets. */
+  .debug-chat-button,
+  .debug-chat-tool-button {
+    min-height: 44px;
+  }
+
+  .debug-chat-screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .debug-chat-profile-label {
+    width: 100%;
+  }
+
+  .debug-chat-profile {
+    /* The picker now lists real router model names, which are long. */
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    height: 40px;
   }
 
   .debug-chat-composer {

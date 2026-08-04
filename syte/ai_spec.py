@@ -324,7 +324,21 @@ def build_ai_spec(base_url: str = "") -> dict:
                     "token_api": "GET /api/agent_activity/stream?uuid={uuid}&since_id=0&session=last",
                     "sycord": "GET /sycord/api/agent_activity/stream?uuid={uuid}",
                     "format": "text/event-stream — each frame is `data: {json}\\n\\n`",
-                    "compression": "gzip|br when Accept-Encoding allows",
+                    "compression": (
+                        "gzip|deflate|br when Accept-Encoding allows; flushed after every "
+                        "frame (br only when the installed build exposes flush())"
+                    ),
+                    "control_frames": {
+                        "retry": "`retry: 2000` sent once before the first frame",
+                        "heartbeat": (
+                            "every 10s of silence, as both an SSE comment (`: heartbeat`) "
+                            "and a named `event: heartbeat` data frame"
+                        ),
+                        "stream_gap": (
+                            "`event: stream_gap` with {dropped, last_id} when events were "
+                            "dropped for a slow subscriber — refetch from since_id"
+                        ),
+                    },
                     "hot_path": {
                         "types": ["token_delta", "thinking_delta"],
                         "shape": "minimal-delta (id, event_type, detail, payload.{delta,request_id,session,agent})",
