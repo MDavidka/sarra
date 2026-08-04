@@ -478,22 +478,44 @@ async def get_settings():
 
 async def _model_configuration() -> dict[str, Any]:
     """Return the user-managed 9Router catalog without exposing its key."""
-    from syte.model_catalog import configured_models, enabled_model_options, model_profile
+    from syte.ai_providers import NINE_ROUTER_API_BASE
+    from syte.model_catalog import (
+        configured_models,
+        enabled_model_options,
+        fetch_router_models,
+        merge_router_models,
+        model_profile,
+        router_catalog_state,
+        router_models_cached,
+    )
 
     key_set = bool((await get_setting("agent_9router_api_key", "")).strip())
-    models = await configured_models()
-    available_models = enabled_model_options(models)
+    # Pull the live router catalog so pickers list everything the router serves,
+    # not only models that were registered by hand. Failures are non-fatal.
+    await fetch_router_models()
+    curated = await configured_models()
+    router_models = router_models_cached()
+    # `models` stays the curated catalog because the Models tab CRUD routes
+    # address rows by their stored id. Router models are additive and only ever
+    # offered for selection.
+    available_models = enabled_model_options(merge_router_models(curated, router_models))
     # Keep the former field while callers move to the catalog response.
-    primary = models[0] if models else None
+    primary = curated[0] if curated else None
     return {
-        "provider": {"name": "9Router", "api_base": "https://9router.sycord.site/v1", "api_key_set": key_set},
+        "provider": {
+            "name": "9Router",
+            "api_base": NINE_ROUTER_API_BASE,
+            "api_key_set": key_set,
+        },
+        "router_catalog": router_catalog_state(),
         "model": {
             "profile": "9router",
             "name": primary["name"],
             "thinking_levels": primary["thinking_levels"],
             "enabled": primary["enabled"],
         } if primary else None,
-        "models": [{**row, "profile": model_profile(row["id"])} for row in models],
+        "models": [{**row, "profile": model_profile(row["id"])} for row in curated],
+        "router_models": enabled_model_options(router_models),
         "available_models": available_models,
     }
 
@@ -505,13 +527,41 @@ async def get_models():
 
 @app.get("/api/models/available")
 async def get_available_models():
-    """Enabled 9Router models suitable for agent model pickers."""
-    return {"models": (await _model_configuration())["available_models"]}
+    """Models offered to agent pickers: curated catalog + live router catalog."""
+    config = await _model_configuration()
+    return {
+        "models": config["available_models"],
+        "router_models": config["router_models"],
+        "router_catalog": config["router_catalog"],
+        "provider": config["provider"],
+    }
+
+
+@app.post("/api/models/router/refresh")
+async def refresh_router_models():
+    """Force a re-read of the router's /v1/models list."""
+    from syte.model_catalog import fetch_router_models, router_catalog_state
+
+    ok = await fetch_router_models(force=True)
+    state = router_catalog_state()
+    return {
+        "ok": ok,
+        "message": (
+            f"Loaded {state['count']} models from the router."
+            if ok else (state["error"] or "Could not reach the router model list.")
+        ),
+        **(await _model_configuration()),
+    }
 
 
 @app.put("/api/models/provider")
 async def save_model_provider(body: ModelProviderSetupRequest):
+    from syte.model_catalog import fetch_router_models, reset_router_models_cache
+
     await set_setting("agent_9router_api_key", body.api_key.strip())
+    # The cached model list was fetched with the previous key.
+    reset_router_models_cache()
+    await fetch_router_models(force=True)
     return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
 
 
@@ -1320,11 +1370,15 @@ async def api_agent_start_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/stop")
 async def api_agent_stop_public(project_id: str, request: Request):
+    from syte.agent_jobs import cancel_agent_job
     from syte.cloud_agent import get_agent_status, stop_agent
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+    # Cancel the durable job first: stop_agent() alone leaves the background
+    # task in agent_jobs._running, which keeps reporting the agent as busy.
+    await cancel_agent_job(project_id)
     ok, message = await stop_agent(project_id)
     return {
         "ok": ok,
@@ -1341,15 +1395,24 @@ async def api_agent_stop_public(project_id: str, request: Request):
 
 @app.post("/api/projects/{project_id}/agent/interrupt")
 async def api_agent_interrupt_public(project_id: str, request: Request):
-    """Cancel the active Syte cloud turn without discarding conversation history."""
-    from syte.cloud_agent import get_agent_status, interrupt_agent
+    """Cancel the active Syte cloud turn without discarding conversation history.
+
+    Routes through ``cancel_agent_job`` so the durable background task is
+    cancelled too. Calling ``interrupt_agent`` on its own only stopped the
+    in-process turn, so the job kept running and the agent stayed "busy" —
+    the Stop button appeared to do nothing.
+    """
+    from syte.agent_jobs import cancel_agent_job
+    from syte.cloud_agent import get_agent_status
 
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    ok, message = await interrupt_agent(project_id)
-    if not ok:
-        raise HTTPException(400, message)
+    _ok, message = await cancel_agent_job(project_id)
+    # "Nothing was running" is a successful stop from the caller's point of
+    # view: the turn is not active any more, which is all Stop has to
+    # guarantee. Raising 400 here surfaced a bogus "Could not stop response"
+    # error and left the composer locked.
     return {
         "ok": True,
         "message": message,

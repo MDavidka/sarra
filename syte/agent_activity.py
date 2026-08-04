@@ -57,6 +57,34 @@ try:
 except Exception:  # pragma: no cover - optional
     _brotli = None
 
+
+def _brotli_supports_streaming() -> bool:
+    """Whether the installed brotli build can flush mid-stream.
+
+    SSE only works when every frame is pushed to the socket immediately. A
+    brotli compressor without ``flush()`` buffers frames internally until the
+    connection closes, which looks exactly like a dead stream to EventSource,
+    so such builds must never be negotiated for ``text/event-stream``.
+    """
+    if _brotli is None:
+        return False
+    try:
+        compressor = _brotli.Compressor(quality=4)
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return callable(getattr(compressor, "flush", None))
+
+
+# Resolved once: brotli is only offered for SSE when it can flush per frame.
+_BROTLI_SSE_OK = _brotli_supports_streaming()
+
+# Reconnect hint (ms) sent to EventSource clients. Browsers default to 3s and
+# reset it on every reconnect; an explicit value keeps recovery predictable.
+SSE_RETRY_MS = 2000
+# Keep-alive cadence. Must stay well below proxy/CDN idle timeouts (Caddy and
+# most load balancers cut idle connections at 30-60s).
+SSE_HEARTBEAT_SECONDS = 10.0
+
 _turso_mirror_tasks: set[asyncio.Task[Any]] = set()
 _delta_batchers: dict[str, "StreamDeltaBatcher"] = {}
 
@@ -101,6 +129,16 @@ ACTIVITY_EVENT_TYPES = frozenset({
     # File scope a subagent is allowed to touch, published by the main agent
     # *before* it delegates so two agents never edit the same file.
     "subagent_scope",
+})
+
+# Turn-ending events are meaningful even when they carry no session mark, so
+# ``session="last"`` keeps them instead of filtering them out. Dropping these
+# was what left the chat UI stuck on "Working…" after a request had finished.
+SESSION_AGNOSTIC_EVENT_TYPES = frozenset({
+    "request_completed",
+    "request_failed",
+    "agent_stopped",
+    "session_stopped",
 })
 
 # Chat lanes. Every event carries ``payload.agent``: the GUI renders "main"
@@ -162,7 +200,7 @@ def negotiate_sse_encoding(accept_encoding: str | None) -> str | None:
     if not raw:
         return None
     parts = [p.strip().split(";")[0] for p in raw.split(",") if p.strip()]
-    if "br" in parts and _brotli is not None:
+    if "br" in parts and _BROTLI_SSE_OK:
         return "br"
     if "gzip" in parts:
         return "gzip"
@@ -182,13 +220,19 @@ async def compress_sse_frames(
             yield frame.encode("utf-8") if isinstance(frame, str) else frame
         return
 
-    if encoding == "br" and _brotli is not None:
+    if encoding == "br" and _BROTLI_SSE_OK:
         compressor = _brotli.Compressor(quality=4)
         async for frame in frames:
             chunk = frame.encode("utf-8") if isinstance(frame, str) else frame
             out = compressor.process(chunk)
             if out:
                 yield out
+            # Flush after every frame. Without this the compressor holds frames
+            # (including heartbeats) in its internal window until the stream
+            # ends, so the client sees a silent, apparently-dead connection.
+            flushed = compressor.flush()
+            if flushed:
+                yield flushed
         trail = compressor.finish()
         if trail:
             yield trail
@@ -452,6 +496,32 @@ async def _prune_agent_events(project_id: str) -> None:
         await db.commit()
 
 
+def _payload_session_mark(payload: Any) -> tuple[str, int | None]:
+    """Classify an event's session mark for history filtering.
+
+    Three outcomes, which must be treated differently:
+
+    * ``("absent", None)`` — no mark at all. Many call sites omit it
+      (``status``, ``service_action``, ``agent_started``, ``question_answered``,
+      provider retry notices), so these events are inherited by the session they
+      appear inside. Excluding them made the transcript differ depending on
+      whether it arrived over SSE or over a history fetch.
+    * ``("invalid", None)`` — a mark is present but not an integer (legacy rows
+      that stored a uuid). The event declared a session, just unusably, so it is
+      never attributed to another one.
+    * ``("number", n)`` — a usable session number.
+    """
+    if not isinstance(payload, dict) or "session" not in payload:
+        return ("absent", None)
+    raw = payload.get("session")
+    if raw is None or raw == "":
+        return ("absent", None)
+    try:
+        return ("number", int(raw))
+    except (TypeError, ValueError):
+        return ("invalid", None)
+
+
 def _payload_session_number(payload: Any) -> int | None:
     """Return a numeric session mark from an event payload, or None if absent/invalid."""
     if not isinstance(payload, dict):
@@ -530,6 +600,13 @@ def _notify_subscribers(project_id: str, event: dict[str, Any]) -> None:
             try:
                 queue.get_nowait()
                 queue.put_nowait(event)
+                # Record the drop so the stream can tell the client to resync
+                # from history instead of silently missing events forever.
+                dropped = getattr(queue, "dropped", 0)
+                try:
+                    queue.dropped = int(dropped) + 1  # type: ignore[attr-defined]
+                except Exception:  # pragma: no cover - plain Queue fallback
+                    pass
             except asyncio.QueueEmpty:
                 pass
 
@@ -835,11 +912,25 @@ async def list_agent_events(
     events = [_event_row_to_dict(row) for row in rows]
     if session_filter is not None:
         filtered: list[dict[str, Any]] = []
+        # Rows are ascending by id, so once the target session's first marked
+        # event is seen, later unmarked events belong to that session too.
+        session_started = False
         for event in events:
-            session_num = _payload_session_number(event.get("payload"))
-            if session_num is None:
-                continue
-            if session_num == session_filter:
+            kind, value = _payload_session_mark(event.get("payload"))
+            if kind == "number":
+                keep = value == session_filter
+                if keep:
+                    session_started = True
+            elif kind == "invalid":
+                keep = False
+            else:
+                # Unmarked events are kept once the session has begun. Turn-ending
+                # events are always kept: dropping them left the GUI showing
+                # "Working…" forever for an already-finished request.
+                keep = session_started or (
+                    str(event.get("event_type") or "") in SESSION_AGNOSTIC_EVENT_TYPES
+                )
+            if keep:
                 filtered.append(event)
             if len(filtered) >= limit:
                 break
@@ -847,8 +938,16 @@ async def list_agent_events(
     return events
 
 
+class ActivityQueue(asyncio.Queue):
+    """Subscriber queue that counts events dropped under backpressure."""
+
+    def __init__(self, maxsize: int = 0) -> None:
+        super().__init__(maxsize=maxsize)
+        self.dropped = 0
+
+
 def subscribe_agent_activity(project_id: str) -> asyncio.Queue[dict[str, Any]]:
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=2000)
+    queue: asyncio.Queue[dict[str, Any]] = ActivityQueue(maxsize=2000)
     _subscribers[project_id].append(queue)
     return queue
 
@@ -875,12 +974,21 @@ def _sse_frame_for_event(event: dict[str, Any]) -> str:
     )
 
 
+def _sse_control_frame(event_type: str, **fields: Any) -> str:
+    """Serialize a non-activity control frame (heartbeat / gap / error)."""
+    payload = {"event_type": event_type, **fields}
+    return (
+        f"event: {event_type}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    )
+
+
 async def activity_sse_generator(
     project_id: str,
     *,
     since_id: int = 0,
     session: str | None = None,
-    heartbeat_seconds: float = 15.0,
+    heartbeat_seconds: float = SSE_HEARTBEAT_SECONDS,
 ):
     """Yield SSE frames for live agent activity (token deltas, tools, etc.).
 
@@ -896,18 +1004,51 @@ async def activity_sse_generator(
     backlog = await list_agent_events(
         project_id, since_id=since_id, limit=backlog_limit, session=session or None,
     )
+    # Sent once, ahead of the first frame, so the browser uses our reconnect
+    # delay. Prefixed onto the first real frame to keep the stream compact.
+    preamble = f"retry: {int(SSE_RETRY_MS)}\n\n"
     last_id = since_id
     for event in backlog:
         last_id = max(last_id, int(event.get("id") or 0))
-        yield _sse_frame_for_event(event)
+        frame = _sse_frame_for_event(event)
+        if preamble:
+            frame = preamble + frame
+            preamble = ""
+        yield frame
+    if preamble:
+        yield preamble
+        preamble = ""
 
     queue = subscribe_agent_activity(project_id)
+    dropped_seen = int(getattr(queue, "dropped", 0) or 0)
+
+    def _gap_frame() -> str | None:
+        """Emit a resync hint if this subscriber lost events to backpressure."""
+        nonlocal dropped_seen
+        dropped_now = int(getattr(queue, "dropped", 0) or 0)
+        if dropped_now <= dropped_seen:
+            return None
+        frame = _sse_control_frame(
+            "stream_gap", dropped=dropped_now - dropped_seen, last_id=last_id,
+        )
+        dropped_seen = dropped_now
+        return frame
+
     try:
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
             except asyncio.TimeoutError:
+                # A comment frame alone is invisible to intermediaries that only
+                # count data frames, so send a real named event as well. Clients
+                # use it to confirm the connection is alive.
                 yield ": heartbeat\n\n"
+                yield _sse_control_frame("heartbeat", last_id=last_id)
+                # A burst that overflowed the queue and was then followed by
+                # silence must still be announced, or the client keeps a hole.
+                gap = _gap_frame()
+                if gap:
+                    yield gap
                 continue
             except asyncio.CancelledError:
                 raise
@@ -919,6 +1060,12 @@ async def activity_sse_generator(
                     f"data: {json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
                 )
                 break
+            # Backpressure discarded events for this subscriber. Tell the client
+            # to backfill from history instead of leaving a hole in the
+            # transcript (previously these were lost silently).
+            gap = _gap_frame()
+            if gap:
+                yield gap
             if int(event.get("id") or 0) <= last_id:
                 continue
             if session:

@@ -64,8 +64,33 @@ Cold (non-hot) events still use the full activity object:
 }
 ```
 
-Clients should prefer `event_type` + `payload` for parsing. Heartbeats are sent as
-SSE comments: `: heartbeat`.
+Clients should prefer `event_type` + `payload` for parsing.
+
+### Control frames
+
+Besides activity events the stream emits three control frames. They never belong
+to the transcript and must not be rendered as messages.
+
+| frame | when | client action |
+| --- | --- | --- |
+| `retry: 2000` | once, before the first frame | browsers adopt it as the reconnect delay |
+| `: heartbeat` + `event: heartbeat` | every 10s of silence | treat the connection as alive |
+| `event: stream_gap` | events were dropped for this subscriber under backpressure | backfill with `GET …/agent/activity?since_id=…&session=last` |
+
+Heartbeats are sent **both** as an SSE comment (`: heartbeat`) and as a named
+data frame. The comment alone is invisible to proxies that only count `data:`
+frames, and to clients that never see comments at all. The 10s cadence is
+deliberately below common proxy/CDN idle timeouts.
+
+`stream_gap` carries `{"dropped": n, "last_id": id}`. It exists because the
+server drops the oldest queued event when a slow subscriber's queue fills; a
+client that ignores this frame will silently miss events.
+
+> **Compression note:** the stream is optionally brotli/gzip/deflate encoded and
+> the compressor is flushed after **every** frame. A compressor that only
+> flushes on close buffers frames indefinitely, which is indistinguishable from
+> a dead connection. Brotli is only negotiated when the installed build exposes
+> `flush()`.
 
 There is **no** stream event named `running since` / `start`. Runtime readiness
 uses `GET /agent_status` → `agent_last_started_at` / `agent_running`. Turn busy
