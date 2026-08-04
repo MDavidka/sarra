@@ -352,8 +352,8 @@ async def api_list_visual_analyses(
 @router.post("/visual_analyze")
 async def api_visual_analyze(body: VisualAnalyzeBody, _token: dict = Depends(verify_api_token)):
     """Capture preview screenshots (optional) and store structured visual_analyses."""
-from syte.cloud_agent import selected_model_metadata
-from syte.main import get_available_models
+    from syte.cloud_agent import selected_model_metadata
+    from syte.main import get_available_models
     from syte.visual_analysis import analyze_and_store
 
     project = await get_project(body.uuid)
