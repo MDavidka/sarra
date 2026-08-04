@@ -31,6 +31,22 @@
       const payload = await clone.json();
       if (!Array.isArray(payload?.events)) return response;
       payload.events = latestSessionEvents(payload.events);
+
+      // Also unstick the chat if we see a completed event
+      const hasEndEvent = payload.events.some(e =>
+        e.event_type === 'request_completed' ||
+        e.event_type === 'request_failed' ||
+        e.event_type === 'agent_stopped'
+      );
+      if (hasEndEvent && typeof window.setDebugChatBusy === 'function') {
+         setTimeout(() => {
+            window.setDebugChatBusy(false);
+            if (typeof window.updateDebugChatAgentStatus === 'function') {
+                window.updateDebugChatAgentStatus();
+            }
+         }, 100);
+      }
+
       return new Response(JSON.stringify(payload), {
         status: response.status,
         statusText: response.statusText,
@@ -40,6 +56,30 @@
       return response;
     }
   };
+
+  // Listen to SSE to unstick
+  const origEventSource = window.EventSource;
+  if (origEventSource && !origEventSource.__agentChatPatched) {
+      window.EventSource = function(...args) {
+          const es = new origEventSource(...args);
+          es.addEventListener('message', (event) => {
+              try {
+                  const data = JSON.parse(event.data);
+                  if (
+                      data.event_type === 'request_completed' ||
+                      data.event_type === 'request_failed' ||
+                      data.event_type === 'agent_stopped'
+                  ) {
+                      if (typeof window.setDebugChatBusy === 'function') {
+                          setTimeout(() => window.setDebugChatBusy(false), 50);
+                      }
+                  }
+              } catch (e) {}
+          });
+          return es;
+      };
+      window.EventSource.__agentChatPatched = true;
+  }
 
   function normalizeStatus(label, detail = '') {
     const text = String(label || '').toLowerCase();

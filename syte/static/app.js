@@ -2053,6 +2053,15 @@ async function loadDebugChatHistory(projectId) {
     }
     const lastId = (res.events || []).reduce((max, e) => Math.max(max, e.id || 0), 0);
     if (lastId) debugChatSinceId = Math.max(debugChatSinceId, lastId);
+
+    // Clear busy state explicitly if there are no pending requests to fix the "stuck on generating" issue on load
+    if (pendingRequests.size === 0) {
+      setDebugChatBusy(false);
+      debugChatSendInFlight = false;
+      updateDebugChatControls();
+      await updateDebugChatAgentStatus();
+    }
+
     const pendingRequestId = [...pendingRequests.keys()].pop() || '';
     if (pendingRequestId) {
       debugChatActiveRequestId = pendingRequestId;
