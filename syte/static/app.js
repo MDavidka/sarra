@@ -3331,16 +3331,6 @@ function syncCustomModelOptions(models) {
       }
     }
   });
-
-  const builtInAgent = document.getElementById('new-feature-model');
-  if (builtInAgent) {
-    const previous = builtInAgent.value;
-    builtInAgent.innerHTML = '<option value="" disabled selected>Select a model from the Models tab</option>';
-    appendModelOptionGroups(builtInAgent, available);
-    if (available.some((model) => model.profile === previous)) {
-      builtInAgent.value = previous;
-    }
-  }
 }
 
 // The chat model picker is populated from the Models tab response, which merges
@@ -3359,6 +3349,17 @@ async function loadAvailableModels() {
 
 function modelThinkingSelect(selected = 'medium') {
   return `<select id="model-thinking" aria-label="Thinking setting">${Object.entries(MODEL_THINKING_LABELS).map(([value, label]) => `<option value="${value}" ${value === selected ? 'selected' : ''}>Thinking: ${label}</option>`).join('')}</select>`;
+}
+
+function updateBuiltInAgentModelOptions(models) {
+  const builtInAgent = document.getElementById('new-feature-model');
+  if (!builtInAgent) return;
+  const previous = builtInAgent.value;
+  builtInAgent.innerHTML = '<option value="" disabled selected>Select a model from the Models tab</option>';
+  appendModelOptionGroups(builtInAgent, models);
+  if (models.some((model) => model.profile === previous)) {
+    builtInAgent.value = previous;
+  }
 }
 
 function renderModelGroups() {
@@ -3401,6 +3402,7 @@ function renderModelsTab(data) {
   modelsTabData = data;
   catalogModels = models;
   syncCustomModelOptions(data.available_models);
+  updateBuiltInAgentModelOptions(models.filter((model) => model.enabled));
   
   // Segmented tabs: Models, Playground, Providers, Add Model
   const tabBar = `<div class="models-tabs segmented-control" role="tablist" aria-label="Models">
@@ -3413,7 +3415,7 @@ function renderModelsTab(data) {
   let tabContent = '';
   
   if (modelsSubtab === 'playground') {
-    const options = (data.available_models || []).map((model) => `<option value="${esc(model.profile)}">${esc(model.provider || '9Router')} · ${esc(model.name)}</option>`).join('');
+    const options = (data.models || []).filter((model) => model.enabled).map((model) => `<option value="${esc(model.profile)}">${esc(model.provider || '9Router')} · ${esc(model.name)}</option>`).join('');
     tabContent = `<div class="model-setup-card model-playground-card">
       <h2>Model playground</h2>
       <p class="hint block">Send a short, tool-free prompt to an enabled model without starting an agent.</p>
