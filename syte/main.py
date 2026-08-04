@@ -842,10 +842,10 @@ async def save_settings(body: SettingsRequest):
 
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import DEFAULT_PROFILE
-        from syte.cloud_agent import is_available_model_profile
+        from syte.cloud_agent import is_catalog_model_profile
 
         profile = body.agent_default_model_profile.strip() or DEFAULT_PROFILE
-        if not await is_available_model_profile(profile):
+        if not await is_catalog_model_profile(profile):
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
         messages.append(f"Default Syte cloud model profile: {profile}")
