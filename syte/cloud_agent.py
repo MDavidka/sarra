@@ -1792,7 +1792,7 @@ async def update_agent_settings(
 ) -> dict[str, Any]:
     if model_profile is not None:
         profile = model_profile.strip() or DEFAULT_PROFILE
-        if not await is_available_model_profile(profile):
+        if not await is_catalog_model_profile(profile):
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
         project = await get_project(project_id)
@@ -6081,7 +6081,7 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
     try:
         if model_profile:
             profile = model_profile.strip() or DEFAULT_PROFILE
-            if not await is_available_model_profile(profile):
+            if not await is_catalog_model_profile(profile):
                 raise ValueError(f"Unknown model profile: {profile}")
             project = {**project, "agent_model_profile": profile}
         else:
