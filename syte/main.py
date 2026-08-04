@@ -1720,7 +1720,7 @@ async def api_get_agent_session(
 class AgentChatRequest(BaseModel):
     message: str
     model_profile: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=5, description="1 Instant … 5 Max")
+    thinking_level: int | None = Field(None, ge=1, le=6, description="1 minimal … 6 xhigh")
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
 

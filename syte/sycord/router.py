@@ -44,7 +44,7 @@ class AgentChangeBody(BaseModel):
     model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
     model_name: str | None = Field(None, description="Alias for model_profile")
     thinking_level: int | None = Field(
-        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth"
+        None, ge=1, le=6, description="1 minimal … 6 xhigh — per-request depth"
     )
     wait: bool = Field(False, description="If true, block until agent completes (legacy sync mode)")
     improve_from_screenshot: bool = Field(
@@ -78,7 +78,7 @@ class ImproveFromScreenshotBody(BaseModel):
     )
     visual_analysis_id: str | None = None
     model_profile: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=5)
+    thinking_level: int | None = Field(None, ge=1, le=6)
     wait: bool = False
 
 

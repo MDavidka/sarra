@@ -15,27 +15,27 @@ from typing import Any
 from syte.ai_providers import DEFAULT_PROFILE
 
 THINKING_LEVEL_MIN = 1
-THINKING_LEVEL_MAX = 5
+THINKING_LEVEL_MAX = 6
 DEFAULT_THINKING_LEVEL = 3
 
 # level → generation settings applied for a single request.
 # model_profile is filled from the caller's selected / fallback profile.
+# Settable values: minimal=1, low=2, medium=3, high=4, max=5, xhigh=6.
 THINKING_LEVELS: dict[int, dict[str, Any]] = {
     1: {
-        "label": "Instant",
+        "label": "Minimal",
         "temperature": 0.1,
         "top_p": 0.85,
         "reasoning_effort": "low",
         "thinking_enabled": False,
         "thinking_budget_tokens": 0,
-        # Instant still needs room to locate files + edit + verify preview.
         "max_tool_steps": 10,
         "stream": True,
         "mandatory_plan": False,
         "reflection": False,
     },
     2: {
-        "label": "Fast",
+        "label": "Low",
         "temperature": 0.2,
         "top_p": 0.90,
         "reasoning_effort": "low",
@@ -47,7 +47,7 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "reflection": False,
     },
     3: {
-        "label": "Balanced",
+        "label": "Medium",
         "temperature": 0.2,
         "top_p": 0.95,
         "reasoning_effort": "medium",
@@ -59,7 +59,7 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "reflection": False,
     },
     4: {
-        "label": "Deep",
+        "label": "High",
         "temperature": 0.3,
         "top_p": 0.98,
         "reasoning_effort": "high",
@@ -82,6 +82,18 @@ THINKING_LEVELS: dict[int, dict[str, Any]] = {
         "mandatory_plan": True,
         "reflection": True,
     },
+    6: {
+        "label": "XHigh",
+        "temperature": 0.5,
+        "top_p": 1.0,
+        "reasoning_effort": "xhigh",
+        "thinking_enabled": True,
+        "thinking_budget_tokens": 16384,
+        "max_tool_steps": 80,
+        "stream": True,
+        "mandatory_plan": True,
+        "reflection": True,
+    },
 }
 
 
@@ -93,11 +105,13 @@ def normalize_thinking_level(value: int | str | None) -> int | None:
         level = int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"thinking_level must be an integer {THINKING_LEVEL_MIN}–{THINKING_LEVEL_MAX}"
+            f"thinking_level must be an integer {THINKING_LEVEL_MIN}–{THINKING_LEVEL_MAX} "
+            f"(minimal=1, low=2, medium=3, high=4, max=5, xhigh=6)"
         ) from exc
     if level < THINKING_LEVEL_MIN or level > THINKING_LEVEL_MAX:
         raise ValueError(
-            f"thinking_level must be between {THINKING_LEVEL_MIN} and {THINKING_LEVEL_MAX}"
+            f"thinking_level must be between {THINKING_LEVEL_MIN} and {THINKING_LEVEL_MAX} "
+            f"(minimal=1, low=2, medium=3, high=4, max=5, xhigh=6)"
         )
     return level
 
@@ -336,7 +350,16 @@ def apply_prompt_cache_markers(
 
 
 def thinking_levels_spec() -> dict[str, Any]:
-    """Public API/docs description of the (legacy) thinking_level parameter."""
+    """Public API/docs description of the thinking_level parameter.
+
+    Settable values:
+        minimal=1  — fastest, no native thinking
+        low=2      — fast, no native thinking
+        medium=3   — balanced with thinking budget 1024
+        high=4     — deep thinking, mandatory plan
+        max=5      — maximum reasoning, reflection enabled
+        xhigh=6    — extreme reasoning, 16384 token budget
+    """
     return {
         "parameter": "thinking_level",
         "range": [THINKING_LEVEL_MIN, THINKING_LEVEL_MAX],

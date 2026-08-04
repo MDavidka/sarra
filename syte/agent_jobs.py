@@ -103,6 +103,7 @@ async def submit_agent_request(
     auto_start: bool = True,
     idempotency_key: str | None = None,
     override_api_key: str | None = None,
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Admit a durable agent request and return immediately.
 
@@ -128,7 +129,6 @@ async def submit_agent_request(
             auto_start=auto_start,
         )
     except Exception:
-        # Race: another request with the same idempotency key just inserted.
         existing = await get_request(request_id)
         if existing:
             return await _idempotent_replay_payload(
@@ -136,16 +136,9 @@ async def submit_agent_request(
             )
         raise
 
-    # Capture the previous durable session *before* opening a new one so an
-    # interrupt/cancel closes the superseded turn, not the admitted one.
     previous_turso_session_id = await current_turso_session_id(project_id)
     previous = _running.get(project_id)
 
-    # Session opens when the user message is admitted so a durable Turso
-    # session (see syte.turso_store) exists from the very first event, before
-    # the worker starts tools. Local SQLite fallback guarantees a session id
-    # even when remote Turso is unset (required by sycord-pages).
-    # Reuse the latest numbered chat session so follow-ups keep history.
     session_number = await ensure_latest_session(project_id, model_profile)
     turso_session_id = await open_turso_session(
         project_id, session_number=session_number, model_profile=model_profile,
@@ -199,6 +192,7 @@ async def submit_agent_request(
             message_index_start=1,
             turso_session_id=turso_session_id,
             override_api_key=override_api_key,
+            override_credentials=override_credentials,
         )
     )
     _running[project_id] = task
@@ -271,6 +265,7 @@ async def _run_agent_attempt(
     message_index_start: int,
     turso_session_id: str | None,
     override_api_key: str | None,
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the provider call and retry one transient external-API failure."""
     from syte.cloud_agent import _communicate_with_agent_impl, _failure_metadata
@@ -290,6 +285,7 @@ async def _run_agent_attempt(
                 message_index_start=message_index_start,
                 turso_session_id=turso_session_id,
                 override_api_key=override_api_key,
+                override_credentials=override_credentials,
             )
         except asyncio.CancelledError:
             raise
@@ -331,6 +327,7 @@ async def _run_job(
     message_index_start: int = 0,
     turso_session_id: str | None = None,
     override_api_key: str | None = None,
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     terminal_status: str | None = None
     async with project_agent_lock(project_id):
@@ -348,6 +345,7 @@ async def _run_job(
                 message_index_start=message_index_start,
                 turso_session_id=turso_session_id,
                 override_api_key=override_api_key,
+                override_credentials=override_credentials,
             )
             await mark_request(
                 request_id,

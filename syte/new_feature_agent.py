@@ -67,6 +67,7 @@ async def _ensure_system_project() -> str:
 async def run_new_feature_agent(
     message: str,
     model_profile: str | None = None,
+    model_id: str | None = None,
     request_api_key: str | None = None,
 ) -> dict[str, Any]:
     """Run the new-feature agent using Syte's general agent API.
@@ -78,6 +79,10 @@ async def run_new_feature_agent(
     ``request_api_key`` — an optional provider API key supplied by the
     requesting user. When provided, Syte uses it for the turn instead of
     requiring a pre-configured key in settings or environment variables.
+
+    ``model_id`` — optional 9Router model id. When provided, it is resolved
+    to the ``9router:{model_id}`` profile and takes precedence over
+    ``model_profile``.
     """
     if not message.strip():
         return {
@@ -86,12 +91,20 @@ async def run_new_feature_agent(
             "message": "Please provide a message for the system agent.",
         }
 
+    resolved_profile = model_profile
+    if not resolved_profile and model_id:
+        from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+        for row in await configured_models():
+            if row.get("id") == model_id:
+                resolved_profile = catalog_model_profile(row["id"])
+                break
+
     project_id = await _ensure_system_project()
 
     result = await communicate_with_agent(
         project_id,
         message,
-        model_profile=model_profile,
+        model_profile=resolved_profile,
         thinking_level=3,
         source="settings_new_feature",
         auto_start=True,

@@ -2363,7 +2363,7 @@ async def _execute_tool(
                 }
             return {"ok": True, "credentials": creds}
         if name == "call_external_api":
-            return await _tool_call_external_api(project_id, args)
+            return await _tool_call_external_api(project_id, args, override_credentials=ctx.get("override_credentials"))
         if name == "web_search":
             from syte.web_search import web_search as do_web_search
 
@@ -3083,7 +3083,8 @@ async def _tool_env_set(project_id: str, args: dict[str, Any]) -> dict[str, Any]
 
 
 async def _tool_call_external_api(
-    project_id: str, args: dict[str, Any]
+    project_id: str, args: dict[str, Any],
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Make an authenticated HTTP request to an external service using stored credentials."""
     from syte.turso_store import get_mcp_credential, list_mcp_credentials
@@ -3093,7 +3094,22 @@ async def _tool_call_external_api(
     if not service_name:
         return {"ok": False, "error": "invalid_service", "message": "service_name is required"}
 
-    cred = await get_mcp_credential(project_id, service_name, include_key=True)
+    override_map = {
+        str(c.get("service_name") or "").strip().lower(): c
+        for c in (override_credentials or [])
+        if isinstance(c, dict) and str(c.get("service_name") or "").strip()
+    }
+    override = override_map.get(service_name)
+
+    cred = None
+    if override:
+        cred = {
+            "service_name": service_name,
+            "api_key": str(override.get("api_key") or ""),
+            "api_url": str(override.get("api_url") or ""),
+        }
+    if not cred:
+        cred = await get_mcp_credential(project_id, service_name, include_key=True)
     if not cred:
         available = await list_mcp_credentials(project_id)
         names = [c["service_name"] for c in available]
@@ -4912,16 +4928,26 @@ async def _run_subagent_loop(
 
 async def communicate_with_agent(
     project_id: str, message: str, *, model_profile: str | None = None,
+    model_id: str | None = None,
     thinking_level: int | str | None = None,
     source: str = "api", auto_start: bool = True, background: bool = False,
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
     idempotency_key: str | None = None,
     override_api_key: str | None = None,
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
     from syte.model_routing import normalize_explicit_profile, suggest_model_profile
 
-    model_profile = normalize_explicit_profile(model_profile)
+    resolved_profile = model_profile
+    if not resolved_profile and model_id:
+        for row in await configured_models():
+            if row.get("id") == model_id:
+                resolved_profile = catalog_model_profile(row["id"])
+                break
+
+    model_profile = normalize_explicit_profile(resolved_profile)
     routing = suggest_model_profile(
         message,
         explicit_profile=model_profile,
@@ -4942,6 +4968,7 @@ async def communicate_with_agent(
             auto_start=auto_start,
             idempotency_key=idempotency_key,
             override_api_key=override_api_key,
+            override_credentials=override_credentials,
         )
         return {**result, "model_routing": routing}
     from syte.agent_jobs import new_request_id, project_agent_lock
@@ -4954,6 +4981,7 @@ async def communicate_with_agent(
             improve_from_screenshot=improve_from_screenshot,
             visual_analysis_id=visual_analysis_id,
             override_api_key=override_api_key,
+            override_credentials=override_credentials,
         )
         return {**result, "model_routing": routing}
 
@@ -4969,6 +4997,7 @@ async def _communicate_with_agent_impl(
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
     override_api_key: str | None = None,
+    override_credentials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
     project = await get_project(project_id)
@@ -5430,6 +5459,7 @@ async def _communicate_with_agent_impl(
         "model": model,
         "max_tool_result_chars": tool_result_chars,
         "override_api_key": override_api_key,
+        "override_credentials": override_credentials or [],
     }
 
     max_tool_steps = int(gen.get("max_tool_steps") or 48)

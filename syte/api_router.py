@@ -117,14 +117,19 @@ class AgentSettingsRequest(BaseModel):
 class AgentCommunicateRequest(BaseModel):
     uuid: str
     message: str
-    model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
+    model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy | 9router:{model_id}")
+    model_id: str | None = Field(None, description="9Router model id — resolves to 9router:{model_id} profile")
     thinking_level: int | None = Field(
-        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+        None, ge=1, le=6, description="1 minimal … 6 xhigh — per-request depth (does not persist model_profile)"
     )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
     api_key: str | None = Field(
         None, description="Optional provider API key for this request (overrides saved key)"
+    )
+    credentials: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="MCP credential overrides for this request (service_name, api_key, api_url, metadata)",
     )
 
 
@@ -133,8 +138,9 @@ class AgentChangeRequest(BaseModel):
     message: str = Field(..., description="Change request from sycord.com user")
     model_profile: str | None = Field(None, description="Model profile alias (syra-nano/ultra/havy)")
     model_name: str | None = Field(None, description="Alias for model_profile from sycord.com")
+    model_id: str | None = Field(None, description="9Router model id — resolves to 9router:{model_id} profile")
     thinking_level: int | None = Field(
-        None, ge=1, le=5, description="1 Instant … 5 Max — per-request depth (does not persist model_profile)"
+        None, ge=1, le=6, description="1 minimal … 6 xhigh — per-request depth (does not persist model_profile)"
     )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
@@ -143,6 +149,10 @@ class AgentChangeRequest(BaseModel):
     )
     api_key: str | None = Field(
         None, description="Optional provider API key for this request (overrides saved key)"
+    )
+    credentials: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="MCP credential overrides for this request (service_name, api_key, api_url, metadata)",
     )
 
 
@@ -1248,15 +1258,24 @@ async def api_agent_test(body: UuidRequest, _token: dict = Depends(verify_api_to
 
 @router.post("/agent_communicate")
 async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = Depends(verify_api_token)):
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+
+    profile = body.model_profile
+    if not profile and body.model_id:
+        for row in await configured_models():
+            if row.get("id") == body.model_id:
+                profile = catalog_model_profile(row["id"])
+                break
     result = await communicate_with_agent(
         body.uuid,
         body.message,
-        model_profile=body.model_profile,
+        model_profile=profile,
         thinking_level=body.thinking_level,
         source="api",
         improve_from_screenshot=bool(body.improve_from_screenshot),
         visual_analysis_id=body.visual_analysis_id,
         override_api_key=body.api_key,
+        override_credentials=body.credentials or None,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_communicate_failed", result.get("message") or "Communication failed")
@@ -1265,7 +1284,14 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
 
 @router.post("/agent_change")
 async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(verify_api_token)):
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+
     profile = body.model_profile or body.model_name
+    if not profile and body.model_id:
+        for row in await configured_models():
+            if row.get("id") == body.model_id:
+                profile = catalog_model_profile(row["id"])
+                break
     result = await communicate_with_agent(
         body.uuid,
         body.message,
@@ -1277,6 +1303,7 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         visual_analysis_id=body.visual_analysis_id,
         idempotency_key=body.idempotency_key,
         override_api_key=body.api_key,
+        override_credentials=body.credentials or None,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")

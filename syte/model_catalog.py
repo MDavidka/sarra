@@ -84,9 +84,9 @@ def new_model_id(name: str, provider: str = "") -> str:
 
 def _levels(value: Any) -> list[int]:
     if not isinstance(value, list):
-        return [1, 2, 3, 4, 5]
-    levels = sorted({int(level) for level in value if str(level).isdigit() and 1 <= int(level) <= 5})
-    return levels or [1, 2, 3, 4, 5]
+        return [1, 2, 3, 4, 5, 6]
+    levels = sorted({int(level) for level in value if str(level).isdigit() and 1 <= int(level) <= 6})
+    return levels or [1, 2, 3, 4, 5, 6]
 
 
 async def configured_models() -> list[dict[str, Any]]:
@@ -140,7 +140,7 @@ def _router_row(model_id: str) -> dict[str, Any] | None:
         "id": new_model_id(name, provider),
         "name": name,
         "provider": provider,
-        "thinking_levels": [1, 2, 3, 4, 5],
+        "thinking_levels": [1, 2, 3, 4, 5, 6],
         "thinking_level": "medium",
         "enabled": True,
         "source": "router",
