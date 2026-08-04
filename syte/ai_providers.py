@@ -31,7 +31,6 @@ LITELLM_API_BASE = LITELLM_INTERNAL_API_URL
 NINE_ROUTER_API_BASE = "https://9router.sycord.site/v1"
 
 PROFILE_ORDER = (
-    "9router",
     "syra-nano",
     "syra-ultra",
     "syra-havy",
@@ -111,17 +110,6 @@ class ProfileProvider(TypedDict):
 
 
 PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
-    "9router": {
-        "profile": "9router",
-        "label": "9Router",
-        "display_name": "Model",
-        "provider": "openai",
-        "api_base": NINE_ROUTER_API_BASE,
-        "model": "",
-        "role": "custom",
-        "setting_key": "agent_9router_api_key",
-        "secret_env": "NINE_ROUTER_API_KEY",
-    },
     "syra-nano": {
         "profile": "syra-nano",
         "label": "Gemini",
@@ -181,7 +169,22 @@ PROFILE_PROVIDERS: dict[str, ProfileProvider] = {
 }
 
 
+NINE_ROUTER_PROFILE_SPEC: ProfileProvider = {
+    "profile": "9router",
+    "label": "9Router",
+    "display_name": "Model",
+    "provider": "openai",
+    "api_base": NINE_ROUTER_API_BASE,
+    "model": "",
+    "role": "custom",
+    "setting_key": "agent_9router_api_key",
+    "secret_env": "NINE_ROUTER_API_KEY",
+}
+
+
 def profile_provider(profile: str) -> ProfileProvider:
+    if profile == "9router":
+        return NINE_ROUTER_PROFILE_SPEC
     return PROFILE_PROVIDERS.get(profile, PROFILE_PROVIDERS[DEFAULT_PROFILE])
 
 

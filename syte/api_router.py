@@ -123,6 +123,9 @@ class AgentCommunicateRequest(BaseModel):
     )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
+    api_key: str | None = Field(
+        None, description="Optional provider API key for this request (overrides saved key)"
+    )
 
 
 class AgentChangeRequest(BaseModel):
@@ -137,6 +140,9 @@ class AgentChangeRequest(BaseModel):
     visual_analysis_id: str | None = None
     idempotency_key: str | None = Field(
         None, description="Optional client key — retries return the same request_id"
+    )
+    api_key: str | None = Field(
+        None, description="Optional provider API key for this request (overrides saved key)"
     )
 
 
@@ -1250,6 +1256,7 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
         source="api",
         improve_from_screenshot=bool(body.improve_from_screenshot),
         visual_analysis_id=body.visual_analysis_id,
+        override_api_key=body.api_key,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_communicate_failed", result.get("message") or "Communication failed")
@@ -1269,6 +1276,7 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         improve_from_screenshot=bool(body.improve_from_screenshot),
         visual_analysis_id=body.visual_analysis_id,
         idempotency_key=body.idempotency_key,
+        override_api_key=body.api_key,
     )
     if not result.get("ok"):
         _http_error(400, result.get("error") or "agent_change_failed", result.get("message") or "Change request failed")
