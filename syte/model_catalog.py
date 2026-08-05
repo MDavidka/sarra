@@ -130,6 +130,21 @@ async def configured_models() -> list[dict[str, Any]]:
     }]
 
 
+async def resolve_model_id(model_id: str | None) -> str | None:
+    """Return the 9Router profile for a configured model id, or raise ValueError.
+
+    When ``model_id`` is provided but does not match any configured model,
+    raises ``ValueError`` with a clear message so callers can surface
+    ``malformed_request`` errors to the API consumer.
+    """
+    if not model_id:
+        return None
+    for row in await configured_models():
+        if row.get("id") == model_id:
+            return model_profile(row["id"])
+    raise ValueError(f"Invalid model id: {model_id}")
+
+
 def _router_row(model_id: str) -> dict[str, Any] | None:
     """Turn one ``/v1/models`` entry into a catalog-shaped record."""
     name = str(model_id or "").strip()

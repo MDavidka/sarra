@@ -305,9 +305,10 @@ def _raise_if_cancelled() -> None:
 
 
 _FAILURE_TITLES = {
-    "rate_limited": "Rate limited",
+    "rate_limited": "Rate limited — slow down",
     "circuit_open": "Provider temporarily unavailable",
     "provider_error": "Provider error",
+    "malformed_request": "Malformed request",
 }
 
 
@@ -3669,7 +3670,7 @@ async def _provider_completion(
     def _quota_message(model_id: str, cooldown: float) -> str:
         profile = model.get("profile") or "The selected model"
         bits = [
-            f"{profile} hit the provider quota (HTTP 429 RESOURCE_EXHAUSTED) on {model_id}.",
+            f"You are being rate limited (slow down). {profile} hit the provider quota (HTTP 429 RESOURCE_EXHAUSTED) on {model_id}.",
             f"Syte paced and retried the request, then parked this model for "
             f"~{int(max(1, round(cooldown)))}s.",
         ]

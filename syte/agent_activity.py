@@ -1053,11 +1053,15 @@ async def activity_sse_generator(
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                # Surface unexpected stream failures so clients do not hang on a
-                # silent dead connection (DAV-180).
+                msg = str(exc)[:500]
+                error_type = "stream_failed"
+                if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
+                    error_type = "rate_limited"
+                elif "malformed" in msg.lower() or "invalid model" in msg.lower():
+                    error_type = "malformed_request"
                 yield (
                     "event: error\n"
-                    f"data: {json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+                    f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
                 )
                 break
             # Backpressure discarded events for this subscriber. Tell the client
@@ -1085,9 +1089,15 @@ async def activity_sse_generator(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        msg = str(exc)[:500]
+        error_type = "stream_failed"
+        if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
+            error_type = "rate_limited"
+        elif "malformed" in msg.lower() or "invalid model" in msg.lower():
+            error_type = "malformed_request"
         yield (
             "event: error\n"
-            f"data: {json.dumps({'event_type': 'error', 'error': 'stream_failed', 'message': str(exc)[:500]}, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
         )
     finally:
         unsubscribe_agent_activity(project_id, queue)

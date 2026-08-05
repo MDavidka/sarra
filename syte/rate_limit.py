@@ -55,7 +55,7 @@ class RateLimitMiddleware:
         allowed, retry_after = await self._allow(self._client_key(scope), limit)
         if not allowed:
             response = JSONResponse(
-                {"detail": "Rate limit exceeded"},
+                {"detail": "Rate limit exceeded — slow down"},
                 status_code=429,
                 headers={"Retry-After": str(max(1, int(retry_after)))},
             )
