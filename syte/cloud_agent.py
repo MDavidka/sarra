@@ -347,11 +347,24 @@ def _failure_metadata(exc: BaseException) -> dict[str, Any]:
         # valid message instead of a generic request failure.
         from syte.agent_errors import classify_provider_error
 
-        classified = classify_provider_error(str(exc))
+        raw_error = str(exc) or ""
+        # Preserve the original error text so streamed/failure events can surface
+        # the exact value the API rejected (e.g. an invalid model id "xy") instead
+        # of only the opaque "malformed_request" code — the classified hint below
+        # is user guidance, not the detail needed to fix the request.
+        if raw_error:
+            detail["raw_error"] = raw_error[:2000]
+        classified = classify_provider_error(raw_error)
         if classified["matched"]:
             error_type = classified["error_type"] or error_type
             retryable = error_type == "rate_limited" or error_type == "provider_error"
-            message = classified["message"] or message
+            hint = classified["message"] or ""
+            # Keep the friendly guidance, but append the original detail so the
+            # offending value is never hidden behind a generic hint.
+            if hint and raw_error:
+                message = f"{hint}\n{raw_error}"
+            else:
+                message = hint or raw_error or message
     return {
         "error_type": error_type,
         "retryable": retryable,

@@ -58,3 +58,42 @@ def test_retryable_detail_allows_transient_errors() -> None:
 
 def test_retryable_detail_rejects_bad_status() -> None:
     assert is_retryable_provider_detail(400, "bad request") is False
+
+
+def test_failure_metadata_preserves_offending_value_for_malformed() -> None:
+    """A raw provider 'invalid model' error must stream the offending value, not just the code."""
+    from syte.cloud_agent import _failure_metadata
+
+    exc = ValueError("invalid model id: xy")
+    meta = _failure_metadata(exc)
+    assert meta["error_type"] == "malformed_request"
+    assert meta["detail"]["raw_error"] == "invalid model id: xy"
+    # The user-facing message must still name the value that was rejected.
+    assert "xy" in meta["message"]
+    assert meta["message"] != "malformed_request"
+
+
+def test_failure_metadata_preserves_raw_error_for_unmatched() -> None:
+    """Unmatched raw exceptions keep their original text in detail + message."""
+    from syte.cloud_agent import _failure_metadata
+
+    exc = RuntimeError("runtime crashed")
+    meta = _failure_metadata(exc)
+    assert meta["error_type"] == "cloud_agent_failed"
+    assert meta["detail"]["raw_error"] == "runtime crashed"
+    assert "runtime crashed" in meta["message"]
+
+
+def test_failure_metadata_malformed_agent_error_keeps_specific_message() -> None:
+    """Structured MalformedRequestError surfaces its specific message (not a generic hint)."""
+    from syte.agent_errors import MalformedRequestError
+    from syte.cloud_agent import _failure_metadata
+
+    exc = MalformedRequestError(
+        "Invalid model id: xy",
+        detail={"profile": "syra-nano"},
+    )
+    meta = _failure_metadata(exc)
+    assert meta["error_type"] == "malformed_request"
+    assert "xy" in meta["message"]
+    assert meta["detail"]["profile"] == "syra-nano"

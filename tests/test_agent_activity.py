@@ -139,3 +139,49 @@ async def test_activity_sse_emits_named_event_frames(tmp_data_dir: Path) -> None
     assert "event: token_delta\n" in frame
     assert "data: " in frame
     assert '"event_type": "token_delta"' in frame or '"event_type":"token_delta"' in frame
+
+
+@pytest.mark.asyncio
+async def test_activity_sse_error_frame_carries_offending_value(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stream-level errors emit the offending value (e.g. model id "xy") in full, not just the code."""
+    from syte.agent_activity import activity_sse_generator
+    from syte.database import init_db
+
+    await init_db()
+
+    class BoomQueue:
+        dropped = 0
+
+        async def get(self) -> dict:
+            raise ValueError("invalid model id: xy")
+
+        async def put(self, *args: object, **kwargs: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "syte.agent_activity.subscribe_agent_activity",
+        lambda project_id: BoomQueue(),
+    )
+
+    agen = activity_sse_generator(
+        "proj-err-frame", since_id=0, session="last", heartbeat_seconds=0.01,
+    )
+    frames: list[str] = []
+    try:
+        async for frame in agen:
+            frames.append(frame)
+            if "event: error" in frame:
+                break
+    finally:
+        await agen.aclose()
+
+    err_frames = [f for f in frames if "event: error" in f]
+    assert err_frames, "expected an SSE error frame"
+    frame = err_frames[0]
+    assert '"event_type": "error"' in frame
+    assert '"error": "malformed_request"' in frame
+    assert '"detail"' in frame
+    assert "xy" in frame

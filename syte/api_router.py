@@ -714,8 +714,8 @@ async def api_agent_models_stream(request: Request, _token: dict = Depends(verif
     async def _gen():
         try:
             yield f"data: {json.dumps({'type': 'snapshot', 'models': model_names})}\n\n"
-        except Exception:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'stream_failed'})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': 'stream_failed', 'message': str(exc)[:2000]})}\n\n"
             return
         try:
             while True:
