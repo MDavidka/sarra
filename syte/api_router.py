@@ -728,9 +728,15 @@ async def api_agent_models_stream(request: Request, _token: dict = Depends(verif
                 await asyncio.sleep(15)
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception as exc:
+            msg = str(exc)[:500]
+            error_type = "stream_failed"
+            if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
+                error_type = "rate_limited"
+            elif "malformed" in msg.lower() or "invalid model" in msg.lower():
+                error_type = "malformed_request"
             try:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'stream_failed'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'error': error_type, 'message': msg})}\n\n"
             except Exception:
                 pass
 
@@ -1258,14 +1264,14 @@ async def api_agent_test(body: UuidRequest, _token: dict = Depends(verify_api_to
 
 @router.post("/agent_communicate")
 async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = Depends(verify_api_token)):
-    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile, resolve_model_id
 
     profile = body.model_profile
     if not profile and body.model_id:
-        for row in await configured_models():
-            if row.get("id") == body.model_id:
-                profile = catalog_model_profile(row["id"])
-                break
+        try:
+            profile = await resolve_model_id(body.model_id)
+        except ValueError as exc:
+            _http_error(400, "malformed_request", str(exc))
     result = await communicate_with_agent(
         body.uuid,
         body.message,
@@ -1284,14 +1290,14 @@ async def api_agent_communicate(body: AgentCommunicateRequest, _token: dict = De
 
 @router.post("/agent_change")
 async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(verify_api_token)):
-    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+    from syte.model_catalog import configured_models, model_profile as catalog_model_profile, resolve_model_id
 
     profile = body.model_profile or body.model_name
     if not profile and body.model_id:
-        for row in await configured_models():
-            if row.get("id") == body.model_id:
-                profile = catalog_model_profile(row["id"])
-                break
+        try:
+            profile = await resolve_model_id(body.model_id)
+        except ValueError as exc:
+            _http_error(400, "malformed_request", str(exc))
     result = await communicate_with_agent(
         body.uuid,
         body.message,

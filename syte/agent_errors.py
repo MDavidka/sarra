@@ -80,6 +80,20 @@ class WorkspaceError(AgentError):
         super().__init__(message, error_type, retryable=retryable, detail=detail)
 
 
+class MalformedRequestError(AgentError):
+    """Client sent a malformed request (invalid model id, bad parameters)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_type: str = "malformed_request",
+        retryable: bool = False,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, error_type, retryable=retryable, detail=detail)
+
+
 _circuit_breakers: dict[str, dict[str, Any]] = defaultdict(
     lambda: {
         "failures": 0,

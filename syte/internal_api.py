@@ -411,14 +411,14 @@ async def internal_agent_communicate(
     _auth: dict = Depends(verify_internal_service_request),
 ):
     await _require_project(project_id)
-    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+    from syte.model_catalog import resolve_model_id
 
     profile = body.model_profile or body.model_name
     if not profile and body.model_id:
-        for row in await configured_models():
-            if row.get("id") == body.model_id:
-                profile = catalog_model_profile(row["id"])
-                break
+        try:
+            profile = await resolve_model_id(body.model_id)
+        except ValueError as exc:
+            raise HTTPException(400, detail={"error": "malformed_request", "message": str(exc)})
     result = await communicate_with_agent(
         project_id,
         body.message,
@@ -439,14 +439,14 @@ async def internal_agent_change(
 ):
     """sycord.com → Syte: request a Syte cloud workspace change by UUID."""
     await _require_project(project_id)
-    from syte.model_catalog import configured_models, model_profile as catalog_model_profile
+    from syte.model_catalog import resolve_model_id
 
     profile = body.model_profile or body.model_name
     if not profile and body.model_id:
-        for row in await configured_models():
-            if row.get("id") == body.model_id:
-                profile = catalog_model_profile(row["id"])
-                break
+        try:
+            profile = await resolve_model_id(body.model_id)
+        except ValueError as exc:
+            raise HTTPException(400, detail={"error": "malformed_request", "message": str(exc)})
     result = await communicate_with_agent(
         project_id,
         body.message,
