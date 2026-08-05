@@ -94,6 +94,85 @@ class MalformedRequestError(AgentError):
         super().__init__(message, error_type, retryable=retryable, detail=detail)
 
 
+# Error messages emitted by external agent providers, mapped to a structured
+# error type + a user-facing message. Covers the phrases providers commonly
+# return verbatim: invalid model, rate limiting, invalid project, capacity.
+_PROVIDER_ERROR_HINTS: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (
+        ("invalid model", "model not found", "unknown model", "model id not found", "no such model"),
+        "malformed_request",
+        "The selected model is not valid or no longer available on the provider. "
+        "Pick a supported model in AI provider settings, then retry.",
+    ),
+    (
+        ("invalid project", "project not found", "no such project", "unknown project"),
+        "malformed_request",
+        "The provider rejected the request because the project is invalid or not found. "
+        "Check the configured project/region in AI provider settings.",
+    ),
+    (
+        ("model is on capacity", "at capacity", "overloaded", "capacity", "server is busy", "insufficient capacity"),
+        "provider_error",
+        "The model is currently at capacity on the provider. This is transient — retry shortly.",
+    ),
+    (
+        ("rate limited", "rate limit", "too many requests", "slow down", "quota exceeded", "resource exhausted"),
+        "rate_limited",
+        "You are being rate limited by the provider. Slow down and retry in a moment.",
+    ),
+)
+
+# Superset used to gate ``is_retryable``: which phrases mark a request as
+# retryable (false for permanent config errors like a bad key).
+_NON_RETRYABLE_PROVIDER_MARKERS = (
+    "invalid model",
+    "model not found",
+    "unknown model",
+    "invalid project",
+    "project not found",
+    "invalid or deactivated api key",
+)
+
+
+def classify_provider_error(detail: str | None, status_code: int | None = None) -> dict[str, Any]:
+    """Categorize a raw external-agent provider error body.
+
+    Returns ``{"matched": bool, "error_type": str, "message": str}``. When the
+    provider message matches a known phrase, ``message`` is a friendly summary
+    and ``error_type`` is the structured type (``rate_limited``,
+    ``malformed_request``, ``provider_error``). Unmatched details degrade to a
+    generic provider error so callers never parse raw strings.
+    """
+    lower = (detail or "").lower()
+    for markers, error_type, hint in _PROVIDER_ERROR_HINTS:
+        if any(marker in lower for marker in markers):
+            return {"matched": True, "error_type": error_type, "message": hint}
+    if status_code == 429:
+        return {
+            "matched": True,
+            "error_type": "rate_limited",
+            "message": (
+                "You are being rate limited by the provider (HTTP 429). "
+                "Slow down and retry in a moment."
+            ),
+        }
+    return {
+        "matched": False,
+        "error_type": "provider_error",
+        "message": "",
+    }
+
+
+def is_retryable_provider_detail(status_code: int | None, detail: str | None) -> bool:
+    """True when a provider error is transient and worth retrying."""
+    lower = (detail or "").lower()
+    if status_code is not None and status_code not in {408, 429, 500, 502, 503, 504}:
+        return False
+    if any(marker in lower for marker in _NON_RETRYABLE_PROVIDER_MARKERS):
+        return False
+    return True
+
+
 _circuit_breakers: dict[str, dict[str, Any]] = defaultdict(
     lambda: {
         "failures": 0,

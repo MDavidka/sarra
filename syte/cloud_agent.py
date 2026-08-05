@@ -338,6 +338,17 @@ def _failure_metadata(exc: BaseException) -> dict[str, Any]:
                 detail[name] = [
                     item for item in value if isinstance(item, (str, int, float, bool))
                 ]
+    else:
+        # A raw provider exception may already carry a friendly message emitted
+        # by classify_provider_error. Detect it so the UI renders the right
+        # error type (rate_limited / malformed_request / provider_error) instead
+        # of a generic request failure.
+        from syte.agent_errors import classify_provider_error
+
+        classified = classify_provider_error(str(exc))
+        if classified["matched"]:
+            error_type = classified["error_type"] or error_type
+            retryable = error_type == "rate_limited" or error_type == "provider_error"
     return {
         "error_type": error_type,
         "retryable": retryable,
@@ -3582,6 +3593,11 @@ async def _provider_completion(
         google_hint = explain_google_api_error(detail, status_code=status_code)
         if google_hint:
             return google_hint
+        from syte.agent_errors import classify_provider_error
+
+        classified = classify_provider_error(detail, status_code=status_code)
+        if classified["matched"]:
+            return classified["message"]
         if (
             status_code in {401, 403}
             or "invalid or deactivated api key" in detail_l
@@ -3652,6 +3668,11 @@ async def _provider_completion(
                 "incorrect api key",
                 "api key you provided is invalid",
                 "api_key_service_blocked",
+                "invalid model",
+                "invalid project",
+                "model not found",
+                "unknown model",
+                "project not found",
             )
         ):
             return False

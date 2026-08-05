@@ -983,6 +983,20 @@ def _sse_control_frame(event_type: str, **fields: Any) -> str:
     )
 
 
+def _classify_stream_error(msg: str) -> str:
+    """Map an exception message to a structured SSE error type."""
+    from syte.agent_errors import classify_provider_error
+
+    if "429" in msg:
+        return "rate_limited"
+    classified = classify_provider_error(msg)
+    if classified["matched"]:
+        return classified["error_type"]
+    if "malformed" in msg.lower() or "invalid model" in msg.lower() or "invalid project" in msg.lower():
+        return "malformed_request"
+    return ""
+
+
 async def activity_sse_generator(
     project_id: str,
     *,
@@ -1055,10 +1069,9 @@ async def activity_sse_generator(
             except Exception as exc:
                 msg = str(exc)[:500]
                 error_type = "stream_failed"
-                if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
-                    error_type = "rate_limited"
-                elif "malformed" in msg.lower() or "invalid model" in msg.lower():
-                    error_type = "malformed_request"
+                classified = _classify_stream_error(msg)
+                if classified:
+                    error_type = classified
                 yield (
                     "event: error\n"
                     f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
@@ -1091,10 +1104,9 @@ async def activity_sse_generator(
     except Exception as exc:
         msg = str(exc)[:500]
         error_type = "stream_failed"
-        if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
-            error_type = "rate_limited"
-        elif "malformed" in msg.lower() or "invalid model" in msg.lower():
-            error_type = "malformed_request"
+        classified = _classify_stream_error(msg)
+        if classified:
+            error_type = classified
         yield (
             "event: error\n"
             f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
