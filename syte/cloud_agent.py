@@ -253,6 +253,7 @@ async def _drain_turso_mirrors(*, timeout_s: float = 5.0) -> None:
         pass
 
 TokenEmitter = Callable[[str], Awaitable[None]]
+ErrorEmitter = Callable[[str, str, bool], Awaitable[None]]
 
 MAX_TOOL_RESULT_CHARS = 16_000
 MAX_REASONING_HISTORY_CHARS = 4_000
@@ -3265,6 +3266,7 @@ async def _parse_sse_completion(
     *,
     on_token: TokenEmitter | None = None,
     on_reasoning: TokenEmitter | None = None,
+    on_error: ErrorEmitter | None = None,
 ) -> dict[str, Any]:
     """Parse an OpenAI-compatible SSE chat.completion.chunk stream into one message."""
     content_parts: list[str] = []
@@ -3502,6 +3504,7 @@ async def _provider_completion(
     stream: bool = False,
     on_token: TokenEmitter | None = None,
     on_reasoning: TokenEmitter | None = None,
+    on_error: ErrorEmitter | None = None,
 ) -> dict[str, Any]:
     from syte.agent_errors import (
         ProviderError,
@@ -3805,7 +3808,7 @@ async def _provider_completion(
                             )
                         )
                     message = await _parse_sse_completion(
-                        response, on_token=on_token, on_reasoning=on_reasoning,
+                        response, on_token=on_token, on_reasoning=on_reasoning, on_error=on_error,
                     )
                     provider_quota.record_success(active_model)
                     record_circuit_success(model.get("provider") or "", active_model)
