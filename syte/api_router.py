@@ -730,11 +730,9 @@ async def api_agent_models_stream(request: Request, _token: dict = Depends(verif
             pass
         except Exception as exc:
             msg = str(exc)[:500]
-            error_type = "stream_failed"
-            if "rate limit" in msg.lower() or "429" in msg or "slow down" in msg.lower():
-                error_type = "rate_limited"
-            elif "malformed" in msg.lower() or "invalid model" in msg.lower():
-                error_type = "malformed_request"
+            from syte.agent_activity import _classify_stream_error
+
+            error_type = _classify_stream_error(msg) or "stream_failed"
             try:
                 yield f"data: {json.dumps({'type': 'error', 'error': error_type, 'message': msg})}\n\n"
             except Exception:
