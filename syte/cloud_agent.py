@@ -325,9 +325,11 @@ def _failure_metadata(exc: BaseException) -> dict[str, Any]:
     error_type = "cloud_agent_failed"
     retryable = False
     detail: dict[str, Any] = {}
+    message = str(exc) or "Request failed"
     if isinstance(exc, AgentError):
         error_type = exc.error_type or error_type
         retryable = bool(exc.retryable)
+        message = exc.message or message
         for key, value in (exc.detail or {}).items():
             name = str(key)
             if name in {"ok", "error", "message", "retryable", "error_type"}:
@@ -341,18 +343,20 @@ def _failure_metadata(exc: BaseException) -> dict[str, Any]:
     else:
         # A raw provider exception may already carry a friendly message emitted
         # by classify_provider_error. Detect it so the UI renders the right
-        # error type (rate_limited / malformed_request / provider_error) instead
-        # of a generic request failure.
+        # error type (rate_limited / malformed_request / provider_error) and a
+        # valid message instead of a generic request failure.
         from syte.agent_errors import classify_provider_error
 
         classified = classify_provider_error(str(exc))
         if classified["matched"]:
             error_type = classified["error_type"] or error_type
             retryable = error_type == "rate_limited" or error_type == "provider_error"
+            message = classified["message"] or message
     return {
         "error_type": error_type,
         "retryable": retryable,
         "detail": detail,
+        "message": message,
         "title": _FAILURE_TITLES.get(error_type, "Request failed"),
     }
 
@@ -6070,20 +6074,23 @@ async def _communicate_with_agent_impl(
         error = str(exc) or "Cloud agent request failed"
         _write_log(project_id, f"request {request_id} failed: {error}")
         await _flush_hot_deltas()
-        await update_project(project_id, {"agent_last_error": error[:4000]})
         # Structured failure metadata so the UI can render a recoverable banner
         # (e.g. "rate limited, retry in 20s") instead of a dead-end error state.
-        # ``error`` stays "cloud_agent_failed" for backwards compatibility.
         failure = _failure_metadata(exc)
+        # Surface a valid, user-facing message instead of a generic error code
+        # (e.g. "cloud_agent_failed") or a raw exception string.
+        friendly = failure.get("message") or error
+        await update_project(project_id, {"agent_last_error": friendly[:4000]})
         await record_agent_event(
-            project_id, "request_failed", title=failure["title"], detail=error[:4000],
+            project_id, "request_failed", title=failure["title"], detail=friendly[:4000],
             payload=_mark_payload(
                 status="d",
                 kind="error",
                 base={
-                    "error": "cloud_agent_failed",
+                    "error": failure["error_type"],
                     "error_type": failure["error_type"],
                     "retryable": failure["retryable"],
+                    "message": friendly,
                     "retry_message": message[:4000],
                     **failure["detail"],
                 },
@@ -6095,7 +6102,7 @@ async def _communicate_with_agent_impl(
             project_id,
             request_id,
             status="failed",
-            error=error,
+            error=friendly,
             usage=turn_usage,
             cost=_estimate_turn_cost(model, turn_usage),
             subagent_count=int(tool_context.get("_subagent_count") or 0),
@@ -6104,7 +6111,7 @@ async def _communicate_with_agent_impl(
             await close_turso_session(turso_session_id, status="failed")
         return {"ok": False, "request_id": request_id, "session": session_number,
                 "turso_session_id": turso_session_id,
-                "error": "cloud_agent_failed", "message": error,
+                "error": failure["error_type"], "message": friendly,
                 "error_type": failure["error_type"],
                 "retryable": failure["retryable"],
                 **failure["detail"]}

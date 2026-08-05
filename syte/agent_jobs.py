@@ -381,21 +381,22 @@ async def _run_job(
             raise
         except Exception as exc:
             error = str(exc) or "Agent request failed"
-            await mark_request(request_id, "failed", error=error)
             from syte.cloud_agent import _failure_metadata
 
             failure = _failure_metadata(exc)
+            friendly = failure["message"] or error
+            await mark_request(request_id, "failed", error=friendly)
             await record_agent_event(
                 project_id,
                 "request_failed",
                 title=failure["title"],
-                detail=error[:4000],
+                detail=friendly[:4000],
                 payload={
                     "request_id": request_id,
-                    "error": "agent_job_failed",
+                    "error": failure["error_type"],
                     "error_type": failure["error_type"],
                     "retryable": failure["retryable"],
-                    "message": error,
+                    "message": friendly,
                     "retry_message": message[:4000],
                     "session": session_number,
                     "model_profile": model_profile,
@@ -410,8 +411,8 @@ async def _run_job(
             return {
                 "ok": False,
                 "request_id": request_id,
-                "error": "agent_job_failed",
-                "message": error,
+                "error": failure["error_type"],
+                "message": friendly,
                 "error_type": failure["error_type"],
                 "retryable": failure["retryable"],
                 "model_profile": model_profile,
