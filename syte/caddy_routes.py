@@ -192,7 +192,8 @@ def render_litellm_api_route(
             "    }",
         ])
     lines.extend([
-        "    handle /v1 /v1/* {",
+        "    @v1 path /v1 /v1/*",
+        "    handle @v1 {",
         f"        reverse_proxy 127.0.0.1:{port}",
         "    }",
         "    handle {",
