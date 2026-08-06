@@ -1040,6 +1040,35 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
     }
 
 
+# ---------------------------------------------------------------------------
+# SSL dashboard (monitor / configure / resolve)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/ssl")
+async def api_ssl_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Aggregate SSL dashboard: Caddy + Cloudflare prerequisites, per-project certs."""
+    from syte.ssl_status import build_ssl_overview
+
+    return await build_ssl_overview()
+
+
+@app.post("/api/ssl/resolve")
+async def api_ssl_resolve(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Attempt to repair SSL: ensure Caddy is running and reload the proxy config."""
+    from syte.ssl_status import resolve_ssl_issues
+
+    try:
+        return await resolve_ssl_issues()
+    except Exception as error:  # noqa: BLE001 - surfaced to the operator dashboard
+        logger.exception("SSL resolve failed")
+        return {
+            "ok": False,
+            "resolved": False,
+            "messages": [f"SSL resolve failed — {type(error).__name__}: {error}"],
+        }
+
+
 async def _syra_action(action: str, operation: Any) -> dict[str, Any]:
     """Run a Syra lifecycle action, reporting failures as readable JSON.
 

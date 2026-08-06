@@ -4484,3 +4484,149 @@ body.ai-settings-open { overflow: hidden; }
     flex-direction: column;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   SSL dashboard
+--------------------------------------------------------------------------- */
+
+.ssl-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ssl-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ssl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.ssl-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ssl-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 13px;
+}
+
+.ssl-check-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.ssl-check-label {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ssl-check-detail {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.ssl-totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.ssl-hints {
+  border: 1px solid var(--border);
+  border-left: 3px solid #2563eb;
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 0.85rem;
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ssl-hints p {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.ssl-hints i {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.ssl-resolve-result {
+  background: var(--bg-input);
+  border-left-color: #16a34a;
+}
+
+.ssl-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ssl-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ssl-project-row:last-child {
+  border-bottom: none;
+}
+
+.ssl-project-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ssl-project-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: right;
+}
+
+.ssl-host {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .ssl-grid,
+  .ssl-totals {
+    grid-template-columns: 1fr;
+  }
+  .ssl-project-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ssl-project-hosts {
+    text-align: left;
+    align-items: flex-start;
+  }
+  .ssl-host {
+    justify-content: flex-start;
+  }
+}
