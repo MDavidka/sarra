@@ -31,6 +31,51 @@ def _has_wildcard_cert(zone: str, cert_root: Path) -> bool:
     return False
 
 
+def stored_wildcard_cert(zone: str) -> dict | None:
+    """Inspect the stored wildcard cert for a zone.
+
+    Uses ``openssl`` (available wherever Caddy runs) to read the issuer and
+    validity so we can distinguish a real Let's Encrypt wildcard cert from a
+    Caddy self-signed placeholder ("Caddy Local Authority") — the latter is
+    what shows up as ``cert error`` for every subdomain in the zone.
+    """
+    cert_root = _cert_dir()
+    if not cert_root:
+        return None
+    marker = f"wildcard_.{zone}"
+    for path in cert_root.rglob("*.crt"):
+        if marker in path.parent.name or marker in path.name:
+            issuer, not_after = _read_cert_meta(path)
+            return {
+                "path": str(path),
+                "issuer": issuer,
+                "valid_until": not_after,
+                "self_signed": bool(issuer and "Caddy Local Authority" in issuer),
+                "exists": True,
+            }
+    return None
+
+
+def _read_cert_meta(path: Path) -> tuple[str | None, str | None]:
+    """Return (issuer, not_after) for a PEM cert using ``openssl x509``."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-in", str(path), "-noout", "-issuer", "-enddate"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, None
+    issuer = None
+    for line in (result.stdout or "").splitlines():
+        if line.startswith("issuer="):
+            issuer = line.split("=", 1)[1].strip('"').strip() or None
+        if line.startswith("notAfter="):
+            not_after = line.split("=", 1)[1].strip()
+            return issuer, not_after
+    return issuer, None
+
+
 def _caddy_has_cert(hostname: str) -> bool:
     """Best-effort: check if Caddy stored a cert for this hostname."""
     cert_root = _cert_dir()
@@ -317,6 +362,19 @@ async def build_ssl_overview() -> dict:
             "add a Cloudflare API token to auto-issue certificates."
         )
 
+    # Detect a Caddy self-signed / placeholder wildcard cert: if present, every
+    # subdomain in the zone is protected by a cert browsers reject → "cert error".
+    wildcard_info = None
+    if preview_zone:
+        wildcard_info = stored_wildcard_cert(preview_zone)
+        if wildcard_info and wildcard_info.get("self_signed"):
+            overview.action_hints.append(
+                f"The wildcard cert *.{preview_zone} is a Caddy self-signed placeholder "
+                "(issuer: {issuer}) — every {zone} subdomain fails HTTPS. Re-issue it: "
+                "ensure the Cloudflare token + DNS-01 are correct, then run 'Apply & resolve SSL'."
+                .format(issuer=wildcard_info.get("issuer") or "Caddy Local Authority", zone=preview_zone)
+            )
+
     overview.caddy_pending = not overview.caddy.get("active")
     try:
         from syte.config import settings as _settings
@@ -332,6 +390,7 @@ async def build_ssl_overview() -> dict:
         "projects": overview.projects,
         "debug": overview_debug,
         "projects_debug": debug,
+        "wildcard_cert": wildcard_info,
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
         "gui_port": _gui_port,

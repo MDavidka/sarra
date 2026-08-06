@@ -4074,6 +4074,22 @@ function renderSslDashboard(d) {
 
   const totals = d.totals || { configured: 0, active: 0, pending: 0 };
 
+  // High-visibility alert: the shared wildcard cert is a self-signed placeholder,
+  // which is why every *.sycord.site (GUI subdomains, previews, 9router) shows
+  // "cert error" even though Caddy holds a cert file.
+  let wildcardAlert = '';
+  if (d.wildcard_cert && d.wildcard_cert.self_signed) {
+    const zone = d.wildcard_cert.suggested_zone || (d.projects_debug && d.projects_debug[0] && (d.projects_debug[0].production?.domain || '').split('.').slice(-2).join('.'));
+    wildcardAlert = `
+      <div class="ssl-alert">
+        <i data-lucide="alert-triangle"></i>
+        <div>
+          <strong>Wildcard certificate is self-signed / not trusted</strong>
+          <p>The shared <code>*.${esc(zone || 'zone')}</code> cert is a Caddy placeholder (issuer: ${esc(d.wildcard_cert.issuer || 'Caddy Local Authority')}), so browsers reject it. This is why every subdomain (GUI, previews, 9router) shows "cert error" even though Caddy holds a certificate file. Fix the DNS-01 prerequisites, then press <strong>Apply &amp; resolve SSL</strong> to re-issue a real Let's Encrypt wildcard cert.</p>
+        </div>
+      </div>`;
+  }
+
   const hints = (d.action_hints || []).length
     ? `<div class="ssl-hints">
         ${d.action_hints.map(h => `<p><i data-lucide="info"></i> ${esc(h)}</p>`).join('')}
@@ -4120,6 +4136,7 @@ function renderSslDashboard(d) {
         <div class="ssl-checks">${cloudflareChecks}</div>
       </div>
     </div>
+    ${wildcardAlert}
     <div class="ssl-totals">
       <div class="swarm-stat"><span class="swarm-label">Configured</span><span class="swarm-value">${totals.configured}</span></div>
       <div class="swarm-stat"><span class="swarm-label">Active HTTPS</span><span class="swarm-value">${totals.active}</span></div>
