@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from syte.caddy_routes import host_zone
-from syte.domain_utils import build_https_url, normalize_domain
+from syte.domain_utils import build_https_url, is_safe_caddy_hostname, normalize_domain
 
 
 def _cert_dir() -> Path | None:
@@ -187,6 +187,8 @@ async def project_ssl_detail(project: dict) -> dict:
         "badge_label": summary["badge_label"],
         "production": production,
         "preview": preview,
+        "custom_tls_domain": normalize_domain(project.get("custom_tls_domain") or ""),
+        "custom_tls_enabled": int(project.get("custom_tls_enabled") or 0) == 1,
     }
 
 
@@ -196,6 +198,7 @@ async def build_ssl_overview() -> dict:
     from syte.database import list_projects, get_setting
     from syte.litellm_config import LITELLM_PUBLIC_HOST
     from syte.preview_domains import resolve_preview_zone
+    from syte.ssl_debug import debug_endpoint
 
     overview = SslOverview(
         caddy={
@@ -212,15 +215,78 @@ async def build_ssl_overview() -> dict:
     overview.litellm = litellm_api_ssl_status()
 
     preview_zone = await resolve_preview_zone()
+    debug: list[dict] = []
     for project in await list_projects():
         detail = await project_ssl_detail(project)
         overview.projects.append(detail)
-        if detail["production"]["active"] or detail["preview"]["active"]:
+        production_ok = bool(detail["production"]["active"])
+        preview_ok = bool(detail["preview"]["active"])
+        if production_ok or preview_ok:
             overview.active_count += 1
         elif detail["production"]["configured"] or detail["preview"]["configured"]:
             overview.pending_count += 1
         if detail["production"]["configured"] or detail["preview"]["configured"]:
             overview.configured_count += 1
+
+        proj_debug = {
+            "project": detail["name"],
+            "id": detail["id"],
+            "badge": detail["badge"],
+        }
+        if detail["production"]["configured"]:
+            proj_debug["production"] = await debug_endpoint(
+                name="production",
+                domain=detail["production"]["domain"],
+                configured=True,
+                cert_active=production_ok,
+            )
+        else:
+            proj_debug["production"] = {
+                "name": "production", "configured": False,
+                "cert": False, "state": "not-configured", "domain": None,
+            }
+        if detail["preview"]["configured"]:
+            proj_debug["preview"] = await debug_endpoint(
+                name="preview",
+                domain=detail["preview"]["domain"],
+                configured=True,
+                cert_active=preview_ok,
+            )
+        else:
+            proj_debug["preview"] = {
+                "name": "preview", "configured": False,
+                "cert": False, "state": "not-configured", "domain": None,
+            }
+        debug.append(proj_debug)
+
+    gui_domain = await get_setting("gui_domain", "") or LITELLM_PUBLIC_HOST
+    overview_debug = []
+    overview_debug.append(await debug_endpoint(
+        name="GUI",
+        domain=gui_domain,
+        configured=True,
+        cert_active=bool(overview.gui.get("active")),
+    ))
+    overview_debug.append(await debug_endpoint(
+        name="LiteLLM API",
+        domain=LITELLM_PUBLIC_HOST,
+        configured=True,
+        cert_active=bool(overview.litellm.get("active")),
+    ))
+    # Known external AI-router base — referenced by Syte but not proxied by this
+    # Caddy instance unless explicitly configured. Surfaces as a diagnostic.
+    try:
+        from syte.ai_providers import NINE_ROUTER_API_BASE
+        _nine_host = normalize_domain(NINE_ROUTER_API_BASE)
+    except Exception:  # noqa: BLE001
+        _nine_host = "9router.sycord.site"
+    overview_debug.append(await debug_endpoint(
+        name="9Router (external)",
+        domain=_nine_host,
+        configured=bool(_nine_host and is_safe_caddy_hostname(_nine_host)),
+        cert_active=False,
+        extra="External AI-router base referenced by Syte; ensure DNS and any reverse proxy are configured if it must be reachable.",
+    ))
 
     if overview.cloudflare.get("token_configured") and not overview.caddy["installed"]:
         overview.action_hints.append(
@@ -243,6 +309,11 @@ async def build_ssl_overview() -> dict:
         )
 
     overview.caddy_pending = not overview.caddy.get("active")
+    try:
+        from syte.config import settings as _settings
+        _gui_port = _settings.port
+    except Exception:  # noqa: BLE001
+        _gui_port = 8787
     return {
         "ok": True,
         "caddy": overview.caddy,
@@ -250,6 +321,11 @@ async def build_ssl_overview() -> dict:
         "gui": overview.gui,
         "litellm": overview.litellm,
         "projects": overview.projects,
+        "debug": overview_debug,
+        "projects_debug": debug,
+        "custom_tls_host": await get_setting("custom_tls_host", ""),
+        "custom_tls_port": await get_setting("custom_tls_port", ""),
+        "gui_port": _gui_port,
         "totals": {
             "configured": overview.configured_count,
             "active": overview.active_count,

@@ -53,6 +53,35 @@ def collect_project_routes(
     return production, preview
 
 
+def collect_custom_tls_routes(projects: list[dict]) -> list[CaddyRoute]:
+    """Per-app dedicated TLS domains (own Let's Encrypt cert, not wildcard).
+
+    These render as standalone host blocks so an app can pin its own custom
+    domain + certificate independently of the shared wildcard zone.
+    """
+    custom: list[CaddyRoute] = []
+    for project in projects:
+        domain = normalize_domain(project.get("custom_tls_domain") or "")
+        port = project.get("port")
+        enabled = project.get("custom_tls_enabled")
+        if domain and port and is_safe_caddy_hostname(domain) and enabled:
+            name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
+            custom.append(CaddyRoute(domain, int(port), name, "custom"))
+    return custom
+
+
+def render_custom_tls_block(route: CaddyRoute) -> list[str]:
+    """Emit a standalone host block for a project's dedicated custom TLS domain."""
+    label = sanitize_caddy_label(route.label)
+    return [
+        f"# {label} — custom TLS",
+        f"{route.hostname} {{",
+        f"    reverse_proxy 127.0.0.1:{route.port}",
+        "}",
+        "",
+    ]
+
+
 def routes_by_zone(routes: list[CaddyRoute]) -> dict[str, list[CaddyRoute]]:
     grouped: dict[str, list[CaddyRoute]] = defaultdict(list)
     for route in routes:
@@ -262,20 +291,25 @@ def render_all_service_routes(
     cors_origin: str | None = None,
 ) -> list[str]:
     """Emit Caddy blocks for production + preview (grouped wildcard TLS when enabled)."""
+    custom_routes = collect_custom_tls_routes(projects)
     production, preview = collect_project_routes(projects)
     all_routes = production + preview
-    if not all_routes:
+    if not all_routes and not custom_routes:
         return []
 
+    custom_lines: list[str] = []
+    for route in custom_routes:
+        custom_lines.extend(render_custom_tls_block(route))
+
     if not use_wildcard_tls:
-        lines: list[str] = []
+        lines: list[str] = list(custom_lines)
         for route in all_routes:
             lines.extend(
                 render_host_block(route, frame_csp=frame_csp, cors_origin=cors_origin)
             )
         return lines
 
-    lines: list[str] = []
+    lines: list[str] = list(custom_lines)
     by_zone = routes_by_zone(all_routes)
     for zone in sorted(by_zone):
         zone_routes = by_zone[zone]

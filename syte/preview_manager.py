@@ -785,6 +785,14 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
     from syte.certificates import apply_proxy_config
     await apply_proxy_config()
 
+    # The preview route + wildcard cert were just (re)applied — drop any cached
+    # HTTPS probe failure so the meta below reports live TLS readiness instead
+    # of an earlier "down" result.
+    from syte.preview_iframe import clear_https_probe_cache
+    if preview_domain:
+        from syte.domain_utils import build_https_url
+        clear_https_probe_cache(build_https_url(preview_domain))
+
     project = await get_project(project_id) or project
     from syte.project_enrich import enrich_ssl
 

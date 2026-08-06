@@ -11,7 +11,7 @@ from syte.caddy_routes import (
 )
 from syte.config import settings
 from syte.database import get_setting, list_projects
-from syte.domain_utils import normalize_domain
+from syte.domain_utils import is_safe_caddy_hostname, normalize_domain
 from syte.litellm_config import LITELLM_HOST_PORT, LITELLM_PUBLIC_HOST
 from syte.preview_domains import preview_frame_ancestors_csp
 
@@ -279,6 +279,23 @@ async def async_generate_caddyfile() -> str:
             cors_origin=cors_origin,
         )
     )
+
+    # Global custom TLS host (e.g. dedicated sycord.site/zone SSL with its own
+    # cert) — a standalone host block forwarding to a configured port.
+    custom_host = normalize_domain(await get_setting("custom_tls_host", "") or "")
+    custom_port_raw = (await get_setting("custom_tls_port", "") or "").strip()
+    if custom_host and is_safe_caddy_hostname(custom_host):
+        try:
+            custom_port = int(custom_port_raw)
+        except (TypeError, ValueError):
+            custom_port = settings.port
+        lines.extend([
+            f"# Global custom TLS — {custom_host}",
+            f"{custom_host} {{",
+            f"    reverse_proxy 127.0.0.1:{custom_port}",
+            "}",
+            "",
+        ])
 
     lines.append(f"# Public IP: {public_ip}")
     return "\n".join(lines)
