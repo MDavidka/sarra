@@ -9,6 +9,7 @@ is referenced as an API base but is not proxied by this Caddy instance.
 from __future__ import annotations
 
 import asyncio
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -16,25 +17,35 @@ import urllib.request
 from syte.domain_utils import build_https_url, is_safe_caddy_hostname, normalize_domain
 
 
-def _probe(url: str, timeout: float = 3.0) -> tuple[bool, float | None]:
+def _probe(url: str, timeout: float = 3.0):
+    """Probe an HTTPS URL, distinguishing a browser-trustable TLS result from a
+    handshake that succeeds only on a self-signed / mismatched certificate.
+
+    Python's default SSL context verifies the certificate trust chain and
+    hostname, so a certificate a browser would reject surfaces here as a
+    verification error rather than a successful request.
+    """
     if not url or not url.startswith("https://"):
         return False, None
     start = time.monotonic()
     try:
         request = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            ok = 200 <= response.status < 600
-            return ok, time.monotonic() - start
+            return True, time.monotonic() - start
     except urllib.error.HTTPError as error:
-        # An HTTP error still proves TLS + routing are working.
+        # A real HTTP reply (even 4xx/5xx) proves TLS + routing with a
+        # trustable certificate are working; Caddy may 404 a non-route.
         return True, time.monotonic() - start
     except urllib.error.URLError as error:
         reason = getattr(error, "reason", "")
         reason_str = str(reason).lower()
-        # Certificate / TLS handshake failures are the diagnostic we care about.
+        latency = time.monotonic() - start
+        # A certificate the browser would reject. Phrase it for the operator.
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return ("invalid-cert", str(reason.verify_message or "certificate not trusted"), latency)
         if "certificate" in reason_str or "ssl" in reason_str or "tls" in reason_str:
-            return "cert-error", time.monotonic() - start
-        return False, time.monotonic() - start
+            return "cert-error", latency
+        return False, latency
     except (TimeoutError, OSError):
         return False, None
 
@@ -47,12 +58,19 @@ async def live_probe_https(url: str, timeout: float = 3.0):
     if not url:
         return {"reachable": False, "state": "not-configured", "detail": "no endpoint", "latency_ms": None}
     result = await asyncio.to_thread(_probe, url, timeout)
-    if result == "cert-error":
+    if isinstance(result, tuple) and result and result[0] == "invalid-cert":
+        return {
+            "reachable": False,
+            "state": "invalid-cert",
+            "detail": f"certificate rejected: {result[1]}",
+            "latency_ms": round(result[2] * 1000) if result[2] is not None else None,
+        }
+    if isinstance(result, tuple) and result and result[0] == "cert-error":
         return {
             "reachable": False,
             "state": "cert-error",
-            "detail": "TLS/certificate error",
-            "latency_ms": result[1],
+            "detail": "TLS/certificate failure",
+            "latency_ms": round(result[1] * 1000) if result[1] is not None else None,
         }
     reachable, latency = result
     return {
@@ -98,6 +116,12 @@ def classify_endpoint(configured: bool, cert_active: bool, live) -> dict:
         "reachable": bool(live and live.get("reachable")),
         "latency_ms": live.get("latency_ms") if live else None,
     }
+    live_state = live.get("state") if live else None
+    if live_state in ("invalid-cert", "cert-error"):
+        base["state"] = live_state
+        base["reachable"] = False
+        base["detail"] = live.get("detail", "certificate not trusted by browsers")
+        return base
     if live and live.get("reachable"):
         base["state"] = "serving"
         base["detail"] = "SSL serving"
