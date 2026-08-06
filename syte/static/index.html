@@ -927,6 +927,49 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="login-screen" class="login-screen hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <div class="login-card">
+      <div class="login-head">
+        <div class="login-brand-row">
+          <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="sidebar-logo">
+          <span class="login-brand-name">Syte</span>
+        </div>
+        <h2 id="login-title">Sign in</h2>
+        <p class="hint">This area is operator protected. Authenticate to continue.</p>
+        <p class="hint login-return-view" id="login-return-hint"></p>
+      </div>
+
+      <label class="login-tabs" role="tablist" aria-label="Sign in method">
+        <button type="button" class="login-tab is-active" id="login-tab-bootstrap" role="tab" aria-selected="true">API key</button>
+        <button type="button" class="login-tab" id="login-tab-method" role="tab" aria-selected="false">Session (bootstrap key)</button>
+      </label>
+
+      <form id="login-form-api" class="login-form">
+        <div class="form-group">
+          <label for="login-api-key">API key</label>
+          <input id="login-api-key" type="password" placeholder="syte_…" autocomplete="off">
+          <span class="hint">Stored in this tab’s session storage only. Create a token under <strong>Users</strong> when unlocked.</span>
+        </div>
+        <button type="submit" class="btn-pill btn-primary login-submit">
+          <i data-lucide="log-in"></i><span>Sign in</span>
+        </button>
+        <p class="hint login-error hidden" id="login-error"></p>
+      </form>
+
+      <form id="login-form-key" class="login-form hidden">
+        <div class="form-group">
+          <label for="login-bootstrap-key">bootstrap key</label>
+          <input id="login-bootstrap-key" type="password" placeholder="operator bootstrap key" autocomplete="off">
+          <span class="hint">Exchanged once for an HttpOnly session cookie. Requires HTTPS.</span>
+        </div>
+        <button type="submit" class="btn-pill btn-primary login-submit">
+          <i data-lucide="log-in"></i><span>Unlock session</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
   <script src="/static/app.js?v=__VERSION__"></script>
 </body>
 </html>
