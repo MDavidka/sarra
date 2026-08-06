@@ -4005,8 +4005,17 @@ function sslHostSummary(host) {
     return `<span class="badge badge-ssl badge-ssl-http">HTTP</span> <span class="hint">n/a</span>`;
   }
   const active = host.active;
+  // live_state is the authoritative probe result (serving / invalid-cert /
+  // down / pending / malformed) merged from the live debug pass.
+  const liveState = host.live_state;
+  const title = host.live_detail ? ` title="${esc(host.live_detail)}"` : '';
+  if (liveState && liveState !== 'serving') {
+    const cls = liveState === 'invalid-cert' ? 'badge-ssl-http' : 'badge-ssl-preview-pending';
+    const label = liveState === 'invalid-cert' ? 'invalid cert' : liveState === 'down' ? 'not serving' : liveState;
+    return `<span class="badge badge-ssl ${cls}" ${title}>${esc(label)}</span> <code>${esc(host.domain)}</code>`;
+  }
   return active
-    ? `<span class="badge badge-ssl badge-ssl-https">HTTPS</span> <a href="${esc(host.url)}" target="_blank" rel="noopener" class="link">${esc(host.domain)}</a>`
+    ? `<span class="badge badge-ssl badge-ssl-https">HTTPS</span> <a href="${esc(host.url)}" target="_blank" rel="noopener" class="link" ${title}>${esc(host.domain)}</a>`
     : `<span class="badge badge-ssl badge-ssl-preview-pending">pending</span> <code>${esc(host.domain)}</code>`;
 }
 
@@ -4016,6 +4025,7 @@ function sslStateBadge(state, detail) {
     'down': ['badge-ssl-pending', 'down'],
     'pending': ['badge-ssl-preview-pending', 'pending'],
     'malformed': ['badge-ssl-http', 'malformed'],
+    'invalid-cert': ['badge-ssl-http', 'invalid cert'],
     'cert-error': ['badge-ssl-preview-pending', 'cert error'],
     'not-configured': ['badge-ssl-http', 'no domain'],
   };

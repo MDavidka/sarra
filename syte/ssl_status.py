@@ -259,6 +259,15 @@ async def build_ssl_overview() -> dict:
             }
         debug.append(proj_debug)
 
+        # Merge live serving state into the project detail so the dashboard's
+        # badges reflect whether the cert is actually accepted + reachable, not
+        # just whether a cert file exists.
+        for key, dbg_key in (("production", "production"), ("preview", "preview")):
+            row = proj_debug.get(dbg_key) or {}
+            detail[key]["live_state"] = row.get("state")
+            detail[key]["live_detail"] = row.get("detail")
+            detail[key]["serving"] = row.get("reachable", False) or row.get("state") == "serving"
+
     gui_domain = await get_setting("gui_domain", "") or LITELLM_PUBLIC_HOST
     overview_debug = []
     overview_debug.append(await debug_endpoint(
