@@ -4010,6 +4010,33 @@ function sslHostSummary(host) {
     : `<span class="badge badge-ssl badge-ssl-preview-pending">pending</span> <code>${esc(host.domain)}</code>`;
 }
 
+function sslStateBadge(state, detail) {
+  const map = {
+    'serving': ['badge-ssl-https', 'serving'],
+    'down': ['badge-ssl-pending', 'down'],
+    'pending': ['badge-ssl-preview-pending', 'pending'],
+    'malformed': ['badge-ssl-http', 'malformed'],
+    'cert-error': ['badge-ssl-preview-pending', 'cert error'],
+    'not-configured': ['badge-ssl-http', 'no domain'],
+  };
+  const [cls, label] = map[state] || ['badge-ssl-http', state || 'unknown'];
+  const title = detail ? `title="${esc(detail)}"` : '';
+  return `<span class="badge badge-ssl ${cls}" ${title}>${esc(label)}</span>`;
+}
+
+function sslDebugRow(d) {
+  const name = esc(d.name || 'endpoint');
+  const domain = d.domain ? `<code>${esc(d.domain)}</code>` : '<span class="hint">—</span>';
+  const latency = d.latency_ms != null ? ` <span class="hint">${d.latency_ms}ms</span>` : '';
+  const note = d.note ? `<small class="ssl-debug-note">${esc(d.note)}</small>` : '';
+  return `<div class="ssl-debug-row">
+    <span class="ssl-debug-name">${name}</span>
+    <span class="ssl-debug-domain">${domain}</span>
+    <span class="ssl-debug-state">${sslStateBadge(d.state, d.detail)}${latency}</span>
+    ${note}
+  </div>`;
+}
+
 function renderSslDashboard(d) {
   const content = document.getElementById('ssl-content');
   if (!content) return;
@@ -4043,6 +4070,20 @@ function renderSslDashboard(d) {
        </div>`
     : '';
 
+  // Live per-endpoint HTTPS debug (most audible signal for "is it serving").
+  const debugRows = (d.debug || []).map(sslDebugRow).join('');
+  const projectDebugRows = (d.projects_debug || []).map(pd => {
+    const prod = pd.production || [];
+    const prev = pd.preview || [];
+    return `<div class="ssl-debug-project">
+      <span class="ssl-debug-project-name">${esc(pd.project)}</span>
+      <span class="ssl-debug-project-hosts">
+        <span class="ssl-debug-inline"><span class="hint">prod</span> ${sslDebugRow(prod)}</span>
+        <span class="ssl-debug-inline"><span class="hint">preview</span> ${sslDebugRow(prev)}</span>
+      </span>
+    </div>`;
+  }).join('');
+
   const rows = (d.projects || []).map(p => `
     <div class="ssl-project-row">
       <div class="ssl-project-name">
@@ -4055,6 +4096,8 @@ function renderSslDashboard(d) {
       </div>
     </div>
   `).join('') || '<p class="hint block">No projects yet.</p>';
+
+  const customTls = customTlsControlsHtml(d);
 
   content.innerHTML = `
     <div class="ssl-grid">
@@ -4074,15 +4117,103 @@ function renderSslDashboard(d) {
     </div>
     ${hints}
     <div class="projects-card panel-form">
+      <div class="projects-title-block mb"><i data-lucide="activity" class="projects-icon"></i><div><h3>Live HTTPS debug <span class="hint">— is each endpoint actually serving?</span></h3></div></div>
+      <div class="ssl-debug-list">${debugRows || '<p class="hint block">No endpoint debug.</p>'}</div>
+      ${projectDebugRows ? `<div class="ssl-debug-project-list">${projectDebugRows}</div>` : ''}
+    </div>
+    <div class="projects-card panel-form">
       <div class="projects-title-block mb"><i data-lucide="shield-check" class="projects-icon"></i><div><h3>Certificates by project</h3></div></div>
       <div class="ssl-project-list">${rows}</div>
     </div>
+    <div class="projects-card panel-form">
+      <div class="projects-title-block mb"><i data-lucide="key-round" class="projects-icon"></i><div><h3>Custom TLS <span class="hint">— per-app and sycord.site dedicated certs</span></h3></div></div>
+      ${customTls}
+    </div>
   `;
   refreshIcons();
+  wireCustomTls();
 }
 
 function cssClassSafe(s) {
   return String(s || 'http').replace(/[^a-z0-9-]/gi, '');
+}
+
+function customTlsControlsHtml(d) {
+  // Global sycord.site / custom host setting.
+  const globalHost = esc((d && d.custom_tls_host) || '');
+  const globalPort = esc((d && d.custom_tls_port) || '');
+  const projectRows = (d.projects || []).map(p => {
+    const pid = cssClassSafe(p.id);
+    const local = p.custom_tls_domain ? p.custom_tls_domain : '';
+    const enabled = Boolean(p.custom_tls_enabled);
+    return `<div class="ssl-custom-row" data-id="${esc(p.id)}">
+      <strong class="ssl-custom-name">${esc(p.name)}</strong>
+      <input class="ssl-custom-input" data-role="domain" value="${esc(local)}" placeholder="custom-domain.example.com">
+      <label class="ssl-custom-toggle"><input type="checkbox" data-role="enabled" ${enabled ? 'checked' : ''}> enable</label>
+      <button type="button" class="btn-pill btn-primary btn-sm ssl-custom-save" data-role="save">Save</button>
+      <span class="hint ssl-custom-status"></span>
+    </div>`;
+  }).join('') || '<p class="hint block">No projects yet.</p>';
+
+  return `
+    <div class="ssl-custom-global">
+      <div class="ssl-custom-global-title"><strong>Global host</strong> <span class="hint">e.g. sycord.site apex or a dedicated domain with its own cert</span></div>
+      <div class="ssl-custom-global-row">
+        <input class="ssl-custom-input" id="ssl-custom-global-domain" value="${globalHost}" placeholder="sycord.site">
+        <input class="ssl-custom-input" id="ssl-custom-global-port" value="${globalPort}" placeholder="port (default ${esc(String((d && d.gui_port) || 8787))})">
+        <button type="button" class="btn-pill btn-primary btn-sm" id="ssl-custom-global-save">Save global TLS</button>
+        <span class="hint ssl-custom-status" id="ssl-custom-global-status"></span>
+      </div>
+    </div>
+    <div class="ssl-custom-project-list">${projectRows}</div>
+  `;
+}
+
+function wireCustomTls() {
+  // Per-project save
+  document.querySelectorAll('.ssl-custom-row').forEach(row => {
+    const saveBtn = row.querySelector('[data-role="save"]');
+    if (!saveBtn) return;
+    saveBtn.addEventListener('click', async () => {
+      const id = row.dataset.id;
+      const domain = (row.querySelector('[data-role="domain"]').value || '').trim();
+      const enabled = row.querySelector('[data-role="enabled"]').checked;
+      const statusEl = row.querySelector('.ssl-custom-status');
+      if (statusEl) statusEl.textContent = 'Applying…';
+      try {
+        const res = await api(`/ssl/projects/${id}/custom-tls`, {
+          method: 'POST',
+          body: JSON.stringify({ custom_tls_domain: domain, custom_tls_enabled: enabled }),
+        });
+        if (statusEl) statusEl.textContent = res.message || 'saved';
+        toast(res.message || 'custom TLS saved');
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+        toast('Error: ' + e.message);
+      }
+    });
+  });
+  // Global save
+  const globalSave = document.getElementById('ssl-custom-global-save');
+  if (globalSave) {
+    globalSave.addEventListener('click', async () => {
+      const domain = (document.getElementById('ssl-custom-global-domain').value || '').trim();
+      const port = (document.getElementById('ssl-custom-global-port').value || '').trim();
+      const statusEl = document.getElementById('ssl-custom-global-status');
+      if (statusEl) statusEl.textContent = 'Applying…';
+      try {
+        const res = await api('/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ custom_tls_host: domain, custom_tls_port: port }),
+        });
+        if (statusEl) statusEl.textContent = (res.messages || []).join(' · ') || 'saved';
+        toast('Global custom TLS saved');
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+        toast('Error: ' + e.message);
+      }
+    });
+  }
 }
 
 async function applyResolveSsl() {

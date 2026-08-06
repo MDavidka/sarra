@@ -71,6 +71,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_status TEXT DEFAULT 'stopped'")
     if "preview_domain" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_domain TEXT")
+    if "custom_tls_domain" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN custom_tls_domain TEXT")
+    if "custom_tls_enabled" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN custom_tls_enabled INTEGER DEFAULT 0")
     if "agent_port" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN agent_port INTEGER")
     if "agent_status" not in cols:
@@ -181,6 +185,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "agent_port", "agent_status", "agent_runtime", "agent_model_profile",
         "agent_last_started_at", "agent_last_error", "agent_config_path",
         "agent_conversation_id",
+        "custom_tls_domain", "custom_tls_enabled",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):

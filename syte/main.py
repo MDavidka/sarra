@@ -182,6 +182,8 @@ class SettingsRequest(BaseModel):
     preview_base_domain: str | None = None
     cloudflare_api_token: str | None = None
     preview_wildcard_tls: str | None = None
+    custom_tls_host: str | None = None
+    custom_tls_port: str | None = None
     agent_default_model_profile: str | None = None
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
@@ -428,6 +430,8 @@ async def get_settings():
         "preview_zone": preview_zone,
         "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
+        "custom_tls_host": await get_setting("custom_tls_host", ""),
+        "custom_tls_port": await get_setting("custom_tls_port", ""),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
         "agent_default_model_profile": bridge["default_profile"],
@@ -841,6 +845,16 @@ async def save_settings(body: SettingsRequest):
         proxy_updated = True
         messages.append(f"Preview wildcard TLS mode: {mode}")
 
+    if body.custom_tls_host is not None:
+        host = normalize_domain(body.custom_tls_host)
+        await set_setting("custom_tls_host", host)
+        proxy_updated = True
+        messages.append(f"Global custom TLS host set to {host}" if host else "Global custom TLS host cleared.")
+    if body.custom_tls_port is not None:
+        await set_setting("custom_tls_port", body.custom_tls_port.strip())
+        proxy_updated = True
+        messages.append("Global custom TLS port set.")
+
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import DEFAULT_PROFILE
         from syte.cloud_agent import is_catalog_model_profile
@@ -1067,6 +1081,49 @@ async def api_ssl_resolve(_operator: dict[str, Any] = Depends(verify_operator_se
             "resolved": False,
             "messages": [f"SSL resolve failed — {type(error).__name__}: {error}"],
         }
+
+
+class CustomTlsRequest(BaseModel):
+    custom_tls_domain: str = ""
+    custom_tls_enabled: bool = False
+
+
+@app.post("/api/ssl/projects/{project_id}/custom-tls")
+async def api_project_custom_tls(
+    project_id: str,
+    body: CustomTlsRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Set an app-specific dedicated TLS domain (its own Let's Encrypt cert).
+
+    ``custom_tls_enabled`` must be true for the block to be served; the domain
+    is normalised and validated for safe use in the Caddyfile.
+    """
+    from syte.database import get_project, update_project
+    from syte.certificates import apply_proxy_config
+
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    domain = normalize_domain(body.custom_tls_domain or "")
+    from syte.domain_utils import is_safe_caddy_hostname
+
+    if body.custom_tls_enabled and not is_safe_caddy_hostname(domain):
+        raise HTTPException(400, f"Invalid or unsafe custom domain: {body.custom_tls_domain!r}")
+
+    await update_project(project_id, {
+        "custom_tls_domain": domain,
+        "custom_tls_enabled": 1 if body.custom_tls_enabled else 0,
+    })
+    ok, msg = await apply_proxy_config()
+    if not ok:
+        return {"ok": False, "message": f"Custom TLS saved but proxy apply failed: {msg}"}
+    return {
+        "ok": True,
+        "message": f"Custom TLS {'enabled' if body.custom_tls_enabled else 'disabled'} for {project.get('name', project_id)}"
+        + (f" on {domain}" if domain and body.custom_tls_enabled else ""),
+    }
 
 
 async def _syra_action(action: str, operation: Any) -> dict[str, Any]:
