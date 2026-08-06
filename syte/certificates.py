@@ -17,6 +17,10 @@ from syte.preview_domains import preview_frame_ancestors_csp
 
 CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
 CADDY_DROPIN_FILE = CADDY_DROPIN_DIR / "syte-cloudflare.conf"
+# Canonical env path — must be stable regardless of settings.data_dir so the
+# systemd EnvironmentFile drop-in and the file we write always point at the
+# same location. Other code (and deployed drop-ins) reference this exact path.
+CADDY_ENV_PATH = Path("/var/lib/syte/caddy.env")
 
 
 def _run(cmd: list[str], timeout: float = 60.0, env: dict | None = None) -> tuple[int, str]:
@@ -49,7 +53,7 @@ def _caddy_env() -> dict | None:
     values through its EnvironmentFile; these one-shot invocations need them
     explicitly or the DNS-01 placeholder resolves empty and validation fails.
     """
-    env_path = settings.data_dir / "caddy.env"
+    env_path = CADDY_ENV_PATH
     try:
         if not env_path.is_file():
             return None
@@ -152,7 +156,7 @@ async def _write_caddy_env() -> str | None:
     token = (await get_setting("cloudflare_api_token", "")).strip()
     if not token:
         return None
-    env_path = settings.data_dir / "caddy.env"
+    env_path = CADDY_ENV_PATH
     env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text(f"CLOUDFLARE_API_TOKEN={token}\n")
     env_path.chmod(0o600)
@@ -176,7 +180,7 @@ async def apply_cloudflare_integration() -> list[str]:
 
 async def cloudflare_tls_status() -> dict:
     token_set = bool((await get_setting("cloudflare_api_token", "")).strip())
-    env_path = settings.data_dir / "caddy.env"
+    env_path = CADDY_ENV_PATH
     env_written = env_path.is_file() and token_set
     wildcard_enabled = await _use_wildcard_tls()
     plugin = caddy_has_cloudflare_plugin()
@@ -307,6 +311,16 @@ async def apply_proxy_config() -> tuple[bool, str]:
     config_path = settings.caddy_config_path
     fallback = settings.data_dir / "Caddyfile"
     env_path = await _write_caddy_env()
+
+    # Fail loudly if a token is configured but the env file still isn't there —
+    # otherwise Caddy starts with an empty CLOUDFLARE_API_TOKEN and DNS-01 fails
+    # with Cloudflare "Authentication error", leaving a self-signed placeholder.
+    token_set = bool((await get_setting("cloudflare_api_token", "")).strip())
+    if token_set and not CADDY_ENV_PATH.is_file():
+        return False, (
+            f"Cloudflare token is saved but {CADDY_ENV_PATH} could not be written. "
+            "DNS-01 wildcard TLS will fail. Check write permission to /var/lib/syte."
+        )
 
     written = None
     write_errors: list[str] = []
