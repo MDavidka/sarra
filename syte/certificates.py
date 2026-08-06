@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,14 +19,20 @@ CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
 CADDY_DROPIN_FILE = CADDY_DROPIN_DIR / "syte-cloudflare.conf"
 
 
-def _run(cmd: list[str], timeout: float = 60.0) -> tuple[int, str]:
+def _run(cmd: list[str], timeout: float = 60.0, env: dict | None = None) -> tuple[int, str]:
     """Run a command, converting every failure into an inspectable result.
 
     Any uncaught OSError here would surface as an opaque HTTP 500 in the GUI,
     and a missing timeout could hang an operator request indefinitely.
     """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
         output = (result.stdout or "") + (result.stderr or "")
         return result.returncode, output.strip()
     except FileNotFoundError:
@@ -34,6 +41,29 @@ def _run(cmd: list[str], timeout: float = 60.0) -> tuple[int, str]:
         return 124, f"Command timed out after {timeout:g}s: {' '.join(cmd)}"
     except OSError as error:
         return 1, f"Could not run {' '.join(cmd)}: {error}"
+
+
+def _caddy_env() -> dict | None:
+    """Build an environment with the saved Cloudflare token for one-shot Caddy
+    commands (validate/reload). The running systemd service loads the same
+    values through its EnvironmentFile; these one-shot invocations need them
+    explicitly or the DNS-01 placeholder resolves empty and validation fails.
+    """
+    env_path = settings.data_dir / "caddy.env"
+    try:
+        if not env_path.is_file():
+            return None
+        merged = dict(os.environ)
+        for line in env_path.read_text().splitlines():
+            if not line or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key:
+                merged[key] = value.strip()
+        return merged
+    except OSError:
+        return None
 
 
 def ensure_caddy() -> tuple[bool, str]:
@@ -60,11 +90,13 @@ def ensure_caddy() -> tuple[bool, str]:
     if cfg.exists():
         # `caddy run` stays in the foreground; never wait on it inside a request.
         try:
+            caddy_env = _caddy_env()
             subprocess.Popen(
                 ["caddy", "start", "--config", str(cfg), "--adapter", "caddyfile"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=caddy_env,
             )
             return True, "Caddy started."
         except OSError as error:
@@ -286,7 +318,10 @@ async def apply_proxy_config() -> tuple[bool, str]:
             "Install Caddy and run: sudo caddy reload --config " + str(written) + extra
         )
 
-    code, out = await asyncio.to_thread(_run, ["caddy", "validate", "--config", str(written)])
+    caddy_env = _caddy_env()
+    code, out = await asyncio.to_thread(
+        _run, ["caddy", "validate", "--config", str(written)], env=caddy_env
+    )
     if code != 0:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
@@ -295,7 +330,8 @@ async def apply_proxy_config() -> tuple[bool, str]:
         ["systemctl", "reload", "caddy"],
         ["caddy", "reload", "--config", str(written)],
     ):
-        code, out = await asyncio.to_thread(_run, cmd)
+        cmd_env = caddy_env if cmd[0] == "caddy" else None
+        code, out = await asyncio.to_thread(_run, cmd, env=cmd_env)
         if code == 0:
             caddy_ok, caddy_message = await asyncio.to_thread(ensure_caddy)
             if not caddy_ok:
