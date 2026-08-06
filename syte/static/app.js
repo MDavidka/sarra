@@ -87,25 +87,11 @@ const STACK_META = {
 let selectedCreateStack = 'nextjs';
 
 function getApiKey() {
-  return localStorage.getItem(API_KEY_STORAGE) || '';
-}
-
-function shouldAttachApiKey(path) {
-  const key = getApiKey();
-  if (!key) return false;
-  // GUI routes are public on same-origin — a stale/revoked stored token breaks SSE and history.
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const guiPrefixes = [
-      '/projects/',
-      '/agent_dashboard',
-      '/settings',
-      '/system',
-      '/tokens',
-      '/operator/',
-    ];
-    if (guiPrefixes.some(prefix => path.startsWith(prefix))) return false;
+  try {
+    return sessionStorage.getItem(API_KEY_STORAGE) || '';
+  } catch (e) {
+    return '';
   }
-  return true;
 }
 
 function normalizeFetchError(message) {
@@ -129,8 +115,10 @@ function parseApiErrorPayload(err, statusText, status) {
 }
 
 function setApiKey(key) {
-  if (key) localStorage.setItem(API_KEY_STORAGE, key);
-  else localStorage.removeItem(API_KEY_STORAGE);
+  try {
+    if (key) sessionStorage.setItem(API_KEY_STORAGE, key);
+    else sessionStorage.removeItem(API_KEY_STORAGE);
+  } catch (e) { /* private session storage unavailable */ }
 }
 
 function stopLogStream() {
@@ -3662,7 +3650,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/tokens') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -3695,6 +3683,155 @@ async function restoreOperatorSession() {
     });
   operatorSessionRestorePromise = restorePromise;
   return restorePromise;
+}
+
+// ---------------------------------------------------------------------------
+// Operator login screen (protected views)
+// ---------------------------------------------------------------------------
+
+// Which UI routes require operator auth before their data loads.
+const OPERATOR_PROTECTED_VIEWS = ['ssl'];
+// REST prefixes that can be authenticated with an API key (session-stored).
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/tokens'];
+
+function isOperatorView(name) {
+  return OPERATOR_PROTECTED_VIEWS.includes(name);
+}
+
+// The browser is considered operator-authenticated if it holds a session cookie
+// (checked lazily against /api/operator/session) or a session-scoped API key.
+async function operatorAuthenticated() {
+  if (await restoreOperatorSession()) return true;
+  return Boolean(getApiKey());
+}
+
+let loginReturnView = null;
+
+function showLoginScreen(returnView) {
+  loginReturnView = returnView || loginReturnView;
+  const screen = document.getElementById('login-screen');
+  const hint = document.getElementById('login-return-hint');
+  if (!screen) return;
+  if (hint) {
+    hint.textContent = loginReturnView
+      ? `Sign in to open the ${loginReturnView} area.`
+      : '';
+  }
+  screen.classList.remove('hidden');
+  document.body.classList.add('login-locked');
+  const first = document.getElementById('login-api-key');
+  if (first) setTimeout(() => first.focus(), 50);
+}
+
+function hideLoginScreen() {
+  const screen = document.getElementById('login-screen');
+  if (screen) screen.classList.add('hidden');
+  document.body.classList.remove('login-locked');
+  const keyInput = document.getElementById('login-api-key');
+  if (keyInput) keyInput.value = '';
+  const bootInput = document.getElementById('login-bootstrap-key');
+  if (bootInput) bootInput.value = '';
+  clearLoginError();
+}
+
+function setLoginError(msg) {
+  const err = document.getElementById('login-error');
+  if (!err) return;
+  err.textContent = msg || '';
+  err.classList.toggle('hidden', !msg);
+}
+
+function clearLoginError() {
+  setLoginError('');
+}
+
+// Heuristic for an operator-auth failure (missing cookie session or rejected /
+// revoked API key) surfaced by verify_operator_session_or_token.
+function isAuthError(e) {
+  const msg = String(e && e.message || '');
+  return /unlock|operator session|api key/i.test(msg);
+}
+
+async function forceLoginForView(viewName) {
+  if (!isOperatorView(viewName)) return true;
+  if (await operatorAuthenticated()) return true;
+  showLoginScreen(viewName);
+  return false;
+}
+
+async function loginWithApiKey(key) {
+  setApiKey(key.trim());
+  // Verify the key against an operator endpoint before closing the screen.
+  try {
+    await api('/ssl', { cache: 'no-store' });
+    hideLoginScreen();
+    if (await forceLoginForView(loginReturnView)) {
+      if (loginReturnView === 'ssl') await loadSslDashboard();
+      loginReturnView = null;
+    }
+    toast('Signed in with API key');
+  } catch (e) {
+    setApiKey('');
+    setLoginError('Invalid API key — ' + e.message);
+  }
+}
+
+async function loginWithBootstrapKey(key) {
+  if (window.location.protocol !== 'https:') {
+    setLoginError('Session unlock requires HTTPS. Open the GUI over its domain.');
+    return;
+  }
+  try {
+    const session = await api('/operator/session', {
+      method: 'POST',
+      body: JSON.stringify({ bootstrap_token: key.trim() }),
+    });
+    operatorSessionRestorePromise = null;
+    syraCsrfToken = session.csrf_token || '';
+    if (!syraCsrfToken) throw new Error('Operator session was not created');
+    hideLoginScreen();
+    if (await forceLoginForView(loginReturnView)) {
+      if (loginReturnView === 'ssl') await loadSslDashboard();
+      loginReturnView = null;
+    }
+    toast('Operator session unlocked');
+  } catch (e) {
+    setLoginError('Unlock failed — ' + e.message);
+  }
+}
+
+function switchLoginTab(which) {
+  const apiForm = document.getElementById('login-form-api');
+  const keyForm = document.getElementById('login-form-key');
+  const tabApi = document.getElementById('login-tab-bootstrap');
+  const tabKey = document.getElementById('login-tab-method');
+  const isApi = which === 'api';
+  if (apiForm) apiForm.classList.toggle('hidden', !isApi);
+  if (keyForm) keyForm.classList.toggle('hidden', isApi);
+  if (tabApi) tabApi.classList.toggle('is-active', isApi);
+  if (tabKey) tabKey.classList.toggle('is-active', !isApi);
+  if (tabApi) tabApi.setAttribute('aria-selected', isApi ? 'true' : 'false');
+  if (tabKey) tabKey.setAttribute('aria-selected', isApi ? 'false' : 'true');
+  clearLoginError();
+}
+
+// Eagerly resolve the API key for operator paths so API-key sign-in persists
+// across protected views within this tab session.
+function shouldAttachApiKey(path) {
+  const key = getApiKey();
+  if (!key) return false;
+  // GUI routes are public on same-origin — but operator-protected paths must
+  // carry the session-stored API key when no cookie session exists.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const guiPrefixes = [
+      '/projects/',
+      '/agent_dashboard',
+      '/system',
+      '/operator/',
+    ];
+    if (guiPrefixes.some(prefix => path.startsWith(prefix))) return false;
+  }
+  return OPERATOR_API_KEY_PATHS.some(prefix => path.startsWith(prefix));
 }
 
 function toast(msg) {
@@ -3829,12 +3966,22 @@ async function loadSslDashboard() {
   const refreshBtn = document.getElementById('ssl-refresh-btn');
   const resolveBtn = document.getElementById('ssl-resolve-btn');
   if (!content) return;
+  if (!(await forceLoginForView('ssl'))) {
+    return;
+  }
   if (refreshBtn) refreshBtn.disabled = true;
   if (resolveBtn) resolveBtn.disabled = true;
   try {
     sslData = await api('/ssl');
     renderSslDashboard(sslData);
   } catch (e) {
+    // A 401 (missing session or rejected API key) means the operator session
+    // expired or the key was revoked — show the login screen instead of a
+    // dead-end error.
+    if (isAuthError(e)) {
+      showLoginScreen('ssl');
+      return;
+    }
     if (content) content.innerHTML = `<p class="hint block">Could not load SSL status — ${esc(String(e && e.message || e))}</p>`;
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
@@ -3942,6 +4089,7 @@ async function applyResolveSsl() {
   const content = document.getElementById('ssl-content');
   const btn = document.getElementById('ssl-resolve-btn');
   const refresh = document.getElementById('ssl-refresh-btn');
+  if (!(await forceLoginForView('ssl'))) return;
   if (btn) btn.disabled = true;
   if (refresh) refresh.disabled = true;
   if (content) {
@@ -3952,6 +4100,12 @@ async function applyResolveSsl() {
   try {
     payload = await api('/ssl/resolve', { method: 'POST' });
   } catch (e) {
+    if (isAuthError(e)) {
+      showLoginScreen('ssl');
+      if (btn) btn.disabled = false;
+      if (refresh) refresh.disabled = false;
+      return;
+    }
     if (content) content.innerHTML = `<p class="hint block">Resolve failed — ${esc(String(e && e.message || e))}</p>`;
     if (btn) btn.disabled = false;
     if (refresh) refresh.disabled = false;
@@ -3974,6 +4128,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const resolveBtn = document.getElementById('ssl-resolve-btn');
   if (refreshBtn) refreshBtn.addEventListener('click', loadSslDashboard);
   if (resolveBtn) resolveBtn.addEventListener('click', applyResolveSsl);
+
+  // Operator login screen
+  const apiForm = document.getElementById('login-form-api');
+  const keyForm = document.getElementById('login-form-key');
+  const tabApi = document.getElementById('login-tab-bootstrap');
+  const tabKey = document.getElementById('login-tab-method');
+  if (apiForm) apiForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('login-api-key');
+    if (!input || !input.value.trim()) return setLoginError('Enter an API key');
+    loginWithApiKey(input.value);
+  });
+  if (keyForm) keyForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('login-bootstrap-key');
+    if (!input || !input.value.trim()) return setLoginError('Enter the bootstrap key');
+    loginWithBootstrapKey(input.value);
+  });
+  if (tabApi) tabApi.addEventListener('click', () => switchLoginTab('api'));
+  if (tabKey) tabKey.addEventListener('click', () => switchLoginTab('key'));
+  document.addEventListener('keydown', (e) => {
+    const screen = document.getElementById('login-screen');
+    if (e.key === 'Escape' && screen && !screen.classList.contains('hidden')) hideLoginScreen();
+  });
 });
 
 async function loadProjects(options = {}) {
