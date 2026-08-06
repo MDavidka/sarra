@@ -76,6 +76,9 @@
               <button type="button" class="nav-sublink" data-view="models">
                 <i data-lucide="bot"></i><span>Models</span>
               </button>
+              <button type="button" class="nav-sublink" data-view="ssl">
+                <i data-lucide="shield-check"></i><span>SSL</span>
+              </button>
               <div class="nav-api-group" id="nav-api-group">
                 <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
                   <i data-lucide="file-code-2"></i><span>API</span>
@@ -607,6 +610,31 @@
               </div>
             </div>
             <div id="models-content" class="models-content" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="view-ssl" class="view">
+          <div class="projects-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="shield-check" class="projects-icon"></i>
+                <div>
+                  <h1>SSL &amp; Certificates</h1>
+                  <p class="projects-sub">Monitor Caddy and Cloudflare TLS setup, and repair pending certificates.</p>
+                </div>
+              </div>
+              <div class="ssl-header-actions">
+                <button type="button" class="btn-pill btn-ghost" id="ssl-refresh-btn">
+                  <i data-lucide="refresh-cw"></i><span>Refresh</span>
+                </button>
+                <button type="button" class="btn-pill btn-primary" id="ssl-resolve-btn">
+                  <i data-lucide="shield-check"></i><span>Apply &amp; resolve SSL</span>
+                </button>
+              </div>
+            </div>
+            <div id="ssl-content" class="ssl-content" aria-live="polite">
+              <p class="hint block">Loading SSL status…</p>
+            </div>
           </div>
         </section>
 

@@ -1,7 +1,10 @@
-"""SSL / HTTPS status helpers for project dashboard."""
+"""SSL / HTTPS status helpers for the SSL dashboard."""
 
 from __future__ import annotations
 
+import asyncio
+import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from syte.caddy_routes import host_zone
@@ -126,3 +129,148 @@ def litellm_api_ssl_status() -> dict:
         "url": LITELLM_PUBLIC_API_URL,
         "label": "HTTPS" if active else "SSL pending",
     }
+
+
+# ---------------------------------------------------------------------------
+# Aggregate SSL dashboard
+# ---------------------------------------------------------------------------
+
+
+def caddy_installed() -> bool:
+    import shutil
+
+    return bool(shutil.which("caddy"))
+
+
+async def _caddy_active() -> bool:
+    code, _ = await asyncio.to_thread(
+        _run_sh, ["systemctl", "is-active", "caddy"]
+    )
+    if code == 0:
+        return True
+    return bool(caddy_installed())
+
+
+def _run_sh(cmd: list[str]) -> tuple[int, str]:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        return result.returncode, (result.stdout or "") + (result.stderr or "")
+    except (OSError, subprocess.TimeoutExpired):
+        return 255, ""
+
+
+@dataclass
+class SslOverview:
+    """Aggregated SSL configuration + per-project certificate status."""
+
+    caddy: dict = field(default_factory=dict)
+    cloudflare: dict = field(default_factory=dict)
+    gui: dict = field(default_factory=dict)
+    litellm: dict = field(default_factory=dict)
+    projects: list[dict] = field(default_factory=list)
+    pending_count: int = 0
+    active_count: int = 0
+    configured_count: int = 0
+    caddy_pending: bool = False
+    action_hints: list[str] = field(default_factory=list)
+
+
+async def project_ssl_detail(project: dict) -> dict:
+    """Detailed SSL status for one project (used by the SSL dashboard)."""
+    summary = project_ssl_summary(project)
+    production = summary["production"]
+    preview = summary["preview"]
+    return {
+        "id": project.get("id"),
+        "name": project.get("name") or project.get("id", "project"),
+        "badge": summary["badge"],
+        "badge_label": summary["badge_label"],
+        "production": production,
+        "preview": preview,
+    }
+
+
+async def build_ssl_overview() -> dict:
+    """Build a single aggregate SSL status payload for the dashboard."""
+    from syte.certificates import cloudflare_tls_status
+    from syte.database import list_projects, get_setting
+    from syte.litellm_config import LITELLM_PUBLIC_HOST
+    from syte.preview_domains import resolve_preview_zone
+
+    overview = SslOverview(
+        caddy={
+            "installed": caddy_installed(),
+            "active": await _caddy_active(),
+        },
+        cloudflare=await cloudflare_tls_status(),
+        gui=production_ssl_status(
+            {"domain": await get_setting("gui_domain", "") or LITELLM_PUBLIC_HOST}
+        ),
+        projects=[],
+    )
+
+    overview.litellm = litellm_api_ssl_status()
+
+    preview_zone = await resolve_preview_zone()
+    for project in await list_projects():
+        detail = await project_ssl_detail(project)
+        overview.projects.append(detail)
+        if detail["production"]["active"] or detail["preview"]["active"]:
+            overview.active_count += 1
+        elif detail["production"]["configured"] or detail["preview"]["configured"]:
+            overview.pending_count += 1
+        if detail["production"]["configured"] or detail["preview"]["configured"]:
+            overview.configured_count += 1
+
+    if overview.cloudflare.get("token_configured") and not overview.caddy["installed"]:
+        overview.action_hints.append(
+            "Caddy is not installed — HTTPS will not work. Install Caddy (sudo ./scripts/install.sh)."
+        )
+    if overview.cloudflare.get("token_configured") and not overview.caddy["active"]:
+        overview.action_hints.append(
+            "Caddy is not running — run 'Apply & resolve SSL' to start and reload it."
+        )
+    if (
+        overview.cloudflare.get("token_configured")
+        and not overview.cloudflare.get("ready")
+    ):
+        overview.action_hints.extend(overview.cloudflare.get("hints", []))
+
+    if preview_zone and not overview.cloudflare.get("token_configured"):
+        overview.action_hints.append(
+            f"Preview HTTPS uses wildcard *.{preview_zone} via Cloudflare DNS — "
+            "add a Cloudflare API token to auto-issue certificates."
+        )
+
+    overview.caddy_pending = not overview.caddy.get("active")
+    return {
+        "ok": True,
+        "caddy": overview.caddy,
+        "cloudflare": overview.cloudflare,
+        "gui": overview.gui,
+        "litellm": overview.litellm,
+        "projects": overview.projects,
+        "totals": {
+            "configured": overview.configured_count,
+            "active": overview.active_count,
+            "pending": overview.pending_count,
+        },
+        "caddy_pending": overview.caddy_pending,
+        "action_hints": overview.action_hints,
+    }
+
+
+async def resolve_ssl_issues() -> dict:
+    """Attempt to repair SSL: ensure Caddy is up and reload the proxy config."""
+    from syte.certificates import apply_proxy_config, ensure_caddy
+
+    messages: list[str] = []
+    caddy_ok, caddy_msg = await asyncio.to_thread(ensure_caddy)
+    messages.append(caddy_msg)
+    proxy_ok, proxy_msg = await apply_proxy_config()
+    messages.append(proxy_msg)
+
+    overview = await build_ssl_overview()
+    overview["resolved"] = proxy_ok and caddy_ok
+    overview["messages"] = messages
+    return overview

@@ -3119,6 +3119,8 @@ const BREADCRUMBS = {
   users: 'Users',
   logs: 'Logs',
   ai: 'AI',
+  models: 'Models',
+  ssl: 'SSL',
   settings: 'Settings',
 };
 
@@ -3250,6 +3252,7 @@ function showView(name) {
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
   if (name === 'models') { loadModelsTab(); }
+  if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
   if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
@@ -3647,7 +3650,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/tokens') || (path === '/operator/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -3814,6 +3817,164 @@ function renderLogsList() {
   `).join('');
   refreshIcons();
 }
+
+// ---------------------------------------------------------------------------
+// SSL dashboard (monitor / configure / resolve)
+// ---------------------------------------------------------------------------
+
+let sslData = null;
+
+async function loadSslDashboard() {
+  const content = document.getElementById('ssl-content');
+  const refreshBtn = document.getElementById('ssl-refresh-btn');
+  const resolveBtn = document.getElementById('ssl-resolve-btn');
+  if (!content) return;
+  if (refreshBtn) refreshBtn.disabled = true;
+  if (resolveBtn) resolveBtn.disabled = true;
+  try {
+    sslData = await api('/ssl');
+    renderSslDashboard(sslData);
+  } catch (e) {
+    if (content) content.innerHTML = `<p class="hint block">Could not load SSL status — ${esc(String(e && e.message || e))}</p>`;
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+    if (resolveBtn) resolveBtn.disabled = false;
+  }
+}
+
+function sslCheckRow(label, ok, detail) {
+  const icon = ok
+    ? '<i data-lucide="check-circle" style="color:var(--ok,#16a34a)"></i>'
+    : '<i data-lucide="x-circle" style="color:var(--err,#dc2626)"></i>';
+  return `<div class="ssl-check-row">
+    <span class="ssl-check-icon">${icon}</span>
+    <span class="ssl-check-label">${esc(label)}</span>
+    <span class="ssl-check-detail">${detail ? esc(detail) : ''}</span>
+  </div>`;
+}
+
+function sslHostSummary(host) {
+  if (!host || !host.configured) {
+    return `<span class="badge badge-ssl badge-ssl-http">HTTP</span> <span class="hint">n/a</span>`;
+  }
+  const active = host.active;
+  return active
+    ? `<span class="badge badge-ssl badge-ssl-https">HTTPS</span> <a href="${esc(host.url)}" target="_blank" rel="noopener" class="link">${esc(host.domain)}</a>`
+    : `<span class="badge badge-ssl badge-ssl-preview-pending">pending</span> <code>${esc(host.domain)}</code>`;
+}
+
+function renderSslDashboard(d) {
+  const content = document.getElementById('ssl-content');
+  if (!content) return;
+
+  const cf = d.cloudflare || {};
+  const caddy = d.caddy || {};
+
+  const cloudflareChecks = [
+    ['Cloudflare API token saved', Boolean(cf.token_configured),
+      cf.token_configured ? 'zone DNS-edit token present' : 'see Settings → Preview domain'],
+    ['Wildcard TLS enabled', Boolean(cf.wildcard_tls_enabled || cf.ready),
+      cf.wildcard_tls_enabled ? 'preview wildcard TLS on' : 'enable via Cloudflare token'],
+    ['Caddy Cloudflare DNS plugin', Boolean(cf.caddy_plugin_installed),
+      cf.caddy_plugin_installed ? 'dns.providers.cloudflare present' : 'run "Apply & resolve SSL"'],
+    ['Caddy systemd env', Boolean(cf.systemd_env_configured),
+      cf.systemd_env_configured ? 'EnvironmentFile configured' : 'needed for DNS-01 challenges'],
+  ].map(([label, ok, detail]) => sslCheckRow(label, ok, detail)).join('');
+
+  const caddyChecks = [
+    ['Caddy installed', Boolean(caddy.installed), caddy.installed ? 'binary found' : 'not installed'],
+    ['Caddy running', Boolean(caddy.active), caddy.active ? 'active' : 'not running'],
+    ['LiteLLM API cert', d.litellm && d.litellm.active, (d.litellm && d.litellm.domain) || 'pending'],
+    ['GUI cert', d.gui && d.gui.active, (d.gui && d.gui.domain) || 'pending'],
+  ].map(([label, ok, detail]) => sslCheckRow(label, ok, detail)).join('');
+
+  const totals = d.totals || { configured: 0, active: 0, pending: 0 };
+
+  const hints = (d.action_hints || []).length
+    ? `<div class="ssl-hints">
+        ${d.action_hints.map(h => `<p><i data-lucide="info"></i> ${esc(h)}</p>`).join('')}
+       </div>`
+    : '';
+
+  const rows = (d.projects || []).map(p => `
+    <div class="ssl-project-row">
+      <div class="ssl-project-name">
+        <strong>${esc(p.name)}</strong>
+        <span class="badge badge-ssl badge-ssl-${cssClassSafe(p.badge)}">${esc(p.badge_label)}</span>
+      </div>
+      <div class="ssl-project-hosts">
+        <div class="ssl-host"><span class="hint">production</span> ${sslHostSummary(p.production)}</div>
+        <div class="ssl-host"><span class="hint">preview</span> ${sslHostSummary(p.preview)}</div>
+      </div>
+    </div>
+  `).join('') || '<p class="hint block">No projects yet.</p>';
+
+  content.innerHTML = `
+    <div class="ssl-grid">
+      <div class="projects-card panel-form">
+        <div class="projects-title-block mb"><i data-lucide="server" class="projects-icon"></i><div><h3>Caddy</h3></div></div>
+        <div class="ssl-checks">${caddyChecks}</div>
+      </div>
+      <div class="projects-card panel-form">
+        <div class="projects-title-block mb"><i data-lucide="cloud" class="projects-icon"></i><div><h3>Cloudflare (wildcard DNS-01)</h3></div></div>
+        <div class="ssl-checks">${cloudflareChecks}</div>
+      </div>
+    </div>
+    <div class="ssl-totals">
+      <div class="swarm-stat"><span class="swarm-label">Configured</span><span class="swarm-value">${totals.configured}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Active HTTPS</span><span class="swarm-value">${totals.active}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Pending</span><span class="swarm-value">${totals.pending}</span></div>
+    </div>
+    ${hints}
+    <div class="projects-card panel-form">
+      <div class="projects-title-block mb"><i data-lucide="shield-check" class="projects-icon"></i><div><h3>Certificates by project</h3></div></div>
+      <div class="ssl-project-list">${rows}</div>
+    </div>
+  `;
+  refreshIcons();
+}
+
+function cssClassSafe(s) {
+  return String(s || 'http').replace(/[^a-z0-9-]/gi, '');
+}
+
+async function applyResolveSsl() {
+  const content = document.getElementById('ssl-content');
+  const btn = document.getElementById('ssl-resolve-btn');
+  const refresh = document.getElementById('ssl-refresh-btn');
+  if (btn) btn.disabled = true;
+  if (refresh) refresh.disabled = true;
+  if (content) {
+    content.innerHTML = '<p class="hint block">Applying Caddy configuration and resolving certificates…</p>';
+    refreshIcons();
+  }
+  let payload = null;
+  try {
+    payload = await api('/ssl/resolve', { method: 'POST' });
+  } catch (e) {
+    if (content) content.innerHTML = `<p class="hint block">Resolve failed — ${esc(String(e && e.message || e))}</p>`;
+    if (btn) btn.disabled = false;
+    if (refresh) refresh.disabled = false;
+    return;
+  }
+  sslData = payload;
+  renderSslDashboard(payload);
+  const messages = payload.messages || [];
+  if (messages.length) {
+    const note = document.createElement('div');
+    note.className = 'ssl-hints ssl-resolve-result';
+    note.innerHTML = messages.map(m => `<p>${esc(m)}</p>`).join('');
+    content.prepend(note);
+  }
+  refreshIcons();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const refreshBtn = document.getElementById('ssl-refresh-btn');
+  const resolveBtn = document.getElementById('ssl-resolve-btn');
+  if (refreshBtn) refreshBtn.addEventListener('click', loadSslDashboard);
+  if (resolveBtn) resolveBtn.addEventListener('click', applyResolveSsl);
+});
 
 async function loadProjects(options = {}) {
   const { silent = false } = options;
