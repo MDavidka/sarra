@@ -420,7 +420,7 @@ function renderDebugChatFailures(payload) {
     if (failure.message) {
       const message = document.createElement('div');
       message.className = 'debug-chat-failure-message';
-      message.textContent = String(failure.message).slice(0, 1200);
+      message.textContent = String(failure.message).slice(0, 2000);
       row.appendChild(message);
     }
     if (failure.target) {
@@ -1356,7 +1356,8 @@ function debugChatErrorPresentation(event) {
   const code = event?.payload?.error || '';
   const errorType = event?.payload?.error_type || '';
   const retryAfter = Number(event?.payload?.retry_after_s);
-  const fallback = event?.detail || event?.payload?.message || 'The request could not be completed.';
+  const rawError = event?.payload?.raw_error || '';
+  const fallback = event?.detail || event?.payload?.message || rawError || 'The request could not be completed.';
   if (errorType === 'rate_limited' || code === 'rate_limited') {
     const waitHint = Number.isFinite(retryAfter) && retryAfter > 0
       ? ` Wait about ${Math.max(1, Math.ceil(retryAfter))}s, then retry.`
@@ -1367,6 +1368,11 @@ function debugChatErrorPresentation(event) {
     };
   }
   const known = {
+    malformed_request: {
+      title: 'Malformed request',
+      detail: rawError || fallback,
+      settings: true,
+    },
     api_key_missing: {
       title: 'Connect an AI provider',
       detail: 'Add the API key for this model profile, then retry your message.',

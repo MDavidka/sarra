@@ -1067,14 +1067,15 @@ async def activity_sse_generator(
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                msg = str(exc)[:500]
+                exc_text = str(exc)
+                msg = exc_text[:1000]
                 error_type = "stream_failed"
-                classified = _classify_stream_error(msg)
+                classified = _classify_stream_error(exc_text)
                 if classified:
                     error_type = classified
                 yield (
                     "event: error\n"
-                    f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
+                    f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg, 'detail': exc_text[:2000]}, ensure_ascii=False)}\n\n"
                 )
                 break
             # Backpressure discarded events for this subscriber. Tell the client
@@ -1102,14 +1103,15 @@ async def activity_sse_generator(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        msg = str(exc)[:500]
+        exc_text = str(exc)
+        msg = exc_text[:1000]
         error_type = "stream_failed"
-        classified = _classify_stream_error(msg)
+        classified = _classify_stream_error(exc_text)
         if classified:
             error_type = classified
         yield (
             "event: error\n"
-            f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg}, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps({'event_type': 'error', 'error': error_type, 'message': msg, 'detail': exc_text[:2000]}, ensure_ascii=False)}\n\n"
         )
     finally:
         unsubscribe_agent_activity(project_id, queue)
