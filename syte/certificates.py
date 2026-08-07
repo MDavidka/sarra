@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from syte.caddy_routes import (
+    NINE_ROUTER_UPSTREAM_DEFAULT,
     host_zone,
     render_9router_route,
     render_all_service_routes,
@@ -213,10 +214,10 @@ async def _use_wildcard_tls() -> bool:
 async def nine_router_backend_port() -> int:
     """Loopback port of the local 9Router AI gateway behind Caddy.
 
-    The 9Router hostname is a fixed part of the product (the AI-router base
-    referenced by the model catalog); only the backend port is operator
-    configurable via the ``nine_router_backend_port`` setting. Defaults to the
-    LiteLLM gateway port, which hosts the router's OpenAI-compatible API.
+    Legacy helper — kept for backwards compatibility. New installs proxy
+    9Router to a dedicated remote gateway host via ``nine_router_upstream``;
+    this only applies when the legacy ``nine_router_backend_port`` setting is
+    explicitly configured.
     """
     raw = (await get_setting("nine_router_backend_port", "")).strip()
     if not raw:
@@ -228,6 +229,32 @@ async def nine_router_backend_port() -> int:
     if 1 <= port <= 65535:
         return port
     return LITELLM_HOST_PORT
+
+
+async def nine_router_upstream() -> str:
+    """Upstream host:port the 9Router gateway is proxied to.
+
+    Defaults to ``65.75.203.134:20128`` — the dedicated gateway host (this
+    Caddy instance only terminates TLS for 9router.sycord.site). Can be
+    overridden with the ``nine_router_upstream`` setting (``host:port``). Falls
+    back to the legacy ``nine_router_backend_port`` loopback port only when the
+    upstream setting is not configured.
+    """
+    raw = (await get_setting("nine_router_upstream", "")).strip()
+    if raw:
+        host, _, port_str = raw.rpartition(":")
+        host = normalize_domain(host)
+        if host and is_safe_caddy_hostname(host):
+            try:
+                port = int(port_str)
+            except (TypeError, ValueError):
+                port = 0
+            if 1 <= port <= 65535:
+                return f"{host}:{port}"
+    legacy_raw = (await get_setting("nine_router_backend_port", "")).strip()
+    if legacy_raw:
+        return f"127.0.0.1:{await nine_router_backend_port()}"
+    return NINE_ROUTER_UPSTREAM_DEFAULT
 
 
 async def async_generate_caddyfile() -> str:
@@ -297,7 +324,8 @@ async def async_generate_caddyfile() -> str:
 
     # 9Router AI gateway — the OpenAI-compatible router base used by the model
     # catalog. A dedicated host block guarantees this Caddy instance terminates
-    # TLS for it (own Let's Encrypt cert via DNS-01 when wildcard TLS is on).
+    # TLS for it (own Let's Encrypt cert via DNS-01 when wildcard TLS is on)
+    # and proxies to the dedicated gateway upstream (65.75.203.134:20128).
     from syte.ai_providers import NINE_ROUTER_API_BASE
 
     nine_host = normalize_domain(NINE_ROUTER_API_BASE)
@@ -305,7 +333,7 @@ async def async_generate_caddyfile() -> str:
         lines.extend(
             render_9router_route(
                 nine_host,
-                await nine_router_backend_port(),
+                await nine_router_upstream(),
                 use_wildcard_tls=use_wildcard_tls,
             )
         )

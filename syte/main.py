@@ -185,6 +185,7 @@ class SettingsRequest(BaseModel):
     custom_tls_host: str | None = None
     custom_tls_port: str | None = None
     nine_router_backend_port: str | None = None
+    nine_router_upstream: str | None = None
     agent_default_model_profile: str | None = None
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
@@ -434,6 +435,7 @@ async def get_settings():
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
         "nine_router_backend_port": await get_setting("nine_router_backend_port", ""),
+        "nine_router_upstream": await get_setting("nine_router_upstream", ""),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
         "agent_default_model_profile": bridge["default_profile"],
@@ -871,6 +873,28 @@ async def save_settings(body: SettingsRequest):
         else:
             await set_setting("nine_router_backend_port", "")
             messages.append("9Router backend port reset to the default gateway port.")
+        proxy_updated = True
+
+    if body.nine_router_upstream is not None:
+        raw = body.nine_router_upstream.strip()
+        if raw:
+            from syte.domain_utils import is_safe_caddy_hostname
+
+            host, _, port_str = raw.rpartition(":")
+            if not is_safe_caddy_hostname(normalize_domain(host)):
+                raise HTTPException(400, f"Invalid 9Router upstream (expected host:port): {raw!r}")
+            try:
+                port = int(port_str)
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"9Router upstream must include a port (expected host:port): {raw!r}")
+            if not 1 <= port <= 65535:
+                raise HTTPException(400, "9Router upstream port must be between 1 and 65535.")
+            upstream = f"{normalize_domain(host)}:{port}"
+            await set_setting("nine_router_upstream", upstream)
+            messages.append(f"9Router upstream set to {upstream} — Caddy terminates SSL and forwards there.")
+        else:
+            await set_setting("nine_router_upstream", "")
+            messages.append("9Router upstream reset to the default gateway (65.75.203.134:20128).")
         proxy_updated = True
 
     if body.agent_default_model_profile is not None:

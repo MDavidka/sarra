@@ -4053,6 +4053,8 @@ function renderSslDashboard(d) {
 
   const cf = d.cloudflare || {};
   const caddy = d.caddy || {};
+  const monitor = d.almalinux_monitor || {};
+  const caddyMon = d.caddy_monitor || {};
 
   const cloudflareChecks = [
     ['Cloudflare API token saved', Boolean(cf.token_configured),
@@ -4065,12 +4067,18 @@ function renderSslDashboard(d) {
       cf.systemd_env_configured ? 'EnvironmentFile configured' : 'needed for DNS-01 challenges'],
   ].map(([label, ok, detail]) => sslCheckRow(label, ok, detail)).join('');
 
-  const caddyChecks = [
-    ['Caddy installed', Boolean(caddy.installed), caddy.installed ? 'binary found' : 'not installed'],
-    ['Caddy running', Boolean(caddy.active), caddy.active ? 'active' : 'not running'],
-    ['LiteLLM API cert', d.litellm && d.litellm.active, (d.litellm && d.litellm.domain) || 'pending'],
-    ['GUI cert', d.gui && d.gui.active, (d.gui && d.gui.domain) || 'pending'],
-    ['9Router cert', Boolean(d.nine_router && d.nine_router.active), (d.nine_router && d.nine_router.domain) || 'pending'],
+  // Caddy server settings monitor — version, boot enablement, uptime, paths.
+  const caddyRows = [
+    ['Installed', Boolean(caddyMon.installed), caddyMon.installed ? 'binary found' : 'not installed'],
+    ['Running', Boolean(caddyMon.active), caddyMon.active ? 'active' : 'not running'],
+    ['Enabled at boot', Boolean(caddyMon.enabled), caddyMon.enabled ? 'systemd enabled' : 'not enabled'],
+    ['Version', Boolean(caddyMon.version), caddyMon.version || 'unknown'],
+    ['Uptime', caddyMon.uptime_seconds != null, formatUptime(caddyMon.uptime_seconds)],
+    ['Config file', Boolean(caddyMon.config_exists), caddyMon.config_path || 'missing'],
+    ['systemd EnvironmentFile', Boolean(caddyMon.systemd_env_configured),
+      caddyMon.systemd_env_configured ? 'Cloudflare token drop-in' : 'not configured'],
+    ['Cloudflare DNS plugin', Boolean(caddyMon.cloudflare_plugin_installed),
+      caddyMon.cloudflare_plugin_installed ? 'dns.providers.cloudflare' : 'missing'],
   ].map(([label, ok, detail]) => sslCheckRow(label, ok, detail)).join('');
 
   const totals = d.totals || { configured: 0, active: 0, pending: 0 };
@@ -4126,11 +4134,27 @@ function renderSslDashboard(d) {
 
   const customTls = customTlsControlsHtml(d);
 
+  const monitorCards = (monitor.endpoints || []).map(monitorEndpointHtml).join('');
+
   content.innerHTML = `
+    <div class="ssl-totals">
+      <div class="swarm-stat"><span class="swarm-label">Configured</span><span class="swarm-value">${totals.configured}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Active HTTPS</span><span class="swarm-value">${totals.active}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Pending</span><span class="swarm-value">${totals.pending}</span></div>
+    </div>
+    <div class="projects-card panel-form">
+      <div class="projects-title-block mb"><i data-lucide="monitor-check" class="projects-icon"></i><div><h3>AlmaLinux status monitor <span class="hint">— live DNS + HTTPS for sycord.site surfaces</span></h3></div></div>
+      <div class="monitor-hostbar">
+        <span class="monitor-hostbar-item"><span class="hint">OS</span> <strong>${esc(monitor.os || '—')}</strong></span>
+        <span class="monitor-hostbar-item"><span class="hint">hostname</span> <strong>${esc(monitor.hostname || '—')}</strong></span>
+        <span class="monitor-hostbar-item"><span class="hint">public IP</span> <strong>${esc(monitor.public_ip || '—')}</strong></span>
+      </div>
+      <div class="monitor-grid">${monitorCards || '<p class="hint block">No endpoints to monitor.</p>'}</div>
+    </div>
     <div class="ssl-grid">
       <div class="projects-card panel-form">
-        <div class="projects-title-block mb"><i data-lucide="server" class="projects-icon"></i><div><h3>Caddy</h3></div></div>
-        <div class="ssl-checks">${caddyChecks}</div>
+        <div class="projects-title-block mb"><i data-lucide="server" class="projects-icon"></i><div><h3>Caddy server settings</h3></div></div>
+        <div class="ssl-checks">${caddyRows}</div>
       </div>
       <div class="projects-card panel-form">
         <div class="projects-title-block mb"><i data-lucide="cloud" class="projects-icon"></i><div><h3>Cloudflare (wildcard DNS-01)</h3></div></div>
@@ -4138,11 +4162,6 @@ function renderSslDashboard(d) {
       </div>
     </div>
     ${wildcardAlert}
-    <div class="ssl-totals">
-      <div class="swarm-stat"><span class="swarm-label">Configured</span><span class="swarm-value">${totals.configured}</span></div>
-      <div class="swarm-stat"><span class="swarm-label">Active HTTPS</span><span class="swarm-value">${totals.active}</span></div>
-      <div class="swarm-stat"><span class="swarm-label">Pending</span><span class="swarm-value">${totals.pending}</span></div>
-    </div>
     ${hints}
     <div class="projects-card panel-form">
       <div class="projects-title-block mb"><i data-lucide="activity" class="projects-icon"></i><div><h3>Live HTTPS debug <span class="hint">— is each endpoint actually serving?</span></h3></div></div>
@@ -4162,6 +4181,43 @@ function renderSslDashboard(d) {
   wireCustomTls();
 }
 
+function monitorEndpointHtml(ep) {
+  const state = ep.state || 'unknown';
+  const badge = sslStateBadge(state, ep.detail);
+  const latency = ep.latency_ms != null ? `<span class="hint">${ep.latency_ms}ms</span>` : '';
+  const dns = ep.resolves
+    ? `<span class="monitor-dns ok">DNS <span class="hint">${(ep.ips || []).join(', ') || 'resolves'}</span></span>`
+    : `<span class="monitor-dns bad">DNS unresolved</span>`;
+  const cert = ep.cert_active
+    ? `<span class="monitor-cert ok">cert stored</span>`
+    : `<span class="monitor-cert bad">no cert</span>`;
+  const link = ep.domain && ep.reachable
+    ? `<a href="https://${esc(ep.domain)}" target="_blank" rel="noopener" class="link">${esc(ep.domain)}</a>`
+    : `<code>${esc(ep.domain || '—')}</code>`;
+  return `
+    <div class="monitor-card">
+      <div class="monitor-card-head">
+        <strong>${esc(ep.name)}</strong>
+        <span class="monitor-card-state">${badge}${latency}</span>
+      </div>
+      <div class="monitor-card-domain">${link}</div>
+      <div class="monitor-card-meta">${dns}${cert}</div>
+      ${ep.detail && !ep.reachable ? `<p class="monitor-card-detail">${esc(ep.detail)}</p>` : ''}
+    </div>`;
+}
+
+function formatUptime(seconds) {
+  if (seconds == null) return 'n/a';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const days = Math.floor(h / 24);
+  return `${days}d ${h % 24}h`;
+}
+
 function cssClassSafe(s) {
   return String(s || 'http').replace(/[^a-z0-9-]/gi, '');
 }
@@ -4170,7 +4226,7 @@ function customTlsControlsHtml(d) {
   // Global sycord.site / custom host setting.
   const globalHost = esc((d && d.custom_tls_host) || '');
   const globalPort = esc((d && d.custom_tls_port) || '');
-  const ninePort = esc((d && d.nine_router_backend_port) || '');
+  const nineUpstream = esc((d && d.nine_router_upstream) || '');
   const projectRows = (d.projects || []).map(p => {
     const pid = cssClassSafe(p.id);
     const local = p.custom_tls_domain ? p.custom_tls_domain : '';
@@ -4195,10 +4251,10 @@ function customTlsControlsHtml(d) {
       </div>
     </div>
     <div class="ssl-custom-global">
-      <div class="ssl-custom-global-title"><strong>9Router gateway</strong> <span class="hint">https://9router.sycord.site — Caddy auto SSL → loopback port</span></div>
+      <div class="ssl-custom-global-title"><strong>9Router gateway</strong> <span class="hint">https://9router.sycord.site — Caddy auto SSL → gateway upstream host:port</span></div>
       <div class="ssl-custom-global-row">
-        <input class="ssl-custom-input" id="ssl-nine-router-port" value="${ninePort}" placeholder="port (default 4000)">
-        <button type="button" class="btn-pill btn-primary btn-sm" id="ssl-nine-router-save">Save 9Router port</button>
+        <input class="ssl-custom-input" id="ssl-nine-router-upstream" value="${nineUpstream}" placeholder="65.75.203.134:20128">
+        <button type="button" class="btn-pill btn-primary btn-sm" id="ssl-nine-router-save">Save 9Router upstream</button>
         <span class="hint ssl-custom-status" id="ssl-nine-router-status"></span>
       </div>
     </div>
@@ -4251,20 +4307,20 @@ function wireCustomTls() {
       }
     });
   }
-  // 9Router gateway port save
+  // 9Router gateway upstream save
   const nineSave = document.getElementById('ssl-nine-router-save');
   if (nineSave) {
     nineSave.addEventListener('click', async () => {
-      const port = (document.getElementById('ssl-nine-router-port').value || '').trim();
+      const upstream = (document.getElementById('ssl-nine-router-upstream').value || '').trim();
       const statusEl = document.getElementById('ssl-nine-router-status');
       if (statusEl) statusEl.textContent = 'Applying…';
       try {
         const res = await api('/settings', {
           method: 'PUT',
-          body: JSON.stringify({ nine_router_backend_port: port }),
+          body: JSON.stringify({ nine_router_upstream: upstream }),
         });
         if (statusEl) statusEl.textContent = (res.messages || []).join(' · ') || 'saved';
-        toast('9Router gateway port saved — Caddy SSL route updated');
+        toast('9Router gateway upstream saved — Caddy SSL route updated');
       } catch (e) {
         if (statusEl) statusEl.textContent = 'Error: ' + e.message;
         toast('Error: ' + e.message);
