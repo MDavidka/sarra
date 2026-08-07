@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+import socket
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -204,6 +207,158 @@ def _run_sh(cmd: list[str]) -> tuple[int, str]:
         return 255, ""
 
 
+# ---------------------------------------------------------------------------
+# AlmaLinux host + endpoint status monitor
+# ---------------------------------------------------------------------------
+
+async def _resolve_host(hostname: str) -> list[str]:
+    """Resolve a hostname to its IPs, off the event loop."""
+    hostname = normalize_domain(hostname)
+    if not hostname:
+        return []
+    try:
+        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
+    except socket.gaierror:
+        return []
+    ips: list[str] = []
+    for info in infos:
+        ip = info[4][0]
+        if ip not in ips:
+            ips.append(ip)
+    return ips
+
+
+async def monitor_endpoint(name: str, domain: str) -> dict:
+    """Live DNS + HTTPS status for one monitored hostname."""
+    from syte.ssl_debug import live_probe_https
+
+    host = normalize_domain(domain or "")
+    if not host:
+        return {
+            "name": name,
+            "domain": None,
+            "configured": False,
+            "resolves": False,
+            "ips": [],
+            "cert_active": False,
+            "state": "not-configured",
+            "reachable": False,
+            "latency_ms": None,
+            "detail": "no hostname",
+        }
+    ips = await _resolve_host(host)
+    live = await live_probe_https(build_https_url(host))
+    return {
+        "name": name,
+        "domain": host,
+        "configured": True,
+        "resolves": bool(ips),
+        "ips": ips,
+        "cert_active": _caddy_has_cert(host),
+        "state": live.get("state"),
+        "reachable": bool(live.get("reachable")),
+        "latency_ms": live.get("latency_ms"),
+        "detail": live.get("detail"),
+    }
+
+
+async def almalinux_monitor() -> dict:
+    """Live status monitor for the AlmaLinux host and its public endpoints.
+
+    Probes the three public sycord.site surfaces — apex, wildcard subdomains,
+    and the 9Router gateway — plus reports host identity so the dashboard can
+    show which machine is being monitored.
+    """
+    from syte.config import settings
+
+    os_info: dict[str, str] = {}
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if "=" in line:
+                key, _, value = line.partition("=")
+                os_info[key.strip()] = value.strip().strip('"')
+    except OSError:
+        pass
+    os_name = (
+        os_info.get("PRETTY_NAME")
+        or " ".join(part for part in (os_info.get("NAME", ""), os_info.get("VERSION_ID", "")) if part)
+    )
+    try:
+        hostname = socket.gethostname()
+    except OSError:
+        hostname = ""
+    try:
+        public_ip = settings.resolved_public_ip
+    except Exception:  # noqa: BLE001 - best-effort host info
+        public_ip = ""
+
+    endpoints = [
+        await monitor_endpoint("sycord.site", "sycord.site"),
+        # Wildcard canary: any *.sycord.site name resolves + gets a browser-
+        # trusted cert only when the wildcard DNS record and wildcard
+        # certificate are actually working.
+        await monitor_endpoint("*.sycord.site (wildcard)", "probe.sycord.site"),
+        await monitor_endpoint("9router.sycord.site", "9router.sycord.site"),
+    ]
+    return {
+        "os": os_name,
+        "os_id": os_info.get("ID", ""),
+        "hostname": hostname,
+        "public_ip": public_ip,
+        "endpoints": endpoints,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Caddy server settings monitor
+# ---------------------------------------------------------------------------
+
+async def caddy_server_monitor() -> dict:
+    """Monitor Caddy's server-side settings and health."""
+    from syte.certificates import CADDY_DROPIN_FILE, CADDY_ENV_PATH, caddy_has_cloudflare_plugin
+    from syte.config import settings
+
+    installed = caddy_installed()
+    version: str | None = None
+    if installed:
+        code, out = _run_sh(["caddy", "version"])
+        if code == 0:
+            version = out.strip() or None
+
+    active = await _caddy_active()
+    enabled = False
+    uptime_seconds: float | None = None
+    if shutil.which("systemctl"):
+        code, out = _run_sh(["systemctl", "is-enabled", "caddy"])
+        enabled = code == 0
+        code, out = _run_sh(
+            ["systemctl", "show", "caddy", "-p", "ActiveEnterTimestampMonotonic"]
+        )
+        if code == 0 and "=" in out:
+            try:
+                value = float(out.partition("=")[2].strip())
+                uptime_seconds = max(0.0, time.monotonic() - value / 1_000_000.0)
+            except (TypeError, ValueError):
+                uptime_seconds = None
+
+    config_path = settings.caddy_config_path
+    fallback = settings.data_dir / "Caddyfile"
+    existing = config_path if config_path.exists() else (fallback if fallback.exists() else None)
+
+    return {
+        "installed": installed,
+        "active": active,
+        "enabled": enabled,
+        "version": version,
+        "uptime_seconds": round(uptime_seconds, 1) if uptime_seconds is not None else None,
+        "config_path": str(existing) if existing else str(config_path),
+        "config_exists": existing is not None,
+        "systemd_env_configured": CADDY_DROPIN_FILE.is_file(),
+        "env_file_written": CADDY_ENV_PATH.is_file(),
+        "cloudflare_plugin_installed": caddy_has_cloudflare_plugin(),
+    }
+
+
 @dataclass
 class SslOverview:
     """Aggregated SSL configuration + per-project certificate status."""
@@ -212,6 +367,9 @@ class SslOverview:
     cloudflare: dict = field(default_factory=dict)
     gui: dict = field(default_factory=dict)
     litellm: dict = field(default_factory=dict)
+    almalinux: dict = field(default_factory=dict)
+    caddy_monitor: dict = field(default_factory=dict)
+    nine_router: dict = field(default_factory=dict)
     projects: list[dict] = field(default_factory=list)
     pending_count: int = 0
     active_count: int = 0
@@ -258,6 +416,8 @@ async def build_ssl_overview() -> dict:
     )
 
     overview.litellm = litellm_api_ssl_status()
+    overview.almalinux = await almalinux_monitor()
+    overview.caddy_monitor = await caddy_server_monitor()
 
     preview_zone = await resolve_preview_zone()
     debug: list[dict] = []
@@ -337,23 +497,25 @@ async def build_ssl_overview() -> dict:
         _nine_host = "9router.sycord.site"
     nine_configured = bool(_nine_host and is_safe_caddy_hostname(_nine_host))
     nine_cert = _caddy_has_cert(_nine_host) if nine_configured else False
+    from syte.certificates import nine_router_upstream
+
+    nine_upstream = await nine_router_upstream()
     overview_debug.append(await debug_endpoint(
         name="9Router API",
         domain=_nine_host,
         configured=nine_configured,
         cert_active=nine_cert,
         extra=(
-            f"Proxied by this Caddy instance (backend port "
-            f"{await get_setting('nine_router_backend_port', '') or '4000'}); "
-            "certificate is issued automatically by Caddy."
+            f"TLS terminated by this Caddy instance, proxied to gateway "
+            f"upstream {nine_upstream}."
         ),
     ))
-    overview["nine_router"] = {
+    overview.nine_router = {
         "configured": nine_configured,
         "active": nine_cert,
         "domain": _nine_host,
         "url": build_https_url(_nine_host) if nine_configured else None,
-        "backend_port": await get_setting("nine_router_backend_port", "") or "4000",
+        "upstream": nine_upstream,
         "label": "HTTPS" if nine_cert else "SSL pending",
     }
 
@@ -402,12 +564,16 @@ async def build_ssl_overview() -> dict:
         "cloudflare": overview.cloudflare,
         "gui": overview.gui,
         "litellm": overview.litellm,
+        "nine_router": overview.nine_router,
+        "almalinux_monitor": overview.almalinux,
+        "caddy_monitor": overview.caddy_monitor,
         "projects": overview.projects,
         "debug": overview_debug,
         "projects_debug": debug,
         "wildcard_cert": wildcard_info,
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
+        "nine_router_upstream": overview.nine_router.get("upstream", ""),
         "gui_port": _gui_port,
         "totals": {
             "configured": overview.configured_count,

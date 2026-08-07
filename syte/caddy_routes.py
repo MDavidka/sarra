@@ -12,6 +12,11 @@ from syte.domain_utils import (
     sanitize_caddy_label,
 )
 
+# 9Router AI gateway upstream: TLS terminates on this Caddy instance
+# (https://9router.sycord.site) and traffic is proxied to the dedicated
+# gateway host/port instead of a local loopback port.
+NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
+
 
 def host_zone(hostname: str) -> str:
     hostname = normalize_domain(hostname)
@@ -241,7 +246,7 @@ def render_litellm_api_route(
 
 def render_9router_route(
     hostname: str,
-    port: int,
+    upstream: str = NINE_ROUTER_UPSTREAM_DEFAULT,
     *,
     use_wildcard_tls: bool,
 ) -> list[str]:
@@ -250,8 +255,8 @@ def render_9router_route(
     ``9router.sycord.site`` is the OpenAI-compatible router base referenced by
     Syte's model catalog (``NINE_ROUTER_API_BASE``). This standalone host block
     makes this Caddy instance terminate TLS for it and forward every path to
-    the local gateway (LiteLLM host port by default, override via the
-    ``nine_router_backend_port`` setting).
+    the gateway upstream (``65.75.203.134:20128`` by default — the dedicated
+    gateway host — override via the ``nine_router_upstream`` setting).
     """
     hostname = normalize_domain(hostname)
     if not hostname or not is_safe_caddy_hostname(hostname):
@@ -270,10 +275,54 @@ def render_9router_route(
             "    }",
         ])
     lines.extend([
-        f"    reverse_proxy 127.0.0.1:{port}",
+        f"    reverse_proxy {upstream}",
         "}",
         "",
     ])
+    return lines
+
+
+def render_preview_host_block(
+    route: CaddyRoute,
+    *,
+    frame_csp: str,
+    cors_origin: str | None = None,
+) -> list[str]:
+    """Emit a standalone host block for one preview route with its own TLS.
+
+    Previews get their own Let's Encrypt DNS-01 certificate instead of sharing
+    the zone wildcard cert, so a wildcard re-issue (e.g. after a fresh server
+    install) never cuts active previews.
+    """
+    label = sanitize_caddy_label(route.label)
+    lines = [
+        f"# {label} — preview (isolated SSL)",
+        f"{route.hostname} {{",
+        "    tls {",
+        "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
+        "    }",
+    ]
+    lines.extend(preview_iframe_header_lines(frame_csp, "    ", cors_origin=cors_origin))
+    lines.extend(
+        reverse_proxy_lines(route.port, strip_frame_headers=True, indent="    ")
+    )
+    lines.append("}")
+    lines.append("")
+    return lines
+
+
+def render_isolated_previews(
+    preview_routes: list[CaddyRoute],
+    *,
+    frame_csp: str,
+    cors_origin: str | None = None,
+) -> list[str]:
+    """Render all preview routes as separate host blocks (own DNS-01 TLS)."""
+    lines: list[str] = []
+    for route in preview_routes:
+        lines.extend(
+            render_preview_host_block(route, frame_csp=frame_csp, cors_origin=cors_origin)
+        )
     return lines
 
 
@@ -327,8 +376,16 @@ def render_all_service_routes(
     frame_csp: str,
     use_wildcard_tls: bool,
     cors_origin: str | None = None,
+    isolate_previews: bool = True,
 ) -> list[str]:
-    """Emit Caddy blocks for production + preview (grouped wildcard TLS when enabled)."""
+    """Emit Caddy blocks for production + preview.
+
+    With wildcard TLS enabled, preview routes are isolated into their own host
+    blocks with a dedicated DNS-01 certificate (``isolate_previews=True``) so a
+    shared-wildcard re-issue — e.g. after a new server is installed — never
+    takes active previews down. Production subdomains stay on the shared
+    ``*.{zone}`` wildcard cert.
+    """
     custom_routes = collect_custom_tls_routes(projects)
     production, preview = collect_project_routes(projects)
     all_routes = production + preview
@@ -348,7 +405,11 @@ def render_all_service_routes(
         return lines
 
     lines: list[str] = list(custom_lines)
-    by_zone = routes_by_zone(all_routes)
+    if isolate_previews and preview:
+        lines.extend(
+            render_isolated_previews(preview, frame_csp=frame_csp, cors_origin=cors_origin)
+        )
+    by_zone = routes_by_zone(production)
     for zone in sorted(by_zone):
         zone_routes = by_zone[zone]
         apex_routes = [r for r in zone_routes if r.hostname == zone]
@@ -363,6 +424,18 @@ def render_all_service_routes(
                 render_wildcard_zone(
                     zone,
                     sub_routes,
+                    frame_csp=frame_csp,
+                    dns_tls=True,
+                    cors_origin=cors_origin,
+                )
+            )
+    if not isolate_previews:
+        preview_zone_routes = routes_by_zone(preview)
+        for zone in sorted(preview_zone_routes):
+            lines.extend(
+                render_wildcard_zone(
+                    zone,
+                    preview_zone_routes[zone],
                     frame_csp=frame_csp,
                     dns_tls=True,
                     cors_origin=cors_origin,
