@@ -17,6 +17,36 @@ from syte.domain_utils import (
 # gateway host/port instead of a local loopback port.
 NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
 
+# Public recursive resolvers used for DNS-01 propagation checks. Without these
+# Caddy asks the system resolver, which on this host points at a local/split
+# view that does not yet see the freshly written _acme-challenge TXT record —
+# the DNS-01 order then times out and Caddy falls back to its self-signed
+# internal issuer.
+ACME_DNS_RESOLVERS = "1.1.1.1 8.8.8.8"
+
+# How long Caddy waits for the challenge TXT record to become visible on the
+# authoritative nameservers before giving up on the order.
+ACME_PROPAGATION_TIMEOUT = "5m"
+
+
+def dedicated_dns_tls_lines(indent: str = "    ") -> list[str]:
+    """TLS block that forces a *dedicated* DNS-01 certificate for one hostname.
+
+    Naming the hostname in its own site block already makes Caddy manage a
+    certificate whose only subject is that hostname — separate from the shared
+    ``*.{zone}`` wildcard. Pinning explicit resolvers and a generous
+    propagation timeout is what makes that dedicated order actually succeed, so
+    the host stops falling back to the wildcard (or to Caddy's untrusted
+    internal issuer) when the wildcard is broken or self-signed.
+    """
+    return [
+        f"{indent}tls {{",
+        f"{indent}    dns cloudflare {{env.CLOUDFLARE_API_TOKEN}}",
+        f"{indent}    resolvers {ACME_DNS_RESOLVERS}",
+        f"{indent}    propagation_timeout {ACME_PROPAGATION_TIMEOUT}",
+        f"{indent}}}",
+    ]
+
 
 def host_zone(hostname: str) -> str:
     hostname = normalize_domain(hostname)
@@ -250,32 +280,40 @@ def render_9router_route(
     *,
     use_wildcard_tls: bool,
 ) -> list[str]:
-    """Render the public 9Router AI-gateway host with automatic TLS.
+    """Render the public 9Router AI-gateway host with its own dedicated TLS cert.
 
     ``9router.sycord.site`` is the OpenAI-compatible router base referenced by
     Syte's model catalog (``NINE_ROUTER_API_BASE``). This standalone host block
     makes this Caddy instance terminate TLS for it and forward every path to
     the gateway upstream (``65.75.203.134:20128`` by default — the dedicated
     gateway host — override via the ``nine_router_upstream`` setting).
+
+    The certificate is deliberately **not** the shared ``*.{zone}`` wildcard.
+    9Router is the only externally-proxied host here, so a wildcard re-issue or
+    a self-signed wildcard placeholder must not be able to break the AI gateway
+    that every agent request depends on. Giving it its own single-subject order
+    isolates it exactly like previews (see ``render_preview_host_block``).
     """
     hostname = normalize_domain(hostname)
     if not hostname or not is_safe_caddy_hostname(hostname):
         return []
 
     lines = [
-        "# 9Router public AI gateway — auto SSL",
+        "# 9Router public AI gateway — dedicated SSL (never the zone wildcard)",
         f"{hostname} {{",
     ]
     if use_wildcard_tls:
-        # DNS-01 reuses the zone wildcard flow (Cloudflare) so the exact
-        # hostname gets a real Let's Encrypt cert even before port 80 is open.
-        lines.extend([
-            "    tls {",
-            "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
-            "    }",
-        ])
+        # DNS-01 via Cloudflare: issues a real Let's Encrypt certificate whose
+        # only subject is this hostname, even before port 80 is reachable.
+        lines.extend(dedicated_dns_tls_lines("    "))
     lines.extend([
-        f"    reverse_proxy {upstream}",
+        f"    reverse_proxy {upstream} {{",
+        # Preserve the client-facing host/scheme so the gateway can build
+        # correct absolute URLs behind this TLS terminator.
+        "        header_up Host {upstream_hostport}",
+        "        header_up X-Forwarded-Host {host}",
+        "        header_up X-Forwarded-Proto https",
+        "    }",
         "}",
         "",
     ])
@@ -298,10 +336,8 @@ def render_preview_host_block(
     lines = [
         f"# {label} — preview (isolated SSL)",
         f"{route.hostname} {{",
-        "    tls {",
-        "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
-        "    }",
     ]
+    lines.extend(dedicated_dns_tls_lines("    "))
     lines.extend(preview_iframe_header_lines(frame_csp, "    ", cors_origin=cors_origin))
     lines.extend(
         reverse_proxy_lines(route.port, strip_frame_headers=True, indent="    ")
