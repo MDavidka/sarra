@@ -20,9 +20,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from syte.database import list_projects
-from syte.process_manager import PID_DIR, is_running, pid_file
+from syte.process_manager import is_running, pid_file
 
-CLK_TCK = os.sysconf(os.sysconf_names["SC_CLK_TCK"]) if hasattr(os, "sysconf") else 100
 PAGE_SIZE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
 
 
@@ -70,6 +69,8 @@ def _total_cpu_jiffies() -> int:
 
 
 def _process_snapshot(pid: int) -> tuple[int, int, str]:
+    """Return process jiffies, RSS pages, and a readable name."""
+
     stat_path = Path("/proc") / str(pid) / "stat"
     status_path = Path("/proc") / str(pid) / "status"
     comm_path = Path("/proc") / str(pid) / "comm"
@@ -78,8 +79,6 @@ def _process_snapshot(pid: int) -> tuple[int, int, str]:
         stat = _read_text(stat_path)
         if not stat:
             raise OSError
-        # /proc/<pid>/stat is a single line where the comm field may contain spaces.
-        # The final fields are stable, so we split from the right side.
         start = stat.rfind(") ")
         if start == -1:
             raise ValueError("invalid stat format")
@@ -87,30 +86,25 @@ def _process_snapshot(pid: int) -> tuple[int, int, str]:
         utime = int(tail[11])
         stime = int(tail[12])
         rss_pages = int(tail[21])
-        name = _read_text(comm_path).strip() or tail[0]
-        return utime + stime, rss_pages, name
+        name = _read_text(comm_path).strip() or f"pid-{pid}"
+        return utime + stime, max(0, rss_pages), name
     except (OSError, ValueError, IndexError):
-        # Fall back to a lighter status read so the caller can still surface a
-        # partially useful record if the process exits between samples.
         try:
             status = _read_text(status_path)
+            name = f"pid-{pid}"
             rss_kb = 0
             for line in status.splitlines():
                 if line.startswith("Name:"):
-                    name = line.split(":", 1)[1].strip()
+                    name = line.split(":", 1)[1].strip() or name
                 elif line.startswith("VmRSS:"):
                     rss_kb = int(line.split()[1])
-            return 0, max(0, rss_kb * 1024 // PAGE_SIZE), name  # type: ignore[name-defined]
+            rss_pages = max(0, (rss_kb * 1024) // PAGE_SIZE)
+            return 0, rss_pages, name
         except Exception:
             return 0, 0, f"pid-{pid}"
 
 
-def _cpu_percent_from_samples(
-    start_proc: int,
-    start_total: int,
-    end_proc: int,
-    end_total: int,
-) -> float:
+def _cpu_percent_from_samples(start_proc: int, start_total: int, end_proc: int, end_total: int) -> float:
     delta_total = end_total - start_total
     delta_proc = end_proc - start_proc
     if delta_total <= 0 or delta_proc <= 0:
@@ -118,27 +112,43 @@ def _cpu_percent_from_samples(
     return max(0.0, min(100.0, (delta_proc / delta_total) * 100.0))
 
 
-async def sample_process_usage(pid: int, *, sample_ms: int = 120) -> ProcessUsage | None:
-    """Return an instantaneous CPU/memory sample for a single process."""
+async def sample_processes(pid_list: Iterable[int], *, sample_ms: int = 120) -> list[ProcessUsage]:
+    """Return an instantaneous CPU/memory sample for a set of processes."""
 
-    if pid <= 0:
-        return None
+    pids = [pid for pid in pid_list if pid and pid > 0]
+    if not pids:
+        return []
 
     start_total = _total_cpu_jiffies()
-    start_proc, start_rss, name = _process_snapshot(pid)
+    start = {pid: _process_snapshot(pid) for pid in pids}
     if start_total <= 0:
-        return ProcessUsage(pid=pid, name=name, cpu_percent=0.0, memory_mb=round(start_rss * PAGE_SIZE / 1024 / 1024, 1))
+        return [
+            ProcessUsage(
+                pid=pid,
+                name=start.get(pid, (0, 0, f"pid-{pid}"))[2],
+                cpu_percent=0.0,
+                memory_mb=round(start.get(pid, (0, 0, f"pid-{pid}"))[1] * PAGE_SIZE / 1024 / 1024, 1),
+            )
+            for pid in pids
+        ]
 
     await asyncio.sleep(sample_ms / 1000)
     end_total = _total_cpu_jiffies()
-    end_proc, end_rss, end_name = _process_snapshot(pid)
-    usage = ProcessUsage(
-        pid=pid,
-        name=end_name or name,
-        cpu_percent=_cpu_percent_from_samples(start_proc, start_total, end_proc, end_total),
-        memory_mb=round(end_rss * PAGE_SIZE / 1024 / 1024, 1),
-    )
-    return usage
+    end = {pid: _process_snapshot(pid) for pid in pids}
+
+    samples: list[ProcessUsage] = []
+    for pid in pids:
+        start_proc, _, start_name = start.get(pid, (0, 0, f"pid-{pid}"))
+        end_proc, end_rss, end_name = end.get(pid, (0, 0, start_name))
+        samples.append(
+            ProcessUsage(
+                pid=pid,
+                name=end_name or start_name,
+                cpu_percent=_cpu_percent_from_samples(start_proc, start_total, end_proc, end_total),
+                memory_mb=round(end_rss * PAGE_SIZE / 1024 / 1024, 1),
+            )
+        )
+    return samples
 
 
 async def _find_caddy_pids() -> list[int]:
@@ -156,17 +166,14 @@ async def _find_caddy_pids() -> list[int]:
 
 
 async def _service_from_pids(name: str, pids: Iterable[int], *, sample_ms: int = 120) -> ServiceUsage:
-    total_cpu = 0.0
-    total_memory = 0.0
-    seen_pids: list[int] = []
-    for pid in pids:
-        usage = await sample_process_usage(pid, sample_ms=sample_ms)
-        if not usage:
-            continue
-        seen_pids.append(pid)
-        total_cpu += usage.cpu_percent
-        total_memory += usage.memory_mb
-    return ServiceUsage(name=name, cpu_percent=total_cpu, memory_mb=total_memory, instances=len(seen_pids), pids=seen_pids)
+    samples = await sample_processes(pids, sample_ms=sample_ms)
+    return ServiceUsage(
+        name=name,
+        cpu_percent=sum(sample.cpu_percent for sample in samples),
+        memory_mb=sum(sample.memory_mb for sample in samples),
+        instances=len(samples),
+        pids=[sample.pid for sample in samples],
+    )
 
 
 async def get_resource_monitor_snapshot(*, sample_ms: int = 120) -> dict[str, Any]:
@@ -177,7 +184,8 @@ async def get_resource_monitor_snapshot(*, sample_ms: int = 120) -> dict[str, An
     website_names: list[str] = []
     for project in projects:
         project_id = str(project.get("id") or "").strip()
-        if not project_id or not is_running(project_id, str(project.get("deploy_type") or "shell")):
+        deploy_type = str(project.get("deploy_type") or "shell")
+        if not project_id or not is_running(project_id, deploy_type):
             continue
         pf = pid_file(project_id)
         try:
