@@ -42,11 +42,12 @@ text + a tiny header. Verbose fields (`project_id`, `role`, `title`, `source`,
 }
 ```
 
-Deltas are **batched** before one frame: collect **16–32 tokens** or
-**300–500 characters** (≈80 ms idle flush). Hot events **never** mirror to
-Turso; durable content lands in final `assistant_message` / tool / request
-events. Cold (non-hot) events mirror to Turso in the **background** so remote
-DB latency never blocks SSE or TTFT.
+Deltas are **batched** before one frame: collect **2–32 tokens** or
+**40–500 characters** (≈15 ms idle flush) — the first frame reaches the client
+almost instantly, and slow trickles flush every 15 ms instead of every 80 ms.
+Hot events **never** mirror to Turso; durable content lands in final
+`assistant_message` / tool / request events. Cold (non-hot) events mirror to
+Turso in the **background** so remote DB latency never blocks SSE or TTFT.
 
 Cold (non-hot) events still use the full activity object:
 

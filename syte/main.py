@@ -184,6 +184,7 @@ class SettingsRequest(BaseModel):
     preview_wildcard_tls: str | None = None
     custom_tls_host: str | None = None
     custom_tls_port: str | None = None
+    nine_router_backend_port: str | None = None
     agent_default_model_profile: str | None = None
     agent_syra_nano_api_key: str | None = None
     agent_syra_havy_api_key: str | None = None
@@ -432,6 +433,7 @@ async def get_settings():
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
+        "nine_router_backend_port": await get_setting("nine_router_backend_port", ""),
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
         "agent_default_model_profile": bridge["default_profile"],
@@ -854,6 +856,22 @@ async def save_settings(body: SettingsRequest):
         await set_setting("custom_tls_port", body.custom_tls_port.strip())
         proxy_updated = True
         messages.append("Global custom TLS port set.")
+
+    if body.nine_router_backend_port is not None:
+        raw = body.nine_router_backend_port.strip()
+        if raw:
+            try:
+                port = int(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(400, "9Router backend port must be an integer (1-65535).")
+            if not 1 <= port <= 65535:
+                raise HTTPException(400, "9Router backend port must be between 1 and 65535.")
+            await set_setting("nine_router_backend_port", str(port))
+            messages.append(f"9Router backend port set to {port} — Caddy SSL route forwards there.")
+        else:
+            await set_setting("nine_router_backend_port", "")
+            messages.append("9Router backend port reset to the default gateway port.")
+        proxy_updated = True
 
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import DEFAULT_PROFILE

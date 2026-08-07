@@ -4070,6 +4070,7 @@ function renderSslDashboard(d) {
     ['Caddy running', Boolean(caddy.active), caddy.active ? 'active' : 'not running'],
     ['LiteLLM API cert', d.litellm && d.litellm.active, (d.litellm && d.litellm.domain) || 'pending'],
     ['GUI cert', d.gui && d.gui.active, (d.gui && d.gui.domain) || 'pending'],
+    ['9Router cert', Boolean(d.nine_router && d.nine_router.active), (d.nine_router && d.nine_router.domain) || 'pending'],
   ].map(([label, ok, detail]) => sslCheckRow(label, ok, detail)).join('');
 
   const totals = d.totals || { configured: 0, active: 0, pending: 0 };
@@ -4169,6 +4170,7 @@ function customTlsControlsHtml(d) {
   // Global sycord.site / custom host setting.
   const globalHost = esc((d && d.custom_tls_host) || '');
   const globalPort = esc((d && d.custom_tls_port) || '');
+  const ninePort = esc((d && d.nine_router_backend_port) || '');
   const projectRows = (d.projects || []).map(p => {
     const pid = cssClassSafe(p.id);
     const local = p.custom_tls_domain ? p.custom_tls_domain : '';
@@ -4190,6 +4192,14 @@ function customTlsControlsHtml(d) {
         <input class="ssl-custom-input" id="ssl-custom-global-port" value="${globalPort}" placeholder="port (default ${esc(String((d && d.gui_port) || 8787))})">
         <button type="button" class="btn-pill btn-primary btn-sm" id="ssl-custom-global-save">Save global TLS</button>
         <span class="hint ssl-custom-status" id="ssl-custom-global-status"></span>
+      </div>
+    </div>
+    <div class="ssl-custom-global">
+      <div class="ssl-custom-global-title"><strong>9Router gateway</strong> <span class="hint">https://9router.sycord.site — Caddy auto SSL → loopback port</span></div>
+      <div class="ssl-custom-global-row">
+        <input class="ssl-custom-input" id="ssl-nine-router-port" value="${ninePort}" placeholder="port (default 4000)">
+        <button type="button" class="btn-pill btn-primary btn-sm" id="ssl-nine-router-save">Save 9Router port</button>
+        <span class="hint ssl-custom-status" id="ssl-nine-router-status"></span>
       </div>
     </div>
     <div class="ssl-custom-project-list">${projectRows}</div>
@@ -4235,6 +4245,26 @@ function wireCustomTls() {
         });
         if (statusEl) statusEl.textContent = (res.messages || []).join(' · ') || 'saved';
         toast('Global custom TLS saved');
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+        toast('Error: ' + e.message);
+      }
+    });
+  }
+  // 9Router gateway port save
+  const nineSave = document.getElementById('ssl-nine-router-save');
+  if (nineSave) {
+    nineSave.addEventListener('click', async () => {
+      const port = (document.getElementById('ssl-nine-router-port').value || '').trim();
+      const statusEl = document.getElementById('ssl-nine-router-status');
+      if (statusEl) statusEl.textContent = 'Applying…';
+      try {
+        const res = await api('/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ nine_router_backend_port: port }),
+        });
+        if (statusEl) statusEl.textContent = (res.messages || []).join(' · ') || 'saved';
+        toast('9Router gateway port saved — Caddy SSL route updated');
       } catch (e) {
         if (statusEl) statusEl.textContent = 'Error: ' + e.message;
         toast('Error: ' + e.message);

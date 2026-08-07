@@ -3,7 +3,7 @@
 The SSL dashboard's certificate summary only says whether Caddy *holds* a
 certificate. It does not tell the operator whether a specific hostname is
 reachable over HTTPS — which is what matters when e.g. ``9router.sycord.site``
-is referenced as an API base but is not proxied by this Caddy instance.
+is served by this Caddy instance and a cert file exists but nothing answers.
 """
 
 from __future__ import annotations

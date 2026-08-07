@@ -6,6 +6,7 @@ from pathlib import Path
 
 from syte.caddy_routes import (
     host_zone,
+    render_9router_route,
     render_all_service_routes,
     render_litellm_api_route,
 )
@@ -209,6 +210,26 @@ async def _use_wildcard_tls() -> bool:
     return bool(cf_token) and mode in ("1", "true", "yes", "on", "auto")
 
 
+async def nine_router_backend_port() -> int:
+    """Loopback port of the local 9Router AI gateway behind Caddy.
+
+    The 9Router hostname is a fixed part of the product (the AI-router base
+    referenced by the model catalog); only the backend port is operator
+    configurable via the ``nine_router_backend_port`` setting. Defaults to the
+    LiteLLM gateway port, which hosts the router's OpenAI-compatible API.
+    """
+    raw = (await get_setting("nine_router_backend_port", "")).strip()
+    if not raw:
+        return LITELLM_HOST_PORT
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        return LITELLM_HOST_PORT
+    if 1 <= port <= 65535:
+        return port
+    return LITELLM_HOST_PORT
+
+
 async def async_generate_caddyfile() -> str:
     from syte.caddy_routes import preview_cors_origin
 
@@ -273,6 +294,21 @@ async def async_generate_caddyfile() -> str:
             gui_port=settings.port,
         )
     )
+
+    # 9Router AI gateway — the OpenAI-compatible router base used by the model
+    # catalog. A dedicated host block guarantees this Caddy instance terminates
+    # TLS for it (own Let's Encrypt cert via DNS-01 when wildcard TLS is on).
+    from syte.ai_providers import NINE_ROUTER_API_BASE
+
+    nine_host = normalize_domain(NINE_ROUTER_API_BASE)
+    if is_safe_caddy_hostname(nine_host):
+        lines.extend(
+            render_9router_route(
+                nine_host,
+                await nine_router_backend_port(),
+                use_wildcard_tls=use_wildcard_tls,
+            )
+        )
 
     projects = await list_projects()
     lines.extend(

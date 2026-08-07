@@ -239,6 +239,44 @@ def render_litellm_api_route(
     return lines
 
 
+def render_9router_route(
+    hostname: str,
+    port: int,
+    *,
+    use_wildcard_tls: bool,
+) -> list[str]:
+    """Render the public 9Router AI-gateway host with automatic TLS.
+
+    ``9router.sycord.site`` is the OpenAI-compatible router base referenced by
+    Syte's model catalog (``NINE_ROUTER_API_BASE``). This standalone host block
+    makes this Caddy instance terminate TLS for it and forward every path to
+    the local gateway (LiteLLM host port by default, override via the
+    ``nine_router_backend_port`` setting).
+    """
+    hostname = normalize_domain(hostname)
+    if not hostname or not is_safe_caddy_hostname(hostname):
+        return []
+
+    lines = [
+        "# 9Router public AI gateway — auto SSL",
+        f"{hostname} {{",
+    ]
+    if use_wildcard_tls:
+        # DNS-01 reuses the zone wildcard flow (Cloudflare) so the exact
+        # hostname gets a real Let's Encrypt cert even before port 80 is open.
+        lines.extend([
+            "    tls {",
+            "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
+            "    }",
+        ])
+    lines.extend([
+        f"    reverse_proxy 127.0.0.1:{port}",
+        "}",
+        "",
+    ])
+    return lines
+
+
 def render_wildcard_zone(
     zone: str,
     routes: list[CaddyRoute],

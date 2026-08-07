@@ -42,12 +42,15 @@ _HOT_PRUNE_EVERY = 250
 _COLD_PRUNE_EVERY = 40
 
 # Batch hot deltas before one SSE/local frame so Turso durable writes stay free.
-HOT_DELTA_BATCH_MIN_CHARS = 300
+# Thresholds are deliberately small: the first frame should reach the client
+# almost instantly (≈15 ms idle flush), not after a 300-char accumulation.
+HOT_DELTA_BATCH_MIN_CHARS = 40
 HOT_DELTA_BATCH_MAX_CHARS = 500
-HOT_DELTA_BATCH_MIN_TOKENS = 16
+HOT_DELTA_BATCH_MIN_TOKENS = 2
 HOT_DELTA_BATCH_MAX_TOKENS = 32
-# Flush idle buffers so slow streams still feel live.
-HOT_DELTA_BATCH_FLUSH_MS = 80
+# Flush idle buffers so slow streams still feel live (was 80 ms — most of the
+# perceived "waiting" between model chunks came from this timer).
+HOT_DELTA_BATCH_FLUSH_MS = 15
 
 # Tiny SSE / replay header keys kept on hot frames (everything else stripped).
 _HOT_PAYLOAD_KEYS = frozenset({"delta", "request_id", "session", "agent", "subagent_task_id"})
@@ -155,6 +158,71 @@ _cold_event_counts: dict[str, int] = defaultdict(int)
 _request_activity_counts: dict[str, int] = {}
 _MAX_TRACKED_REQUESTS = 256
 
+# Shared SQLite writer for activity rows. Opening a fresh connection (plus the
+# WAL handshake) per event cost milliseconds on the token hot path; a single
+# persistent connection with a module lock drops per-frame write overhead to a
+# plain INSERT + commit. SQLite is single-writer anyway, so serializing here is
+# no less concurrent than the previous per-event connections.
+_write_conn: aiosqlite.Connection | None = None
+_write_conn_path: str = ""
+_write_lock = asyncio.Lock()
+
+
+async def _ensure_write_conn(db_path: str) -> aiosqlite.Connection:
+    """Return the shared writer connection for ``db_path``, reopening as needed."""
+    global _write_conn, _write_conn_path
+    if _write_conn is not None and _write_conn_path == db_path:
+        return _write_conn
+    if _write_conn is not None:
+        try:
+            await _write_conn.close()
+        except Exception:  # pragma: no cover - defensive
+            pass
+        _write_conn = None
+    _write_conn = await aiosqlite.connect(db_path)
+    from syte.sqlite_utils import configure_sqlite
+
+    await configure_sqlite(_write_conn, db_path=db_path)
+    _write_conn_path = db_path
+    return _write_conn
+
+
+async def _insert_event_row(
+    project_id: str,
+    event_type: str,
+    role: str,
+    title: str,
+    detail: str,
+    payload_json: str,
+    source: str,
+    now: str,
+) -> int:
+    """Insert one activity row on the shared writer connection; return its id."""
+    db_path = str(settings.resolved_db_path)
+    async with _write_lock:
+        for attempt in (0, 1):
+            try:
+                conn = await _ensure_write_conn(db_path)
+                cursor = await conn.execute(
+                    "INSERT INTO agent_events "
+                    "(project_id, event_type, role, title, detail, payload, source, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, event_type, role, title, detail, payload_json, source, now),
+                )
+                await conn.commit()
+                return int(cursor.lastrowid)
+            except Exception:
+                if attempt == 1:
+                    raise
+                # Stale/closed connection (long-lived process) — reopen once.
+                if _write_conn is not None:
+                    try:
+                        await _write_conn.close()
+                    except Exception:  # pragma: no cover - defensive
+                        pass
+                    _write_conn = None
+    raise RuntimeError("unreachable")  # pragma: no cover
+
 
 def _approx_token_count(text: str) -> int:
     """Cheap token estimate (whitespace splits) for batch thresholds."""
@@ -257,7 +325,8 @@ async def compress_sse_frames(
         yield trail
 
 
-def _track_turso_event_task(task: asyncio.Task[Any]) -> None:
+def _track_background_task(task: asyncio.Task[Any], *, label: str = "task") -> None:
+    """Track a fire-and-forget background task and log unexpected failures."""
     _turso_mirror_tasks.add(task)
 
     def _done(t: asyncio.Task[Any]) -> None:
@@ -267,10 +336,14 @@ def _track_turso_event_task(task: asyncio.Task[Any]) -> None:
         exc = t.exception()
         if exc is not None:
             logging.getLogger(__name__).warning(
-                "Background Turso event mirror failed: %s", exc,
+                "Background %s failed: %s", label, exc,
             )
 
     task.add_done_callback(_done)
+
+
+def _track_turso_event_task(task: asyncio.Task[Any]) -> None:
+    _track_background_task(task, label="Turso event mirror")
 
 
 async def drain_turso_event_mirrors(*, timeout_s: float = 5.0) -> None:
@@ -282,10 +355,12 @@ async def drain_turso_event_mirrors(*, timeout_s: float = 5.0) -> None:
 
 
 class StreamDeltaBatcher:
-    """Collect 16–32 tokens or 300–500 characters before one hot frame.
+    """Collect small batches before one hot frame.
 
     Keeps the SSE hot path cheap and frees the event loop for durable Turso
-    writes (non-hot events + messages).
+    writes (non-hot events + messages). With the low thresholds a token chunk
+    normally flushes on the very next ``push``; the short idle timer only
+    catches single-character trickles.
     """
 
     def __init__(
@@ -666,27 +741,18 @@ async def record_agent_event(
     _bump_request_activity(clean_payload, event_type)
     payload_json = json.dumps(clean_payload, ensure_ascii=False)
     now = _now()
-    async with aiosqlite.connect(settings.resolved_db_path) as db:
-        from syte.sqlite_utils import configure_sqlite
-
-        await configure_sqlite(db, db_path=str(settings.resolved_db_path))
-        cursor = await db.execute(
-            "INSERT INTO agent_events "
-            "(project_id, event_type, role, title, detail, payload, source, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                project_id,
-                event_type,
-                role,
-                title[:500],
-                detail[:4000],
-                payload_json,
-                source,
-                now,
-            ),
-        )
-        await db.commit()
-        event_id = int(cursor.lastrowid)
+    # Single shared connection + commit: opening a fresh connection per event
+    # was the biggest per-frame latency on the token hot path.
+    event_id = await _insert_event_row(
+        project_id,
+        event_type,
+        role,
+        title[:500],
+        detail[:4000],
+        payload_json,
+        source,
+        now,
+    )
 
     if is_hot:
         event = {
@@ -727,7 +793,8 @@ async def record_agent_event(
             logging.getLogger(__name__).debug("failure log mirror failed", exc_info=True)
 
     # Prune periodically — never on every cold tool write (that added multi-second
-    # SQLite DELETE latency between tools).
+    # SQLite DELETE latency between tools) and never synchronously on the hot
+    # path: a slow prune must not delay the next streamed token frame.
     should_prune = False
     if is_hot:
         _hot_event_counts[project_id] += 1
@@ -739,11 +806,17 @@ async def record_agent_event(
             should_prune = True
     if should_prune:
         try:
-            await _prune_agent_events(project_id)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "Failed to prune agent events for project %s", project_id
+            _track_background_task(
+                asyncio.create_task(_prune_agent_events(project_id)),
+                label="agent event prune",
             )
+        except RuntimeError:  # no running loop (sync tests)
+            try:
+                await _prune_agent_events(project_id)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Failed to prune agent events for project %s", project_id
+                )
 
     # Stream chunks are ephemeral for Turso; final assistant/tool events carry content.
     # Cold events mirror in the background so Turso latency never stalls the turn.

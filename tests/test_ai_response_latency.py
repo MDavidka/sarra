@@ -159,6 +159,51 @@ async def test_delta_batcher_flushes_on_char_threshold(tmp_data_dir: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_hot_delta_batching_keeps_stream_real_time(tmp_data_dir: Path) -> None:
+    """The hot path must not buffer deltas for long: idle flush <25ms, low min batch."""
+    from syte.agent_activity import (
+        HOT_DELTA_BATCH_FLUSH_MS,
+        HOT_DELTA_BATCH_MIN_CHARS,
+        HOT_DELTA_BATCH_MIN_TOKENS,
+    )
+
+    assert HOT_DELTA_BATCH_FLUSH_MS <= 25, "idle flush delay must stay sub-25ms for live streaming"
+    assert HOT_DELTA_BATCH_MIN_CHARS <= 60, "min char threshold must stay small for live streaming"
+    assert HOT_DELTA_BATCH_MIN_TOKENS <= 4, "min token threshold must stay small for live streaming"
+
+
+@pytest.mark.asyncio
+async def test_small_delta_flushes_via_short_idle_timer(tmp_data_dir: Path) -> None:
+    """A small trickle of tokens must reach SSE within ~1 idle flush window, not be held."""
+    from syte.agent_activity import (
+        StreamDeltaBatcher,
+        subscribe_agent_activity,
+        unsubscribe_agent_activity,
+    )
+    from syte.database import init_db
+
+    await init_db()
+    queue = subscribe_agent_activity("proj-trickle")
+    batcher = StreamDeltaBatcher(
+        "proj-trickle",
+        "token_delta",
+        request_id="req-t",
+        session=1,
+        flush_ms=20,
+    )
+    try:
+        # Well below any min threshold — must still flush via the idle timer.
+        assert await batcher.push("hi") is None
+        try:
+            await asyncio.wait_for(queue.get(), timeout=0.5)
+        except asyncio.TimeoutError:
+            pytest.fail("trickle delta never reached SSE subscribers")
+    finally:
+        unsubscribe_agent_activity("proj-trickle", queue)
+        await batcher.flush()
+
+
+@pytest.mark.asyncio
 async def test_sse_gzip_compression_negotiated() -> None:
     from syte.agent_activity import compress_sse_frames, negotiate_sse_encoding
 
