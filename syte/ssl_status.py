@@ -327,20 +327,35 @@ async def build_ssl_overview() -> dict:
         configured=True,
         cert_active=bool(overview.litellm.get("active")),
     ))
-    # Known external AI-router base — referenced by Syte but not proxied by this
-    # Caddy instance unless explicitly configured. Surfaces as a diagnostic.
+    # 9Router AI gateway — a first-class Caddy host in this instance (auto SSL
+    # via the same wildcard DNS-01 flow). Certificate status comes from Caddy's
+    # store and reachability is probed live, exactly like the GUI / LiteLLM rows.
     try:
         from syte.ai_providers import NINE_ROUTER_API_BASE
         _nine_host = normalize_domain(NINE_ROUTER_API_BASE)
     except Exception:  # noqa: BLE001
         _nine_host = "9router.sycord.site"
+    nine_configured = bool(_nine_host and is_safe_caddy_hostname(_nine_host))
+    nine_cert = _caddy_has_cert(_nine_host) if nine_configured else False
     overview_debug.append(await debug_endpoint(
-        name="9Router (external)",
+        name="9Router API",
         domain=_nine_host,
-        configured=bool(_nine_host and is_safe_caddy_hostname(_nine_host)),
-        cert_active=False,
-        extra="External AI-router base referenced by Syte; ensure DNS and any reverse proxy are configured if it must be reachable.",
+        configured=nine_configured,
+        cert_active=nine_cert,
+        extra=(
+            f"Proxied by this Caddy instance (backend port "
+            f"{await get_setting('nine_router_backend_port', '') or '4000'}); "
+            "certificate is issued automatically by Caddy."
+        ),
     ))
+    overview["nine_router"] = {
+        "configured": nine_configured,
+        "active": nine_cert,
+        "domain": _nine_host,
+        "url": build_https_url(_nine_host) if nine_configured else None,
+        "backend_port": await get_setting("nine_router_backend_port", "") or "4000",
+        "label": "HTTPS" if nine_cert else "SSL pending",
+    }
 
     if overview.cloudflare.get("token_configured") and not overview.caddy["installed"]:
         overview.action_hints.append(
