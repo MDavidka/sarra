@@ -79,17 +79,80 @@ def _read_cert_meta(path: Path) -> tuple[str | None, str | None]:
     return issuer, None
 
 
+def _exact_cert_path(hostname: str) -> Path | None:
+    """Return the stored certificate whose subject is exactly ``hostname``.
+
+    Deliberately does *not* fall back to the zone wildcard: this is how the
+    dashboard distinguishes a host with its own dedicated certificate (e.g.
+    9router.sycord.site, isolated previews) from one merely covered by the
+    shared ``*.{zone}`` cert.
+    """
+    cert_root = _cert_dir()
+    if not cert_root:
+        return None
+    host = normalize_domain(hostname)
+    if not host:
+        return None
+    for path in cert_root.rglob("*.crt"):
+        if host in path.parent.name or host in path.name:
+            return path
+    return None
+
+
+def caddy_has_exact_cert(hostname: str) -> bool:
+    """True when Caddy holds a certificate issued for exactly this hostname."""
+    return _exact_cert_path(hostname) is not None
+
+
+def stored_host_cert(hostname: str) -> dict | None:
+    """Inspect the dedicated (exact-subject) certificate for one hostname."""
+    path = _exact_cert_path(hostname)
+    if path is None:
+        return None
+    issuer, not_after = _read_cert_meta(path)
+    return {
+        "path": str(path),
+        "issuer": issuer,
+        "valid_until": not_after,
+        "self_signed": bool(issuer and "Caddy Local Authority" in issuer),
+        "exists": True,
+    }
+
+
+def cert_scope(hostname: str) -> str:
+    """Classify how a hostname is covered by Caddy's certificate store.
+
+    Returns ``"dedicated"`` when the host has its own single-subject cert,
+    ``"wildcard"`` when it is only covered by the zone wildcard, and ``"none"``
+    when no certificate covers it at all.
+    """
+    host = normalize_domain(hostname)
+    if not host:
+        return "none"
+    if caddy_has_exact_cert(host):
+        return "dedicated"
+    cert_root = _cert_dir()
+    if cert_root:
+        zone = host_zone(host)
+        if host != zone and host.endswith(f".{zone}") and _has_wildcard_cert(zone, cert_root):
+            return "wildcard"
+    return "none"
+
+
 def _caddy_has_cert(hostname: str) -> bool:
-    """Best-effort: check if Caddy stored a cert for this hostname."""
+    """Best-effort: check if Caddy stored a cert for this hostname.
+
+    Accepts wildcard coverage — use :func:`caddy_has_exact_cert` when a
+    dedicated certificate is what matters.
+    """
     cert_root = _cert_dir()
     if not cert_root:
         return False
     host = normalize_domain(hostname)
     if not host:
         return False
-    for path in cert_root.rglob("*.crt"):
-        if host in path.parent.name or host in path.name:
-            return True
+    if _exact_cert_path(host) is not None:
+        return True
     zone = host_zone(host)
     if host != zone and host.endswith(f".{zone}"):
         return _has_wildcard_cert(zone, cert_root)
@@ -228,8 +291,13 @@ async def _resolve_host(hostname: str) -> list[str]:
     return ips
 
 
-async def monitor_endpoint(name: str, domain: str) -> dict:
-    """Live DNS + HTTPS status for one monitored hostname."""
+async def monitor_endpoint(name: str, domain: str, *, expect_dedicated: bool = False) -> dict:
+    """Live DNS + HTTPS status for one monitored hostname.
+
+    ``expect_dedicated`` marks hosts that are configured with their own
+    single-subject certificate (9Router, isolated previews). For those, being
+    covered only by the zone wildcard is a misconfiguration worth surfacing.
+    """
     from syte.ssl_debug import live_probe_https
 
     host = normalize_domain(domain or "")
@@ -241,6 +309,9 @@ async def monitor_endpoint(name: str, domain: str) -> dict:
             "resolves": False,
             "ips": [],
             "cert_active": False,
+            "cert_scope": "none",
+            "expect_dedicated": expect_dedicated,
+            "dedicated_cert": False,
             "state": "not-configured",
             "reachable": False,
             "latency_ms": None,
@@ -248,13 +319,18 @@ async def monitor_endpoint(name: str, domain: str) -> dict:
         }
     ips = await _resolve_host(host)
     live = await live_probe_https(build_https_url(host))
+    scope = cert_scope(host)
     return {
         "name": name,
         "domain": host,
         "configured": True,
         "resolves": bool(ips),
         "ips": ips,
-        "cert_active": _caddy_has_cert(host),
+        "cert_active": scope != "none",
+        "cert_scope": scope,
+        "expect_dedicated": expect_dedicated,
+        "dedicated_cert": scope == "dedicated",
+        "cert": stored_host_cert(host) if scope == "dedicated" else None,
         "state": live.get("state"),
         "reachable": bool(live.get("reachable")),
         "latency_ms": live.get("latency_ms"),
@@ -298,7 +374,11 @@ async def almalinux_monitor() -> dict:
         # trusted cert only when the wildcard DNS record and wildcard
         # certificate are actually working.
         await monitor_endpoint("*.sycord.site (wildcard)", "probe.sycord.site"),
-        await monitor_endpoint("9router.sycord.site", "9router.sycord.site"),
+        # 9Router is configured with its own dedicated certificate, so flag it
+        # when the wildcard is all that covers it.
+        await monitor_endpoint(
+            "9router.sycord.site", "9router.sycord.site", expect_dedicated=True
+        ),
     ]
     return {
         "os": os_name,
@@ -310,53 +390,223 @@ async def almalinux_monitor() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Service SSL health monitor — web / api / projects
+# ---------------------------------------------------------------------------
+
+# Health verdicts, worst first, so a group can be reduced to its weakest member.
+HEALTH_DOWN = "down"
+HEALTH_DEGRADED = "degraded"
+HEALTH_PENDING = "pending"
+HEALTH_HEALTHY = "healthy"
+HEALTH_UNCONFIGURED = "unconfigured"
+
+_HEALTH_RANK = {
+    HEALTH_DOWN: 0,
+    HEALTH_DEGRADED: 1,
+    HEALTH_PENDING: 2,
+    HEALTH_UNCONFIGURED: 3,
+    HEALTH_HEALTHY: 4,
+}
+
+
+def health_from_state(state: str | None, *, cert_active: bool, resolves: bool = True) -> str:
+    """Reduce a live probe result to a single health verdict.
+
+    ``serving`` is the only healthy outcome: a stored certificate that browsers
+    reject, or a host that resolves but never answers, is not "working SSL".
+    """
+    if state == "not-configured":
+        return HEALTH_UNCONFIGURED
+    if state == "serving":
+        return HEALTH_HEALTHY
+    if state in ("invalid-cert", "cert-error", "malformed"):
+        # TLS terminates but clients refuse the certificate — worst case, since
+        # it looks configured while every request fails.
+        return HEALTH_DOWN
+    if not resolves:
+        return HEALTH_DOWN
+    if state == "down":
+        # A cert exists but nothing answers → the proxy or app is down.
+        return HEALTH_DOWN if cert_active else HEALTH_PENDING
+    if state == "pending":
+        return HEALTH_PENDING
+    return HEALTH_DEGRADED
+
+
+def worst_health(verdicts: list[str]) -> str:
+    """The weakest verdict in a group, ignoring unconfigured members."""
+    considered = [v for v in verdicts if v != HEALTH_UNCONFIGURED]
+    if not considered:
+        return HEALTH_UNCONFIGURED
+    return min(considered, key=lambda v: _HEALTH_RANK.get(v, 1))
+
+
+async def _surface_health(
+    key: str,
+    name: str,
+    description: str,
+    domain: str,
+    *,
+    expect_dedicated: bool = False,
+) -> dict:
+    """Build one health row for a single named HTTPS surface."""
+    endpoint = await monitor_endpoint(name, domain, expect_dedicated=expect_dedicated)
+    health = health_from_state(
+        endpoint.get("state"),
+        cert_active=bool(endpoint.get("cert_active")),
+        resolves=bool(endpoint.get("resolves")),
+    )
+    issues: list[str] = []
+    if endpoint.get("configured") and not endpoint.get("resolves"):
+        issues.append(f"DNS does not resolve for {endpoint['domain']}.")
+    if endpoint.get("state") in ("invalid-cert", "cert-error"):
+        issues.append(endpoint.get("detail") or "Certificate is not trusted by clients.")
+    if endpoint.get("state") == "down" and endpoint.get("cert_active"):
+        issues.append("Certificate is installed but the endpoint is not responding.")
+    if endpoint.get("state") == "pending":
+        issues.append("Certificate has not been issued yet.")
+    if expect_dedicated and endpoint.get("cert_scope") == "wildcard":
+        issues.append("Expected a dedicated certificate but only the zone wildcard covers this host.")
+    return {
+        "key": key,
+        "name": name,
+        "description": description,
+        "kind": "endpoint",
+        "health": health,
+        "issues": issues,
+        **endpoint,
+    }
+
+
+async def service_health_monitor() -> dict:
+    """Health monitor for the three SSL surfaces: web, API, and project sites.
+
+    These are the three things that can independently break:
+
+    * **web** — the operator GUI on its custom domain,
+    * **api** — the public Syra / LiteLLM API host that agents call,
+    * **projects** — every deployed project's production and preview hostname,
+      aggregated because there can be many.
+    """
+    from syte.database import get_setting, list_projects
+    from syte.litellm_config import LITELLM_PUBLIC_HOST
+    from syte.ssl_debug import live_probe_https
+
+    gui_domain = normalize_domain(await get_setting("gui_domain", "")) or LITELLM_PUBLIC_HOST
+
+    web, api = await asyncio.gather(
+        _surface_health(
+            "web",
+            "Web GUI",
+            "Operator interface served over HTTPS",
+            gui_domain,
+        ),
+        _surface_health(
+            "api",
+            "API",
+            f"Public agent API on {LITELLM_PUBLIC_HOST}",
+            LITELLM_PUBLIC_HOST,
+        ),
+    )
+
+    # Projects: probe every configured production/preview host, then aggregate.
+    projects = await list_projects()
+    hosts: list[dict] = []
+    for project in projects:
+        summary = project_ssl_summary(project)
+        label = project.get("name") or project.get("id", "project")
+        for kind in ("production", "preview"):
+            host_info = summary[kind]
+            if not host_info.get("configured"):
+                continue
+            domain = host_info["domain"]
+            scope = cert_scope(domain)
+            live = await live_probe_https(build_https_url(domain))
+            health = health_from_state(
+                live.get("state"), cert_active=scope != "none"
+            )
+            hosts.append({
+                "project": label,
+                "project_id": project.get("id"),
+                "kind": kind,
+                "domain": domain,
+                "url": host_info.get("url"),
+                "cert_scope": scope,
+                "cert_active": scope != "none",
+                "dedicated_cert": scope == "dedicated",
+                "state": live.get("state"),
+                "reachable": bool(live.get("reachable")),
+                "latency_ms": live.get("latency_ms"),
+                "detail": live.get("detail"),
+                "health": health,
+            })
+
+    counts = {
+        HEALTH_HEALTHY: 0,
+        HEALTH_PENDING: 0,
+        HEALTH_DEGRADED: 0,
+        HEALTH_DOWN: 0,
+    }
+    for host in hosts:
+        counts[host["health"]] = counts.get(host["health"], 0) + 1
+
+    project_issues: list[str] = []
+    broken = [h for h in hosts if h["health"] in (HEALTH_DOWN, HEALTH_DEGRADED)]
+    for host in broken[:5]:
+        project_issues.append(
+            f"{host['project']} ({host['kind']}) — {host['domain']}: {host.get('detail') or host['health']}"
+        )
+    if len(broken) > 5:
+        project_issues.append(f"…and {len(broken) - 5} more failing project hostnames.")
+
+    projects_row = {
+        "key": "projects",
+        "name": "Project SSL",
+        "description": "Production and preview hostnames for deployed projects",
+        "kind": "aggregate",
+        "configured": bool(hosts),
+        "health": worst_health([h["health"] for h in hosts]) if hosts else HEALTH_UNCONFIGURED,
+        "issues": project_issues,
+        "total": len(hosts),
+        "counts": counts,
+        "hosts": hosts,
+        "detail": (
+            f"{counts[HEALTH_HEALTHY]}/{len(hosts)} hostnames serving trusted HTTPS"
+            if hosts else "no project hostnames configured"
+        ),
+    }
+
+    services = [web, api, projects_row]
+    return {
+        "services": services,
+        "overall": worst_health([s["health"] for s in services]),
+        "counts": {
+            "healthy": sum(1 for s in services if s["health"] == HEALTH_HEALTHY),
+            "pending": sum(1 for s in services if s["health"] == HEALTH_PENDING),
+            "degraded": sum(1 for s in services if s["health"] == HEALTH_DEGRADED),
+            "down": sum(1 for s in services if s["health"] == HEALTH_DOWN),
+            "unconfigured": sum(1 for s in services if s["health"] == HEALTH_UNCONFIGURED),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Caddy server settings monitor
 # ---------------------------------------------------------------------------
 
 async def caddy_server_monitor() -> dict:
-    """Monitor Caddy's server-side settings and health."""
-    from syte.certificates import CADDY_DROPIN_FILE, CADDY_ENV_PATH, caddy_has_cloudflare_plugin
-    from syte.config import settings
+    """Monitor Caddy's server-side settings and health.
 
-    installed = caddy_installed()
-    version: str | None = None
-    if installed:
-        code, out = _run_sh(["caddy", "version"])
-        if code == 0:
-            version = out.strip() or None
+    Delegates to :mod:`syte.caddy_monitor`, which additionally probes the admin
+    API, the :80/:443 listeners, the Caddyfile on disk and the certificate
+    store. The flat keys the dashboard has always consumed (``installed``,
+    ``active``, ``enabled``, ``version``, ``uptime_seconds``, ``config_path``,
+    ``config_exists``, ``systemd_env_configured``,
+    ``cloudflare_plugin_installed``) are preserved in the payload.
+    """
+    from syte.caddy_monitor import caddy_monitor
 
-    active = await _caddy_active()
-    enabled = False
-    uptime_seconds: float | None = None
-    if shutil.which("systemctl"):
-        code, out = _run_sh(["systemctl", "is-enabled", "caddy"])
-        enabled = code == 0
-        code, out = _run_sh(
-            ["systemctl", "show", "caddy", "-p", "ActiveEnterTimestampMonotonic"]
-        )
-        if code == 0 and "=" in out:
-            try:
-                value = float(out.partition("=")[2].strip())
-                uptime_seconds = max(0.0, time.monotonic() - value / 1_000_000.0)
-            except (TypeError, ValueError):
-                uptime_seconds = None
-
-    config_path = settings.caddy_config_path
-    fallback = settings.data_dir / "Caddyfile"
-    existing = config_path if config_path.exists() else (fallback if fallback.exists() else None)
-
-    return {
-        "installed": installed,
-        "active": active,
-        "enabled": enabled,
-        "version": version,
-        "uptime_seconds": round(uptime_seconds, 1) if uptime_seconds is not None else None,
-        "config_path": str(existing) if existing else str(config_path),
-        "config_exists": existing is not None,
-        "systemd_env_configured": CADDY_DROPIN_FILE.is_file(),
-        "env_file_written": CADDY_ENV_PATH.is_file(),
-        "cloudflare_plugin_installed": caddy_has_cloudflare_plugin(),
-    }
+    return await caddy_monitor()
 
 
 @dataclass
@@ -369,6 +619,7 @@ class SslOverview:
     litellm: dict = field(default_factory=dict)
     almalinux: dict = field(default_factory=dict)
     caddy_monitor: dict = field(default_factory=dict)
+    health: dict = field(default_factory=dict)
     nine_router: dict = field(default_factory=dict)
     projects: list[dict] = field(default_factory=list)
     pending_count: int = 0
@@ -418,6 +669,7 @@ async def build_ssl_overview() -> dict:
     overview.litellm = litellm_api_ssl_status()
     overview.almalinux = await almalinux_monitor()
     overview.caddy_monitor = await caddy_server_monitor()
+    overview.health = await service_health_monitor()
 
     preview_zone = await resolve_preview_zone()
     debug: list[dict] = []
@@ -496,7 +748,12 @@ async def build_ssl_overview() -> dict:
     except Exception:  # noqa: BLE001
         _nine_host = "9router.sycord.site"
     nine_configured = bool(_nine_host and is_safe_caddy_hostname(_nine_host))
-    nine_cert = _caddy_has_cert(_nine_host) if nine_configured else False
+    # 9Router is issued its own single-subject certificate, so report on the
+    # dedicated cert rather than accepting shared-wildcard coverage.
+    nine_scope = cert_scope(_nine_host) if nine_configured else "none"
+    nine_dedicated = nine_scope == "dedicated"
+    nine_cert = nine_scope != "none"
+    nine_cert_meta = stored_host_cert(_nine_host) if nine_dedicated else None
     from syte.certificates import nine_router_upstream
 
     nine_upstream = await nine_router_upstream()
@@ -506,8 +763,8 @@ async def build_ssl_overview() -> dict:
         configured=nine_configured,
         cert_active=nine_cert,
         extra=(
-            f"TLS terminated by this Caddy instance, proxied to gateway "
-            f"upstream {nine_upstream}."
+            f"Dedicated certificate (not the zone wildcard); TLS terminated by "
+            f"this Caddy instance, proxied to gateway upstream {nine_upstream}."
         ),
     ))
     overview.nine_router = {
@@ -516,8 +773,33 @@ async def build_ssl_overview() -> dict:
         "domain": _nine_host,
         "url": build_https_url(_nine_host) if nine_configured else None,
         "upstream": nine_upstream,
-        "label": "HTTPS" if nine_cert else "SSL pending",
+        "cert_scope": nine_scope,
+        "dedicated_cert": nine_dedicated,
+        "cert": nine_cert_meta,
+        "label": (
+            "HTTPS (dedicated cert)" if nine_dedicated
+            else "HTTPS (wildcard)" if nine_cert
+            else "SSL pending"
+        ),
     }
+    if nine_configured and nine_scope == "wildcard":
+        overview.action_hints.append(
+            f"{_nine_host} is configured for a dedicated certificate but is currently "
+            "covered only by the zone wildcard. Run 'Apply & resolve SSL' so Caddy "
+            "issues its own single-subject certificate."
+        )
+    if nine_cert_meta and nine_cert_meta.get("self_signed"):
+        overview.action_hints.append(
+            f"The dedicated certificate for {_nine_host} was issued by Caddy's internal "
+            "authority, so browsers and API clients reject it. Verify the Cloudflare "
+            "DNS-01 token, then run 'Apply & resolve SSL'."
+        )
+
+    # Surface everything the deep Caddy monitor found wrong — stale config,
+    # missing :443 listener, unreachable admin API, untrusted certs.
+    for problem in overview.caddy_monitor.get("problems", []):
+        if problem not in overview.action_hints:
+            overview.action_hints.append(problem)
 
     if overview.cloudflare.get("token_configured") and not overview.caddy["installed"]:
         overview.action_hints.append(
@@ -567,6 +849,7 @@ async def build_ssl_overview() -> dict:
         "nine_router": overview.nine_router,
         "almalinux_monitor": overview.almalinux,
         "caddy_monitor": overview.caddy_monitor,
+        "health": overview.health,
         "projects": overview.projects,
         "debug": overview_debug,
         "projects_debug": debug,
