@@ -342,8 +342,7 @@ async def prepare_syra_host() -> dict[str, Any]:
             f"combined endpoint is also available at https://{LITELLM_PUBLIC_HOST}/."
         )
     else:
-        await set_setting("gui_domain", LITELLM_PUBLIC_HOST)
-        steps.append(f"Syte GUI hostname set to https://{LITELLM_PUBLIC_HOST}.")
+        steps.append(f"Syte GUI available at the direct URL; https://{LITELLM_PUBLIC_HOST}/ serves LiteLLM and previews.")
     return {
         "ok": True,
         "message": "AlmaLinux host is prepared for Syte, Caddy, Docker, and LiteLLM.",

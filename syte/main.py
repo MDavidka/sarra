@@ -1229,7 +1229,7 @@ async def _router_gui_guard() -> dict[str, Any] | None:
     from syte.nine_router_manager import router_status
 
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
-    if gui_domain and gui_domain != NINE_ROUTER_PUBLIC_HOST:
+    if not gui_domain or gui_domain != NINE_ROUTER_PUBLIC_HOST:
         return None
     status = await router_status()
     return {

@@ -146,6 +146,9 @@ async def test_router_gui_guard_blocks_takeover_without_separate_domain(
     await set_setting("gui_domain", "console.sycord.site")
     assert await main._router_gui_guard() is None
 
+    await set_setting("gui_domain", "")
+    assert await main._router_gui_guard() is None
+
 
 @pytest.mark.asyncio
 async def test_router_public_state_rolls_back_after_caddy_failure(
@@ -226,6 +229,42 @@ async def test_router_status_does_not_call_running_container_ready_without_http_
     assert result["ready"] is False
     assert result["healthy"] is False
     assert "dashboard is not ready" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_router_probe_marks_dashboard_auth_errors_as_ready(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import nine_router_manager as manager
+    from syte.database import init_db
+
+    await init_db()
+
+    async def fake_run_docker(args: list[str], timeout: float = 60.0) -> tuple[int, str]:
+        if args[:2] == ["ps", "-a"]:
+            return 0, json.dumps({"ID": "router-container-id", "State": "running", "Status": "Up 1 second"})
+        return 0, ""
+
+    async def fake_probe() -> dict[str, object]:
+        return {
+            "web_gui_ready": True,
+            "api_ready": True,
+            "api_authenticated": False,
+            "dashboard_status": 401,
+            "api_status": 401,
+            "readiness_message": "9Router dashboard and API are ready; save an API key before making authenticated API calls.",
+        }
+
+    monkeypatch.setattr(manager, "_run_docker", fake_run_docker)
+    monkeypatch.setattr(manager, "_probe_router_http", fake_probe)
+
+    result = await manager.router_status()
+
+    assert result["running"] is True
+    assert result["ready"] is True
+    assert result["healthy"] is True
+    assert "ready" in result["message"]
 
 
 

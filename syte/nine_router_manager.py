@@ -116,7 +116,7 @@ async def _probe_router_http() -> dict[str, Any]:
             "readiness_message": f"9Router is still starting: {error}",
         }
 
-    web_gui_ready = 200 <= dashboard_status < 400
+    web_gui_ready = 200 <= dashboard_status < 400 or dashboard_status in {401, 403}
     api_authenticated = 200 <= api_status < 400
     api_ready = api_authenticated or api_status in {401, 403}
     if not web_gui_ready:
