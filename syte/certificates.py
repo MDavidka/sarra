@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import os
 import shutil
 import subprocess
@@ -231,30 +232,44 @@ async def nine_router_backend_port() -> int:
     return LITELLM_HOST_PORT
 
 
+def normalize_remote_nine_router_upstream(raw: str) -> str:
+    """Validate a 9Router upstream and reject local/private destinations."""
+    host, separator, port_str = (raw or "").strip().rpartition(":")
+    if not separator:
+        return ""
+    host = normalize_domain(host)
+    if not host or not is_safe_caddy_hostname(host):
+        return ""
+    lowered = host.lower()
+    if lowered in {"localhost", "localhost.localdomain", "local"} or lowered.endswith((".localhost", ".local")):
+        return ""
+    try:
+        port = int(port_str)
+    except (TypeError, ValueError):
+        return ""
+    if not 1 <= port <= 65535:
+        return ""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # Hostnames are allowed when they are not obvious local-only names.
+        return f"{host}:{port}"
+    if address.version != 4 or not address.is_global:
+        return ""
+    return f"{address}:{port}"
+
+
 async def nine_router_upstream() -> str:
     """Upstream host:port the 9Router gateway is proxied to.
 
-    Defaults to ``65.75.203.134:20128`` — the dedicated gateway host (this
-    Caddy instance only terminates TLS for 9router.sycord.site). Can be
-    overridden with the ``nine_router_upstream`` setting (``host:port``). Falls
-    back to the legacy ``nine_router_backend_port`` loopback port only when the
-    upstream setting is not configured.
+    Defaults to ``65.75.203.134:20128`` — the dedicated gateway host. An
+    explicit ``nine_router_upstream`` may override it with a remote hostname
+    or global IPv4 address. Legacy local backend-port settings are deliberately
+    ignored because they point Caddy at localhost and break the public route.
     """
     raw = (await get_setting("nine_router_upstream", "")).strip()
-    if raw:
-        host, _, port_str = raw.rpartition(":")
-        host = normalize_domain(host)
-        if host and is_safe_caddy_hostname(host):
-            try:
-                port = int(port_str)
-            except (TypeError, ValueError):
-                port = 0
-            if 1 <= port <= 65535:
-                return f"{host}:{port}"
-    legacy_raw = (await get_setting("nine_router_backend_port", "")).strip()
-    if legacy_raw:
-        return f"127.0.0.1:{await nine_router_backend_port()}"
-    return NINE_ROUTER_UPSTREAM_DEFAULT
+    upstream = normalize_remote_nine_router_upstream(raw)
+    return upstream or NINE_ROUTER_UPSTREAM_DEFAULT
 
 
 async def async_generate_caddyfile() -> str:

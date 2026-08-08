@@ -1393,6 +1393,47 @@ body.nav-mode-service .sidebar-menu {
   margin-top: 1rem;
 }
 
+.update-mergeable-commits {
+  margin-top: 0.85rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.update-mergeable-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  text-transform: lowercase;
+  margin-bottom: 0.3rem;
+}
+
+.update-commit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.22rem 0;
+  font-size: 0.72rem;
+}
+
+.update-commit-sha,
+.update-commit-pr {
+  flex: 0 0 auto;
+  color: var(--link);
+  text-decoration: none;
+}
+
+.update-commit-sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.update-commit-sha:hover,
+.update-commit-pr:hover { text-decoration: underline; }
+.update-commit-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
 .update-bootstrap {
   margin-top: 0.75rem;
   font-size: 0.8rem;
