@@ -1478,7 +1478,12 @@ async def api_get_project(project_id: str):
 
 
 @app.post("/api/projects")
-async def api_create_project(body: CreateServiceRequest):
+async def api_create_project(request: Request, body: CreateServiceRequest):
+    # Empty project creation remains compatible with the legacy GUI flow. A
+    # server-side repository clone/deploy is an operator action because it can
+    # execute code from the submitted repository.
+    if body.git_url:
+        await verify_operator_session_or_token(request)
     project, message = await deployment.begin_deploy_service(
         name=body.name,
         git_url=body.git_url,

@@ -48,7 +48,8 @@
       </div>
 
       <nav class="sidebar-menu edge-sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <div class="edge-team-switcher"><span class="edge-team-mark">∞</span><div><strong>acme-team</strong><small><b></b> Production</small></div><i data-lucide="chevrons-up-down"></i></div>
+        <div id="nav-block-home" class="nav-block">
+          <div class="edge-team-switcher"><span class="edge-team-mark">∞</span><div><strong>acme-team</strong><small><b></b> Production</small></div><i data-lucide="chevrons-up-down"></i></div>
         <label class="edge-sidebar-search"><i data-lucide="search"></i><input placeholder="Find"><kbd>F</kbd></label>
         <p class="edge-sidebar-label">Delivery</p>
         <button type="button" class="nav-sublink edge-sidebar-link active" data-view="dashboard"><i data-lucide="layout-grid"></i><span>Overview</span></button>
@@ -63,6 +64,24 @@
         <button type="button" class="edge-sidebar-view-all" data-view="dashboard">View all 89 regions <span>→</span></button>
         <div class="edge-sidebar-spacer"></div>
         <div class="edge-bandwidth"><div><span>Bandwidth</span><small>this cycle</small></div><strong>4.1 TB <small>of 10 TB</small></strong><div class="edge-bandwidth-bar"><i></i></div><p>Resets Aug 20</p></div>
+
+          <div class="edge-legacy-nav">
+            <p class="edge-sidebar-label">System</p>
+            <button type="button" class="nav-sublink edge-sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord"><img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span></button>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="server-swarm"><i data-lucide="boxes"></i><span>Server Swarm</span></button>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="users"><i data-lucide="users"></i><span>Users</span></button>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="models"><i data-lucide="bot"></i><span>Models</span></button>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="ssl"><i data-lucide="shield-check"></i><span>SSL</span></button>
+            <div class="nav-api-group edge-legacy-api" id="nav-api-group">
+              <a class="nav-sublink edge-sidebar-link" href="/api/" data-view="api" id="nav-api-link"><i data-lucide="file-code-2"></i><span>API docs</span></a>
+              <div class="nav-api-minitabs" id="nav-api-minitabs" aria-label="API documentation sections">
+                <a class="nav-api-mini" href="/api/#overview/overview-flow">Overview</a><a class="nav-api-mini" href="/api/#auth/auth-token">Auth</a><a class="nav-api-mini" href="/api/#agent/agent-status">Agent</a><a class="nav-api-mini" href="/api/#stream/stream-connect">Stream</a>
+              </div>
+            </div>
+            <button type="button" class="nav-sublink edge-sidebar-link" data-view="settings"><i data-lucide="settings-2"></i><span>Settings</span></button>
+          </div>
+        </div>
         <div id="nav-block-service" class="nav-block hidden">
           <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" title="Back to deployments"><i data-lucide="arrow-left"></i><span id="nav-service-title">Deployment</span></button>
           <div id="sidebar-service-tabs" class="nav-group-body nav-group-body-compact">
@@ -100,6 +119,7 @@
                 <p class="projects-sub">Manage your global content delivery network.</p>
               </div>
               <div class="edge-page-actions">
+                <button type="button" class="edge-control-btn edge-create-btn" onclick="showView('new-service')"><i data-lucide="plus"></i><span>Create deployment</span></button>
                 <button type="button" class="edge-control-btn"><i data-lucide="calendar-clock"></i><span>Last 12 hours</span><i data-lucide="chevron-down"></i></button>
                 <button type="button" class="edge-control-btn"><i data-lucide="list-filter"></i><span>View Routing Order</span></button>
               </div>
@@ -110,11 +130,11 @@
                 <div class="edge-map-card">
                   <div class="edge-card-topline">
                     <div class="edge-tabs" role="tablist" aria-label="Network regions">
-                      <button class="edge-tab active" type="button">Global</button>
-                      <button class="edge-tab" type="button">Europe</button>
-                      <button class="edge-tab" type="button">North America</button>
-                      <button class="edge-tab" type="button">South America</button>
-                      <button class="edge-tab" type="button">Asia</button>
+                      <button class="edge-tab active" type="button" data-edge-region="global">Global</button>
+                      <button class="edge-tab" type="button" data-edge-region="europe">Europe</button>
+                      <button class="edge-tab" type="button" data-edge-region="north-america">North America</button>
+                      <button class="edge-tab" type="button" data-edge-region="south-america">South America</button>
+                      <button class="edge-tab" type="button" data-edge-region="asia">Asia</button>
                     </div>
                     <div class="edge-map-actions"><button class="edge-icon-btn" aria-label="Map settings"><i data-lucide="settings-2"></i></button><button class="edge-icon-btn" aria-label="Toggle map"><i data-lucide="globe-2"></i></button></div>
                   </div>
@@ -139,7 +159,7 @@
 
                 <div class="edge-requests-card">
                   <div class="edge-request-toolbar">
-                    <div class="edge-request-tabs"><button class="active" type="button">All <small id="edge-total-count">0</small></button><button type="button">Running <small id="edge-running-count">0</small></button><button type="button">Deploying <small id="edge-deploying-count">0</small></button><button type="button">Stopped <small id="edge-stopped-count">0</small></button></div>
+                    <div class="edge-request-tabs"><button class="active" type="button" data-edge-status="all">All <small id="edge-total-count">0</small></button><button type="button" data-edge-status="running">Running <small id="edge-running-count">0</small></button><button type="button" data-edge-status="deploying">Deploying <small id="edge-deploying-count">0</small></button><button type="button" data-edge-status="stopped">Stopped <small id="edge-stopped-count">0</small></button></div>
                     <label class="edge-table-search"><i data-lucide="search"></i><input id="project-filter" type="search" placeholder="Search deployments" autocomplete="off"></label>
                   </div>
                   <div class="edge-table-head"><span>TYPE</span><span>PATH / PROJECT</span><span>REGION</span><span>DEPLOYMENT</span><span>STATUS</span><span>PORT</span><span>TIME</span></div>
