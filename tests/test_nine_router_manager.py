@@ -138,7 +138,7 @@ async def test_router_gui_guard_blocks_takeover_without_separate_domain(
         return {"ok": True, "running": False, "enabled": False}
 
     monkeypatch.setattr(manager, "router_status", fake_status)
-    await set_setting("gui_domain", "api.sycord.site")
+    await set_setting("gui_domain", "9router.sycord.site")
     blocked = await main._router_gui_guard()
     assert blocked and blocked["ok"] is False
     assert "separate GUI domain" in str(blocked["message"])
@@ -160,7 +160,7 @@ async def test_router_gui_guard_blocks_when_gui_domain_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reproduces the reported bug: 'Start Syra' defaults gui_domain to
-    api.sycord.site (LITELLM_PUBLIC_HOST == NINE_ROUTER_PUBLIC_HOST), which
+    9router.sycord.site (gui_domain == NINE_ROUTER_PUBLIC_HOST), which
     silently blocks every 9Router start with no actionable next step. The
     guard must flag the conflict and suggest a fix instead of only rejecting.
     """
@@ -203,7 +203,7 @@ async def test_router_status_surfaces_gui_domain_conflict_before_start(
     monkeypatch.setattr(manager, "router_status", fake_status)
 
     # Simulates prepare_syra_host()'s default.
-    await set_setting("gui_domain", "api.sycord.site")
+    await set_setting("gui_domain", "9router.sycord.site")
     result = await main.api_router_status.__wrapped__() if hasattr(main.api_router_status, "__wrapped__") else None
     if result is None:
         # FastAPI route functions are plain coroutines here (no Depends override

@@ -167,9 +167,9 @@ def test_render_managed_9router_route_publishes_full_api_host() -> None:
     from syte.caddy_routes import render_managed_9router_route
     from syte.nine_router_manager import NINE_ROUTER_HOST_PORT
 
-    text = "\n".join(render_managed_9router_route("api.sycord.site", NINE_ROUTER_HOST_PORT, use_wildcard_tls=False))
+    text = "\n".join(render_managed_9router_route("9router.sycord.site", NINE_ROUTER_HOST_PORT, use_wildcard_tls=False))
 
-    assert "api.sycord.site {" in text
+    assert "9router.sycord.site {" in text
     assert f"reverse_proxy 127.0.0.1:{NINE_ROUTER_HOST_PORT}" in text
     assert "X-Forwarded-Proto https" in text
 
@@ -191,10 +191,9 @@ async def test_generated_caddyfile_switches_api_host_for_managed_router(
 
     await set_setting("nine_router_public_enabled", "1")
     managed = await async_generate_caddyfile()
-    assert managed.count("api.sycord.site {") == 1
+    assert managed.count("9router.sycord.site {") == 1
     assert f"reverse_proxy 127.0.0.1:{NINE_ROUTER_HOST_PORT}" in managed
     assert "@v1 path /v1 /v1/*" not in managed
-    assert "9router.sycord.site {" not in managed
 
     await set_setting("nine_router_public_enabled", "0")
     fallback = await async_generate_caddyfile()
