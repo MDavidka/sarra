@@ -166,6 +166,7 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
         aliyun_api_base_for_key,
         key_mismatch_hint,
         looks_like_openrouter_key,
+        resolved_nine_router_api_base,
     )
     from syte.gemini_native import (
         VERTEX_EXPRESS_API_BASE,
@@ -176,6 +177,8 @@ async def probe_profile_provider(profile: str, api_key: str) -> dict[str, Any]:
     spec = profile_provider(profile)
     api_key = (api_key or "").strip()
     base = normalize_provider_api_base(spec["api_base"])
+    if profile == "9router":
+        base = normalize_provider_api_base(await resolved_nine_router_api_base())
     if profile == "syra-ultra" and api_key:
         base = normalize_provider_api_base(aliyun_api_base_for_key(api_key))
     headers = {

@@ -6227,10 +6227,11 @@ function renderRouterTab(data) {
   if (!content) return;
   routerData = data || {};
   const running = Boolean(routerData.running);
+  const ready = Boolean(routerData.ready);
   const enabled = Boolean(routerData.enabled);
-  const badgeClass = running ? 'badge-running' : (enabled ? 'badge-warning' : 'badge-stopped');
-  const badgeText = running ? 'Running' : (enabled ? 'Configured · stopped' : 'Not deployed');
-  if (startBtn) startBtn.disabled = running;
+  const badgeClass = ready ? 'badge-running' : (running || enabled ? 'badge-warning' : 'badge-stopped');
+  const badgeText = ready ? 'Ready' : (running ? 'Starting' : (enabled ? 'Configured · stopped' : 'Not deployed'));
+  if (startBtn) startBtn.disabled = ready;
   if (stopBtn) stopBtn.disabled = !running;
   if (restartBtn) restartBtn.disabled = !running;
 
@@ -6245,13 +6246,13 @@ function renderRouterTab(data) {
     <div class="router-status-head"><span class="badge ${badgeClass}">${badgeText}</span><span class="hint">${esc(routerData.message || '')}</span></div>
     <div class="swarm-grid router-status-grid">
       <div class="swarm-stat"><span class="swarm-label">Public API</span><a class="swarm-value link" href="${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}" target="_blank" rel="noopener">${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}</a></div>
-      <div class="swarm-stat"><span class="swarm-label">Dashboard</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://api.sycord.site/')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://api.sycord.site/')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Dashboard</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://api.sycord.site/dashboard')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://api.sycord.site/dashboard')}</a></div>
       <div class="swarm-stat"><span class="swarm-label">Container</span><span class="swarm-value">${esc(routerData.container_id || '—')}</span></div>
       <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:latest')}</span></div>
       <div class="swarm-stat full"><span class="swarm-label">Data</span><span class="swarm-value"><code>/var/lib/syte/9router</code> · persistent across redeploys</span></div>
     </div>
     ${passwordNotice}
-    <p class="hint block router-help">The Docker container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. Caddy publishes the complete 9Router dashboard and <code>/v1</code> API at <code>api.sycord.site</code>. A separate GUI domain is required before deployment so the Syte console remains reachable. Configure provider connections and API keys in the 9Router dashboard before exposing this endpoint.</p>
+    <p class="hint block router-help">The official 9Router dashboard is at <code>/dashboard</code> and its OpenAI-compatible API is at <code>/v1</code>. The Docker container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. A separate GUI domain is required before deployment so the Syte console remains reachable. Configure provider connections and an API key in the 9Router dashboard before making authenticated API calls.</p>
     <details class="router-logs-details"><summary>Recent container logs</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-logs-refresh"><i data-lucide="refresh-cw"></i><span>Refresh logs</span></button></div><pre id="router-logs" class="router-logs">Load logs when needed.</pre></details>
   `;
   document.getElementById('router-logs-refresh')?.addEventListener('click', loadRouterLogs);

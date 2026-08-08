@@ -44,13 +44,26 @@ async def test_start_router_uses_persistent_data_and_official_image(
     async def fake_sleep(_seconds: float) -> None:
         return None
 
+    async def fake_probe() -> dict[str, object]:
+        return {
+            "web_gui_ready": True,
+            "api_ready": True,
+            "api_authenticated": True,
+            "dashboard_status": 200,
+            "api_status": 200,
+            "readiness_message": "ready",
+        }
+
     monkeypatch.setattr(manager, "_run_docker", fake_run_docker)
+    monkeypatch.setattr(manager, "_probe_router_http", fake_probe)
     monkeypatch.setattr(manager.asyncio, "sleep", fake_sleep)
 
     result = await manager.start_router()
 
     assert result["ok"] is True
     assert result["running"] is True
+    assert result["ready"] is True
+    assert result["dashboard_url"].endswith("/dashboard")
     assert result["initial_password"]
     assert await get_setting(manager.NINE_ROUTER_PASSWORD_SETTING) == result["initial_password"]
 
@@ -62,6 +75,8 @@ async def test_start_router_uses_persistent_data_and_official_image(
     assert manager.NINE_ROUTER_HOST_PORT != manager.NINE_ROUTER_CONTAINER_PORT
     assert f"{tmp_data_dir / manager.NINE_ROUTER_DATA_DIR_NAME}:/app/data" in run_args
     assert "-e" in run_args
+    assert f"BASE_URL={manager.NINE_ROUTER_INTERNAL_BASE_URL}" in run_args
+    assert f"NEXT_PUBLIC_BASE_URL=https://{manager.NINE_ROUTER_PUBLIC_HOST}" in run_args
     assert f"INITIAL_PASSWORD={result['initial_password']}" in run_args
 
 
@@ -155,3 +170,105 @@ async def test_router_public_state_rolls_back_after_caddy_failure(
     assert "restored" in message
     assert calls == 2
     assert await get_setting("nine_router_public_enabled", "0") == "0"
+
+
+
+@pytest.mark.asyncio
+async def test_router_api_base_follows_managed_public_state(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.ai_providers import (
+        NINE_ROUTER_API_BASE,
+        NINE_ROUTER_MANAGED_API_BASE,
+        resolved_nine_router_api_base,
+    )
+    from syte.database import init_db, set_setting
+
+    await init_db()
+    assert await resolved_nine_router_api_base() == NINE_ROUTER_API_BASE
+
+    await set_setting("nine_router_public_enabled", "1")
+    assert await resolved_nine_router_api_base() == NINE_ROUTER_MANAGED_API_BASE
+
+
+
+@pytest.mark.asyncio
+async def test_router_status_does_not_call_running_container_ready_without_http_probe(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import nine_router_manager as manager
+    from syte.database import init_db
+
+    await init_db()
+
+    async def fake_run_docker(args: list[str], timeout: float = 60.0) -> tuple[int, str]:
+        if args[:2] == ["ps", "-a"]:
+            return 0, json.dumps({"ID": "router-container-id", "State": "running", "Status": "Up 1 second"})
+        return 0, ""
+
+    async def fake_probe() -> dict[str, object]:
+        return {
+            "web_gui_ready": False,
+            "api_ready": False,
+            "api_authenticated": False,
+            "dashboard_status": 503,
+            "api_status": None,
+            "readiness_message": "9Router dashboard is not ready (HTTP 503).",
+        }
+
+    monkeypatch.setattr(manager, "_run_docker", fake_run_docker)
+    monkeypatch.setattr(manager, "_probe_router_http", fake_probe)
+
+    result = await manager.router_status()
+
+    assert result["running"] is True
+    assert result["ready"] is False
+    assert result["healthy"] is False
+    assert "dashboard is not ready" in result["message"]
+
+
+
+@pytest.mark.asyncio
+async def test_router_start_restores_fallback_before_cleanup_when_public_route_fails(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import main
+    from syte.database import init_db
+    from syte import nine_router_manager as manager
+
+    await init_db()
+    cleanup_called = False
+    route_states: list[bool] = []
+
+    async def fake_guard() -> None:
+        return None
+
+    async def fake_status() -> dict[str, object]:
+        return {"ok": True, "running": False, "enabled": False}
+
+    async def fake_start() -> dict[str, object]:
+        return {"ok": True, "running": True, "ready": True, "message": "ready"}
+
+    async def fake_stop() -> dict[str, object]:
+        nonlocal cleanup_called
+        cleanup_called = True
+        return {"ok": True, "running": False}
+
+    async def fake_set(enabled: bool, *, force: bool = False) -> tuple[bool, str]:
+        route_states.append(enabled)
+        return (False, "managed reload failed") if enabled else (True, "fallback restored")
+
+    monkeypatch.setattr(main, "_router_gui_guard", fake_guard)
+    monkeypatch.setattr(main, "_set_router_public_state", fake_set)
+    monkeypatch.setattr(manager, "router_status", fake_status)
+    monkeypatch.setattr(manager, "start_router", fake_start)
+    monkeypatch.setattr(manager, "stop_router", fake_stop)
+
+    result = await main._router_start()
+
+    assert result["ok"] is False
+    assert result["fallback_configured"] is True
+    assert route_states == [True, False]
+    assert cleanup_called is True

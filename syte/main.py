@@ -521,7 +521,7 @@ async def _github_token_source() -> str:
 
 async def _model_configuration() -> dict[str, Any]:
     """Return the user-managed 9Router catalog without exposing its key."""
-    from syte.ai_providers import NINE_ROUTER_API_BASE
+    from syte.ai_providers import resolved_nine_router_api_base
     from syte.model_catalog import (
         configured_models,
         enabled_model_options,
@@ -545,10 +545,11 @@ async def _model_configuration() -> dict[str, Any]:
     available_models = enabled_model_options(curated)
     # Keep the former field while callers move to the catalog response.
     primary = curated[0] if curated else None
+    api_base = await resolved_nine_router_api_base()
     return {
         "provider": {
             "name": "9Router",
-            "api_base": NINE_ROUTER_API_BASE,
+            "api_base": api_base,
             "api_key_set": key_set,
         },
         "router_catalog": router_catalog_state(),
@@ -1282,9 +1283,15 @@ async def _router_start() -> dict[str, Any]:
         result["proxy_configured"] = route_ok
         result["proxy_message"] = route_message
         if not route_ok:
-            # The container is no longer public; stop a newly-created instance
-            # when possible, while preserving the accurate fallback setting.
-            if not before.get("running"):
+            # First restore the fallback route. Only stop a newly-created
+            # container after the safe route is confirmed, otherwise a failed
+            # Caddy reload could leave the enabled flag pointing at a dead
+            # upstream.
+            fallback_ok, fallback_message = await _set_router_public_state(False, force=True)
+            result["fallback_configured"] = fallback_ok
+            if not fallback_ok:
+                route_message += f" Fallback route restore also failed: {fallback_message}"
+            if fallback_ok and not before.get("running"):
                 cleanup = await stop_router()
                 if not cleanup.get("ok"):
                     route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
