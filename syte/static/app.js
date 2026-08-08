@@ -3223,6 +3223,124 @@ function toggleNavGroup(groupId) {
   if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
+function setSettingsMiniTab(tab = 'general') {
+  const allowed = ['general', 'git', 'advanced'];
+  const next = allowed.includes(tab) ? tab : 'general';
+  const descriptions = {
+    general: 'Server, domains, and preview access',
+    git: 'Track the install branch and review open pull requests',
+    advanced: 'AI and feature controls',
+  };
+  document.querySelectorAll('[data-settings-tab]').forEach((button) => {
+    const active = button.dataset.settingsTab === next;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-settings-panel]').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.settingsPanel !== next);
+  });
+  const hint = document.getElementById('settings-tab-hint');
+  if (hint) hint.textContent = descriptions[next];
+  try { localStorage.setItem('syte_settings_tab', next); } catch { /* private browsing */ }
+  if (next === 'git') void loadGitTracking();
+  refreshIcons();
+}
+
+async function loadGitTracking() {
+  const summary = document.getElementById('github-tracking-summary');
+  const list = document.getElementById('github-pr-list');
+  if (!summary || !list) return;
+  if (!await operatorAuthenticated()) {
+    summary.innerHTML = '<p class="hint">Sign in to load branch and pull request status.</p>';
+    list.innerHTML = '<button type="button" class="btn-pill btn-ghost" id="github-sign-in-btn">Sign in to GitHub tracking</button>';
+    document.getElementById('github-sign-in-btn')?.addEventListener('click', () => showLoginScreen('settings'));
+    return;
+  }
+  summary.innerHTML = '<p class="hint">Loading local branch and update status…</p>';
+  list.innerHTML = '<p class="hint">Loading pull requests…</p>';
+  try {
+    const status = await api('/github/status');
+    const local = status.local || {};
+    const update = status.update || {};
+    const repo = status.repo || 'repository not configured';
+    const repoLink = status.repo_url
+      ? `<a class="link" href="${esc(status.repo_url)}" target="_blank" rel="noopener">${esc(repo)}</a>`
+      : esc(repo);
+    summary.innerHTML = `
+      <div class="git-state-item"><span class="git-state-label">repository</span><span class="git-state-value">${repoLink}</span></div>
+      <div class="git-state-item"><span class="git-state-label">current branch</span><span class="git-state-value">${esc(local.branch || 'detached')}</span></div>
+      <div class="git-state-item"><span class="git-state-label">commit</span><span class="git-state-value">${esc(local.commit || '—')}${local.dirty ? ' · uncommitted changes' : ''}</span></div>
+      <div class="git-state-item"><span class="git-state-label">update target</span><span class="git-state-value">${esc(update.label || update.branch || 'main')}</span></div>
+      <div class="git-state-item"><span class="git-state-label">token</span><span class="git-state-value">${status.token_configured ? `configured · ${esc(status.token_source || 'unknown')}` : 'not configured'}</span></div>
+      <div class="git-state-item"><span class="git-state-label">working tree</span><span class="git-state-value">${local.dirty ? `${local.changed_files || 0} changed file(s)` : 'clean'}</span></div>
+    `;
+    const prs = await api('/github/pulls');
+    renderGitHubPullRequests(prs);
+  } catch (error) {
+    summary.innerHTML = `<p class="hint">GitHub tracking unavailable: ${esc(error.message)}</p>`;
+    list.innerHTML = '<p class="hint">Check the repository name, token permissions, or GitHub rate limit.</p>';
+  }
+  refreshIcons();
+}
+
+function renderGitHubPullRequests(payload) {
+  const list = document.getElementById('github-pr-list');
+  if (!list) return;
+  const prs = payload?.pull_requests || [];
+  if (!prs.length) {
+    list.innerHTML = '<p class="hint">No open pull requests found for this repository.</p>';
+    return;
+  }
+  list.innerHTML = prs.map((pr) => {
+    const blockers = pr.merge_blockers || [];
+    const checks = pr.checks || {};
+    const ready = Boolean(pr.can_merge && !blockers.length);
+    const status = ready
+      ? '<span class="github-pr-status ready">ready to merge</span>'
+      : `<span class="github-pr-status blocked">${esc(blockers[0] || (pr.enriched ? `checks: ${checks.state || 'unknown'}` : 'details loading'))}</span>`;
+    const mergeButton = ready
+      ? `<button type="button" class="btn-pill btn-primary btn-sm github-pr-merge" data-merge-pr="${pr.number}">Merge squash</button>`
+      : '';
+    return `
+      <div class="github-pr-row">
+        <div class="github-pr-main">
+          <strong>#${pr.number} · ${esc(pr.title || 'Untitled pull request')}</strong>
+          <div class="github-pr-meta">
+            <a href="${esc(pr.url || '#')}" target="_blank" rel="noopener">${esc(pr.head_ref || 'unknown')}</a>
+            → ${esc(pr.base_ref || 'main')} · ${esc(pr.author || 'unknown')} · ${checks.passed || 0}/${checks.total || 0} checks passed
+          </div>
+          ${mergeButton}
+        </div>
+        ${status}
+      </div>
+    `;
+  }).join('');
+  list.querySelectorAll('[data-merge-pr]').forEach((button) => {
+    button.addEventListener('click', () => mergeTrackedPullRequest(Number(button.dataset.mergePr)));
+  });
+  refreshIcons();
+}
+
+async function mergeTrackedPullRequest(number) {
+  if (!number || !confirm(`Merge pull request #${number} with squash?`)) return;
+  try {
+    const result = await api(`/github/pulls/${number}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ method: 'squash', force: false }),
+    });
+    toast(result.message || `PR #${number} merged`);
+    await loadGitTracking();
+  } catch (error) {
+    toast(`Merge failed: ${error.message}`);
+  }
+}
+
+function restoreSettingsMiniTab() {
+  let tab = 'general';
+  try { tab = localStorage.getItem('syte_settings_tab') || 'general'; } catch { /* private browsing */ }
+  setSettingsMiniTab(tab);
+}
+
 function showView(name) {
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
@@ -3638,7 +3756,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -3650,7 +3768,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -3692,7 +3810,7 @@ async function restoreOperatorSession() {
 // Which UI routes require operator auth before their data loads.
 const OPERATOR_PROTECTED_VIEWS = ['ssl'];
 // REST prefixes that can be authenticated with an API key (session-stored).
-const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/tokens'];
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens'];
 
 function isOperatorView(name) {
   return OPERATOR_PROTECTED_VIEWS.includes(name);
@@ -5334,7 +5452,17 @@ async function loadSettings() {
     const tursoDatabaseUrl = document.getElementById('turso-database-url');
     const tursoAuthToken = document.getElementById('turso-auth-token');
     const litellmDatabaseUrl = document.getElementById('litellm-database-url');
-    if (ip && s.public_ip) ip.value = s.public_ip;
+    const githubRepo = document.getElementById('github-repo');
+    const githubToken = document.getElementById('github-token');
+    const githubTokenStatus = document.getElementById('github-token-status');
+    if (githubRepo) githubRepo.value = s.github_repo || '';
+    if (githubToken) githubToken.placeholder = s.github_token_set
+      ? 'token saved — enter new value to replace'
+      : 'personal access token (optional for public read access)';
+    if (githubTokenStatus) githubTokenStatus.textContent = s.github_token_set
+      ? `Token configured via ${s.github_token_source || 'settings'}. It is never shown here.`
+      : 'Token is not configured. Public repositories can still be read with GitHub rate limits.';
+
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
     if (previewDomain) {
@@ -5722,6 +5850,35 @@ document.addEventListener('click', () => toggleContextMenu(false));
 document.getElementById('debug-chat-mcp')?.addEventListener('click', () => openDebugChatResources('mcp'));
 document.getElementById('debug-chat-skills')?.addEventListener('click', () => openDebugChatResources('skills'));
 document.getElementById('debug-chat-resources-close')?.addEventListener('click', closeDebugChatResources);
+
+document.querySelectorAll('[data-settings-tab]').forEach((button) => {
+  button.addEventListener('click', () => setSettingsMiniTab(button.dataset.settingsTab));
+});
+document.getElementById('save-github-settings-btn')?.addEventListener('click', async () => {
+  const repo = document.getElementById('github-repo')?.value.trim() || '';
+  const token = document.getElementById('github-token')?.value.trim() || '';
+  if (!await operatorAuthenticated()) {
+    showLoginScreen('settings');
+    return;
+  }
+  const button = document.getElementById('save-github-settings-btn');
+  if (button) { button.disabled = true; button.textContent = 'saving…'; }
+  try {
+    const body = { repo };
+    if (token) body.token = token;
+    const result = await api('/settings/github', { method: 'PUT', body: JSON.stringify(body) });
+    toast((result.messages || []).join(' ') || 'Git settings saved');
+    if (token) document.getElementById('github-token').value = '';
+    await loadSettings();
+    await loadGitTracking();
+  } catch (error) {
+    toast(`Git settings failed: ${error.message}`);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Save Git settings'; }
+  }
+});
+document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());
+restoreSettingsMiniTab();
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;

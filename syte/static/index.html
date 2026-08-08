@@ -789,8 +789,20 @@
         </div>
 
         <section id="view-settings" class="view">
+          <div class="settings-mini-tabs" id="settings-mini-tabs" role="tablist" aria-label="Settings sections">
+            <button type="button" class="settings-mini-tab is-active" data-settings-tab="general" role="tab" aria-selected="true">
+              <i data-lucide="sliders-horizontal"></i><span>General</span>
+            </button>
+            <button type="button" class="settings-mini-tab" data-settings-tab="git" role="tab" aria-selected="false">
+              <i data-lucide="git-branch"></i><span>Git &amp; updates</span>
+            </button>
+            <button type="button" class="settings-mini-tab" data-settings-tab="advanced" role="tab" aria-selected="false">
+              <i data-lucide="settings-2"></i><span>Advanced</span>
+            </button>
+          </div>
+          <div class="settings-tab-hint" id="settings-tab-hint">Server, domains, and preview access</div>
           <div class="settings-stack">
-            <div class="projects-card panel-form">
+            <div class="projects-card panel-form" data-settings-panel="general">
               <div class="projects-title-block mb">
                 <i data-lucide="server" class="projects-icon"></i>
                 <div><h1>Server</h1></div>
@@ -809,7 +821,7 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form">
+            <div class="projects-card panel-form" data-settings-panel="general">
               <div class="projects-title-block mb">
                 <i data-lucide="globe" class="projects-icon"></i>
                 <div><h1>Web GUI domain</h1></div>
@@ -833,7 +845,7 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form">
+            <div class="projects-card panel-form" data-settings-panel="general">
               <div class="projects-title-block mb">
                 <i data-lucide="monitor-play" class="projects-icon"></i>
                 <div><h1>Preview domain</h1></div>
@@ -858,7 +870,7 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form">
+            <div class="projects-card panel-form" data-settings-panel="git">
               <div class="projects-title-block mb">
                 <i data-lucide="refresh-cw" class="projects-icon"></i>
                 <div><h1>Update Syte</h1></div>
@@ -876,11 +888,46 @@
                   </button>
                 </div>
                 <p class="hint" id="syte-update-source">Checking update source…</p>
-<div id="update-result" class="result-box hidden"></div>
+                <div id="update-result" class="result-box hidden"></div>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form" data-settings-panel="git" id="github-tracking-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="git-pull-request" class="projects-icon"></i>
+                <div>
+                  <h1>GitHub tracking</h1>
+                  <p class="settings-card-subtitle">Follow branches and review merge readiness without leaving Syte.</p>
+                </div>
+              </div>
+              <div class="form-inner">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="github-repo">Repository</label>
+                    <input type="text" id="github-repo" placeholder="owner/repository" autocomplete="off">
+                    <span class="hint">Use <code>owner/repo</code> or a GitHub URL.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="github-token">GitHub token</label>
+                    <input type="password" id="github-token" placeholder="token saved — enter to replace" autocomplete="off">
+                    <span class="hint" id="github-token-status">Token is not configured.</span>
+                  </div>
+                </div>
+                <div class="form-actions settings-git-actions">
+                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Git settings</button>
+                  <button type="button" class="btn-pill btn-ghost" id="refresh-github-tracking-btn">
+                    <i data-lucide="refresh-cw"></i><span>Refresh tracking</span>
+                  </button>
+                </div>
+                <div class="git-tracking-summary" id="github-tracking-summary">
+                  <p class="hint">Sign in to load branch and pull request status.</p>
+                </div>
+                <div class="github-pr-list" id="github-pr-list"></div>
+              </div>
             </div>
           </div>
 
-          <div class="projects-card panel-form" id="new-feature-card">
+          <div class="projects-card panel-form" id="new-feature-card" data-settings-panel="advanced">
             <div class="projects-title-block mb">
               <i data-lucide="sparkles" class="projects-icon"></i>
               <div><h1>New feature?</h1></div>
