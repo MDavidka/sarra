@@ -5192,6 +5192,8 @@ document.getElementById('create-name-focus')?.addEventListener('click', () => {
   document.getElementById('create-name')?.focus();
 });
 
+document.getElementById('check-nine-router-tls-btn')?.addEventListener('click', checkNineRouterLocalTls);
+
 document.getElementById('save-server-btn')?.addEventListener('click', async () => {
   try {
     const res = await api('/settings', {
@@ -5433,6 +5435,39 @@ async function waitForServerRestart(maxAttempts = 30, intervalMs = 2000) {
   throw new Error('Syte did not come back online after restart. Check server logs.');
 }
 
+function renderNineRouterLocalTlsStatus(status) {
+  const badge = document.getElementById('nine-router-local-tls-badge');
+  const detail = document.getElementById('nine-router-local-tls-detail');
+  if (!badge || !detail) return;
+  const state = status?.state || 'unknown';
+  const labels = {
+    serving: ['badge-ssl-https', 'serving'],
+    'invalid-cert': ['badge-ssl-http', 'invalid cert'],
+    'cert-error': ['badge-ssl-http', 'TLS error'],
+    'caddy-down': ['badge-ssl-http', 'Caddy not serving'],
+    'bad-response': ['badge-ssl-preview-pending', 'bad response'],
+    malformed: ['badge-ssl-http', 'invalid host'],
+  };
+  const [className, label] = labels[state] || ['badge-ssl-preview-pending', state];
+  badge.innerHTML = `<span class="badge badge-ssl ${className}">${esc(label)}</span>`;
+  detail.textContent = status?.detail || 'No local TLS probe result.';
+}
+
+async function checkNineRouterLocalTls() {
+  const button = document.getElementById('check-nine-router-tls-btn');
+  const detail = document.getElementById('nine-router-local-tls-detail');
+  if (button) button.disabled = true;
+  if (detail) detail.textContent = 'Checking 127.0.0.1:20128…';
+  try {
+    const status = await api('/settings/9router-tls');
+    renderNineRouterLocalTlsStatus(status);
+  } catch (e) {
+    renderNineRouterLocalTlsStatus({ state: 'caddy-down', detail: `Local TLS check failed: ${e.message}` });
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function loadSettings() {
   try {
     const s = await api('/settings');
@@ -5502,6 +5537,7 @@ async function loadSettings() {
         cfStatus.textContent += ` — ${cf.hints.join(' ')}`;
       }
     }
+    renderNineRouterLocalTlsStatus(s.nine_router_local_tls);
     const defaultProfile = s.agent_default_model_profile || 'syra-nano';
     if (agentDefaultProfile) agentDefaultProfile.value = defaultProfile;
     if (window.customElements?.whenDefined) await customElements.whenDefined('sl-select');

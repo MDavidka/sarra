@@ -870,6 +870,24 @@
               </div>
             </div>
 
+            <div class="projects-card panel-form" data-settings-panel="general" id="nine-router-tls-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="shield-check" class="projects-icon"></i>
+                <div><h1>9Router local SSL</h1></div>
+              </div>
+              <div class="form-inner">
+                <p class="hint block">Checks that Caddy is serving <code>9router.sycord.site</code> with the correct TLS certificate and SNI through the local listener <code>127.0.0.1:20128</code>.</p>
+                <div class="version-row">
+                  <div>
+                    <span class="version-label">Caddy TLS status</span>
+                    <span class="version-value" id="nine-router-local-tls-badge"><span class="badge badge-ssl badge-ssl-preview-pending">checking…</span></span>
+                  </div>
+                  <button type="button" class="btn-pill btn-ghost" id="check-nine-router-tls-btn"><i data-lucide="refresh-cw"></i><span>Check now</span></button>
+                </div>
+                <p class="hint" id="nine-router-local-tls-detail">Checking 127.0.0.1:20128…</p>
+              </div>
+            </div>
+
             <div class="projects-card panel-form" data-settings-panel="git">
               <div class="projects-title-block mb">
                 <i data-lucide="refresh-cw" class="projects-icon"></i>

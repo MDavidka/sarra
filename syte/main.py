@@ -423,12 +423,14 @@ async def get_settings():
     from syte.cloud_agent import bridge_settings, provider_key_status
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
+    from syte.ssl_debug import local_caddy_tls_status
 
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
     cf_status = await cloudflare_tls_status()
+    nine_router_local_tls = await local_caddy_tls_status()
     bridge = await bridge_settings()
     key_status = await provider_key_status()
     syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
@@ -446,6 +448,7 @@ async def get_settings():
         "custom_tls_port": await get_setting("custom_tls_port", ""),
         "nine_router_backend_port": await get_setting("nine_router_backend_port", ""),
         "nine_router_upstream": await get_setting("nine_router_upstream", ""),
+        "nine_router_local_tls": nine_router_local_tls,
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
         "agent_default_model_profile": bridge["default_profile"],
@@ -495,6 +498,14 @@ async def get_settings():
         "github_token_source": (await _github_token_source()),
         "version": __version__,
     }
+
+
+@app.get("/api/settings/9router-tls")
+async def get_nine_router_local_tls():
+    """Check the loopback Caddy TLS listener used by the 9Router API route."""
+    from syte.ssl_debug import local_caddy_tls_status
+
+    return await local_caddy_tls_status()
 
 
 async def _github_token_source() -> str:

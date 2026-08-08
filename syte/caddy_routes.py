@@ -14,8 +14,12 @@ from syte.domain_utils import (
 
 # 9Router AI gateway upstream: TLS terminates on this Caddy instance
 # (https://9router.sycord.site) and traffic is proxied to the dedicated
-# gateway host/port instead of a local loopback port.
+# gateway host/port. A separate loopback-only listener below verifies the same
+# certificate/SNI path for local API clients without changing the remote upstream.
 NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
+# Caddy also exposes a loopback-only TLS listener so the Settings tab and
+# local API clients can verify the certificate/SNI path without leaving this VM.
+NINE_ROUTER_LOCAL_TLS_PORT = 20128
 
 # Public recursive resolvers used for DNS-01 propagation checks. Without these
 # Caddy asks the system resolver, which on this host points at a local/split
@@ -310,6 +314,20 @@ def render_9router_route(
         f"    reverse_proxy {upstream} {{",
         # Preserve the client-facing host/scheme so the gateway can build
         # correct absolute URLs behind this TLS terminator.
+        "        header_up Host {upstream_hostport}",
+        "        header_up X-Forwarded-Host {host}",
+        "        header_up X-Forwarded-Proto https",
+        "    }",
+        "}",
+        "",
+        "# 9Router loopback TLS probe — certificate/SNI check for the local API path",
+        f"{hostname}:{NINE_ROUTER_LOCAL_TLS_PORT} {{",
+        "    bind 127.0.0.1",
+    ])
+    if use_wildcard_tls:
+        lines.extend(dedicated_dns_tls_lines("    "))
+    lines.extend([
+        f"    reverse_proxy {upstream} {{",
         "        header_up Host {upstream_hostport}",
         "        header_up X-Forwarded-Host {host}",
         "        header_up X-Forwarded-Proto https",
