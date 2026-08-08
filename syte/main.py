@@ -1224,8 +1224,25 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
 # Managed 9Router deployment
 # ---------------------------------------------------------------------------
 
+def _suggested_gui_domain() -> str:
+    """A distinct subdomain on the same zone, offered as a one-click fix."""
+    from syte.caddy_routes import host_zone
+
+    zone = host_zone(NINE_ROUTER_PUBLIC_HOST)
+    return f"console.{zone}" if zone else ""
+
+
 async def _router_gui_guard() -> dict[str, Any] | None:
-    """Require a separate Syte origin before handing api.sycord.site to 9Router."""
+    """Require a separate Syte origin before handing api.sycord.site to 9Router.
+
+    ``gui_domain`` defaults to ``api.sycord.site`` for LiteLLM/Syra setups
+    (``host_setup.prepare_syra_host``), which is the same host the managed
+    Router needs to take over. Without this guard the operator would silently
+    lose the Syte console; the response instead carries enough information
+    (``gui_domain_conflict`` + ``suggested_gui_domain``) for the Router tab to
+    offer a one-click fix rather than sending the operator to hunt through
+    Settings for the cause.
+    """
     from syte.nine_router_manager import router_status
 
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
@@ -1235,6 +1252,8 @@ async def _router_gui_guard() -> dict[str, Any] | None:
     return {
         **status,
         "ok": False,
+        "gui_domain_conflict": True,
+        "suggested_gui_domain": _suggested_gui_domain(),
         "message": (
             "Configure a separate GUI domain in Settings before deploying 9Router. "
             f"The managed Router takes over https://{NINE_ROUTER_PUBLIC_HOST}/."
@@ -1378,6 +1397,15 @@ async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_
         )
     else:
         result["warning"] = ""
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    result["gui_domain_conflict"] = not gui_domain or gui_domain == NINE_ROUTER_PUBLIC_HOST
+    if result["gui_domain_conflict"]:
+        result["suggested_gui_domain"] = _suggested_gui_domain()
+        if not result.get("enabled"):
+            result["warning"] = (
+                f"Set a separate GUI domain (e.g. {result['suggested_gui_domain']}) in Settings "
+                "before starting 9Router — it will otherwise be blocked."
+            )
     return result
 
 
