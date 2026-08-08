@@ -1,7 +1,7 @@
 """Lifecycle management for the local 9Router Docker gateway.
 
 The router is kept on loopback and published through Syte's Caddy route at
-``https://api.sycord.site/v1``.  Its SQLite data is persisted outside the
+``https://9router.sycord.site/v1``.  Its SQLite data is persisted outside the
 container so redeploying the image does not remove provider connections,
 models, or usage history.
 """

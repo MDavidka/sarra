@@ -30,9 +30,9 @@ VYCEAI_API_BASE = "https://vyceai.com/v1"
 LITELLM_API_BASE = LITELLM_INTERNAL_API_URL
 # Legacy remote host used while the managed container is disabled.
 NINE_ROUTER_API_BASE = "https://9router.sycord.site/v1"
-# Managed mode takes ownership of api.sycord.site so the dashboard and API use
+# Managed mode takes ownership of 9router.sycord.site so the dashboard and API use
 # the same public origin advertised to the 9Router application.
-NINE_ROUTER_MANAGED_API_BASE = "https://api.sycord.site/v1"
+NINE_ROUTER_MANAGED_API_BASE = "https://9router.sycord.site/v1"
 NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
 
 

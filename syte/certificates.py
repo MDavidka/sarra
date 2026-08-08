@@ -333,7 +333,7 @@ async def async_generate_caddyfile() -> str:
 
     managed_router_enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
     if managed_router_enabled:
-        # The Router tab temporarily owns api.sycord.site so the dashboard and
+        # The Router tab temporarily owns 9router.sycord.site so the dashboard and
         # /v1 API share the origin advertised by the official Docker image.
         # Operators should configure a separate gui_domain before enabling it.
         lines.extend(

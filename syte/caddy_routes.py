@@ -21,7 +21,7 @@ NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
 # local API clients can verify the certificate/SNI path without leaving this VM.
 NINE_ROUTER_LOCAL_TLS_PORT = 20128
 # Host used when the managed Router tab publishes the local 9Router container.
-NINE_ROUTER_PUBLIC_HOST = "api.sycord.site"
+NINE_ROUTER_PUBLIC_HOST = "9router.sycord.site"
 # The official 9Router web UI is mounted at /dashboard. Keep this in the route
 # layer so opening the public host lands on the real dashboard instead of the
 # API root, which intentionally returns 404.
@@ -294,7 +294,7 @@ def render_managed_9router_route(
 ) -> list[str]:
     """Render the full public host for the managed local 9Router container.
 
-    The managed container owns ``api.sycord.site`` while enabled. This is
+    The managed container owns ``9router.sycord.site`` while enabled. This is
     intentionally a full host block rather than a path-only handler: the
     9Router dashboard and its API assets need the same origin and base URL.
     The public root redirects to the official dashboard because 9Router's API
@@ -331,8 +331,8 @@ def render_9router_route(
     """Render the public 9Router AI-gateway host with its own dedicated TLS cert.
 
     ``9router.sycord.site`` is the legacy public host used while the managed
-    container is disabled. Managed mode instead publishes the container at
-    ``api.sycord.site``. This standalone host block makes Caddy terminate TLS
+    container is disabled. Managed mode instead publishes the local container on
+    the same dedicated host. This standalone host block makes Caddy terminate TLS
     for the legacy route and forward every path to the gateway upstream
     (``65.75.203.134:20128`` by default — the dedicated gateway host; override
     via the ``nine_router_upstream`` setting).

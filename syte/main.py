@@ -1233,9 +1233,9 @@ def _suggested_gui_domain() -> str:
 
 
 async def _router_gui_guard() -> dict[str, Any] | None:
-    """Require a separate Syte origin before handing api.sycord.site to 9Router.
+    """Require a separate Syte origin before handing 9router.sycord.site to 9Router.
 
-    ``gui_domain`` may be unset or set to ``api.sycord.site`` on fresh hosts,
+    ``gui_domain`` may be unset or set to ``9router.sycord.site`` on fresh hosts,
     and either state conflicts with the host the managed Router needs to take
     over. Without this guard the operator would silently lose the Syte console;
     the response instead carries enough information
@@ -1319,7 +1319,7 @@ async def _router_start() -> dict[str, Any]:
         else:
             result["message"] = (
                 f"{result.get('message', '9Router started')} "
-                "api.sycord.site now serves the 9Router dashboard and /v1 API."
+                "9router.sycord.site now serves the 9Router dashboard and /v1 API."
             )
         return result
 
@@ -1392,7 +1392,7 @@ async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_
     result["syte_gui_url"] = await _gui_url()
     if result.get("enabled"):
         result["warning"] = (
-            "api.sycord.site is currently owned by 9Router. "
+            "9router.sycord.site is currently owned by 9Router. "
             "The Syte console is available at the configured separate GUI domain."
         )
     else:
@@ -1411,7 +1411,7 @@ async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_
 
 @app.post("/api/settings/router/start")
 async def api_router_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Deploy the official 9Router image and publish it at api.sycord.site."""
+    """Deploy the official 9Router image and publish it at 9router.sycord.site."""
     try:
         return await _router_start()
     except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
