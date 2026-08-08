@@ -167,9 +167,7 @@ class CreateServiceRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
     domain: str | None = None
-    framework: str | None = None
-    stack: str | None = None
-    deployment_strategy: str = "auto"
+    stack: str | None = "nextjs"
 
 
 class DomainRequest(BaseModel):
@@ -246,8 +244,6 @@ class UpdateProjectRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] | None = None
     domain: str | None = None
-    framework: str | None = None
-    deployment_strategy: str | None = None
 
 
 @app.get("/api/health")
@@ -1448,12 +1444,6 @@ def _running(project: dict) -> bool:
     )
 
 
-@app.get("/api/deployment/options")
-async def api_deployment_options():
-    """Frameworks and deployment strategies supported by the project form."""
-    return deployment.deployment_options()
-
-
 @app.get("/api/projects")
 async def api_list_projects():
     from syte.preview_manager import ensure_preview_address
@@ -1478,12 +1468,7 @@ async def api_get_project(project_id: str):
 
 
 @app.post("/api/projects")
-async def api_create_project(request: Request, body: CreateServiceRequest):
-    # Empty project creation remains compatible with the legacy GUI flow. A
-    # server-side repository clone/deploy is an operator action because it can
-    # execute code from the submitted repository.
-    if body.git_url:
-        await verify_operator_session_or_token(request)
+async def api_create_project(body: CreateServiceRequest):
     project, message = await deployment.begin_deploy_service(
         name=body.name,
         git_url=body.git_url,
@@ -1492,8 +1477,6 @@ async def api_create_project(request: Request, body: CreateServiceRequest):
         env_vars=body.env_vars,
         domain=body.domain,
         stack=body.stack,
-        framework=body.framework,
-        deployment_strategy=body.deployment_strategy,
     )
     if not project:
         raise HTTPException(500, message)

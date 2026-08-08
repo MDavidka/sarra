@@ -16,8 +16,6 @@ CREATE TABLE IF NOT EXISTS projects (
     domain TEXT,
     start_command TEXT NOT NULL DEFAULT '',
     env_vars TEXT DEFAULT '{}',
-    framework TEXT DEFAULT 'nextjs',
-    deployment_strategy TEXT DEFAULT 'auto',
     status TEXT DEFAULT 'stopped',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -67,10 +65,6 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN deploy_type TEXT DEFAULT 'shell'")
     if "dockerfile_path" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN dockerfile_path TEXT")
-    if "framework" not in cols:
-        await db.execute("ALTER TABLE projects ADD COLUMN framework TEXT DEFAULT 'nextjs'")
-    if "deployment_strategy" not in cols:
-        await db.execute("ALTER TABLE projects ADD COLUMN deployment_strategy TEXT DEFAULT 'auto'")
     if "preview_port" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_port INTEGER")
     if "preview_status" not in cols:
@@ -157,8 +151,8 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
         await db.execute(
             """INSERT INTO projects
             (id, name, git_url, branch, port, domain, start_command, env_vars,
-             framework, deployment_strategy, deploy_type, dockerfile_path, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             deploy_type, dockerfile_path, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["name"],
@@ -168,8 +162,6 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("domain"),
                 data.get("start_command", ""),
                 json.dumps(data.get("env_vars", {})),
-                data.get("framework", "nextjs"),
-                data.get("deployment_strategy", "auto"),
                 data.get("deploy_type", "shell"),
                 data.get("dockerfile_path"),
                 "stopped",
@@ -188,7 +180,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
 
     allowed = {
         "name", "git_url", "branch", "port", "domain",
-        "start_command", "env_vars", "framework", "deployment_strategy", "status", "deploy_type", "dockerfile_path",
+        "start_command", "env_vars", "status", "deploy_type", "dockerfile_path",
         "preview_port", "preview_status", "preview_domain", "preview_started_at",
         "agent_port", "agent_status", "agent_runtime", "agent_model_profile",
         "agent_last_started_at", "agent_last_error", "agent_config_path",

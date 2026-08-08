@@ -67,8 +67,6 @@ let debugChatSubagentUnread = 0;
 const debugChatAutoScrollByLane = { main: true, sub: true };
 let projectFilterText = '';
 let projectSortMode = 'newest';
-let activeEdgeStatus = 'all';
-let activeEdgeRegion = 'global';
 let appContext = 'non-conected';
 let statsPollTimer = null;
 let activeSvcTab = 'general';
@@ -78,24 +76,15 @@ let syraCsrfToken = '';
 let operatorSessionRestorePromise = null;
 
 const STACK_META = {
-  nextjs: { label: 'Next.js', icon: 'N', cls: '' },
-  react: { label: 'React / Vite', icon: 'R', cls: 'stack-icon-react' },
-  vue: { label: 'Vue / Nuxt', icon: 'V', cls: 'stack-icon-vue' },
-  svelte: { label: 'Svelte', icon: 'S', cls: 'stack-icon-svelte' },
-  astro: { label: 'Astro', icon: 'A', cls: 'stack-icon-astro' },
-  node: { label: 'Node / Express', icon: 'JS', cls: 'stack-icon-node' },
-  python: { label: 'Python', icon: 'Py', cls: 'stack-python' },
-  go: { label: 'Go', icon: 'Go', cls: 'stack-icon-go' },
-  rust: { label: 'Rust', icon: 'R', cls: 'stack-icon-rust' },
-  static: { label: 'Static HTML', icon: '5', cls: 'stack-icon-html5' },
-  javascript: { label: 'JavaScript', icon: 'JS', cls: 'stack-javascript' },
-  html5: { label: 'HTML5', icon: '5', cls: 'stack-icon-html5' },
-  shell: { label: 'Build & run', icon: '$', cls: 'stack-shell' },
-  docker: { label: 'Dockerfile', icon: 'D', cls: '' },
+  nextjs: { label: 'next.js', icon: 'N', cls: '' },
+  python: { label: 'python', icon: 'Py', cls: 'stack-python' },
+  javascript: { label: 'javascript', icon: 'JS', cls: 'stack-javascript' },
+  html5: { label: 'html5', icon: '5', cls: 'stack-html5' },
+  shell: { label: 'shell', icon: '$', cls: 'stack-shell' },
+  docker: { label: 'docker', icon: 'D', cls: '' },
 };
 
 let selectedCreateStack = 'nextjs';
-let selectedDeploymentStrategy = 'auto';
 
 function getApiKey() {
   try {
@@ -3767,9 +3756,9 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path === '/projects' && method === 'POST') ||
-    ((path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl')) || (path === '/operator/session' && method === 'DELETE'))
-  ) && !['GET', 'HEAD', 'OPTIONS'].includes(method);
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
+    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
   let res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
   if (res.status === 401 && getApiKey()) {
@@ -3779,7 +3768,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/projects' && method === 'POST') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -3821,7 +3810,7 @@ async function restoreOperatorSession() {
 // Which UI routes require operator auth before their data loads.
 const OPERATOR_PROTECTED_VIEWS = ['ssl'];
 // REST prefixes that can be authenticated with an API key (session-stored).
-const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens', '/projects'];
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens'];
 
 function isOperatorView(name) {
   return OPERATOR_PROTECTED_VIEWS.includes(name);
@@ -4004,12 +3993,6 @@ function filteredProjects() {
       (p.id || '').toLowerCase().includes(q) ||
       (p.domain || '').toLowerCase().includes(q)
     );
-  }
-  if (activeEdgeStatus !== 'all') {
-    list = list.filter(p => {
-      const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
-      return status === activeEdgeStatus;
-    });
   }
   if (projectSortMode === 'name') {
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -4587,61 +4570,32 @@ function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
   const visible = filteredProjects();
-  const all = projects || [];
-  const running = all.filter(p => p.running).length;
-  const deploying = all.filter(p => p.status === 'deploying').length;
-  const stopped = all.length - running - deploying;
-  const count = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-  count('edge-total-count', all.length);
-  count('edge-running-count', running);
-  count('edge-deploying-count', deploying);
-  count('edge-stopped-count', Math.max(0, stopped));
 
   if (!visible.length) {
-    if (list) list.innerHTML = '';
+    list.innerHTML = '';
     empty?.classList.remove('hidden');
     refreshIcons();
     return;
   }
 
   empty?.classList.add('hidden');
-  if (!list) return;
   list.innerHTML = visible.map(p => {
     const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
-    const framework = p.framework || detectStack(p);
-    const strategy = p.deployment_strategy || p.deploy_type || 'auto';
-    const region = p.domain ? p.domain.split('.')[0] : (p.preview_domain ? p.preview_domain.split('.')[0] : 'all regions');
-    const time = p.updated_at ? new Date(p.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-    return `<button type="button" class="edge-request-row" onclick="openService('${p.id}')">
-      <span class="edge-row-type"><i data-lucide="${p.git_url ? 'git-branch' : 'cloud'}"></i><strong>${esc(framework)}</strong></span>
-      <span class="edge-row-path"><strong>${esc(p.name)}</strong><small>${esc(p.git_url || `/${p.id}`)}</small></span>
-      <span class="edge-row-region">${esc(region)}</span>
-      <span class="edge-row-cache">${esc(strategy)}</span>
-      <span class="edge-row-status"><b class="edge-status-dot ${status}"></b>${esc(status)}</span>
-      <span class="edge-row-size">:${esc(String(p.port || '—'))}</span>
-      <span class="edge-row-time">${esc(time)}</span>
-    </button>`;
+    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
+    return `
+    <div class="project-card" onclick="openService('${p.id}')">
+      <div class="project-card-head">
+        <h3>${esc(p.name)}</h3>
+        <span class="project-card-status ${status}" title="${status}"></span>
+      </div>
+      <div class="project-card-meta">
+        <span class="project-card-tag">${status}</span>
+        <span class="project-card-tag">${deployLabel}</span>
+        ${p.port ? `<span class="project-card-tag">:${p.port}</span>` : ''}
+      </div>
+    </div>`;
   }).join('');
   refreshIcons();
-}
-
-function setEdgeStatus(status) {
-  activeEdgeStatus = status || 'all';
-  document.querySelectorAll('[data-edge-status]').forEach(button => {
-    const active = button.dataset.edgeStatus === activeEdgeStatus;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
-  renderServices();
-}
-
-function setEdgeRegion(region) {
-  activeEdgeRegion = region || 'global';
-  document.querySelectorAll('[data-edge-region]').forEach(button => {
-    const active = button.dataset.edgeRegion === activeEdgeRegion;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
 }
 
 function statusClass(p) {
@@ -4661,7 +4615,6 @@ function formatEnv(env) {
 
 function detectStack(p) {
   const env = p.env_vars || {};
-  if (p.framework) return p.framework;
   if (env.SYTE_STACK) return env.SYTE_STACK;
   if (p.deploy_type === 'docker') return 'nextjs';
   return 'shell';
@@ -4669,12 +4622,6 @@ function detectStack(p) {
 
 function resetCreateForm() {
   selectedCreateStack = 'nextjs';
-  selectedDeploymentStrategy = 'auto';
-  document.querySelectorAll('.deployment-strategy-card').forEach(card => {
-    const on = card.dataset.deploymentStrategy === 'auto';
-    card.classList.toggle('active', on);
-    card.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
   document.querySelectorAll('.stack-card').forEach(card => {
     const on = card.dataset.stack === 'nextjs';
     card.classList.toggle('active', on);
@@ -4682,10 +4629,6 @@ function resetCreateForm() {
   });
   const nameInput = document.getElementById('create-name');
   if (nameInput) nameInput.value = '';
-  const gitInput = document.getElementById('create-git-url');
-  if (gitInput) gitInput.value = '';
-  const branchInput = document.getElementById('create-branch');
-  if (branchInput) branchInput.value = 'main';
   const startCmd = document.getElementById('create-start-cmd');
   if (startCmd) startCmd.value = '';
   const buildCmd = document.getElementById('create-build-cmd');
@@ -5193,18 +5136,11 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   const name = document.getElementById('create-name')?.value.trim();
   if (!name) return toast('Enter a project name');
 
-  const gitUrl = document.getElementById('create-git-url')?.value.trim() || null;
-  if (gitUrl && !await operatorAuthenticated()) {
-    showLoginScreen('new-service');
-    return;
-  }
-
   btn.disabled = true;
   btn.querySelector('span').textContent = 'Creating…';
 
   const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
   const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
-  const branch = document.getElementById('create-branch')?.value.trim() || 'main';
   const env_vars = {};
   if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
 
@@ -5219,10 +5155,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
       method: 'POST',
       body: JSON.stringify({
         name,
-        git_url: gitUrl,
-        branch,
-        framework: selectedCreateStack,
-        deployment_strategy: selectedDeploymentStrategy,
+        stack: selectedCreateStack,
         start_command: startCmd,
         env_vars,
       }),
@@ -5251,18 +5184,9 @@ document.getElementById('stack-picker')?.addEventListener('click', (e) => {
   selectCreateStack(card.dataset.stack);
 });
 
-document.getElementById('deployment-strategy-picker')?.addEventListener('click', (e) => {
-  const card = e.target.closest('.deployment-strategy-card');
-  if (!card?.dataset.deploymentStrategy) return;
-  selectedDeploymentStrategy = card.dataset.deploymentStrategy;
-  document.querySelectorAll('.deployment-strategy-card').forEach(option => {
-    const on = option === card;
-    option.classList.toggle('active', on);
-    option.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
+document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
+  head.addEventListener('click', () => toggleCreateAccordion(head));
 });
-
-
 
 document.getElementById('create-name-focus')?.addEventListener('click', () => {
   document.getElementById('create-name')?.focus();
@@ -5971,18 +5895,11 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[Syte] Unhandled promise rejection:', event?.reason);
 });
 
-document.querySelector('.edge-team-switcher[role="button"]')?.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  showView('dashboard');
-});
-
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('context-menu');
   toggleContextMenu(menu?.classList.contains('hidden'));
 });
-
 
 document.querySelectorAll('.context-option').forEach(btn => {
   btn.addEventListener('click', (e) => {
@@ -6030,16 +5947,6 @@ restoreSettingsMiniTab();
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;
   renderServices();
-});
-
-document.querySelectorAll('[data-edge-status]').forEach((button) => {
-  button.addEventListener('click', () => setEdgeStatus(button.dataset.edgeStatus));
-});
-document.querySelectorAll('[data-edge-region]').forEach((button) => {
-  button.addEventListener('click', () => setEdgeRegion(button.dataset.edgeRegion));
-});
-document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-  head.addEventListener('click', () => toggleCreateAccordion(head));
 });
 
 document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
