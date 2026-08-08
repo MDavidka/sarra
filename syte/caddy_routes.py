@@ -321,11 +321,13 @@ def render_9router_route(
         "}",
         "",
         "# 9Router loopback TLS probe — certificate/SNI check for the local API path",
+        "# No tls directive here on purpose: a second automation policy for the same",
+        "# hostname would make certificate management ambiguous. Caddy matches",
+        "# automation policies by SNI, so this listener reuses the dedicated cert",
+        "# issued by the public block above.",
         f"{hostname}:{NINE_ROUTER_LOCAL_TLS_PORT} {{",
         "    bind 127.0.0.1",
     ])
-    if use_wildcard_tls:
-        lines.extend(dedicated_dns_tls_lines("    "))
     lines.extend([
         f"    reverse_proxy {upstream} {{",
         "        header_up Host {upstream_hostport}",
