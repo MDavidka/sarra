@@ -890,7 +890,7 @@ async def save_settings(body: SettingsRequest):
             if not 1 <= port <= 65535:
                 raise HTTPException(400, "9Router backend port must be between 1 and 65535.")
             await set_setting("nine_router_backend_port", str(port))
-            messages.append(f"9Router backend port set to {port} — Caddy SSL route forwards there.")
+            messages.append(f"Legacy 9Router backend port saved as {port}; public 9Router Caddy traffic remains on the remote gateway.")
         else:
             await set_setting("nine_router_backend_port", "")
             messages.append("9Router backend port reset to the default gateway port.")
@@ -899,23 +899,20 @@ async def save_settings(body: SettingsRequest):
     if body.nine_router_upstream is not None:
         raw = body.nine_router_upstream.strip()
         if raw:
-            from syte.domain_utils import is_safe_caddy_hostname
+            from syte.certificates import normalize_remote_nine_router_upstream
 
-            host, _, port_str = raw.rpartition(":")
-            if not is_safe_caddy_hostname(normalize_domain(host)):
-                raise HTTPException(400, f"Invalid 9Router upstream (expected host:port): {raw!r}")
-            try:
-                port = int(port_str)
-            except (TypeError, ValueError):
-                raise HTTPException(400, f"9Router upstream must include a port (expected host:port): {raw!r}")
-            if not 1 <= port <= 65535:
-                raise HTTPException(400, "9Router upstream port must be between 1 and 65535.")
-            upstream = f"{normalize_domain(host)}:{port}"
+            upstream = normalize_remote_nine_router_upstream(raw)
+            if not upstream:
+                raise HTTPException(
+                    400,
+                    "9Router upstream must be a remote hostname or global IPv4 address with port; "
+                    "localhost and private/local IPs are not allowed.",
+                )
             await set_setting("nine_router_upstream", upstream)
             messages.append(f"9Router upstream set to {upstream} — Caddy terminates SSL and forwards there.")
         else:
             await set_setting("nine_router_upstream", "")
-            messages.append("9Router upstream reset to the default gateway (65.75.203.134:20128).")
+            messages.append("9Router upstream reset to the real gateway (65.75.203.134:20128).")
         proxy_updated = True
 
     if body.agent_default_model_profile is not None:
@@ -1139,7 +1136,14 @@ async def api_github_merge_pull(
 async def api_update_info():
     from syte.self_update import get_update_info
 
-    return {"ok": True, **get_update_info()}
+    info = {"ok": True, **get_update_info(), "recent_mergeable_commits": []}
+    try:
+        from syte.github_prs import recent_mergeable_commits
+
+        info["recent_mergeable_commits"] = await recent_mergeable_commits(limit=3)
+    except Exception as error:  # noqa: BLE001 - update info remains useful without GitHub
+        logger.warning("Could not load recent mergeable commits: %s", error)
+    return info
 
 
 @app.post("/api/system/update")

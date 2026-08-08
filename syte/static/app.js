@@ -5462,6 +5462,11 @@ async function loadSettings() {
     if (githubTokenStatus) githubTokenStatus.textContent = s.github_token_set
       ? `Token configured via ${s.github_token_source || 'settings'}. It is never shown here.`
       : 'Token is not configured. Public repositories can still be read with GitHub rate limits.';
+    const githubTrackingCard = document.getElementById('github-tracking-card');
+    const githubCredentialsLoaded = Boolean(
+      s.github_token_set || (s.github_token_source && s.github_token_source !== 'none')
+    );
+    if (githubTrackingCard) githubTrackingCard.classList.toggle('hidden', githubCredentialsLoaded);
 
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -5585,8 +5590,31 @@ async function loadUpdateInfo() {
       bootstrap = `<details class="update-bootstrap"><summary>Manual upgrade (SSH)</summary><pre>${esc(info.bootstrap_commands.join('\n'))}</pre></details>`;
     }
     el.innerHTML = `Will pull <strong>${esc(label)}</strong>${workBranch}${prLink}${bootstrap}`;
+    const commits = Array.isArray(info.recent_mergeable_commits)
+      ? info.recent_mergeable_commits.slice(0, 3)
+      : [];
+    const commitsEl = document.getElementById('syte-mergeable-commits');
+    if (commitsEl) {
+      if (!commits.length) {
+        commitsEl.innerHTML = '';
+        commitsEl.classList.add('hidden');
+      } else {
+        commitsEl.innerHTML = `
+          <span class="update-mergeable-label">mergeable commits</span>
+          ${commits.map((commit) => `
+            <div class="update-commit-row">
+              <a href="${esc(commit.commit_url || commit.pr_url || '#')}" target="_blank" rel="noopener" class="update-commit-sha">${esc(commit.sha || 'commit')}</a>
+              <span class="update-commit-message">${esc(commit.message || '')}</span>
+              ${commit.pr_number ? `<a href="${esc(commit.pr_url || '#')}" target="_blank" rel="noopener" class="update-commit-pr">PR #${esc(String(commit.pr_number))}</a>` : ''}
+            </div>
+          `).join('')}
+        `;
+        commitsEl.classList.remove('hidden');
+      }
+    }
   } catch {
     el.textContent = 'Will pull latest open GitHub PR (fallback: main)';
+    document.getElementById('syte-mergeable-commits')?.classList.add('hidden');
   }
 }
 
