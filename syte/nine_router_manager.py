@@ -25,8 +25,14 @@ NINE_ROUTER_CONTAINER_PORT = 20128
 # when the managed route is disabled. Keep the Docker host binding separate;
 # the container can still listen on the upstream's documented port internally.
 NINE_ROUTER_HOST_PORT = 20129
+NINE_ROUTER_LOCAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_HOST_PORT}"
+NINE_ROUTER_INTERNAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_CONTAINER_PORT}"
 NINE_ROUTER_PUBLIC_API_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}/v1"
+NINE_ROUTER_DASHBOARD_PATH = "/dashboard"
+NINE_ROUTER_DASHBOARD_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}{NINE_ROUTER_DASHBOARD_PATH}"
 NINE_ROUTER_DATA_DIR_NAME = "9router"
+NINE_ROUTER_READINESS_TIMEOUT = 45.0
+NINE_ROUTER_READINESS_POLL_SECONDS = 1.0
 NINE_ROUTER_PASSWORD_SETTING = "nine_router_initial_password"
 NINE_ROUTER_PASSWORD_REVEALED_SETTING = "nine_router_initial_password_revealed"
 NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
@@ -75,6 +81,62 @@ def _parse_container(output: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+async def _probe_router_http() -> dict[str, Any]:
+    """Verify that the official dashboard and OpenAI route answer locally.
+
+    Docker's ``running`` state only proves that the Node process has not exited.
+    The official deployment exposes the dashboard at ``/dashboard`` and the
+    OpenAI-compatible API at ``/v1``; probe both before publishing Caddy.
+    A 401/403 from ``/v1/models`` is still a reachable API when API-key
+    enforcement is enabled, but it is reported separately from authentication.
+    """
+    import httpx
+
+    api_key = (await get_setting("agent_9router_api_key", "")).strip()
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    dashboard_status: int | None = None
+    api_status: int | None = None
+    try:
+        async with httpx.AsyncClient(
+            base_url=NINE_ROUTER_LOCAL_BASE_URL,
+            timeout=3.0,
+            follow_redirects=True,
+        ) as client:
+            dashboard = await client.get(NINE_ROUTER_DASHBOARD_PATH)
+            api = await client.get("/v1/models", headers=headers)
+        dashboard_status = dashboard.status_code
+        api_status = api.status_code
+    except (httpx.HTTPError, OSError) as error:
+        return {
+            "web_gui_ready": False,
+            "api_ready": False,
+            "api_authenticated": False,
+            "dashboard_status": dashboard_status,
+            "api_status": api_status,
+            "readiness_message": f"9Router is still starting: {error}",
+        }
+
+    web_gui_ready = 200 <= dashboard_status < 400
+    api_authenticated = 200 <= api_status < 400
+    api_ready = api_authenticated or api_status in {401, 403}
+    if not web_gui_ready:
+        message = f"9Router dashboard is not ready (HTTP {dashboard_status})."
+    elif not api_ready:
+        message = f"9Router API is not ready (HTTP {api_status})."
+    elif not api_authenticated:
+        message = "9Router dashboard and API are ready; save an API key before making authenticated API calls."
+    else:
+        message = "9Router dashboard and authenticated API are ready."
+    return {
+        "web_gui_ready": web_gui_ready,
+        "api_ready": api_ready,
+        "api_authenticated": api_authenticated,
+        "dashboard_status": dashboard_status,
+        "api_status": api_status,
+        "readiness_message": message,
+    }
+
+
 async def router_status() -> dict[str, Any]:
     """Return a safe, browser-facing status for the managed container."""
     code, output = await _run_docker([
@@ -89,7 +151,13 @@ async def router_status() -> dict[str, Any]:
         "port": NINE_ROUTER_HOST_PORT,
         "public_host": NINE_ROUTER_PUBLIC_HOST,
         "public_api_url": NINE_ROUTER_PUBLIC_API_URL,
-        "dashboard_url": f"https://{NINE_ROUTER_PUBLIC_HOST}/",
+        "dashboard_url": NINE_ROUTER_DASHBOARD_URL,
+        "web_gui_ready": False,
+        "api_ready": False,
+        "api_authenticated": False,
+        "dashboard_status": None,
+        "api_status": None,
+        "ready": False,
         "message": "",
         "enabled": (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")) == "1",
         "initial_password_set": bool((await get_setting(NINE_ROUTER_PASSWORD_SETTING, "")).strip()),
@@ -106,10 +174,18 @@ async def router_status() -> dict[str, Any]:
     state = str(container.get("State") or "").lower()
     status = str(container.get("Status") or "")
     result["running"] = state == "running"
-    result["healthy"] = result["running"] and ("unhealthy" not in status.lower())
+    if not result["running"]:
+        result["message"] = f"9Router container is {status or state or 'stopped'}."
+        return result
+
+    readiness = await _probe_router_http()
+    result.update(readiness)
+    result["ready"] = bool(result["web_gui_ready"] and result["api_ready"])
+    result["healthy"] = bool(result["ready"] and "unhealthy" not in status.lower())
     result["message"] = (
-        f"9Router is running: {status}" if result["running"]
-        else f"9Router container is {status or state or 'stopped'}."
+        f"9Router is running: {status}. {readiness['readiness_message']}"
+        if result["ready"]
+        else readiness["readiness_message"]
     )
     return result
 
@@ -127,8 +203,8 @@ async def _router_password() -> tuple[str, bool]:
 async def start_router() -> dict[str, Any]:
     """Install/start the published 9Router image with persistent data."""
     current = await router_status()
-    if current["running"]:
-        return {**current, "ok": True, "message": "9Router is already running."}
+    if current["running"] and current.get("ready"):
+        return {**current, "ok": True, "message": "9Router is already running and ready."}
 
     data_dir = _data_dir()
     try:
@@ -147,7 +223,7 @@ async def start_router() -> dict[str, Any]:
         "-e", f"PORT={NINE_ROUTER_CONTAINER_PORT}",
         "-e", "HOSTNAME=0.0.0.0",
         "-e", "NODE_ENV=production",
-        "-e", f"BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
+        "-e", f"BASE_URL={NINE_ROUTER_INTERNAL_BASE_URL}",
         "-e", f"NEXT_PUBLIC_BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
         "-e", "AUTH_COOKIE_SECURE=true",
         "-e", "REQUIRE_API_KEY=true",
@@ -158,16 +234,30 @@ async def start_router() -> dict[str, Any]:
     if code != 0:
         return {**current, "ok": False, "message": f"Failed to start 9Router: {output or 'unknown Docker error'}"}
 
-    await asyncio.sleep(2.0)
+    deadline = asyncio.get_running_loop().time() + NINE_ROUTER_READINESS_TIMEOUT
     status = await router_status()
+    while status["running"] and not status.get("ready"):
+        if asyncio.get_running_loop().time() >= deadline:
+            break
+        await asyncio.sleep(NINE_ROUTER_READINESS_POLL_SECONDS)
+        status = await router_status()
     if not status["running"]:
         return {**status, "ok": False, "message": f"9Router container started but is not running: {status['message']}"}
+    if not status.get("ready"):
+        return {
+            **status,
+            "ok": False,
+            "message": (
+                f"9Router container is running but did not become ready within "
+                f"{NINE_ROUTER_READINESS_TIMEOUT:.0f}s: {status['message']}"
+            ),
+        }
     result = {
         **status,
         "ok": True,
         "message": (
-            f"9Router started on loopback port {NINE_ROUTER_HOST_PORT}. "
-            f"The public OpenAI-compatible API will be {NINE_ROUTER_PUBLIC_API_URL}."
+            f"9Router dashboard is ready at {NINE_ROUTER_DASHBOARD_URL}; "
+            f"the public OpenAI-compatible API is {NINE_ROUTER_PUBLIC_API_URL}."
         ),
     }
     # Reveal the generated/admin password only after the first successful

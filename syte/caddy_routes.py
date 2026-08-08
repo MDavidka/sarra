@@ -324,11 +324,12 @@ def render_9router_route(
 ) -> list[str]:
     """Render the public 9Router AI-gateway host with its own dedicated TLS cert.
 
-    ``9router.sycord.site`` is the OpenAI-compatible router base referenced by
-    Syte's model catalog (``NINE_ROUTER_API_BASE``). This standalone host block
-    makes this Caddy instance terminate TLS for it and forward every path to
-    the gateway upstream (``65.75.203.134:20128`` by default — the dedicated
-    gateway host — override via the ``nine_router_upstream`` setting).
+    ``9router.sycord.site`` is the legacy public host used while the managed
+    container is disabled. Managed mode instead publishes the container at
+    ``api.sycord.site``. This standalone host block makes Caddy terminate TLS
+    for the legacy route and forward every path to the gateway upstream
+    (``65.75.203.134:20128`` by default — the dedicated gateway host; override
+    via the ``nine_router_upstream`` setting).
 
     The certificate is deliberately **not** the shared ``*.{zone}`` wildcard.
     9Router is the only externally-proxied host here, so a wildcard re-issue or

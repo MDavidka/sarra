@@ -28,7 +28,20 @@ ALIYUN_DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 VYCEAI_API_BASE = "https://vyceai.com/v1"
 
 LITELLM_API_BASE = LITELLM_INTERNAL_API_URL
+# Legacy remote host used while the managed container is disabled.
 NINE_ROUTER_API_BASE = "https://9router.sycord.site/v1"
+# Managed mode takes ownership of api.sycord.site so the dashboard and API use
+# the same public origin advertised to the 9Router application.
+NINE_ROUTER_MANAGED_API_BASE = "https://api.sycord.site/v1"
+NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
+
+
+async def resolved_nine_router_api_base() -> str:
+    """Return the endpoint that Caddy currently publishes for 9Router."""
+    from syte.database import get_setting
+
+    enabled = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
+    return NINE_ROUTER_MANAGED_API_BASE if enabled else NINE_ROUTER_API_BASE
 
 PROFILE_ORDER = (
     "syra-nano",

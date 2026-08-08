@@ -31,6 +31,7 @@ from syte.ai_providers import (
     PROFILE_PROVIDERS,
     provider_chat_completion_url,
     profile_provider,
+    resolved_nine_router_api_base,
 )
 from syte.cloud_agent_store import (
     append_message,
@@ -863,6 +864,7 @@ async def bridge_settings() -> dict[str, Any]:
     primary = enabled_custom_models[0] if enabled_custom_models else None
     profiles["9router"] = {
         **NINE_ROUTER_PROFILE_SPEC,
+        "api_base": await resolved_nine_router_api_base(),
         "api_key": router_resolved["api_key"],
         "key_source": router_resolved["source"],
         "api_key_hint": router_resolved["api_key_hint"],

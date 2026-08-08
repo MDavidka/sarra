@@ -220,7 +220,7 @@ async def fetch_router_models(*, force: bool = False) -> bool:
     """
     import httpx
 
-    from syte.ai_providers import NINE_ROUTER_API_BASE
+    from syte.ai_providers import resolved_nine_router_api_base
 
     def _cached_answer() -> bool | None:
         """Return a cached verdict, or None when a fetch is warranted.
@@ -264,7 +264,8 @@ async def fetch_router_models(*, force: bool = False) -> bool:
             })
             return bool(_router_cache["models"])
 
-        url = f"{NINE_ROUTER_API_BASE.rstrip('/')}/models"
+        api_base = await resolved_nine_router_api_base()
+        url = f"{api_base.rstrip('/')}/models"
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {api_key}",
