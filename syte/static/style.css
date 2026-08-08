@@ -5302,3 +5302,58 @@ body.login-locked {
   .framework-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .deployment-strategy-picker { grid-template-columns: 1fr; }
 }
+
+:root { overflow-x: hidden; }
+html, body { overflow-x: hidden; }
+
+/* Mobile drawer: use the full phone width so the compact navigation does not
+   clip labels or leave an unusable sliver of the page exposed. */
+.edge-team-switcher[role="button"] { cursor: pointer; }
+.edge-team-switcher[role="button"]:focus-visible { outline: 2px solid #9aa3aa; outline-offset: 2px; }
+.edge-request-toolbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.edge-toolbar-create { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; border: 1px solid #e1e5e8; border-radius: 4px; background: #202428; color: #fff; padding: 5px 8px; font: 8px var(--font); cursor: pointer; white-space: nowrap; }
+.edge-toolbar-create:hover { background: #373d42; }
+.edge-toolbar-create svg { width: 10px; height: 10px; }
+
+@media (max-width: 768px) {
+  .app-sidebar {
+    width: min(94vw, 368px);
+    max-width: 368px;
+    height: 100dvh;
+    padding: max(0.75rem, env(safe-area-inset-top, 0)) 0.75rem max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .app-main { width: 100%; min-width: 0; margin-left: 0; }
+  .content { width: 100%; max-width: 100%; overflow-x: hidden; }
+  .edge-sidebar-menu { min-width: 0; overflow: visible; }
+  .edge-sidebar-spacer { display: none; }
+  .edge-legacy-nav { margin-top: 10px; }
+  .edge-page-head { gap: 10px; }
+  .edge-request-toolbar { width: 100%; }
+  .edge-request-toolbar-left { width: 100%; justify-content: space-between; gap: 8px; }
+  .edge-request-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .edge-request-tabs::-webkit-scrollbar { display: none; }
+  .edge-toolbar-create { min-height: 30px; }
+  .edge-table-search { min-height: 32px; }
+  .edge-map-card, .edge-requests-card, .edge-assistant-card { width: 100%; min-width: 0; }
+  .edge-insights-card { width: 100%; min-width: 0; }
+}
+
+@media (max-width: 420px) {
+  .app-sidebar { width: 94vw; }
+  .content { padding-inline: 9px; }
+  .edge-page-head h1 { font-size: clamp(19px, 7vw, 23px); }
+  .edge-request-toolbar-left { align-items: stretch; flex-direction: column; }
+  .edge-request-tabs { width: 100%; justify-content: flex-start; gap: 12px; }
+  .edge-toolbar-create { width: 100%; justify-content: center; }
+  .edge-table-search { width: 100%; }
+  .edge-card-topline { padding-inline: 8px; }
+  .edge-tabs { width: 100%; padding-right: 2px; }
+  .edge-map-actions { position: absolute; right: 0; top: 0; background: #fff; padding-left: 4px; }
+  .edge-map-visual { margin-inline: 5px; }
+  .edge-request-row { grid-template-columns: 0.9fr 1.8fr 0.9fr 0.8fr; padding-inline: 8px; }
+  .edge-table-head { padding-inline: 8px; }
+}
