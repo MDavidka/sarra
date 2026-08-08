@@ -76,15 +76,24 @@ let syraCsrfToken = '';
 let operatorSessionRestorePromise = null;
 
 const STACK_META = {
-  nextjs: { label: 'next.js', icon: 'N', cls: '' },
-  python: { label: 'python', icon: 'Py', cls: 'stack-python' },
-  javascript: { label: 'javascript', icon: 'JS', cls: 'stack-javascript' },
-  html5: { label: 'html5', icon: '5', cls: 'stack-html5' },
-  shell: { label: 'shell', icon: '$', cls: 'stack-shell' },
-  docker: { label: 'docker', icon: 'D', cls: '' },
+  nextjs: { label: 'Next.js', icon: 'N', cls: '' },
+  react: { label: 'React / Vite', icon: 'R', cls: 'stack-icon-react' },
+  vue: { label: 'Vue / Nuxt', icon: 'V', cls: 'stack-icon-vue' },
+  svelte: { label: 'Svelte', icon: 'S', cls: 'stack-icon-svelte' },
+  astro: { label: 'Astro', icon: 'A', cls: 'stack-icon-astro' },
+  node: { label: 'Node / Express', icon: 'JS', cls: 'stack-icon-node' },
+  python: { label: 'Python', icon: 'Py', cls: 'stack-python' },
+  go: { label: 'Go', icon: 'Go', cls: 'stack-icon-go' },
+  rust: { label: 'Rust', icon: 'R', cls: 'stack-icon-rust' },
+  static: { label: 'Static HTML', icon: '5', cls: 'stack-icon-html5' },
+  javascript: { label: 'JavaScript', icon: 'JS', cls: 'stack-javascript' },
+  html5: { label: 'HTML5', icon: '5', cls: 'stack-icon-html5' },
+  shell: { label: 'Build & run', icon: '$', cls: 'stack-shell' },
+  docker: { label: 'Dockerfile', icon: 'D', cls: '' },
 };
 
 let selectedCreateStack = 'nextjs';
+let selectedDeploymentStrategy = 'auto';
 
 function getApiKey() {
   try {
@@ -4570,30 +4579,40 @@ function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
   const visible = filteredProjects();
+  const all = projects || [];
+  const running = all.filter(p => p.running).length;
+  const deploying = all.filter(p => p.status === 'deploying').length;
+  const stopped = all.length - running - deploying;
+  const count = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  count('edge-total-count', all.length);
+  count('edge-running-count', running);
+  count('edge-deploying-count', deploying);
+  count('edge-stopped-count', Math.max(0, stopped));
 
   if (!visible.length) {
-    list.innerHTML = '';
+    if (list) list.innerHTML = '';
     empty?.classList.remove('hidden');
     refreshIcons();
     return;
   }
 
   empty?.classList.add('hidden');
+  if (!list) return;
   list.innerHTML = visible.map(p => {
     const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
-    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
-    return `
-    <div class="project-card" onclick="openService('${p.id}')">
-      <div class="project-card-head">
-        <h3>${esc(p.name)}</h3>
-        <span class="project-card-status ${status}" title="${status}"></span>
-      </div>
-      <div class="project-card-meta">
-        <span class="project-card-tag">${status}</span>
-        <span class="project-card-tag">${deployLabel}</span>
-        ${p.port ? `<span class="project-card-tag">:${p.port}</span>` : ''}
-      </div>
-    </div>`;
+    const framework = p.framework || detectStack(p);
+    const strategy = p.deployment_strategy || p.deploy_type || 'auto';
+    const region = p.domain ? p.domain.split('.')[0] : (p.preview_domain ? p.preview_domain.split('.')[0] : 'all regions');
+    const time = p.updated_at ? new Date(p.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+    return `<button type="button" class="edge-request-row" onclick="openService('${p.id}')">
+      <span class="edge-row-type"><i data-lucide="${p.git_url ? 'git-branch' : 'cloud'}"></i><strong>${esc(framework)}</strong></span>
+      <span class="edge-row-path"><strong>${esc(p.name)}</strong><small>${esc(p.git_url || `/${p.id}`)}</small></span>
+      <span class="edge-row-region">${esc(region)}</span>
+      <span class="edge-row-cache">${esc(strategy)}</span>
+      <span class="edge-row-status"><b class="edge-status-dot ${status}"></b>${esc(status)}</span>
+      <span class="edge-row-size">:${esc(String(p.port || '—'))}</span>
+      <span class="edge-row-time">${esc(time)}</span>
+    </button>`;
   }).join('');
   refreshIcons();
 }
@@ -4622,6 +4641,12 @@ function detectStack(p) {
 
 function resetCreateForm() {
   selectedCreateStack = 'nextjs';
+  selectedDeploymentStrategy = 'auto';
+  document.querySelectorAll('.deployment-strategy-card').forEach(card => {
+    const on = card.dataset.deploymentStrategy === 'auto';
+    card.classList.toggle('active', on);
+    card.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
   document.querySelectorAll('.stack-card').forEach(card => {
     const on = card.dataset.stack === 'nextjs';
     card.classList.toggle('active', on);
@@ -4629,6 +4654,10 @@ function resetCreateForm() {
   });
   const nameInput = document.getElementById('create-name');
   if (nameInput) nameInput.value = '';
+  const gitInput = document.getElementById('create-git-url');
+  if (gitInput) gitInput.value = '';
+  const branchInput = document.getElementById('create-branch');
+  if (branchInput) branchInput.value = 'main';
   const startCmd = document.getElementById('create-start-cmd');
   if (startCmd) startCmd.value = '';
   const buildCmd = document.getElementById('create-build-cmd');
@@ -5141,6 +5170,8 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
 
   const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
   const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
+  const gitUrl = document.getElementById('create-git-url')?.value.trim() || null;
+  const branch = document.getElementById('create-branch')?.value.trim() || 'main';
   const env_vars = {};
   if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
 
@@ -5155,7 +5186,10 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
       method: 'POST',
       body: JSON.stringify({
         name,
-        stack: selectedCreateStack,
+        git_url: gitUrl,
+        branch,
+        framework: selectedCreateStack,
+        deployment_strategy: selectedDeploymentStrategy,
         start_command: startCmd,
         env_vars,
       }),
@@ -5184,9 +5218,18 @@ document.getElementById('stack-picker')?.addEventListener('click', (e) => {
   selectCreateStack(card.dataset.stack);
 });
 
-document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-  head.addEventListener('click', () => toggleCreateAccordion(head));
+document.getElementById('deployment-strategy-picker')?.addEventListener('click', (e) => {
+  const card = e.target.closest('.deployment-strategy-card');
+  if (!card?.dataset.deploymentStrategy) return;
+  selectedDeploymentStrategy = card.dataset.deploymentStrategy;
+  document.querySelectorAll('.deployment-strategy-card').forEach(option => {
+    const on = option === card;
+    option.classList.toggle('active', on);
+    option.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
 });
+
+
 
 document.getElementById('create-name-focus')?.addEventListener('click', () => {
   document.getElementById('create-name')?.focus();

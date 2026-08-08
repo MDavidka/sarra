@@ -47,88 +47,34 @@
         </div>
       </div>
 
-      <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <div id="nav-block-home" class="nav-block">
-          <p class="nav-section-label">Platform</p>
-          <div class="nav-group expanded" id="nav-group-main">
-            <button type="button" class="nav-group-head" id="nav-group-main-toggle" aria-expanded="true">
-              <span class="nav-group-icon" aria-hidden="true">M</span>
-              <span class="nav-group-title">Main</span>
-              <i data-lucide="chevron-down" class="nav-group-chevron"></i>
-            </button>
-            <div class="nav-group-body" id="nav-group-main-body">
-              <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard">
-                <i data-lucide="layout-grid"></i><span>Home</span>
-              </button>
-              <p class="nav-sublabel">System</p>
-              <button type="button" class="nav-sublink sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord">
-                <img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span>
-              </button>
-              <button type="button" class="nav-sublink" data-view="server-swarm">
-                <i data-lucide="boxes"></i><span>Server Swarm</span>
-              </button>
-              <button type="button" class="nav-sublink" data-view="users">
-                <i data-lucide="users"></i><span>Users</span>
-              </button>
-              <button type="button" class="nav-sublink" data-view="logs">
-                <i data-lucide="scroll-text"></i><span>Logs</span>
-              </button>
-              <button type="button" class="nav-sublink" data-view="models">
-                <i data-lucide="bot"></i><span>Models</span>
-              </button>
-              <button type="button" class="nav-sublink" data-view="ssl">
-                <i data-lucide="shield-check"></i><span>SSL</span>
-              </button>
-              <div class="nav-api-group" id="nav-api-group">
-                <a class="nav-sublink" href="/api/" data-view="api" id="nav-api-link">
-                  <i data-lucide="file-code-2"></i><span>API</span>
-                </a>
-                <div class="nav-api-minitabs" id="nav-api-minitabs" aria-label="API documentation sections">
-                  <a class="nav-api-mini" href="/api/#overview/overview-flow">Overview</a>
-                  <a class="nav-api-mini" href="/api/#auth/auth-token">Auth</a>
-                  <a class="nav-api-mini" href="/api/#agent/agent-status">Agent</a>
-                  <a class="nav-api-mini" href="/api/#stream/stream-connect">Stream</a>
-                  <a class="nav-api-mini" href="/api/#stream/token-delta">token_delta</a>
-                  <a class="nav-api-mini" href="/api/#turso/turso-overview">Turso</a>
-                  <a class="nav-api-mini" href="/api/#agent/agent-change">agent_change</a>
-                  <a class="nav-api-mini" href="/api/#agent/agent-activity-stream">SSE</a>
-                </div>
-              </div>
-              <button type="button" class="nav-sublink" data-view="settings">
-                <i data-lucide="settings-2"></i><span>Settings</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
+      <nav class="sidebar-menu edge-sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
+        <div class="edge-team-switcher"><span class="edge-team-mark">∞</span><div><strong>acme-team</strong><small><b></b> Production</small></div><i data-lucide="chevrons-up-down"></i></div>
+        <label class="edge-sidebar-search"><i data-lucide="search"></i><input placeholder="Find"><kbd>F</kbd></label>
+        <p class="edge-sidebar-label">Delivery</p>
+        <button type="button" class="nav-sublink edge-sidebar-link active" data-view="dashboard"><i data-lucide="layout-grid"></i><span>Overview</span></button>
+        <button type="button" class="nav-sublink edge-sidebar-link" data-view="dashboard"><i data-lucide="database-zap"></i><span>Caches</span><b class="edge-sidebar-value green">96%</b></button>
+        <button type="button" class="nav-sublink edge-sidebar-link" data-view="dashboard"><i data-lucide="corner-up-right"></i><span>Redirects</span><b class="edge-sidebar-value">24</b></button>
+        <button type="button" class="nav-sublink edge-sidebar-link" data-view="dashboard"><i data-lucide="route"></i><span>Routing Rules</span><b class="edge-sidebar-value">8</b></button>
+        <button type="button" class="nav-sublink edge-sidebar-link" data-view="dashboard"><i data-lucide="history"></i><span>Purge history</span><b class="edge-sidebar-value muted">2h ago</b></button>
+        <p class="edge-sidebar-label edge-region-label">Regions</p>
+        <div class="edge-sidebar-region"><b class="region-green"></b><span>fra1</span><small>Frankfurt</small><strong>28 ms</strong></div>
+        <div class="edge-sidebar-region"><b class="region-green"></b><span>iad1</span><small>Washington</small><strong>41 ms</strong></div>
+        <div class="edge-sidebar-region"><b class="region-amber"></b><span>hnd1</span><small>Tokyo</small><strong class="warn">89 ms</strong></div>
+        <button type="button" class="edge-sidebar-view-all" data-view="dashboard">View all 89 regions <span>→</span></button>
+        <div class="edge-sidebar-spacer"></div>
+        <div class="edge-bandwidth"><div><span>Bandwidth</span><small>this cycle</small></div><strong>4.1 TB <small>of 10 TB</small></strong><div class="edge-bandwidth-bar"><i></i></div><p>Resets Aug 20</p></div>
         <div id="nav-block-service" class="nav-block hidden">
-          <p class="nav-section-label">Project</p>
-          <div class="nav-group expanded" id="nav-group-service">
-            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
-              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
-              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
-              <span class="nav-group-title" id="nav-service-title">Service</span>
-            </button>
-            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
-              <button type="button" class="nav-sublink active" data-svc-tab="general">
-                <i data-lucide="layout-dashboard"></i><span>General</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="env">
-                <i data-lucide="braces"></i><span>Environment</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="logs">
-                <i data-lucide="terminal-square"></i><span>Logs</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="preview">
-                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
-                <i data-lucide="messages-square"></i><span>Agent chat</span>
-              </button>
-            </div>
+          <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" title="Back to deployments"><i data-lucide="arrow-left"></i><span id="nav-service-title">Deployment</span></button>
+          <div id="sidebar-service-tabs" class="nav-group-body nav-group-body-compact">
+            <button type="button" class="nav-sublink active" data-svc-tab="general"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
+            <button type="button" class="nav-sublink" data-svc-tab="env"><i data-lucide="braces"></i><span>Environment</span></button>
+            <button type="button" class="nav-sublink" data-svc-tab="logs"><i data-lucide="terminal-square"></i><span>Logs</span></button>
+            <button type="button" class="nav-sublink" data-svc-tab="preview"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
+            <button type="button" class="nav-sublink" data-svc-tab="debug-chat"><i data-lucide="messages-square"></i><span>Agent chat</span></button>
           </div>
         </div>
       </nav>
+
     </aside>
 
     <div class="app-main">
@@ -146,31 +92,71 @@
 
       <main class="content">
         <section id="view-dashboard" class="view active">
-          <div class="projects-page">
-            <div class="projects-hero-card">
-              <div class="projects-title-block">
-                <i data-lucide="folder-input" class="projects-icon"></i>
-                <div>
-                  <h1>Projects</h1>
-                  <p class="projects-sub">Create and manage your projects</p>
+          <div class="edge-dashboard">
+            <header class="edge-page-head">
+              <div>
+                <p class="edge-eyebrow"><span class="edge-live-dot"></span> production control plane</p>
+                <h1>Edge Network</h1>
+                <p class="projects-sub">Manage your global content delivery network.</p>
+              </div>
+              <div class="edge-page-actions">
+                <button type="button" class="edge-control-btn"><i data-lucide="calendar-clock"></i><span>Last 12 hours</span><i data-lucide="chevron-down"></i></button>
+                <button type="button" class="edge-control-btn"><i data-lucide="list-filter"></i><span>View Routing Order</span></button>
+              </div>
+            </header>
+
+            <div class="edge-workspace">
+              <section class="edge-primary-column">
+                <div class="edge-map-card">
+                  <div class="edge-card-topline">
+                    <div class="edge-tabs" role="tablist" aria-label="Network regions">
+                      <button class="edge-tab active" type="button">Global</button>
+                      <button class="edge-tab" type="button">Europe</button>
+                      <button class="edge-tab" type="button">North America</button>
+                      <button class="edge-tab" type="button">South America</button>
+                      <button class="edge-tab" type="button">Asia</button>
+                    </div>
+                    <div class="edge-map-actions"><button class="edge-icon-btn" aria-label="Map settings"><i data-lucide="settings-2"></i></button><button class="edge-icon-btn" aria-label="Toggle map"><i data-lucide="globe-2"></i></button></div>
+                  </div>
+                  <div class="edge-map-visual" aria-label="Global deployment regions">
+                    <svg viewBox="0 0 900 360" role="img" aria-hidden="true">
+                      <defs><pattern id="edge-map-dots" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.45" fill="#cfd4d9"></circle></pattern></defs>
+                      <path fill="url(#edge-map-dots)" d="M104 87l47-28 91 8 37 34-22 29-18 44-37-7-22 26-42-15-10-35-28-15zm170 111l35 13 19 37-23 43-29-13-22-35zm207-83l38-38 56-9 28 20-10 31-30 11-13 34-42-1-21-20zm111-38l57-19 80 22 35 34-25 22-39-4-13 27-40-14-31 7-30-31zm-91 109l35-5 25 31-18 45-34 25-20-27 15-32zm148 11l39-8 38 27-16 38-34 8-24-26z"></path>
+                    </svg>
+                    <span class="edge-map-node edge-node-eu"><b></b><span>fra1</span></span>
+                    <span class="edge-map-node edge-node-us"><b></b><span>iad1</span></span>
+                    <span class="edge-map-node edge-node-asia"><b></b><span>hnd1</span></span>
+                    <div class="edge-map-legend"><span><b class="legend-green"></b> healthy</span><span><b class="legend-amber"></b> elevated latency</span></div>
+                  </div>
                 </div>
-              </div>
 
-              <button type="button" class="btn-create" onclick="showView('new-service')">
-                <i data-lucide="plus"></i>
-                <span>Create Project</span>
-              </button>
+                <div class="edge-insights-card">
+                  <div class="edge-insights-icon"><i data-lucide="orbit"></i></div>
+                  <div class="edge-insights-copy"><strong>Edge Insights <span>New</span></strong><p>Explore traffic patterns and get alerted on anomalies — automatically.</p></div>
+                  <button type="button" class="edge-text-btn">Maybe later</button>
+                  <button type="button" class="edge-dark-btn">Try Edge Insights</button>
+                </div>
 
-              <div class="search-field">
-                <input type="search" id="project-filter" placeholder="Filter projects..." autocomplete="off">
-                <i data-lucide="search" class="search-icon"></i>
-              </div>
-            </div>
+                <div class="edge-requests-card">
+                  <div class="edge-request-toolbar">
+                    <div class="edge-request-tabs"><button class="active" type="button">All <small id="edge-total-count">0</small></button><button type="button">Running <small id="edge-running-count">0</small></button><button type="button">Deploying <small id="edge-deploying-count">0</small></button><button type="button">Stopped <small id="edge-stopped-count">0</small></button></div>
+                    <label class="edge-table-search"><i data-lucide="search"></i><input id="project-filter" type="search" placeholder="Search deployments" autocomplete="off"></label>
+                  </div>
+                  <div class="edge-table-head"><span>TYPE</span><span>PATH / PROJECT</span><span>REGION</span><span>DEPLOYMENT</span><span>STATUS</span><span>PORT</span><span>TIME</span></div>
+                  <div id="services-list" class="edge-request-list"></div>
+                  <div id="empty-state" class="projects-empty hidden"><i data-lucide="cloud-off" class="empty-icon"></i><p>No deployments found</p><button type="button" class="edge-dark-btn" onclick="showView('new-service')">Create deployment</button></div>
+                </div>
+              </section>
 
-            <div id="services-list" class="projects-grid"></div>
-            <div id="empty-state" class="projects-empty hidden">
-              <i data-lucide="folder-input" class="empty-icon"></i>
-              <p>No projects found</p>
+              <aside class="edge-assistant-card">
+                <div class="edge-assistant-head"><div><strong>New Chat</strong><span class="edge-settings-dot">⌄</span></div><div class="edge-assistant-tools"><button aria-label="Expand"><i data-lucide="maximize-2"></i></button><button aria-label="Close"><i data-lucide="x"></i></button></div></div>
+                <div class="edge-assistant-body">
+                  <div class="edge-agent-intro"><span class="edge-agent-avatar"><i data-lucide="sparkles"></i></span><strong>Agent <span>Beta</span></strong><p>I can help you understand and manage your infrastructure on the Atlas platform. What do you need?</p></div>
+                  <div class="edge-prompts"><button type="button">Show CDN cache status for acme-portal? <kbd>Ctrl 1</kbd></button><button type="button">What caused the recent deploy failures? <kbd>Ctrl 2</kbd></button><button type="button">How many deployments in the last 24 hours? <kbd>Ctrl 3</kbd></button></div>
+                  <div class="edge-chat-input"><span>Ask anything...</span><i data-lucide="paperclip"></i><button aria-label="Send"><i data-lucide="arrow-up"></i></button></div>
+                  <p class="edge-agent-note">Agent may make mistakes. Verify all outputs.</p>
+                </div>
+              </aside>
             </div>
           </div>
         </section>
@@ -193,25 +179,35 @@
                 <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
               </div>
 
+              <div class="create-source-card">
+                <div class="create-source-head"><div><p class="create-section-label">source</p><strong><i data-lucide="github"></i> Import from GitHub</strong><span>Clone a repository and deploy it on this server.</span></div><span class="create-source-badge">GitHub</span></div>
+                <div class="create-source-fields"><label><span>Repository URL</span><input type="url" id="create-git-url" placeholder="https://github.com/org/repository"></label><label class="create-branch-field"><span>Branch</span><input type="text" id="create-branch" value="main" placeholder="main"></label></div>
+                <p class="create-field-help"><i data-lucide="shield-check"></i> Public and private repositories supported through your server Git credentials.</p>
+              </div>
+
               <div class="create-section">
-                <p class="create-section-label">deployment type</p>
-                <div class="stack-picker" id="stack-picker" role="listbox" aria-label="Deployment type">
-                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true">
-                    <span class="stack-card-icon stack-icon-nextjs">N</span>
-                    <span class="stack-card-label">next.js</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-python">Py</span>
-                    <span class="stack-card-label">python</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-javascript">JS</span>
-                    <span class="stack-card-label">javascript</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-html5">5</span>
-                    <span class="stack-card-label">html5</span>
-                  </button>
+                <p class="create-section-label">framework</p>
+                <div class="stack-picker framework-picker" id="stack-picker" role="listbox" aria-label="Framework">
+                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true"><span class="stack-card-icon stack-icon-nextjs">N</span><span class="stack-card-label">Next.js</span></button>
+                  <button type="button" class="stack-card" data-stack="react" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-react">R</span><span class="stack-card-label">React / Vite</span></button>
+                  <button type="button" class="stack-card" data-stack="vue" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-vue">V</span><span class="stack-card-label">Vue / Nuxt</span></button>
+                  <button type="button" class="stack-card" data-stack="svelte" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-svelte">S</span><span class="stack-card-label">Svelte</span></button>
+                  <button type="button" class="stack-card" data-stack="astro" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-astro">A</span><span class="stack-card-label">Astro</span></button>
+                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-python">Py</span><span class="stack-card-label">Python</span></button>
+                  <button type="button" class="stack-card" data-stack="node" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-node">JS</span><span class="stack-card-label">Node / Express</span></button>
+                  <button type="button" class="stack-card" data-stack="go" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-go">Go</span><span class="stack-card-label">Go</span></button>
+                  <button type="button" class="stack-card" data-stack="rust" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-rust">R</span><span class="stack-card-label">Rust</span></button>
+                  <button type="button" class="stack-card" data-stack="static" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-html5">5</span><span class="stack-card-label">Static HTML</span></button>
+                </div>
+              </div>
+
+              <div class="create-section create-deployment-section">
+                <div class="create-section-heading"><div><p class="create-section-label">deployment strategy</p><span class="create-field-help">Choose how this repository should run.</span></div><span class="create-autodetect"><i data-lucide="wand-sparkles"></i> recommended</span></div>
+                <div class="deployment-strategy-picker" id="deployment-strategy-picker" role="listbox" aria-label="Deployment strategy">
+                  <button type="button" class="deployment-strategy-card active" data-deployment-strategy="auto" aria-selected="true"><i data-lucide="wand-sparkles"></i><span><strong>Auto detect</strong><small>Dockerfile or framework runtime</small></span></button>
+                  <button type="button" class="deployment-strategy-card" data-deployment-strategy="docker" aria-selected="false"><i data-lucide="container"></i><span><strong>Dockerfile</strong><small>Build an isolated container</small></span></button>
+                  <button type="button" class="deployment-strategy-card" data-deployment-strategy="shell" aria-selected="false"><i data-lucide="terminal"></i><span><strong>Build &amp; run</strong><small>Run on the server</small></span></button>
+                  <button type="button" class="deployment-strategy-card" data-deployment-strategy="static" aria-selected="false"><i data-lucide="file-code-2"></i><span><strong>Static site</strong><small>Serve HTML and assets</small></span></button>
                 </div>
               </div>
 

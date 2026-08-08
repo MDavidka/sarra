@@ -167,7 +167,9 @@ class CreateServiceRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
     domain: str | None = None
-    stack: str | None = "nextjs"
+    framework: str | None = None
+    stack: str | None = None
+    deployment_strategy: str = "auto"
 
 
 class DomainRequest(BaseModel):
@@ -244,6 +246,8 @@ class UpdateProjectRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] | None = None
     domain: str | None = None
+    framework: str | None = None
+    deployment_strategy: str | None = None
 
 
 @app.get("/api/health")
@@ -1444,6 +1448,12 @@ def _running(project: dict) -> bool:
     )
 
 
+@app.get("/api/deployment/options")
+async def api_deployment_options():
+    """Frameworks and deployment strategies supported by the project form."""
+    return deployment.deployment_options()
+
+
 @app.get("/api/projects")
 async def api_list_projects():
     from syte.preview_manager import ensure_preview_address
@@ -1477,6 +1487,8 @@ async def api_create_project(body: CreateServiceRequest):
         env_vars=body.env_vars,
         domain=body.domain,
         stack=body.stack,
+        framework=body.framework,
+        deployment_strategy=body.deployment_strategy,
     )
     if not project:
         raise HTTPException(500, message)
