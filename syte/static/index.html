@@ -49,17 +49,7 @@
 
       <nav class="sidebar-menu edge-sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
         <div id="nav-block-home" class="nav-block">
-        <div class="edge-team-switcher" role="button" tabindex="0" aria-label="Open overview" onclick="showView('dashboard')"><span class="edge-team-mark">∞</span><div><strong>acme-team</strong><small><b></b> Production</small></div><i data-lucide="chevrons-up-down"></i></div>
-        <label class="edge-sidebar-search"><i data-lucide="search"></i><input placeholder="Find"><kbd>F</kbd></label>
-        <p class="edge-sidebar-label edge-region-label">Regions</p>
-        <div class="edge-sidebar-region"><b class="region-green"></b><span>fra1</span><small>Frankfurt</small><strong>28 ms</strong></div>
-        <div class="edge-sidebar-region"><b class="region-green"></b><span>iad1</span><small>Washington</small><strong>41 ms</strong></div>
-        <div class="edge-sidebar-region"><b class="region-amber"></b><span>hnd1</span><small>Tokyo</small><strong class="warn">89 ms</strong></div>
-        <button type="button" class="edge-sidebar-view-all" data-view="dashboard">View all 89 regions <span>→</span></button>
-        <div class="edge-sidebar-spacer"></div>
-        <div class="edge-bandwidth"><div><span>Bandwidth</span><small>this cycle</small></div><strong>4.1 TB <small>of 10 TB</small></strong><div class="edge-bandwidth-bar"><i></i></div><p>Resets Aug 20</p></div>
-
-          <div class="edge-legacy-nav">
+          <div class="edge-legacy-nav edge-legacy-nav-top">
             <p class="edge-sidebar-label">System</p>
             <button type="button" class="nav-sublink edge-sidebar-link sidebar-link-xwf hidden" data-view="sycord" id="nav-sycord"><img src="/static/icon.png?v=__VERSION__" alt="" class="nav-sublink-img"><span>Sycord</span></button>
             <button type="button" class="nav-sublink edge-sidebar-link" data-view="server-swarm"><i data-lucide="boxes"></i><span>Server Swarm</span></button>
@@ -75,6 +65,18 @@
             </div>
             <button type="button" class="nav-sublink edge-sidebar-link" data-view="settings"><i data-lucide="settings-2"></i><span>Settings</span></button>
           </div>
+
+          <div class="sidebar-divider" aria-hidden="true"></div>
+
+          <div class="edge-team-switcher" role="button" tabindex="0" aria-label="Open overview" onclick="showView('dashboard')"><span class="edge-team-mark">∞</span><div><strong>acme-team</strong><small><b></b> Production</small></div><i data-lucide="chevrons-up-down"></i></div>
+          <label class="edge-sidebar-search"><i data-lucide="search"></i><input placeholder="Find"><kbd>F</kbd></label>
+          <p class="edge-sidebar-label edge-region-label">Regions</p>
+          <div class="edge-sidebar-region"><b class="region-green"></b><span>fra1</span><small>Frankfurt</small><strong>28 ms</strong></div>
+          <div class="edge-sidebar-region"><b class="region-green"></b><span>iad1</span><small>Washington</small><strong>41 ms</strong></div>
+          <div class="edge-sidebar-region"><b class="region-amber"></b><span>hnd1</span><small>Tokyo</small><strong class="warn">89 ms</strong></div>
+          <button type="button" class="edge-sidebar-view-all" data-view="dashboard">View all 89 regions <span>→</span></button>
+          <div class="edge-sidebar-spacer"></div>
+          <div class="edge-bandwidth"><div><span>Bandwidth</span><small>this cycle</small></div><strong>4.1 TB <small>of 10 TB</small></strong><div class="edge-bandwidth-bar"><i></i></div><p>Resets Aug 20</p></div>
         </div>
         <div id="nav-block-service" class="nav-block hidden">
           <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" title="Back to deployments"><i data-lucide="arrow-left"></i><span id="nav-service-title">Deployment</span></button>
