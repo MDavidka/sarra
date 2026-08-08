@@ -5194,7 +5194,7 @@ body.login-locked {
 
 /* Image-led Edge Network landing page */
 .app-sidebar { padding: 10px 8px 8px; border-right-color: #eceef0; box-shadow: 1px 0 0 rgba(20, 30, 40, .02); }
-.sidebar-head { display: none; }
+.sidebar-head { display: block; }
 .app-main { margin-left: var(--sidebar-w); }
 .main-topbar { display: none; }
 .content { max-width: none; padding: 24px 25px 34px; }
@@ -5254,3 +5254,51 @@ body.login-locked {
 
 @media (max-width: 980px) { .edge-workspace { grid-template-columns:1fr; }.edge-assistant-card { min-height:300px; }.edge-agent-intro { margin-top:0; }.framework-picker { grid-template-columns:repeat(4,1fr); } }
 @media (max-width: 700px) { .app-sidebar { width:0; padding:0; border:0; overflow:hidden; }.app-main { margin-left:0; }.content { padding:16px 12px 25px; }.edge-page-head { flex-direction:column; margin-bottom:13px; }.edge-page-actions { padding-top:0; }.edge-workspace { gap:10px; }.edge-map-card { height:245px; }.edge-map-visual { height:205px; }.edge-request-toolbar { align-items:flex-start; flex-direction:column; }.edge-table-search { width:100%; }.edge-table-head { display:none; }.edge-request-row { grid-template-columns:1.2fr 2fr 1fr; gap:5px; }.edge-request-row > span:nth-child(n+4) { display:none; }.create-source-fields, .deployment-strategy-picker { grid-template-columns:1fr; }.framework-picker { grid-template-columns:repeat(2,1fr); }.edge-insights-card { flex-wrap:wrap; }.edge-insights-copy { min-width:calc(100% - 42px); }.edge-text-btn { margin-left:auto; } }
+
+
+/* Restored legacy navigation and mobile-safe overrides */
+.edge-legacy-nav { margin-top: 14px; padding-top: 10px; border-top: 1px solid #f0f1f2; }
+.edge-legacy-nav .edge-sidebar-link { min-height: 25px; }
+.edge-legacy-api .nav-api-minitabs { display: flex; flex-wrap: wrap; gap: 3px 7px; padding: 2px 7px 5px 26px; }
+.edge-legacy-api .nav-api-mini { color: #a0a7ad; font-size: 7px; text-decoration: none; }
+.edge-legacy-api .nav-api-mini:hover { color: #4f585f; }
+.edge-create-btn { background: #202428; color: #fff; border-color: #202428; }
+.edge-create-btn:hover { background: #373d42; color: #fff; }
+.edge-sidebar-link .nav-sublink-img { width: 12px; height: 12px; object-fit: contain; }
+
+@media (max-width: 768px) {
+  .main-topbar { display: flex; min-height: 52px; padding: 0.55rem 0.75rem; background: #fff; border-bottom: 1px solid #e8eaed; }
+  .sidebar-toggle { display: inline-flex; }
+  .app-sidebar { width: min(86vw, 300px); padding: 0.75rem; border-right: 1px solid #e7e9eb; overflow-y: auto; overflow-x: hidden; }
+  .sidebar-head { display: block; }
+  .edge-sidebar-menu { overflow: visible; }
+  .edge-page-actions { width: 100%; flex-wrap: wrap; }
+  .edge-control-btn { min-height: 34px; }
+  .edge-create-btn { order: -1; }
+  .edge-card-topline { align-items: stretch; flex-wrap: wrap; gap: 6px; }
+  .edge-tabs { max-width: 100%; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+  .edge-tab { flex: 0 0 auto; }
+  .edge-map-actions { margin-left: auto; }
+  .edge-request-row { grid-template-columns: 0.95fr 1.8fr 0.9fr 0.85fr; }
+  .edge-request-row > span:nth-child(4), .edge-request-row > span:nth-child(7) { display: none; }
+  .edge-table-head { grid-template-columns: 0.95fr 1.8fr 0.9fr 0.85fr; }
+  .edge-table-head span:nth-child(4), .edge-table-head span:nth-child(7) { display: none; }
+  .edge-assistant-card { min-height: 330px; }
+}
+
+@media (max-width: 420px) {
+  .content { padding: 13px 9px 22px; }
+  .edge-page-head h1 { font-size: 20px; }
+  .edge-page-actions { gap: 5px; }
+  .edge-control-btn { flex: 1 1 auto; justify-content: center; padding-inline: 7px; font-size: 8px; }
+  .edge-map-card { height: 235px; }
+  .edge-map-visual { height: 194px; margin-inline: 7px; }
+  .edge-request-tabs { width: 100%; justify-content: space-between; gap: 5px; }
+  .edge-request-tabs button { font-size: 7px; }
+  .edge-row-type strong { font-size: 7px; }
+  .edge-row-path small { display: none; }
+  .edge-row-region, .edge-row-size { font-size: 7px; }
+  .create-source-fields { grid-template-columns: 1fr; }
+  .framework-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deployment-strategy-picker { grid-template-columns: 1fr; }
+}

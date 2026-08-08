@@ -67,6 +67,8 @@ let debugChatSubagentUnread = 0;
 const debugChatAutoScrollByLane = { main: true, sub: true };
 let projectFilterText = '';
 let projectSortMode = 'newest';
+let activeEdgeStatus = 'all';
+let activeEdgeRegion = 'global';
 let appContext = 'non-conected';
 let statsPollTimer = null;
 let activeSvcTab = 'general';
@@ -3765,9 +3767,9 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
-    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
-  );
+    (path === '/projects' && method === 'POST') ||
+    ((path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl')) || (path === '/operator/session' && method === 'DELETE'))
+  ) && !['GET', 'HEAD', 'OPTIONS'].includes(method);
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
   let res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
   if (res.status === 401 && getApiKey()) {
@@ -3777,7 +3779,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/projects' && method === 'POST') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -3819,7 +3821,7 @@ async function restoreOperatorSession() {
 // Which UI routes require operator auth before their data loads.
 const OPERATOR_PROTECTED_VIEWS = ['ssl'];
 // REST prefixes that can be authenticated with an API key (session-stored).
-const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens'];
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens', '/projects'];
 
 function isOperatorView(name) {
   return OPERATOR_PROTECTED_VIEWS.includes(name);
@@ -4002,6 +4004,12 @@ function filteredProjects() {
       (p.id || '').toLowerCase().includes(q) ||
       (p.domain || '').toLowerCase().includes(q)
     );
+  }
+  if (activeEdgeStatus !== 'all') {
+    list = list.filter(p => {
+      const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
+      return status === activeEdgeStatus;
+    });
   }
   if (projectSortMode === 'name') {
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -4617,6 +4625,25 @@ function renderServices() {
   refreshIcons();
 }
 
+function setEdgeStatus(status) {
+  activeEdgeStatus = status || 'all';
+  document.querySelectorAll('[data-edge-status]').forEach(button => {
+    const active = button.dataset.edgeStatus === activeEdgeStatus;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  renderServices();
+}
+
+function setEdgeRegion(region) {
+  activeEdgeRegion = region || 'global';
+  document.querySelectorAll('[data-edge-region]').forEach(button => {
+    const active = button.dataset.edgeRegion === activeEdgeRegion;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
 function statusClass(p) {
   if (p.status === 'deploying') return 'badge-deploying';
   return p.running ? 'badge-running' : 'badge-stopped';
@@ -4634,6 +4661,7 @@ function formatEnv(env) {
 
 function detectStack(p) {
   const env = p.env_vars || {};
+  if (p.framework) return p.framework;
   if (env.SYTE_STACK) return env.SYTE_STACK;
   if (p.deploy_type === 'docker') return 'nextjs';
   return 'shell';
@@ -5165,12 +5193,17 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   const name = document.getElementById('create-name')?.value.trim();
   if (!name) return toast('Enter a project name');
 
+  const gitUrl = document.getElementById('create-git-url')?.value.trim() || null;
+  if (gitUrl && !await operatorAuthenticated()) {
+    showLoginScreen('new-service');
+    return;
+  }
+
   btn.disabled = true;
   btn.querySelector('span').textContent = 'Creating…';
 
   const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
   const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
-  const gitUrl = document.getElementById('create-git-url')?.value.trim() || null;
   const branch = document.getElementById('create-branch')?.value.trim() || 'main';
   const env_vars = {};
   if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
@@ -5990,6 +6023,16 @@ restoreSettingsMiniTab();
 document.getElementById('project-filter')?.addEventListener('input', (e) => {
   projectFilterText = e.target.value;
   renderServices();
+});
+
+document.querySelectorAll('[data-edge-status]').forEach((button) => {
+  button.addEventListener('click', () => setEdgeStatus(button.dataset.edgeStatus));
+});
+document.querySelectorAll('[data-edge-region]').forEach((button) => {
+  button.addEventListener('click', () => setEdgeRegion(button.dataset.edgeRegion));
+});
+document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
+  head.addEventListener('click', () => toggleCreateAccordion(head));
 });
 
 document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
