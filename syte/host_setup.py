@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from syte.config import settings
-from syte.database import get_setting, set_setting
+from syte.database import get_setting
 from syte.domain_utils import normalize_domain
 from syte.litellm_config import LITELLM_PUBLIC_HOST
 
@@ -342,7 +342,9 @@ async def prepare_syra_host() -> dict[str, Any]:
             f"combined endpoint is also available at https://{LITELLM_PUBLIC_HOST}/."
         )
     else:
-        steps.append(f"Syte GUI available at the direct URL; https://{LITELLM_PUBLIC_HOST}/ serves LiteLLM and previews.")
+        steps.append(
+            f"Syte GUI available at the direct URL; https://{LITELLM_PUBLIC_HOST}/ serves LiteLLM and previews."
+        )
     return {
         "ok": True,
         "message": "AlmaLinux host is prepared for Syte, Caddy, Docker, and LiteLLM.",

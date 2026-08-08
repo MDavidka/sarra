@@ -6241,8 +6241,19 @@ function renderRouterTab(data) {
   const warning = routerData.warning
     ? `<div class="note router-warning"><strong>Important:</strong> ${esc(routerData.warning)}</div>`
     : '';
+  const suggestedDomain = routerData.suggested_gui_domain || '';
+  const domainConflict = routerData.gui_domain_conflict
+    ? `<div class="note router-warning">
+        <strong>GUI domain conflict:</strong> Settings → GUI domain is empty or set to
+        <code>${esc(routerData.public_host || 'api.sycord.site')}</code>, the same host 9Router needs
+        to take over. Starting 9Router is blocked until a different GUI domain is configured
+        (this is also the default set by "Start Syra").
+        ${suggestedDomain ? `<button type="button" class="btn-pill btn-sm" id="router-fix-domain-btn" data-domain="${esc(suggestedDomain)}">Use ${esc(suggestedDomain)}</button>` : ''}
+      </div>`
+    : '';
   content.innerHTML = `
     ${warning}
+    ${domainConflict}
     <div class="router-status-head"><span class="badge ${badgeClass}">${badgeText}</span><span class="hint">${esc(routerData.message || '')}</span></div>
     <div class="swarm-grid router-status-grid">
       <div class="swarm-stat"><span class="swarm-label">Public API</span><a class="swarm-value link" href="${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}" target="_blank" rel="noopener">${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}</a></div>
@@ -6256,6 +6267,32 @@ function renderRouterTab(data) {
     <details class="router-logs-details"><summary>Recent container logs</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-logs-refresh"><i data-lucide="refresh-cw"></i><span>Refresh logs</span></button></div><pre id="router-logs" class="router-logs">Load logs when needed.</pre></details>
   `;
   document.getElementById('router-logs-refresh')?.addEventListener('click', loadRouterLogs);
+  document.getElementById('router-fix-domain-btn')?.addEventListener('click', async (event) => {
+    const btn = event.currentTarget;
+    const domain = btn.dataset.domain;
+    if (!domain) return;
+    btn.disabled = true;
+    btn.textContent = 'Applying…';
+    try {
+      const settings = await api('/settings');
+      const email = settings.admin_email;
+      if (!email || !email.includes('@') || email.endsWith('@localhost')) {
+        toast('Set a valid admin email in Settings first, then retry.');
+        return;
+      }
+      const res = await api('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ gui_domain: domain, admin_email: email }),
+      });
+      toast(Array.isArray(res.messages) ? res.messages.join(' ') : `GUI domain set to ${domain}`);
+      await loadRouterTab();
+    } catch (error) {
+      toast(`Could not set GUI domain: ${error.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = `Use ${domain}`;
+    }
+  });
   refreshIcons();
 }
 
