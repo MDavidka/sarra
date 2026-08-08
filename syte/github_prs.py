@@ -410,6 +410,56 @@ async def list_open_prs(repo: str | None = None, *, enrich: int = 12) -> dict:
     }
 
 
+async def recent_mergeable_commits(repo: str | None = None, *, limit: int = 3) -> list[dict[str, Any]]:
+    """Return the newest head commits from mergeable open pull requests.
+
+    GitHub's pull-request list does not include commit messages. Reuse the
+    bounded PR enrichment above, then fetch each eligible head commit. The
+    result is intentionally small because it is rendered below the Update UI.
+    """
+    token, _token_source = await resolve_token()
+    if not token:
+        return []
+    repo = repo or await resolve_repo()
+    if not repo or limit <= 0:
+        return []
+
+    payload = await list_open_prs(repo, enrich=12)
+    commits: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for pr in payload.get("pull_requests") or []:
+        if not pr.get("can_merge") or pr.get("mergeable") is not True:
+            continue
+        sha = str(pr.get("head_sha") or "").strip()
+        if not sha or sha in seen:
+            continue
+        status, body = await _request("GET", f"/repos/{repo}/commits/{sha}", token=token)
+        if status >= 400 or not isinstance(body, dict):
+            continue
+        commit = body.get("commit") or {}
+        message = str(commit.get("message") or "").splitlines()[0].strip()
+        if not message:
+            message = str(pr.get("title") or "Untitled commit").strip()
+        author = commit.get("author") or {}
+        committer = commit.get("committer") or {}
+        committed_at = str(author.get("date") or committer.get("date") or "")
+        commits.append({
+            "sha": sha[:7],
+            "message": message,
+            "committed_at": committed_at,
+            "commit_url": str(body.get("html_url") or f"https://github.com/{repo}/commit/{sha}"),
+            "pr_number": pr.get("number"),
+            "pr_title": str(pr.get("title") or ""),
+            "pr_url": str(pr.get("url") or ""),
+            "head_ref": str(pr.get("head_ref") or ""),
+            "base_ref": str(pr.get("base_ref") or "main"),
+        })
+        seen.add(sha)
+
+    commits.sort(key=lambda item: item.get("committed_at") or "", reverse=True)
+    return commits[:limit]
+
+
 def merge_blockers(pr: dict) -> list[str]:
     """Reasons this PR must not be merged, in operator language."""
     blockers: list[str] = []

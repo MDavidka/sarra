@@ -40,9 +40,18 @@ def test_render_9router_route_skips_unsafe_hostname() -> None:
 
 
 def test_render_9router_route_accepts_custom_upstream() -> None:
-    lines = render_9router_route("9router.sycord.site", "10.0.0.9:5050", use_wildcard_tls=True)
+    lines = render_9router_route("9router.sycord.site", "1.1.1.1:5050", use_wildcard_tls=True)
     text = "\n".join(lines)
-    assert "reverse_proxy 10.0.0.9:5050" in text
+    assert "reverse_proxy 1.1.1.1:5050" in text
+
+
+def test_normalize_nine_router_upstream_rejects_local_destinations() -> None:
+    from syte.certificates import normalize_remote_nine_router_upstream
+
+    assert normalize_remote_nine_router_upstream("localhost:5050") == ""
+    assert normalize_remote_nine_router_upstream("127.0.0.1:5050") == ""
+    assert normalize_remote_nine_router_upstream("10.0.0.9:5050") == ""
+    assert normalize_remote_nine_router_upstream("1.1.1.1:5050") == "1.1.1.1:5050"
 
 
 def test_render_all_service_routes_isolates_previews_with_own_tls() -> None:
@@ -132,11 +141,22 @@ async def test_nine_router_upstream_defaults_to_gateway_host(
     # Default: the dedicated gateway upstream, not a local port.
     assert await nine_router_upstream() == "65.75.203.134:20128"
 
+    await set_setting("nine_router_upstream", "1.1.1.1:5050")
+    assert await nine_router_upstream() == "1.1.1.1:5050"
+
+    # Private/local settings fall back to the real remote gateway.
     await set_setting("nine_router_upstream", "10.0.0.9:5050")
-    assert await nine_router_upstream() == "10.0.0.9:5050"
+    assert await nine_router_upstream() == "65.75.203.134:20128"
+    await set_setting("nine_router_upstream", "localhost:5050")
+    assert await nine_router_upstream() == "65.75.203.134:20128"
+
+    # The legacy local port must never redirect public 9Router traffic.
+    await set_setting("nine_router_upstream", "")
+    await set_setting("nine_router_backend_port", "5300")
+    assert await nine_router_upstream() == "65.75.203.134:20128"
 
     # Invalid upstreams fall back to the default instead of breaking Caddy.
     await set_setting("nine_router_upstream", "not a host")
     assert await nine_router_upstream() == "65.75.203.134:20128"
-    await set_setting("nine_router_upstream", "10.0.0.9:99999")
+    await set_setting("nine_router_upstream", "1.1.1.1:99999")
     assert await nine_router_upstream() == "65.75.203.134:20128"
