@@ -22,6 +22,13 @@ NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
 NINE_ROUTER_LOCAL_TLS_PORT = 20128
 # Host used when the managed Router tab publishes the local 9Router container.
 NINE_ROUTER_PUBLIC_HOST = "api.sycord.site"
+# The managed 9Router web UI should live on a separate GUI host so the router
+# can own api.sycord.site without colliding with Syte's main console.
+NINE_ROUTER_GUI_HOST = "9router.sycord.site"
+# The official 9Router web UI is mounted at /dashboard. Keep this in the route
+# layer so opening the public host lands on the real dashboard instead of the
+# API root, which intentionally returns 404.
+NINE_ROUTER_DASHBOARD_PATH = "/dashboard"
 
 # Public recursive resolvers used for DNS-01 propagation checks. Without these
 # Caddy asks the system resolver, which on this host points at a local/split
@@ -291,10 +298,11 @@ def render_managed_9router_route(
 ) -> list[str]:
     """Render the full public host for the managed local 9Router container.
 
-    The managed container owns ``api.sycord.site`` while enabled.  This is
+    The managed container owns ``api.sycord.site`` while enabled. This is
     intentionally a full host block rather than a path-only handler: the
     9Router dashboard and its API assets need the same origin and base URL.
-    Syte remains reachable through a separately configured GUI domain.
+    The public root redirects to the official dashboard because 9Router's API
+    root is not a web page and intentionally returns 404.
     """
     hostname = normalize_domain(hostname)
     if not hostname or not is_safe_caddy_hostname(hostname):
@@ -306,6 +314,8 @@ def render_managed_9router_route(
     if use_wildcard_tls:
         lines.extend(dedicated_dns_tls_lines("    "))
     lines.extend([
+        f"    @nine_router_root path /",
+        f"    redir @nine_router_root {NINE_ROUTER_DASHBOARD_PATH} 302",
         f"    reverse_proxy 127.0.0.1:{port} {{",
         "        header_up X-Forwarded-Host {host}",
         "        header_up X-Forwarded-Proto https",
@@ -412,7 +422,6 @@ def render_isolated_previews(
     frame_csp: str,
     cors_origin: str | None = None,
 ) -> list[str]:
-    """Render all preview routes as separate host blocks (own DNS-01 TLS)."""
     lines: list[str] = []
     for route in preview_routes:
         lines.extend(
@@ -426,37 +435,28 @@ def render_wildcard_zone(
     routes: list[CaddyRoute],
     *,
     frame_csp: str,
-    dns_tls: bool,
+    dns_tls: bool = True,
     cors_origin: str | None = None,
 ) -> list[str]:
-    lines = [f"# Wildcard zone *.{zone} — auto SSL", f"*.{zone} {{"]
+    label = sanitize_caddy_label(zone)
+    lines = [f"# {label} — wildcard zone", f"*.{zone} {{"]
     if dns_tls:
-        lines.extend([
-            "    tls {",
-            "        dns cloudflare {env.CLOUDFLARE_API_TOKEN}",
-            "    }",
-        ])
+        lines.extend(dedicated_dns_tls_lines("    "))
     for route in routes:
         lines.extend(
-            render_route_handle(
-                route, frame_csp=frame_csp, indent="    ", cors_origin=cors_origin
-            )
+            render_route_handle(route, frame_csp=frame_csp, indent="    ", cors_origin=cors_origin)
         )
-    lines.extend(["}", ""])
+    lines.append("}")
+    lines.append("")
     return lines
 
 
-def render_apex_hosts(
-    hostnames: list[tuple[str, int, str]],
-) -> list[str]:
-    """Exact apex hosts (e.g. sycord.com) — not covered by *.sycord.com cert."""
+def render_apex_hosts(hosts: list[tuple[str, int, str]]) -> list[str]:
     lines: list[str] = []
-    for hostname, port, label in hostnames:
-        if not is_safe_caddy_hostname(hostname):
-            continue
-        safe_label = sanitize_caddy_label(label)
+    for hostname, port, label in hosts:
+        name = sanitize_caddy_label(label)
         lines.extend([
-            f"# {safe_label} — apex",
+            f"# {name} — apex",
             f"{hostname} {{",
             f"    reverse_proxy 127.0.0.1:{port}",
             "}",
@@ -473,67 +473,31 @@ def render_all_service_routes(
     cors_origin: str | None = None,
     isolate_previews: bool = True,
 ) -> list[str]:
-    """Emit Caddy blocks for production + preview.
-
-    With wildcard TLS enabled, preview routes are isolated into their own host
-    blocks with a dedicated DNS-01 certificate (``isolate_previews=True``) so a
-    shared-wildcard re-issue — e.g. after a new server is installed — never
-    takes active previews down. Production subdomains stay on the shared
-    ``*.{zone}`` wildcard cert.
-    """
+    """Emit Caddy blocks for production + preview."""
     custom_routes = collect_custom_tls_routes(projects)
     production, preview = collect_project_routes(projects)
     all_routes = production + preview
-    if not all_routes and not custom_routes:
-        return []
-
-    custom_lines: list[str] = []
-    for route in custom_routes:
-        custom_lines.extend(render_custom_tls_block(route))
-
+    custom_lines = [line for route in custom_routes for line in render_custom_tls_block(route)]
     if not use_wildcard_tls:
         lines: list[str] = list(custom_lines)
         for route in all_routes:
-            lines.extend(
-                render_host_block(route, frame_csp=frame_csp, cors_origin=cors_origin)
-            )
+            lines.extend(render_host_block(route, frame_csp=frame_csp, cors_origin=cors_origin))
         return lines
 
     lines: list[str] = list(custom_lines)
     if isolate_previews and preview:
-        lines.extend(
-            render_isolated_previews(preview, frame_csp=frame_csp, cors_origin=cors_origin)
-        )
+        lines.extend(render_isolated_previews(preview, frame_csp=frame_csp, cors_origin=cors_origin))
     by_zone = routes_by_zone(production)
     for zone in sorted(by_zone):
         zone_routes = by_zone[zone]
         apex_routes = [r for r in zone_routes if r.hostname == zone]
         sub_routes = [r for r in zone_routes if r.hostname != zone]
-
         if apex_routes:
-            lines.extend(
-                render_apex_hosts([(r.hostname, r.port, r.label) for r in apex_routes])
-            )
+            lines.extend(render_apex_hosts([(r.hostname, r.port, r.label) for r in apex_routes]))
         if sub_routes:
-            lines.extend(
-                render_wildcard_zone(
-                    zone,
-                    sub_routes,
-                    frame_csp=frame_csp,
-                    dns_tls=True,
-                    cors_origin=cors_origin,
-                )
-            )
+            lines.extend(render_wildcard_zone(zone, sub_routes, frame_csp=frame_csp, dns_tls=True, cors_origin=cors_origin))
     if not isolate_previews:
         preview_zone_routes = routes_by_zone(preview)
         for zone in sorted(preview_zone_routes):
-            lines.extend(
-                render_wildcard_zone(
-                    zone,
-                    preview_zone_routes[zone],
-                    frame_csp=frame_csp,
-                    dns_tls=True,
-                    cors_origin=cors_origin,
-                )
-            )
+            lines.extend(render_wildcard_zone(zone, preview_zone_routes[zone], frame_csp=frame_csp, dns_tls=True, cors_origin=cors_origin))
     return lines
