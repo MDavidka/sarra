@@ -3108,6 +3108,7 @@ const BREADCRUMBS = {
   logs: 'Logs',
   ai: 'AI',
   models: 'Models',
+  router: 'Router',
   ssl: 'SSL',
   settings: 'Settings',
 };
@@ -3358,6 +3359,7 @@ function showView(name) {
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
   if (name === 'models') { loadModelsTab(); }
+  if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
@@ -3756,7 +3758,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -3768,7 +3770,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -3808,9 +3810,9 @@ async function restoreOperatorSession() {
 // ---------------------------------------------------------------------------
 
 // Which UI routes require operator auth before their data loads.
-const OPERATOR_PROTECTED_VIEWS = ['ssl'];
+const OPERATOR_PROTECTED_VIEWS = ['ssl', 'router'];
 // REST prefixes that can be authenticated with an API key (session-stored).
-const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/github', '/github', '/tokens'];
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/router', '/settings/github', '/github', '/tokens'];
 
 function isOperatorView(name) {
   return OPERATOR_PROTECTED_VIEWS.includes(name);
@@ -3885,6 +3887,7 @@ async function loginWithApiKey(key) {
     hideLoginScreen();
     if (await forceLoginForView(loginReturnView)) {
       if (loginReturnView === 'ssl') await loadSslDashboard();
+      if (loginReturnView === 'router') await loadRouterTab();
       loginReturnView = null;
     }
     toast('Signed in with API key');
@@ -3910,6 +3913,7 @@ async function loginWithBootstrapKey(key) {
     hideLoginScreen();
     if (await forceLoginForView(loginReturnView)) {
       if (loginReturnView === 'ssl') await loadSslDashboard();
+      if (loginReturnView === 'router') await loadRouterTab();
       loginReturnView = null;
     }
     toast('Operator session unlocked');
@@ -6209,6 +6213,99 @@ window.addEventListener('resize', () => {
 
 
 // ---------------------------------------------------------------------------
+// Managed 9Router deployment
+// ---------------------------------------------------------------------------
+
+let routerData = null;
+let routerInitialPassword = '';
+
+function renderRouterTab(data) {
+  const content = document.getElementById('router-content');
+  const startBtn = document.getElementById('router-start-btn');
+  const stopBtn = document.getElementById('router-stop-btn');
+  const restartBtn = document.getElementById('router-restart-btn');
+  if (!content) return;
+  routerData = data || {};
+  const running = Boolean(routerData.running);
+  const enabled = Boolean(routerData.enabled);
+  const badgeClass = running ? 'badge-running' : (enabled ? 'badge-warning' : 'badge-stopped');
+  const badgeText = running ? 'Running' : (enabled ? 'Configured · stopped' : 'Not deployed');
+  if (startBtn) startBtn.disabled = running;
+  if (stopBtn) stopBtn.disabled = !running;
+  if (restartBtn) restartBtn.disabled = !running;
+
+  const passwordNotice = routerInitialPassword
+    ? `<div class="router-secret-box"><strong>Initial dashboard password</strong><code>${esc(routerInitialPassword)}</code><span class="hint">Save this now. It is only shown after deployment and is not returned by status requests.</span></div>`
+    : '';
+  const warning = routerData.warning
+    ? `<div class="note router-warning"><strong>Important:</strong> ${esc(routerData.warning)}</div>`
+    : '';
+  content.innerHTML = `
+    ${warning}
+    <div class="router-status-head"><span class="badge ${badgeClass}">${badgeText}</span><span class="hint">${esc(routerData.message || '')}</span></div>
+    <div class="swarm-grid router-status-grid">
+      <div class="swarm-stat"><span class="swarm-label">Public API</span><a class="swarm-value link" href="${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}" target="_blank" rel="noopener">${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Dashboard</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://api.sycord.site/')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://api.sycord.site/')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Container</span><span class="swarm-value">${esc(routerData.container_id || '—')}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:latest')}</span></div>
+      <div class="swarm-stat full"><span class="swarm-label">Data</span><span class="swarm-value"><code>/var/lib/syte/9router</code> · persistent across redeploys</span></div>
+    </div>
+    ${passwordNotice}
+    <p class="hint block router-help">The Docker container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. Caddy publishes the complete 9Router dashboard and <code>/v1</code> API at <code>api.sycord.site</code>. A separate GUI domain is required before deployment so the Syte console remains reachable. Configure provider connections and API keys in the 9Router dashboard before exposing this endpoint.</p>
+    <details class="router-logs-details"><summary>Recent container logs</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-logs-refresh"><i data-lucide="refresh-cw"></i><span>Refresh logs</span></button></div><pre id="router-logs" class="router-logs">Load logs when needed.</pre></details>
+  `;
+  document.getElementById('router-logs-refresh')?.addEventListener('click', loadRouterLogs);
+  refreshIcons();
+}
+
+async function loadRouterTab() {
+  const content = document.getElementById('router-content');
+  if (!content) return;
+  if (!(await forceLoginForView('router'))) return;
+  content.innerHTML = '<p class="hint block">Loading 9Router status…</p>';
+  try {
+    renderRouterTab(await api('/settings/router/status'));
+  } catch (error) {
+    if (isAuthError(error)) {
+      showLoginScreen('router');
+      return;
+    }
+    content.innerHTML = `<p class="hint block">Could not load 9Router status: ${esc(error.message)}</p>`;
+  }
+}
+
+async function routerAction(action) {
+  if (!(await forceLoginForView('router'))) return;
+  const button = document.getElementById(`router-${action}-btn`);
+  if (button) button.disabled = true;
+  try {
+    const result = await api(`/settings/router/${action}`, { method: 'POST' });
+    if (result.initial_password) routerInitialPassword = result.initial_password;
+    toast(result.message || `9Router ${action} complete`);
+    await loadRouterTab();
+  } catch (error) {
+    if (isAuthError(error)) {
+      showLoginScreen('router');
+      return;
+    }
+    toast(`9Router ${action} failed: ${error.message}`);
+    await loadRouterTab();
+  }
+}
+
+async function loadRouterLogs() {
+  const logs = document.getElementById('router-logs');
+  if (!logs) return;
+  logs.textContent = 'Loading…';
+  try {
+    const result = await api('/settings/router/logs?lines=120');
+    logs.textContent = result.logs || 'No logs available.';
+  } catch (error) {
+    logs.textContent = `Could not load logs: ${error.message}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Syra / LiteLLM proxy management
 // ---------------------------------------------------------------------------
 
@@ -6405,6 +6502,11 @@ async function loadSyraModels() {
     if (modelsEl) modelsEl.innerHTML = '<p class="hint">Error loading models: ' + e.message + '</p>';
   }
 }
+
+document.getElementById('router-refresh-btn')?.addEventListener('click', loadRouterTab);
+document.getElementById('router-start-btn')?.addEventListener('click', () => routerAction('start'));
+document.getElementById('router-stop-btn')?.addEventListener('click', () => routerAction('stop'));
+document.getElementById('router-restart-btn')?.addEventListener('click', () => routerAction('restart'));
 
 document.getElementById('syra-start-btn')?.addEventListener('click', async () => {
   if (!syraSessionReady()) return;

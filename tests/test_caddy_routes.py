@@ -160,3 +160,44 @@ async def test_nine_router_upstream_defaults_to_gateway_host(
     assert await nine_router_upstream() == "65.75.203.134:20128"
     await set_setting("nine_router_upstream", "1.1.1.1:99999")
     assert await nine_router_upstream() == "65.75.203.134:20128"
+
+
+
+def test_render_managed_9router_route_publishes_full_api_host() -> None:
+    from syte.caddy_routes import render_managed_9router_route
+    from syte.nine_router_manager import NINE_ROUTER_HOST_PORT
+
+    text = "\n".join(render_managed_9router_route("api.sycord.site", NINE_ROUTER_HOST_PORT, use_wildcard_tls=False))
+
+    assert "api.sycord.site {" in text
+    assert f"reverse_proxy 127.0.0.1:{NINE_ROUTER_HOST_PORT}" in text
+    assert "X-Forwarded-Proto https" in text
+
+
+
+@pytest.mark.asyncio
+async def test_generated_caddyfile_switches_api_host_for_managed_router(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.certificates import async_generate_caddyfile
+    from syte.database import init_db, set_setting
+    from syte.config import settings
+    from syte.nine_router_manager import NINE_ROUTER_HOST_PORT
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(settings, "db_path", tmp_path / "syte.db")
+    await init_db()
+
+    await set_setting("nine_router_public_enabled", "1")
+    managed = await async_generate_caddyfile()
+    assert managed.count("api.sycord.site {") == 1
+    assert f"reverse_proxy 127.0.0.1:{NINE_ROUTER_HOST_PORT}" in managed
+    assert "@v1 path /v1 /v1/*" not in managed
+    assert "9router.sycord.site {" not in managed
+
+    await set_setting("nine_router_public_enabled", "0")
+    fallback = await async_generate_caddyfile()
+    assert "@v1 path /v1 /v1/*" in fallback
+    assert "9router.sycord.site {" in fallback
+    assert "reverse_proxy 127.0.0.1:20128" not in fallback

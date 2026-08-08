@@ -6,16 +6,19 @@ import subprocess
 from pathlib import Path
 
 from syte.caddy_routes import (
+    NINE_ROUTER_PUBLIC_HOST,
     NINE_ROUTER_UPSTREAM_DEFAULT,
     host_zone,
     render_9router_route,
     render_all_service_routes,
     render_litellm_api_route,
+    render_managed_9router_route,
 )
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import is_safe_caddy_hostname, normalize_domain
 from syte.litellm_config import LITELLM_HOST_PORT, LITELLM_PUBLIC_HOST
+from syte.nine_router_manager import NINE_ROUTER_HOST_PORT
 from syte.preview_domains import preview_frame_ancestors_csp
 
 CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
@@ -328,30 +331,42 @@ async def async_generate_caddyfile() -> str:
             "",
         ])
 
-    lines.extend(
-        render_litellm_api_route(
-            LITELLM_PUBLIC_HOST,
-            LITELLM_HOST_PORT,
-            use_wildcard_tls=use_wildcard_tls,
-            gui_port=settings.port,
-        )
-    )
-
-    # 9Router AI gateway — the OpenAI-compatible router base used by the model
-    # catalog. A dedicated host block guarantees this Caddy instance terminates
-    # TLS for it (own Let's Encrypt cert via DNS-01 when wildcard TLS is on)
-    # and proxies to the dedicated gateway upstream (65.75.203.134:20128).
-    from syte.ai_providers import NINE_ROUTER_API_BASE
-
-    nine_host = normalize_domain(NINE_ROUTER_API_BASE)
-    if is_safe_caddy_hostname(nine_host):
+    managed_router_enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    if managed_router_enabled:
+        # The Router tab temporarily owns api.sycord.site so the dashboard and
+        # /v1 API share the origin advertised by the official Docker image.
+        # Operators should configure a separate gui_domain before enabling it.
         lines.extend(
-            render_9router_route(
-                nine_host,
-                await nine_router_upstream(),
+            render_managed_9router_route(
+                NINE_ROUTER_PUBLIC_HOST,
+                NINE_ROUTER_HOST_PORT,
                 use_wildcard_tls=use_wildcard_tls,
             )
         )
+    else:
+        lines.extend(
+            render_litellm_api_route(
+                LITELLM_PUBLIC_HOST,
+                LITELLM_HOST_PORT,
+                use_wildcard_tls=use_wildcard_tls,
+                gui_port=settings.port,
+            )
+        )
+
+        # Keep the existing remote 9Router gateway route when the managed
+        # container is not enabled. Its loopback TLS probe would conflict with
+        # the local Docker binding while the managed service is running.
+        from syte.ai_providers import NINE_ROUTER_API_BASE
+
+        nine_host = normalize_domain(NINE_ROUTER_API_BASE)
+        if is_safe_caddy_hostname(nine_host):
+            lines.extend(
+                render_9router_route(
+                    nine_host,
+                    await nine_router_upstream(),
+                    use_wildcard_tls=use_wildcard_tls,
+                )
+            )
 
     projects = await list_projects()
     lines.extend(

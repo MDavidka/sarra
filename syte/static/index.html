@@ -76,6 +76,9 @@
               <button type="button" class="nav-sublink" data-view="models">
                 <i data-lucide="bot"></i><span>Models</span>
               </button>
+              <button type="button" class="nav-sublink" data-view="router">
+                <i data-lucide="route"></i><span>Router</span>
+              </button>
               <button type="button" class="nav-sublink" data-view="ssl">
                 <i data-lucide="shield-check"></i><span>SSL</span>
               </button>
@@ -610,6 +613,29 @@
               </div>
             </div>
             <div id="models-content" class="models-content" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="view-router" class="view">
+          <div class="projects-card router-page-card">
+            <div class="projects-header">
+              <div class="projects-title-block">
+                <i data-lucide="route" class="projects-icon"></i>
+                <div>
+                  <h1>9Router</h1>
+                  <p class="projects-sub">Deploy the official 9Router gateway and publish its OpenAI-compatible API at <code>https://api.sycord.site/v1</code>.</p>
+                </div>
+              </div>
+              <div class="router-actions">
+                <button type="button" class="btn-pill btn-ghost" id="router-refresh-btn"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
+                <button type="button" class="btn-pill btn-primary" id="router-start-btn"><i data-lucide="rocket"></i><span>Deploy 9Router</span></button>
+                <button type="button" class="btn-pill btn-ghost" id="router-restart-btn"><i data-lucide="rotate-cw"></i><span>Restart</span></button>
+                <button type="button" class="btn-pill btn-danger" id="router-stop-btn"><i data-lucide="square"></i><span>Stop</span></button>
+              </div>
+            </div>
+            <div id="router-content" class="router-content" aria-live="polite">
+              <p class="hint block">Loading 9Router status…</p>
+            </div>
           </div>
         </section>
 

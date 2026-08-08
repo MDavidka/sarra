@@ -23,6 +23,7 @@ from syte.database import (
 )
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
+from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
 from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
 from syte.self_update import update_syte
@@ -49,6 +50,7 @@ from syte import supervisor
 logger = logging.getLogger("syte")
 
 _SYRA_START_LOCK = asyncio.Lock()
+_ROUTER_START_LOCK = asyncio.Lock()
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 NO_CACHE = "no-cache, no-store, must-revalidate"
@@ -448,6 +450,7 @@ async def get_settings():
         "custom_tls_port": await get_setting("custom_tls_port", ""),
         "nine_router_backend_port": await get_setting("nine_router_backend_port", ""),
         "nine_router_upstream": await get_setting("nine_router_upstream", ""),
+        "nine_router_public_enabled": (await get_setting("nine_router_public_enabled", "0")).strip() == "1",
         "nine_router_local_tls": nine_router_local_tls,
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
@@ -1214,6 +1217,202 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
         "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
         "agent_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
     }
+
+
+# ---------------------------------------------------------------------------
+# Managed 9Router deployment
+# ---------------------------------------------------------------------------
+
+async def _router_gui_guard() -> dict[str, Any] | None:
+    """Require a separate Syte origin before handing api.sycord.site to 9Router."""
+    from syte.nine_router_manager import router_status
+
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    if gui_domain and gui_domain != NINE_ROUTER_PUBLIC_HOST:
+        return None
+    status = await router_status()
+    return {
+        **status,
+        "ok": False,
+        "message": (
+            "Configure a separate GUI domain in Settings before deploying 9Router. "
+            f"The managed Router takes over https://{NINE_ROUTER_PUBLIC_HOST}/."
+        ),
+    }
+
+
+async def _set_router_public_state(enabled: bool, *, force: bool = False) -> tuple[bool, str]:
+    """Apply the Caddy route and roll the setting back if application fails."""
+    from syte.nine_router_manager import NINE_ROUTER_ENABLED_SETTING
+
+    previous = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
+    if previous == enabled and not force:
+        return True, "Router public route already has the requested state."
+    await set_setting(NINE_ROUTER_ENABLED_SETTING, "1" if enabled else "0")
+    ok, message = await apply_proxy_config()
+    if ok:
+        return True, message
+
+    await set_setting(NINE_ROUTER_ENABLED_SETTING, "1" if previous else "0")
+    rollback_ok, rollback_message = await apply_proxy_config()
+    if rollback_ok:
+        return False, f"{message}; previous Router route state was restored."
+    return False, f"{message}; route-state rollback also failed: {rollback_message}"
+
+
+async def _router_start() -> dict[str, Any]:
+    from syte.nine_router_manager import router_status, start_router, stop_router
+
+    async with _ROUTER_START_LOCK:
+        guard = await _router_gui_guard()
+        if guard:
+            return guard
+        before = await router_status()
+        result = await start_router()
+        if not result.get("ok"):
+            # If a previously enabled container failed to start, do not leave
+            # Caddy pointing at a dead upstream. Restore the fallback route.
+            if before.get("enabled"):
+                route_ok, route_message = await _set_router_public_state(False, force=True)
+                result["proxy_configured"] = route_ok
+                result["proxy_message"] = route_message
+            return result
+
+        route_ok, route_message = await _set_router_public_state(True, force=True)
+        result["proxy_configured"] = route_ok
+        result["proxy_message"] = route_message
+        if not route_ok:
+            # The container is no longer public; stop a newly-created instance
+            # when possible, while preserving the accurate fallback setting.
+            if not before.get("running"):
+                cleanup = await stop_router()
+                if not cleanup.get("ok"):
+                    route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
+            result["ok"] = False
+            result["message"] = f"9Router is running, but its public route failed: {route_message}"
+        else:
+            result["message"] = (
+                f"{result.get('message', '9Router started')} "
+                "api.sycord.site now serves the 9Router dashboard and /v1 API."
+            )
+        return result
+
+
+async def _router_stop() -> dict[str, Any]:
+    from syte.nine_router_manager import NINE_ROUTER_ENABLED_SETTING, router_status, stop_router
+
+    async with _ROUTER_START_LOCK:
+        enabled = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
+        if enabled:
+            # Move public traffic away before stopping the upstream. If this
+            # fails, keep the enabled flag and live route unchanged.
+            route_ok, route_message = await _set_router_public_state(False)
+            if not route_ok:
+                status = await router_status()
+                return {
+                    **status,
+                    "ok": False,
+                    "proxy_configured": False,
+                    "proxy_message": route_message,
+                    "message": f"Could not restore the LiteLLM route; 9Router remains enabled: {route_message}",
+                }
+
+        result = await stop_router()
+        result["proxy_configured"] = True
+        result["proxy_message"] = "LiteLLM/remote 9Router fallback route is active." if enabled else ""
+        if not result.get("ok"):
+            result["message"] = f"{result.get('message', 'Failed to stop 9Router')} Public fallback route is active."
+        return result
+
+
+async def _router_restart() -> dict[str, Any]:
+    from syte.nine_router_manager import start_router, stop_router, router_status
+
+    async with _ROUTER_START_LOCK:
+        guard = await _router_gui_guard()
+        if guard:
+            return guard
+        # Use the same safe handoff as stop/start instead of restarting the
+        # container while Caddy still points at an unavailable upstream.
+        enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+        if enabled:
+            route_ok, route_message = await _set_router_public_state(False)
+            if not route_ok:
+                return {**await router_status(), "ok": False, "message": route_message}
+        stopped = await stop_router()
+        if not stopped.get("ok"):
+            return stopped
+        started = await start_router()
+        if not started.get("ok"):
+            return started
+        route_ok, route_message = await _set_router_public_state(True, force=True)
+        started["proxy_configured"] = route_ok
+        started["proxy_message"] = route_message
+        if not route_ok:
+            cleanup = await stop_router()
+            if not cleanup.get("ok"):
+                route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
+            started["ok"] = False
+            started["message"] = f"9Router restarted, but its public route failed: {route_message}"
+        return started
+
+
+@app.get("/api/settings/router/status")
+async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return status for the managed local 9Router deployment."""
+    from syte.nine_router_manager import router_status
+
+    result = await router_status()
+    result["syte_gui_url"] = await _gui_url()
+    if result.get("enabled"):
+        result["warning"] = (
+            "api.sycord.site is currently owned by 9Router. "
+            "The Syte console is available at the configured separate GUI domain."
+        )
+    else:
+        result["warning"] = ""
+    return result
+
+
+@app.post("/api/settings/router/start")
+async def api_router_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Deploy the official 9Router image and publish it at api.sycord.site."""
+    try:
+        return await _router_start()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router start failed")
+        return {"ok": False, "running": False, "message": f"9Router start failed — {type(error).__name__}: {error}"}
+
+
+@app.post("/api/settings/router/stop")
+async def api_router_stop(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Stop the managed 9Router container and restore the previous API route."""
+    try:
+        return await _router_stop()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router stop failed")
+        return {"ok": False, "running": False, "message": f"9Router stop failed — {type(error).__name__}: {error}"}
+
+
+@app.post("/api/settings/router/restart")
+async def api_router_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Restart 9Router and re-apply its public Caddy route."""
+    try:
+        return await _router_restart()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router restart failed")
+        return {"ok": False, "running": False, "message": f"9Router restart failed — {type(error).__name__}: {error}"}
+
+
+@app.get("/api/settings/router/logs")
+async def api_router_logs(
+    lines: int = 100,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Return recent logs from the managed 9Router container."""
+    from syte.nine_router_manager import router_logs
+
+    return await router_logs(lines)
 
 
 # ---------------------------------------------------------------------------
