@@ -342,6 +342,11 @@ async def prepare_syra_host() -> dict[str, Any]:
             f"combined endpoint is also available at https://{LITELLM_PUBLIC_HOST}/."
         )
     else:
+        # NOTE: this default equals NINE_ROUTER_PUBLIC_HOST (api.sycord.site).
+        # If the managed 9Router Router tab is used later, its GUI-domain
+        # guard (syte.main._router_gui_guard) will require a *different*
+        # gui_domain before it can take over this host — the Router tab
+        # surfaces a one-click fix for that when it detects the conflict.
         await set_setting("gui_domain", LITELLM_PUBLIC_HOST)
         steps.append(f"Syte GUI hostname set to https://{LITELLM_PUBLIC_HOST}.")
     return {

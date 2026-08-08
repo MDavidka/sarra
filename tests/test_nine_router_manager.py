@@ -142,9 +142,71 @@ async def test_router_gui_guard_blocks_takeover_without_separate_domain(
     blocked = await main._router_gui_guard()
     assert blocked and blocked["ok"] is False
     assert "separate GUI domain" in str(blocked["message"])
+    assert blocked["gui_domain_conflict"] is True
+    assert blocked["suggested_gui_domain"] == "console.sycord.site"
 
     await set_setting("gui_domain", "console.sycord.site")
     assert await main._router_gui_guard() is None
+
+
+@pytest.mark.asyncio
+async def test_router_gui_guard_blocks_when_gui_domain_unset(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reproduces the reported bug: 'Start Syra' defaults gui_domain to
+    api.sycord.site (LITELLM_PUBLIC_HOST == NINE_ROUTER_PUBLIC_HOST), which
+    silently blocks every 9Router start with no actionable next step. The
+    guard must flag the conflict and suggest a fix instead of only rejecting.
+    """
+    from syte import main
+    from syte.database import init_db
+    from syte import nine_router_manager as manager
+
+    await init_db()
+
+    async def fake_status() -> dict[str, object]:
+        return {"ok": True, "running": False, "enabled": False}
+
+    monkeypatch.setattr(manager, "router_status", fake_status)
+    # gui_domain left unset — the state prepare_syra_host leaves things in
+    # before an operator has configured anything.
+    blocked = await main._router_gui_guard()
+    assert blocked and blocked["ok"] is False
+    assert blocked["gui_domain_conflict"] is True
+    assert blocked["suggested_gui_domain"]
+
+
+@pytest.mark.asyncio
+async def test_router_status_surfaces_gui_domain_conflict_before_start(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The status endpoint (polled before the operator clicks Start) should
+    proactively warn about the conflict rather than only failing after a
+    start attempt.
+    """
+    from syte import main
+    from syte.database import init_db, set_setting
+    from syte import nine_router_manager as manager
+
+    await init_db()
+
+    async def fake_status() -> dict[str, object]:
+        return {"ok": True, "running": False, "enabled": False, "message": ""}
+
+    monkeypatch.setattr(manager, "router_status", fake_status)
+
+    # Simulates prepare_syra_host()'s default.
+    await set_setting("gui_domain", "api.sycord.site")
+    result = await main.api_router_status.__wrapped__() if hasattr(main.api_router_status, "__wrapped__") else None
+    if result is None:
+        # FastAPI route functions are plain coroutines here (no Depends override
+        # needed since _operator is unused in the body); call directly.
+        result = await main.api_router_status(_operator={})
+    assert result["gui_domain_conflict"] is True
+    assert result["suggested_gui_domain"] == "console.sycord.site"
+    assert "separate GUI domain" in result["warning"]
 
 
 @pytest.mark.asyncio
