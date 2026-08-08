@@ -5360,3 +5360,57 @@ html, body { overflow-x: hidden; }
   .edge-request-row { grid-template-columns: 0.9fr 1.8fr 0.9fr 0.8fr; padding-inline: 8px; }
   .edge-table-head { padding-inline: 8px; }
 }
+
+/* Mobile readability: grow controls instead of shrinking the product into a thumbnail. */
+@media (max-width: 768px) {
+  .content { padding: 18px 14px 32px; }
+  .nav-sublink { min-height: 44px; padding: 9px 10px; font-size: 14px; }
+  .nav-sublink svg, .nav-sublink-img { width: 21px; height: 21px; }
+  .edge-sidebar-link { min-height: 42px; padding: 8px 9px; font-size: 12px; }
+  .edge-sidebar-link svg { width: 18px; height: 18px; }
+  .icon-btn, .sidebar-toggle, button, a { min-width: 44px; min-height: 44px; }
+  .icon-btn, .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  .edge-page-head { align-items: flex-start; flex-wrap: wrap; }
+  .edge-page-head h1 { font-size: clamp(22px, 7vw, 30px); line-height: 1.15; }
+  .edge-page-head p, .edge-card-subtitle { font-size: 14px; line-height: 1.5; }
+  .edge-map-card, .edge-insights-card, .edge-requests-card, .edge-assistant-card, .panel, .panel-form { border-radius: 12px; }
+  .edge-card-topline, .edge-request-toolbar, .edge-assistant-head { min-height: 52px; }
+  .edge-map-visual { min-height: 240px; }
+  .edge-insights-grid, .stats-row, .services-grid { grid-template-columns: 1fr; }
+  .edge-request-row { min-height: 52px; font-size: 13px; }
+  .edge-table-head { font-size: 12px; }
+  .settings-page-head { gap: 14px; padding: 4px 2px 18px; }
+  .settings-page-title { align-items: flex-start; gap: 12px; }
+  .settings-page-icon { width: 42px; height: 42px; flex: 0 0 42px; }
+  .settings-page-icon svg { width: 21px; height: 21px; }
+  .settings-page-title h1 { font-size: 22px; line-height: 1.2; }
+  .settings-page-title p { font-size: 14px; line-height: 1.45; }
+  .settings-page-status { align-self: flex-start; font-size: 12px; }
+  .settings-mini-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; padding: 4px; }
+  .settings-mini-tabs::-webkit-scrollbar { display: none; }
+  .settings-mini-tab { min-width: max-content; min-height: 44px; padding: 9px 13px; font-size: 14px; }
+  .settings-mini-tab svg { width: 18px; height: 18px; }
+  .settings-tab-hint { font-size: 13px; margin: 0 2px 14px; }
+  .settings-stack { gap: 14px; }
+  .panel-form { padding: 18px 16px; }
+  .projects-title-block { gap: 10px; }
+  .projects-title-block h1 { font-size: 18px; }
+  .projects-icon { width: 22px; height: 22px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { font-size: 13px; margin-bottom: 6px; }
+  .form-group input, .form-group select, .form-group textarea { min-height: 48px; font-size: 16px; padding: 11px 13px; }
+  .form-row { flex-direction: column; gap: 0; }
+  .form-row .form-group { min-width: 0; }
+  .form-actions { flex-direction: column; align-items: stretch; }
+  .form-actions .btn-pill, .panel-form .btn-pill { width: 100%; justify-content: center; min-height: 46px; }
+  .gui-url, .result-box { font-size: 13px; padding: 12px; }
+  .git-tracking-summary { gap: 8px; }
+}
+
+@media (max-width: 420px) {
+  .content { padding-inline: 12px; }
+  .edge-page-head h1 { font-size: 24px; }
+  .edge-map-visual { min-height: 210px; }
+  .settings-page-title h1 { font-size: 20px; }
+  .settings-page-title p { font-size: 13px; }
+}
