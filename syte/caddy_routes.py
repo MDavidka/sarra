@@ -20,6 +20,8 @@ NINE_ROUTER_UPSTREAM_DEFAULT = "65.75.203.134:20128"
 # Caddy also exposes a loopback-only TLS listener so the Settings tab and
 # local API clients can verify the certificate/SNI path without leaving this VM.
 NINE_ROUTER_LOCAL_TLS_PORT = 20128
+# Host used when the managed Router tab publishes the local 9Router container.
+NINE_ROUTER_PUBLIC_HOST = "api.sycord.site"
 
 # Public recursive resolvers used for DNS-01 propagation checks. Without these
 # Caddy asks the system resolver, which on this host points at a local/split
@@ -238,19 +240,22 @@ def render_litellm_api_route(
     *,
     use_wildcard_tls: bool,
     gui_port: int | None = None,
+    backend_name: str = "LiteLLM",
 ) -> list[str]:
-    """Render the combined Syte GUI and public LiteLLM API host.
+    """Render the combined Syte GUI and public OpenAI-compatible API host.
 
-    The container stays on loopback. Only OpenAI-compatible ``/v1/*`` paths
-    are forwarded to LiteLLM; all other paths go to the Syte GUI when
-    ``gui_port`` is provided, keeping LiteLLM admin endpoints private.
+    The selected gateway stays on loopback. Only ``/v1/*`` paths are forwarded
+    to it; all other paths go to the Syte GUI when ``gui_port`` is provided,
+    keeping gateway administration private. ``backend_name`` is used only in
+    the generated comment so this route can also publish local 9Router.
     """
+
     hostname = normalize_domain(hostname)
     if not hostname or not is_safe_caddy_hostname(hostname):
         return []
 
     lines = [
-        "# Syra LiteLLM public API — virtual-key authentication is enforced by LiteLLM",
+        f"# {backend_name} public API — /v1 routes stay behind the Syte GUI host",
         f"{hostname} {{",
     ]
     if use_wildcard_tls:
@@ -271,6 +276,39 @@ def render_litellm_api_route(
     else:
         lines.append('        respond "Not found" 404')
     lines.extend([
+        "    }",
+        "}",
+        "",
+    ])
+    return lines
+
+
+def render_managed_9router_route(
+    hostname: str,
+    port: int,
+    *,
+    use_wildcard_tls: bool,
+) -> list[str]:
+    """Render the full public host for the managed local 9Router container.
+
+    The managed container owns ``api.sycord.site`` while enabled.  This is
+    intentionally a full host block rather than a path-only handler: the
+    9Router dashboard and its API assets need the same origin and base URL.
+    Syte remains reachable through a separately configured GUI domain.
+    """
+    hostname = normalize_domain(hostname)
+    if not hostname or not is_safe_caddy_hostname(hostname):
+        return []
+    lines = [
+        "# Managed 9Router — public host (the Router tab owns this hostname)",
+        f"{hostname} {{",
+    ]
+    if use_wildcard_tls:
+        lines.extend(dedicated_dns_tls_lines("    "))
+    lines.extend([
+        f"    reverse_proxy 127.0.0.1:{port} {{",
+        "        header_up X-Forwarded-Host {host}",
+        "        header_up X-Forwarded-Proto https",
         "    }",
         "}",
         "",
