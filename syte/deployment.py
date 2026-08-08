@@ -23,6 +23,36 @@ from syte.workspace import (
 _deploy_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _deploy_running: dict[str, asyncio.Task] = {}
 
+SUPPORTED_FRAMEWORKS = (
+    {"id": "nextjs", "label": "Next.js", "category": "React / SSR"},
+    {"id": "react", "label": "React / Vite", "category": "JavaScript"},
+    {"id": "vue", "label": "Vue / Nuxt", "category": "JavaScript"},
+    {"id": "svelte", "label": "Svelte / SvelteKit", "category": "JavaScript"},
+    {"id": "astro", "label": "Astro", "category": "JavaScript"},
+    {"id": "node", "label": "Node / Express", "category": "JavaScript"},
+    {"id": "python", "label": "Python", "category": "Python"},
+    {"id": "go", "label": "Go", "category": "Backend"},
+    {"id": "rust", "label": "Rust", "category": "Backend"},
+    {"id": "static", "label": "Static HTML", "category": "Web"},
+)
+
+SUPPORTED_DEPLOYMENT_STRATEGIES = (
+    {"id": "auto", "label": "Auto detect", "description": "Use Dockerfile when present, otherwise detect the framework."},
+    {"id": "docker", "label": "Dockerfile", "description": "Build and run the repository Dockerfile."},
+    {"id": "shell", "label": "Build & run", "description": "Run a custom start command directly on the server."},
+    {"id": "static", "label": "Static site", "description": "Serve HTML, CSS, and assets with a lightweight web server."},
+)
+
+_ALLOWED_DEPLOYMENT_STRATEGIES = {item["id"] for item in SUPPORTED_DEPLOYMENT_STRATEGIES}
+
+
+def deployment_options() -> dict:
+    """Return the framework and deployment choices shared by GUI/API clients."""
+    return {
+        "frameworks": [dict(item) for item in SUPPORTED_FRAMEWORKS],
+        "deployment_strategies": [dict(item) for item in SUPPORTED_DEPLOYMENT_STRATEGIES],
+    }
+
 
 async def _ensure_production_domain(project_id: str) -> None:
     """Assign auto production subdomain when zone is configured and domain is empty."""
@@ -46,12 +76,17 @@ def _resolve_deploy(
     project_id: str,
     start_command: str | None,
     *,
+    deployment_strategy: str = "auto",
     prefer_docker: bool = True,
 ) -> tuple[dict, str | None]:
-    """After git clone, prefer Docker deploy; fall back to shell only with explicit command."""
+    """Resolve the selected deployment strategy after a repository is available."""
+    strategy = (deployment_strategy or "auto").strip().lower()
+    if strategy not in _ALLOWED_DEPLOYMENT_STRATEGIES:
+        strategy = "auto"
+
     dockerfile = find_dockerfile(project_id)
-    if dockerfile:
-        app_root = ensure_workspace(project_id) / "app"
+    app_root = ensure_workspace(project_id) / "app"
+    if strategy in {"auto", "docker"} and dockerfile:
         try:
             rel = dockerfile.relative_to(app_root)
         except ValueError:
@@ -62,23 +97,26 @@ def _resolve_deploy(
             "start_command": f"docker:{rel}",
         }, None
 
+    if strategy == "docker":
+        return {
+            "deploy_type": "docker",
+            "dockerfile_path": None,
+            "start_command": "",
+        }, "Docker deployment selected, but no Dockerfile was found in the repository."
+
+    if strategy == "static":
+        return {
+            "deploy_type": "shell",
+            "dockerfile_path": None,
+            "start_command": start_command or "python3 -m http.server ${PORT:-3000}",
+        }, None
+
     if start_command:
         return {
             "deploy_type": "shell",
             "dockerfile_path": None,
             "start_command": start_command,
         }, None
-
-    if prefer_docker:
-        return {
-            "deploy_type": "docker",
-            "dockerfile_path": None,
-            "start_command": "",
-        }, (
-            "No Dockerfile found in repository. "
-            "Add a Dockerfile for docker deployment (recommended), "
-            "or provide a start command for shell deployment."
-        )
 
     cmd, err = detect_start_command(project_id)
     if err:
@@ -145,7 +183,11 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
             await update_project(project_id, {"status": "stopped"})
             return "\n".join(messages)
 
-        deploy_info, deploy_err = _resolve_deploy(project_id, start_command or project.get("start_command"))
+        deploy_info, deploy_err = _resolve_deploy(
+            project_id,
+            start_command or project.get("start_command"),
+            deployment_strategy=project.get("deployment_strategy", "auto"),
+        )
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
         if not project:
@@ -207,6 +249,8 @@ async def create_project_record(
     project_uuid: str | None = None,
     deploy_now: bool = False,
     stack: str | None = None,
+    framework: str | None = None,
+    deployment_strategy: str = "auto",
 ) -> tuple[dict | None, str]:
     """Create an empty project workspace. Git and files are optional — add anytime, deploy anytime."""
     from syte.database import list_projects
@@ -229,8 +273,12 @@ async def create_project_record(
         resolved_git = f"https://{git_provider}/{git_url.lstrip('/')}"
 
     merged_env = dict(env_vars or {})
-    if stack:
-        merged_env["SYTE_STACK"] = stack.strip().lower()
+    selected_framework = (framework or stack or "nextjs").strip().lower()
+    if selected_framework:
+        merged_env["SYTE_STACK"] = selected_framework
+    selected_strategy = (deployment_strategy or "auto").strip().lower()
+    if selected_strategy not in _ALLOWED_DEPLOYMENT_STRATEGIES:
+        selected_strategy = "auto"
 
     project = await create_project({
         "id": project_id,
@@ -241,7 +289,9 @@ async def create_project_record(
         "domain": domain,
         "start_command": start_command or "",
         "env_vars": merged_env,
-        "deploy_type": "docker",
+        "framework": selected_framework,
+        "deployment_strategy": selected_strategy,
+        "deploy_type": "docker" if selected_strategy == "docker" else "shell",
     })
 
     ensure_workspace(project_id)
@@ -290,6 +340,8 @@ async def begin_deploy_service(
     git_provider: str | None = None,
     project_uuid: str | None = None,
     stack: str | None = None,
+    framework: str | None = None,
+    deployment_strategy: str = "auto",
 ) -> tuple[dict | None, str]:
     """Create project and immediately start deploy (GUI flow)."""
     return await create_project_record(
@@ -303,6 +355,8 @@ async def begin_deploy_service(
         project_uuid=project_uuid,
         deploy_now=True,
         stack=stack,
+        framework=framework,
+        deployment_strategy=deployment_strategy,
     )
 
 

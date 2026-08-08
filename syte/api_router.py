@@ -100,6 +100,9 @@ class CreateProjectRequest(BaseModel):
         description="Shorthand: github.com/user/repo.git",
     )
     branch: str = "main"
+    framework: str | None = Field(None, description="Framework/runtime: nextjs, react, vue, svelte, astro, node, python, go, rust, static")
+    stack: str | None = Field(None, description="Backward-compatible alias for framework")
+    deployment_strategy: str = Field("auto", description="auto, docker, shell, or static")
     start_command: str | None = None
     domain: str | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
@@ -1331,6 +1334,9 @@ async def api_create_project(body: CreateProjectRequest, _token: dict = Depends(
         git_provider=body.git_provider,
         project_uuid=body.uuid,
         deploy_now=body.deploy,
+        stack=body.stack,
+        framework=body.framework,
+        deployment_strategy=body.deployment_strategy,
     )
     if not project:
         _http_error(400, "create_failed", message)
