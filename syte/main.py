@@ -198,6 +198,16 @@ class SettingsRequest(BaseModel):
     turso_auth_token: str | None = None
 
 
+class GitHubSettingsRequest(BaseModel):
+    repo: str | None = None
+    token: str | None = None
+
+
+class GitHubMergeRequest(BaseModel):
+    method: str = "squash"
+    force: bool = False
+
+
 class SyraSecretsRequest(BaseModel):
     """Protected server-side LiteLLM credentials and Syra virtual key."""
 
@@ -480,8 +490,19 @@ async def get_settings():
         ),
         "direct_url": build_direct_url(ip, settings.port),
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
+        "github_repo": (await get_setting("github_repo", "")).strip(),
+        "github_token_set": bool((await get_setting("github_token", "")).strip()),
+        "github_token_source": (await _github_token_source()),
         "version": __version__,
     }
+
+
+async def _github_token_source() -> str:
+    """Return the configured GitHub token source without exposing its value."""
+    from syte.github_prs import resolve_token
+
+    _token, source = await resolve_token()
+    return source
 
 
 async def _model_configuration() -> dict[str, Any]:
@@ -1028,6 +1049,90 @@ async def api_syra_save_secrets(
 ):
     """Save server-side LiteLLM credentials using an operator API token."""
     return await _save_syra_secrets(body)
+
+
+@app.get("/api/settings/github")
+async def api_github_settings(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Return GitHub tracking configuration without exposing the token."""
+    from syte.github_prs import resolve_token
+
+    token, source = await resolve_token()
+    return {
+        "ok": True,
+        "repo": (await get_setting("github_repo", "")).strip(),
+        "token_configured": bool(token),
+        "token_source": source,
+    }
+
+
+@app.put("/api/settings/github")
+async def api_save_github_settings(
+    body: GitHubSettingsRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Save the repository/token used by the web Git and PR tracker."""
+    from syte.update_source import parse_github_repo
+
+    if body.repo is None and body.token is None:
+        raise HTTPException(400, "Provide a repository or token to update.")
+
+    messages: list[str] = []
+    if body.repo is not None:
+        raw_repo = body.repo.strip()
+        repo = parse_github_repo(raw_repo) or raw_repo.strip("/")
+        parts = repo.split("/") if repo else []
+        if len(parts) != 2 or any(not part or any(char.isspace() for char in part) for part in parts):
+            raise HTTPException(400, "GitHub repository must be owner/repo or a GitHub URL.")
+        await set_setting("github_repo", repo)
+        messages.append(f"GitHub repository set to {repo}.")
+    if body.token is not None:
+        token = body.token.strip()
+        await set_setting("github_token", token)
+        messages.append("GitHub token saved." if token else "GitHub token cleared.")
+    return {"ok": True, "messages": messages}
+
+
+@app.get("/api/github/status")
+async def api_github_status(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Return local branch/update state for the web Git tracker."""
+    from syte.github_prs import git_status
+
+    return await git_status()
+
+
+@app.get("/api/github/pulls")
+async def api_github_pulls(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """List tracked repository pull requests with merge-readiness metadata."""
+    from syte.github_prs import GitHubError, list_open_prs
+
+    try:
+        return await list_open_prs()
+    except GitHubError as error:
+        raise HTTPException(error.status or 502, str(error)) from error
+
+
+@app.post("/api/github/pulls/{number}/merge")
+async def api_github_merge_pull(
+    number: int,
+    body: GitHubMergeRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Merge a ready tracked pull request after an explicit web confirmation."""
+    from syte.github_prs import GitHubError, merge_pr
+
+    try:
+        result = await merge_pr(number, method=body.method, force=body.force)
+    except GitHubError as error:
+        raise HTTPException(error.status or 502, str(error)) from error
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=409)
+    return result
 
 
 @app.get("/api/system/update-info")

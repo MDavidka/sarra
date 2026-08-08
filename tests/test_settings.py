@@ -179,3 +179,27 @@ async def test_get_settings_reports_turso_configuration(
     assert "turso_database_url" not in res
     assert res["turso_auth_token_set"] is True
     assert res["turso_configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_save_github_tracking_settings_masks_token(
+    tmp_data_dir: Path,
+) -> None:
+    from syte.database import get_setting, init_db
+    from syte.main import GitHubSettingsRequest, api_github_settings, api_save_github_settings
+
+    await init_db()
+    saved = await api_save_github_settings(
+        GitHubSettingsRequest(repo="https://github.com/MDavidka/sarra.git", token="ghp-secret"),
+        {},
+    )
+
+    assert saved["ok"] is True
+    assert await get_setting("github_repo") == "MDavidka/sarra"
+    assert await get_setting("github_token") == "ghp-secret"
+
+    status = await api_github_settings({})
+    assert status["repo"] == "MDavidka/sarra"
+    assert status["token_configured"] is True
+    assert "token" not in status
+    assert "ghp-secret" not in str(status)
