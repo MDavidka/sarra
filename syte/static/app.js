@@ -5971,11 +5971,18 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[Syte] Unhandled promise rejection:', event?.reason);
 });
 
+document.querySelector('.edge-team-switcher[role="button"]')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  showView('dashboard');
+});
+
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('context-menu');
   toggleContextMenu(menu?.classList.contains('hidden'));
 });
+
 
 document.querySelectorAll('.context-option').forEach(btn => {
   btn.addEventListener('click', (e) => {
