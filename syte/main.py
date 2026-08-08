@@ -1235,10 +1235,10 @@ def _suggested_gui_domain() -> str:
 async def _router_gui_guard() -> dict[str, Any] | None:
     """Require a separate Syte origin before handing api.sycord.site to 9Router.
 
-    ``gui_domain`` defaults to ``api.sycord.site`` for LiteLLM/Syra setups
-    (``host_setup.prepare_syra_host``), which is the same host the managed
-    Router needs to take over. Without this guard the operator would silently
-    lose the Syte console; the response instead carries enough information
+    ``gui_domain`` may be unset or set to ``api.sycord.site`` on fresh hosts,
+    and either state conflicts with the host the managed Router needs to take
+    over. Without this guard the operator would silently lose the Syte console;
+    the response instead carries enough information
     (``gui_domain_conflict`` + ``suggested_gui_domain``) for the Router tab to
     offer a one-click fix rather than sending the operator to hunt through
     Settings for the cause.
