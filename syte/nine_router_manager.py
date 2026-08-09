@@ -29,6 +29,10 @@ NINE_ROUTER_CONTAINER_PORT = 20128
 NINE_ROUTER_HOST_PORT = 20129
 NINE_ROUTER_LOCAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_HOST_PORT}"
 NINE_ROUTER_INTERNAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_CONTAINER_PORT}"
+# 9Router is a Next.js app built and started from /app inside the official
+# image. Be explicit so Router-tab starts do not inherit a changed image
+# default working directory and fail to find the application bundle.
+NINE_ROUTER_CONTAINER_WORKDIR = "/app"
 NINE_ROUTER_PUBLIC_API_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}/v1"
 NINE_ROUTER_DASHBOARD_PATH = "/dashboard"
 NINE_ROUTER_DASHBOARD_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}{NINE_ROUTER_DASHBOARD_PATH}"
@@ -297,6 +301,7 @@ async def start_router() -> dict[str, Any]:
     code, output = await _run_docker([
         "run", "-d",
         "--name", NINE_ROUTER_CONTAINER_NAME,
+        "--workdir", NINE_ROUTER_CONTAINER_WORKDIR,
         "-p", f"127.0.0.1:{NINE_ROUTER_HOST_PORT}:{NINE_ROUTER_CONTAINER_PORT}",
         "-v", f"{data_dir}:/app/data",
         "-e", "DATA_DIR=/app/data",
