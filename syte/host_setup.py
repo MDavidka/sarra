@@ -50,6 +50,14 @@ def _docker_unit_loaded() -> bool:
     return _systemd_unit_loaded("docker.service")
 
 
+def _podman_engine_ready() -> bool:
+    """Accept a healthy Podman-compatible Docker CLI without migrating it."""
+    if not (_command_exists("docker") and _command_exists("podman")):
+        return False
+    code, output = _run(["docker", "info"], timeout=20.0)
+    return code == 0 and "podman" in output.lower()
+
+
 def _run(command: list[str], timeout: float = 120.0) -> tuple[int, str]:
     try:
         result = subprocess.run(
@@ -271,7 +279,8 @@ def _ensure_almalinux_packages() -> tuple[bool, list[str]]:
         messages.append("curl installed.")
 
     docker_ready = _command_exists("docker") and _docker_unit_loaded()
-    if not docker_ready:
+    podman_ready = _podman_engine_ready()
+    if not docker_ready and not podman_ready:
         migration_ok, migration_messages = _prepare_docker_ce_migration()
         messages.extend(migration_messages)
         if not migration_ok:
@@ -300,7 +309,11 @@ def _ensure_almalinux_packages() -> tuple[bool, list[str]]:
                 return False, messages + [detail]
             messages.append(f"{label} ready.")
     else:
-        messages.append("Docker already installed.")
+        messages.append(
+            "Podman engine is already ready through the Docker-compatible CLI; preserving existing containers."
+            if podman_ready and not docker_ready
+            else "Docker already installed."
+        )
 
     if not _command_exists("caddy"):
         ok, detail = _run_checked(
@@ -330,7 +343,17 @@ def _ensure_services_and_firewall() -> tuple[bool, list[str]]:
     if not _command_exists("systemctl"):
         return False, ["systemctl is required to manage Docker, Caddy, and firewalld."]
 
-    for service in ("docker", "firewalld"):
+    container_service = "docker" if _docker_unit_loaded() else "podman"
+    if not _docker_unit_loaded() and not _podman_engine_ready():
+        return False, ["Neither Docker nor a healthy Podman-compatible container engine is available."]
+
+    services = ["firewalld"]
+    if container_service == "docker" or _systemd_unit_loaded("podman.service"):
+        services.insert(0, container_service)
+    else:
+        messages.append("Podman is already serving containers; no Docker service migration was needed.")
+
+    for service in services:
         ok, detail = _run_checked(
             ["systemctl", "enable", "--now", service],
             f"Enable {service}",
