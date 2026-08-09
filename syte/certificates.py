@@ -450,10 +450,14 @@ async def apply_proxy_config() -> tuple[bool, str]:
     if code != 0:
         return False, f"Invalid Caddy config: {out or 'validation failed'}"
 
+    # Reload the newly written file first. Restarting the systemd unit before
+    # an explicit reload can report success while continuing to serve the old
+    # in-memory configuration, which leaves managed 9Router on a blank/stale
+    # public route after the container itself is healthy.
     for cmd in (
-        ["systemctl", "restart", "caddy"],
-        ["systemctl", "reload", "caddy"],
         ["caddy", "reload", "--config", str(written)],
+        ["systemctl", "reload", "caddy"],
+        ["systemctl", "restart", "caddy"],
     ):
         cmd_env = caddy_env if cmd[0] == "caddy" else None
         code, out = await asyncio.to_thread(_run, cmd, env=cmd_env)
