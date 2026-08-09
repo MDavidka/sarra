@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
 from syte.config import settings
 from syte.database import get_setting
 from syte.domain_utils import normalize_domain
@@ -214,8 +215,11 @@ async def _resolve_public_ipv4() -> str:
     return str(address)
 
 
-async def _ensure_dns_record() -> tuple[bool, str]:
-    """Ensure api.sycord.site points at this host, using the saved Cloudflare token."""
+async def _ensure_dns_record(hostname: str = LITELLM_PUBLIC_HOST) -> tuple[bool, str]:
+    """Ensure one public endpoint points at this host, using Cloudflare when configured."""
+    hostname = normalize_domain(hostname)
+    if not hostname:
+        return False, "DNS setup received an empty hostname."
     public_ip = await _resolve_public_ipv4()
     token = (await get_setting("cloudflare_api_token", "")).strip()
     if not public_ip:
@@ -226,13 +230,13 @@ async def _ensure_dns_record() -> tuple[bool, str]:
 
     if not token:
         try:
-            resolved = socket.gethostbyname(LITELLM_PUBLIC_HOST)
+            resolved = socket.gethostbyname(hostname)
         except OSError:
             resolved = ""
         if resolved == public_ip:
-            return True, f"DNS already resolves {LITELLM_PUBLIC_HOST} to {public_ip}."
+            return True, f"DNS already resolves {hostname} to {public_ip}."
         return False, (
-            f"{LITELLM_PUBLIC_HOST} does not resolve to {public_ip}. "
+            f"{hostname} does not resolve to {public_ip}. "
             "Save a Cloudflare DNS-edit token or create the A record manually."
         )
 
@@ -255,17 +259,17 @@ async def _ensure_dns_record() -> tuple[bool, str]:
 
         records_response = await client.get(
             f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
-            params={"type": "A", "name": LITELLM_PUBLIC_HOST},
+            params={"type": "A", "name": hostname},
             headers=headers,
         )
         records_payload = records_response.json()
         records = records_payload.get("result", []) if isinstance(records_payload, dict) else []
         if records_response.status_code != 200:
-            return False, "Cloudflare DNS records could not be read; check token permissions."
+            return False, f"Cloudflare DNS record for {hostname} could not be read; check token permissions."
 
         record_body = {
             "type": "A",
-            "name": LITELLM_PUBLIC_HOST,
+            "name": hostname,
             "content": public_ip,
             "ttl": 120,
             "proxied": False,
@@ -273,7 +277,7 @@ async def _ensure_dns_record() -> tuple[bool, str]:
         if records:
             record = records[0]
             if record.get("content") == public_ip and not record.get("proxied", False):
-                return True, f"Cloudflare DNS already points {LITELLM_PUBLIC_HOST} to {public_ip}."
+                return True, f"Cloudflare DNS already points {hostname} to {public_ip}."
             response = await client.put(
                 f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record['id']}",
                 headers=headers,
@@ -289,8 +293,8 @@ async def _ensure_dns_record() -> tuple[bool, str]:
             action = "created"
         payload = response.json()
         if response.status_code not in (200, 201) or not payload.get("success"):
-            return False, "Cloudflare could not update the api.sycord.site DNS record."
-        return True, f"Cloudflare DNS record {action}: {LITELLM_PUBLIC_HOST} → {public_ip}."
+            return False, f"Cloudflare could not update the {hostname} DNS record."
+        return True, f"Cloudflare DNS record {action}: {hostname} → {public_ip}."
 
 
 async def prepare_syra_host() -> dict[str, Any]:
@@ -348,5 +352,62 @@ async def prepare_syra_host() -> dict[str, Any]:
     return {
         "ok": True,
         "message": "AlmaLinux host is prepared for Syte, Caddy, Docker, and LiteLLM.",
+        "steps": steps,
+    }
+
+
+async def prepare_router_host() -> dict[str, Any]:
+    """Prepare an AlmaLinux host for the managed 9Router GUI and HTTPS route.
+
+    Router deployment is available from its own tab, so it cannot depend on an
+    operator having started Syra first. Keep this flow explicit and return every
+    completed step so a failed install is actionable in the browser.
+    """
+    if os.geteuid() != 0:
+        return {
+            "ok": False,
+            "message": "9Router host setup must run as root through the Syte systemd service.",
+            "steps": [],
+        }
+
+    release = _os_release()
+    if not _is_almalinux(release):
+        return {
+            "ok": False,
+            "message": (
+                "Automatic 9Router host setup supports AlmaLinux only "
+                f"(detected {release.get('PRETTY_NAME', 'unknown')})."
+            ),
+            "steps": [],
+        }
+
+    steps: list[str] = []
+    ok, package_messages = await asyncio.to_thread(_ensure_almalinux_packages)
+    steps.extend(package_messages)
+    if not ok:
+        return {"ok": False, "message": package_messages[-1], "steps": steps}
+
+    ok, service_messages = await asyncio.to_thread(_ensure_services_and_firewall)
+    steps.extend(service_messages)
+    if not ok:
+        return {"ok": False, "message": service_messages[-1], "steps": steps}
+
+    ok, docker_message = await _wait_for_docker()
+    steps.append(docker_message)
+    if not ok:
+        return {"ok": False, "message": docker_message, "steps": steps}
+
+    try:
+        dns_ok, dns_message = await _ensure_dns_record(NINE_ROUTER_PUBLIC_HOST)
+    except Exception as error:  # noqa: BLE001 - returned as setup diagnostics
+        dns_ok = False
+        dns_message = f"DNS setup failed for {NINE_ROUTER_PUBLIC_HOST}: {type(error).__name__}: {error}"
+    steps.append(dns_message)
+    if not dns_ok:
+        return {"ok": False, "message": dns_message, "steps": steps}
+
+    return {
+        "ok": True,
+        "message": "AlmaLinux host is prepared for 9Router, Docker, Caddy, firewalld, DNS, and HTTPS.",
         "steps": steps,
     }

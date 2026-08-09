@@ -5,7 +5,25 @@ SYTE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="${SYTE_DATA_DIR:-/var/lib/syte}"
 VENV_DIR="${SYTE_DIR}/.venv"
 
+if [[ $EUID -eq 0 ]]; then
+  INSTALL_LOG="${SYTE_INSTALL_LOG:-${DATA_DIR}/install.log}"
+  mkdir -p "$(dirname "$INSTALL_LOG")"
+else
+  INSTALL_LOG="${SYTE_INSTALL_LOG:-/tmp/syte-install.log}"
+fi
+# Keep credentials and package-manager output readable only by the installer user.
+touch "$INSTALL_LOG"
+chmod 600 "$INSTALL_LOG" 2>/dev/null || true
+# Keep a complete install transcript: package managers, Docker, Caddy, and
+# systemd output are the useful evidence when the Router tab cannot start.
+exec > >(tee -a "$INSTALL_LOG") 2>&1
+trap 'status=$?; if [[ $status -ne 0 ]]; then echo "[ERROR] install.sh failed at line ${LINENO} (exit ${status}); full log: ${INSTALL_LOG}"; fi' EXIT
+if [[ "${SYTE_INSTALL_DEBUG:-0}" == "1" ]]; then
+  set -x
+fi
+
 echo "==> Installing Syte deployment service"
+echo "    Installer log: ${INSTALL_LOG}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "Run with sudo for system-wide install: sudo ./scripts/install.sh"
@@ -51,6 +69,27 @@ if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
       || apt-get install -y -qq chromium 2>/dev/null \
       || echo "Chromium install skipped — screenshots need chromium; set SYTE_CHROMIUM_PATH or apt install chromium"
   fi
+elif [[ "$INSTALL_SYSTEM" == true ]] && command -v dnf &>/dev/null; then
+  echo "==> Installing AlmaLinux system dependencies"
+  dnf -y install dnf-plugins-core curl git firewalld python3.12 python3.12-pip python3.12-devel nodejs npm
+
+  if ! command -v docker &>/dev/null; then
+    echo "==> Installing Docker CE (for 9Router and Docker deployments)"
+    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
+
+  if ! command -v caddy &>/dev/null; then
+    echo "==> Installing Caddy (reverse proxy + automatic HTTPS)"
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/setup.rpm.sh' | bash
+    dnf -y install caddy
+  fi
+
+  echo "==> Enabling AlmaLinux services required by the Router tab"
+  systemctl enable --now docker firewalld
+  firewall-cmd --permanent --add-service=http
+  firewall-cmd --permanent --add-service=https
+  firewall-cmd --reload
 fi
 
 # Python venv
@@ -103,15 +142,30 @@ if [[ "$INSTALL_SYSTEM" == true ]]; then
     "$SYTE_DIR/systemd/syte.service" > /etc/systemd/system/syte.service
   systemctl daemon-reload
   systemctl enable syte
-  systemctl enable caddy 2>/dev/null || true
+  systemctl enable caddy 2>/dev/null || echo "WARN: Caddy could not be enabled; HTTPS may not work."
   chmod +x "$SYTE_DIR/scripts/"*.sh
   "$SYTE_DIR/scripts/stop.sh" 2>/dev/null || true
-  "$SYTE_DIR/scripts/apply-caddy.sh" 2>/dev/null || true
-  systemctl start caddy 2>/dev/null || true
-  systemctl start syte 2>/dev/null || true
+  "$SYTE_DIR/scripts/apply-caddy.sh" || echo "WARN: initial Caddy configuration failed; inspect the installer log."
+  if ! systemctl start caddy; then
+    echo "WARN: Caddy failed to start — recent diagnostics:"
+    systemctl status caddy --no-pager || true
+    journalctl -u caddy -n 80 --no-pager || true
+  fi
+  if ! systemctl start syte; then
+    echo "ERROR: Syte failed to start — recent diagnostics:"
+    systemctl status syte --no-pager || true
+    journalctl -u syte -n 120 --no-pager || true
+    exit 1
+  fi
   echo "    Services enabled: syte, caddy (24/7)"
   echo "    Manage with: sudo ./scripts/restart.sh"
-  curl -fsS "http://127.0.0.1:${SYTE_PORT:-8787}/api/health" 2>/dev/null && echo "" || true
+  if ! curl -fsS "http://127.0.0.1:${SYTE_PORT:-8787}/api/health"; then
+    echo "WARN: Syte health endpoint did not answer; recent service diagnostics:"
+    systemctl status syte --no-pager || true
+    journalctl -u syte -n 120 --no-pager || true
+  else
+    echo ""
+  fi
 fi
 
 echo ""

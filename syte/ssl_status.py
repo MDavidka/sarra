@@ -320,6 +320,11 @@ async def monitor_endpoint(name: str, domain: str, *, expect_dedicated: bool = F
     ips = await _resolve_host(host)
     live = await live_probe_https(build_https_url(host))
     scope = cert_scope(host)
+    state = live.get("state")
+    detail = live.get("detail")
+    if expect_dedicated and scope == "wildcard":
+        state = "dedicated-cert-missing"
+        detail = "Endpoint is reachable, but only the zone wildcard covers it; a dedicated certificate is required."
     return {
         "name": name,
         "domain": host,
@@ -331,10 +336,10 @@ async def monitor_endpoint(name: str, domain: str, *, expect_dedicated: bool = F
         "expect_dedicated": expect_dedicated,
         "dedicated_cert": scope == "dedicated",
         "cert": stored_host_cert(host) if scope == "dedicated" else None,
-        "state": live.get("state"),
+        "state": state,
         "reachable": bool(live.get("reachable")),
         "latency_ms": live.get("latency_ms"),
-        "detail": live.get("detail"),
+        "detail": detail,
     }
 
 
@@ -419,7 +424,7 @@ def health_from_state(state: str | None, *, cert_active: bool, resolves: bool = 
         return HEALTH_UNCONFIGURED
     if state == "serving":
         return HEALTH_HEALTHY
-    if state in ("invalid-cert", "cert-error", "malformed"):
+    if state in ("invalid-cert", "cert-error", "malformed", "dedicated-cert-missing"):
         # TLS terminates but clients refuse the certificate — worst case, since
         # it looks configured while every request fails.
         return HEALTH_DOWN
@@ -459,8 +464,8 @@ async def _surface_health(
     issues: list[str] = []
     if endpoint.get("configured") and not endpoint.get("resolves"):
         issues.append(f"DNS does not resolve for {endpoint['domain']}.")
-    if endpoint.get("state") in ("invalid-cert", "cert-error"):
-        issues.append(endpoint.get("detail") or "Certificate is not trusted by clients.")
+    if endpoint.get("state") in ("invalid-cert", "cert-error", "dedicated-cert-missing"):
+        issues.append(endpoint.get("detail") or "Certificate is not suitable for this endpoint.")
     if endpoint.get("state") == "down" and endpoint.get("cert_active"):
         issues.append("Certificate is installed but the endpoint is not responding.")
     if endpoint.get("state") == "pending":
@@ -755,8 +760,16 @@ async def build_ssl_overview() -> dict:
     nine_cert = nine_scope != "none"
     nine_cert_meta = stored_host_cert(_nine_host) if nine_dedicated else None
     from syte.certificates import nine_router_upstream
+    from syte.nine_router_manager import NINE_ROUTER_LOCAL_BASE_URL, router_status
 
-    nine_upstream = await nine_router_upstream()
+    nine_router_managed = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    nine_state = await router_status() if nine_router_managed else {}
+    nine_upstream = NINE_ROUTER_LOCAL_BASE_URL if nine_router_managed else await nine_router_upstream()
+    nine_route_note = (
+        "Managed local Docker GUI/API route through Caddy."
+        if nine_router_managed
+        else f"Legacy remote gateway upstream {nine_upstream}."
+    )
     overview_debug.append(await debug_endpoint(
         name="9Router API",
         domain=_nine_host,
@@ -764,20 +777,25 @@ async def build_ssl_overview() -> dict:
         cert_active=nine_cert,
         extra=(
             f"Dedicated certificate (not the zone wildcard); TLS terminated by "
-            f"this Caddy instance, proxied to gateway upstream {nine_upstream}."
+            f"this Caddy instance. {nine_route_note}"
         ),
     ))
     overview.nine_router = {
         "configured": nine_configured,
         "active": nine_cert,
         "domain": _nine_host,
-        "url": build_https_url(_nine_host) if nine_configured else None,
+        "url": f"{build_https_url(_nine_host)}/dashboard" if nine_configured else None,
+        "api_url": f"{build_https_url(_nine_host)}/v1" if nine_configured else None,
         "upstream": nine_upstream,
+        "managed": nine_router_managed,
+        "running": bool(nine_state.get("running")),
+        "ready": bool(nine_state.get("ready")),
         "cert_scope": nine_scope,
         "dedicated_cert": nine_dedicated,
         "cert": nine_cert_meta,
         "label": (
             "HTTPS (dedicated cert)" if nine_dedicated
+            else "Dedicated SSL missing" if nine_scope == "wildcard"
             else "HTTPS (wildcard)" if nine_cert
             else "SSL pending"
         ),

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,66 @@ NINE_ROUTER_READINESS_POLL_SECONDS = 1.0
 NINE_ROUTER_PASSWORD_SETTING = "nine_router_initial_password"
 NINE_ROUTER_PASSWORD_REVEALED_SETTING = "nine_router_initial_password_revealed"
 NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
+NINE_ROUTER_DEBUG_FILE_NAME = "install-debug.log"
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)(\b(?:initial[_ -]?password|password|api[_ -]?key|token|secret)\b\s*[=:]\s*)([^\s,;]+)"
+)
+_BEARER_RE = re.compile(r"(?i)(\bbearer\s+)([^\s,;]+)")
+_KEY_SHAPE_RE = re.compile(r"(?i)\b(?:sk-[a-z0-9_-]{12,}|AIza[a-z0-9_-]{20,})\b")
+
+
+def _redact_router_diagnostic(value: str) -> str:
+    """Remove common credentials before Router logs are stored or returned."""
+    text = str(value or "")
+    text = _SECRET_ASSIGNMENT_RE.sub(r"\1[REDACTED]", text)
+    text = _BEARER_RE.sub(r"\1[REDACTED]", text)
+    return _KEY_SHAPE_RE.sub("[REDACTED]", text)
+
+
+def _debug_path() -> Path:
+    return _data_dir() / NINE_ROUTER_DEBUG_FILE_NAME
+
+
+def record_router_debug(phase: str, message: str, *, ok: bool | None = None) -> None:
+    """Persist a redacted, operator-facing deployment diagnostic.
+
+    The Router tab is often used precisely when deployment fails. A persistent
+    log means Docker/Caddy/AlmaLinux output remains available after the request
+    finishes or the service is restarted. Callers must not pass credentials.
+    """
+    try:
+        path = _debug_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(exist_ok=True)
+        path.chmod(0o600)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        state = "OK" if ok is True else "FAIL" if ok is False else "INFO"
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(
+                f"[{timestamp}] [{state}] {phase}: {_redact_router_diagnostic(message).strip()}\n"
+            )
+    except OSError:
+        # Diagnostics must never turn a deployment failure into a second error.
+        return
+
+
+async def router_debug_log(max_chars: int = 24000) -> dict[str, Any]:
+    """Return redacted Router and bootstrap installer diagnostics."""
+    paths = [settings.data_dir / "install.log", _debug_path()]
+    sections: list[str] = []
+    for path in paths:
+        try:
+            text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            sections.append(f"{path.name}: could not read ({type(error).__name__}: {error})")
+            continue
+        sections.append(f"=== {path.name} ===\n{_redact_router_diagnostic(text)}")
+    text = "\n\n".join(sections) or "No Router installation diagnostics have been recorded yet."
+    if len(text) > max_chars:
+        text = "[older diagnostics truncated]\n" + text[-max_chars:]
+    return {"ok": bool(sections), "log": text}
 
 
 async def _run_docker(args: list[str], timeout: float = 60.0) -> tuple[int, str]:
@@ -202,18 +264,36 @@ async def _router_password() -> tuple[str, bool]:
 
 async def start_router() -> dict[str, Any]:
     """Install/start the published 9Router image with persistent data."""
+    record_router_debug("start", "Beginning managed 9Router deployment.")
     current = await router_status()
     if current["running"] and current.get("ready"):
+        record_router_debug("readiness", "Existing container is already running and ready.", ok=True)
         return {**current, "ok": True, "message": "9Router is already running and ready."}
 
     data_dir = _data_dir()
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
+        record_router_debug("storage", f"Persistent data directory ready: {data_dir}.", ok=True)
     except OSError as error:
-        return {**current, "ok": False, "message": f"Could not create {data_dir}: {error}"}
+        message = f"Could not create {data_dir}: {error}"
+        record_router_debug("storage", message, ok=False)
+        return {**current, "ok": False, "message": message}
 
-    password, reveal_password = await _router_password()
-    await _run_docker(["rm", "-f", NINE_ROUTER_CONTAINER_NAME], timeout=30.0)
+    try:
+        password, reveal_password = await _router_password()
+    except Exception as error:  # noqa: BLE001 - preserve the failure in diagnostics
+        message = f"Could not create or read the persistent dashboard password: {type(error).__name__}: {error}"
+        record_router_debug("credentials", message, ok=False)
+        return {**current, "ok": False, "message": message}
+
+    remove_code, remove_output = await _run_docker(
+        ["rm", "-f", NINE_ROUTER_CONTAINER_NAME], timeout=30.0
+    )
+    record_router_debug(
+        "container cleanup",
+        remove_output or "No previous container needed removal.",
+        ok=remove_code == 0 or "no such container" in remove_output.lower(),
+    )
     code, output = await _run_docker([
         "run", "-d",
         "--name", NINE_ROUTER_CONTAINER_NAME,
@@ -232,7 +312,10 @@ async def start_router() -> dict[str, Any]:
         NINE_ROUTER_IMAGE,
     ], timeout=120.0)
     if code != 0:
-        return {**current, "ok": False, "message": f"Failed to start 9Router: {output or 'unknown Docker error'}"}
+        message = f"Failed to start 9Router: {output or 'unknown Docker error'}"
+        record_router_debug("docker run", message, ok=False)
+        return {**current, "ok": False, "message": message}
+    record_router_debug("docker run", output or "Container created.", ok=True)
 
     deadline = asyncio.get_running_loop().time() + NINE_ROUTER_READINESS_TIMEOUT
     status = await router_status()
@@ -242,16 +325,20 @@ async def start_router() -> dict[str, Any]:
         await asyncio.sleep(NINE_ROUTER_READINESS_POLL_SECONDS)
         status = await router_status()
     if not status["running"]:
-        return {**status, "ok": False, "message": f"9Router container started but is not running: {status['message']}"}
+        message = f"9Router container started but is not running: {status['message']}"
+        record_router_debug("readiness", message, ok=False)
+        return {**status, "ok": False, "message": message}
     if not status.get("ready"):
-        return {
-            **status,
-            "ok": False,
-            "message": (
-                f"9Router container is running but did not become ready within "
-                f"{NINE_ROUTER_READINESS_TIMEOUT:.0f}s: {status['message']}"
-            ),
-        }
+        message = (
+            f"9Router container is running but did not become ready within "
+            f"{NINE_ROUTER_READINESS_TIMEOUT:.0f}s: {status['message']}"
+        )
+        log_result = await router_logs(200)
+        if log_result.get("logs"):
+            record_router_debug("container logs", log_result["logs"], ok=False)
+        record_router_debug("readiness", message, ok=False)
+        return {**status, "ok": False, "message": message}
+
     result = {
         **status,
         "ok": True,
@@ -260,6 +347,7 @@ async def start_router() -> dict[str, Any]:
             f"the public OpenAI-compatible API is {NINE_ROUTER_PUBLIC_API_URL}."
         ),
     }
+    record_router_debug("readiness", result["message"], ok=True)
     # Reveal the generated/admin password only after the first successful
     # deployment. Subsequent restarts still need the persisted value in Docker
     # environment metadata, but never send it back to the browser again.
@@ -293,4 +381,8 @@ async def router_logs(lines: int = 100) -> dict[str, Any]:
     code, output = await _run_docker([
         "logs", "--tail", str(max(1, min(int(lines), 500))), NINE_ROUTER_CONTAINER_NAME,
     ], timeout=30.0)
-    return {"ok": code == 0, "logs": output, "message": "" if code == 0 else output}
+    return {
+        "ok": code == 0,
+        "logs": _redact_router_diagnostic(output),
+        "message": "" if code == 0 else _redact_router_diagnostic(output),
+    }
