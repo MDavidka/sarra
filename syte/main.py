@@ -432,7 +432,17 @@ async def get_settings():
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
     cf_status = await cloudflare_tls_status()
-    nine_router_local_tls = await local_caddy_tls_status()
+    router_public_enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    if router_public_enabled:
+        from syte.ssl_status import monitor_endpoint
+
+        nine_router_local_tls = await monitor_endpoint(
+            "9Router dashboard",
+            NINE_ROUTER_PUBLIC_HOST,
+            expect_dedicated=True,
+        )
+    else:
+        nine_router_local_tls = await local_caddy_tls_status()
     bridge = await bridge_settings()
     key_status = await provider_key_status()
     syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
@@ -505,9 +515,18 @@ async def get_settings():
 
 @app.get("/api/settings/9router-tls")
 async def get_nine_router_local_tls():
-    """Check the loopback Caddy TLS listener used by the 9Router API route."""
+    """Check the active 9Router HTTPS path without probing a retired listener."""
     from syte.ssl_debug import local_caddy_tls_status
 
+    enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    if enabled:
+        from syte.ssl_status import monitor_endpoint
+
+        return await monitor_endpoint(
+            "9Router dashboard",
+            NINE_ROUTER_PUBLIC_HOST,
+            expect_dedicated=True,
+        )
     return await local_caddy_tls_status()
 
 
@@ -1281,24 +1300,47 @@ async def _set_router_public_state(enabled: bool, *, force: bool = False) -> tup
 
 
 async def _router_start() -> dict[str, Any]:
-    from syte.nine_router_manager import router_status, start_router, stop_router
+    from syte.host_setup import prepare_router_host
+    from syte.nine_router_manager import (
+        record_router_debug,
+        router_status,
+        start_router,
+        stop_router,
+    )
 
     async with _ROUTER_START_LOCK:
         guard = await _router_gui_guard()
         if guard:
+            record_router_debug("configuration", guard.get("message", "GUI domain conflict"), ok=False)
             return guard
+
+        host_setup = await prepare_router_host()
+        for step in host_setup.get("steps", []):
+            record_router_debug("AlmaLinux host setup", step, ok=host_setup.get("ok"))
+        if not host_setup.get("ok"):
+            record_router_debug("AlmaLinux host setup", host_setup.get("message", "Host setup failed"), ok=False)
+            return {
+                **await router_status(),
+                "ok": False,
+                "host_setup": host_setup,
+                "message": host_setup.get("message", "Could not prepare the AlmaLinux host."),
+            }
+
         before = await router_status()
         result = await start_router()
+        result["host_setup"] = host_setup
         if not result.get("ok"):
             # If a previously enabled container failed to start, do not leave
             # Caddy pointing at a dead upstream. Restore the fallback route.
             if before.get("enabled"):
                 route_ok, route_message = await _set_router_public_state(False, force=True)
+                record_router_debug("Caddy fallback route", route_message, ok=route_ok)
                 result["proxy_configured"] = route_ok
                 result["proxy_message"] = route_message
             return result
 
         route_ok, route_message = await _set_router_public_state(True, force=True)
+        record_router_debug("Caddy managed Router route", route_message, ok=route_ok)
         result["proxy_configured"] = route_ok
         result["proxy_message"] = route_message
         if not route_ok:
@@ -1307,20 +1349,35 @@ async def _router_start() -> dict[str, Any]:
             # Caddy reload could leave the enabled flag pointing at a dead
             # upstream.
             fallback_ok, fallback_message = await _set_router_public_state(False, force=True)
+            record_router_debug("Caddy fallback route", fallback_message, ok=fallback_ok)
             result["fallback_configured"] = fallback_ok
             if not fallback_ok:
                 route_message += f" Fallback route restore also failed: {fallback_message}"
             if fallback_ok and not before.get("running"):
                 cleanup = await stop_router()
+                record_router_debug("container cleanup", cleanup.get("message", ""), ok=cleanup.get("ok"))
                 if not cleanup.get("ok"):
                     route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
             result["ok"] = False
             result["message"] = f"9Router is running, but its public route failed: {route_message}"
         else:
+            from syte.ssl_status import monitor_endpoint
+
+            result["public_ssl"] = await monitor_endpoint(
+                "9Router dashboard",
+                NINE_ROUTER_PUBLIC_HOST,
+                expect_dedicated=True,
+            )
+            result["ssl_ready"] = result["public_ssl"].get("state") == "serving"
             result["message"] = (
                 f"{result.get('message', '9Router started')} "
-                "9router.sycord.site now serves the 9Router dashboard and /v1 API."
+                "9router.sycord.site now serves the 9Router dashboard and /v1 API over HTTPS."
             )
+            if not result["ssl_ready"]:
+                result["message"] += (
+                    f" Public HTTPS status: {result['public_ssl'].get('detail', 'still pending')}. "
+                    "Refresh diagnostics after DNS/Caddy certificate issuance."
+                )
         return result
 
 
@@ -1334,6 +1391,9 @@ async def _router_stop() -> dict[str, Any]:
             # fails, keep the enabled flag and live route unchanged.
             route_ok, route_message = await _set_router_public_state(False)
             if not route_ok:
+                from syte.nine_router_manager import record_router_debug
+
+                record_router_debug("stop Caddy handoff", route_message, ok=False)
                 status = await router_status()
                 return {
                     **status,
@@ -1347,49 +1407,87 @@ async def _router_stop() -> dict[str, Any]:
         result["proxy_configured"] = True
         result["proxy_message"] = "LiteLLM/remote 9Router fallback route is active." if enabled else ""
         if not result.get("ok"):
+            from syte.nine_router_manager import record_router_debug
+
+            record_router_debug("stop", result.get("message", "Failed to stop 9Router"), ok=False)
             result["message"] = f"{result.get('message', 'Failed to stop 9Router')} Public fallback route is active."
         return result
 
 
 async def _router_restart() -> dict[str, Any]:
-    from syte.nine_router_manager import start_router, stop_router, router_status
+    from syte.host_setup import prepare_router_host
+    from syte.nine_router_manager import record_router_debug, start_router, stop_router, router_status
 
     async with _ROUTER_START_LOCK:
         guard = await _router_gui_guard()
         if guard:
+            record_router_debug("configuration", guard.get("message", "GUI domain conflict"), ok=False)
             return guard
+        host_setup = await prepare_router_host()
+        for step in host_setup.get("steps", []):
+            record_router_debug("AlmaLinux host setup", step, ok=host_setup.get("ok"))
+        if not host_setup.get("ok"):
+            message = host_setup.get("message", "Could not prepare the AlmaLinux host.")
+            record_router_debug("AlmaLinux host setup", message, ok=False)
+            return {**await router_status(), "ok": False, "host_setup": host_setup, "message": message}
         # Use the same safe handoff as stop/start instead of restarting the
         # container while Caddy still points at an unavailable upstream.
         enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
         if enabled:
             route_ok, route_message = await _set_router_public_state(False)
             if not route_ok:
+                record_router_debug("restart Caddy handoff", route_message, ok=False)
                 return {**await router_status(), "ok": False, "message": route_message}
         stopped = await stop_router()
         if not stopped.get("ok"):
+            record_router_debug("restart stop", stopped.get("message", "Failed to stop 9Router"), ok=False)
             return stopped
         started = await start_router()
+        started["host_setup"] = host_setup
         if not started.get("ok"):
+            record_router_debug("restart start", started.get("message", "Failed to start 9Router"), ok=False)
             return started
         route_ok, route_message = await _set_router_public_state(True, force=True)
+        record_router_debug("Caddy managed Router route", route_message, ok=route_ok)
         started["proxy_configured"] = route_ok
         started["proxy_message"] = route_message
         if not route_ok:
             cleanup = await stop_router()
+            record_router_debug("restart cleanup", cleanup.get("message", ""), ok=cleanup.get("ok"))
             if not cleanup.get("ok"):
                 route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
             started["ok"] = False
             started["message"] = f"9Router restarted, but its public route failed: {route_message}"
+        else:
+            from syte.ssl_status import monitor_endpoint
+
+            started["public_ssl"] = await monitor_endpoint(
+                "9Router dashboard",
+                NINE_ROUTER_PUBLIC_HOST,
+                expect_dedicated=True,
+            )
+            started["ssl_ready"] = started["public_ssl"].get("state") == "serving"
+            if not started["ssl_ready"]:
+                started["message"] = (
+                    f"{started.get('message', '9Router restarted')} "
+                    f"Public HTTPS status: {started['public_ssl'].get('detail', 'still pending')}."
+                )
         return started
 
 
 @app.get("/api/settings/router/status")
 async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
-    """Return status for the managed local 9Router deployment."""
+    """Return status for the managed local 9Router deployment and its public SSL."""
     from syte.nine_router_manager import router_status
+    from syte.ssl_status import monitor_endpoint
 
     result = await router_status()
     result["syte_gui_url"] = await _gui_url()
+    result["ssl"] = await monitor_endpoint(
+        "9Router dashboard",
+        NINE_ROUTER_PUBLIC_HOST,
+        expect_dedicated=True,
+    )
     if result.get("enabled"):
         result["warning"] = (
             "9router.sycord.site is currently owned by 9Router. "
@@ -1416,6 +1514,9 @@ async def api_router_start(_operator: dict[str, Any] = Depends(verify_operator_s
         return await _router_start()
     except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
         logger.exception("9Router start failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("start exception", f"{type(error).__name__}: {error}", ok=False)
         return {"ok": False, "running": False, "message": f"9Router start failed — {type(error).__name__}: {error}"}
 
 
@@ -1426,6 +1527,9 @@ async def api_router_stop(_operator: dict[str, Any] = Depends(verify_operator_se
         return await _router_stop()
     except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
         logger.exception("9Router stop failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("stop exception", f"{type(error).__name__}: {error}", ok=False)
         return {"ok": False, "running": False, "message": f"9Router stop failed — {type(error).__name__}: {error}"}
 
 
@@ -1436,6 +1540,9 @@ async def api_router_restart(_operator: dict[str, Any] = Depends(verify_operator
         return await _router_restart()
     except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
         logger.exception("9Router restart failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("restart exception", f"{type(error).__name__}: {error}", ok=False)
         return {"ok": False, "running": False, "message": f"9Router restart failed — {type(error).__name__}: {error}"}
 
 
@@ -1448,6 +1555,22 @@ async def api_router_logs(
     from syte.nine_router_manager import router_logs
 
     return await router_logs(lines)
+
+
+@app.get("/api/settings/router/debug")
+async def api_router_debug(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return persistent install diagnostics plus recent container output."""
+    from syte.nine_router_manager import router_debug_log, router_logs, router_status
+
+    diagnostic_log = await router_debug_log()
+    container = await router_logs(200)
+    return {
+        "ok": bool(diagnostic_log.get("ok") or container.get("ok")),
+        "status": await router_status(),
+        "installation_log": diagnostic_log.get("log", ""),
+        "container_logs": container.get("logs", ""),
+        "container_log_error": container.get("message", "") if not container.get("ok") else "",
+    }
 
 
 # ---------------------------------------------------------------------------

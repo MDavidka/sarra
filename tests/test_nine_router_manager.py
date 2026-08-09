@@ -340,10 +340,14 @@ async def test_router_start_restores_fallback_before_cleanup_when_public_route_f
     from syte import main
     from syte.database import init_db
     from syte import nine_router_manager as manager
+    from syte import host_setup
 
     await init_db()
     cleanup_called = False
     route_states: list[bool] = []
+
+    async def fake_prepare_host() -> dict[str, object]:
+        return {"ok": True, "message": "host ready", "steps": ["host ready"]}
 
     async def fake_guard() -> None:
         return None
@@ -364,6 +368,7 @@ async def test_router_start_restores_fallback_before_cleanup_when_public_route_f
         return (False, "managed reload failed") if enabled else (True, "fallback restored")
 
     monkeypatch.setattr(main, "_router_gui_guard", fake_guard)
+    monkeypatch.setattr(host_setup, "prepare_router_host", fake_prepare_host)
     monkeypatch.setattr(main, "_set_router_public_state", fake_set)
     monkeypatch.setattr(manager, "router_status", fake_status)
     monkeypatch.setattr(manager, "start_router", fake_start)

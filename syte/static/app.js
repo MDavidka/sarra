@@ -4133,7 +4133,7 @@ function sslHostSummary(host) {
   const title = host.live_detail ? ` title="${esc(host.live_detail)}"` : '';
   if (liveState && liveState !== 'serving') {
     const cls = liveState === 'invalid-cert' ? 'badge-ssl-http' : 'badge-ssl-preview-pending';
-    const label = liveState === 'invalid-cert' ? 'invalid cert' : liveState === 'down' ? 'not serving' : liveState;
+    const label = liveState === 'invalid-cert' ? 'invalid cert' : liveState === 'dedicated-cert-missing' ? 'dedicated cert missing' : liveState === 'down' ? 'not serving' : liveState;
     return `<span class="badge badge-ssl ${cls}" ${title}>${esc(label)}</span> <code>${esc(host.domain)}</code>`;
   }
   return active
@@ -4149,6 +4149,7 @@ function sslStateBadge(state, detail) {
     'malformed': ['badge-ssl-http', 'malformed'],
     'invalid-cert': ['badge-ssl-http', 'invalid cert'],
     'cert-error': ['badge-ssl-preview-pending', 'cert error'],
+    'dedicated-cert-missing': ['badge-ssl-preview-pending', 'dedicated cert missing'],
     'not-configured': ['badge-ssl-http', 'no domain'],
   };
   const [cls, label] = map[state] || ['badge-ssl-http', state || 'unknown'];
@@ -6218,6 +6219,7 @@ window.addEventListener('resize', () => {
 
 let routerData = null;
 let routerInitialPassword = '';
+let routerInstallDebug = '';
 
 function renderRouterTab(data) {
   const content = document.getElementById('router-content');
@@ -6235,6 +6237,11 @@ function renderRouterTab(data) {
   if (stopBtn) stopBtn.disabled = !running;
   if (restartBtn) restartBtn.disabled = !running;
 
+  const ssl = routerData.ssl || {};
+  const sslState = ssl.state || 'unknown';
+  const sslLabel = sslState === 'serving' ? (ssl.dedicated_cert === false ? 'Dedicated SSL missing' : 'HTTPS serving') : sslState === 'dedicated-cert-missing' ? 'Dedicated SSL missing' : sslState === 'invalid-cert' || sslState === 'cert-error' ? 'SSL error' : sslState === 'down' ? 'HTTPS not serving' : sslState;
+  const sslClass = sslState === 'serving' && ssl.dedicated_cert !== false ? 'badge-running' : 'badge-warning';
+  const initialDebug = routerInstallDebug || 'Load diagnostics to inspect AlmaLinux, Docker, Caddy, DNS, and container failures.';
   const passwordNotice = routerInitialPassword
     ? `<div class="router-secret-box"><strong>Initial dashboard password</strong><code>${esc(routerInitialPassword)}</code><span class="hint">Save this now. It is only shown after deployment and is not returned by status requests.</span></div>`
     : '';
@@ -6245,7 +6252,7 @@ function renderRouterTab(data) {
   const domainConflict = routerData.gui_domain_conflict
     ? `<div class="note router-warning">
         <strong>GUI domain conflict:</strong> Settings → GUI domain is empty or set to
-        <code>${esc(routerData.public_host || 'api.sycord.site')}</code>, the same host 9Router needs
+        <code>${esc(routerData.public_host || '9router.sycord.site')}</code>, the same host 9Router needs
         to take over. Starting 9Router is blocked until a different GUI domain is configured
         (this is also the default set by "Start Syra").
         ${suggestedDomain ? `<button type="button" class="btn-pill btn-sm" id="router-fix-domain-btn" data-domain="${esc(suggestedDomain)}">Use ${esc(suggestedDomain)}</button>` : ''}
@@ -6256,16 +6263,19 @@ function renderRouterTab(data) {
     ${domainConflict}
     <div class="router-status-head"><span class="badge ${badgeClass}">${badgeText}</span><span class="hint">${esc(routerData.message || '')}</span></div>
     <div class="swarm-grid router-status-grid">
-      <div class="swarm-stat"><span class="swarm-label">Public API</span><a class="swarm-value link" href="${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}" target="_blank" rel="noopener">${esc(routerData.public_api_url || 'https://api.sycord.site/v1')}</a></div>
-      <div class="swarm-stat"><span class="swarm-label">Dashboard</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://api.sycord.site/dashboard')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://api.sycord.site/dashboard')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Public API</span><a class="swarm-value link" href="${esc(routerData.public_api_url || 'https://9router.sycord.site/v1')}" target="_blank" rel="noopener">${esc(routerData.public_api_url || 'https://9router.sycord.site/v1')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Web GUI</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://9router.sycord.site/dashboard')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://9router.sycord.site/dashboard')}</a></div>
+      <div class="swarm-stat"><span class="swarm-label">Public SSL</span><span class="swarm-value"><span class="badge ${sslClass}">${esc(sslLabel)}</span> <small>${esc(ssl.detail || 'No public HTTPS probe yet.')}</small></span></div>
       <div class="swarm-stat"><span class="swarm-label">Container</span><span class="swarm-value">${esc(routerData.container_id || '—')}</span></div>
       <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:latest')}</span></div>
       <div class="swarm-stat full"><span class="swarm-label">Data</span><span class="swarm-value"><code>/var/lib/syte/9router</code> · persistent across redeploys</span></div>
     </div>
     ${passwordNotice}
-    <p class="hint block router-help">The official 9Router dashboard is at <code>/dashboard</code> and its OpenAI-compatible API is at <code>/v1</code>. The Docker container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. A separate GUI domain is required before deployment so the Syte console remains reachable. Configure provider connections and an API key in the 9Router dashboard before making authenticated API calls.</p>
+    <p class="hint block router-help">The official 9Router web GUI is at <code>https://9router.sycord.site/dashboard</code> and its OpenAI-compatible API is at <code>/v1</code>. AlmaLinux prepares Docker, Caddy, firewalld, DNS, and HTTPS before deployment. The container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. A separate GUI domain is required so the Syte console remains reachable.</p>
+    <details class="router-logs-details"><summary>Installation diagnostics</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-debug-refresh"><i data-lucide="refresh-cw"></i><span>Refresh diagnostics</span></button></div><pre id="router-install-debug" class="router-logs">${esc(initialDebug)}</pre></details>
     <details class="router-logs-details"><summary>Recent container logs</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-logs-refresh"><i data-lucide="refresh-cw"></i><span>Refresh logs</span></button></div><pre id="router-logs" class="router-logs">Load logs when needed.</pre></details>
   `;
+  document.getElementById('router-debug-refresh')?.addEventListener('click', loadRouterDebug);
   document.getElementById('router-logs-refresh')?.addEventListener('click', loadRouterLogs);
   document.getElementById('router-fix-domain-btn')?.addEventListener('click', async (event) => {
     const btn = event.currentTarget;
@@ -6319,6 +6329,14 @@ async function routerAction(action) {
   try {
     const result = await api(`/settings/router/${action}`, { method: 'POST' });
     if (result.initial_password) routerInitialPassword = result.initial_password;
+    if (result.host_setup || result.proxy_message || result.message) {
+      routerInstallDebug = [
+        result.host_setup?.message,
+        ...(Array.isArray(result.host_setup?.steps) ? result.host_setup.steps : []),
+        result.message,
+        result.proxy_message,
+      ].filter(Boolean).join('\n');
+    }
     toast(result.message || `9Router ${action} complete`);
     await loadRouterTab();
   } catch (error) {
@@ -6328,6 +6346,24 @@ async function routerAction(action) {
     }
     toast(`9Router ${action} failed: ${error.message}`);
     await loadRouterTab();
+  }
+}
+
+async function loadRouterDebug() {
+  const debug = document.getElementById('router-install-debug');
+  if (!debug) return;
+  debug.textContent = 'Loading diagnostics…';
+  try {
+    const result = await api('/settings/router/debug');
+    const sections = [
+      result.installation_log ? `=== INSTALLATION / HOST / CADDY ===\n${result.installation_log}` : '',
+      result.container_logs ? `=== CONTAINER LOGS ===\n${result.container_logs}` : '',
+      result.container_log_error ? `=== CONTAINER LOG ERROR ===\n${result.container_log_error}` : '',
+    ].filter(Boolean);
+    routerInstallDebug = sections.join('\n\n') || 'No Router installation diagnostics have been recorded yet.';
+    debug.textContent = routerInstallDebug;
+  } catch (error) {
+    debug.textContent = `Could not load installation diagnostics: ${error.message}`;
   }
 }
 
