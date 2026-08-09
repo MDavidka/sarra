@@ -71,6 +71,8 @@ async def test_start_router_uses_persistent_data_and_official_image(
     assert manager.NINE_ROUTER_IMAGE in run_args
     assert "--restart" in run_args
     assert run_args[run_args.index("--restart") + 1] == "unless-stopped"
+    assert "--workdir" in run_args
+    assert run_args[run_args.index("--workdir") + 1] == manager.NINE_ROUTER_CONTAINER_WORKDIR
     assert f"127.0.0.1:{manager.NINE_ROUTER_HOST_PORT}:{manager.NINE_ROUTER_CONTAINER_PORT}" in run_args
     assert manager.NINE_ROUTER_HOST_PORT != manager.NINE_ROUTER_CONTAINER_PORT
     assert f"{tmp_data_dir / manager.NINE_ROUTER_DATA_DIR_NAME}:/app/data" in run_args
