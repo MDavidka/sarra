@@ -70,14 +70,20 @@ if [[ "$INSTALL_SYSTEM" == true ]] && command -v apt-get &>/dev/null; then
       || echo "Chromium install skipped — screenshots need chromium; set SYTE_CHROMIUM_PATH or apt install chromium"
   fi
 elif [[ "$INSTALL_SYSTEM" == true ]] && command -v dnf &>/dev/null; then
-  echo "==> Installing AlmaLinux system dependencies"
-  dnf -y install dnf-plugins-core curl git firewalld python3.12 python3.12-pip python3.12-devel nodejs npm
-
-  if ! command -v docker &>/dev/null; then
-    echo "==> Installing Docker CE (for 9Router and Docker deployments)"
-    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-    dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
   fi
+  if [[ "${ID:-}" != "almalinux" ]]; then
+    echo "ERROR: automatic DNF host setup supports AlmaLinux only (detected ${PRETTY_NAME:-unknown})."
+    exit 1
+  fi
+  echo "==> Safely migrating the AlmaLinux host to Docker CE"
+  chmod +x "$SYTE_DIR/scripts/recover-docker-almalinux.sh"
+  "$SYTE_DIR/scripts/recover-docker-almalinux.sh"
+
+  echo "==> Installing AlmaLinux application dependencies"
+  dnf -y install dnf-plugins-core curl git firewalld python3.12 python3.12-pip python3.12-devel nodejs npm
 
   if ! command -v caddy &>/dev/null; then
     echo "==> Installing Caddy (reverse proxy + automatic HTTPS)"

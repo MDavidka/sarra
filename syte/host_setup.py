@@ -19,6 +19,15 @@ from syte.litellm_config import LITELLM_PUBLIC_HOST
 
 DOCKER_REPO = "https://download.docker.com/linux/centos/docker-ce.repo"
 CADDY_REPO_SETUP = "https://dl.cloudsmith.io/public/caddy/stable/setup.rpm.sh"
+DOCKER_CE_PACKAGES = (
+    "docker-ce",
+    "docker-ce-cli",
+    "containerd.io",
+    "docker-buildx-plugin",
+    "docker-compose-plugin",
+)
+PODMAN_MIGRATION_PACKAGES = ("podman-docker", "podman")
+RUNC_CONFLICT_PACKAGE = "runc"
 
 
 def _command_exists(name: str) -> bool:
@@ -84,6 +93,171 @@ def _run_checked(command: list[str], label: str, *, timeout: float = 600.0) -> t
     return False, f"{label} failed (exit {code}): {output or 'no output'}"
 
 
+def _rpm_installed(package: str) -> bool:
+    if not _command_exists("rpm"):
+        return False
+    code, _ = _run(["rpm", "-q", package], timeout=30.0)
+    return code == 0
+
+
+def _rpm_query_requires(package: str) -> list[str]:
+    """Return installed packages that directly require ``package``."""
+    if not _command_exists("rpm"):
+        return []
+    code, output = _run(
+        ["rpm", "-q", "--whatrequires", "--qf", "%{NAME}\\n", package],
+        timeout=30.0,
+    )
+    if code != 0:
+        return []
+    return sorted({line.strip() for line in output.splitlines() if line.strip()})
+
+
+def _podman_container_ids() -> list[str]:
+    if not _command_exists("podman"):
+        return []
+    code, output = _run(["podman", "ps", "-aq"], timeout=60.0)
+    if code != 0:
+        return []
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _enabled_container_tools_module() -> bool:
+    """Detect the AlmaLinux 8 module that can filter Docker's runc dependency."""
+    release = _os_release()
+    if not release.get("VERSION_ID", "").startswith("8") or not _command_exists("dnf"):
+        return False
+    code, output = _run(["dnf", "module", "list", "--enabled", "container-tools"], timeout=60.0)
+    if code != 0:
+        return False
+    return any(
+        line.strip() and not line.lower().startswith(("last metadata", "error", "no matching"))
+        and "container-tools" in line
+        for line in output.splitlines()
+    )
+
+
+def _stop_disable_podman_services() -> tuple[bool, list[str]]:
+    """Stop only Podman socket/service units before removing their RPMs."""
+    if not _command_exists("systemctl"):
+        return True, ["systemctl is unavailable; no Podman service units were changed."]
+    messages: list[str] = []
+    for unit in ("podman.socket", "podman.service"):
+        if not _systemd_unit_loaded(unit):
+            continue
+        ok, detail = _run_checked(
+            ["systemctl", "disable", "--now", unit],
+            f"Stop and disable {unit}",
+            timeout=120.0,
+        )
+        if not ok:
+            return False, [detail]
+        messages.append(f"{unit} stopped and disabled.")
+    return True, messages
+
+
+def _prepare_docker_ce_migration() -> tuple[bool, list[str]]:
+    """Deliberately migrate a Podman compatibility install to Docker CE.
+
+    This function performs inventory first, refuses to remove Podman while any
+    Podman containers exist, checks direct RPM dependents, disables only the
+    container-tools module on AlmaLinux 8, and never uses ``--allowerasing``.
+    Docker/containerd data directories are only inspected and never deleted.
+    """
+    if not _command_exists("rpm"):
+        return True, []
+
+    messages: list[str] = []
+    inventory: list[str] = []
+    for package in (*PODMAN_MIGRATION_PACKAGES, RUNC_CONFLICT_PACKAGE, *DOCKER_CE_PACKAGES):
+        if _rpm_installed(package):
+            inventory.append(package)
+    messages.append(
+        "Package inventory before Docker migration: "
+        + (", ".join(inventory) if inventory else "no matching RPMs installed")
+        + "."
+    )
+    for command, label in (
+        (["dnf", "repolist", "--all"], "DNF repositories"),
+        (["dnf", "module", "list", "--enabled"], "Enabled DNF modules"),
+    ):
+        code, output = _run(command, timeout=120.0)
+        messages.append(f"{label}: {output or ('command failed with exit ' + str(code))}")
+
+    podman_packages = [package for package in PODMAN_MIGRATION_PACKAGES if _rpm_installed(package)]
+    runc_installed = _rpm_installed(RUNC_CONFLICT_PACKAGE)
+    packages_to_remove = [*podman_packages]
+    if runc_installed:
+        packages_to_remove.append(RUNC_CONFLICT_PACKAGE)
+
+    if not packages_to_remove:
+        return True, messages
+
+    podman_ids = _podman_container_ids()
+    if podman_ids:
+        return False, messages + [
+            "Podman migration stopped safely: existing Podman containers were found "
+            f"({', '.join(podman_ids)}). No packages were removed; migrate those containers explicitly first."
+        ]
+
+    removal_set = set(packages_to_remove)
+    for package in packages_to_remove:
+        dependents = [name for name in _rpm_query_requires(package) if name not in removal_set]
+        if dependents:
+            return False, messages + [
+                f"Refusing to remove {package}: installed packages require it ({', '.join(dependents)}). "
+                "No conflicting packages were removed."
+            ]
+
+    service_ok, service_messages = _stop_disable_podman_services()
+    messages.extend(service_messages)
+    if not service_ok:
+        return False, messages
+
+    for path in ("/var/lib/docker", "/var/lib/containerd", "/var/lib/containers"):
+        exists = Path(path).exists()
+        messages.append(f"Preserving {path}: {'present' if exists else 'not present'}; it will not be deleted.")
+
+    ok, detail = _run_checked(
+        ["dnf", "-y", "remove", "--no-autoremove", *packages_to_remove],
+        "Remove conflicting Podman/AppStream runtime packages",
+        timeout=600.0,
+    )
+    if not ok:
+        return False, messages + [detail]
+    messages.append(
+        "Removed only the conflicting packages: " + ", ".join(packages_to_remove) + "."
+    )
+
+    if _enabled_container_tools_module():
+        ok, detail = _run_checked(
+            ["dnf", "-y", "module", "disable", "container-tools"],
+            "Disable AlmaLinux 8 container-tools module",
+        )
+        if not ok:
+            return False, messages + [detail]
+        messages.append("Disabled AlmaLinux 8 container-tools module to prevent runc modular filtering.")
+
+    for command, label in (
+        (["dnf", "clean", "all"], "Clean DNF metadata"),
+        (["dnf", "makecache", "--refresh"], "Rebuild DNF metadata"),
+    ):
+        ok, detail = _run_checked(command, label, timeout=300.0)
+        if not ok:
+            return False, messages + [detail]
+        messages.append(f"{label} complete.")
+    return True, messages
+
+
+def _docker_repo_configured() -> bool:
+    if Path("/etc/yum.repos.d/docker-ce.repo").exists():
+        return True
+    if not _command_exists("rpm"):
+        return False
+    code, output = _run(["dnf", "repolist", "--enabled"], timeout=60.0)
+    return code == 0 and "docker-ce" in output.lower()
+
+
 def _ensure_almalinux_packages() -> tuple[bool, list[str]]:
     """Install Docker CE, Caddy, and firewalld using idempotent dnf checks."""
     if not _command_exists("dnf"):
@@ -98,29 +272,32 @@ def _ensure_almalinux_packages() -> tuple[bool, list[str]]:
 
     docker_ready = _command_exists("docker") and _docker_unit_loaded()
     if not docker_ready:
+        migration_ok, migration_messages = _prepare_docker_ce_migration()
+        messages.extend(migration_messages)
+        if not migration_ok:
+            return False, messages
         if _command_exists("docker"):
             messages.append("Docker CLI found but docker.service is missing; installing Docker CE engine.")
         commands: list[tuple[list[str], str]] = [
             (["dnf", "-y", "install", "dnf-plugins-core"], "Docker prerequisites"),
         ]
-        if not Path("/etc/yum.repos.d/docker-ce.repo").exists():
+        if not _docker_repo_configured():
             commands.append(
                 (["dnf", "config-manager", "--add-repo", DOCKER_REPO], "Docker repository")
             )
         commands.append(
-            (
-                [
-                    "dnf", "-y", "install",
-                    "docker-ce", "docker-ce-cli", "containerd.io",
-                    "docker-buildx-plugin", "docker-compose-plugin",
-                ],
-                "Docker CE",
-            )
+            (["dnf", "clean", "all"], "Clean DNF metadata")
+        )
+        commands.append(
+            (["dnf", "makecache", "--refresh"], "Rebuild DNF metadata")
+        )
+        commands.append(
+            (["dnf", "-y", "install", *DOCKER_CE_PACKAGES], "Docker CE")
         )
         for command, label in commands:
             ok, detail = _run_checked(command, label)
             if not ok:
-                return False, [detail]
+                return False, messages + [detail]
             messages.append(f"{label} ready.")
     else:
         messages.append("Docker already installed.")
