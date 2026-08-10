@@ -657,25 +657,10 @@ async def git_status() -> dict:
     except Exception as error:  # noqa: BLE001 - never break the panel
         update_info = {"error": f"{type(error).__name__}: {error}"}
 
-    repo_url = f"https://github.com/{repo}" if repo else ""
-    description = ""
-    readme_url = ""
-    if repo:
-        try:
-            status, body = await _request("GET", f"/repos/{repo}", token=token)
-            if status < 400 and isinstance(body, dict):
-                description = str(body.get("description") or "")
-                if body.get("default_branch"):
-                    readme_url = f"https://raw.githubusercontent.com/{repo}/{body['default_branch']}/README.md"
-        except Exception:
-            pass
-
     return {
         "ok": True,
         "repo": repo,
-        "repo_url": repo_url,
-        "description": description,
-        "readme_url": readme_url,
+        "repo_url": f"https://github.com/{repo}" if repo else "",
         "token_configured": bool(token),
         "token_source": token_source,
         "merge_methods": list(MERGE_METHODS),
