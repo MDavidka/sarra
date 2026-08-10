@@ -549,8 +549,6 @@ async def _model_configuration() -> dict[str, Any]:
         model_profile,
         router_catalog_state,
         router_models_cached,
-        provider_icon_for_model,
-        inferred_provider,
     )
 
     key_set = bool((await get_setting("agent_9router_api_key", "")).strip())
@@ -580,7 +578,7 @@ async def _model_configuration() -> dict[str, Any]:
             "thinking_levels": primary["thinking_levels"],
             "enabled": primary["enabled"],
         } if primary else None,
-        "models": [{**row, "profile": model_profile(row["id"]), "provider_icon": row.get("provider_icon") or provider_icon_for_model(row["name"], row.get("provider") or inferred_provider(row["name"]))} for row in curated],
+        "models": [{**row, "profile": model_profile(row["id"])} for row in curated],
         "router_models": enabled_model_options(router_models),
         "available_models": available_models,
     }

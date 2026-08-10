@@ -84,36 +84,6 @@ const STACK_META = {
   docker: { label: 'docker', icon: 'D', cls: '' },
 };
 
-const PROVIDER_ICONS = {
-  deepseek: 'cpu',
-  nemotron: 'gpu',
-  glm: 'sparkles',
-  zhipuai: 'sparkles',
-  openai: 'brain',
-  aliyun: 'cloud',
-  gemini: 'sparkles',
-  vyceai: 'shield',
-  litellm: 'boxes',
-  '9router': 'route',
-  syte: 'bot',
-};
-
-function providerIconForModel(name, provider) {
-  const raw = (name || '').trim().toLowerCase().replace(/^9router:/, '');
-  if (raw.startsWith('deepseek')) return PROVIDER_ICONS.deepseek;
-  if (raw.startsWith('nemotron')) return PROVIDER_ICONS.nemotron;
-  if (raw.startsWith('glm')) return PROVIDER_ICONS.glm;
-  const profileIcons = {
-    'syra-nano': 'sparkles',
-    'syra-ultra': 'cloud',
-    'syra-havy': 'shield',
-    'syra-litellm': 'boxes',
-  };
-  if (profileIcons[raw]) return profileIcons[raw];
-  const key = (provider || '').trim().toLowerCase();
-  return PROVIDER_ICONS[key] || 'box';
-}
-
 let selectedCreateStack = 'nextjs';
 
 function getApiKey() {
@@ -766,14 +736,12 @@ function setDebugChatActivity(label, detail = '', icon = '', active = true) {
   const modelEl = document.getElementById('debug-chat-activity-model');
   const nextLabel = active && label ? label : debugChatIdleStatus;
   const isWorking = /planning|working|writing|sending|connecting|reconnecting|stopping|capturing|waiting|reading|editing|running/i.test(nextLabel);
-  const profile = document.getElementById('debug-chat-profile')?.value || '';
-  const modelIcon = profile === 'auto' ? 'bot' : providerIconForModel(profile, '');
-  const nextIcon = icon || (isWorking ? 'loader' : modelIcon);
+  const nextIcon = icon || (isWorking ? 'loader' : 'sparkles');
   debugChatActivityLabel = nextLabel;
   if (labelEl) labelEl.textContent = nextLabel;
   if (detailEl) detailEl.textContent = active ? detail : '';
   if (iconEl) {
-    iconEl.innerHTML = `<i data-lucide="${esc(active ? nextIcon : modelIcon)}"></i>`;
+    iconEl.innerHTML = `<i data-lucide="${esc(active ? nextIcon : 'sparkles')}"></i>`;
     iconEl.classList.toggle('debug-chat-activity-spin', active && nextIcon === 'loader');
   }
   bar.classList.toggle('is-active', Boolean(active && isWorking));
@@ -3301,8 +3269,6 @@ async function loadGitTracking() {
       : esc(repo);
     summary.innerHTML = `
       <div class="git-state-item"><span class="git-state-label">repository</span><span class="git-state-value">${repoLink}</span></div>
-      ${status.description ? `<div class="git-state-item"><span class="git-state-label">description</span><span class="git-state-value">${esc(status.description)}</span></div>` : ''}
-      ${status.readme_url ? `<div class="git-state-item"><span class="git-state-label">readme</span><span class="git-state-value"><a class="link" href="${esc(status.readme_url)}" target="_blank" rel="noopener">raw README</a></span></div>` : ''}
       <div class="git-state-item"><span class="git-state-label">current branch</span><span class="git-state-value">${esc(local.branch || 'detached')}</span></div>
       <div class="git-state-item"><span class="git-state-label">commit</span><span class="git-state-value">${esc(local.commit || '—')}${local.dirty ? ' · uncommitted changes' : ''}</span></div>
       <div class="git-state-item"><span class="git-state-label">update target</span><span class="git-state-value">${esc(update.label || update.branch || 'main')}</span></div>
@@ -3441,7 +3407,6 @@ function appendModelOptionGroups(select, models) {
       option.value = model.profile;
       option.textContent = model.name;
       option.dataset.customModel = '1';
-      option.dataset.providerIcon = model.provider_icon || providerIconForModel(model.name, model.provider);
       group.appendChild(option);
     });
     select.appendChild(group);
@@ -3480,15 +3445,6 @@ function syncCustomModelOptions(models) {
         select.value = 'auto';
       } else if (selectable.length > 0) {
         select.value = selectable[0].profile;
-      }
-    }
-    if (select.id === 'debug-chat-profile') {
-      const profileIcon = document.getElementById('debug-chat-profile-icon');
-      const profile = select.value || 'auto';
-      if (profileIcon) {
-        const iconName = profile === 'auto' ? 'box' : providerIconForModel(profile, '');
-        profileIcon.innerHTML = `<i data-lucide="${esc(iconName)}"></i>`;
-        refreshIcons();
       }
     }
   });
@@ -3538,13 +3494,10 @@ function renderModelGroups() {
   });
   list.innerHTML = groups.size ? [...groups.entries()].map(([provider, models]) => `
     <section class="model-provider-group">
-      <h3><i data-lucide="${providerIconForModel(models[0]?.name || '', provider)}"></i> ${esc(provider)} <span>${models.length}</span></h3>
+      <h3>${esc(provider)} <span>${models.length}</span></h3>
       <div class="model-list">${models.map((model) => `
         <div class="model-list-row ${model.enabled ? '' : 'is-disabled'}">
-          <div style="display:flex;align-items:center;gap:.5rem;min-width:0">
-            <span class="model-provider-icon"><i data-lucide="${esc(model.provider_icon || providerIconForModel(model.name, model.provider))}"></i></span>
-            <div style="min-width:0"><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${esc(MODEL_THINKING_LABELS[model.thinking_level] || 'Medium')} · ${model.enabled ? 'Available to agents' : 'Disabled'}</span></div>
-          </div>
+          <div><strong>${esc(model.name)}</strong><span class="hint">Thinking: ${esc(MODEL_THINKING_LABELS[model.thinking_level] || 'Medium')} · ${model.enabled ? 'Available to agents' : 'Disabled'}</span></div>
           <div class="model-row-actions">
             <button type="button" class="btn-pill ${model.enabled ? 'btn-ghost' : 'btn-primary'} model-toggle-btn" data-model-id="${esc(model.id)}">
               <i data-lucide="${model.enabled ? 'pause' : 'play'}"></i><span>${model.enabled ? 'Disable' : 'Enable'}</span>
@@ -6057,15 +6010,9 @@ document.getElementById('debug-chat-failures-clear')?.addEventListener('click', 
 document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
   const select = document.getElementById('debug-chat-profile');
   if (select) select.dataset.userSelected = '1';
-  const profileIcon = document.getElementById('debug-chat-profile-icon');
-  const profile = select?.value || 'auto';
-  if (profileIcon) {
-    const iconName = profile === 'auto' ? 'box' : providerIconForModel(profile, '');
-    profileIcon.innerHTML = `<i data-lucide="${esc(iconName)}"></i>`;
-    refreshIcons();
-  }
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
+    const profile = document.getElementById('debug-chat-profile')?.value || '';
     const short = ({ auto: 'auto', 'syra-nano': 'Go · Gemini 2.5 Flash', 'syra-ultra': 'Air · Aliyun Qwen', 'syra-havy': 'Metal · Claude Sonnet 4.6' })[profile] || profile;
     if (modelEl && short) {
       modelEl.hidden = false;
