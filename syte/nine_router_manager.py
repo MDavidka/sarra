@@ -21,7 +21,7 @@ from syte.database import get_setting, set_setting
 from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
 
 NINE_ROUTER_CONTAINER_NAME = "syte-9router"
-NINE_ROUTER_IMAGE = "decolua/9router:latest"
+NINE_ROUTER_IMAGE = "decolua/9router:0.5.50"
 NINE_ROUTER_CONTAINER_PORT = 20128
 # Caddy already owns 127.0.0.1:20128 for the legacy remote-router TLS probe
 # when the managed route is disabled. Keep the Docker host binding separate;
