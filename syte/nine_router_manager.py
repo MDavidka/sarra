@@ -185,10 +185,25 @@ async def _probe_router_http() -> dict[str, Any]:
     web_gui_ready = 200 <= dashboard_status < 400 or dashboard_status in {401, 403}
     api_authenticated = 200 <= api_status < 400
     api_ready = api_authenticated or api_status in {401, 403}
+    # glibc `getent` is a safer bet in minimal containers than nslookup/curl
+    dns_code, dns_output = await _run_docker(
+        ["exec", NINE_ROUTER_CONTAINER_NAME, "getent", "hosts", "oauth2.googleapis.com"]
+    )
+    dns_ready = dns_code == 0
+
+    outbound_code, outbound_output = await _run_docker(
+        ["exec", NINE_ROUTER_CONTAINER_NAME, "node", "-e", "fetch('https://oauth2.googleapis.com/').then(r => process.exit(0)).catch(e => process.exit(1))"]
+    )
+    outbound_ready = outbound_code == 0
+
     if not web_gui_ready:
         message = f"9Router dashboard is not ready (HTTP {dashboard_status})."
     elif not api_ready:
         message = f"9Router API is not ready (HTTP {api_status})."
+    elif not dns_ready:
+        message = f"9Router cannot resolve external DNS (oauth2.googleapis.com)."
+    elif not outbound_ready:
+        message = f"9Router cannot reach external HTTPS (oauth2.googleapis.com)."
     elif not api_authenticated:
         message = "9Router dashboard and API are ready; save an API key before making authenticated API calls."
     else:
@@ -196,6 +211,8 @@ async def _probe_router_http() -> dict[str, Any]:
     return {
         "web_gui_ready": web_gui_ready,
         "api_ready": api_ready,
+        "dns_ready": dns_ready,
+        "outbound_ready": outbound_ready,
         "api_authenticated": api_authenticated,
         "dashboard_status": dashboard_status,
         "api_status": api_status,
@@ -246,7 +263,12 @@ async def router_status() -> dict[str, Any]:
 
     readiness = await _probe_router_http()
     result.update(readiness)
-    result["ready"] = bool(result["web_gui_ready"] and result["api_ready"])
+    result["ready"] = bool(
+        result["web_gui_ready"]
+        and result["api_ready"]
+        and result.get("dns_ready", True)
+        and result.get("outbound_ready", True)
+    )
     result["healthy"] = bool(result["ready"] and "unhealthy" not in status.lower())
     result["message"] = (
         f"9Router is running: {status}. {readiness['readiness_message']}"
@@ -265,6 +287,70 @@ async def _router_password() -> tuple[str, bool]:
     revealed = (await get_setting(NINE_ROUTER_PASSWORD_REVEALED_SETTING, "0")).strip() == "1"
     return password, not revealed
 
+
+
+
+
+async def _get_host_resolvers() -> list[str]:
+    """Read valid IPv4 nameservers from /etc/resolv.conf."""
+    try:
+        import asyncio
+        import aiofiles
+        async with aiofiles.open("/etc/resolv.conf", mode="r") as f:
+            content = await f.read()
+    except (OSError, ImportError):
+        return []
+    import re
+    resolvers = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("nameserver "):
+            ip = line.split()[1]
+            if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", ip) and ip not in ("127.0.0.1", "127.0.0.53"):
+                resolvers.append(ip)
+    return resolvers
+
+async def _verify_dns(resolvers: list[str]) -> bool:
+    """Verify if a list of resolvers can resolve external domain."""
+    if not resolvers:
+        return False
+    import asyncio
+    try:
+        dns_args = []
+        for r in resolvers:
+            dns_args.extend(["--dns", r])
+        code, _ = await _run_docker(["run", "--rm"] + dns_args + [NINE_ROUTER_IMAGE, "getent", "hosts", "oauth2.googleapis.com"])
+        return code == 0
+    except Exception:
+        return False
+
+async def _determine_dns_args() -> list[str]:
+    """Determine which DNS strategy to use for the container."""
+    # 1. Native resolution (let docker/podman handle loopback)
+    code, _ = await _run_docker([
+        "run", "--rm", NINE_ROUTER_IMAGE, "getent", "hosts", "oauth2.googleapis.com"
+    ])
+    if code == 0:
+        record_router_debug("dns", "Host DNS configuration successfully resolved external domain natively.", ok=True)
+        return []
+
+    # 2. Extract valid non-loopback from host resolv.conf
+    host_resolvers = await _get_host_resolvers()
+    if host_resolvers and await _verify_dns(host_resolvers):
+        record_router_debug("dns", f"Using host DNS resolvers: {', '.join(host_resolvers)}", ok=True)
+        args = []
+        for r in host_resolvers:
+            args.extend(["--dns", r])
+        return args
+
+    # 3. Fallback
+    fallback = ["8.8.8.8", "1.1.1.1"]
+    if await _verify_dns(fallback):
+        record_router_debug("dns", "Host DNS failed or absent; using fallback public DNS (8.8.8.8, 1.1.1.1).", ok=True)
+        return ["--dns", "8.8.8.8", "--dns", "1.1.1.1"]
+
+    record_router_debug("dns", "Both host and fallback DNS failed to resolve oauth2.googleapis.com.", ok=False)
+    return []
 
 async def start_router() -> dict[str, Any]:
     """Install/start the published 9Router image with persistent data."""
@@ -290,6 +376,8 @@ async def start_router() -> dict[str, Any]:
         record_router_debug("credentials", message, ok=False)
         return {**current, "ok": False, "message": message}
 
+    dns_args = await _determine_dns_args()
+
     remove_code, remove_output = await _run_docker(
         ["rm", "-f", NINE_ROUTER_CONTAINER_NAME], timeout=30.0
     )
@@ -308,12 +396,15 @@ async def start_router() -> dict[str, Any]:
         "-e", f"PORT={NINE_ROUTER_CONTAINER_PORT}",
         "-e", "HOSTNAME=0.0.0.0",
         "-e", "NODE_ENV=production",
-        "-e", f"BASE_URL={NINE_ROUTER_INTERNAL_BASE_URL}",
+        "-e", f"BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
+        "-e", f"AUTH_TRUST_HOST=true",
+        "-e", f"NEXTAUTH_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
         "-e", f"NEXT_PUBLIC_BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
         "-e", "AUTH_COOKIE_SECURE=true",
         "-e", "REQUIRE_API_KEY=true",
         "-e", f"INITIAL_PASSWORD={password}",
         "--restart", "unless-stopped",
+        *dns_args,
         NINE_ROUTER_IMAGE,
     ], timeout=120.0)
     if code != 0:

@@ -51,6 +51,8 @@ async def test_start_router_uses_persistent_data_and_official_image(
             "api_authenticated": True,
             "dashboard_status": 200,
             "api_status": 200,
+        "dns_ready": True,
+        "outbound_ready": True,
             "readiness_message": "ready",
         }
 
@@ -67,7 +69,7 @@ async def test_start_router_uses_persistent_data_and_official_image(
     assert result["initial_password"]
     assert await get_setting(manager.NINE_ROUTER_PASSWORD_SETTING) == result["initial_password"]
 
-    run_args = next(args for args, _timeout in calls if args[0] == "run")
+    run_args = next(args for args, _timeout in calls if args[0] == "run" and "-d" in args)
     assert manager.NINE_ROUTER_IMAGE in run_args
     assert "--restart" in run_args
     assert run_args[run_args.index("--restart") + 1] == "unless-stopped"
@@ -77,7 +79,7 @@ async def test_start_router_uses_persistent_data_and_official_image(
     assert manager.NINE_ROUTER_HOST_PORT != manager.NINE_ROUTER_CONTAINER_PORT
     assert f"{tmp_data_dir / manager.NINE_ROUTER_DATA_DIR_NAME}:/app/data" in run_args
     assert "-e" in run_args
-    assert f"BASE_URL={manager.NINE_ROUTER_INTERNAL_BASE_URL}" in run_args
+    assert f"BASE_URL=https://{manager.NINE_ROUTER_PUBLIC_HOST}" in run_args
     assert f"NEXT_PUBLIC_BASE_URL=https://{manager.NINE_ROUTER_PUBLIC_HOST}" in run_args
     assert f"INITIAL_PASSWORD={result['initial_password']}" in run_args
 
