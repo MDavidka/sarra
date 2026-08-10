@@ -15,6 +15,19 @@ from syte.database import get_setting
 MODEL_CATALOG_SETTING = "agent_9router_models"
 DEFAULT_MODEL_PROVIDER = "9Router"
 
+ALLOWED_MODEL_PATTERNS = [
+    "deepseek-v4-pro",
+    "nemotron-3-ultra-550b",
+    "glm-5.2",
+    "deepseek-v4-flash",
+    "nemotron-3-super-120b",
+]
+
+
+def _is_allowed_model(name: str) -> bool:
+    raw = (name or "").strip().lower()
+    return any(pattern in raw for pattern in ALLOWED_MODEL_PATTERNS)
+
 # Live router catalog (GET {api_base}/models). Cached because it is read on the
 # agent hot path when resolving a selected model profile.
 ROUTER_MODELS_TTL_SECONDS = 120.0
@@ -63,12 +76,38 @@ def inferred_provider(name: str) -> str:
     """Keep older ``provider/model`` entries grouped usefully in the UI."""
     raw = (name or "").strip()
     if "/" not in raw:
-        # A bare id like "gpt-4o" has no provider segment. Title-casing the model
-        # name itself produced junk groups ("Gpt-4O") that also broke dedupe
-        # against curated rows with a hand-set provider.
         return DEFAULT_MODEL_PROVIDER
     prefix = raw.split("/", 1)[0].strip()
     return prefix.title() if prefix else DEFAULT_MODEL_PROVIDER
+
+
+def provider_icon_for_model(name: str, provider: str = "") -> str:
+    """Return a short icon key for the model's provider."""
+    raw = (name or "").strip().lower().replace("9router:", "")
+    if raw.startswith("deepseek"):
+        return "cpu"
+    if raw.startswith("nemotron"):
+        return "gpu"
+    if raw.startswith("glm"):
+        return "sparkles"
+    profile_icons = {
+        "syra-nano": "sparkles",
+        "syra-ultra": "cloud",
+        "syra-havy": "shield",
+        "syra-litellm": "boxes",
+    }
+    if raw in profile_icons:
+        return profile_icons[raw]
+    provider_lower = (provider or "").strip().lower()
+    return {
+        "openai": "brain",
+        "aliyun": "cloud",
+        "gemini": "sparkles",
+        "vyceai": "shield",
+        "litellm": "boxes",
+        "9router": "route",
+        "syte": "bot",
+    }.get(provider_lower, "box")
 
 
 def model_profile(model_id: str) -> str:
@@ -111,6 +150,7 @@ async def configured_models() -> list[dict[str, Any]]:
                     "thinking_levels": _levels(item.get("thinking_levels")),
                     "thinking_level": str(item.get("thinking_level") or "medium").strip().lower(),
                     "enabled": bool(item.get("enabled")),
+                    "provider_icon": provider_icon_for_model(name, str(item.get("provider") or inferred_provider(name))),
                 })
     if rows:
         return rows
@@ -127,6 +167,7 @@ async def configured_models() -> list[dict[str, Any]]:
         "thinking_levels": _levels(legacy_levels),
         "thinking_level": "medium",
         "enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
+        "provider_icon": provider_icon_for_model(legacy_name, inferred_provider(legacy_name)),
     }]
 
 
@@ -159,6 +200,7 @@ def _router_row(model_id: str) -> dict[str, Any] | None:
         "thinking_level": "medium",
         "enabled": True,
         "source": "router",
+        "provider_icon": provider_icon_for_model(name, provider),
     }
 
 
@@ -179,7 +221,10 @@ def _parse_router_models(payload: Any) -> list[dict[str, Any]]:
             raw_id = entry.get("id") or entry.get("name") or entry.get("model")
         else:
             raw_id = entry
-        row = _router_row(str(raw_id or ""))
+        name = str(raw_id or "").strip()
+        if not name or not _is_allowed_model(name):
+            continue
+        row = _router_row(name)
         if row is None or row["id"] in seen:
             continue
         seen.add(row["id"])
@@ -332,4 +377,5 @@ def enabled_model_options(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "provider": row.get("provider") or inferred_provider(row["name"]),
         "thinking_levels": list(row["thinking_levels"]),
         "thinking_level": row.get("thinking_level") or "medium",
+        "provider_icon": row.get("provider_icon") or provider_icon_for_model(row["name"], row.get("provider") or inferred_provider(row["name"])),
     } for row in models if row.get("enabled")]
