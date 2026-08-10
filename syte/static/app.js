@@ -6267,7 +6267,7 @@ function renderRouterTab(data) {
       <div class="swarm-stat"><span class="swarm-label">Web GUI</span><a class="swarm-value link" href="${esc(routerData.dashboard_url || 'https://9router.sycord.site/dashboard')}" target="_blank" rel="noopener">${esc(routerData.dashboard_url || 'https://9router.sycord.site/dashboard')}</a></div>
       <div class="swarm-stat"><span class="swarm-label">Public SSL</span><span class="swarm-value"><span class="badge ${sslClass}">${esc(sslLabel)}</span> <small>${esc(ssl.detail || 'No public HTTPS probe yet.')}</small></span></div>
       <div class="swarm-stat"><span class="swarm-label">Container</span><span class="swarm-value">${esc(routerData.container_id || '—')}</span></div>
-      <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:latest')}</span></div>
+      <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:0.5.50')}</span></div>
       <div class="swarm-stat full"><span class="swarm-label">Data</span><span class="swarm-value"><code>/var/lib/syte/9router</code> · persistent across redeploys</span></div>
     </div>
     ${passwordNotice}
