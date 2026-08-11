@@ -206,6 +206,10 @@ async def test_router_status_surfaces_gui_domain_conflict_before_start(
 
     monkeypatch.setattr(manager, "router_status", fake_status)
 
+    async def fake_monitor(*args, **kwargs):
+        return {"ok": True}
+    monkeypatch.setattr("syte.ssl_status.monitor_endpoint", fake_monitor)
+
     # Simulates prepare_syra_host()'s default.
     await set_setting("gui_domain", "9router.sycord.site")
     result = await main.api_router_status.__wrapped__() if hasattr(main.api_router_status, "__wrapped__") else None
