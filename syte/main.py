@@ -1,5 +1,4 @@
 import json
-import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -425,7 +424,6 @@ async def get_settings():
     from syte.cloud_agent import bridge_settings, provider_key_status
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
-    from syte.ssl_debug import local_caddy_tls_status
 
     ip = _resolved_ip()
     gui_domain = normalize_domain(await get_setting("gui_domain", ""))
@@ -442,7 +440,14 @@ async def get_settings():
             expect_dedicated=True,
         )
     else:
-        nine_router_local_tls = await local_caddy_tls_status()
+        nine_router_local_tls = {
+            "configured": False,
+            "serving": False,
+            "state": "unreachable",
+            "hostname": NINE_ROUTER_PUBLIC_HOST,
+            "target": "external-gateway",
+            "detail": "Remote gateway SNI verification requires public access.",
+        }
     bridge = await bridge_settings()
     key_status = await provider_key_status()
     syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
@@ -515,9 +520,10 @@ async def get_settings():
 
 @app.get("/api/settings/9router-tls")
 async def get_nine_router_local_tls():
-    """Check the active 9Router HTTPS path without probing a retired listener."""
-    from syte.ssl_debug import local_caddy_tls_status
-
+    """Check the active 9Router HTTPS path without probing a retired listener.
+    Note: the local loopback TLS listener was removed to prevent Caddy automation
+    policy conflicts. Thus, when not using the managed router, this status is
+    unavailable via local probe."""
     enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
     if enabled:
         from syte.ssl_status import monitor_endpoint
@@ -527,7 +533,14 @@ async def get_nine_router_local_tls():
             NINE_ROUTER_PUBLIC_HOST,
             expect_dedicated=True,
         )
-    return await local_caddy_tls_status()
+    return {
+        "configured": False,
+        "serving": False,
+        "state": "unreachable",
+        "hostname": NINE_ROUTER_PUBLIC_HOST,
+        "target": "external-gateway",
+        "detail": "Remote gateway SNI verification requires public access.",
+    }
 
 
 async def _github_token_source() -> str:
@@ -545,7 +558,6 @@ async def _model_configuration() -> dict[str, Any]:
         configured_models,
         enabled_model_options,
         fetch_router_models,
-        merge_router_models,
         model_profile,
         router_catalog_state,
         router_models_cached,

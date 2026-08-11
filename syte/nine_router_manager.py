@@ -201,9 +201,9 @@ async def _probe_router_http() -> dict[str, Any]:
     elif not api_ready:
         message = f"9Router API is not ready (HTTP {api_status})."
     elif not dns_ready:
-        message = f"9Router cannot resolve external DNS (oauth2.googleapis.com)."
+        message = "9Router cannot resolve external DNS (oauth2.googleapis.com)."
     elif not outbound_ready:
-        message = f"9Router cannot reach external HTTPS (oauth2.googleapis.com)."
+        message = "9Router cannot reach external HTTPS (oauth2.googleapis.com)."
     elif not api_authenticated:
         message = "9Router dashboard and API are ready; save an API key before making authenticated API calls."
     else:
@@ -314,7 +314,6 @@ async def _verify_dns(resolvers: list[str]) -> bool:
     """Verify if a list of resolvers can resolve external domain."""
     if not resolvers:
         return False
-    import asyncio
     try:
         dns_args = []
         for r in resolvers:
@@ -381,13 +380,21 @@ async def start_router() -> dict[str, Any]:
     remove_code, remove_output = await _run_docker(
         ["rm", "-f", NINE_ROUTER_CONTAINER_NAME], timeout=30.0
     )
+
+    version_code, version_out = await _run_docker(["--version"])
+    is_podman = version_code == 0 and "podman" in version_out.lower()
+
     record_router_debug(
         "container cleanup",
         remove_output or "No previous container needed removal.",
         ok=remove_code == 0 or "no such container" in remove_output.lower(),
     )
-    code, output = await _run_docker([
-        "run", "-d",
+
+    run_args = ["run", "-d"]
+    if is_podman:
+        run_args.append("--replace")
+
+    run_args.extend([
         "--name", NINE_ROUTER_CONTAINER_NAME,
         "--workdir", NINE_ROUTER_CONTAINER_WORKDIR,
         "-p", f"127.0.0.1:{NINE_ROUTER_HOST_PORT}:{NINE_ROUTER_CONTAINER_PORT}",
@@ -397,7 +404,7 @@ async def start_router() -> dict[str, Any]:
         "-e", "HOSTNAME=0.0.0.0",
         "-e", "NODE_ENV=production",
         "-e", f"BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
-        "-e", f"AUTH_TRUST_HOST=true",
+        "-e", "AUTH_TRUST_HOST=true",
         "-e", f"NEXTAUTH_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
         "-e", f"NEXT_PUBLIC_BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
         "-e", "AUTH_COOKIE_SECURE=true",
@@ -406,7 +413,8 @@ async def start_router() -> dict[str, Any]:
         "--restart", "unless-stopped",
         *dns_args,
         NINE_ROUTER_IMAGE,
-    ], timeout=120.0)
+    ])
+    code, output = await _run_docker(run_args, timeout=120.0)
     if code != 0:
         message = f"Failed to start 9Router: {output or 'unknown Docker error'}"
         record_router_debug("docker run", message, ok=False)
