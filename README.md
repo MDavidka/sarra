@@ -113,6 +113,28 @@ from the agent chat UI or directly via API (session routes under
 `/api/agent_mcp*` and `/api/agent_skills*`). Custom skills can be added with
 name + guidance content. See [`docs/api-agent.md`](docs/api-agent.md).
 
+## Platform layer (Coolify parity)
+
+`syte/platform/` adds the PaaS resource model and deployment engine Syte was
+missing next to [Coolify](https://github.com/coollabsio/coolify):
+
+- **Build packs** — deploy without writing a Dockerfile. Detects and generates
+  for Node, Bun, Deno, Python, Go, Rust, PHP, Ruby, Java, Elixir, .NET and
+  static sites, with framework handling for Next.js, Nuxt, Remix, SvelteKit,
+  Astro, Django, Laravel, Rails and Phoenix.
+- **Managed databases** — PostgreSQL, MySQL, MariaDB, MongoDB, Redis, KeyDB,
+  Dragonfly and ClickHouse, with generated credentials, connection URLs,
+  readiness probes and logical backup/restore commands.
+- **Resource model** — team → server → project → environment → resource
+  (application / database / service), plus deployments, PR previews, scoped
+  environment variables, persistent volumes, scheduled tasks, backups,
+  notification channels and git sources.
+- **Git integration** — repository identity matching across URL forms and
+  webhook signature verification for GitHub, GitLab, Gitea and Bitbucket.
+
+See [`docs/platform-coolify-parity.md`](docs/platform-coolify-parity.md) for the
+design, the operational details it encodes, and the remaining roadmap.
+
 ## Configuration
 
 Environment variables (prefix `SYTE_`):
