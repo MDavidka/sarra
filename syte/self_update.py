@@ -41,6 +41,22 @@ def _allow_downgrade() -> bool:
     }
 
 
+def _ref_contains_current_commit(ref: str) -> bool:
+    """Return true when the fetched target contains the installed checkout.
+
+    Version strings are useful metadata, but they can be manually bumped or
+    reset on release branches. Git ancestry is the safer signal for deciding
+    whether a fetched ref is genuinely newer than the code currently running.
+    """
+    if not ref:
+        return False
+    code, _out = run_cmd(
+        ["git", "merge-base", "--is-ancestor", "HEAD", ref],
+        cwd=INSTALL_DIR,
+    )
+    return code == 0 and ref != "HEAD"
+
+
 def _venv_python() -> str:
     venv_python = INSTALL_DIR / ".venv" / "bin" / "python"
     return str(venv_python) if venv_python.exists() else sys.executable
@@ -221,17 +237,25 @@ def _git_sync_update_target(target: UpdateTarget) -> tuple[bool, str, str]:
     target_version = _read_version_at_ref(checkout_point)
     if target_version and not _allow_downgrade():
         installed = _read_installed_version()
-        if installed != "unknown" and _version_lt(target_version, installed):
+        if (
+            installed != "unknown"
+            and _version_lt(target_version, installed)
+            and not _ref_contains_current_commit(checkout_point)
+        ):
             return (
                 False,
                 "\n".join(
                     messages
                     + [
                         f"Refusing downgrade: installed {installed}, target {target_version} ({target.label}).",
-                        "Close older open PRs or set SYTE_UPDATE_PR to the correct PR number.",
+                        "The target ref does not contain the installed commit. Close older open PRs or set SYTE_UPDATE_PR to the correct PR number.",
                     ]
                 ),
                 checkout_point,
+            )
+        if installed != "unknown" and _version_lt(target_version, installed):
+            messages.append(
+                f"Version metadata is lower ({installed} → {target_version}), but the target ref contains the installed commit; continuing by Git ancestry."
             )
 
     ok, checkout_msg = _git_checkout_ref(UPDATE_WORK_BRANCH, checkout_point)
