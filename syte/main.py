@@ -9,13 +9,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import httpx
 
 from syte import __version__
 from syte.config import settings
 from syte.database import (
+    create_deployment_run,
     get_project,
     get_setting,
     init_db,
+    list_deployment_runs,
     list_projects,
     set_setting,
     update_project,
@@ -169,6 +172,21 @@ class CreateServiceRequest(BaseModel):
     env_vars: dict[str, str] = Field(default_factory=dict)
     domain: str | None = None
     stack: str | None = "nextjs"
+
+
+class DeploymentConfigRequest(BaseModel):
+    branch: str | None = None
+    start_command: str | None = None
+    deploy_type: str | None = None
+    dockerfile_path: str | None = None
+    docker_image: str | None = None
+    compose_file: str | None = None
+    healthcheck_path: str | None = None
+    healthcheck_interval: int | None = Field(default=None, ge=5, le=3600)
+    auto_deploy: bool | None = None
+    resource_memory: str | None = None
+    resource_cpus: str | None = None
+    env_vars: dict[str, str] | None = None
 
 
 class DomainRequest(BaseModel):
@@ -3188,6 +3206,45 @@ async def api_logs_stream(project_id: str, request: Request, live: bool = False)
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/projects/{project_id}/deployments")
+async def api_deployment_history(project_id: str, limit: int = 20):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return {"project_id": project_id, "deployments": await list_deployment_runs(project_id, limit)}
+
+
+@app.get("/api/projects/{project_id}/health")
+async def api_project_health(project_id: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    url = _project_url(_enrich(project))
+    path = project.get("healthcheck_path") or "/"
+    url = url.rstrip("/") + (path if path.startswith("/") else f"/{path}")
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "Syte-Health/1.0"})
+        result = {"healthy": response.status_code < 500, "status_code": response.status_code, "detail": response.reason_phrase}
+    except Exception as exc:
+        result = {"healthy": False, "status_code": None, "detail": str(exc)}
+    return {"project_id": project_id, "url": url, **result}
+
+
+@app.put("/api/projects/{project_id}/deployment-config")
+async def api_deployment_config(project_id: str, body: DeploymentConfigRequest):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    updates = body.model_dump(exclude_none=True)
+    if "auto_deploy" in updates:
+        updates["auto_deploy"] = int(updates["auto_deploy"])
+    if updates.get("deploy_type") not in {None, "shell", "docker", "compose", "image"}:
+        raise HTTPException(400, "deploy_type must be shell, docker, compose, or image")
+    updated = await update_project(project_id, updates)
+    return {"ok": True, "project": _enrich(updated or project)}
 
 
 @app.post("/api/projects/{project_id}/deploy")

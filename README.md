@@ -9,6 +9,10 @@
 - **Custom GUI domain** — configure a domain for the Syte web interface in Settings; Syte issues certificates via Caddy (automatic HTTPS)
 - **Syte self-update** — pull the newest Syte version from git and restart from Settings (workspace data preserved)
 - **Web GUI** — responsive black-and-white interface with Lucide icon navigation
+- **Deployment history** — every manual or automated deployment is recorded with status, trigger, duration, and failure detail
+- **Health checks** — probe each service's public URL from the dashboard and API
+- **Resource controls** — configure per-project Docker memory and CPU limits while retaining server-wide safety defaults
+- **Management dashboard** — view live health and recent deployment runs beside each project's lifecycle controls
 
 ## Quick Start
 
@@ -104,6 +108,9 @@ chmod +x scripts/*.sh
 | `POST` | `/api/system/update` | Pull newest Syte version & restart |
 | `PUT` | `/api/settings` | Save server settings |
 | `GET` | `/api/projects/{id}/logs` | View logs |
+| `GET` | `/api/projects/{id}/deployments` | View deployment history |
+| `GET` | `/api/projects/{id}/health` | Probe the configured public health URL |
+| `PUT` | `/api/projects/{id}/deployment-config` | Update deployment type, commands, health checks, env, auto-deploy flag, and Docker resource limits |
 
 ### Agent MCP & skills
 
@@ -132,8 +139,14 @@ missing next to [Coolify](https://github.com/coollabsio/coolify):
 - **Git integration** — repository identity matching across URL forms and
   webhook signature verification for GitHub, GitLab, Gitea and Bitbucket.
 
+The existing Syte management layer complements this platform model with
+isolated project workspaces, Docker and shell lifecycle actions, streaming logs,
+custom domains, previews, deployment history, live health probes, and per-project
+Docker CPU/memory limits. The service dashboard exposes the health and recent
+deployment state backed by the deployment-history and health APIs.
+
 See [`docs/platform-coolify-parity.md`](docs/platform-coolify-parity.md) for the
-design, the operational details it encodes, and the remaining roadmap.
+design, operational details, and remaining roadmap.
 
 ## Configuration
 

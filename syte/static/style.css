@@ -5203,3 +5203,16 @@ body.login-locked {
 .router-content .badge-running { color: #166534; background: #dcfce7; }
 .router-content .badge-warning { color: #92400e; background: #fef3c7; }
 .router-content .badge-stopped { color: #52525b; background: #f4f4f5; }
+
+/* Coolify-inspired resource management cards */
+.svc-management-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.svc-management-card{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg-surface);min-width:0}
+.svc-management-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:12px}
+.svc-management-head span{display:flex;align-items:center;gap:7px}.svc-management-head svg{width:15px;height:15px}
+.svc-health-state{font-size:16px;font-weight:700;margin-bottom:5px}.svc-health-state.is-healthy{color:#15803d}.svc-health-state.is-unhealthy{color:#b91c1c}.svc-health-state.is-checking{color:#a16207}
+.svc-health-detail{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.svc-deployments-list{display:flex;flex-direction:column;gap:8px;max-height:118px;overflow:auto}
+.svc-deployment-row{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}.svc-deployment-status{width:8px;height:8px;border-radius:50%;background:#a1a1aa;flex:0 0 auto}
+.svc-deployment-status.succeeded{background:#16a34a}.svc-deployment-status.failed{background:#dc2626}.svc-deployment-status.running{background:#ca8a04}.svc-deployment-status.cancelled{background:#71717a}
+.svc-deployment-main{display:flex;flex-direction:column;min-width:0;flex:1}.svc-deployment-main strong{font-size:11px;text-transform:capitalize}.svc-deployment-main small{color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.svc-deployment-duration{color:var(--text-muted);font-size:11px}
+@media (max-width:700px){.svc-management-grid{grid-template-columns:1fr}}

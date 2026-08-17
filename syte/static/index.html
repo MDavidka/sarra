@@ -295,6 +295,17 @@
                   <div class="svc-quick-actions" id="svc-quick-actions"></div>
                 </div>
                 <div class="svc-info-grid" id="svc-info-body"></div>
+                <div class="svc-management-grid">
+                  <div class="svc-management-card">
+                    <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
+                    <div class="svc-health-state" id="svc-health-state">Not checked</div>
+                    <div class="svc-health-detail" id="svc-health-detail">Configure a path such as /health for a live probe.</div>
+                  </div>
+                  <div class="svc-management-card">
+                    <div class="svc-management-head"><span><i data-lucide="history"></i> Deployment history</span><button type="button" class="logs-tool-btn" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button></div>
+                    <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
+                  </div>
+                </div>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
