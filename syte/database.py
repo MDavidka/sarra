@@ -34,6 +34,24 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     created_at TEXT NOT NULL,
     last_used_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS deployment_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    trigger TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'queued',
+    commit_sha TEXT,
+    commit_message TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    duration_ms INTEGER,
+    log_path TEXT,
+    error TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_deployment_runs_project_started
+    ON deployment_runs(project_id, started_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -93,6 +111,20 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN agent_conversation_id TEXT")
     if "preview_started_at" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN preview_started_at TEXT")
+    if "healthcheck_path" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN healthcheck_path TEXT DEFAULT '/'")
+    if "healthcheck_interval" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN healthcheck_interval INTEGER DEFAULT 30")
+    if "auto_deploy" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN auto_deploy INTEGER DEFAULT 0")
+    if "resource_memory" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN resource_memory TEXT")
+    if "resource_cpus" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN resource_cpus TEXT")
+    if "docker_image" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN docker_image TEXT")
+    if "compose_file" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN compose_file TEXT")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
         await db.execute(
             "INSERT OR IGNORE INTO system_settings (key, value) "
@@ -186,6 +218,8 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "agent_last_started_at", "agent_last_error", "agent_config_path",
         "agent_conversation_id",
         "custom_tls_domain", "custom_tls_enabled",
+        "healthcheck_path", "healthcheck_interval", "auto_deploy",
+        "resource_memory", "resource_cpus", "docker_image", "compose_file",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):
@@ -211,6 +245,56 @@ async def delete_project(project_id: str) -> bool:
         cursor = await db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def create_deployment_run(project_id: str, trigger: str = "manual") -> dict[str, Any]:
+    import uuid
+    run = {
+        "id": uuid.uuid4().hex[:16],
+        "project_id": project_id,
+        "trigger": trigger,
+        "status": "queued",
+        "started_at": _now(),
+    }
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO deployment_runs (id, project_id, trigger, status, started_at) VALUES (?, ?, ?, ?, ?)",
+            (run["id"], project_id, trigger, run["status"], run["started_at"]),
+        )
+        await db.commit()
+    return run
+
+
+async def update_deployment_run(run_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    fields = {key: value for key, value in updates.items() if key in {
+        "status", "commit_sha", "commit_message", "finished_at", "duration_ms", "log_path", "error"
+    }}
+    if not fields:
+        return await get_deployment_run(run_id)
+    assignments = ", ".join(f"{key} = ?" for key in fields)
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(f"UPDATE deployment_runs SET {assignments} WHERE id = ?", [*fields.values(), run_id])
+        await db.commit()
+    return await get_deployment_run(run_id)
+
+
+async def get_deployment_run(run_id: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM deployment_runs WHERE id = ?", (run_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def list_deployment_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(int(limit), 100))
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM deployment_runs WHERE project_id = ? ORDER BY started_at DESC LIMIT ?",
+            (project_id, safe_limit),
+        ) as cur:
+            return [dict(row) for row in await cur.fetchall()]
 
 
 async def create_api_token(name: str, prefix: str, token_hash: str) -> dict[str, Any]:

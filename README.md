@@ -9,6 +9,10 @@
 - **Custom GUI domain** — configure a domain for the Syte web interface in Settings; Syte issues certificates via Caddy (automatic HTTPS)
 - **Syte self-update** — pull the newest Syte version from git and restart from Settings (workspace data preserved)
 - **Web GUI** — responsive black-and-white interface with Lucide icon navigation
+- **Deployment history** — every manual or automated deployment is recorded with status, trigger, duration, and failure detail
+- **Health checks** — probe each service's public URL from the dashboard and API
+- **Resource controls** — configure per-project Docker memory and CPU limits while retaining server-wide safety defaults
+- **Management dashboard** — view live health and recent deployment runs beside each project's lifecycle controls
 
 ## Quick Start
 
@@ -104,6 +108,9 @@ chmod +x scripts/*.sh
 | `POST` | `/api/system/update` | Pull newest Syte version & restart |
 | `PUT` | `/api/settings` | Save server settings |
 | `GET` | `/api/projects/{id}/logs` | View logs |
+| `GET` | `/api/projects/{id}/deployments` | View deployment history |
+| `GET` | `/api/projects/{id}/health` | Probe the configured public health URL |
+| `PUT` | `/api/projects/{id}/deployment-config` | Update deployment type, commands, health checks, env, auto-deploy flag, and Docker resource limits |
 
 ### Agent MCP & skills
 
@@ -112,6 +119,12 @@ from the agent chat UI or directly via API (session routes under
 `/api/projects/{id}/agent/mcp` and `/agent/skills`, plus token mirrors
 `/api/agent_mcp*` and `/api/agent_skills*`). Custom skills can be added with
 name + guidance content. See [`docs/api-agent.md`](docs/api-agent.md).
+
+## Coolify-inspired management scope
+
+Syte now covers the core operational slice of a self-hosted PaaS: isolated project workspaces, Docker and shell deployments, lifecycle actions, streaming logs, custom domains, previews, per-project environment variables, deployment history, health probes, and per-project Docker CPU/memory limits. The new management cards are shown on each service overview and are backed by the deployment-history and health APIs.
+
+The remaining larger platform capabilities from Coolify—multi-server orchestration, database one-click templates, team roles, provider-specific Git installations, backups, and pull-request preview automation—require additional infrastructure integrations and are intentionally not represented as fake UI controls.
 
 ## Configuration
 

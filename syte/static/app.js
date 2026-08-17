@@ -4784,6 +4784,43 @@ function setPreviewFrameSrc(frame, url) {
 function renderServiceEmbed(p) {
   renderPreviewSection(p);
 }
+async function loadServiceHealth(projectId) {
+  const state = document.getElementById('svc-health-state');
+  const detail = document.getElementById('svc-health-detail');
+  if (!state || !detail) return;
+  state.textContent = 'Checking…';
+  state.className = 'svc-health-state is-checking';
+  try {
+    const result = await api(`/projects/${encodeURIComponent(projectId)}/health`);
+    state.textContent = result.healthy ? `Healthy · ${result.status_code}` : 'Unhealthy';
+    state.className = `svc-health-state ${result.healthy ? 'is-healthy' : 'is-unhealthy'}`;
+    detail.textContent = `${result.url} · ${result.detail || 'No response detail'}`;
+  } catch (err) {
+    state.textContent = 'Health check failed';
+    state.className = 'svc-health-state is-unhealthy';
+    detail.textContent = normalizeFetchError(err?.message) || 'Unable to probe the service.';
+  }
+}
+async function loadDeploymentHistory(projectId) {
+  const list = document.getElementById('svc-deployments-list');
+  if (!list) return;
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(projectId)}/deployments?limit=8`);
+    const rows = payload.deployments || [];
+    if (!rows.length) {
+      list.innerHTML = '<span class="hint">No deployments recorded yet.</span>';
+      return;
+    }
+    list.innerHTML = rows.map((run) => {
+      const status = cssClassSafe(run.status || 'queued');
+      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
+      const duration = run.duration_ms ? `${Math.round(run.duration_ms / 1000)}s` : '—';
+      return `<div class="svc-deployment-row"><span class="svc-deployment-status ${status}"></span><span class="svc-deployment-main"><strong>${esc(run.status || 'queued')}</strong><small>${esc(run.trigger || 'manual')} · ${esc(when)}</small></span><span class="svc-deployment-duration">${esc(duration)}</span></div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<span class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to load deployment history.')}</span>`;
+  }
+}
 
 function openService(id) {
   const p = projects.find(x => x.id === id);
@@ -4815,6 +4852,8 @@ function renderServiceDashboard(p, resetLogs) {
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
     renderStackBadge(p);
+    void loadServiceHealth(p.id);
+    void loadDeploymentHistory(p.id);
     document.getElementById('svc-info-body').innerHTML = `
     <div class="info-cell"><span>status</span><strong>${esc(statusLabel(p))}</strong></div>
     <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
@@ -6183,6 +6222,12 @@ document.getElementById('ai-test-agent-btn')?.addEventListener('click', async ()
   }
 });
 
+document.getElementById('svc-health-refresh')?.addEventListener('click', () => {
+  if (activeServiceId) void loadServiceHealth(activeServiceId);
+});
+document.getElementById('svc-deployments-refresh')?.addEventListener('click', () => {
+  if (activeServiceId) void loadDeploymentHistory(activeServiceId);
+});
 document.getElementById('svc-logs-refresh')?.addEventListener('click', () => {
   if (!activeServiceId) return;
   const logsEl = document.getElementById('svc-live-logs');

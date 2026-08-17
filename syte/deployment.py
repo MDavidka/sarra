@@ -1,11 +1,20 @@
 import uuid
 import asyncio
+import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from syte import process_manager
 from syte.certificates import apply_proxy_config
-from syte.database import create_project, delete_project, get_project, update_project
+from syte.database import (
+    create_deployment_run,
+    create_project,
+    delete_project,
+    get_project,
+    update_deployment_run,
+    update_project,
+)
 from syte.docker_deploy import find_dockerfile
 from syte.runtime import ensure_runtime_for_command
 from syte.preview_domains import resolve_production_domain
@@ -306,7 +315,47 @@ async def begin_deploy_service(
     )
 
 
-async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
+async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
+    started = time.monotonic()
+    try:
+        await update_deployment_run(run_id, {"status": "running"})
+        output = await run_deploy_job(project_id)
+        project = await get_project(project_id)
+        status = "succeeded" if project and project.get("status") == "running" else "failed"
+        await update_deployment_run(
+            run_id,
+            {
+                "status": status,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "error": None if status == "succeeded" else output[-1000:],
+            },
+        )
+        return output
+    except asyncio.CancelledError:
+        await update_deployment_run(
+            run_id,
+            {
+                "status": "cancelled",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
+        raise
+    except Exception as exc:
+        await update_deployment_run(
+            run_id,
+            {
+                "status": "failed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "error": str(exc),
+            },
+        )
+        raise
+
+
+async def issue_deploy(project_id: str, trigger: str = "manual") -> tuple[dict | None, str]:
     """Re-run deploy for an existing project (background)."""
     project = await get_project(project_id)
     if not project:
@@ -317,7 +366,8 @@ async def issue_deploy(project_id: str) -> tuple[dict | None, str]:
             f"Deploy already in progress for {project_id}. "
             f"Stream logs: GET /api/projects/{project_id}/logs/stream"
         )
-    task = asyncio.create_task(run_deploy_job(project_id))
+    run = await create_deployment_run(project_id, trigger=trigger)
+    task = asyncio.create_task(_run_recorded_deploy(project_id, run["id"]))
     _deploy_running[project_id] = task
 
     def _clear(done: asyncio.Task) -> None:

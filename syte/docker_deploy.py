@@ -23,13 +23,14 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _UNLIMITED = frozenset({"", "0", "none", "unlimited", "off"})
 
 
-def _runtime_resource_args() -> list[str]:
-    """Default CPU/memory/pids caps for production containers (DAV-126)."""
+def _runtime_resource_args(project: dict | None = None) -> list[str]:
+    """CPU/memory/pids caps for a container, with optional project overrides."""
     from syte.config import settings
 
+    project = project or {}
     args: list[str] = []
-    memory = str(getattr(settings, "docker_memory", "1g") or "").strip()
-    cpus = str(getattr(settings, "docker_cpus", "1.0") or "").strip()
+    memory = str(project.get("resource_memory") or getattr(settings, "docker_memory", "1g") or "").strip()
+    cpus = str(project.get("resource_cpus") or getattr(settings, "docker_cpus", "1.0") or "").strip()
     pids = int(getattr(settings, "docker_pids_limit", 256) or 0)
     if memory.lower() not in _UNLIMITED:
         args.extend(["--memory", memory])
@@ -400,7 +401,7 @@ def deploy_docker(
         "docker", "run", "-d",
         "--name", container,
         "--restart", "unless-stopped",
-        *_runtime_resource_args(),
+        *_runtime_resource_args(project),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
         *_runtime_env_args(repo, container_port, env_vars_raw),
