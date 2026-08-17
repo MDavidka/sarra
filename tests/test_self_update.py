@@ -168,6 +168,8 @@ def test_git_sync_update_target_refuses_downgrade(
             return 0, "fetched pr"
         if cmd[:2] == ["git", "show"]:
             return 0, '__version__ = "0.4.0"'
+        if cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
+            return 1, "not an ancestor"
         return 0, ""
 
     monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
@@ -183,6 +185,37 @@ def test_git_sync_update_target_refuses_downgrade(
     assert ok is False
     assert "Refusing downgrade" in msg
     assert ref == "syte-pr-4"
+
+
+def test_git_sync_update_target_allows_lower_version_on_newer_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run_cmd(cmd, cwd=None):
+        if cmd[:3] == ["git", "status", "--porcelain"]:
+            return 0, ""
+        if len(cmd) >= 4 and cmd[3].startswith("pull/299/head"):
+            return 0, "fetched pr"
+        if cmd[:2] == ["git", "show"]:
+            return 0, '__version__ = "0.9.2"'
+        if cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
+            return 0, ""
+        if cmd[:3] == ["git", "checkout", "-B"]:
+            return 0, "checked out"
+        return 0, ""
+
+    monkeypatch.setattr(self_update, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(self_update, "_read_installed_version", lambda: "0.9.17")
+    target = UpdateTarget(
+        source_type="pr",
+        branch="feat/deployment-management-v0.9.2",
+        label="PR #299",
+        pr_number=299,
+        repo="MDavidka/sarra",
+    )
+    ok, msg, ref = self_update._git_sync_update_target(target)
+    assert ok is True
+    assert ref == "syte-pr-299"
+    assert "continuing by Git ancestry" in msg
 
 
 def test_git_fetch_pr_uses_fetch_head_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
