@@ -120,11 +120,33 @@ from the agent chat UI or directly via API (session routes under
 `/api/agent_mcp*` and `/api/agent_skills*`). Custom skills can be added with
 name + guidance content. See [`docs/api-agent.md`](docs/api-agent.md).
 
-## Coolify-inspired management scope
+## Platform layer (Coolify parity)
 
-Syte now covers the core operational slice of a self-hosted PaaS: isolated project workspaces, Docker and shell deployments, lifecycle actions, streaming logs, custom domains, previews, per-project environment variables, deployment history, health probes, and per-project Docker CPU/memory limits. The new management cards are shown on each service overview and are backed by the deployment-history and health APIs.
+`syte/platform/` adds the PaaS resource model and deployment engine Syte was
+missing next to [Coolify](https://github.com/coollabsio/coolify):
 
-The remaining larger platform capabilities from Coolify—multi-server orchestration, database one-click templates, team roles, provider-specific Git installations, backups, and pull-request preview automation—require additional infrastructure integrations and are intentionally not represented as fake UI controls.
+- **Build packs** — deploy without writing a Dockerfile. Detects and generates
+  for Node, Bun, Deno, Python, Go, Rust, PHP, Ruby, Java, Elixir, .NET and
+  static sites, with framework handling for Next.js, Nuxt, Remix, SvelteKit,
+  Astro, Django, Laravel, Rails and Phoenix.
+- **Managed databases** — PostgreSQL, MySQL, MariaDB, MongoDB, Redis, KeyDB,
+  Dragonfly and ClickHouse, with generated credentials, connection URLs,
+  readiness probes and logical backup/restore commands.
+- **Resource model** — team → server → project → environment → resource
+  (application / database / service), plus deployments, PR previews, scoped
+  environment variables, persistent volumes, scheduled tasks, backups,
+  notification channels and git sources.
+- **Git integration** — repository identity matching across URL forms and
+  webhook signature verification for GitHub, GitLab, Gitea and Bitbucket.
+
+The existing Syte management layer complements this platform model with
+isolated project workspaces, Docker and shell lifecycle actions, streaming logs,
+custom domains, previews, deployment history, live health probes, and per-project
+Docker CPU/memory limits. The service dashboard exposes the health and recent
+deployment state backed by the deployment-history and health APIs.
+
+See [`docs/platform-coolify-parity.md`](docs/platform-coolify-parity.md) for the
+design, operational details, and remaining roadmap.
 
 ## Configuration
 
