@@ -3202,7 +3202,10 @@ function updateSidebarNav(viewName) {
   document.getElementById('nav-block-service')?.classList.toggle('hidden', !isService);
 
   document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
-    el.classList.toggle('active', !isService && el.dataset.view === navView);
+    const isPlatformLink = el.dataset.view === 'platform';
+    const matchesPlatformPage = isPlatformLink && el.dataset.platformPage === activePlatformPage;
+    const matchesView = !isPlatformLink && el.dataset.view === navView;
+    el.classList.toggle('active', !isService && (matchesPlatformPage || matchesView));
   });
 }
 
