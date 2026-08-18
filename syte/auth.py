@@ -129,9 +129,9 @@ def _prune_operator_sessions(now: float | None = None) -> None:
 
 
 def create_bootstrap_operator_session(bootstrap_token: str) -> dict[str, str | int]:
-    """Create a short-lived GUI session after an explicit bootstrap-key unlock.
+    """Create a short-lived GUI operator session from the server credential.
 
-    The bootstrap key remains server configuration: only a random HttpOnly
+    The credential remains server configuration: only a random HttpOnly
     session id goes into the cookie, while the CSRF value is returned to the
     same page for unsafe same-origin requests.
     """
@@ -197,7 +197,7 @@ async def verify_operator_session_or_token(
     if not session.get("authenticated"):
         raise HTTPException(
             401,
-            detail={"error": "operator_session_required", "message": "Unlock the Syra web UI first."},
+            detail={"error": "operator_session_required", "message": "Operator authentication is required for this protected action."},
         )
 
     if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:

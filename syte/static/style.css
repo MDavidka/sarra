@@ -5227,3 +5227,36 @@ body.login-locked {
 .platform-database-main{min-width:0}.platform-database-title{display:flex;align-items:center;gap:8px;min-width:0}.platform-database-title svg{width:15px;height:15px}.platform-database-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.platform-database-type{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
 .platform-database-meta{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--text-muted);font-size:12px}.platform-database-meta .status-dot{width:7px;height:7px}.platform-database-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}.platform-database-actions .btn-danger{color:#b91c1c}
 @media (max-width:700px){.platform-resources-head,.platform-database-card{flex-direction:column;align-items:stretch}.platform-database-actions{justify-content:flex-start}.platform-database-actions .btn-pill{flex:1 1 auto}}
+
+
+/* Coolify-style organization sidebar */
+:root{--sidebar-w:270px;--sidebar-w-compact:236px}
+.app-sidebar{background:#171717;color:#f4f4f5;border-right:1px solid #2b2b2b;padding:1.05rem .78rem 1rem;overflow-y:auto}
+.sidebar-head{padding:0 .55rem .9rem;margin-bottom:.35rem;border-bottom:1px solid #2a2a2a}
+.sidebar-brand-row{gap:.65rem}
+.sidebar-brand-name{color:#fafafa;font-size:1.05rem;font-weight:700;letter-spacing:-.03em}
+.sidebar-logo{width:30px;height:30px;border-radius:9px;background:#232323}
+.sidebar-divider,.sidebar-load-row,.context-switcher-wrap{display:none}
+.sidebar-menu{gap:0;overflow-y:auto;padding:.1rem 0 .4rem}
+.coolify-nav-block{display:flex;flex-direction:column;min-height:100%;gap:.45rem}
+.coolify-org-head{display:grid;grid-template-columns:32px minmax(0,1fr) 18px 20px;align-items:center;gap:.65rem;padding:.7rem .55rem .95rem;border-bottom:1px solid #2b2b2b;color:#f4f4f5}
+.coolify-org-icon{width:30px;height:30px;display:grid;place-items:center;border:1px solid #444;border-radius:8px;color:#fff}
+.coolify-org-icon svg,.coolify-org-switch,.coolify-org-bell{width:18px;height:18px;stroke-width:1.8}
+.coolify-org-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coolify-org-switch,.coolify-org-bell{color:#d4d4d8}
+.coolify-nav-section{display:flex;flex-direction:column;gap:1px;padding:.55rem 0 0}
+.coolify-nav-section .nav-section-label{color:#8f8f93;font-size:10px;letter-spacing:.13em;padding:.15rem .75rem .35rem;margin:0;text-transform:uppercase}
+.coolify-nav-section .nav-sublink{min-height:38px;padding:.45rem .72rem;border-radius:7px;color:#d4d4d8;gap:.72rem;font-size:14px;font-weight:450}
+.coolify-nav-section .nav-sublink svg,.coolify-nav-section .nav-sublink-img{width:19px;height:19px;color:#fafafa;stroke-width:1.7;opacity:1}
+.coolify-nav-section .nav-sublink:hover{background:#252525;color:#fff}
+.coolify-nav-section .nav-sublink.active{background:#2a2a2a;color:#fff;font-weight:600}
+.coolify-nav-section .nav-sublink.active::before{left:0;top:7px;bottom:7px;width:2px;background:#fff}
+.coolify-nav-section-bottom{margin-top:auto}
+.coolify-account-card{display:grid;grid-template-columns:34px minmax(0,1fr) 18px;align-items:center;gap:.65rem;border-top:1px solid #2b2b2b;padding:.8rem .55rem .45rem;margin-top:.35rem;color:#f4f4f5}
+.coolify-account-avatar{width:32px;height:32px;display:grid;place-items:center;border:1px solid #4a4a4a;border-radius:50%;color:#fff}
+.coolify-account-avatar svg{width:17px;height:17px;stroke-width:1.8}
+.coolify-account-card strong,.coolify-account-card small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coolify-account-card strong{font-size:14px}.coolify-account-card small{color:#a1a1aa;font-size:12px;margin-top:2px}
+.coolify-version{text-align:center;color:#71717a;font-size:11px;padding:.25rem 0 .1rem}
+.nav-placeholder{opacity:.9}
+@media (max-width:768px){:root{--sidebar-w:290px}.app-sidebar{padding:.85rem .7rem 1rem}.coolify-nav-section .nav-sublink{min-height:42px;font-size:15px}.coolify-org-name{font-size:16px}}
