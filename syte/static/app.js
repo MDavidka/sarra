@@ -3448,20 +3448,33 @@ async function loadDockerStore() {
   panel.classList.remove('hidden');
   try {
     const data = await api('/platform/store/catalog');
-    const render = (filter = '') => {
-      const query = filter.toLowerCase().trim();
-      const apps = (data.apps || []).filter(app => !query || `${app.name} ${app.description} ${app.category}`.toLowerCase().includes(query));
-      grid.innerHTML = apps.map(app => `<article class="store-app-card"><div class="store-app-visual" style="--store-color:${esc(app.color)}"><img src="${esc(app.icon)}" alt="" loading="lazy"><span>${esc(app.category)}</span></div><div class="store-app-body"><h3>${esc(app.name)}</h3><p>${esc(app.description)}</p><div class="store-app-meta"><span>${esc(app.size)}</span><span>${esc(app.image)}</span></div><button type="button" class="btn-create store-install-btn" data-store-app="${esc(app.slug)}"><i data-lucide="download"></i><span>Install</span></button></div></article>`).join('') || '<div class="platform-empty">No apps match your search.</div>';
-      grid.querySelectorAll('[data-store-app]').forEach(btn => btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.querySelector('span').textContent = 'Installing…';
-        try { await api('/platform/store/install', {method:'POST', body: JSON.stringify({slug: btn.dataset.storeApp})}); btn.querySelector('span').textContent = 'Installed'; await loadPlatformPage('docker'); }
-        catch (error) { btn.disabled = false; btn.querySelector('span').textContent = `Retry`; document.getElementById('platform-page-message').textContent = `Install failed: ${error.message}`; }
-      }));
+    const apps = data.apps || [];
+    let category = 'All';
+    let sort = 'Popular';
+    const categories = ['All', ...new Set(apps.map(app => app.category))];
+    const categoryEl = document.getElementById('docker-library-categories');
+    if (categoryEl) categoryEl.innerHTML = categories.map(item => `<button type="button" class="docker-category ${item === category ? 'active' : ''}" data-category="${esc(item)}">${esc(item)}</button>`).join('');
+    const render = (query = '') => {
+      const normalized = query.toLowerCase().trim();
+      let visible = apps.filter(app => (category === 'All' || app.category === category) && (!normalized || `${app.name} ${app.description} ${app.category} ${app.image}`.toLowerCase().includes(normalized)));
+      if (sort === 'A–Z') visible = [...visible].sort((a,b) => a.name.localeCompare(b.name));
+      const count = document.getElementById('docker-library-count'); if (count) count.textContent = `${visible.length} apps`;
+      const featured = document.getElementById('docker-library-featured');
+      if (featured && !normalized && category === 'All' && apps[0]) {
+        const app = apps[0];
+        featured.innerHTML = `<article class="docker-featured-card" style="--store-color:${esc(app.color)}"><div class="docker-featured-copy"><span class="docker-featured-label">Featured this week</span><h2>${esc(app.name)} for your next deployment</h2><p>${esc(app.description)}</p><div class="docker-featured-meta"><span>${esc(app.size)}</span><span>${esc(app.image)}</span></div><button type="button" class="docker-featured-btn" data-store-app="${esc(app.slug)}"><i data-lucide="arrow-down-to-line"></i>Install ${esc(app.name)}</button></div><div class="docker-featured-icon"><img src="${esc(app.icon)}" alt="" loading="lazy"></div></article>`;
+      } else if (featured) featured.innerHTML = '';
+      grid.innerHTML = visible.map(app => `<article class="docker-app-card"><div class="docker-app-card-head" style="--store-color:${esc(app.color)}"><img src="${esc(app.icon)}" alt="" loading="lazy"><span>${esc(app.category)}</span><button type="button" class="docker-app-more" aria-label="More about ${esc(app.name)}"><i data-lucide="ellipsis"></i></button></div><div class="docker-app-card-body"><h3>${esc(app.name)}</h3><p>${esc(app.description)}</p><div class="docker-app-card-foot"><span>${esc(app.size)}</span><span>${esc(app.image)}</span></div><button type="button" class="docker-app-install" data-store-app="${esc(app.slug)}"><span>Install</span><i data-lucide="plus"></i></button></div></article>`).join('') || '<div class="platform-empty">No applications match this view.</div>';
+      const install = async (btn) => { btn.disabled = true; const label = btn.querySelector('span'); if (label) label.textContent = 'Installing…'; try { await api('/platform/store/install', {method:'POST', body: JSON.stringify({slug: btn.dataset.storeApp})}); if (label) label.textContent = 'Added'; } catch (error) { btn.disabled = false; if (label) label.textContent = 'Retry'; const message = document.getElementById('platform-page-message'); if (message) message.textContent = `Install failed: ${error.message}`; } };
+      document.querySelectorAll('[data-store-app]').forEach(btn => btn.addEventListener('click', () => install(btn)));
       refreshIcons();
     };
-    render();
+    categoryEl?.querySelectorAll('[data-category]').forEach(btn => btn.addEventListener('click', () => { category = btn.dataset.category; categoryEl.querySelectorAll('.docker-category').forEach(item => item.classList.toggle('active', item === btn)); render(document.getElementById('platform-store-filter')?.value || ''); }));
     document.getElementById('platform-store-filter')?.addEventListener('input', event => render(event.target.value));
-  } catch (error) { grid.innerHTML = `<div class="platform-error">Store unavailable: ${esc(error.message)}</div>`; }
+    document.getElementById('docker-library-sort')?.addEventListener('click', event => { sort = sort === 'Popular' ? 'A–Z' : 'Popular'; event.currentTarget.querySelector('span').textContent = sort; render(document.getElementById('platform-store-filter')?.value || ''); });
+    document.getElementById('docker-library-refresh')?.addEventListener('click', () => loadDockerStore());
+    render();
+  } catch (error) { grid.innerHTML = `<div class="platform-error">Library unavailable: ${esc(error.message)}</div>`; }
 }
 
 function renderPlatformDetails(page, resources) {
@@ -3530,6 +3543,7 @@ function showView(name) {
   if (name === 'users') loadTokens();
   if (name === 'dashboard') { activeServiceId = null; loadOverviewMonitor(); }
   if (name === 'platform') {
+    document.getElementById('platform-workspace')?.classList.toggle('docker-library-mode', activePlatformPage === 'docker');
     document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
     loadPlatformPage(activePlatformPage);
     if (activePlatformPage === 'docker') loadDockerStore();
