@@ -3342,6 +3342,56 @@ function restoreSettingsMiniTab() {
   setSettingsMiniTab(tab);
 }
 
+let activePlatformPage = 'overview';
+
+const PLATFORM_PAGE_LABELS = {
+  projects: 'Projects', overview: 'Overview', schedules: 'Schedules', traefik: 'Traefik File System', docker: 'Docker',
+  profile: 'Profile', sessions: 'Sessions', 'remote-servers': 'Remote Servers', 'audit-logs': 'Audit Logs', 'ssh-keys': 'SSH Keys',
+  ai: 'AI', tags: 'Tags', git: 'Git', registry: 'Registry', secrets: 'Secrets', 'dns-providers': 'DNS Providers',
+  's3-destinations': 'S3 Destinations', certificates: 'Certificates', notifications: 'Notifications', billing: 'Billing',
+  license: 'License', sso: 'SSO', documentation: 'Documentation', support: 'Support',
+};
+
+async function loadPlatformPage(page = 'overview') {
+  const safePage = PLATFORM_PAGE_LABELS[page] ? page : 'overview';
+  activePlatformPage = safePage;
+  const title = document.getElementById('platform-page-title');
+  const description = document.getElementById('platform-page-description');
+  const list = document.getElementById('platform-resource-list');
+  const actions = document.getElementById('platform-action-list');
+  const summary = document.getElementById('platform-summary-grid');
+  const count = document.getElementById('platform-resource-count');
+  const message = document.getElementById('platform-page-message');
+  if (title) title.textContent = PLATFORM_PAGE_LABELS[safePage];
+  if (list) list.innerHTML = '<div class="platform-loading">Loading live platform data…</div>';
+  if (actions) actions.innerHTML = '';
+  try {
+    const data = await api(`/platform/navigation/${encodeURIComponent(safePage)}`);
+    if (description) description.textContent = data.description || '';
+    if (count) count.textContent = String(data.resource_count || 0);
+    if (summary) summary.innerHTML = [
+      ['Resources', data.resource_count || 0],
+      ['Page', PLATFORM_PAGE_LABELS[safePage]],
+      ['Source', 'Syte platform API'],
+    ].map(([label, value]) => `<div class="platform-summary-card"><span>${esc(String(label))}</span><strong>${esc(String(value))}</strong></div>`).join('');
+    if (list) list.innerHTML = data.resources?.length
+      ? data.resources.map((row) => {
+        const name = row.name || row.title || row.uuid || row.id || 'Resource';
+        const status = row.status || row.state || row.type || row._table || 'tracked';
+        return `<div class="platform-resource-row"><span><strong>${esc(String(name))}</strong><small>${esc(String(row._table || 'platform resource'))}</small></span><em>${esc(String(status))}</em></div>`;
+      }).join('')
+      : '<div class="platform-empty">No records are configured for this page yet. The page is live and will populate as resources are added.</div>';
+    if (actions) actions.innerHTML = (data.actions || []).map((action) => action.href
+      ? `<a class="btn-pill btn-ghost" href="${esc(action.href)}"><i data-lucide="external-link"></i><span>${esc(action.label)}</span></a>`
+      : `<button type="button" class="btn-pill btn-ghost platform-action-btn" data-action="${esc(action.id)}"><i data-lucide="refresh-cw"></i><span>${esc(action.label)}</span></button>`).join('');
+    if (message) message.textContent = 'Data is sourced from the running Syte platform store; secret values are never rendered.';
+    refreshIcons();
+  } catch (error) {
+    if (list) list.innerHTML = `<div class="platform-error">Could not load this page: ${esc(error.message)}</div>`;
+    if (message) message.textContent = 'The page is available, but the protected platform API did not return data.';
+  }
+}
+
 function showView(name) {
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
@@ -3355,6 +3405,7 @@ function showView(name) {
 
   if (name === 'users') loadTokens();
   if (name === 'dashboard') activeServiceId = null;
+  if (name === 'platform') loadPlatformPage(activePlatformPage);
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
@@ -6056,8 +6107,16 @@ document.getElementById('project-filter')?.addEventListener('input', (e) => {
 });
 
 document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
-  if (el.tagName === 'A') return;
-  el.addEventListener('click', () => showView(el.dataset.view));
+  if (el.tagName === 'A' && !el.dataset.platformPage) return;
+  el.addEventListener('click', (event) => {
+    if (el.dataset.platformPage) event.preventDefault();
+    if (el.dataset.platformPage) activePlatformPage = el.dataset.platformPage;
+    showView(el.dataset.view);
+  });
+});
+document.getElementById('platform-page-refresh')?.addEventListener('click', () => loadPlatformPage(activePlatformPage));
+document.getElementById('platform-action-list')?.addEventListener('click', (event) => {
+  if (event.target.closest('[data-action="refresh"]')) loadPlatformPage(activePlatformPage);
 });
 document.getElementById('nav-group-main-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-main'));
 document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
