@@ -1,6 +1,13 @@
 """Authenticated platform resource APIs used by the Syte dashboard."""
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+import urllib.request
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -261,6 +268,17 @@ class NavigationActionRequest(BaseModel):
     action: str = Field(min_length=1, max_length=80)
 
 
+class StoreInstallRequest(BaseModel):
+    slug: str = Field(min_length=1, max_length=80)
+    name: str | None = Field(default=None, max_length=80)
+
+
+class GenerateSshKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    algorithm: str = Field(default="ed25519", pattern="^(ed25519|rsa)$")
+    bits: int = Field(default=4096, ge=2048, le=8192)
+
+
 @router.post("/navigation/{page}/records", dependencies=[Depends(_operator)])
 async def create_navigation_record(page: str, body: NavigationRecordRequest) -> dict[str, Any]:
     config = _PLATFORM_NAV_PAGES.get(page)
@@ -366,3 +384,106 @@ async def run_navigation_action(page: str, body: NavigationActionRequest) -> dic
         licenses = await find("platform_license_records", {})
         return {"ok": True, "action": body.action, "message": f"Entitlement check completed for {len(licenses)} feature record(s).", "event": event}
     return {"ok": True, "action": body.action, "message": "Operator action recorded.", "event": event}
+
+
+DOCKER_STORE_CATALOG: list[dict[str, Any]] = [
+    {"slug": "nginx", "name": "Nginx", "category": "Web", "image": "nginx:alpine", "size": "~25 MB", "color": "#0d9488", "icon": "https://cdn.simpleicons.org/nginx/ffffff", "description": "Fast, reliable reverse proxy and static web server.", "compose": "services:\n  nginx:\n    image: nginx:alpine\n    restart: unless-stopped\n    ports:\n      - 8080:80"},
+    {"slug": "wordpress", "name": "WordPress", "category": "CMS", "image": "wordpress:latest", "size": "~650 MB", "color": "#2563eb", "icon": "https://cdn.simpleicons.org/wordpress/ffffff", "description": "Popular publishing platform with a MySQL-backed content stack.", "compose": "services:\n  wordpress:\n    image: wordpress:latest\n    restart: unless-stopped\n    ports:\n      - 8080:80\n    environment:\n      WORDPRESS_DB_HOST: db:3306\n  db:\n    image: mysql:8.0\n    restart: unless-stopped"},
+    {"slug": "nextcloud", "name": "Nextcloud", "category": "Files", "image": "nextcloud:apache", "size": "~1.1 GB", "color": "#0284c7", "icon": "https://cdn.simpleicons.org/nextcloud/ffffff", "description": "Private file sync, collaboration, calendar, and contacts.", "compose": "services:\n  nextcloud:\n    image: nextcloud:apache\n    restart: unless-stopped\n    ports:\n      - 8080:80"},
+    {"slug": "n8n", "name": "n8n", "category": "Automation", "image": "n8nio/n8n:latest", "size": "~500 MB", "color": "#ea580c", "icon": "https://cdn.simpleicons.org/n8n/ffffff", "description": "Workflow automation with hundreds of integrations.", "compose": "services:\n  n8n:\n    image: n8nio/n8n:latest\n    restart: unless-stopped\n    ports:\n      - 5678:5678"},
+    {"slug": "uptime-kuma", "name": "Uptime Kuma", "category": "Monitoring", "image": "louislam/uptime-kuma:1", "size": "~300 MB", "color": "#dc2626", "icon": "https://cdn.simpleicons.org/uptimekuma/ffffff", "description": "Self-hosted uptime monitoring with alerts and status pages.", "compose": "services:\n  uptime-kuma:\n    image: louislam/uptime-kuma:1\n    restart: unless-stopped\n    ports:\n      - 3001:3001"},
+    {"slug": "grafana", "name": "Grafana", "category": "Observability", "image": "grafana/grafana:latest", "size": "~350 MB", "color": "#f97316", "icon": "https://cdn.simpleicons.org/grafana/ffffff", "description": "Dashboards and alerting for metrics, logs, and traces.", "compose": "services:\n  grafana:\n    image: grafana/grafana:latest\n    restart: unless-stopped\n    ports:\n      - 3000:3000"},
+    {"slug": "redis", "name": "Redis", "category": "Database", "image": "redis:7-alpine", "size": "~35 MB", "color": "#dc2626", "icon": "https://cdn.simpleicons.org/redis/ffffff", "description": "Fast in-memory data store for caches, queues, and sessions.", "compose": "services:\n  redis:\n    image: redis:7-alpine\n    restart: unless-stopped\n    ports:\n      - 6379:6379"},
+    {"slug": "postgres", "name": "PostgreSQL", "category": "Database", "image": "postgres:16-alpine", "size": "~250 MB", "color": "#1d4ed8", "icon": "https://cdn.simpleicons.org/postgresql/ffffff", "description": "Production-grade relational database for application workloads.", "compose": "services:\n  postgres:\n    image: postgres:16-alpine\n    restart: unless-stopped\n    ports:\n      - 5432:5432"},
+]
+
+
+def _host_cpu_percent() -> float:
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as handle:
+            load = float(handle.read().split()[0])
+        return min(100.0, max(0.0, load / max(1, os.cpu_count() or 1) * 100))
+    except (OSError, ValueError):
+        return 0.0
+
+
+def _host_memory_percent() -> float:
+    try:
+        values: dict[str, float] = {}
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                key, value = line.split(":", 1)
+                values[key] = float(value.strip().split()[0])
+        total, available = values.get("MemTotal", 0), values.get("MemAvailable", 0)
+        return ((total - available) / total * 100) if total else 0.0
+    except (OSError, ValueError):
+        return 0.0
+
+
+async def _internet_ping_ms() -> float | None:
+    started = time.perf_counter()
+    try:
+        await asyncio.to_thread(urllib.request.urlopen, "https://www.cloudflare.com/cdn-cgi/trace", timeout=3)
+        return (time.perf_counter() - started) * 1000
+    except Exception:
+        return None
+
+
+@router.get("/overview/metrics", dependencies=[Depends(_operator)])
+async def overview_metrics() -> dict[str, Any]:
+    projects = await find("platform_projects", {})
+    deployments = await find("platform_deployments", {})
+    webhooks = await find("platform_webhook_events", {})
+    servers = await find("platform_servers", {})
+    disk = shutil.disk_usage("/")
+    blocked = sum(1 for row in webhooks if not bool(row.get("accepted", 1)))
+    return {
+        "cpu_percent": _host_cpu_percent(),
+        "memory_percent": _host_memory_percent(),
+        "disk_percent": (disk.used / disk.total * 100) if disk.total else 0,
+        "api_requests": len(deployments) + len(webhooks),
+        "internet_ping_ms": await _internet_ping_ms(),
+        "project_count": len(projects),
+        "security_blocked_users": blocked,
+        "server_count": len(servers),
+        "collected_at": utcnow(),
+    }
+
+
+@router.get("/store/catalog", dependencies=[Depends(_operator)])
+async def docker_store_catalog() -> dict[str, Any]:
+    return {"apps": [{key: value for key, value in app.items() if key != "compose"} for app in DOCKER_STORE_CATALOG]}
+
+
+@router.post("/store/install", dependencies=[Depends(_operator)])
+async def install_docker_store_app(body: StoreInstallRequest) -> dict[str, Any]:
+    app = next((item for item in DOCKER_STORE_CATALOG if item["slug"] == body.slug), None)
+    if app is None:
+        raise HTTPException(404, "Docker application is not in the catalog.")
+    bootstrap = await ensure_bootstrap()
+    now = utcnow()
+    service = await insert("platform_services", {
+        "uuid": new_uuid(), "environment_uuid": bootstrap["environment"]["uuid"], "server_uuid": bootstrap["server"]["uuid"],
+        "destination_uuid": bootstrap["destination"]["uuid"], "name": body.name or app["name"], "description": app["description"],
+        "template_key": app["slug"], "service_type": "docker-store", "docker_compose_raw": app["compose"], "docker_compose": app["compose"],
+        "status": "stopped", "created_at": now, "updated_at": now,
+    })
+    return {"ok": True, "app": {key: value for key, value in app.items() if key != "compose"}, "service": service, "message": f"{app['name']} was added to the environment. Review its configuration before starting it."}
+
+
+@router.post("/ssh-keys/generate", dependencies=[Depends(_operator)])
+async def generate_ssh_key(body: GenerateSshKeyRequest) -> dict[str, Any]:
+    bootstrap = await ensure_bootstrap()
+    with tempfile.TemporaryDirectory(prefix="syte-ssh-") as directory:
+        key_path = os.path.join(directory, "id_key")
+        command = ["ssh-keygen", "-q", "-N", "", "-C", body.name]
+        command += ["-t", "ed25519"] if body.algorithm == "ed25519" else ["-t", "rsa", "-b", str(body.bits)]
+        command += ["-f", key_path]
+        result = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise HTTPException(500, f"SSH key generation failed: {result.stderr.strip() or 'ssh-keygen error'}")
+        private_key = open(key_path, encoding="utf-8").read()
+        public_key = open(f"{key_path}.pub", encoding="utf-8").read().strip()
+    now = utcnow()
+    row = await insert("platform_private_keys", {"uuid": new_uuid(), "team_uuid": bootstrap["team"]["uuid"], "name": body.name, "description": f"Generated {body.algorithm} key", "private_key": private_key, "public_key": public_key, "fingerprint": public_key.split()[-1] if public_key else "", "created_at": now, "updated_at": now})
+    return {"ok": True, "key": {"uuid": row["uuid"], "name": row["name"], "public_key": public_key, "fingerprint": row.get("fingerprint"), "algorithm": body.algorithm}, "private_key": private_key, "message": "Private key generated. Download it now; it will not be shown again by list endpoints."}
