@@ -7,6 +7,7 @@ import pytest
 from syte.update_source import (
     UpdateTarget,
     fetch_latest_open_pr,
+    fetch_pull_request,
     parse_github_repo,
     resolve_update_target,
 )
@@ -150,3 +151,52 @@ def test_resolve_update_target_respects_branch_override(
     target = resolve_update_target(install_dir)
     assert target.branch == "production"
     assert target.source_type == "branch"
+
+
+def test_fetch_pull_request_ignores_merged_pr(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "number": 301,
+                "title": "Merged aggregate PR",
+                "state": "closed",
+                "merged_at": "2026-08-18T14:00:00Z",
+                "head": {"ref": "feat/platform-complete-0.9.2"},
+                "html_url": "https://github.com/MDavidka/sarra/pull/301",
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, params=None, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr("syte.update_source.httpx.Client", FakeClient)
+    assert fetch_pull_request("MDavidka/sarra", 301) is None
+
+
+def test_stale_pr_override_falls_back_to_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_dir = tmp_path / "syte"
+    install_dir.mkdir()
+    monkeypatch.delenv("SYTE_UPDATE_BRANCH", raising=False)
+    monkeypatch.setenv("SYTE_UPDATE_PR", "301")
+    monkeypatch.delenv("SYTE_UPDATE_FROM_PR", raising=False)
+    monkeypatch.setattr("syte.update_source.git_remote_repo", lambda _dir: "MDavidka/sarra")
+    monkeypatch.setattr("syte.update_source.fetch_pull_request", lambda _repo, _pr: None)
+
+    target = resolve_update_target(install_dir)
+    assert target.source_type == "branch"
+    assert target.branch == "main"
+    assert target.label == "main"
