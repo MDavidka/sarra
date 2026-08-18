@@ -3352,6 +3352,68 @@ const PLATFORM_PAGE_LABELS = {
   license: 'License', sso: 'SSO', documentation: 'Documentation', support: 'Support',
 };
 
+const PLATFORM_PAGE_BLUEPRINTS = {
+  projects: {heading:'Applications and environments', control:'create-project', columns:['name','status','git_repository','git_branch']},
+  overview: {heading:'Platform inventory', columns:['name','status','_table']},
+  schedules: {heading:'Backup and task schedules', control:'create-schedule', columns:['name','frequency','enabled','last_run_at']},
+  traefik: {heading:'Proxy configuration', control:'validate-proxy', columns:['name','status','domain','certificate']},
+  docker: {heading:'Runtime containers', control:'runtime-actions', columns:['name','status','database_type','server_uuid']},
+  profile: {heading:'Operator profile', control:'profile-form', columns:['email','name','role']},
+  sessions: {heading:'Authenticated sessions', control:'session-actions', columns:['created_at','last_seen_at','user_agent','status']},
+  'remote-servers': {heading:'Deployment nodes', control:'server-form', columns:['name','status','ip','proxy']},
+  'audit-logs': {heading:'Recent audit events', columns:['created_at','event','source','status']},
+  'ssh-keys': {heading:'Deployment credentials', control:'key-form', columns:['name','fingerprint','created_at']},
+  ai: {heading:'Model providers', control:'ai-actions', columns:['provider','model','enabled','updated_at']},
+  tags: {heading:'Resource tags', control:'tag-form', columns:['name','color','resource_count']},
+  git: {heading:'Git providers and repositories', control:'git-form', columns:['name','provider','url','status']},
+  registry: {heading:'Container registries', control:'registry-form', columns:['name','url','username','status']},
+  secrets: {heading:'Environment variables', control:'secret-form', columns:['key','scope','resource_uuid','updated_at']},
+  'dns-providers': {heading:'DNS automation providers', control:'dns-form', columns:['name','provider','zone','status']},
+  's3-destinations': {heading:'Backup destinations', control:'s3-form', columns:['name','endpoint','bucket','region','status']},
+  certificates: {heading:'TLS certificates', control:'certificate-actions', columns:['domain','issuer','status','expires_at']},
+  notifications: {heading:'Notification channels', control:'notification-form', columns:['name','type','enabled','last_delivery_at']},
+  billing: {heading:'Usage and entitlement', columns:['name','resource_count','status']},
+  license: {heading:'Installation entitlement', control:'license-actions', columns:['feature','status','source']},
+  sso: {heading:'Identity provider configuration', control:'sso-form', columns:['provider','issuer','status','updated_at']},
+  documentation: {heading:'Operator references', control:'documentation-actions', columns:['name','url','method','status']},
+  support: {heading:'Diagnostics and support', control:'support-actions', columns:['created_at','event','source','status']},
+};
+
+function renderPlatformControls(page, data) {
+  const blueprint = PLATFORM_PAGE_BLUEPRINTS[page] || {};
+  const controls = document.getElementById('platform-page-controls');
+  if (!controls) return;
+  const forms = {
+    'create-project':['Project name','Repository URL'], 'create-schedule':['Schedule name','Cron expression'], 'profile-form':['Display name','Email'],
+    'server-form':['Server name','Host/IP'], 'key-form':['Key name','Private key'], 'tag-form':['Tag name','Color'], 'git-form':['Provider name','Repository URL'],
+    'registry-form':['Registry name','Registry URL'], 'secret-form':['Variable name','Value'], 'dns-form':['Provider name','Zone'], 's3-form':['Destination name','Bucket'],
+    'notification-form':['Channel name','Webhook URL'], 'sso-form':['Provider','Issuer URL'],
+  };
+  const fields = forms[blueprint.control];
+  if (fields) {
+    controls.innerHTML = `<form class="platform-inline-form" data-platform-form="${esc(blueprint.control)}"><div><label>${esc(fields[0])}</label><input name="primary" required></div><div><label>${esc(fields[1])}</label><input name="secondary" required></div><button class="btn-create" type="submit"><i data-lucide="plus"></i><span>Create</span></button></form>`;
+  } else if (blueprint.control) {
+    controls.innerHTML = `<div class="platform-control-toolbar"><span>Operational tools</span><button type="button" class="btn-pill btn-ghost" data-platform-operation="${esc(blueprint.control)}"><i data-lucide="play"></i><span>Run action</span></button></div>`;
+  } else controls.innerHTML = '';
+  controls.querySelector('form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try { await api(`/platform/navigation/${encodeURIComponent(page)}/records`, {method:'POST', body: JSON.stringify({primary: form.get('primary'), secondary: form.get('secondary')})}); await loadPlatformPage(page); }
+    catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; }
+  });
+  controls.querySelector('[data-platform-operation]')?.addEventListener('click', async () => {
+    try { await api(`/platform/navigation/${encodeURIComponent(page)}/actions`, {method:'POST', body: JSON.stringify({action: blueprint.control})}); await loadPlatformPage(page); }
+    catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; }
+  });
+}
+
+function renderPlatformDetails(page, resources) {
+  const table = document.getElementById('platform-detail-table');
+  const columns = PLATFORM_PAGE_BLUEPRINTS[page]?.columns || ['name','status'];
+  if (!table) return;
+  table.innerHTML = resources?.length ? `<table><thead><tr>${columns.map(column => `<th>${esc(column.replaceAll('_',' '))}</th>`).join('')}</tr></thead><tbody>${resources.map(row => `<tr>${columns.map(column => `<td>${esc(String(row[column] ?? '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<div class="platform-empty">No operational records yet.</div>';
+}
+
 async function loadPlatformPage(page = 'overview') {
   const safePage = PLATFORM_PAGE_LABELS[page] ? page : 'overview';
   activePlatformPage = safePage;
@@ -3369,6 +3431,10 @@ async function loadPlatformPage(page = 'overview') {
     const data = await api(`/platform/navigation/${encodeURIComponent(safePage)}`);
     if (description) description.textContent = data.description || '';
     if (count) count.textContent = String(data.resource_count || 0);
+    const blueprint = PLATFORM_PAGE_BLUEPRINTS[safePage] || {};
+    const heading = document.getElementById('platform-resource-heading');
+    if (heading) heading.textContent = blueprint.heading || 'Resources';
+    renderPlatformControls(safePage, data);
     if (summary) summary.innerHTML = [
       ['Resources', data.resource_count || 0],
       ['Page', PLATFORM_PAGE_LABELS[safePage]],
@@ -3381,6 +3447,7 @@ async function loadPlatformPage(page = 'overview') {
         return `<div class="platform-resource-row"><span><strong>${esc(String(name))}</strong><small>${esc(String(row._table || 'platform resource'))}</small></span><em>${esc(String(status))}</em></div>`;
       }).join('')
       : '<div class="platform-empty">No records are configured for this page yet. The page is live and will populate as resources are added.</div>';
+    renderPlatformDetails(safePage, data.resources || []);
     if (actions) actions.innerHTML = (data.actions || []).map((action) => action.href
       ? `<a class="btn-pill btn-ghost" href="${esc(action.href)}"><i data-lucide="external-link"></i><span>${esc(action.label)}</span></a>`
       : `<button type="button" class="btn-pill btn-ghost platform-action-btn" data-action="${esc(action.id)}"><i data-lucide="refresh-cw"></i><span>${esc(action.label)}</span></button>`).join('');
