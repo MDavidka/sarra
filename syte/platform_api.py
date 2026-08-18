@@ -194,3 +194,59 @@ async def restore_backup_execution(uuid: str) -> dict[str, Any]:
     if not ok:
         raise HTTPException(502, message)
     return {"ok": True, "message": message}
+
+
+_PLATFORM_NAV_PAGES: dict[str, dict[str, Any]] = {
+    "projects": {"title": "Projects", "description": "Applications, environments, and deployment resources managed by Syte.", "tables": ["platform_projects", "platform_applications"]},
+    "overview": {"title": "Overview", "description": "Live platform inventory across projects, applications, databases, and backups.", "tables": ["platform_projects", "platform_applications", "platform_databases", "platform_backups"]},
+    "schedules": {"title": "Schedules", "description": "Backup and scheduled-task records currently configured on this Syte instance.", "tables": ["platform_backups", "platform_scheduled_tasks"]},
+    "traefik": {"title": "Traefik File System", "description": "Proxy configuration is generated from Syte domains and certificates.", "tables": ["platform_certificates", "platform_domains"]},
+    "docker": {"title": "Docker", "description": "Managed containers, databases, and deployment runtime inventory.", "tables": ["platform_databases", "platform_applications", "platform_services"]},
+    "profile": {"title": "Profile", "description": "Current operator and instance identity settings.", "tables": []},
+    "sessions": {"title": "Sessions", "description": "Current operator session status and session policy.", "tables": []},
+    "remote-servers": {"title": "Remote Servers", "description": "Servers available for deployment and platform resource placement.", "tables": ["platform_servers"]},
+    "audit-logs": {"title": "Audit Logs", "description": "Recent webhook and platform events retained by Syte.", "tables": ["platform_webhook_events"]},
+    "ssh-keys": {"title": "SSH Keys", "description": "SSH key inventory used by remote deployment integrations.", "tables": ["platform_ssh_keys"]},
+    "ai": {"title": "AI", "description": "Configured model providers and built-in agent capabilities.", "tables": ["model_configs"]},
+    "tags": {"title": "Tags", "description": "Resource tagging inventory for organizing platform objects.", "tables": ["platform_tags"]},
+    "git": {"title": "Git", "description": "Git provider and repository configuration used by deployments.", "tables": ["platform_git_sources", "platform_applications"]},
+    "registry": {"title": "Registry", "description": "Container image sources and registry-backed deployments.", "tables": ["platform_registries", "platform_applications"]},
+    "secrets": {"title": "Secrets", "description": "Environment and shared-secret records are shown without secret values.", "tables": ["platform_shared_env_vars", "platform_env_vars"]},
+    "dns-providers": {"title": "DNS Providers", "description": "DNS provider configuration used for domain automation.", "tables": ["platform_dns_providers"]},
+    "s3-destinations": {"title": "S3 Destinations", "description": "Backup destinations configured for managed database exports.", "tables": ["platform_s3_storages"]},
+    "certificates": {"title": "Certificates", "description": "TLS certificate and domain records used by the proxy.", "tables": ["platform_certificates"]},
+    "notifications": {"title": "Notifications", "description": "Configured notification channels for platform events.", "tables": ["platform_notification_channels"]},
+    "billing": {"title": "Billing", "description": "Local billing readiness and resource usage summary.", "tables": ["platform_projects", "platform_databases"]},
+    "license": {"title": "License", "description": "Syte installation version and feature availability.", "tables": []},
+    "sso": {"title": "SSO", "description": "Single sign-on readiness and configured identity-provider state.", "tables": []},
+    "documentation": {"title": "Documentation", "description": "API and operator documentation for the running Syte instance.", "tables": []},
+    "support": {"title": "Support", "description": "Support resources, diagnostics, and recent platform events.", "tables": ["platform_webhook_events"]},
+}
+
+
+@router.get("/navigation/{page}", dependencies=[Depends(_operator)])
+async def navigation_page(page: str) -> dict[str, Any]:
+    config = _PLATFORM_NAV_PAGES.get(page)
+    if config is None:
+        raise HTTPException(404, "Platform page not found.")
+    resources: list[dict[str, Any]] = []
+    for table in config["tables"]:
+        try:
+            rows = await find(table, {}, order_by="created_at DESC", limit=25)
+        except Exception:
+            rows = []
+        for row in rows:
+            safe = {key: value for key, value in row.items() if key not in {"secret", "password", "token", "credentials", "private_key", "env"}}
+            safe["_table"] = table
+            resources.append(safe)
+    return {
+        "page": page,
+        "title": config["title"],
+        "description": config["description"],
+        "resource_count": len(resources),
+        "resources": resources[:100],
+        "actions": [
+            {"id": "refresh", "label": "Refresh data", "method": "GET"},
+            {"id": "open-api", "label": "Open API reference", "href": "/api/"},
+        ],
+    }

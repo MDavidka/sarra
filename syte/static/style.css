@@ -5260,3 +5260,47 @@ body.login-locked {
 .coolify-version{text-align:center;color:#71717a;font-size:11px;padding:.25rem 0 .1rem}
 .nav-placeholder{opacity:.9}
 @media (max-width:768px){:root{--sidebar-w:290px}.app-sidebar{padding:.85rem .7rem 1rem}.coolify-nav-section .nav-sublink{min-height:42px;font-size:15px}.coolify-org-name{font-size:16px}}
+
+
+/* White Coolify-style sidebar refinement */
+:root{--sidebar-w:232px;--sidebar-w-compact:210px}
+.app-sidebar{background:#fff;color:#18181b;border-right:1px solid #e4e4e7;padding:.8rem .62rem .85rem;box-shadow:4px 0 18px rgba(24,24,27,.035)}
+.sidebar-head{padding:0 .4rem .65rem;margin-bottom:.2rem;border-bottom:1px solid #f0f0f2}
+.sidebar-brand-name{color:#18181b;font-size:1rem}
+.sidebar-logo{width:28px;height:28px;background:#f4f4f5}
+.coolify-org-head{padding:.55rem .42rem .7rem;border-bottom:1px solid #f0f0f2;color:#27272a}
+.coolify-org-icon{width:28px;height:28px;border-color:#e4e4e7;color:#52525b}
+.coolify-org-switch,.coolify-org-bell{color:#71717a}
+.coolify-nav-section{padding:.4rem 0 0}
+.coolify-nav-section .nav-section-label{color:#a1a1aa;font-size:9px;padding:.15rem .62rem .25rem}
+.nav-sublink{gap:.55rem;padding:.42rem .52rem;min-height:34px;border-radius:6px;color:#52525b;font-size:12px}
+.nav-sublink svg,.nav-sublink-img{width:17px;height:17px;stroke-width:1.8}
+.nav-sublink:hover{background:#f4f4f5;color:#18181b}
+.nav-sublink.active{background:#f4f4f5;color:#18181b;font-weight:600}
+.nav-sublink.active::before{left:-.62rem;width:2px;background:#18181b}
+.coolify-account-card{border-top:1px solid #f0f0f2;color:#27272a;padding:.65rem .4rem .15rem}
+.coolify-account-card strong{font-size:12px}.coolify-account-card small{color:#71717a;font-size:10px}
+.coolify-account-avatar{width:26px;height:26px;background:#f4f4f5;border-color:#e4e4e7;color:#52525b}
+.coolify-version{color:#a1a1aa;font-size:10px}
+
+.platform-workspace{max-width:1180px;margin:0 auto;padding:2rem 2.2rem 3rem}
+.platform-page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.6rem}
+.platform-eyebrow{margin:0 0 .35rem;color:#71717a;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.platform-page-head h1{margin:0;color:#18181b;font-size:30px;letter-spacing:-.04em}
+.platform-page-description{margin:.5rem 0 0;color:#71717a;max-width:680px;font-size:14px}
+.platform-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.platform-summary-card{min-height:76px;padding:15px 16px;background:#fff;border:1px solid #e4e4e7;border-radius:9px}
+.platform-summary-card span{display:block;color:#71717a;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.platform-summary-card strong{display:block;margin-top:8px;color:#18181b;font-size:18px}
+.platform-resource-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:16px}
+.platform-resource-panel{background:#fff;border:1px solid #e4e4e7;border-radius:9px;padding:16px}
+.platform-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.platform-panel-head h2{margin:0;color:#27272a;font-size:15px}
+.platform-count{color:#71717a;font-size:12px}
+.platform-resource-list{display:flex;flex-direction:column;gap:1px}
+.platform-resource-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #f4f4f5}
+.platform-resource-row:last-child{border-bottom:0}.platform-resource-row strong{display:block;color:#27272a;font-size:13px}.platform-resource-row small{display:block;color:#a1a1aa;font-size:11px;margin-top:2px}.platform-resource-row em{font-style:normal;color:#71717a;font-size:11px}
+.platform-action-list{display:flex;flex-direction:column;gap:8px}.platform-action-list .btn-pill{justify-content:flex-start;width:100%}
+.platform-loading,.platform-empty,.platform-error{padding:18px 0;color:#71717a;font-size:13px}.platform-error{color:#b91c1c}.platform-page-message{margin-top:12px;color:#a1a1aa;font-size:11px}
+@media (max-width:900px){.platform-workspace{padding:1.4rem 1rem 2rem}.platform-resource-grid{grid-template-columns:1fr}.platform-summary-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:768px){:root{--sidebar-w:270px}.nav-sublink{min-height:40px;font-size:14px}.platform-summary-grid{grid-template-columns:1fr}}
