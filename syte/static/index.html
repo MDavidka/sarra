@@ -171,6 +171,17 @@
             </div>
 
             <div id="services-list" class="projects-grid"></div>
+            <section class="platform-resources-panel" aria-labelledby="platform-resources-title">
+              <div class="platform-resources-head">
+                <div>
+                  <p class="eyebrow">Platform resources</p>
+                  <h2 id="platform-resources-title">Managed databases</h2>
+                  <p class="hint">Private Docker databases with persistent volumes. Public ports stay closed unless explicitly enabled.</p>
+                </div>
+                <button type="button" class="btn-pill btn-ghost btn-sm" id="platform-databases-refresh"><i data-lucide="refresh-cw"></i>Refresh</button>
+              </div>
+              <div id="platform-databases-list" class="platform-databases-list"><span class="hint">Loading managed databases…</span></div>
+            </section>
             <div id="empty-state" class="projects-empty hidden">
               <i data-lucide="folder-input" class="empty-icon"></i>
               <p>No projects found</p>

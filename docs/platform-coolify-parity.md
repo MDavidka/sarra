@@ -215,6 +215,22 @@ starts and one that works:
 - Engines without a logical dump tool (Redis, KeyDB, Dragonfly, ClickHouse)
   **raise** rather than silently writing an empty backup file.
 
+### Managed database runtime and API — **done**
+
+The first production runtime slice is now wired into the application. `syte/platform/database_runtime.py` creates or reuses a private Docker network, provisions named volumes, starts and stops database containers, reports status, and deletes containers without deleting data unless explicitly requested. Public ports are not published by default. `syte/platform_api.py` exposes catalog, list, create, start, stop, status, connection-details, and delete endpoints under `/api/platform/databases`. The main lifespan initializes the platform schema and default team/server/project/environment bootstrap records.
+
+Touched files: `syte/platform/database_runtime.py`, `syte/platform_api.py`, `syte/main.py`, and `tests/test_database_runtime.py`.
+
+### Backup scheduling and restore — **partial**
+
+The platform schema and pure dump/restore command builders are present, but S3-compatible upload, retention execution, and restore orchestration remain to be connected to a host scheduler. No backup UI is exposed until that execution path is implemented safely.
+
+Touched files currently providing the foundation: `syte/platform/store.py` and `syte/platform/database_catalog.py`.
+
+### Generic Git deploy, templates, previews, disk hygiene, multi-server, teams, notifications — **partial**
+
+The existing Syte deployment, preview, GitHub, resource-monitor, and platform model implementations provide foundations, but these capabilities still need effectful orchestration and UI wiring. They remain explicitly tracked here rather than being presented as complete.
+
 ### `git_sources.py` — repository identity and webhook authenticity
 
 Two pure concerns that the inbound-webhook receiver will build on.
