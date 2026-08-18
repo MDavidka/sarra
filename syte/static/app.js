@@ -3355,7 +3355,7 @@ function showView(name) {
 
   if (name === 'users') loadTokens();
   if (name === 'dashboard') activeServiceId = null;
-  if (name === 'server-swarm') renderServerSwarm();
+  if (name === 'server-swarm') { renderServerSwarm(); void loadPlatformServerWorkspace(); }
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
   if (name === 'models') { loadModelsTab(); }
@@ -4050,6 +4050,62 @@ function renderServerSwarm(sys) {
   set('swarm-total', projects.length);
   set('swarm-running', running);
 }
+
+let activePlatformServer = null;
+
+function renderPlatformServerWorkspace(payload) {
+  const server = payload?.server || {};
+  activePlatformServer = server;
+  const setValue = (id, value) => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
+  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value ?? '—'; };
+  setText('server-subtitle', `${server.name || 'Server'} · ${server.ip || '127.0.0.1'}`);
+  setText('server-reachability', server.is_reachable ? 'Reachable' : (server.status || 'Unknown'));
+  setValue('server-name-input', server.name); setValue('server-description-input', server.description); setValue('server-wildcard-input', server.wildcard_domain); setValue('server-ip-input', server.ip); setValue('server-user-input', server.user); setValue('server-port-input', server.port);
+  const build = document.getElementById('server-build-input'); if (build) build.checked = Boolean(server.is_build_server);
+  const manager = document.getElementById('server-manager-input'); if (manager) manager.checked = Boolean(server.is_swarm_manager);
+  const worker = document.getElementById('server-worker-input'); if (worker) worker.checked = Boolean(server.is_swarm_worker);
+  const proxy = document.getElementById('server-proxy-details');
+  if (proxy) proxy.innerHTML = [['Proxy type', server.proxy_type || 'CADDY'], ['Proxy status', server.proxy_status || 'unknown'], ['Wildcard domain', server.wildcard_domain || 'Not configured'], ['Docker version', server.docker_version || 'Not detected'], ['Connection timeout', `${server.connection_timeout || 30}s`], ['Concurrent builds', server.concurrent_builds || 2]].map(([label, value]) => `<div class="server-detail-item"><span>${esc(label)}</span><strong>${esc(String(value))}</strong></div>`).join('');
+  const resources = payload?.resources || {};
+  const items = Object.entries(resources).flatMap(([type, rows]) => rows.map(row => ({ ...row, resource_type: type.slice(0, -1) })));
+  const resourceList = document.getElementById('server-resource-list');
+  if (resourceList) resourceList.innerHTML = items.length ? items.map(row => `<div class="server-resource-row"><span class="server-resource-kind">${esc(row.resource_type)}</span><strong>${esc(row.name || row.uuid)}</strong><span class="server-resource-status">${esc(row.status || 'unknown')}</span></div>`).join('') : '<span class="hint">No resources are assigned to this server.</span>';
+  const bars = document.getElementById('server-performance-bars');
+  const latest = (payload?.metrics || []).slice(-1)[0] || {};
+  if (bars) bars.innerHTML = [['Main server', Number(latest.cpu_percent || 0)], ['Memory', Number(latest.memory_percent || 0)], ['Disk', Number(latest.disk_percent || 0)]].map(([label, value]) => `<div class="server-performance-row"><div><span>${esc(label)}</span><strong>${Math.round(value)}%</strong></div><div class="server-performance-track"><span style="width:${Math.max(0, Math.min(100, value))}%"></span></div></div>`).join('');
+  refreshIcons();
+}
+
+async function loadPlatformServerWorkspace() {
+  const content = document.getElementById('server-subtitle');
+  try {
+    const servers = await api('/platform/servers');
+    if (!servers.length) { if (content) content.textContent = 'No servers configured'; return; }
+    const payload = await api(`/platform/servers/${encodeURIComponent(servers[0].uuid)}`);
+    renderPlatformServerWorkspace(payload);
+  } catch (error) {
+    if (content) content.textContent = `Could not load server: ${error.message}`;
+  }
+}
+
+async function savePlatformServer() {
+  if (!activePlatformServer?.uuid) return;
+  const body = { name: document.getElementById('server-name-input')?.value.trim(), description: document.getElementById('server-description-input')?.value.trim(), wildcard_domain: document.getElementById('server-wildcard-input')?.value.trim(), ip: document.getElementById('server-ip-input')?.value.trim(), user: document.getElementById('server-user-input')?.value.trim(), port: Number(document.getElementById('server-port-input')?.value), is_build_server: Boolean(document.getElementById('server-build-input')?.checked), is_swarm_manager: Boolean(document.getElementById('server-manager-input')?.checked), is_swarm_worker: Boolean(document.getElementById('server-worker-input')?.checked) };
+  const button = document.getElementById('server-save-btn'); if (button) button.disabled = true;
+  try { await api(`/platform/servers/${encodeURIComponent(activePlatformServer.uuid)}`, { method: 'PUT', body: JSON.stringify(body) }); toast('Server configuration saved'); await loadPlatformServerWorkspace(); } catch (error) { toast(`Could not save server: ${error.message}`); } finally { if (button) button.disabled = false; }
+}
+
+async function runPlatformServerTerminal() {
+  if (!activePlatformServer?.uuid) return;
+  const command = document.getElementById('server-terminal-command')?.value.trim(); const output = document.getElementById('server-terminal-output'); if (!command || !output) return;
+  output.textContent = 'Running…';
+  try { const result = await api(`/platform/servers/${encodeURIComponent(activePlatformServer.uuid)}/terminal`, { method: 'POST', body: JSON.stringify({ command }) }); output.textContent = `${result.output || '(no output)'}\\n\\nexit code: ${result.exit_code}`; } catch (error) { output.textContent = error.message; }
+}
+
+document.querySelectorAll('[data-server-tab]').forEach(button => button.addEventListener('click', () => { const tab = button.dataset.serverTab; document.querySelectorAll('[data-server-tab]').forEach(item => item.classList.toggle('active', item === button)); document.querySelectorAll('[data-server-tab-content]').forEach(panel => panel.classList.toggle('active', panel.dataset.serverTabContent === tab)); document.querySelectorAll('[data-server-content]').forEach(panel => panel.classList.toggle('active', tab === 'configuration' && panel.dataset.serverContent === 'general')); document.querySelector('.server-subnav')?.classList.toggle('hidden', tab !== 'configuration'); }));
+document.querySelectorAll('[data-server-panel]').forEach(button => button.addEventListener('click', () => { const panel = button.dataset.serverPanel; document.querySelectorAll('[data-server-panel]').forEach(item => item.classList.toggle('active', item === button)); document.querySelectorAll('[data-server-content]').forEach(content => content.classList.toggle('active', content.dataset.serverContent === panel)); }));
+document.getElementById('server-save-btn')?.addEventListener('click', savePlatformServer);
+document.getElementById('server-terminal-run')?.addEventListener('click', runPlatformServerTerminal);
 
 function renderLogsList() {
   const list = document.getElementById('logs-project-list');
