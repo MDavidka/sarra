@@ -3357,14 +3357,14 @@ const PLATFORM_PAGE_LABELS = {
 
 const PLATFORM_PAGE_BLUEPRINTS = {
   projects: {heading:'Applications and environments', control:'create-project', columns:['name','status','git_repository','git_branch']},
-  overview: {heading:'Platform inventory', columns:['name','status','_table']},
+  overview: {heading:'Platform inventory', control:'overview-actions', columns:['name','status','_table']},
   schedules: {heading:'Backup and task schedules', control:'create-schedule', columns:['name','frequency','enabled','last_run_at']},
   traefik: {heading:'Proxy configuration', control:'validate-proxy', columns:['name','status','domain','certificate']},
   docker: {heading:'Runtime containers', control:'runtime-actions', columns:['name','status','database_type','server_uuid']},
   profile: {heading:'Operator profile', control:'profile-form', columns:['email','name','role']},
   sessions: {heading:'Authenticated sessions', control:'session-actions', columns:['created_at','last_seen_at','user_agent','status']},
   'remote-servers': {heading:'Deployment nodes', control:'server-form', columns:['name','status','ip','proxy']},
-  'audit-logs': {heading:'Recent audit events', columns:['created_at','event','source','status']},
+  'audit-logs': {heading:'Recent audit events', control:'audit-actions', columns:['created_at','event','source','status']},
   'ssh-keys': {heading:'Deployment credentials', control:'key-form', columns:['name','fingerprint','created_at']},
   ai: {heading:'Model providers', control:'ai-actions', columns:['provider','model','enabled','updated_at']},
   tags: {heading:'Resource tags', control:'tag-form', columns:['name','color','resource_count']},
@@ -3375,7 +3375,7 @@ const PLATFORM_PAGE_BLUEPRINTS = {
   's3-destinations': {heading:'Backup destinations', control:'s3-form', columns:['name','endpoint','bucket','region','status']},
   certificates: {heading:'TLS certificates', control:'certificate-actions', columns:['domain','issuer','status','expires_at']},
   notifications: {heading:'Notification channels', control:'notification-form', columns:['name','type','enabled','last_delivery_at']},
-  billing: {heading:'Usage and entitlement', columns:['name','resource_count','status']},
+  billing: {heading:'Usage and entitlement', control:'billing-actions', columns:['name','resource_count','status']},
   license: {heading:'Installation entitlement', control:'license-actions', columns:['feature','status','source']},
   sso: {heading:'Identity provider configuration', control:'sso-form', columns:['provider','issuer','status','updated_at']},
   documentation: {heading:'Operator references', control:'documentation-actions', columns:['name','url','method','status']},
@@ -3392,11 +3392,16 @@ function renderPlatformControls(page, data) {
     'registry-form':['Registry name','Registry URL'], 'secret-form':['Variable name','Value'], 'dns-form':['Provider name','Zone'], 's3-form':['Destination name','Bucket'],
     'notification-form':['Channel name','Webhook URL'], 'sso-form':['Provider','Issuer URL'],
   };
+  const actionLabels = {
+    'overview-actions':'Refresh inventory', 'validate-proxy':'Validate proxy configuration', 'runtime-actions':'Refresh runtime status', 'session-actions':'Revoke stale sessions',
+    'ai-actions':'Refresh model catalog', 'certificate-actions':'Renew certificate inventory', 'billing-actions':'Recalculate usage', 'license-actions':'Check entitlement',
+    'documentation-actions':'Open API documentation', 'support-actions':'Run diagnostics', 'audit-actions':'Refresh audit log',
+  };
   const fields = forms[blueprint.control];
   if (fields) {
     controls.innerHTML = `<form class="platform-inline-form" data-platform-form="${esc(blueprint.control)}"><div><label>${esc(fields[0])}</label><input name="primary" required></div><div><label>${esc(fields[1])}</label><input name="secondary" required></div><button class="btn-create" type="submit"><i data-lucide="plus"></i><span>Create</span></button></form>`;
   } else if (blueprint.control) {
-    controls.innerHTML = `<div class="platform-control-toolbar"><span>Operational tools</span><button type="button" class="btn-pill btn-ghost" data-platform-operation="${esc(blueprint.control)}"><i data-lucide="play"></i><span>Run action</span></button></div>`;
+    controls.innerHTML = `<div class="platform-control-toolbar"><span>Operational tools</span><button type="button" class="btn-pill btn-ghost" data-platform-operation="${esc(blueprint.control)}"><i data-lucide="play"></i><span>${esc(actionLabels[blueprint.control] || 'Run operation')}</span></button></div>`;
   } else controls.innerHTML = '';
   controls.querySelector('form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
