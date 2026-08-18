@@ -3388,7 +3388,7 @@ function renderPlatformControls(page, data) {
   if (!controls) return;
   const forms = {
     'create-project':['Project name','Repository URL'], 'create-schedule':['Schedule name','Cron expression'], 'profile-form':['Display name','Email'],
-    'server-form':['Server name','Host/IP'], 'key-form':['Key name','Private key'], 'tag-form':['Tag name','Color'], 'git-form':['Provider name','Repository URL'],
+    'server-form':['Server name','Host/IP'], 'key-form':['Key name','Algorithm (ed25519 or rsa)'], 'tag-form':['Tag name','Color'], 'git-form':['Provider name','Repository URL'],
     'registry-form':['Registry name','Registry URL'], 'secret-form':['Variable name','Value'], 'dns-form':['Provider name','Zone'], 's3-form':['Destination name','Bucket'],
     'notification-form':['Channel name','Webhook URL'], 'sso-form':['Provider','Issuer URL'],
   };
@@ -3406,13 +3406,62 @@ function renderPlatformControls(page, data) {
   controls.querySelector('form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    try { await api(`/platform/navigation/${encodeURIComponent(page)}/records`, {method:'POST', body: JSON.stringify({primary: form.get('primary'), secondary: form.get('secondary')})}); await loadPlatformPage(page); }
-    catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; }
+    try {
+      const endpoint = blueprint.control === 'key-form' ? '/platform/ssh-keys/generate' : `/platform/navigation/${encodeURIComponent(page)}/records`;
+      const body = blueprint.control === 'key-form' ? {name: form.get('primary'), algorithm: form.get('secondary') || 'ed25519'} : {primary: form.get('primary'), secondary: form.get('secondary')};
+      const result = await api(endpoint, {method:'POST', body: JSON.stringify(body)});
+      if (blueprint.control === 'key-form') {
+        const message = document.getElementById('platform-page-message');
+        if (message) message.textContent = `${result.message} Fingerprint: ${result.key?.fingerprint || 'generated'}. Private key is available in the response for immediate download.`;
+      }
+      await loadPlatformPage(page);
+    } catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; }
   });
   controls.querySelector('[data-platform-operation]')?.addEventListener('click', async () => {
     try { await api(`/platform/navigation/${encodeURIComponent(page)}/actions`, {method:'POST', body: JSON.stringify({action: blueprint.control})}); await loadPlatformPage(page); }
     catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; }
   });
+}
+
+function renderMonitorMetrics(data) {
+  const target = document.getElementById('overview-monitor-grid');
+  if (!target) return;
+  const cards = [
+    ['CPU', `${Math.round(data.cpu_percent || 0)}%`, 'cpu'], ['RAM', `${Math.round(data.memory_percent || 0)}%`, 'memory-stick'],
+    ['Storage', `${Math.round(data.disk_percent || 0)}%`, 'hard-drive'], ['API requests', String(data.api_requests || 0), 'activity'],
+    ['Internet ping', `${data.internet_ping_ms == null ? '—' : Math.round(data.internet_ping_ms) + ' ms'}`, 'wifi'], ['Projects', String(data.project_count || 0), 'layers'],
+    ['Security blocked', String(data.security_blocked_users || 0), 'shield-ban'],
+  ];
+  target.innerHTML = cards.map(([label, value, icon]) => `<div class="monitor-metric-card"><i data-lucide="${icon}"></i><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
+  refreshIcons();
+}
+
+async function loadOverviewMonitor() {
+  try { renderMonitorMetrics(await api('/platform/overview/metrics')); }
+  catch (error) { const target = document.getElementById('overview-monitor-grid'); if (target) target.innerHTML = `<div class="platform-error">Metrics unavailable: ${esc(error.message)}</div>`; }
+}
+
+async function loadDockerStore() {
+  const panel = document.getElementById('platform-store-panel');
+  const grid = document.getElementById('platform-store-grid');
+  if (!panel || !grid) return;
+  panel.classList.remove('hidden');
+  try {
+    const data = await api('/platform/store/catalog');
+    const render = (filter = '') => {
+      const query = filter.toLowerCase().trim();
+      const apps = (data.apps || []).filter(app => !query || `${app.name} ${app.description} ${app.category}`.toLowerCase().includes(query));
+      grid.innerHTML = apps.map(app => `<article class="store-app-card"><div class="store-app-visual" style="--store-color:${esc(app.color)}"><img src="${esc(app.icon)}" alt="" loading="lazy"><span>${esc(app.category)}</span></div><div class="store-app-body"><h3>${esc(app.name)}</h3><p>${esc(app.description)}</p><div class="store-app-meta"><span>${esc(app.size)}</span><span>${esc(app.image)}</span></div><button type="button" class="btn-create store-install-btn" data-store-app="${esc(app.slug)}"><i data-lucide="download"></i><span>Install</span></button></div></article>`).join('') || '<div class="platform-empty">No apps match your search.</div>';
+      grid.querySelectorAll('[data-store-app]').forEach(btn => btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.querySelector('span').textContent = 'Installing…';
+        try { await api('/platform/store/install', {method:'POST', body: JSON.stringify({slug: btn.dataset.storeApp})}); btn.querySelector('span').textContent = 'Installed'; await loadPlatformPage('docker'); }
+        catch (error) { btn.disabled = false; btn.querySelector('span').textContent = `Retry`; document.getElementById('platform-page-message').textContent = `Install failed: ${error.message}`; }
+      }));
+      refreshIcons();
+    };
+    render();
+    document.getElementById('platform-store-filter')?.addEventListener('input', event => render(event.target.value));
+  } catch (error) { grid.innerHTML = `<div class="platform-error">Store unavailable: ${esc(error.message)}</div>`; }
 }
 
 function renderPlatformDetails(page, resources) {
@@ -3479,8 +3528,13 @@ function showView(name) {
   updateSidebarNav(name);
 
   if (name === 'users') loadTokens();
-  if (name === 'dashboard') activeServiceId = null;
-  if (name === 'platform') loadPlatformPage(activePlatformPage);
+  if (name === 'dashboard') { activeServiceId = null; loadOverviewMonitor(); }
+  if (name === 'platform') {
+    document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
+    loadPlatformPage(activePlatformPage);
+    if (activePlatformPage === 'docker') loadDockerStore();
+    if (activePlatformPage === 'overview') loadOverviewMonitor();
+  }
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
@@ -6190,6 +6244,7 @@ document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
   });
 });
 document.getElementById('platform-page-refresh')?.addEventListener('click', () => loadPlatformPage(activePlatformPage));
+document.getElementById('overview-monitor-refresh')?.addEventListener('click', loadOverviewMonitor);
 document.getElementById('platform-action-list')?.addEventListener('click', (event) => {
   if (event.target.closest('[data-action="refresh"]')) loadPlatformPage(activePlatformPage);
 });

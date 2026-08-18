@@ -167,6 +167,10 @@
                 <i data-lucide="search" class="search-icon"></i>
               </div>
             </div>
+            <section class="overview-monitor-panel" aria-labelledby="overview-monitor-title">
+              <div class="platform-panel-head"><div><p class="eyebrow">Live operations</p><h2 id="overview-monitor-title">System monitor</h2></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-monitor-refresh"><i data-lucide="refresh-cw"></i>Refresh</button></div>
+              <div id="overview-monitor-grid" class="overview-monitor-grid"><div class="platform-loading">Loading system metrics…</div></div>
+            </section>
 
             <div id="services-list" class="projects-grid"></div>
             <section class="platform-resources-panel" aria-labelledby="platform-resources-title">
@@ -846,6 +850,7 @@
             </div>
             <div class="platform-summary-grid" id="platform-summary-grid"></div>
             <div id="platform-page-controls" class="platform-page-controls"></div>
+            <div id="platform-store-panel" class="platform-store-panel hidden"><div class="platform-panel-head"><div><p class="eyebrow">Docker catalog</p><h2>Install popular apps</h2><p class="hint">Deploy curated, self-hostable Docker applications into the selected environment.</p></div><input id="platform-store-filter" class="platform-store-filter" type="search" placeholder="Search apps…"></div><div id="platform-store-grid" class="platform-store-grid"></div></div>
             <div class="platform-resource-grid">
               <div class="platform-resource-panel"><div class="platform-panel-head"><h2 id="platform-resource-heading">Resources</h2><span id="platform-resource-count" class="platform-count">0</span></div><div id="platform-resource-list" class="platform-resource-list"></div></div>
               <div class="platform-resource-panel"><div class="platform-panel-head"><h2>Operations</h2></div><div id="platform-action-list" class="platform-action-list"></div></div>
