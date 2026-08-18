@@ -1,6 +1,7 @@
 """Authenticated platform resource APIs used by the Syte dashboard."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,7 +23,12 @@ from syte.platform.store import (
     find,
     get,
     get_database,
+    get_server,
     insert,
+    list_server_resources,
+    list_servers,
+    server_metrics,
+    update,
 )
 from syte.platform.types import new_uuid, utcnow
 
@@ -39,6 +45,24 @@ class CreateDatabaseRequest(BaseModel):
     auto_start: bool = True
 
 
+class ServerUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    ip: str | None = None
+    user: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    wildcard_domain: str | None = None
+    proxy_type: str | None = None
+    is_build_server: bool | None = None
+    concurrent_builds: int | None = Field(default=None, ge=1, le=64)
+    is_swarm_manager: bool | None = None
+    is_swarm_worker: bool | None = None
+
+
+class ServerCommandRequest(BaseModel):
+    command: str = Field(min_length=1, max_length=2000)
+
+
 class CreateBackupRequest(BaseModel):
     database_uuid: str
     frequency: str = "0 0 * * *"
@@ -50,6 +74,55 @@ class CreateBackupRequest(BaseModel):
 
 async def _operator(_: dict[str, Any] = Depends(verify_operator_session_or_token)) -> dict[str, Any]:
     return _
+
+
+@router.get("/servers", dependencies=[Depends(_operator)])
+async def list_platform_servers() -> list[dict[str, Any]]:
+    await ensure_bootstrap()
+    return await list_servers()
+
+
+@router.get("/servers/{uuid}", dependencies=[Depends(_operator)])
+async def get_platform_server(uuid: str) -> dict[str, Any]:
+    server = await get_server(uuid)
+    if server is None:
+        raise HTTPException(404, "Server not found.")
+    resources = await list_server_resources(uuid)
+    return {"server": server, "resources": resources, "metrics": await server_metrics(uuid, limit=60)}
+
+
+@router.put("/servers/{uuid}", dependencies=[Depends(_operator)])
+async def update_platform_server(uuid: str, body: ServerUpdateRequest) -> dict[str, Any]:
+    if await get_server(uuid) is None:
+        raise HTTPException(404, "Server not found.")
+    values = body.model_dump(exclude_none=True)
+    return await update("platform_servers", uuid, values) or {}
+
+
+@router.get("/servers/{uuid}/resources", dependencies=[Depends(_operator)])
+async def platform_server_resources(uuid: str) -> dict[str, list[dict[str, Any]]]:
+    if await get_server(uuid) is None:
+        raise HTTPException(404, "Server not found.")
+    return await list_server_resources(uuid)
+
+
+@router.get("/servers/{uuid}/metrics", dependencies=[Depends(_operator)])
+async def platform_server_metrics(uuid: str, limit: int = 60) -> list[dict[str, Any]]:
+    if await get_server(uuid) is None:
+        raise HTTPException(404, "Server not found.")
+    return await server_metrics(uuid, limit=max(1, min(limit, 240)))
+
+
+@router.post("/servers/{uuid}/terminal", dependencies=[Depends(_operator)])
+async def run_server_terminal(uuid: str, body: ServerCommandRequest) -> dict[str, Any]:
+    server = await get_server(uuid)
+    if server is None:
+        raise HTTPException(404, "Server not found.")
+    if not bool(server.get("is_local")):
+        raise HTTPException(400, "Remote server terminal is not enabled in this local workspace.")
+    from syte.workspace import run_cmd
+    code, output = await asyncio.to_thread(run_cmd, ["bash", "-lc", body.command])
+    return {"ok": code == 0, "exit_code": code, "output": output[-20000:]}
 
 
 @router.get("/databases/catalog", dependencies=[Depends(_operator)])

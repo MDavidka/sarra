@@ -556,23 +556,33 @@
         </section>
 
         <section id="view-server-swarm" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="boxes" class="projects-icon"></i>
-                <div>
-                  <h1>Server Swarm</h1>
-                  <p class="projects-sub">Server status and deployment overview</p>
-                </div>
-              </div>
+          <div class="server-page">
+            <div class="server-page-head">
+              <div class="server-title-wrap"><span class="server-title-icon"><i data-lucide="server"></i></span><div><h1>Server</h1><p class="projects-sub" id="server-subtitle">Loading server…</p></div></div>
+              <div class="server-head-actions"><span class="server-reachability" id="server-reachability">Checking…</span><button type="button" class="btn-pill btn-primary btn-sm" id="server-save-btn">Save</button></div>
             </div>
-            <div class="swarm-grid" id="swarm-stats">
-              <div class="swarm-stat"><span class="swarm-label">Public IP</span><span class="swarm-value" id="swarm-ip">—</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Version</span><span class="swarm-value" id="swarm-version">—</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Projects</span><span class="swarm-value" id="swarm-total">0</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Running</span><span class="swarm-value" id="swarm-running">0</span></div>
-              <div class="swarm-stat full"><span class="swarm-label">GUI URL</span><span class="swarm-value" id="swarm-gui-url">—</span></div>
-              <div class="swarm-stat full"><span class="swarm-label">Direct URL</span><span class="swarm-value" id="swarm-direct-url">—</span></div>
+            <div class="server-tabs" role="tablist" aria-label="Server sections">
+              <button type="button" class="server-tab active" data-server-tab="configuration">Configuration</button>
+              <button type="button" class="server-tab" data-server-tab="proxy">Proxy</button>
+              <button type="button" class="server-tab" data-server-tab="resources">Resources</button>
+              <button type="button" class="server-tab" data-server-tab="terminal">Terminal</button>
+            </div>
+            <div class="server-workspace">
+              <aside class="server-subnav">
+                <button type="button" class="server-subnav-item active" data-server-panel="general">General</button>
+                <button type="button" class="server-subnav-item" data-server-panel="private-key">Private Key</button>
+                <button type="button" class="server-subnav-item" data-server-panel="cloudflare">Cloudflare Tunnels</button>
+                <button type="button" class="server-subnav-item danger" data-server-panel="danger">Danger</button>
+              </aside>
+              <div class="server-panel-stack">
+                <section class="server-panel active" data-server-content="general"><div class="server-panel-heading"><div><h2>General</h2><p>The server is validated and reachable when the probe succeeds.</p></div></div><div class="server-form-grid"><label>Name *<input id="server-name-input" autocomplete="off"></label><label>Description<input id="server-description-input" autocomplete="off"></label><label>Wildcard Domain<input id="server-wildcard-input" placeholder="https://example.com"></label><label>IP Address / Domain *<input id="server-ip-input" autocomplete="off"></label><label>User *<input id="server-user-input" autocomplete="off"></label><label>Port *<input id="server-port-input" type="number" min="1" max="65535"></label><label>Server Timezone<input value="UTC" disabled></label><label class="server-check-row"><input id="server-build-input" type="checkbox"> Use it as a build server?</label></div><div class="server-swarm-options"><h3>Swarm</h3><p>Optional cluster role metadata for deployment scheduling.</p><label><input type="checkbox" id="server-manager-input"> Is it a Swarm Manager?</label><label><input type="checkbox" id="server-worker-input"> Is it a Swarm Worker?</label></div></section>
+                <section class="server-panel" data-server-content="private-key"><div class="server-panel-heading"><div><h2>Private Key</h2><p>SSH credentials are stored server-side and never rendered back into the browser.</p></div></div><div class="server-secret-placeholder"><i data-lucide="key-round"></i><div><strong>Credential protection enabled</strong><span>Attach or rotate a private key from the server API. Secret values are masked in responses.</span></div></div></section>
+                <section class="server-panel" data-server-content="cloudflare"><div class="server-panel-heading"><div><h2>Cloudflare Tunnels</h2><p>Use a tunnel when the server cannot accept inbound SSH or proxy traffic.</p></div></div><div class="server-empty-state"><i data-lucide="cloud"></i><strong>No tunnel configured</strong><span>Configure the tunnel through the platform API when this server requires outbound-only connectivity.</span></div></section>
+                <section class="server-panel" data-server-content="danger"><div class="server-panel-heading"><div><h2>Danger zone</h2><p>Destructive server actions are intentionally separated from ordinary configuration.</p></div></div><div class="server-danger-box"><strong>Remove server</strong><span>Resources must be moved or deleted before this server can be removed.</span><button type="button" class="btn-pill btn-danger btn-sm" disabled>Remove server</button></div></section>
+                <section class="server-tab-content active" data-server-tab-content="proxy"><div class="server-panel-heading"><div><h2>Proxy</h2><p>Reverse proxy status and routing metadata for this server.</p></div></div><div class="server-detail-grid" id="server-proxy-details"></div></section>
+                <section class="server-tab-content" data-server-tab-content="resources"><div class="server-panel-heading"><div><h2>Resources</h2><p>Applications, databases, and services assigned to this server.</p></div></div><div class="server-resource-list" id="server-resource-list"></div><div class="server-performance-bars" id="server-performance-bars"></div></section>
+                <section class="server-tab-content" data-server-tab-content="terminal"><div class="server-panel-heading"><div><h2>Terminal</h2><p>Run a controlled diagnostic command on the local server.</p></div></div><div class="server-terminal"><div class="server-terminal-toolbar"><input id="server-terminal-command" value="docker ps --format '{{.Names}}\\t{{.Status}}'" aria-label="Terminal command"><button type="button" class="btn-pill btn-primary btn-sm" id="server-terminal-run">Run</button></div><pre id="server-terminal-output">No command executed.</pre></div></section>
+              </div>
             </div>
           </div>
         </section>
