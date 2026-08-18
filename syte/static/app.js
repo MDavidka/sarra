@@ -3477,6 +3477,47 @@ async function loadDockerStore() {
   } catch (error) { grid.innerHTML = `<div class="platform-error">Library unavailable: ${esc(error.message)}</div>`; }
 }
 
+const DEDICATED_PAGE_CONFIG = {
+  projects:{icon:'layers-3',eyebrow:'Workspace',title:'Projects',intro:'Launch, deploy, and organize applications by environment.',action:'Create project',fields:['Project name','Repository URL'],tone:'violet'},
+  overview:{icon:'layout-dashboard',eyebrow:'Command center',title:'Overview',intro:'See the health and activity of your self-hosted platform at a glance.',action:'Refresh metrics',tone:'blue'},
+  schedules:{icon:'calendar-clock',eyebrow:'Automation',title:'Schedules',intro:'Create recurring backups, jobs, and deployment tasks.',action:'New schedule',fields:['Schedule name','Cron expression'],tone:'amber'},
+  traefik:{icon:'route',eyebrow:'Networking',title:'Traefik',intro:'Inspect routes, certificates, and proxy readiness before traffic reaches your apps.',action:'Validate routes',tone:'cyan'},
+  docker:{icon:'box',eyebrow:'App marketplace',title:'Docker Library',intro:'Browse installable services.',action:'Browse catalog',tone:'blue'},
+  profile:{icon:'user-round',eyebrow:'Account',title:'Profile',intro:'Manage your operator identity and workspace preferences.',action:'Save profile',fields:['Display name','Email'],tone:'violet'},
+  sessions:{icon:'shield-check',eyebrow:'Security',title:'Sessions',intro:'Review active operator sessions and revoke stale access.',action:'Review sessions',tone:'rose'},
+  'remote-servers':{icon:'server',eyebrow:'Infrastructure',title:'Remote Servers',intro:'Register deployment nodes and monitor their availability.',action:'Add server',fields:['Server name','Host/IP'],tone:'green'},
+  'audit-logs':{icon:'list-checks',eyebrow:'Governance',title:'Audit Logs',intro:'Trace operator actions and platform changes in one chronological stream.',action:'Refresh log',tone:'slate'},
+  'ssh-keys':{icon:'key-round',eyebrow:'Credentials',title:'SSH Keys',intro:'Generate and manage deployment credentials without leaving the console.',action:'Generate key',fields:['Key name','Algorithm (ed25519 or rsa)'],tone:'orange'},
+  ai:{icon:'sparkles',eyebrow:'Intelligence',title:'AI Providers',intro:'Configure model providers and inspect the engines available to Syte.',action:'Refresh models',tone:'purple'},
+  tags:{icon:'tags',eyebrow:'Organization',title:'Tags',intro:'Create a consistent vocabulary for filtering projects and resources.',action:'Create tag',fields:['Tag name','Color'],tone:'pink'},
+  git:{icon:'git-branch',eyebrow:'Source control',title:'Git Sources',intro:'Connect repositories and keep deployments tied to trusted source providers.',action:'Add source',fields:['Provider name','Repository URL'],tone:'orange'},
+  registry:{icon:'container',eyebrow:'Images',title:'Registries',intro:'Manage private image registries used by your deployments.',action:'Add registry',fields:['Registry name','Registry URL'],tone:'blue'},
+  secrets:{icon:'lock-keyhole',eyebrow:'Configuration',title:'Secrets',intro:'Store environment variables and keep sensitive values out of application code.',action:'Add secret',fields:['Variable name','Value'],tone:'rose'},
+  'dns-providers':{icon:'globe-2',eyebrow:'Domains',title:'DNS Providers',intro:'Connect DNS automation providers for domain verification and records.',action:'Add provider',fields:['Provider name','Zone'],tone:'cyan'},
+  's3-destinations':{icon:'archive',eyebrow:'Backups',title:'S3 Destinations',intro:'Configure durable object storage destinations for backups and exports.',action:'Add destination',fields:['Destination name','Bucket'],tone:'green'},
+  certificates:{icon:'badge-check',eyebrow:'TLS',title:'Certificates',intro:'Track certificate coverage and expiration across your platform.',action:'Refresh certificates',tone:'blue'},
+  notifications:{icon:'bell-ring',eyebrow:'Delivery',title:'Notifications',intro:'Route deployment, backup, and security events to your team.',action:'Add channel',fields:['Channel name','Webhook URL'],tone:'amber'},
+  billing:{icon:'credit-card',eyebrow:'Usage',title:'Billing',intro:'Understand platform usage and resource growth before it becomes a surprise.',action:'Recalculate usage',tone:'slate'},
+  license:{icon:'badge-dollar-sign',eyebrow:'Entitlement',title:'License',intro:'Inspect installation capabilities and entitlement status.',action:'Check entitlement',tone:'violet'},
+  sso:{icon:'scan-face',eyebrow:'Identity',title:'SSO',intro:'Configure identity providers and centralize operator access.',action:'Add provider',fields:['Provider','Issuer URL'],tone:'purple'},
+  documentation:{icon:'book-open',eyebrow:'References',title:'Documentation',intro:'Open the API reference and operational guides for this installation.',action:'Open API docs',tone:'slate'},
+  support:{icon:'life-buoy',eyebrow:'Help center',title:'Support',intro:'Run diagnostics and collect the information needed to resolve incidents.',action:'Run diagnostics',tone:'rose'},
+};
+
+function renderDedicatedPage(page, data) {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  if (page === 'docker') { target.innerHTML = ''; return; }
+  const cfg = DEDICATED_PAGE_CONFIG[page] || DEDICATED_PAGE_CONFIG.overview;
+  const rows = data.resources || [];
+  const rowsHtml = rows.slice(0, 8).map(row => `<li><span><strong>${esc(String(row.name || row.title || row.uuid || row.event || 'Resource'))}</strong><small>${esc(String(row.status || row.state || row.type || row._table || 'tracked'))}</small></span><i data-lucide="chevron-right"></i></li>`).join('') || '<li class="dedicated-empty">No records yet. Use the action above to create the first one.</li>';
+  const fields = cfg.fields ? `<form class="dedicated-form" data-dedicated-form="${esc(page)}"><label>${esc(cfg.fields[0])}<input name="primary" required></label><label>${esc(cfg.fields[1])}<input name="secondary" required></label><button type="submit" class="dedicated-primary"><i data-lucide="plus"></i>${esc(cfg.action)}</button></form>` : `<button type="button" class="dedicated-primary" data-dedicated-action="${esc(page)}"><i data-lucide="zap"></i>${esc(cfg.action)}</button>`;
+  target.innerHTML = `<section class="dedicated-shell dedicated-${esc(cfg.tone)}"><div class="dedicated-hero"><div class="dedicated-icon"><i data-lucide="${esc(cfg.icon)}"></i></div><div><p class="dedicated-eyebrow">${esc(cfg.eyebrow)}</p><h2>${esc(cfg.title)}</h2><p>${esc(cfg.intro)}</p></div></div><div class="dedicated-stat-row"><div><span>Tracked resources</span><strong>${esc(String(data.resource_count || 0))}</strong></div><div><span>Workspace status</span><strong>Operational</strong></div><div><span>Last sync</span><strong>Live</strong></div></div><div class="dedicated-columns"><div class="dedicated-action-panel"><p class="dedicated-label">Primary workflow</p>${fields}<p class="dedicated-note">Changes are persisted through the Syte platform API.</p></div><div class="dedicated-list-panel"><div class="dedicated-panel-head"><div><p class="dedicated-label">Live records</p><h3>${esc(cfg.title)} activity</h3></div><span>${esc(String(rows.length))} shown</span></div><ul>${rowsHtml}</ul></div></div></section>`;
+  target.querySelector('form')?.addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.currentTarget); try { const ssh = page === 'ssh-keys'; const endpoint = ssh ? '/platform/ssh-keys/generate' : `/platform/navigation/${encodeURIComponent(page)}/records`; const body = ssh ? {name:form.get('primary'), algorithm:form.get('secondary') || 'ed25519'} : {primary:form.get('primary'), secondary:form.get('secondary')}; const result = await api(endpoint, {method:'POST', body:JSON.stringify(body)}); if (ssh) { const message = document.getElementById('platform-page-message'); if (message) message.textContent = `${result.message} Fingerprint: ${result.key?.fingerprint || 'generated'}`; } await loadPlatformPage(page); } catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; } });
+  target.querySelector('[data-dedicated-action]')?.addEventListener('click', async event => { const btn = event.currentTarget; btn.disabled = true; try { await api(`/platform/navigation/${encodeURIComponent(page)}/actions`, {method:'POST', body:JSON.stringify({action: PLATFORM_PAGE_BLUEPRINTS[page]?.control || `${page}-actions`})}); await loadPlatformPage(page); } catch (error) { document.getElementById('platform-page-message').textContent = `Action failed: ${error.message}`; btn.disabled = false; } });
+  refreshIcons();
+}
+
 function renderPlatformDetails(page, resources) {
   const table = document.getElementById('platform-detail-table');
   const columns = PLATFORM_PAGE_BLUEPRINTS[page]?.columns || ['name','status'];
@@ -3502,6 +3543,7 @@ async function loadPlatformPage(page = 'overview') {
     if (description) description.textContent = data.description || '';
     if (count) count.textContent = String(data.resource_count || 0);
     const blueprint = PLATFORM_PAGE_BLUEPRINTS[safePage] || {};
+    renderDedicatedPage(safePage, data);
     const heading = document.getElementById('platform-resource-heading');
     if (heading) heading.textContent = blueprint.heading || 'Resources';
     renderPlatformControls(safePage, data);
