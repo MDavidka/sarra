@@ -59,12 +59,12 @@ async def _operator(_: dict[str, Any] = Depends(verify_operator_session_or_token
     return _
 
 
-@router.get("/databases/catalog", dependencies=[Depends(_operator)])
+@router.get("/databases/catalog")
 async def database_catalog() -> list[dict[str, object]]:
     return catalog()
 
 
-@router.get("/databases", dependencies=[Depends(_operator)])
+@router.get("/databases")
 async def list_databases() -> list[dict[str, Any]]:
     return await find("platform_databases", {}, order_by="created_at DESC")
 
@@ -103,7 +103,7 @@ async def _database_or_404(uuid: str) -> dict[str, Any]:
     return row
 
 
-@router.get("/databases/{uuid}/status", dependencies=[Depends(_operator)])
+@router.get("/databases/{uuid}/status")
 async def get_database_status(uuid: str) -> dict[str, Any]:
     db = await _database_or_404(uuid)
     return {"database": db, "runtime": await database_status(db)}
@@ -146,7 +146,7 @@ async def delete_managed_database(uuid: str, delete_volume: bool = False) -> dic
     return {"ok": True, "message": message}
 
 
-@router.get("/backups", dependencies=[Depends(_operator)])
+@router.get("/backups")
 async def list_backups() -> list[dict[str, Any]]:
     return await find("platform_backups", {}, order_by="created_at DESC")
 
@@ -171,7 +171,7 @@ async def create_backup(body: CreateBackupRequest) -> dict[str, Any]:
     return row
 
 
-@router.get("/backups/{uuid}/executions", dependencies=[Depends(_operator)])
+@router.get("/backups/{uuid}/executions")
 async def list_backup_executions(uuid: str) -> list[dict[str, Any]]:
     return await backup_executions(uuid)
 
@@ -231,7 +231,7 @@ _PLATFORM_NAV_PAGES: dict[str, dict[str, Any]] = {
 }
 
 
-@router.get("/navigation/{page}", dependencies=[Depends(_operator)])
+@router.get("/navigation/{page}")
 async def navigation_page(page: str) -> dict[str, Any]:
     config = _PLATFORM_NAV_PAGES.get(page)
     if config is None:
@@ -429,7 +429,7 @@ async def _internet_ping_ms() -> float | None:
         return None
 
 
-@router.get("/overview/metrics", dependencies=[Depends(_operator)])
+@router.get("/overview/metrics")
 async def overview_metrics() -> dict[str, Any]:
     projects = await find("platform_projects", {})
     deployments = await find("platform_deployments", {})
@@ -450,7 +450,7 @@ async def overview_metrics() -> dict[str, Any]:
     }
 
 
-@router.get("/store/catalog", dependencies=[Depends(_operator)])
+@router.get("/store/catalog")
 async def docker_store_catalog() -> dict[str, Any]:
     return {"apps": [{key: value for key, value in app.items() if key != "compose"} for app in DOCKER_STORE_CATALOG]}
 
