@@ -632,6 +632,30 @@ CREATE TABLE IF NOT EXISTS platform_webhook_events (
 );
 CREATE INDEX IF NOT EXISTS idx_platform_webhook_events_created
     ON platform_webhook_events (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS platform_registry_configs (
+    uuid TEXT PRIMARY KEY, team_uuid TEXT NOT NULL, name TEXT NOT NULL,
+    url TEXT NOT NULL, username TEXT DEFAULT '', password TEXT DEFAULT '',
+    status TEXT DEFAULT 'configured', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_dns_providers (
+    uuid TEXT PRIMARY KEY, team_uuid TEXT NOT NULL, name TEXT NOT NULL,
+    provider TEXT NOT NULL, zone TEXT DEFAULT '', credentials TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'configured', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_identity_providers (
+    uuid TEXT PRIMARY KEY, team_uuid TEXT NOT NULL, provider TEXT NOT NULL,
+    issuer TEXT DEFAULT '', client_id TEXT DEFAULT '', client_secret TEXT DEFAULT '',
+    status TEXT DEFAULT 'configured', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_operator_profiles (
+    uuid TEXT PRIMARY KEY, team_uuid TEXT NOT NULL, display_name TEXT DEFAULT '',
+    email TEXT DEFAULT '', role TEXT DEFAULT 'operator', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_license_records (
+    uuid TEXT PRIMARY KEY, team_uuid TEXT NOT NULL, feature TEXT NOT NULL,
+    status TEXT DEFAULT 'available', source TEXT DEFAULT 'self-hosted', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 """
 
 

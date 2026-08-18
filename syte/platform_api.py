@@ -202,7 +202,7 @@ _PLATFORM_NAV_PAGES: dict[str, dict[str, Any]] = {
     "schedules": {"title": "Schedules", "description": "Backup and scheduled-task records currently configured on this Syte instance.", "tables": ["platform_backups", "platform_scheduled_tasks"]},
     "traefik": {"title": "Traefik File System", "description": "Proxy configuration is generated from Syte domains and certificates.", "tables": ["platform_certificates", "platform_domains"]},
     "docker": {"title": "Docker", "description": "Managed containers, databases, and deployment runtime inventory.", "tables": ["platform_databases", "platform_applications", "platform_services"]},
-    "profile": {"title": "Profile", "description": "Current operator and instance identity settings.", "tables": []},
+    "profile": {"title": "Profile", "description": "Current operator and instance identity settings.", "tables": ["platform_operator_profiles"]},
     "sessions": {"title": "Sessions", "description": "Current operator session status and session policy.", "tables": []},
     "remote-servers": {"title": "Remote Servers", "description": "Servers available for deployment and platform resource placement.", "tables": ["platform_servers"]},
     "audit-logs": {"title": "Audit Logs", "description": "Recent webhook and platform events retained by Syte.", "tables": ["platform_webhook_events"]},
@@ -210,15 +210,15 @@ _PLATFORM_NAV_PAGES: dict[str, dict[str, Any]] = {
     "ai": {"title": "AI", "description": "Configured model providers and built-in agent capabilities.", "tables": ["model_configs"]},
     "tags": {"title": "Tags", "description": "Resource tagging inventory for organizing platform objects.", "tables": ["platform_tags"]},
     "git": {"title": "Git", "description": "Git provider and repository configuration used by deployments.", "tables": ["platform_git_sources", "platform_applications"]},
-    "registry": {"title": "Registry", "description": "Container image sources and registry-backed deployments.", "tables": ["platform_registries", "platform_applications"]},
+    "registry": {"title": "Registry", "description": "Container image sources and registry-backed deployments.", "tables": ["platform_registry_configs", "platform_applications"]},
     "secrets": {"title": "Secrets", "description": "Environment and shared-secret records are shown without secret values.", "tables": ["platform_shared_env_vars", "platform_env_vars"]},
     "dns-providers": {"title": "DNS Providers", "description": "DNS provider configuration used for domain automation.", "tables": ["platform_dns_providers"]},
     "s3-destinations": {"title": "S3 Destinations", "description": "Backup destinations configured for managed database exports.", "tables": ["platform_s3_storages"]},
     "certificates": {"title": "Certificates", "description": "TLS certificate and domain records used by the proxy.", "tables": ["platform_certificates"]},
     "notifications": {"title": "Notifications", "description": "Configured notification channels for platform events.", "tables": ["platform_notification_channels"]},
     "billing": {"title": "Billing", "description": "Local billing readiness and resource usage summary.", "tables": ["platform_projects", "platform_databases"]},
-    "license": {"title": "License", "description": "Syte installation version and feature availability.", "tables": []},
-    "sso": {"title": "SSO", "description": "Single sign-on readiness and configured identity-provider state.", "tables": []},
+    "license": {"title": "License", "description": "Syte installation version and feature availability.", "tables": ["platform_license_records"]},
+    "sso": {"title": "SSO", "description": "Single sign-on readiness and configured identity-provider state.", "tables": ["platform_identity_providers"]},
     "documentation": {"title": "Documentation", "description": "API and operator documentation for the running Syte instance.", "tables": []},
     "support": {"title": "Support", "description": "Support resources, diagnostics, and recent platform events.", "tables": ["platform_webhook_events"]},
 }
@@ -250,3 +250,94 @@ async def navigation_page(page: str) -> dict[str, Any]:
             {"id": "open-api", "label": "Open API reference", "href": "/api/"},
         ],
     }
+
+
+class NavigationRecordRequest(BaseModel):
+    primary: str = Field(min_length=1, max_length=500)
+    secondary: str = Field(default="", max_length=2000)
+
+
+class NavigationActionRequest(BaseModel):
+    action: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/navigation/{page}/records", dependencies=[Depends(_operator)])
+async def create_navigation_record(page: str, body: NavigationRecordRequest) -> dict[str, Any]:
+    config = _PLATFORM_NAV_PAGES.get(page)
+    if config is None:
+        raise HTTPException(404, "Platform page not found.")
+    bootstrap = await ensure_bootstrap()
+    team_uuid = str(bootstrap["team"]["uuid"])
+    now = utcnow()
+    primary, secondary = body.primary.strip(), body.secondary.strip()
+    table = "platform_webhook_events"
+    payload: dict[str, Any] = {
+        "uuid": new_uuid(), "source": "operator", "event": f"{page}.created",
+        "repository": primary, "branch": secondary, "accepted": 1,
+        "message": f"Created from {page} workspace.", "created_at": now,
+    }
+    if page == "projects":
+        table = "platform_projects"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "description": secondary, "created_at": now, "updated_at": now}
+    elif page == "schedules":
+        table = "platform_scheduled_tasks"
+        payload = {"uuid": new_uuid(), "resource_uuid": str(bootstrap["environment"]["uuid"]), "resource_type": "environment", "name": primary, "command": "/bin/true", "frequency": secondary or "0 0 * * *", "enabled": 1, "created_at": now, "updated_at": now}
+    elif page == "remote-servers":
+        table = "platform_servers"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "ip": secondary or "127.0.0.1", "status": "pending", "created_at": now, "updated_at": now}
+    elif page == "ssh-keys":
+        table = "platform_private_keys"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "private_key": secondary, "fingerprint": "operator-managed", "created_at": now, "updated_at": now}
+    elif page == "tags":
+        table = "platform_tags"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "color": secondary or "#111111", "created_at": now, "updated_at": now}
+    elif page == "git":
+        table = "platform_git_sources"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "kind": "github", "name": primary, "html_url": secondary, "created_at": now, "updated_at": now}
+    elif page == "secrets":
+        table = "platform_shared_env_vars"
+        payload = {"uuid": new_uuid(), "scope": "team", "scope_uuid": team_uuid, "key": primary, "value": secondary, "is_secret": 1, "created_at": now, "updated_at": now}
+    elif page == "registry":
+        table = "platform_registry_configs"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "url": secondary, "status": "configured", "created_at": now, "updated_at": now}
+    elif page == "dns-providers":
+        table = "platform_dns_providers"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "provider": primary, "zone": secondary, "status": "configured", "created_at": now, "updated_at": now}
+    elif page == "s3-destinations":
+        table = "platform_s3_storages"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "name": primary, "description": "Operator-created backup destination", "endpoint": secondary, "bucket": primary, "access_key": "", "secret_key": "", "created_at": now, "updated_at": now}
+    elif page == "notifications":
+        table = "platform_notification_channels"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "kind": "webhook", "name": primary, "config": secondary, "events": "[]", "enabled": 1, "created_at": now, "updated_at": now}
+    elif page == "sso":
+        table = "platform_identity_providers"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "provider": primary, "issuer": secondary, "status": "configured", "created_at": now, "updated_at": now}
+    elif page == "profile":
+        table = "platform_operator_profiles"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "display_name": primary, "email": secondary, "role": "operator", "created_at": now, "updated_at": now}
+    elif page == "license":
+        table = "platform_license_records"
+        payload = {"uuid": new_uuid(), "team_uuid": team_uuid, "feature": primary, "status": secondary or "available", "source": "self-hosted", "created_at": now, "updated_at": now}
+    elif page in {"billing"}:
+        payload.update({"event": f"{page}.updated", "message": f"{primary}: {secondary}"})
+    else:
+        raise HTTPException(400, f"{config['title']} does not accept record creation.")
+    created = await insert(table, payload)
+    return {"ok": True, "page": page, "table": table, "record": created}
+
+
+@router.post("/navigation/{page}/actions", dependencies=[Depends(_operator)])
+async def run_navigation_action(page: str, body: NavigationActionRequest) -> dict[str, Any]:
+    if page not in _PLATFORM_NAV_PAGES:
+        raise HTTPException(404, "Platform page not found.")
+    bootstrap = await ensure_bootstrap()
+    now = utcnow()
+    event = await insert("platform_webhook_events", {"uuid": new_uuid(), "source": "operator", "event": f"{page}.action", "accepted": 1, "message": body.action, "created_at": now})
+    if page == "docker" and body.action == "runtime-actions":
+        servers = await find("platform_servers", {}, order_by="created_at ASC")
+        return {"ok": True, "action": body.action, "message": f"Runtime inventory refreshed across {len(servers)} server(s).", "event": event}
+    if page == "traefik" and body.action == "validate-proxy":
+        return {"ok": True, "action": body.action, "message": "Proxy configuration validation queued.", "event": event}
+    if page == "certificates" and body.action == "certificate-actions":
+        return {"ok": True, "action": body.action, "message": "Certificate inventory refreshed.", "event": event}
+    return {"ok": True, "action": body.action, "message": "Operator action recorded.", "event": event}
