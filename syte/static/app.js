@@ -4526,6 +4526,7 @@ async function loadProjects(options = {}) {
   try {
     projects = await api('/projects');
     renderServices();
+    await loadPlatformDatabases();
     updateStats();
     if (activeServiceId) {
       const p = projects.find(x => x.id === activeServiceId);
@@ -4541,6 +4542,77 @@ async function loadProjects(options = {}) {
     console.error(e);
   }
 }
+
+let platformDatabases = [];
+
+async function loadPlatformDatabases() {
+  const list = document.getElementById('platform-databases-list');
+  if (!list) return;
+  try {
+    platformDatabases = await api('/platform/databases');
+    renderPlatformDatabases();
+  } catch (error) {
+    list.innerHTML = `<span class="hint">Could not load managed databases: ${esc(normalizeFetchError(error.message))}</span>`;
+  }
+}
+
+function renderPlatformDatabases() {
+  const list = document.getElementById('platform-databases-list');
+  if (!list) return;
+  if (!platformDatabases.length) {
+    list.innerHTML = '<span class="hint">No managed databases yet. Create one through the platform API.</span>';
+    return;
+  }
+  list.innerHTML = platformDatabases.map((db) => {
+    const state = db.status || 'stopped';
+    return `<article class="platform-database-card">
+      <div class="platform-database-main">
+        <div class="platform-database-title"><i data-lucide="database"></i><strong>${esc(db.name || db.uuid)}</strong><span class="platform-database-type">${esc(db.database_type || '')}</span></div>
+        <div class="platform-database-meta"><span class="status-dot ${state === 'running' ? 'is-live' : ''}"></span>${esc(state)} · ${db.is_public ? `public :${esc(String(db.public_port || ''))}` : 'private network'}</div>
+      </div>
+      <div class="platform-database-actions">
+        <button type="button" class="btn-pill btn-ghost btn-sm" onclick="platformDatabaseAction('${esc(db.uuid)}','${state === 'running' ? 'stop' : 'start'}')">${state === 'running' ? 'Stop' : 'Start'}</button>
+        <button type="button" class="btn-pill btn-ghost btn-sm" onclick="copyPlatformDatabaseConnection('${esc(db.uuid)}')">Copy URL</button>
+        <button type="button" class="btn-pill btn-danger btn-sm" onclick="deletePlatformDatabase('${esc(db.uuid)}')">Delete</button>
+      </div>
+    </article>`;
+  }).join('');
+  refreshIcons();
+}
+
+async function platformDatabaseAction(uuid, action) {
+  try {
+    await api(`/platform/databases/${encodeURIComponent(uuid)}/${action}`, { method: 'POST' });
+    await loadPlatformDatabases();
+    showToast(`Database ${action}ed`);
+  } catch (error) {
+    showToast(normalizeFetchError(error.message), 'error');
+  }
+}
+
+async function copyPlatformDatabaseConnection(uuid) {
+  try {
+    const details = await api(`/platform/databases/${encodeURIComponent(uuid)}/connection`);
+    const value = details.internal_url || details.public_url || '';
+    await navigator.clipboard.writeText(value);
+    showToast('Connection URL copied');
+  } catch (error) {
+    showToast(normalizeFetchError(error.message), 'error');
+  }
+}
+
+async function deletePlatformDatabase(uuid) {
+  if (!window.confirm('Delete this database container? Its named volume will be preserved.')) return;
+  try {
+    await api(`/platform/databases/${encodeURIComponent(uuid)}`, { method: 'DELETE' });
+    await loadPlatformDatabases();
+    showToast('Database deleted');
+  } catch (error) {
+    showToast(normalizeFetchError(error.message), 'error');
+  }
+}
+
+document.getElementById('platform-databases-refresh')?.addEventListener('click', loadPlatformDatabases);
 
 function updateActiveServiceMeta(p) {
   updateServiceStatusDot(p);

@@ -5216,3 +5216,14 @@ body.login-locked {
 .svc-deployment-status.succeeded{background:#16a34a}.svc-deployment-status.failed{background:#dc2626}.svc-deployment-status.running{background:#ca8a04}.svc-deployment-status.cancelled{background:#71717a}
 .svc-deployment-main{display:flex;flex-direction:column;min-width:0;flex:1}.svc-deployment-main strong{font-size:11px;text-transform:capitalize}.svc-deployment-main small{color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.svc-deployment-duration{color:var(--text-muted);font-size:11px}
 @media (max-width:700px){.svc-management-grid{grid-template-columns:1fr}}
+
+
+/* Managed database resources */
+.platform-resources-panel{margin-top:20px;padding:18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-surface)}
+.platform-resources-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.platform-resources-head h2{margin:2px 0 4px;font-size:18px}
+.platform-databases-list{display:grid;gap:10px}
+.platform-database-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input)}
+.platform-database-main{min-width:0}.platform-database-title{display:flex;align-items:center;gap:8px;min-width:0}.platform-database-title svg{width:15px;height:15px}.platform-database-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.platform-database-type{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+.platform-database-meta{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--text-muted);font-size:12px}.platform-database-meta .status-dot{width:7px;height:7px}.platform-database-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}.platform-database-actions .btn-danger{color:#b91c1c}
+@media (max-width:700px){.platform-resources-head,.platform-database-card{flex-direction:column;align-items:stretch}.platform-database-actions{justify-content:flex-start}.platform-database-actions .btn-pill{flex:1 1 auto}}
