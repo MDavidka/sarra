@@ -3828,19 +3828,10 @@ async function operatorAuthenticated() {
 let loginReturnView = null;
 
 function showLoginScreen(returnView) {
+  // The web UI is always navigable. Protected API actions report their own
+  // authentication error without blocking the entire console behind a key gate.
   loginReturnView = returnView || loginReturnView;
-  const screen = document.getElementById('login-screen');
-  const hint = document.getElementById('login-return-hint');
-  if (!screen) return;
-  if (hint) {
-    hint.textContent = loginReturnView
-      ? `Sign in to open the ${loginReturnView} area.`
-      : '';
-  }
-  screen.classList.remove('hidden');
-  document.body.classList.add('login-locked');
-  const first = document.getElementById('login-api-key');
-  if (first) setTimeout(() => first.focus(), 50);
+  return true;
 }
 
 function hideLoginScreen() {
@@ -3869,14 +3860,13 @@ function clearLoginError() {
 // revoked API key) surfaced by verify_operator_session_or_token.
 function isAuthError(e) {
   const msg = String(e && e.message || '');
-  return /unlock|operator session|api key/i.test(msg);
+  return /operator authentication|operator session|api key/i.test(msg);
 }
 
 async function forceLoginForView(viewName) {
-  if (!isOperatorView(viewName)) return true;
-  if (await operatorAuthenticated()) return true;
-  showLoginScreen(viewName);
-  return false;
+  // Do not gate navigation on a bootstrap/API key. The server still enforces
+  // authentication for protected mutations and returns a normal API error.
+  return true;
 }
 
 async function loginWithApiKey(key) {
@@ -3899,7 +3889,7 @@ async function loginWithApiKey(key) {
 
 async function loginWithBootstrapKey(key) {
   if (window.location.protocol !== 'https:') {
-    setLoginError('Session unlock requires HTTPS. Open the GUI over its domain.');
+    setLoginError('Operator session requires HTTPS. Open the configured GUI domain.');
     return;
   }
   try {
@@ -3916,9 +3906,9 @@ async function loginWithBootstrapKey(key) {
       if (loginReturnView === 'router') await loadRouterTab();
       loginReturnView = null;
     }
-    toast('Operator session unlocked');
+    toast('Operator session enabled');
   } catch (e) {
-    setLoginError('Unlock failed — ' + e.message);
+    setLoginError('Operator session failed — ' + e.message);
   }
 }
 
@@ -4510,7 +4500,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (keyForm) keyForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const input = document.getElementById('login-bootstrap-key');
-    if (!input || !input.value.trim()) return setLoginError('Enter the bootstrap key');
+    if (!input || !input.value.trim()) return setLoginError('Enter an operator credential');
     loginWithBootstrapKey(input.value);
   });
   if (tabApi) tabApi.addEventListener('click', () => switchLoginTab('api'));
@@ -5932,7 +5922,7 @@ async function loadTokens() {
   const list = document.getElementById('tokens-list');
   if (!list) return;
   if (!await restoreOperatorSession()) {
-    list.innerHTML = '<p class="hint">Unlock Syra to manage API keys.</p>';
+    list.innerHTML = '<p class="hint">Protected API access is required to manage API keys.</p>';
     return;
   }
   try {
@@ -5956,7 +5946,7 @@ async function loadTokens() {
 async function revokeToken(id) {
   if (!confirm('Revoke this API token?')) return;
   if (!await restoreOperatorSession()) {
-    return toast('Unlock Syra to manage API keys');
+    return toast('Protected API access is required to manage API keys');
   }
   try {
     await api(`/tokens/${id}`, { method: 'DELETE' });
@@ -5970,7 +5960,7 @@ async function revokeToken(id) {
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
   if (!await restoreOperatorSession()) {
-    return toast('Unlock Syra to manage API keys');
+    return toast('Protected API access is required to manage API keys');
   }
   try {
     const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
@@ -6586,20 +6576,19 @@ function setSyraSessionState(unlocked) {
 }
 
 function syraSessionReady() {
-  if (syraCsrfToken) return true;
-  toast('Unlock Syra to continue');
-  document.getElementById('syra-bootstrap-key')?.focus();
-  return false;
+  // Navigation and read-only UI are not blocked by an unlock screen. Protected
+  // actions continue through the API boundary and surface an ordinary error.
+  return true;
 }
 
 async function unlockSyra() {
   if (window.location.protocol !== 'https:') {
-    return toast('Syra unlock requires HTTPS. Open the configured GUI domain.');
+    return toast('Operator session requires HTTPS. Open the configured GUI domain.');
   }
   const input = document.getElementById('syra-bootstrap-key');
   const button = document.getElementById('syra-unlock-btn');
   const bootstrapToken = input?.value.trim() || '';
-  if (!bootstrapToken) return toast('Enter the system bootstrap API key');
+  if (!bootstrapToken) return toast('Enter the operator credential');
   if (button) button.disabled = true;
   try {
     const session = await api('/operator/session', {
@@ -6610,10 +6599,10 @@ async function unlockSyra() {
     syraCsrfToken = session.csrf_token || '';
     if (!syraCsrfToken) throw new Error('Operator session was not created');
     if (input) input.value = '';
-    toast('Syra unlocked for this browser');
+    toast('Operator session enabled for this browser');
     await initSyraTab();
   } catch (e) {
-    toast('Unlock failed: ' + e.message);
+      toast('Operator session failed: ' + e.message);
   } finally {
     if (button) button.disabled = false;
   }
@@ -6644,11 +6633,11 @@ async function initSyraTab() {
     if (!unlocked) {
       const statusLabel = document.getElementById('syra-status-label');
       const publicStatus = document.getElementById('syra-public-status');
-      if (statusLabel) statusLabel.textContent = 'Unlock required';
+      if (statusLabel) statusLabel.textContent = 'Authentication available for protected actions';
       if (publicStatus) {
         publicStatus.classList.remove('is-ready');
         publicStatus.classList.add('is-pending');
-        publicStatus.textContent = 'Unlock Syra to manage the public endpoint.';
+        publicStatus.textContent = 'Protected actions require an operator API session.';
       }
       return;
     }
@@ -6823,4 +6812,12 @@ document.getElementById('syra-bootstrap-key')?.addEventListener('keydown', (even
     event.preventDefault();
     unlockSyra();
   }
+});
+
+
+document.querySelectorAll('.nav-placeholder[data-nav-placeholder]').forEach((item) => {
+  item.addEventListener('click', () => {
+    const label = item.dataset.navPlaceholder || 'This section';
+    toast(`${label} is available in the navigation and is being wired to the platform API.`);
+  });
 });
