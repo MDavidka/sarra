@@ -208,24 +208,23 @@
               </div>
 
               <div class="create-section">
-                <p class="create-section-label">deployment type</p>
-                <div class="stack-picker" id="stack-picker" role="listbox" aria-label="Deployment type">
-                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true">
-                    <span class="stack-card-icon stack-icon-nextjs">N</span>
-                    <span class="stack-card-label">next.js</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-python">Py</span>
-                    <span class="stack-card-label">python</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-javascript">JS</span>
-                    <span class="stack-card-label">javascript</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-html5">5</span>
-                    <span class="stack-card-label">html5</span>
-                  </button>
+                <p class="create-section-label">deployment runtime</p>
+                <p class="hint block create-runtime-hint">Choose a hint or use auto-detect. Git deployments without a handwritten Dockerfile receive a generated production Dockerfile for the detected framework.</p>
+                <div class="stack-picker stack-picker-expanded" id="stack-picker" role="listbox" aria-label="Deployment runtime">
+                  <button type="button" class="stack-card active" data-stack="auto" role="option" aria-selected="true"><span class="stack-card-icon stack-icon-auto">A</span><span class="stack-card-label">auto-detect</span></button>
+                  <button type="button" class="stack-card" data-stack="nextjs" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-nextjs">N</span><span class="stack-card-label">next.js</span></button>
+                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-python">Py</span><span class="stack-card-label">python</span></button>
+                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-javascript">JS</span><span class="stack-card-label">node.js</span></button>
+                  <button type="button" class="stack-card" data-stack="go" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-go">Go</span><span class="stack-card-label">go</span></button>
+                  <button type="button" class="stack-card" data-stack="rust" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-rust">Rs</span><span class="stack-card-label">rust</span></button>
+                  <button type="button" class="stack-card" data-stack="java" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-java">J</span><span class="stack-card-label">java</span></button>
+                  <button type="button" class="stack-card" data-stack="php" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-php">PHP</span><span class="stack-card-label">php</span></button>
+                  <button type="button" class="stack-card" data-stack="ruby" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-ruby">Rb</span><span class="stack-card-label">ruby</span></button>
+                  <button type="button" class="stack-card" data-stack="dotnet" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-dotnet">.N</span><span class="stack-card-label">.net</span></button>
+                  <button type="button" class="stack-card" data-stack="bun" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-bun">B</span><span class="stack-card-label">bun</span></button>
+                  <button type="button" class="stack-card" data-stack="deno" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-deno">D</span><span class="stack-card-label">deno</span></button>
+                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-html5">5</span><span class="stack-card-label">static</span></button>
+                  <button type="button" class="stack-card" data-stack="docker" role="option" aria-selected="false"><span class="stack-card-icon stack-icon-docker">D</span><span class="stack-card-label">dockerfile</span></button>
                 </div>
               </div>
 
