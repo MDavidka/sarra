@@ -13,6 +13,9 @@
 - **Health checks** — probe each service's public URL from the dashboard and API
 - **Resource controls** — configure per-project Docker memory and CPU limits while retaining server-wide safety defaults
 - **Management dashboard** — view live health and recent deployment runs beside each project's lifecycle controls
+- **Automatic framework deployments** — generate a production Dockerfile for detected Node/framework, Bun, Deno, Python, Go, Rust, PHP, Ruby, Java, Elixir, .NET, and static projects when no Dockerfile is present
+- **Runtime matrix** — choose auto-detect or a framework hint from the create-project UI; generated build-pack notes are written into deployment logs
+- **Compact operator navigation** — reduced sidebar width and tighter icon/menu rhythm for more workspace area
 
 ## Quick Start
 
@@ -141,7 +144,7 @@ Backup schedules are persisted in the platform store and can execute engine-spec
 `syte/platform/` adds the PaaS resource model and deployment engine Syte was
 missing next to [Coolify](https://github.com/coollabsio/coolify):
 
-- **Build packs** — deploy without writing a Dockerfile. Detects and generates
+- **Build packs** — deploy without writing a Dockerfile. Git deployments now materialize the generated plan as `Dockerfile.syte.generated` and pass it through the existing Docker worker. Detects and generates
   for Node, Bun, Deno, Python, Go, Rust, PHP, Ruby, Java, Elixir, .NET and
   static sites, with framework handling for Next.js, Nuxt, Remix, SvelteKit,
   Astro, Django, Laravel, Rails and Phoenix.

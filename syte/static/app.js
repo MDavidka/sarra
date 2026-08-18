@@ -76,15 +76,24 @@ let syraCsrfToken = '';
 let operatorSessionRestorePromise = null;
 
 const STACK_META = {
+  auto: { label: 'auto-detect', icon: 'A', cls: 'stack-auto' },
   nextjs: { label: 'next.js', icon: 'N', cls: '' },
   python: { label: 'python', icon: 'Py', cls: 'stack-python' },
-  javascript: { label: 'javascript', icon: 'JS', cls: 'stack-javascript' },
-  html5: { label: 'html5', icon: '5', cls: 'stack-html5' },
+  javascript: { label: 'node.js', icon: 'JS', cls: 'stack-javascript' },
+  go: { label: 'go', icon: 'Go', cls: 'stack-go' },
+  rust: { label: 'rust', icon: 'Rs', cls: 'stack-rust' },
+  java: { label: 'java', icon: 'J', cls: 'stack-java' },
+  php: { label: 'php', icon: 'PHP', cls: 'stack-php' },
+  ruby: { label: 'ruby', icon: 'Rb', cls: 'stack-ruby' },
+  dotnet: { label: '.net', icon: '.N', cls: 'stack-dotnet' },
+  bun: { label: 'bun', icon: 'B', cls: 'stack-bun' },
+  deno: { label: 'deno', icon: 'D', cls: 'stack-deno' },
+  html5: { label: 'static', icon: '5', cls: 'stack-html5' },
+  docker: { label: 'dockerfile', icon: 'D', cls: 'stack-docker' },
   shell: { label: 'shell', icon: '$', cls: 'stack-shell' },
-  docker: { label: 'docker', icon: 'D', cls: '' },
 };
 
-let selectedCreateStack = 'nextjs';
+let selectedCreateStack = 'auto';
 
 function getApiKey() {
   try {
@@ -4754,9 +4763,9 @@ function detectStack(p) {
 }
 
 function resetCreateForm() {
-  selectedCreateStack = 'nextjs';
+  selectedCreateStack = 'auto';
   document.querySelectorAll('.stack-card').forEach(card => {
-    const on = card.dataset.stack === 'nextjs';
+    const on = card.dataset.stack === 'auto';
     card.classList.toggle('active', on);
     card.setAttribute('aria-selected', on ? 'true' : 'false');
   });
@@ -5314,6 +5323,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
   const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
   const env_vars = {};
+  if (selectedCreateStack && selectedCreateStack !== 'auto') env_vars.SYTE_STACK = selectedCreateStack;
   if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
 
   const logPanel = document.getElementById('deploy-log-panel');
@@ -5988,7 +5998,7 @@ async function loadTokens() {
   const list = document.getElementById('tokens-list');
   if (!list) return;
   if (!await restoreOperatorSession()) {
-    list.innerHTML = '<p class="hint">Unlock Syra to manage API keys.</p>';
+    list.innerHTML = '<p class="hint">Operator authentication required to manage API keys.</p>';
     return;
   }
   try {
@@ -6012,7 +6022,7 @@ async function loadTokens() {
 async function revokeToken(id) {
   if (!confirm('Revoke this API token?')) return;
   if (!await restoreOperatorSession()) {
-    return toast('Unlock Syra to manage API keys');
+    return toast('Operator authentication required to manage API keys');
   }
   try {
     await api(`/tokens/${id}`, { method: 'DELETE' });
@@ -6026,7 +6036,7 @@ async function revokeToken(id) {
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
   if (!await restoreOperatorSession()) {
-    return toast('Unlock Syra to manage API keys');
+    return toast('Operator authentication required to manage API keys');
   }
   try {
     const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
@@ -6643,7 +6653,7 @@ function setSyraSessionState(unlocked) {
 
 function syraSessionReady() {
   if (syraCsrfToken) return true;
-  toast('Unlock Syra to continue');
+  toast('Operator authentication required to continue');
   document.getElementById('syra-bootstrap-key')?.focus();
   return false;
 }
@@ -6700,11 +6710,11 @@ async function initSyraTab() {
     if (!unlocked) {
       const statusLabel = document.getElementById('syra-status-label');
       const publicStatus = document.getElementById('syra-public-status');
-      if (statusLabel) statusLabel.textContent = 'Unlock required';
+      if (statusLabel) statusLabel.textContent = 'Authentication required';
       if (publicStatus) {
         publicStatus.classList.remove('is-ready');
         publicStatus.classList.add('is-pending');
-        publicStatus.textContent = 'Unlock Syra to manage the public endpoint.';
+        publicStatus.textContent = 'Operator authentication required to manage the public endpoint.';
       }
       return;
     }

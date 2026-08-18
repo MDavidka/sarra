@@ -16,6 +16,7 @@ from syte.database import (
     update_project,
 )
 from syte.docker_deploy import find_dockerfile
+from syte.platform.build_packs import BuildContext, BuildPack, resolve_build_plan, scan_context
 from syte.runtime import ensure_runtime_for_command
 from syte.preview_domains import resolve_production_domain
 from syte.workspace import (
@@ -51,11 +52,36 @@ def _next_port(existing: list[dict]) -> int:
     return port
 
 
+def _materialize_generated_dockerfile(project: dict) -> tuple[str | None, str | None, list[str]]:
+    """Generate a real Dockerfile for supported framework/language projects.
+
+    The build-pack module owns detection and generation; this adapter makes the
+    generated plan consumable by the existing Docker deployment worker.
+    """
+    project_id = str(project["id"])
+    repo = ensure_workspace(project_id) / "app"
+    files, package_json = scan_context(repo)
+    ctx = BuildContext(
+        files=files,
+        package_json=package_json,
+        port=int(project.get("port") or 3000),
+        start_command=str(project.get("start_command") or ""),
+    )
+    try:
+        plan = resolve_build_plan(BuildPack.NIXPACKS, ctx)
+    except (ValueError, OSError) as exc:
+        return None, str(exc), []
+    generated = repo / "Dockerfile.syte.generated"
+    generated.write_text(plan.dockerfile, encoding="utf-8")
+    return str(Path(generated.name)), None, list(plan.notes)
+
+
 def _resolve_deploy(
     project_id: str,
     start_command: str | None,
     *,
     prefer_docker: bool = True,
+    project: dict | None = None,
 ) -> tuple[dict, str | None]:
     """After git clone, prefer Docker deploy; fall back to shell only with explicit command."""
     dockerfile = find_dockerfile(project_id)
@@ -79,14 +105,23 @@ def _resolve_deploy(
         }, None
 
     if prefer_docker:
+        project_data = project or {"id": project_id}
+        generated_path, generation_error, notes = _materialize_generated_dockerfile(project_data)
+        if generated_path:
+            return {
+                "deploy_type": "docker",
+                "dockerfile_path": generated_path,
+                "start_command": f"docker:{generated_path}",
+                "build_pack": "nixpacks",
+                "build_notes": notes,
+            }, None
         return {
             "deploy_type": "docker",
             "dockerfile_path": None,
             "start_command": "",
         }, (
-            "No Dockerfile found in repository. "
-            "Add a Dockerfile for docker deployment (recommended), "
-            "or provide a start command for shell deployment."
+            f"No deployable framework detected: {generation_error or 'unknown build-pack error'}. "
+            "Add a Dockerfile, choose a supported framework, or set an explicit start command."
         )
 
     cmd, err = detect_start_command(project_id)
@@ -114,7 +149,7 @@ async def _ensure_deploy_info(project: dict) -> dict:
     dockerfile = find_dockerfile(project_id)
     if not dockerfile:
         return project
-    deploy_info, _ = _resolve_deploy(project_id, project.get("start_command") or None)
+    deploy_info, _ = _resolve_deploy(project_id, project.get("start_command") or None, project=project)
     if deploy_info["deploy_type"] != "docker":
         return project
     await update_project(project_id, deploy_info)
@@ -154,7 +189,7 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
             await update_project(project_id, {"status": "stopped"})
             return "\n".join(messages)
 
-        deploy_info, deploy_err = _resolve_deploy(project_id, start_command or project.get("start_command"))
+        deploy_info, deploy_err = _resolve_deploy(project_id, start_command or project.get("start_command"), project=project)
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
         if not project:
@@ -167,6 +202,8 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
 
         if deploy_info["deploy_type"] == "docker":
             log(f"Dockerfile: {deploy_info['dockerfile_path']}")
+            for note in deploy_info.get("build_notes", []):
+                log(f"Build pack: {note}")
     elif not project.get("start_command") and not start_command:
         cmd, err = detect_start_command(project_id)
         if err:
@@ -443,7 +480,7 @@ async def deploy_service(
         if not ok:
             return project, "\n".join(messages)
 
-        deploy_info, deploy_err = _resolve_deploy(project_id, start_command)
+        deploy_info, deploy_err = _resolve_deploy(project_id, start_command, project=project)
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
 
@@ -517,7 +554,7 @@ async def update_service(project_id: str) -> tuple[dict | None, str]:
         return project, "\n".join(messages)
 
     if project.get("git_url"):
-        deploy_info, deploy_err = _resolve_deploy(project_id, None)
+        deploy_info, deploy_err = _resolve_deploy(project_id, None, project=project)
         await update_project(project_id, deploy_info)
         project = await get_project(project_id)
         deploy_type = project.get("deploy_type", "shell")

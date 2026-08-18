@@ -197,7 +197,7 @@ async def verify_operator_session_or_token(
     if not session.get("authenticated"):
         raise HTTPException(
             401,
-            detail={"error": "operator_session_required", "message": "Unlock the Syra web UI first."},
+            detail={"error": "operator_session_required", "message": "Operator authentication required. Sign in to continue."},
         )
 
     if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
