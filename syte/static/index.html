@@ -580,29 +580,10 @@
         </section>
 
         <section id="view-users" class="view">
-          <div class="projects-card panel-form">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="users" class="projects-icon"></i>
-                <div>
-                  <h1>Users</h1>
-                  <p class="projects-sub">API tokens for programmatic access</p>
-                </div>
-              </div>
-            </div>
-            <div class="form-inner">
-              <p class="hint block">Create tokens for the external API — see <a href="/api/" class="link">API documentation</a></p>
-              <div class="form-group">
-                <label for="token-name">Token name</label>
-                <input type="text" id="token-name" placeholder="ci-deploy">
-              </div>
-              <button class="btn-pill btn-primary" id="create-token-btn">
-                <i data-lucide="plus"></i>
-                <span>Create token</span>
-              </button>
-              <div id="new-token-box" class="result-box hidden"></div>
-              <div id="tokens-list" class="tokens-list"></div>
-            </div>
+          <div class="users-directory-page">
+            <div class="users-directory-hero"><div class="users-directory-icon"><i data-lucide="users-round"></i></div><div><p class="dedicated-eyebrow">Administration</p><h1>People & access</h1><p>Manage operators, API access, and the credentials used by automation.</p></div><span class="users-live-badge"><i data-lucide="radio"></i>Live workspace</span></div>
+            <div class="users-directory-grid"><div class="users-summary-card"><span>Workspace members</span><strong>Operator</strong><small>Current workspace identity</small></div><div class="users-summary-card"><span>API access</span><strong>Token vault</strong><small>Programmatic credentials</small></div><div class="users-summary-card"><span>Security</span><strong>Protected</strong><small>Tokens can be revoked anytime</small></div></div>
+            <section class="users-token-panel"><div><p class="dedicated-eyebrow">Automation credentials</p><h2>API tokens</h2><p>Create tokens for CI, deployments, and external integrations. See the <a href="/api/" class="link">API documentation</a>.</p></div><div class="users-token-form"><label for="token-name">Token name</label><div><input type="text" id="token-name" placeholder="ci-deploy"><button class="btn-pill btn-primary" id="create-token-btn"><i data-lucide="plus"></i><span>Create token</span></button></div></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="tokens-list"></div></section>
           </div>
         </section>
 
