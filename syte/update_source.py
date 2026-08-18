@@ -88,7 +88,16 @@ def fetch_pull_request(repo: str, pr_number: int) -> UpdateTarget | None:
             response = client.get(url, headers=_github_headers())
         if response.status_code >= 400:
             return None
-        return _pr_from_api_item(response.json(), repo)
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return None
+        # A merged or closed PR is no longer an update source. This matters for
+        # servers that still have SYTE_UPDATE_PR set from an older deployment:
+        # the update button must follow the current release branch instead of
+        # repeatedly checking out a stale PR ref.
+        if str(payload.get("state") or "").lower() != "open" or payload.get("merged_at"):
+            return None
+        return _pr_from_api_item(payload, repo)
     except Exception:
         return None
 
@@ -148,6 +157,8 @@ def resolve_update_target(install_dir: Path) -> UpdateTarget:
         target = fetch_pull_request(repo, int(pr_override))
         if target:
             return target
+        # Stale overrides are intentionally non-blocking. Once a PR is merged
+        # or closed, continue through the normal source-selection policy.
 
     use_open_pr = (os.environ.get("SYTE_UPDATE_FROM_PR") or "").strip().lower() in {
         "1",
