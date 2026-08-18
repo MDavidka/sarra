@@ -43,6 +43,9 @@ from syte.auth import (
 from syte import api_router
 from syte import internal_api
 from syte import workspace_api
+from syte import platform_api
+from syte.platform.backup_scheduler import backup_scheduler_loop
+from syte.platform.store import ensure_bootstrap, init_platform_db
 from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
@@ -69,6 +72,8 @@ class VersionedStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await init_platform_db()
+    await ensure_bootstrap()
     custom_ip = await get_setting("public_ip")
     if custom_ip:
         settings.public_ip = custom_ip
@@ -94,9 +99,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Supervisor startup failed — GUI will still start")
     task = asyncio.create_task(supervisor.supervisor_loop())
+    backup_stop = asyncio.Event()
+    backup_task = asyncio.create_task(backup_scheduler_loop(backup_stop))
     yield
+    backup_stop.set()
     supervisor.stop_supervisor()
     task.cancel()
+    try:
+        await backup_task
+    except asyncio.CancelledError:
+        backup_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
@@ -149,6 +161,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 app.include_router(api_router.router, prefix="/api")
+app.include_router(platform_api.router, prefix="/api")
 app.include_router(internal_api.router, prefix="/api/internal")
 
 from syte.sycord.router import router as sycord_router

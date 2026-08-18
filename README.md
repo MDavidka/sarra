@@ -111,6 +111,16 @@ chmod +x scripts/*.sh
 | `GET` | `/api/projects/{id}/deployments` | View deployment history |
 | `GET` | `/api/projects/{id}/health` | Probe the configured public health URL |
 | `PUT` | `/api/projects/{id}/deployment-config` | Update deployment type, commands, health checks, env, auto-deploy flag, and Docker resource limits |
+| `GET` | `/api/platform/databases/catalog` | List supported managed database engines |
+| `GET` | `/api/platform/databases` | List managed databases |
+| `POST` | `/api/platform/databases` | Provision a private Docker database with a named volume |
+| `POST` | `/api/platform/databases/{id}/start` | Start a managed database |
+| `POST` | `/api/platform/databases/{id}/stop` | Stop a managed database |
+| `GET` | `/api/platform/databases/{id}/connection` | Retrieve authenticated connection details for copying into an app |
+| `DELETE` | `/api/platform/databases/{id}` | Delete a database container; preserve its volume by default |
+| `POST` | `/api/platform/backups` | Create a backup schedule |
+| `POST` | `/api/platform/backups/{id}/run` | Run a database dump immediately |
+| `POST` | `/api/platform/backup-executions/{id}/restore` | Restore a locally available backup |
 
 ### Agent MCP & skills
 
@@ -119,6 +129,12 @@ from the agent chat UI or directly via API (session routes under
 `/api/projects/{id}/agent/mcp` and `/agent/skills`, plus token mirrors
 `/api/agent_mcp*` and `/api/agent_skills*`). Custom skills can be added with
 name + guidance content. See [`docs/api-agent.md`](docs/api-agent.md).
+
+## Managed databases and backups
+
+The platform API can provision PostgreSQL, MySQL, MariaDB, MongoDB, Redis, KeyDB, Dragonfly, and ClickHouse from the existing catalog. Containers join the private `syte` Docker network, persist data in named volumes, and do not publish ports unless `public` and `public_port` are explicitly supplied. Use the returned internal connection URL or `DATABASE_URL`/`REDIS_URL` values from `/api/platform/databases/{id}/connection` when linking an application on the same network.
+
+Backup schedules are persisted in the platform store and can execute engine-specific logical dumps locally. S3-compatible upload is supported when the optional `boto3` dependency and a configured `platform_s3_storages` record are present. Restore is intentionally restricted to locally available artifacts and never logs database credentials.
 
 ## Platform layer (Coolify parity)
 
