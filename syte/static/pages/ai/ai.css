@@ -1,0 +1,3 @@
+/* Page-local styles for ai: chat and job inspector. */
+.page-ai { --page-accent: #2563eb; }
+.page-ai .ops-card { border-radius: 18px; }

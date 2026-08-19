@@ -1,0 +1,3 @@
+/* Page-local styles for sso: provider forms. */
+.page-sso { --page-accent: #2563eb; }
+.page-sso .ops-card { border-radius: 18px; }

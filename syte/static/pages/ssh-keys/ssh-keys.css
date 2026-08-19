@@ -1,0 +1,3 @@
+/* Page-local styles for ssh-keys: keyring list. */
+.page-ssh-keys { --page-accent: #2563eb; }
+.page-ssh-keys .ops-card { border-radius: 18px; }

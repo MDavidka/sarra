@@ -3308,14 +3308,32 @@ def _enrich(project: dict) -> dict:
     return p
 
 
-@app.get("/")
-async def index():
+def _index_response() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text()
     html = html.replace("__VERSION__", __version__)
-    return HTMLResponse(
-        html,
-        headers={"Cache-Control": NO_CACHE, "Pragma": "no-cache"},
-    )
+    return HTMLResponse(html, headers={"Cache-Control": NO_CACHE, "Pragma": "no-cache"})
+
+
+@app.get("/")
+async def index():
+    return _index_response()
+
+
+_GUI_PATHS = [
+    "/home", "/projects", "/settings", "/profile", "/session", "/servers", "/users",
+    "/audit", "/ssh-keys", "/ai", "/tags", "/git", "/registry", "/secrets",
+    "/dns", "/s3", "/certificates", "/notifications", "/billing", "/license",
+    "/sso", "/docs", "/support",
+]
 
 
 app.mount("/static", VersionedStaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/{path:path}", include_in_schema=False)
+async def gui_path(path: str):
+    normalized = "/" + path.strip("/")
+    if normalized in _GUI_PATHS or (normalized.startswith("/projects/") and normalized.count("/") == 3):
+        return _index_response()
+    raise HTTPException(404, "Not found")
+

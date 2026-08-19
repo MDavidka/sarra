@@ -1,0 +1,3 @@
+/* Page-local styles for registry: credential table. */
+.page-registry { --page-accent: #2563eb; }
+.page-registry .ops-card { border-radius: 18px; }

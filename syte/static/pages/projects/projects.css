@@ -1,0 +1,3 @@
+/* Page-local styles for projects: data table with right inspector. */
+.page-projects { --page-accent: #2563eb; }
+.page-projects .ops-card { border-radius: 18px; }

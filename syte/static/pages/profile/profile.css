@@ -1,0 +1,3 @@
+/* Page-local styles for profile: operator identity card. */
+.page-profile { --page-accent: #2563eb; }
+.page-profile .ops-card { border-radius: 18px; }
