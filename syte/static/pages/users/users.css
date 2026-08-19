@@ -1,0 +1,3 @@
+/* Page-local styles for users: admin directory. */
+.page-users { --page-accent: #2563eb; }
+.page-users .ops-card { border-radius: 18px; }

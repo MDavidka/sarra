@@ -1,0 +1,3 @@
+/* Page-local styles for docs: documentation reader. */
+.page-docs { --page-accent: #2563eb; }
+.page-docs .ops-card { border-radius: 18px; }

@@ -1,0 +1,3 @@
+/* Page-local styles for git: repo and PR list. */
+.page-git { --page-accent: #2563eb; }
+.page-git .ops-card { border-radius: 18px; }

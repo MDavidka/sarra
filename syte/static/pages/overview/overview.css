@@ -1,0 +1,3 @@
+/* Page-local styles for overview: two-pane project status cockpit. */
+.page-overview { --page-accent: #2563eb; }
+.page-overview .ops-card { border-radius: 18px; }

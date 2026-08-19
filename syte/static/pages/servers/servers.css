@@ -1,0 +1,3 @@
+/* Page-local styles for servers: fleet map and health dots. */
+.page-servers { --page-accent: #2563eb; }
+.page-servers .ops-card { border-radius: 18px; }

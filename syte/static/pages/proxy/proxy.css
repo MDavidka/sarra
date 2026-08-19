@@ -1,0 +1,3 @@
+/* Page-local styles for proxy: full-height config editor. */
+.page-proxy { --page-accent: #2563eb; }
+.page-proxy .ops-card { border-radius: 18px; }

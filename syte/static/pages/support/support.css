@@ -1,0 +1,3 @@
+/* Page-local styles for support: incident toolbox. */
+.page-support { --page-accent: #2563eb; }
+.page-support .ops-card { border-radius: 18px; }

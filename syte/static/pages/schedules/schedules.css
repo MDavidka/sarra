@@ -1,0 +1,3 @@
+/* Page-local styles for schedules: cron next-run timeline. */
+.page-schedules { --page-accent: #2563eb; }
+.page-schedules .ops-card { border-radius: 18px; }

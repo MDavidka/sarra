@@ -1,0 +1,3 @@
+/* Page-local styles for audit: immutable log viewer. */
+.page-audit { --page-accent: #2563eb; }
+.page-audit .ops-card { border-radius: 18px; }

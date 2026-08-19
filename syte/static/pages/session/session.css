@@ -1,0 +1,3 @@
+/* Page-local styles for session: session timeline. */
+.page-session { --page-accent: #2563eb; }
+.page-session .ops-card { border-radius: 18px; }
