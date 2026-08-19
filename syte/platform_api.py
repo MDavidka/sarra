@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import secrets
 import subprocess
 import tempfile
 import time
@@ -31,6 +32,8 @@ from syte.platform.store import (
     get_database,
     insert,
     update,
+    server_metrics,
+    record_server_metrics,
 )
 from syte.platform.types import new_uuid, utcnow
 
@@ -302,6 +305,42 @@ class NavigationActionRequest(BaseModel):
     action: str = Field(min_length=1, max_length=80)
 
 
+class FleetServerRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    host: str = Field(min_length=1, max_length=255)
+    server_type: str = Field(default="vps", pattern="^(micro|vps|dedicated|edge|build)$")
+    username: str = Field(default="root", min_length=1, max_length=80)
+    port: int = Field(default=22, ge=1, le=65535)
+    role_websites: bool = True
+    role_router: bool = False
+    role_workers: bool = False
+    load_balancing_enabled: bool = False
+    load_balancing_weight: int = Field(default=100, ge=1, le=1000)
+
+
+class FleetRoleRequest(BaseModel):
+    role_websites: bool | None = None
+    role_router: bool | None = None
+    role_workers: bool | None = None
+    load_balancing_enabled: bool | None = None
+    load_balancing_weight: int | None = Field(default=None, ge=1, le=1000)
+
+
+class FleetPolicyRequest(BaseModel):
+    load_balancing_enabled: bool
+    strategy: str = Field(default="least-load", pattern="^(least-load|round-robin)$")
+    router_server_uuid: str = Field(default="", max_length=80)
+    health_check_path: str = Field(default="/health", min_length=1, max_length=255)
+
+
+class FleetHeartbeatRequest(BaseModel):
+    token: str = Field(min_length=24, max_length=256)
+    cpu_percent: float = Field(default=0, ge=0, le=100)
+    memory_percent: float = Field(default=0, ge=0, le=100)
+    disk_percent: float = Field(default=0, ge=0, le=100)
+    container_count: int = Field(default=0, ge=0, le=100000)
+
+
 class StoreInstallRequest(BaseModel):
     slug: str = Field(min_length=1, max_length=80)
     name: str | None = Field(default=None, max_length=80)
@@ -311,6 +350,209 @@ class GenerateSshKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     algorithm: str = Field(default="ed25519", pattern="^(ed25519|rsa)$")
     bits: int = Field(default=4096, ge=2048, le=8192)
+
+
+def _fleet_status(server: dict[str, Any], metrics: dict[str, Any] | None) -> str:
+    """Return an operator-facing state without treating missing telemetry as healthy."""
+    raw = str(server.get("status") or "pending").lower()
+    if bool(server.get("is_reachable")) and bool(server.get("is_usable")):
+        return "online"
+    if metrics and raw not in {"error", "offline", "unreachable"}:
+        return "reporting"
+    if raw in {"error", "offline", "unreachable"}:
+        return "offline"
+    return "pending"
+
+
+async def _fleet_node(server: dict[str, Any]) -> dict[str, Any]:
+    samples = await server_metrics(str(server["uuid"]), limit=1)
+    latest = samples[-1] if samples else None
+    load_percent = None
+    if latest:
+        load_percent = round(max(
+            float(latest.get("cpu_percent") or 0),
+            float(latest.get("memory_percent") or 0),
+            float(latest.get("disk_percent") or 0),
+        ), 1)
+    status = _fleet_status(server, latest)
+    return {
+        "uuid": server["uuid"], "name": server.get("name") or "Unnamed server",
+        "host": server.get("ip") or "", "server_type": server.get("server_type") or "vps",
+        "status": status, "last_seen_at": server.get("last_seen_at"),
+        "role_websites": bool(server.get("role_websites")),
+        "role_router": bool(server.get("role_router")),
+        "role_workers": bool(server.get("role_workers")),
+        "load_balancing_enabled": bool(server.get("load_balancing_enabled")),
+        "load_balancing_weight": int(server.get("load_balancing_weight") or 100),
+        "load_percent": load_percent,
+        "availability_percent": round(100 - load_percent, 1) if load_percent is not None else None,
+        "metrics": ({
+            "cpu_percent": round(float(latest.get("cpu_percent") or 0), 1),
+            "memory_percent": round(float(latest.get("memory_percent") or 0), 1),
+            "disk_percent": round(float(latest.get("disk_percent") or 0), 1),
+            "container_count": int(latest.get("container_count") or 0),
+            "recorded_at": latest.get("recorded_at"),
+        } if latest else None),
+    }
+
+
+async def _fleet_policy() -> dict[str, Any]:
+    bootstrap = await ensure_bootstrap()
+    team_uuid = str(bootstrap["team"]["uuid"])
+    policies = await find("platform_fleet_policies", {"team_uuid": team_uuid}, order_by="created_at ASC", limit=1)
+    if policies:
+        return policies[0]
+    return await insert("platform_fleet_policies", {
+        "uuid": new_uuid(), "team_uuid": team_uuid, "load_balancing_enabled": False,
+        "strategy": "least-load", "router_server_uuid": "", "health_check_path": "/health",
+        "created_at": utcnow(), "updated_at": utcnow(),
+    })
+
+
+async def _fleet_snapshot() -> dict[str, Any]:
+    servers = await find("platform_servers", {}, order_by="created_at ASC")
+    nodes = [await _fleet_node(server) for server in servers]
+    policy = await _fleet_policy()
+    eligible = [
+        node for node in nodes
+        if node["status"] in {"online", "reporting"}
+        and node["role_websites"] and node["load_balancing_enabled"]
+    ]
+    eligible.sort(key=lambda node: (node["load_percent"] is None, node["load_percent"] or 100, node["name"].lower()))
+    routers = [node for node in nodes if node["role_router"] and node["status"] in {"online", "reporting"}]
+    return {
+        "nodes": nodes,
+        "summary": {
+            "total_nodes": len(nodes), "online_nodes": sum(node["status"] in {"online", "reporting"} for node in nodes),
+            "website_nodes": sum(node["role_websites"] for node in nodes),
+            "router_nodes": len(routers), "worker_nodes": sum(node["role_workers"] for node in nodes),
+        },
+        "load_balancer": {
+            "enabled": bool(policy.get("load_balancing_enabled")),
+            "strategy": policy.get("strategy") or "least-load",
+            "router_server_uuid": policy.get("router_server_uuid") or "",
+            "health_check_path": policy.get("health_check_path") or "/health",
+            "eligible_targets": [{"uuid": node["uuid"], "name": node["name"], "load_percent": node["load_percent"], "weight": node["load_balancing_weight"]} for node in eligible],
+            "active_router_count": len(routers),
+        },
+    }
+
+
+@router.get("/fleet", dependencies=[Depends(_operator)])
+async def get_fleet() -> dict[str, Any]:
+    return await _fleet_snapshot()
+
+
+@router.post("/fleet/servers", dependencies=[Depends(_operator)])
+async def enroll_fleet_server(body: FleetServerRequest) -> dict[str, Any]:
+    bootstrap = await ensure_bootstrap()
+    now = utcnow()
+    server = await insert("platform_servers", {
+        "uuid": new_uuid(), "team_uuid": bootstrap["team"]["uuid"], "name": body.name.strip(),
+        "ip": body.host.strip(), "user": body.username.strip(), "port": body.port,
+        "status": "pending", "server_type": body.server_type,
+        "role_websites": body.role_websites, "role_router": body.role_router,
+        "role_workers": body.role_workers, "load_balancing_enabled": body.load_balancing_enabled,
+        "load_balancing_weight": body.load_balancing_weight,
+        "enrollment_token": secrets.token_urlsafe(32), "helper_script_version": "1",
+        "created_at": now, "updated_at": now,
+    })
+    return {"ok": True, "server": await _fleet_node(server), "message": "Server enrolled. Install its generated heartbeat helper to begin reporting load."}
+
+
+@router.put("/fleet/servers/{server_uuid}/roles", dependencies=[Depends(_operator)])
+async def update_fleet_roles(server_uuid: str, body: FleetRoleRequest) -> dict[str, Any]:
+    server = await get("platform_servers", server_uuid, include_secrets=True)
+    if server is None:
+        raise HTTPException(404, "Server not found.")
+    updates = {key: value for key, value in body.model_dump().items() if value is not None}
+    if not updates:
+        raise HTTPException(400, "Provide at least one role or load-balancing setting.")
+    if updates.get("load_balancing_enabled") and not (updates.get("role_websites", server.get("role_websites"))):
+        raise HTTPException(400, "Enable the Websites role before placing a node in the load-balancing target pool.")
+    updated = await update("platform_servers", server_uuid, updates)
+    return {"ok": True, "server": await _fleet_node(updated or server), "message": "Server roles updated."}
+
+
+@router.put("/fleet/load-balancer", dependencies=[Depends(_operator)])
+async def update_fleet_policy(body: FleetPolicyRequest) -> dict[str, Any]:
+    policy = await _fleet_policy()
+    if body.router_server_uuid:
+        router = await get("platform_servers", body.router_server_uuid)
+        if router is None or not bool(router.get("role_router")):
+            raise HTTPException(400, "Select a server with the Router role for the load balancer.")
+    updated = await update("platform_fleet_policies", str(policy["uuid"]), body.model_dump())
+    snapshot = await _fleet_snapshot()
+    return {"ok": True, "load_balancer": snapshot["load_balancer"], "message": "Load-balancer policy updated."}
+
+
+@router.get("/fleet/servers/{server_uuid}/setup-script", dependencies=[Depends(_operator)])
+async def fleet_setup_script(server_uuid: str) -> dict[str, Any]:
+    server = await get("platform_servers", server_uuid, include_secrets=True)
+    if server is None:
+        raise HTTPException(404, "Server not found.")
+    token = str(server.get("enrollment_token") or "")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        server = await update("platform_servers", server_uuid, {"enrollment_token": token}) or server
+    base_url = os.getenv("SYTE_PUBLIC_URL", "https://sycord.site").rstrip("/")
+    heartbeat_url = f"{base_url}/api/platform/fleet/heartbeat/{server_uuid}"
+    script = f'''#!/usr/bin/env bash
+set -euo pipefail
+# Syte fleet heartbeat helper for {server.get("name") or server_uuid}.
+# Review before running. The token identifies this one node; store the file root-readable only.
+install -d -m 700 /etc/syte-fleet
+cat > /etc/syte-fleet/agent.env <<'EOF'
+SYTE_HEARTBEAT_URL={heartbeat_url}
+SYTE_ENROLLMENT_TOKEN={token}
+EOF
+chmod 600 /etc/syte-fleet/agent.env
+cat > /usr/local/bin/syte-fleet-heartbeat <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/syte-fleet/agent.env
+cpu=$(LC_ALL=C top -bn1 | awk '/Cpu[(]s[)]/ {{print 100-$8; exit}}' | tr ',' '.')
+mem=$(free | awk '/Mem:/ {{printf "%.1f", $3/$2*100}}')
+disk=$(df -P / | awk 'END {{gsub("%", "", $5); print $5}}')
+containers=$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')
+curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \\
+  -H 'Content-Type: application/json' \\
+  --data "{{\\\"token\\\":\\\"$SYTE_ENROLLMENT_TOKEN\\\",\\\"cpu_percent\\\":${{cpu:-0}},\\\"memory_percent\\\":${{mem:-0}},\\\"disk_percent\\\":${{disk:-0}},\\\"container_count\\\":${{containers:-0}}}}" \\
+  "$SYTE_HEARTBEAT_URL" >/dev/null
+EOF
+chmod 700 /usr/local/bin/syte-fleet-heartbeat
+cat > /etc/systemd/system/syte-fleet-heartbeat.service <<'EOF'
+[Unit]
+Description=Syte fleet heartbeat
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/syte-fleet-heartbeat
+EOF
+cat > /etc/systemd/system/syte-fleet-heartbeat.timer <<'EOF'
+[Unit]
+Description=Send Syte fleet metrics every minute
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now syte-fleet-heartbeat.timer
+/usr/local/bin/syte-fleet-heartbeat || true
+echo 'Syte fleet heartbeat helper installed.'
+'''
+    return {"server_uuid": server_uuid, "filename": "syte-fleet-heartbeat.sh", "script": script, "message": "Run this script as root on the enrolled node after reviewing it."}
+
+
+@router.post("/fleet/heartbeat/{server_uuid}")
+async def fleet_heartbeat(server_uuid: str, body: FleetHeartbeatRequest) -> dict[str, Any]:
+    server = await get("platform_servers", server_uuid, include_secrets=True)
+    if server is None or not server.get("enrollment_token") or not secrets.compare_digest(str(server.get("enrollment_token")), body.token):
+        raise HTTPException(401, "Invalid fleet enrollment credential.")
+    await record_server_metrics(server_uuid, body.model_dump(exclude={"token"}))
+    await update("platform_servers", server_uuid, {"status": "ready", "is_reachable": True, "is_usable": True, "last_seen_at": utcnow()})
+    return {"ok": True, "message": "Fleet metrics accepted."}
 
 
 @router.post("/navigation/{page}/records", dependencies=[Depends(_operator)])

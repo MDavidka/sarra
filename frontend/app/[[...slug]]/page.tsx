@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, Bot, Boxes, BrainCircuit, CalendarClock, ChevronRight, CircleHelp, Cloud,
   Database, FileCog, Gauge, Home, KeyRound, LayoutDashboard, Menu, Router,
-  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound, Rocket, Leaf, Heart, Camera, LockKeyhole, AtSign,
+  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound, Rocket, Leaf, Heart, Camera, LockKeyhole, AtSign, Plus, Copy, Network, HardDrive, Cpu, Check,
 } from 'lucide-react';
 import { api, setOperatorCsrfToken } from '@/lib/api';
 
@@ -225,6 +225,73 @@ function BlankPage() {
   return <section className="intentionalBlank" aria-label="Blank workspace"/>;
 }
 
+type FleetNode = {
+  uuid: string; name: string; host: string; server_type: string; status: string; last_seen_at?: string;
+  role_websites: boolean; role_router: boolean; role_workers: boolean; load_balancing_enabled: boolean;
+  load_balancing_weight: number; load_percent: number | null; availability_percent: number | null;
+  metrics?: { recorded_at?: string } | null;
+};
+type FleetPayload = {
+  nodes: FleetNode[];
+  summary: { total_nodes: number; online_nodes: number; website_nodes: number; router_nodes: number; worker_nodes: number };
+  load_balancer: { enabled: boolean; strategy: 'least-load' | 'round-robin'; router_server_uuid: string; health_check_path: string; active_router_count: number; eligible_targets: Array<{ uuid: string; name: string; load_percent: number | null; weight: number }> };
+};
+
+function RemoteServersPage() {
+  const fleet = useApi<FleetPayload>('/platform/fleet');
+  const [showEnroll, setShowEnroll] = useState(false);
+  const [name, setName] = useState('');
+  const [host, setHost] = useState('');
+  const [serverType, setServerType] = useState('micro');
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [script, setScript] = useState<{ name: string; code: string } | null>(null);
+  const data = fleet.data;
+  const updateRoles = async (node: FleetNode, patch: Record<string, boolean | number>) => {
+    setBusy(true); setMessage(null);
+    try { await api(`/platform/fleet/servers/${node.uuid}/roles`, { method: 'PUT', body: JSON.stringify(patch) }); await fleet.reload(); }
+    catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const updateBalancer = async (patch: Record<string, string | boolean>) => {
+    if (!data) return;
+    setBusy(true); setMessage(null);
+    try { await api('/platform/fleet/load-balancer', { method: 'PUT', body: JSON.stringify({ ...data.load_balancer, ...patch }) }); await fleet.reload(); }
+    catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const enroll = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!name.trim() || !host.trim()) return;
+    setBusy(true); setMessage(null);
+    try {
+      await api('/platform/fleet/servers', { method: 'POST', body: JSON.stringify({ name, host, server_type: serverType, role_websites: true, role_router: serverType === 'edge', role_workers: serverType === 'build', load_balancing_enabled: serverType !== 'build' }) });
+      setName(''); setHost(''); setShowEnroll(false); await fleet.reload(); setMessage('Server enrolled. Generate its helper script to start real load reporting.');
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const showScript = async (node: FleetNode) => {
+    setBusy(true); setMessage(null);
+    try { const result = await api<{ filename: string; script: string }>(`/platform/fleet/servers/${node.uuid}/setup-script`); setScript({ name: result.filename, code: result.script }); }
+    catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const copyScript = async () => { if (!script) return; await navigator.clipboard.writeText(script.code); setMessage('Helper script copied. Review it before running as root on the node.'); };
+  const statusText = data?.load_balancer.enabled ? `${data.load_balancer.eligible_targets.length} healthy web target${data.load_balancer.eligible_targets.length === 1 ? '' : 's'} in pool` : 'Load balancing is disabled';
+  return <section className="fleetPage">
+    <PageHeader eyebrow="Infrastructure fleet" title="Remote Servers" description="Enroll micro-servers, assign workload roles, and route web traffic according to real node-reported load." action={fleet.reload}/>
+    {message && <p className="notice fleetNotice">{message}</p>}
+    <section className="fleetHeroPanel">
+      <div className="fleetBalancerTitle"><div className="fleetIcon"><Network size={23}/></div><div><p className="eyebrow">Load balancer</p><h2>{data?.load_balancer.enabled ? 'Traffic distribution is enabled' : 'Traffic distribution is paused'}</h2><p>{statusText}. The control plane selects eligible Website nodes using the configured policy.</p></div></div>
+      <div className="fleetBalancerControls"><label className="switchControl"><input type="checkbox" checked={Boolean(data?.load_balancer.enabled)} disabled={!data || busy} onChange={(event) => updateBalancer({ load_balancing_enabled: event.target.checked })}/><span/><b>{data?.load_balancer.enabled ? 'Enabled' : 'Disabled'}</b></label><label>Strategy<select value={data?.load_balancer.strategy || 'least-load'} disabled={!data || busy} onChange={(event) => updateBalancer({ strategy: event.target.value })}><option value="least-load">Least load</option><option value="round-robin">Round robin</option></select></label><label>Router node<select value={data?.load_balancer.router_server_uuid || ''} disabled={!data || busy} onChange={(event) => updateBalancer({ router_server_uuid: event.target.value })}><option value="">Automatic router selection</option>{data?.nodes.filter((node) => node.role_router).map((node) => <option key={node.uuid} value={node.uuid}>{node.name}</option>)}</select></label></div>
+    </section>
+    <section className="fleetSummary">{[['Fleet nodes', data?.summary.total_nodes || 0, Server], ['Reporting', data?.summary.online_nodes || 0, Activity], ['Web targets', data?.summary.website_nodes || 0, Network], ['Background', data?.summary.worker_nodes || 0, Cpu]].map(([label, value, Icon]) => { const IconComponent = Icon as typeof Server; return <article key={String(label)}><IconComponent size={18}/><span>{String(label)}</span><strong>{String(value)}</strong></article>; })}</section>
+    <div className="fleetSectionHeader"><div><p className="eyebrow">Server inventory</p><h2>Nodes & workload roles</h2></div><button className="darkButton" onClick={() => setShowEnroll((open) => !open)}><Plus size={16}/>{showEnroll ? 'Close enrollment' : 'Add a server'}</button></div>
+    {showEnroll && <form className="fleetEnroll" onSubmit={enroll}><label>Node name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="beta-web-01" maxLength={120} required/></label><label>IP address or host<input value={host} onChange={(event) => setHost(event.target.value)} placeholder="203.0.113.10" maxLength={255} required/></label><label>Server type<select value={serverType} onChange={(event) => setServerType(event.target.value)}><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><button className="darkButton" disabled={busy} type="submit"><Plus size={16}/>{busy ? 'Enrolling…' : 'Enroll node'}</button></form>}
+    <section className="fleetGrid">{fleet.loading ? <p className="empty">Loading fleet records…</p> : data?.nodes.length ? data.nodes.map((node) => { const percent = node.load_percent === null ? 0 : Math.max(0, Math.min(100, node.load_percent)); return <article className="fleetNode" key={node.uuid}><div className="fleetNodeTop"><div><span className={`fleetState ${node.status}`}>{node.status}</span><h3>{node.name}</h3><p>{node.host} · {node.server_type}</p></div><HardDrive size={20}/></div><div className="fleetLoad"><div><span>Node load</span><strong>{node.load_percent === null ? 'Awaiting report' : `${Math.round(percent)}%`}</strong></div><div className="fleetBar"><span style={{ width: `${percent}%` }}/></div></div><div className="fleetRoles"><button className={node.role_websites ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_websites: !node.role_websites, ...(node.role_websites ? { load_balancing_enabled: false } : {}) })}>Websites</button><button className={node.role_router ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_router: !node.role_router })}>Router</button><button className={node.role_workers ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_workers: !node.role_workers })}>Background</button></div><div className="fleetNodeFooter"><label className="nodePoolToggle"><input type="checkbox" checked={node.load_balancing_enabled} disabled={busy || !node.role_websites} onChange={(event) => updateRoles(node, { load_balancing_enabled: event.target.checked })}/><span/>Web pool</label><button className="lightButton fleetScriptButton" disabled={busy} onClick={() => showScript(node)}><TerminalSquare size={15}/>Helper script</button></div></article>; }) : <article className="fleetEmpty"><Server size={28}/><h3>Start with a server</h3><p>Enroll a micro-server, VPS, router, or build worker to create your deployment fleet.</p></article>}</section>
+    {script && <section className="fleetScriptDialog" role="dialog" aria-modal="true" aria-label="Server helper script"><div className="fleetScriptHeader"><div><p className="eyebrow">Secure node enrollment</p><h2>{script.name}</h2><p>Copy this node-specific helper, review it, then run it as root on the enrolled server.</p></div><button className="iconButton" onClick={() => setScript(null)} aria-label="Close helper script"><X size={17}/></button></div><pre>{script.code}</pre><div className="fleetScriptActions"><button className="lightButton" onClick={() => setScript(null)}>Close</button><button className="darkButton" onClick={copyScript}><Copy size={16}/>Copy script</button></div></section>}
+  </section>;
+}
+
 function PlatformPage({ page }: { page: string }) {
   const payload = useApi<PagePayload>(`/platform/navigation/${page}`);
   const resources = payload.data?.resources || [];
@@ -245,6 +312,6 @@ export default function Shell() {
   if (authLoading) return <main className="authBoot">Loading secure workspace…</main>;
   if (!accountSession?.authenticated || !accountSession.account) return <LoginScreen onAuthenticated={setAccountSession}/>;
   const account = accountSession.account;
-  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === 'servers' ? <RemoteServersPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="appAccountCorner"><AccountAvatar account={account} compact/><button onClick={() => window.location.assign('/profile')} aria-label="Open profile">{account.display_name || account.email}</button></div><div className="content">{content}</div></main>;
 }

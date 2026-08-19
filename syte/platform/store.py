@@ -127,6 +127,19 @@ CREATE TABLE IF NOT EXISTS platform_servers (
 -- A destination is a docker network on a server. Resources in the same
 -- destination resolve each other by container name, which is how a compose
 -- service talks to a managed database without publishing a port.
+CREATE TABLE IF NOT EXISTS platform_fleet_policies (
+    uuid TEXT PRIMARY KEY,
+    team_uuid TEXT NOT NULL,
+    load_balancing_enabled INTEGER DEFAULT 0,
+    strategy TEXT DEFAULT 'least-load',
+    router_server_uuid TEXT DEFAULT '',
+    health_check_path TEXT DEFAULT '/health',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_fleet_policies_team
+    ON platform_fleet_policies (team_uuid);
+
 CREATE TABLE IF NOT EXISTS platform_destinations (
     uuid TEXT PRIMARY KEY,
     server_uuid TEXT NOT NULL,
@@ -672,6 +685,14 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("platform_databases", "ssl_mode", "TEXT DEFAULT 'prefer'"),
     ("platform_servers", "docker_version", "TEXT DEFAULT ''"),
     ("platform_servers", "last_seen_at", "TEXT"),
+    ("platform_servers", "server_type", "TEXT DEFAULT 'vps'"),
+    ("platform_servers", "role_websites", "INTEGER DEFAULT 1"),
+    ("platform_servers", "role_router", "INTEGER DEFAULT 0"),
+    ("platform_servers", "role_workers", "INTEGER DEFAULT 0"),
+    ("platform_servers", "load_balancing_enabled", "INTEGER DEFAULT 0"),
+    ("platform_servers", "load_balancing_weight", "INTEGER DEFAULT 100"),
+    ("platform_servers", "enrollment_token", "TEXT DEFAULT ''"),
+    ("platform_servers", "helper_script_version", "TEXT DEFAULT '1'"),
     ("platform_deployments", "requested_by", "TEXT DEFAULT ''"),
     ("platform_deployments", "plan", "TEXT DEFAULT '{}'"),
 )
@@ -707,8 +728,10 @@ BOOL_COLUMNS: dict[str, frozenset[str]] = {
         "is_swarm_manager", "is_swarm_worker", "is_terminal_enabled",
         "is_metrics_enabled", "is_sentinel_enabled", "delete_unused_volumes",
         "delete_unused_networks", "unreachable_notification_sent",
-        "high_disk_usage_notification_sent",
+        "high_disk_usage_notification_sent", "role_websites", "role_router",
+        "role_workers", "load_balancing_enabled",
     }),
+    "platform_fleet_policies": frozenset({"load_balancing_enabled"}),
     "platform_deployments": frozenset({
         "force_rebuild", "restart_only", "rollback", "is_webhook", "is_api",
     }),
@@ -736,6 +759,7 @@ SECRET_COLUMNS: dict[str, frozenset[str]] = {
     "platform_s3_storages": frozenset({"secret_key"}),
     "platform_git_sources": frozenset({"client_secret", "access_token", "webhook_secret"}),
     "platform_ssl_certificates": frozenset({"private_key"}),
+    "platform_servers": frozenset({"enrollment_token"}),
 }
 
 # Tables keyed by ``uuid``. ``platform_server_metrics`` is the one exception
