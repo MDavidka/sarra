@@ -247,6 +247,14 @@ function RemoteServersPage() {
   const [busy, setBusy] = useState(false);
   const [script, setScript] = useState<{ name: string; code: string } | null>(null);
   const data = fleet.data;
+
+  useEffect(() => {
+    if (!script) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setScript(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [script]);
+
   const updateRoles = async (node: FleetNode, patch: Record<string, boolean | number>) => {
     setBusy(true); setMessage(null);
     try { await api(`/platform/fleet/servers/${node.uuid}/roles`, { method: 'PUT', body: JSON.stringify(patch) }); await fleet.reload(); }
@@ -261,11 +269,13 @@ function RemoteServersPage() {
     finally { setBusy(false); }
   };
   const enroll = async (event: React.FormEvent) => {
-    event.preventDefault(); if (!name.trim() || !host.trim()) return;
+    event.preventDefault();
+    if (!name.trim() || !host.trim()) return;
     setBusy(true); setMessage(null);
     try {
       await api('/platform/fleet/servers', { method: 'POST', body: JSON.stringify({ name, host, server_type: serverType, role_websites: true, role_router: serverType === 'edge', role_workers: serverType === 'build', load_balancing_enabled: serverType !== 'build' }) });
-      setName(''); setHost(''); setShowEnroll(false); await fleet.reload(); setMessage('Server enrolled. Generate its helper script to start real load reporting.');
+      setName(''); setHost(''); setShowEnroll(false); await fleet.reload();
+      setMessage('Node enrolled. Open its helper script to begin secure load reporting.');
     } catch (error) { setMessage((error as Error).message); }
     finally { setBusy(false); }
   };
@@ -275,20 +285,58 @@ function RemoteServersPage() {
     catch (error) { setMessage((error as Error).message); }
     finally { setBusy(false); }
   };
-  const copyScript = async () => { if (!script) return; await navigator.clipboard.writeText(script.code); setMessage('Helper script copied. Review it before running as root on the node.'); };
-  const statusText = data?.load_balancer.enabled ? `${data.load_balancer.eligible_targets.length} healthy web target${data.load_balancer.eligible_targets.length === 1 ? '' : 's'} in pool` : 'Load balancing is disabled';
+  const copyScript = async () => {
+    if (!script) return;
+    try { await navigator.clipboard.writeText(script.code); setMessage('Helper script copied. Review it before running it as root.'); }
+    catch { setMessage('Copy is unavailable in this browser. Select the script and copy it manually.'); }
+  };
+  const balanceEnabled = Boolean(data?.load_balancer.enabled);
+  const healthyTargets = data?.load_balancer.eligible_targets.length || 0;
+  const balancerLabel = balanceEnabled ? `${healthyTargets} healthy target${healthyTargets === 1 ? '' : 's'} ready for traffic` : 'Traffic routing is paused';
+
   return <section className="fleetPage">
-    <PageHeader eyebrow="Infrastructure fleet" title="Remote Servers" description="Enroll micro-servers, assign workload roles, and route web traffic according to real node-reported load." action={fleet.reload}/>
-    {message && <p className="notice fleetNotice">{message}</p>}
-    <section className="fleetHeroPanel">
-      <div className="fleetBalancerTitle"><div className="fleetIcon"><Network size={23}/></div><div><p className="eyebrow">Load balancer</p><h2>{data?.load_balancer.enabled ? 'Traffic distribution is enabled' : 'Traffic distribution is paused'}</h2><p>{statusText}. The control plane selects eligible Website nodes using the configured policy.</p></div></div>
-      <div className="fleetBalancerControls"><label className="switchControl"><input type="checkbox" checked={Boolean(data?.load_balancer.enabled)} disabled={!data || busy} onChange={(event) => updateBalancer({ load_balancing_enabled: event.target.checked })}/><span/><b>{data?.load_balancer.enabled ? 'Enabled' : 'Disabled'}</b></label><label>Strategy<select value={data?.load_balancer.strategy || 'least-load'} disabled={!data || busy} onChange={(event) => updateBalancer({ strategy: event.target.value })}><option value="least-load">Least load</option><option value="round-robin">Round robin</option></select></label><label>Router node<select value={data?.load_balancer.router_server_uuid || ''} disabled={!data || busy} onChange={(event) => updateBalancer({ router_server_uuid: event.target.value })}><option value="">Automatic router selection</option>{data?.nodes.filter((node) => node.role_router).map((node) => <option key={node.uuid} value={node.uuid}>{node.name}</option>)}</select></label></div>
+    <PageHeader eyebrow="Infrastructure fleet" title="Remote Servers" description="Add servers, choose their responsibilities, and safely route website traffic using reported node load." action={fleet.reload}/>
+    {message && <p className="notice fleetNotice" role="status">{message}</p>}
+
+    <section className="shadcnCard fleetControlCard" aria-label="Load balancer settings">
+      <div className="fleetControlIntro"><div className="fleetIcon"><Network size={20}/></div><div><p className="eyebrow">Traffic routing</p><h2>{balancerLabel}</h2><p>Only online Website nodes in the web pool are eligible. Choose a policy and optional router below.</p></div></div>
+      <div className="fleetControlFields">
+        <label className="fleetSwitchRow"><input type="checkbox" checked={balanceEnabled} disabled={!data || busy} onChange={(event) => updateBalancer({ load_balancing_enabled: event.target.checked })}/><span aria-hidden="true"/><span><b>Load balancer</b><small>{balanceEnabled ? 'Accepting traffic' : 'Not accepting traffic'}</small></span></label>
+        <label className="fleetField"><span>Routing strategy</span><select value={data?.load_balancer.strategy || 'least-load'} disabled={!data || busy} onChange={(event) => updateBalancer({ strategy: event.target.value })}><option value="least-load">Least load</option><option value="round-robin">Round robin</option></select></label>
+        <label className="fleetField"><span>Router node</span><select value={data?.load_balancer.router_server_uuid || ''} disabled={!data || busy} onChange={(event) => updateBalancer({ router_server_uuid: event.target.value })}><option value="">Choose automatically</option>{data?.nodes.filter((node) => node.role_router).map((node) => <option key={node.uuid} value={node.uuid}>{node.name}</option>)}</select></label>
+      </div>
     </section>
-    <section className="fleetSummary">{[['Fleet nodes', data?.summary.total_nodes || 0, Server], ['Reporting', data?.summary.online_nodes || 0, Activity], ['Web targets', data?.summary.website_nodes || 0, Network], ['Background', data?.summary.worker_nodes || 0, Cpu]].map(([label, value, Icon]) => { const IconComponent = Icon as typeof Server; return <article key={String(label)}><IconComponent size={18}/><span>{String(label)}</span><strong>{String(value)}</strong></article>; })}</section>
-    <div className="fleetSectionHeader"><div><p className="eyebrow">Server inventory</p><h2>Nodes & workload roles</h2></div><button className="darkButton" onClick={() => setShowEnroll((open) => !open)}><Plus size={16}/>{showEnroll ? 'Close enrollment' : 'Add a server'}</button></div>
-    {showEnroll && <form className="fleetEnroll" onSubmit={enroll}><label>Node name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="beta-web-01" maxLength={120} required/></label><label>IP address or host<input value={host} onChange={(event) => setHost(event.target.value)} placeholder="203.0.113.10" maxLength={255} required/></label><label>Server type<select value={serverType} onChange={(event) => setServerType(event.target.value)}><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><button className="darkButton" disabled={busy} type="submit"><Plus size={16}/>{busy ? 'Enrolling…' : 'Enroll node'}</button></form>}
-    <section className="fleetGrid">{fleet.loading ? <p className="empty">Loading fleet records…</p> : data?.nodes.length ? data.nodes.map((node) => { const percent = node.load_percent === null ? 0 : Math.max(0, Math.min(100, node.load_percent)); return <article className="fleetNode" key={node.uuid}><div className="fleetNodeTop"><div><span className={`fleetState ${node.status}`}>{node.status}</span><h3>{node.name}</h3><p>{node.host} · {node.server_type}</p></div><HardDrive size={20}/></div><div className="fleetLoad"><div><span>Node load</span><strong>{node.load_percent === null ? 'Awaiting report' : `${Math.round(percent)}%`}</strong></div><div className="fleetBar"><span style={{ width: `${percent}%` }}/></div></div><div className="fleetRoles"><button className={node.role_websites ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_websites: !node.role_websites, ...(node.role_websites ? { load_balancing_enabled: false } : {}) })}>Websites</button><button className={node.role_router ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_router: !node.role_router })}>Router</button><button className={node.role_workers ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_workers: !node.role_workers })}>Background</button></div><div className="fleetNodeFooter"><label className="nodePoolToggle"><input type="checkbox" checked={node.load_balancing_enabled} disabled={busy || !node.role_websites} onChange={(event) => updateRoles(node, { load_balancing_enabled: event.target.checked })}/><span/>Web pool</label><button className="lightButton fleetScriptButton" disabled={busy} onClick={() => showScript(node)}><TerminalSquare size={15}/>Helper script</button></div></article>; }) : <article className="fleetEmpty"><Server size={28}/><h3>Start with a server</h3><p>Enroll a micro-server, VPS, router, or build worker to create your deployment fleet.</p></article>}</section>
-    {script && <section className="fleetScriptDialog" role="dialog" aria-modal="true" aria-label="Server helper script"><div className="fleetScriptHeader"><div><p className="eyebrow">Secure node enrollment</p><h2>{script.name}</h2><p>Copy this node-specific helper, review it, then run it as root on the enrolled server.</p></div><button className="iconButton" onClick={() => setScript(null)} aria-label="Close helper script"><X size={17}/></button></div><pre>{script.code}</pre><div className="fleetScriptActions"><button className="lightButton" onClick={() => setScript(null)}>Close</button><button className="darkButton" onClick={copyScript}><Copy size={16}/>Copy script</button></div></section>}
+
+    <section className="fleetStats" aria-label="Fleet summary">{[['Servers', data?.summary.total_nodes || 0, Server], ['Reporting', data?.summary.online_nodes || 0, Activity], ['Website pool', data?.summary.website_nodes || 0, Network], ['Background', data?.summary.worker_nodes || 0, Cpu]].map(([label, value, Icon]) => { const IconComponent = Icon as typeof Server; return <article key={String(label)}><IconComponent size={16}/><span>{String(label)}</span><strong>{String(value)}</strong></article>; })}</section>
+
+    <div className="fleetWorkspace">
+      <section className="shadcnCard fleetInventory">
+        <header className="fleetPanelHeader"><div><p className="eyebrow">Server inventory</p><h2>Nodes and responsibilities</h2><p>Enable one or more roles per node. Changes save immediately.</p></div><button className="shadcnOutline fleetRefresh" type="button" onClick={fleet.reload} disabled={fleet.loading || busy}><Activity size={15}/><span>Refresh</span></button></header>
+        <div className="fleetNodeList">{fleet.loading ? <p className="fleetLoading">Loading fleet records…</p> : data?.nodes.length ? data.nodes.map((node) => {
+          const percent = node.load_percent === null ? 0 : Math.max(0, Math.min(100, node.load_percent));
+          const status = node.load_percent === null ? 'Waiting for first report' : `${Math.round(percent)}% current load`;
+          return <article className="fleetNodeRow" key={node.uuid}>
+            <div className="fleetNodeIdentity"><span className={`fleetStatusDot ${node.status}`} aria-hidden="true"/><div><h3>{node.name}</h3><p>{node.host} <span aria-hidden="true">·</span> {node.server_type}</p></div></div>
+            <div className="fleetNodeLoad"><div><span>Node load</span><strong>{status}</strong></div><div className="fleetBar" aria-label={status}><span style={{ width: `${percent}%` }}/></div></div>
+            <div className="fleetNodeRoles" aria-label={`${node.name} workload roles`}>
+              <span>Roles</span><div>
+                <button type="button" aria-pressed={node.role_websites} className={node.role_websites ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_websites: !node.role_websites, ...(node.role_websites ? { load_balancing_enabled: false } : {}) })}>Websites</button>
+                <button type="button" aria-pressed={node.role_router} className={node.role_router ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_router: !node.role_router })}>Router</button>
+                <button type="button" aria-pressed={node.role_workers} className={node.role_workers ? 'selected' : ''} disabled={busy} onClick={() => updateRoles(node, { role_workers: !node.role_workers })}>Background</button>
+              </div>
+            </div>
+            <div className="fleetNodeActions"><label className="nodePoolToggle"><input type="checkbox" checked={node.load_balancing_enabled} disabled={busy || !node.role_websites} onChange={(event) => updateRoles(node, { load_balancing_enabled: event.target.checked })}/><span aria-hidden="true"/>In web pool</label><button className="shadcnOutline fleetScriptButton" type="button" disabled={busy} onClick={() => showScript(node)}><TerminalSquare size={15}/>Setup script</button></div>
+          </article>;
+        }) : <div className="fleetEmpty"><Server size={26}/><h3>No servers enrolled</h3><p>Add a server to create a website, router, or background-workload pool.</p><button className="shadcnPrimary" type="button" onClick={() => setShowEnroll(true)}><Plus size={16}/>Add first server</button></div>}</div>
+      </section>
+
+      <aside className="shadcnCard fleetSetupPanel">
+        <div className="fleetSetupIcon"><Server size={19}/></div><p className="eyebrow">Server enrollment</p><h2>Add a node</h2><p>Enter a reachable host. The generated setup script gives the node a one-time, scoped enrollment credential.</p>
+        {!showEnroll ? <button className="shadcnPrimary fleetSetupOpen" type="button" onClick={() => setShowEnroll(true)}><Plus size={16}/>Add server</button> : <form className="fleetEnroll" onSubmit={enroll}><label htmlFor="fleet-node-name">Node name<input id="fleet-node-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="beta-web-01" maxLength={120} required/></label><label htmlFor="fleet-node-host">IP address or host<input id="fleet-node-host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="203.0.113.10" maxLength={255} required/></label><label htmlFor="fleet-node-type">Server type<select id="fleet-node-type" value={serverType} onChange={(event) => setServerType(event.target.value)}><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><div className="fleetEnrollActions"><button className="shadcnOutline" type="button" onClick={() => setShowEnroll(false)} disabled={busy}>Cancel</button><button className="shadcnPrimary" disabled={busy} type="submit"><Plus size={16}/>{busy ? 'Enrolling…' : 'Enroll node'}</button></div></form>}
+      </aside>
+    </div>
+
+    {script && <div className="fleetDialogBackdrop" role="presentation" onMouseDown={() => setScript(null)}><section className="fleetScriptDialog shadcnCard" role="dialog" aria-modal="true" aria-labelledby="fleet-script-title" onMouseDown={(event) => event.stopPropagation()}><header className="fleetScriptHeader"><div><p className="eyebrow">Secure enrollment helper</p><h2 id="fleet-script-title">{script.name}</h2><p>Copy the command, review it, then run it as root on this node.</p></div><button className="iconButton" type="button" onClick={() => setScript(null)} aria-label="Close helper script"><X size={17}/></button></header><pre tabIndex={0}>{script.code}</pre><footer className="fleetScriptActions"><button className="shadcnOutline" type="button" onClick={() => setScript(null)}>Cancel</button><button className="shadcnPrimary" type="button" onClick={copyScript}><Copy size={16}/>Copy script</button></footer></section></div>}
   </section>;
 }
 
