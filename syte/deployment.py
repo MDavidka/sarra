@@ -18,6 +18,7 @@ from syte.database import (
 from syte.docker_deploy import find_dockerfile
 from syte.runtime import ensure_runtime_for_command
 from syte.preview_domains import resolve_production_domain
+from syte.stack_detector import detect_stack
 from syte.workspace import (
     append_deploy_log,
     assert_safe_project_id,
@@ -145,6 +146,9 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
         append_deploy_log(project_id, line)
 
     log(f"Deploying {project_id}…")
+    detection = detect_stack(project_id)
+    log(f"Preflight detected {detection.get('framework') or detection.get('language') or 'unknown stack'} · {detection.get('deploy_type')} deploy")
+    log(f"Configuration: {len(detection.get('env_keys', []))} environment keys, {len(detection.get('warnings', []))} warning(s)")
 
     if git_url:
         log("Cloning/updating git repository…")
