@@ -214,7 +214,7 @@ async def verify_operator_session_or_token(
         if not supplied or not hmac.compare_digest(supplied, csrf_token):
             raise HTTPException(
                 403,
-                detail={"error": "invalid_csrf_token", "message": "Refresh the Syra web UI and retry."},
+                detail={"error": "invalid_csrf_token", "message": "Refresh Syte and retry."},
             )
     account = session.get("account") if isinstance(session, dict) else None
     if isinstance(account, dict):
