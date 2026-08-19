@@ -5076,6 +5076,31 @@ function sslBadgeHtml(p) {
   return `<span class="badge badge-ssl badge-ssl-${badge}" title="${esc(title)}">${esc(label)}</span>`;
 }
 
+function projectCardFavicon(p) {
+  if (!p?.url) return '/static/syte-logo.png?v=0.9.2';
+  try {
+    const site = new URL(p.url);
+    return new URL('/favicon.ico', site.origin).toString();
+  } catch {
+    return '/static/syte-logo.png?v=0.9.2';
+  }
+}
+
+function projectCardSource(p) {
+  if (!p?.git_url) return 'Manual source';
+  return p.git_url
+    .replace(/^https:\/\/(?:www\.)?github\.com\//i, '')
+    .replace(/^git@github\.com:/i, '')
+    .replace(/\.git$/i, '');
+}
+
+function projectCardDate(p) {
+  const raw = p?.created_at || p?.updated_at;
+  if (!raw) return 'Recently created';
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? 'Recently created' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
@@ -5091,19 +5116,20 @@ function renderServices() {
   empty?.classList.add('hidden');
   list.innerHTML = visible.map(p => {
     const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
-    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
+    const domain = p.domain || hostPortLabel(p) || 'Domain pending';
+    const favicon = projectCardFavicon(p);
+    const source = projectCardSource(p);
+    const fallback = '/static/syte-logo.png?v=0.9.2';
     return `
-    <div class="project-card" onclick="openService('${p.id}')">
-      <div class="project-card-head">
-        <h3>${esc(p.name)}</h3>
-        <span class="project-card-status ${status}" title="${status}"></span>
+    <article class="project-card project-card-reference" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')}">
+      <div class="project-card-reference-top">
+        <img class="project-card-site-icon" src="${esc(favicon)}" alt="" onerror="this.onerror=null;this.src='${fallback}'">
+        <div class="project-card-identity"><h3>${esc(p.name)}</h3><span>${esc(domain)}</span></div>
+        <span class="project-card-status ${status}" title="${esc(status)}"></span>
       </div>
-      <div class="project-card-meta">
-        <span class="project-card-tag">${status}</span>
-        <span class="project-card-tag">${deployLabel}</span>
-        ${p.port ? `<span class="project-card-tag">:${p.port}</span>` : ''}
-      </div>
-    </div>`;
+      <div class="project-card-reference-branch"><i data-lucide="git-branch"></i><strong>${esc(p.branch || 'main')}</strong></div>
+      <div class="project-card-reference-source"><i data-lucide="github"></i><span>${esc(source)} <b>·</b> ${esc(projectCardDate(p))}</span></div>
+    </article>`;
   }).join('');
   refreshIcons();
 }
