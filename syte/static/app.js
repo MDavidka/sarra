@@ -4448,7 +4448,11 @@ async function loadSystem() {
       const p = projects.find(x => x.id === activeServiceId);
       if (p) {
         const conn = document.getElementById('svc-conn');
-        if (conn) conn.textContent = hostPortLabel(p);
+        if (conn) {
+          const label = conn.querySelector('span');
+          if (label) label.textContent = 'Visit';
+          else conn.textContent = hostPortLabel(p);
+        }
       }
     }
   } catch { /* offline */ }
