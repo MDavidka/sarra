@@ -3589,6 +3589,26 @@ function renderPlatformDetails(page, resources) {
   table.innerHTML = resources?.length ? `<table><thead><tr>${columns.map(column => `<th>${esc(column.replaceAll('_',' '))}</th>`).join('')}</tr></thead><tbody>${resources.map(row => `<tr>${columns.map(column => `<td>${esc(String(row[column] ?? '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<div class="platform-empty">No operational records yet.</div>';
 }
 
+function renderOverviewHealth(data) {
+  const metrics = data.metrics || {};
+  const services = data.services || {};
+  const toneFor = (value) => value >= 85 ? 'danger' : value >= 70 ? 'warning' : 'healthy';
+  const gauge = (label, value) => {
+    const numeric = Math.max(0, Math.min(100, Number(value || 0)));
+    const tone = toneFor(numeric);
+    const dash = `${numeric} 100`;
+    return `<div class="overview-gauge ${tone}" role="img" aria-label="${esc(label)} ${Math.round(numeric)} percent"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="overview-gauge-track" pathLength="100" d="M15 60 A45 45 0 0 1 105 60"/><path class="overview-gauge-value" pathLength="100" stroke-dasharray="${dash}" d="M15 60 A45 45 0 0 1 105 60"/></svg><strong>${Math.round(numeric)}%</strong><span>${esc(label)}</span></div>`;
+  };
+  const node = (key, label) => {
+    const service = services[key] || {state: 'unavailable', detail: 'Status unavailable.'};
+    return `<div class="overview-node ${esc(service.state || 'unavailable')}" title="${esc(service.detail || '')}"><i></i><strong>${esc(label)}</strong><small>${esc(service.state || 'unavailable')}</small></div>`;
+  };
+  const overallText = data.overall === 'healthy' ? 'everything up' : data.overall === 'attention' ? 'attention needed' : 'service degraded';
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section>`;
+}
+
 async function loadPlatformPage(page = 'overview') {
   const safePage = PLATFORM_PAGE_LABELS[page] ? page : 'overview';
   activePlatformPage = safePage;
@@ -3600,11 +3620,23 @@ async function loadPlatformPage(page = 'overview') {
   const count = document.getElementById('platform-resource-count');
   const message = document.getElementById('platform-page-message');
   const workspace = document.getElementById('platform-workspace');
-  const isBlankWorkspace = safePage !== 'docker';
+  const isOverview = safePage === 'overview';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
+  workspace?.classList.toggle('is-overview-workspace', isOverview);
   if (isBlankWorkspace) {
     const blankTarget = document.getElementById('platform-dedicated-page');
     if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
+    return;
+  }
+  if (isOverview) {
+    const blankTarget = document.getElementById('platform-dedicated-page');
+    if (blankTarget) blankTarget.innerHTML = '<section class="overview-loading">Loading system health…</section>';
+    try {
+      renderOverviewHealth(await api('/platform/overview/health'));
+    } catch (error) {
+      if (blankTarget) blankTarget.innerHTML = `<section class="overview-error">System health is unavailable: ${esc(error.message)}</section>`;
+    }
     return;
   }
   if (title) title.textContent = PLATFORM_PAGE_LABELS[safePage];
