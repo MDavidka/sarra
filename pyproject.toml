@@ -18,6 +18,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "httpx[http2]>=0.28",
     "h2>=4.1",
+    "cryptography>=43",
 ]
 
 [project.scripts]
