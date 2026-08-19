@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -67,6 +68,27 @@ CREATE TABLE IF NOT EXISTS deployment_runs (
 
 CREATE INDEX IF NOT EXISTS idx_deployment_runs_project_started
     ON deployment_runs(project_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS github_oauth_states (
+    state TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_github_oauth_states_account
+    ON github_oauth_states(account_id, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS github_connections (
+    account_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'github',
+    login TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT NOT NULL DEFAULT '',
+    token_ciphertext TEXT NOT NULL,
+    scopes TEXT NOT NULL DEFAULT '',
+    connected_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -415,3 +437,74 @@ async def update_operator_account(account_id: str, updates: dict[str, Any]) -> d
         await db.execute(f"UPDATE operator_accounts SET {columns} WHERE id = ?", values)
         await db.commit()
     return await get_operator_account(account_id)
+
+
+async def create_github_oauth_state(state: str, account_id: str, redirect_uri: str, expires_at: int) -> None:
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute("DELETE FROM github_oauth_states WHERE expires_at <= ?", (int(time.time()),))
+        await db.execute(
+            "INSERT INTO github_oauth_states (state, account_id, redirect_uri, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (state, account_id, redirect_uri, int(expires_at), now),
+        )
+        await db.commit()
+
+
+async def consume_github_oauth_state(state: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM github_oauth_states WHERE state = ?", (state,)) as cur:
+            row = await cur.fetchone()
+        await db.execute("DELETE FROM github_oauth_states WHERE state = ?", (state,))
+        await db.execute("DELETE FROM github_oauth_states WHERE expires_at <= ?", (int(time.time()),))
+        await db.commit()
+    if not row:
+        return None
+    value = dict(row)
+    return value if int(value["expires_at"]) > int(time.time()) else None
+
+
+async def get_github_connection(account_id: str, *, include_token: bool = False) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM github_connections WHERE account_id = ?", (account_id,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        return None
+    connection = dict(row)
+    if not include_token:
+        connection.pop("token_ciphertext", None)
+    return connection
+
+
+async def save_github_connection(
+    account_id: str,
+    *,
+    login: str,
+    avatar_url: str,
+    token_ciphertext: str,
+    scopes: str,
+) -> dict[str, Any]:
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO github_connections
+            (account_id, provider, login, avatar_url, token_ciphertext, scopes, connected_at, updated_at)
+            VALUES (?, 'github', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+              login = excluded.login,
+              avatar_url = excluded.avatar_url,
+              token_ciphertext = excluded.token_ciphertext,
+              scopes = excluded.scopes,
+              updated_at = excluded.updated_at""",
+            (account_id, login, avatar_url, token_ciphertext, scopes, now, now),
+        )
+        await db.commit()
+    return (await get_github_connection(account_id)) or {"account_id": account_id, "login": login}
+
+
+async def delete_github_connection(account_id: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute("DELETE FROM github_connections WHERE account_id = ?", (account_id,))
+        await db.commit()
+        return cursor.rowcount > 0

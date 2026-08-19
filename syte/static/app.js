@@ -5121,6 +5121,132 @@ function detectStack(p) {
 let projectImportSource = 'git';
 let importedProjectId = null;
 let importedProjectAnalysis = null;
+let githubSourceStatus = null;
+let githubSourceRepositories = [];
+let githubSourceSelection = null;
+
+function renderGithubSourceStatus(status) {
+  githubSourceStatus = status || { configured: false, connected: false };
+  const connect = document.getElementById('github-connect-btn');
+  const disconnect = document.getElementById('github-disconnect-btn');
+  const account = document.getElementById('github-source-account');
+  const browser = document.getElementById('github-repository-browser');
+  const description = document.getElementById('github-source-description');
+  if (!connect || !disconnect || !account || !browser || !description) return;
+  const configured = Boolean(githubSourceStatus.configured);
+  const connected = Boolean(githubSourceStatus.connected);
+  connect.classList.toggle('hidden', connected);
+  disconnect.classList.toggle('hidden', !connected);
+  connect.disabled = !configured;
+  browser.classList.toggle('hidden', !connected);
+  if (!configured) {
+    description.textContent = 'GitHub OAuth must be configured by an operator before accounts can connect.';
+    account.classList.add('hidden');
+  } else if (!connected) {
+    description.textContent = 'Connect GitHub to browse repositories you can access, including private repositories.';
+    account.classList.add('hidden');
+  } else {
+    description.textContent = 'Choose a repository and branch. OAuth credentials stay encrypted and never become part of the Git remote.';
+    account.classList.remove('hidden');
+    account.innerHTML = `${githubSourceStatus.avatar_url ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="">` : '<i data-lucide="circle-user-round"></i>'}<span class="github-connected-dot"></span><span>Connected as <strong>${esc(githubSourceStatus.login || 'GitHub account')}</strong></span>`;
+  }
+  refreshIcons();
+}
+
+function renderGithubRepositories() {
+  const list = document.getElementById('github-repository-list');
+  const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
+  if (!list) return;
+  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description].join(' ').toLowerCase().includes(search));
+  if (!repositories.length) {
+    list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
+    return;
+  }
+  list.innerHTML = repositories.map((repo) => `<button type="button" class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}"><span class="github-repository-name">${esc(repo.full_name)}</span>${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}${repo.description ? `<span class="github-repository-description">${esc(repo.description)}</span>` : ''}</button>`).join('');
+}
+
+async function loadGithubRepositories() {
+  const list = document.getElementById('github-repository-list');
+  if (!githubSourceStatus?.connected) return;
+  if (list) list.innerHTML = '<p class="github-repository-empty">Loading GitHub repositories…</p>';
+  try {
+    const result = await api('/projects/git/github/repositories');
+    githubSourceRepositories = result.repositories || [];
+    renderGithubRepositories();
+  } catch (error) {
+    if (list) list.innerHTML = `<p class="github-repository-empty">${esc(normalizeFetchError(error?.message) || 'Could not load GitHub repositories.')}</p>`;
+  }
+}
+
+async function loadGithubSourceStatus({ loadRepositories = true } = {}) {
+  try {
+    const result = await api('/projects/git/github/status');
+    renderGithubSourceStatus(result);
+    if (result.connected && loadRepositories) await loadGithubRepositories();
+  } catch (error) {
+    renderGithubSourceStatus({ configured: false, connected: false });
+  }
+}
+
+async function selectGithubRepository(fullName) {
+  const repository = githubSourceRepositories.find((item) => item.full_name === fullName);
+  const branchSelect = document.getElementById('github-branch-select');
+  if (!repository || !branchSelect) return;
+  githubSourceSelection = repository;
+  document.getElementById('create-git-url').value = repository.clone_url || '';
+  const nameInput = document.getElementById('create-name');
+  if (nameInput && !nameInput.value.trim()) nameInput.value = repository.name || '';
+  branchSelect.disabled = true;
+  branchSelect.innerHTML = '<option value="">Loading branches…</option>';
+  renderGithubRepositories();
+  try {
+    const result = await api(`/projects/git/github/repositories/${encodeURIComponent(repository.full_name)}/branches`);
+    const branches = result.branches || [];
+    branchSelect.innerHTML = branches.length ? branches.map((item) => `<option value="${esc(item.name)}">${esc(item.name)}</option>`).join('') : '<option value="">No branches available</option>';
+    const preferred = branches.some((item) => item.name === repository.default_branch) ? repository.default_branch : branches[0]?.name || '';
+    branchSelect.value = preferred;
+    document.getElementById('create-branch').value = preferred;
+    branchSelect.disabled = !branches.length;
+  } catch (error) {
+    branchSelect.innerHTML = '<option value="">Could not load branches</option>';
+    toast(normalizeFetchError(error?.message) || 'Could not load repository branches');
+  }
+  refreshIcons();
+}
+
+function resetGithubSourceSelection() {
+  githubSourceSelection = null;
+  const branchSelect = document.getElementById('github-branch-select');
+  if (branchSelect) {
+    branchSelect.disabled = true;
+    branchSelect.innerHTML = '<option value="">Choose a repository first</option>';
+  }
+  renderGithubRepositories();
+}
+
+async function connectGithubSource(popup) {
+  try {
+    const result = await api('/projects/git/github/connect');
+    if (!result.authorization_url) throw new Error('GitHub did not provide an authorization URL.');
+    if (popup) popup.location.href = result.authorization_url;
+    else window.location.assign(result.authorization_url);
+  } catch (error) {
+    popup?.close();
+    toast(normalizeFetchError(error?.message) || 'Could not start GitHub authorization.');
+  }
+}
+
+async function disconnectGithubSource() {
+  try {
+    await api('/projects/git/github/disconnect', { method: 'DELETE' });
+    githubSourceRepositories = [];
+    resetGithubSourceSelection();
+    renderGithubSourceStatus({ configured: githubSourceStatus?.configured, connected: false });
+    toast('GitHub connection removed');
+  } catch (error) {
+    toast(normalizeFetchError(error?.message) || 'Could not disconnect GitHub.');
+  }
+}
 
 function setProjectImportSource(source) {
   projectImportSource = source === 'zip' ? 'zip' : 'git';
@@ -5173,6 +5299,7 @@ function resetCreateForm() {
   importedProjectId = null;
   importedProjectAnalysis = null;
   setProjectImportSource('git');
+  resetGithubSourceSelection();
   ['create-name', 'create-git-url', 'create-start-cmd', 'create-build-cmd', 'create-env-vars'].forEach(id => {
     const input = document.getElementById(id);
     if (input) input.value = '';
@@ -5711,8 +5838,12 @@ async function importProjectSource() {
   const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
   if (projectImportSource === 'git') {
     const gitUrl = document.getElementById('create-git-url')?.value.trim();
-    const branch = document.getElementById('create-branch')?.value.trim() || 'main';
-    if (!gitUrl) throw new Error('Enter a repository URL');
+    const branch = (githubSourceSelection ? document.getElementById('github-branch-select')?.value : document.getElementById('create-branch')?.value)?.trim() || 'main';
+    if (githubSourceSelection) {
+      if (!document.getElementById('github-branch-select')?.value) throw new Error('Choose a branch for the connected GitHub repository');
+      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory }) });
+    }
+    if (!gitUrl) throw new Error('Enter a repository URL or choose a connected GitHub repository');
     return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory }) });
   }
   const archive = document.getElementById('create-source-zip')?.files?.[0];
@@ -5777,6 +5908,38 @@ document.querySelectorAll('[data-import-source]').forEach(tab => tab.addEventLis
   if (importedProjectId) return toast('Reset this draft before changing its source type.');
   setProjectImportSource(tab.dataset.importSource);
 }));
+
+document.getElementById('github-connect-btn')?.addEventListener('click', () => {
+  const popup = window.open('', 'syte-github-connect', 'popup=yes,width=600,height=720');
+  if (!popup) return toast('Allow pop-ups for this site to connect GitHub.');
+  popup.document.title = 'Connecting GitHub…';
+  void connectGithubSource(popup);
+});
+
+document.getElementById('github-disconnect-btn')?.addEventListener('click', () => void disconnectGithubSource());
+document.getElementById('github-repositories-refresh')?.addEventListener('click', () => void loadGithubRepositories());
+document.getElementById('github-repository-search')?.addEventListener('input', renderGithubRepositories);
+document.getElementById('github-repository-list')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-github-repository]');
+  if (button) void selectGithubRepository(button.dataset.githubRepository);
+});
+document.getElementById('github-branch-select')?.addEventListener('change', (event) => {
+  const branch = event.target.value;
+  const manualBranch = document.getElementById('create-branch');
+  if (manualBranch) manualBranch.value = branch;
+});
+document.getElementById('create-git-url')?.addEventListener('input', () => {
+  if (githubSourceSelection && document.getElementById('create-git-url')?.value !== githubSourceSelection.clone_url) resetGithubSourceSelection();
+});
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin || event.data?.type !== 'syte-github-oauth') return;
+  if (event.data.ok) {
+    toast(`GitHub connected${event.data.login ? ` as ${event.data.login}` : ''}`);
+    void loadGithubSourceStatus();
+  } else if (event.data.message) {
+    toast(event.data.message);
+  }
+});
 
 document.getElementById('reanalyze-source')?.addEventListener('click', async () => {
   try { await reanalyzeImportedProject(); } catch (error) { toast('Analysis failed: ' + error.message); }
@@ -6471,6 +6634,7 @@ loadSystem();
 loadProjects();
 loadSettings();
 loadTokens();
+void loadGithubSourceStatus();
 appContext = getContext();
 applyContext();
 startStatsPoll();
