@@ -217,6 +217,19 @@ class ProjectRepositoryImportRequest(BaseModel):
     base_directory: str = Field(default="/", max_length=255)
 
 
+class GitHubConnectedImportRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    repository: str = Field(min_length=3, max_length=255)
+    branch: str = Field(default="main", min_length=1, max_length=255)
+    base_directory: str = Field(default="/", max_length=255)
+
+
+class GitHubOAuthConfigRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=255)
+    client_secret: str = Field(min_length=1, max_length=1024)
+    encryption_key: str = Field(min_length=1, max_length=255)
+
+
 class ProjectSourceAnalysisRequest(BaseModel):
     base_directory: str = Field(default="/", max_length=255)
 
@@ -2006,6 +2019,160 @@ async def api_create_project(body: CreateServiceRequest):
         "message": message,
         "stream_url": f"/api/projects/{project['id']}/logs/stream",
     }
+
+
+async def _github_callback_url(request: Request) -> str:
+    configured = settings.public_base_url.strip() or (await get_setting("public_base_url", "")).strip()
+    if configured:
+        return f"{configured.rstrip('/')}/api/projects/git/github/callback"
+    gui_domain = (await get_setting("gui_domain", "")).strip()
+    if gui_domain:
+        return f"https://{gui_domain}/api/projects/git/github/callback"
+    return f"{str(request.base_url).rstrip('/')}/api/projects/git/github/callback"
+
+
+@app.get("/api/projects/git/github/status")
+async def api_github_source_status(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.github_oauth import connection_summary
+
+    return await connection_summary(str(_operator["id"]))
+
+
+@app.put("/api/projects/git/github/config")
+async def api_configure_github_oauth(
+    body: GitHubOAuthConfigRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Persist provider credentials only through the protected operator session.
+
+    The secret and encryption key are never returned by a status or connection
+    endpoint. Production may alternatively inject the same settings by env vars.
+    """
+    from cryptography.fernet import Fernet
+
+    try:
+        Fernet(body.encryption_key.strip().encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "Use a valid Fernet encryption key for OAuth token storage.") from exc
+    await set_setting("github_oauth_client_id", body.client_id.strip())
+    await set_setting("github_oauth_client_secret", body.client_secret.strip())
+    await set_setting("oauth_encryption_key", body.encryption_key.strip())
+    return {"ok": True, "message": "GitHub OAuth provider configured. Connect an account to choose repositories."}
+
+
+@app.get("/api/projects/git/github/connect")
+async def api_connect_github(
+    request: Request,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.github_oauth import GitHubOAuthError, start_github_authorization
+
+    try:
+        authorization_url = await start_github_authorization(str(_operator["id"]), await _github_callback_url(request))
+    except GitHubOAuthError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"authorization_url": authorization_url}
+
+
+@app.get("/api/projects/git/github/callback", response_class=HTMLResponse)
+async def api_github_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    from html import escape
+    from syte.github_oauth import GitHubOAuthError, complete_github_authorization
+
+    if error or not code or not state:
+        message = "GitHub authorization was cancelled or did not return a code."
+        return HTMLResponse(f"<script>window.opener?.postMessage({{type:'syte-github-oauth',ok:false,message:{message!r}}}, window.location.origin);window.close()</script><p>{escape(message)}</p>", status_code=400)
+    try:
+        connection = await complete_github_authorization(code, state)
+    except GitHubOAuthError as exc:
+        message = str(exc)
+        return HTMLResponse(f"<script>window.opener?.postMessage({{type:'syte-github-oauth',ok:false,message:{message!r}}}, window.location.origin);window.close()</script><p>{escape(message)}</p>", status_code=400)
+    message = f"GitHub connected as {connection['login']}. You can close this window."
+    return HTMLResponse(f"<script>window.opener?.postMessage({{type:'syte-github-oauth',ok:true,login:{connection['login']!r}}}, window.location.origin);window.close()</script><p>{escape(message)}</p>")
+
+
+@app.delete("/api/projects/git/github/disconnect")
+async def api_disconnect_github(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.database import delete_github_connection
+
+    await delete_github_connection(str(_operator["id"]))
+    return {"ok": True, "message": "GitHub connection removed."}
+
+
+@app.get("/api/projects/git/github/repositories")
+async def api_list_github_repositories(
+    q: str = "",
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.github_oauth import GitHubOAuthError, list_repositories
+
+    try:
+        return {"repositories": await list_repositories(str(_operator["id"]), q)}
+    except GitHubOAuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/projects/git/github/repositories/{repository:path}/branches")
+async def api_list_github_branches(
+    repository: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.github_oauth import GitHubOAuthError, list_branches
+
+    try:
+        return {"branches": await list_branches(str(_operator["id"]), repository)}
+    except GitHubOAuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/projects/import/github")
+async def api_import_connected_github_project(
+    body: GitHubConnectedImportRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Import an operator-selected GitHub source using an ephemeral OAuth token."""
+    from syte.github_oauth import GitHubOAuthError, list_branches, list_repositories, token_for_account
+    from syte.project_intake import analysis_metadata, analyze_project_source
+    from syte.workspace import clone_or_pull
+
+    account_id = str(_operator["id"])
+    try:
+        repositories = await list_repositories(account_id)
+        selected = next((repo for repo in repositories if repo["full_name"].lower() == body.repository.strip().lower()), None)
+        if not selected:
+            raise GitHubOAuthError("Choose a repository available to the connected GitHub account.")
+        branches = await list_branches(account_id, selected["full_name"])
+        if body.branch.strip() not in {str(item["name"]) for item in branches}:
+            raise GitHubOAuthError("Choose a branch available in the selected repository.")
+        token = await token_for_account(account_id)
+    except GitHubOAuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    project, message = await deployment.create_project_record(
+        name=body.name,
+        git_url=selected["clone_url"],
+        branch=body.branch.strip(),
+        deploy_now=False,
+    )
+    if not project:
+        raise HTTPException(400, message)
+    ok, clone_message = await asyncio.to_thread(
+        clone_or_pull, project["id"], selected["clone_url"], body.branch.strip(), http_token=token
+    )
+    if not ok:
+        await update_project(project["id"], {"status": "stopped"})
+        raise HTTPException(400, "Could not import the selected GitHub repository. Verify the account can access it.")
+    try:
+        analysis = await asyncio.to_thread(analyze_project_source, project["id"], source_type="github", base_directory=body.base_directory)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await update_project(project["id"], {"env_vars": analysis_metadata(analysis), "status": "created"})
+    refreshed = await get_project(project["id"])
+    return {"project": _enrich(refreshed or project), "analysis": analysis, "message": "Connected GitHub repository imported."}
 
 
 @app.post("/api/projects/import/repository")

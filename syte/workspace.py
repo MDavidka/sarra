@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -125,7 +126,27 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) ->
     return code, output
 
 
-def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bool, str]:
+def _git_auth_env(token: str | None) -> tuple[dict[str, str], Path | None]:
+    """Return an ephemeral askpass program for HTTPS Git auth, if needed.
+
+    Git reads the token from the process environment. It is never placed in the
+    clone URL, command arguments, Git config, deployment logs, or ``origin``.
+    """
+    if not token:
+        return {}, None
+    ws = settings.resolved_workspaces_dir
+    ws.mkdir(parents=True, exist_ok=True)
+    askpass = ws / f".git-askpass-{secrets.token_hex(12)}"
+    askpass.write_text("#!/bin/sh\ncase \"$1\" in *Username*) printf 'x-access-token' ;; *) printf '%s' \"$SYTE_GIT_HTTP_TOKEN\" ;; esac\n")
+    askpass.chmod(0o700)
+    return {
+        "GIT_ASKPASS": str(askpass),
+        "GIT_ASKPASS_REQUIRE": "force",
+        "SYTE_GIT_HTTP_TOKEN": token,
+    }, askpass
+
+
+def clone_or_pull(project_id: str, git_url: str | None, branch: str, *, http_token: str | None = None) -> tuple[bool, str]:
     ws = ensure_workspace(project_id)
     repo_dir = ws / "app"
 
@@ -133,27 +154,32 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str) -> tuple[bo
         repo_dir.mkdir(parents=True, exist_ok=True)
         return True, "Workspace ready (no git repository configured)."
 
-    if (repo_dir / ".git").exists():
-        code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir)
-        if code != 0:
-            return False, out
-        code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
-        if code != 0:
-            return False, out
-        code, out = run_cmd(git_cmd("pull", "origin", branch), cwd=repo_dir)
-        return code == 0, out or "Repository updated."
+    auth_env, askpass = _git_auth_env(http_token)
+    try:
+        if (repo_dir / ".git").exists():
+            code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir, env=auth_env)
+            if code != 0:
+                return False, out
+            code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
+            if code != 0:
+                return False, out
+            code, out = run_cmd(git_cmd("pull", "origin", branch), cwd=repo_dir, env=auth_env)
+            return code == 0, out or "Repository updated."
 
-    if repo_dir.exists():
-        shutil.rmtree(repo_dir)
+        if repo_dir.exists():
+            shutil.rmtree(repo_dir)
 
-    code, out = run_cmd(
-        git_cmd("clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir))
-    )
-    if code != 0:
-        code, out = run_cmd(git_cmd("clone", git_url, str(repo_dir)))
-        if code == 0:
-            run_cmd(git_cmd("checkout", branch), cwd=repo_dir)
-    return code == 0, out or "Repository cloned."
+        code, out = run_cmd(
+            git_cmd("clone", "--branch", branch, "--depth", "1", git_url, str(repo_dir)), env=auth_env
+        )
+        if code != 0:
+            code, out = run_cmd(git_cmd("clone", git_url, str(repo_dir)), env=auth_env)
+            if code == 0:
+                run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
+        return code == 0, out or "Repository cloned."
+    finally:
+        if askpass:
+            askpass.unlink(missing_ok=True)
 
 
 def _node_start_command(repo: Path) -> str | None:

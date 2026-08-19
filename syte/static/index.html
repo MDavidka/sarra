@@ -222,9 +222,21 @@
                   <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
                 </div>
                 <div class="deploy-source-fields" id="deploy-git-fields">
+                  <section class="github-source-connect" aria-labelledby="github-source-title">
+                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub Connected Source</strong><p id="github-source-description">Connect GitHub to browse repositories you can access, including private repositories.</p></div></div>
+                    <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
+                    <div id="github-source-account" class="github-source-account hidden"></div>
+                  </section>
+                  <section id="github-repository-browser" class="github-repository-browser hidden" aria-labelledby="github-repository-title">
+                    <div class="github-browser-toolbar"><div><p class="eyebrow">Connected repository</p><h3 id="github-repository-title">Choose code from GitHub</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
+                    <label for="github-repository-search">Search repositories<input id="github-repository-search" type="search" autocomplete="off" placeholder="Filter by owner, name, or description"></label>
+                    <div id="github-repository-list" class="github-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
+                    <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
+                  </section>
+                  <div class="github-manual-divider"><span>or use a public URL</span></div>
                   <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
-                  <div class="deploy-field-row"><label for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
-                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Public HTTPS repositories are cloned without repository hooks or local file protocols.</p>
+                  <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
+                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Connected GitHub sources use an encrypted, ephemeral OAuth credential during clone. Manual URLs remain for public HTTPS repositories.</p>
                 </div>
                 <div class="deploy-source-fields hidden" id="deploy-zip-fields">
                   <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>

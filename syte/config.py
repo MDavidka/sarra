@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     public_ip: str = ""
     admin_email: str = "admin@localhost"
     bootstrap_api_token: str = "syra123"
+    # GitHub OAuth App credentials are supplied at deployment time or through the
+    # protected provider configuration API. OAuth tokens are encrypted at rest
+    # with this Fernet key and never returned to browser clients.
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    oauth_encryption_key: str = ""
+    public_base_url: str = ""
     # Per-container caps for production docker run (DoS / noisy-neighbor guard).
     # Set any value to "0" / "none" / "unlimited" to disable that limit.
     docker_memory: str = "1g"
