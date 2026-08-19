@@ -3552,20 +3552,23 @@ function renderRemoteServersWorkspace(target) {
     const summary = fleet.summary || {};
     const nodeCards = nodes.map(node => {
       const load = node.load_percent == null ? 0 : Math.min(100, Math.max(0, Number(node.load_percent)));
-      return `<article class="legacy-fleet-node"><div class="legacy-fleet-node-head"><div><span class="legacy-fleet-state ${esc(node.status || 'pending')}">${esc(node.status || 'pending')}</span><h3>${esc(node.name || 'Unnamed server')}</h3><p>${esc(node.host || 'Host pending')} · ${esc(node.server_type || 'vps')}</p></div><i data-lucide="server"></i></div><div class="legacy-fleet-load"><div><span>Node load</span><strong>${node.load_percent == null ? 'Awaiting report' : `${Math.round(load)}%`}</strong></div><div class="legacy-fleet-bar"><span style="width:${load}%"></span></div></div><div class="legacy-fleet-roles"><button type="button" data-fleet-role="websites" data-server-id="${esc(node.uuid)}" data-current="${node.role_websites ? '1' : '0'}" class="${node.role_websites ? 'active' : ''}">Websites</button><button type="button" data-fleet-role="router" data-server-id="${esc(node.uuid)}" data-current="${node.role_router ? '1' : '0'}" class="${node.role_router ? 'active' : ''}">Router</button><button type="button" data-fleet-role="workers" data-server-id="${esc(node.uuid)}" data-current="${node.role_workers ? '1' : '0'}" class="${node.role_workers ? 'active' : ''}">Background</button></div><div class="legacy-fleet-node-foot"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-pool="1" data-server-id="${esc(node.uuid)}" ${node.load_balancing_enabled ? 'checked' : ''} ${node.role_websites ? '' : 'disabled'}><span></span>Web pool</label><button class="legacy-fleet-script" type="button" data-fleet-script="${esc(node.uuid)}"><i data-lucide="terminal-square"></i>Helper script</button></div></article>`;
-    }).join('') || '<article class="legacy-fleet-empty"><i data-lucide="server"></i><h3>Start with a server</h3><p>Enroll a micro-server, VPS, router, or build worker to form a deployment fleet.</p></article>';
-    target.innerHTML = `<section class="legacy-fleet-page"><header class="legacy-fleet-header"><div><p>Infrastructure fleet</p><h2>Remote Servers</h2><span>Enroll micro-servers, assign workload roles, and route web traffic from reported node load.</span></div><button class="legacy-fleet-refresh" type="button" data-fleet-refresh="1" aria-label="Refresh fleet"><i data-lucide="refresh-cw"></i></button></header><section class="legacy-fleet-balancer"><div class="legacy-fleet-balancer-copy"><span class="legacy-fleet-icon"><i data-lucide="network"></i></span><div><p>Load balancer</p><h3>${balancer.enabled ? 'Traffic distribution is enabled' : 'Traffic distribution is paused'}</h3><small>${balancer.enabled ? `${(balancer.eligible_targets || []).length} healthy web target(s) are eligible for routing.` : 'Enable routing after assigning at least one Website role.'}</small></div></div><div class="legacy-fleet-balancer-controls"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-balancer="enabled" ${balancer.enabled ? 'checked' : ''}><span></span>Enabled</label><label>Strategy<select data-fleet-balancer="strategy"><option value="least-load" ${balancer.strategy === 'least-load' ? 'selected' : ''}>Least load</option><option value="round-robin" ${balancer.strategy === 'round-robin' ? 'selected' : ''}>Round robin</option></select></label><label>Router node<select data-fleet-balancer="router"><option value="">Automatic router selection</option>${nodes.filter(node => node.role_router).map(node => `<option value="${esc(node.uuid)}" ${balancer.router_server_uuid === node.uuid ? 'selected' : ''}>${esc(node.name)}</option>`).join('')}</select></label></div></section><section class="legacy-fleet-summary"><article><i data-lucide="server"></i><span>Fleet nodes</span><strong>${summary.total_nodes || 0}</strong></article><article><i data-lucide="activity"></i><span>Reporting</span><strong>${summary.online_nodes || 0}</strong></article><article><i data-lucide="network"></i><span>Web targets</span><strong>${summary.website_nodes || 0}</strong></article><article><i data-lucide="cpu"></i><span>Background</span><strong>${summary.worker_nodes || 0}</strong></article></section><div class="legacy-fleet-section-head"><div><p>Server inventory</p><h3>Nodes & workload roles</h3></div><button class="dedicated-primary" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add a server</button></div><form class="legacy-fleet-enroll" data-fleet-enroll="1" hidden><label>Node name<input name="name" required maxlength="120" placeholder="beta-web-01"></label><label>IP address or host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Server type<select name="server_type"><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><button class="dedicated-primary" type="submit"><i data-lucide="plus"></i>Enroll node</button></form><section class="legacy-fleet-grid">${nodeCards}</section><section class="legacy-fleet-script-panel" data-fleet-script-panel="1" hidden><header><div><p>Secure node enrollment</p><h3>syte-fleet-heartbeat.sh</h3><span>Review before running as root on the enrolled node.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close helper script"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1"></pre><footer><button class="dedicated-primary" type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i>Copy script</button></footer></section></section>`;
+      const loadLabel = node.load_percent == null ? 'Waiting for first report' : `${Math.round(load)}% current load`;
+      return `<article class="legacy-fleet-node-row"><div class="legacy-fleet-node-identity"><span class="legacy-fleet-status-dot ${esc(node.status || 'pending')}"></span><div><h3>${esc(node.name || 'Unnamed server')}</h3><p>${esc(node.host || 'Host pending')} <span aria-hidden="true">·</span> ${esc(node.server_type || 'vps')}</p></div></div><div class="legacy-fleet-node-load"><div><span>Node load</span><strong>${esc(loadLabel)}</strong></div><div class="legacy-fleet-bar" aria-label="${esc(loadLabel)}"><span style="width:${load}%"></span></div></div><div class="legacy-fleet-node-roles"><span>Roles</span><div><button type="button" aria-pressed="${node.role_websites ? 'true' : 'false'}" data-fleet-role="websites" data-server-id="${esc(node.uuid)}" data-current="${node.role_websites ? '1' : '0'}" class="${node.role_websites ? 'active' : ''}">Websites</button><button type="button" aria-pressed="${node.role_router ? 'true' : 'false'}" data-fleet-role="router" data-server-id="${esc(node.uuid)}" data-current="${node.role_router ? '1' : '0'}" class="${node.role_router ? 'active' : ''}">Router</button><button type="button" aria-pressed="${node.role_workers ? 'true' : 'false'}" data-fleet-role="workers" data-server-id="${esc(node.uuid)}" data-current="${node.role_workers ? '1' : '0'}" class="${node.role_workers ? 'active' : ''}">Background</button></div></div><div class="legacy-fleet-node-actions"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-pool="1" data-server-id="${esc(node.uuid)}" ${node.load_balancing_enabled ? 'checked' : ''} ${node.role_websites ? '' : 'disabled'}><span></span>In web pool</label><button class="legacy-fleet-script" type="button" data-fleet-script="${esc(node.uuid)}"><i data-lucide="terminal-square"></i>Setup script</button></div></article>`;
+    }).join('') || '<div class="legacy-fleet-empty"><i data-lucide="server"></i><h3>No servers enrolled</h3><p>Add a server to create a website, router, or background-workload pool.</p><button class="dedicated-primary" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add first server</button></div>';
+    const eligible = (balancer.eligible_targets || []).length;
+    target.innerHTML = `<section class="legacy-fleet-page"><header class="legacy-fleet-header"><div><p>Infrastructure fleet</p><h2>Remote Servers</h2><span>Add servers, choose responsibilities, and route website traffic using reported node load.</span></div><button class="legacy-fleet-refresh" type="button" data-fleet-refresh="1" aria-label="Refresh fleet"><i data-lucide="refresh-cw"></i></button></header><section class="legacy-fleet-control-card"><div class="legacy-fleet-control-intro"><span class="legacy-fleet-icon"><i data-lucide="network"></i></span><div><p>Traffic routing</p><h3>${balancer.enabled ? `${eligible} healthy target${eligible === 1 ? '' : 's'} ready for traffic` : 'Traffic routing is paused'}</h3><small>Only online Website nodes in the web pool are eligible. Choose a policy and optional router below.</small></div></div><div class="legacy-fleet-control-fields"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-balancer="enabled" ${balancer.enabled ? 'checked' : ''}><span></span><b>Load balancer<small>${balancer.enabled ? 'Accepting traffic' : 'Not accepting traffic'}</small></b></label><label>Routing strategy<select data-fleet-balancer="strategy"><option value="least-load" ${balancer.strategy === 'least-load' ? 'selected' : ''}>Least load</option><option value="round-robin" ${balancer.strategy === 'round-robin' ? 'selected' : ''}>Round robin</option></select></label><label>Router node<select data-fleet-balancer="router"><option value="">Choose automatically</option>${nodes.filter(node => node.role_router).map(node => `<option value="${esc(node.uuid)}" ${balancer.router_server_uuid === node.uuid ? 'selected' : ''}>${esc(node.name)}</option>`).join('')}</select></label></div></section><section class="legacy-fleet-summary"><article><i data-lucide="server"></i><span>Servers</span><strong>${summary.total_nodes || 0}</strong></article><article><i data-lucide="activity"></i><span>Reporting</span><strong>${summary.online_nodes || 0}</strong></article><article><i data-lucide="network"></i><span>Website pool</span><strong>${summary.website_nodes || 0}</strong></article><article><i data-lucide="cpu"></i><span>Background</span><strong>${summary.worker_nodes || 0}</strong></article></section><div class="legacy-fleet-workspace"><section class="legacy-fleet-inventory"><header class="legacy-fleet-section-head"><div><p>Server inventory</p><h3>Nodes and responsibilities</h3><span>Enable one or more roles per node. Changes save immediately.</span></div><button class="legacy-fleet-compact-refresh" type="button" data-fleet-refresh="1"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><section class="legacy-fleet-grid">${nodeCards}</section></section><aside class="legacy-fleet-setup"><span class="legacy-fleet-setup-icon"><i data-lucide="server"></i></span><p>Server enrollment</p><h3>Add a node</h3><small>Enter a reachable host. Its generated setup script provides a scoped enrollment credential.</small><button class="dedicated-primary legacy-fleet-setup-open" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add server</button><form class="legacy-fleet-enroll" data-fleet-enroll="1" hidden><label>Node name<input name="name" required maxlength="120" placeholder="beta-web-01"></label><label>IP address or host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Server type<select name="server_type"><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><div><button type="button" class="legacy-fleet-enroll-cancel" data-fleet-enroll-toggle="1">Cancel</button><button class="dedicated-primary" type="submit"><i data-lucide="plus"></i>Enroll node</button></div></form></aside></div><div class="legacy-fleet-dialog-backdrop" data-fleet-script-panel="1" hidden><section class="legacy-fleet-script-panel" role="dialog" aria-modal="true" aria-label="Server helper script"><header><div><p>Secure enrollment helper</p><h3>syte-fleet-heartbeat.sh</h3><span>Copy the command, review it, then run it as root on this node.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close helper script"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1" tabindex="0"></pre><footer><button class="legacy-fleet-enroll-cancel" type="button" data-fleet-script-close="1">Cancel</button><button class="dedicated-primary" type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i>Copy script</button></footer></section></div></section>`;
     const message = text => { const el = document.getElementById('platform-page-message'); if (el) el.textContent = text; };
     const refresh = () => renderRemoteServersWorkspace(target);
-    target.querySelector('[data-fleet-refresh]')?.addEventListener('click', refresh);
-    target.querySelector('[data-fleet-enroll-toggle]')?.addEventListener('click', event => { const form = target.querySelector('[data-fleet-enroll]'); form.hidden = !form.hidden; event.currentTarget.innerHTML = form.hidden ? '<i data-lucide="plus"></i>Add a server' : '<i data-lucide="x"></i>Close enrollment'; refreshIcons(); });
+    target.querySelectorAll('[data-fleet-refresh]').forEach(button => button.addEventListener('click', refresh));
+    target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(button => button.addEventListener('click', event => { const form = target.querySelector('[data-fleet-enroll]'); form.hidden = !form.hidden; const isOpen = !form.hidden; target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(toggle => { toggle.innerHTML = isOpen ? '<i data-lucide="x"></i>Close enrollment' : '<i data-lucide="plus"></i>Add a server'; }); refreshIcons(); }));
     target.querySelector('[data-fleet-enroll]')?.addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.currentTarget); const type = String(form.get('server_type') || 'micro'); try { await api('/platform/fleet/servers',{method:'POST',body:JSON.stringify({name:form.get('name'),host:form.get('host'),server_type:type,role_websites:true,role_router:type === 'edge',role_workers:type === 'build',load_balancing_enabled:type !== 'build'})}); message('Server enrolled. Generate its helper script to begin load reporting.'); refresh(); } catch(error) { message(`Enrollment failed: ${error.message}`); } });
     target.querySelectorAll('[data-fleet-role]').forEach(button => button.addEventListener('click', async () => { const role = button.dataset.fleetRole; const active = button.dataset.current === '1'; const updates = {[`role_${role}`]: !active}; if (role === 'websites' && active) updates.load_balancing_enabled = false; try { await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify(updates)}); refresh(); } catch(error) { message(`Role update failed: ${error.message}`); } }));
     target.querySelectorAll('[data-fleet-pool]').forEach(input => input.addEventListener('change', async () => { try { await api(`/platform/fleet/servers/${encodeURIComponent(input.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify({load_balancing_enabled:input.checked})}); refresh(); } catch(error) { message(`Pool update failed: ${error.message}`); refresh(); } }));
     const saveBalancer = async () => { try { await api('/platform/fleet/load-balancer',{method:'PUT',body:JSON.stringify({load_balancing_enabled:target.querySelector('[data-fleet-balancer="enabled"]').checked,strategy:target.querySelector('[data-fleet-balancer="strategy"]').value,router_server_uuid:target.querySelector('[data-fleet-balancer="router"]').value,health_check_path:balancer.health_check_path || '/health'})}); refresh(); } catch(error) { message(`Load-balancer update failed: ${error.message}`); } };
     target.querySelectorAll('[data-fleet-balancer]').forEach(input => input.addEventListener('change', saveBalancer));
     target.querySelectorAll('[data-fleet-script]').forEach(button => button.addEventListener('click', async () => { try { const result = await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.fleetScript)}/setup-script`); const panel = target.querySelector('[data-fleet-script-panel]'); panel.hidden = false; target.querySelector('[data-fleet-script-content]').textContent = result.script; panel.scrollIntoView({behavior:'smooth',block:'center'}); } catch(error) { message(`Script generation failed: ${error.message}`); } }));
-    target.querySelector('[data-fleet-script-close]')?.addEventListener('click', () => { target.querySelector('[data-fleet-script-panel]').hidden = true; });
+    target.querySelectorAll('[data-fleet-script-close]').forEach(button => button.addEventListener('click', () => { target.querySelector('[data-fleet-script-panel]').hidden = true; }));
+    target.querySelector('[data-fleet-script-panel]')?.addEventListener('mousedown', event => { if (event.target === event.currentTarget) event.currentTarget.hidden = true; });
     target.querySelector('[data-fleet-script-copy]')?.addEventListener('click', async () => { const text = target.querySelector('[data-fleet-script-content]').textContent; try { await navigator.clipboard.writeText(text); message('Helper script copied. Review it before running as root.'); } catch(error) { message('Could not copy automatically. Select the helper script and copy it manually.'); } });
     refreshIcons();
   }).catch(error => { target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Fleet unavailable: ${esc(error.message)}</p></section>`; });
@@ -3701,10 +3704,12 @@ async function loadPlatformPage(page = 'overview') {
   const workspace = document.getElementById('platform-workspace');
   const isOverview = safePage === 'overview';
   const isProfile = safePage === 'profile';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile;
+  const isRemoteServers = safePage === 'remote-servers';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
+  workspace?.classList.toggle('is-remote-servers-workspace', isRemoteServers);
   if (isBlankWorkspace) {
     const blankTarget = document.getElementById('platform-dedicated-page');
     if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
@@ -4179,7 +4184,8 @@ function setAiSettingsTab(tab) {
 }
 
 async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const isMultipart = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+  const headers = { ...(isMultipart ? {} : { 'Content-Type': 'application/json' }), ...(opts.headers || {}) };
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
@@ -5112,49 +5118,214 @@ function detectStack(p) {
   return 'shell';
 }
 
-function resetCreateForm() {
-  selectedCreateStack = 'nextjs';
-  document.querySelectorAll('.stack-card').forEach(card => {
-    const on = card.dataset.stack === 'nextjs';
-    card.classList.toggle('active', on);
-    card.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
+let projectImportSource = 'git';
+let importedProjectId = null;
+let importedProjectAnalysis = null;
+let githubSourceStatus = null;
+let githubSourceRepositories = [];
+let githubSourceSelection = null;
+
+function renderGithubSourceStatus(status) {
+  githubSourceStatus = status || { configured: false, connected: false };
+  const connect = document.getElementById('github-connect-btn');
+  const disconnect = document.getElementById('github-disconnect-btn');
+  const account = document.getElementById('github-source-account');
+  const browser = document.getElementById('github-repository-browser');
+  const description = document.getElementById('github-source-description');
+  if (!connect || !disconnect || !account || !browser || !description) return;
+  const configured = Boolean(githubSourceStatus.configured);
+  const connected = Boolean(githubSourceStatus.connected);
+  connect.classList.toggle('hidden', connected);
+  disconnect.classList.toggle('hidden', !connected);
+  connect.disabled = !configured;
+  browser.classList.toggle('hidden', !connected);
+  if (!configured) {
+    description.textContent = 'GitHub OAuth must be configured by an operator before accounts can connect.';
+    account.classList.add('hidden');
+  } else if (!connected) {
+    description.textContent = 'Connect GitHub to browse repositories you can access, including private repositories.';
+    account.classList.add('hidden');
+  } else {
+    description.textContent = 'Choose a repository and branch. OAuth credentials stay encrypted and never become part of the Git remote.';
+    account.classList.remove('hidden');
+    account.innerHTML = `${githubSourceStatus.avatar_url ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="">` : '<i data-lucide="circle-user-round"></i>'}<span class="github-connected-dot"></span><span>Connected as <strong>${esc(githubSourceStatus.login || 'GitHub account')}</strong></span>`;
+  }
+  refreshIcons();
+}
+
+function renderGithubRepositories() {
+  const list = document.getElementById('github-repository-list');
+  const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
+  if (!list) return;
+  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description].join(' ').toLowerCase().includes(search));
+  if (!repositories.length) {
+    list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
+    return;
+  }
+  list.innerHTML = repositories.map((repo) => `<button type="button" class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}"><span class="github-repository-name">${esc(repo.full_name)}</span>${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}${repo.description ? `<span class="github-repository-description">${esc(repo.description)}</span>` : ''}</button>`).join('');
+}
+
+async function loadGithubRepositories() {
+  const list = document.getElementById('github-repository-list');
+  if (!githubSourceStatus?.connected) return;
+  if (list) list.innerHTML = '<p class="github-repository-empty">Loading GitHub repositories…</p>';
+  try {
+    const result = await api('/projects/git/github/repositories');
+    githubSourceRepositories = result.repositories || [];
+    renderGithubRepositories();
+  } catch (error) {
+    if (list) list.innerHTML = `<p class="github-repository-empty">${esc(normalizeFetchError(error?.message) || 'Could not load GitHub repositories.')}</p>`;
+  }
+}
+
+async function loadGithubSourceStatus({ loadRepositories = true } = {}) {
+  try {
+    const result = await api('/projects/git/github/status');
+    renderGithubSourceStatus(result);
+    if (result.connected && loadRepositories) await loadGithubRepositories();
+  } catch (error) {
+    renderGithubSourceStatus({ configured: false, connected: false });
+  }
+}
+
+async function selectGithubRepository(fullName) {
+  const repository = githubSourceRepositories.find((item) => item.full_name === fullName);
+  const branchSelect = document.getElementById('github-branch-select');
+  if (!repository || !branchSelect) return;
+  githubSourceSelection = repository;
+  document.getElementById('create-git-url').value = repository.clone_url || '';
   const nameInput = document.getElementById('create-name');
-  if (nameInput) nameInput.value = '';
-  const startCmd = document.getElementById('create-start-cmd');
-  if (startCmd) startCmd.value = '';
-  const buildCmd = document.getElementById('create-build-cmd');
-  if (buildCmd) buildCmd.value = '';
-  document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-    head.setAttribute('aria-expanded', 'false');
-    const panel = document.getElementById(head.dataset.accordion);
-    panel?.classList.add('hidden');
+  if (nameInput && !nameInput.value.trim()) nameInput.value = repository.name || '';
+  branchSelect.disabled = true;
+  branchSelect.innerHTML = '<option value="">Loading branches…</option>';
+  renderGithubRepositories();
+  try {
+    const result = await api(`/projects/git/github/repositories/${encodeURIComponent(repository.full_name)}/branches`);
+    const branches = result.branches || [];
+    branchSelect.innerHTML = branches.length ? branches.map((item) => `<option value="${esc(item.name)}">${esc(item.name)}</option>`).join('') : '<option value="">No branches available</option>';
+    const preferred = branches.some((item) => item.name === repository.default_branch) ? repository.default_branch : branches[0]?.name || '';
+    branchSelect.value = preferred;
+    document.getElementById('create-branch').value = preferred;
+    branchSelect.disabled = !branches.length;
+  } catch (error) {
+    branchSelect.innerHTML = '<option value="">Could not load branches</option>';
+    toast(normalizeFetchError(error?.message) || 'Could not load repository branches');
+  }
+  refreshIcons();
+}
+
+function resetGithubSourceSelection() {
+  githubSourceSelection = null;
+  const branchSelect = document.getElementById('github-branch-select');
+  if (branchSelect) {
+    branchSelect.disabled = true;
+    branchSelect.innerHTML = '<option value="">Choose a repository first</option>';
+  }
+  renderGithubRepositories();
+}
+
+async function connectGithubSource(popup) {
+  try {
+    const result = await api('/projects/git/github/connect');
+    if (!result.authorization_url) throw new Error('GitHub did not provide an authorization URL.');
+    if (popup) popup.location.href = result.authorization_url;
+    else window.location.assign(result.authorization_url);
+  } catch (error) {
+    popup?.close();
+    toast(normalizeFetchError(error?.message) || 'Could not start GitHub authorization.');
+  }
+}
+
+async function disconnectGithubSource() {
+  try {
+    await api('/projects/git/github/disconnect', { method: 'DELETE' });
+    githubSourceRepositories = [];
+    resetGithubSourceSelection();
+    renderGithubSourceStatus({ configured: githubSourceStatus?.configured, connected: false });
+    toast('GitHub connection removed');
+  } catch (error) {
+    toast(normalizeFetchError(error?.message) || 'Could not disconnect GitHub.');
+  }
+}
+
+function setProjectImportSource(source) {
+  projectImportSource = source === 'zip' ? 'zip' : 'git';
+  document.querySelectorAll('[data-import-source]').forEach(tab => {
+    const active = tab.dataset.importSource === projectImportSource;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
   });
+  document.getElementById('deploy-git-fields')?.classList.toggle('hidden', projectImportSource !== 'git');
+  document.getElementById('deploy-zip-fields')?.classList.toggle('hidden', projectImportSource !== 'zip');
+  refreshIcons();
+}
+
+function setProjectDeployButton(label, icon = 'scan-search', disabled = false) {
+  const button = document.getElementById('deploy-btn');
+  if (!button) return;
+  button.disabled = disabled;
+  button.innerHTML = `<i data-lucide="${icon}"></i><span>${esc(label)}</span>`;
+  refreshIcons();
+}
+
+function renderProjectAnalysis(analysis) {
+  importedProjectAnalysis = analysis;
+  const panel = document.getElementById('deploy-analysis');
+  const grid = document.getElementById('deploy-detection-grid');
+  const suggestions = document.getElementById('deploy-env-suggestions');
+  panel?.classList.remove('hidden');
+  if (!analysis) return;
+  const fields = [
+    ['Framework', analysis.framework || 'Custom'], ['Language', analysis.language || 'Unknown'],
+    ['Build pack', analysis.build_pack || 'Manual'], ['Base directory', analysis.base_directory || '/'],
+    ['Port', analysis.exposed_port ? `:${analysis.exposed_port}` : 'Auto'], ['Source files', String(analysis.files_detected || 0)],
+  ];
+  if (grid) grid.innerHTML = fields.map(([label, value]) => `<article><span>${esc(label)}</span><strong>${esc(value)}</strong></article>`).join('');
+  const warningList = [...(analysis.warnings || []), ...(analysis.error ? [analysis.error] : [])];
+  if (grid && warningList.length) grid.insertAdjacentHTML('beforeend', `<aside class="deploy-analysis-warning"><i data-lucide="triangle-alert"></i><p>${warningList.map(esc).join('<br>')}</p></aside>`);
+  if (suggestions) {
+    const values = analysis.environment_suggestions || [];
+    suggestions.innerHTML = values.length ? values.map(item => `<button type="button" data-env-suggestion="${esc(item.key)}"><strong>${esc(item.key)}</strong><span>${esc(item.source || 'source')}</span><i data-lucide="plus"></i></button>`).join('') : '<p class="deploy-empty-hint">No referenced variable names were found. You can add them manually below.</p>';
+  }
+  const start = document.getElementById('create-start-cmd');
+  const build = document.getElementById('create-build-cmd');
+  if (start && !start.value) start.value = analysis.start_command || '';
+  if (build && !build.value) build.value = analysis.build_command || '';
+  setProjectDeployButton(analysis.status === 'ready' ? 'Deploy project' : 'Resolve configuration', analysis.status === 'ready' ? 'rocket' : 'sliders-horizontal', analysis.status !== 'ready');
+  refreshIcons();
+}
+
+function resetCreateForm() {
+  importedProjectId = null;
+  importedProjectAnalysis = null;
+  setProjectImportSource('git');
+  resetGithubSourceSelection();
+  ['create-name', 'create-git-url', 'create-start-cmd', 'create-build-cmd', 'create-env-vars'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+  });
+  ['create-branch', 'create-base-directory', 'create-zip-base-directory'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = id === 'create-branch' ? 'main' : '/';
+  });
+  const archive = document.getElementById('create-source-zip');
+  if (archive) archive.value = '';
+  document.getElementById('deploy-analysis')?.classList.add('hidden');
   const placeholder = document.getElementById('create-log-placeholder');
   const logPanel = document.getElementById('deploy-log-panel');
   placeholder?.classList.remove('hidden');
   logPanel?.classList.add('hidden');
   if (logPanel) clearLogPanel(logPanel);
+  setProjectDeployButton('Analyze source');
   refreshIcons();
 }
 
-function selectCreateStack(stack) {
-  selectedCreateStack = stack;
-  document.querySelectorAll('.stack-card').forEach(card => {
-    const on = card.dataset.stack === stack;
-    card.classList.toggle('active', on);
-    card.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-}
-
-function toggleCreateAccordion(head) {
-  const panelId = head.dataset.accordion;
-  if (!panelId) return;
-  const panel = document.getElementById(panelId);
-  if (!panel) return;
-  const open = panel.classList.toggle('hidden');
-  head.setAttribute('aria-expanded', open ? 'false' : 'true');
-  refreshIcons();
+function appendSuggestedEnvironment(key) {
+  const target = document.getElementById('create-env-vars');
+  if (!target || !key) return;
+  const current = target.value.trimEnd();
+  if (!new RegExp(`(^|\\n)${key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}=`).test(current)) target.value = `${current}${current ? '\\n' : ''}${key}=`;
+  target.focus();
 }
 
 function displayTitle(p) {
@@ -5661,62 +5832,122 @@ async function saveServiceEnv(id) {
   }
 }
 
-document.getElementById('create-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('deploy-btn');
+async function importProjectSource() {
   const name = document.getElementById('create-name')?.value.trim();
-  if (!name) return toast('Enter a project name');
+  if (!name) throw new Error('Enter a project name');
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  if (projectImportSource === 'git') {
+    const gitUrl = document.getElementById('create-git-url')?.value.trim();
+    const branch = (githubSourceSelection ? document.getElementById('github-branch-select')?.value : document.getElementById('create-branch')?.value)?.trim() || 'main';
+    if (githubSourceSelection) {
+      if (!document.getElementById('github-branch-select')?.value) throw new Error('Choose a branch for the connected GitHub repository');
+      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory }) });
+    }
+    if (!gitUrl) throw new Error('Enter a repository URL or choose a connected GitHub repository');
+    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory }) });
+  }
+  const archive = document.getElementById('create-source-zip')?.files?.[0];
+  if (!archive) throw new Error('Choose a ZIP archive');
+  const form = new FormData();
+  form.set('name', name); form.set('base_directory', baseDirectory); form.set('archive', archive);
+  return api('/projects/import/zip', { method: 'POST', body: form });
+}
 
-  btn.disabled = true;
-  btn.querySelector('span').textContent = 'Creating…';
+async function reanalyzeImportedProject() {
+  if (!importedProjectId) return;
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const result = await api(`/projects/${importedProjectId}/analyze`, { method: 'POST', body: JSON.stringify({ base_directory: baseDirectory }) });
+  renderProjectAnalysis(result.analysis);
+  toast('Build plan refreshed');
+}
 
-  const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
-  const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
-  const env_vars = {};
-  if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
+async function deployImportedProject() {
+  if (!importedProjectId || !importedProjectAnalysis) throw new Error('Import a source before deployment');
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const envVars = parseEnv(document.getElementById('create-env-vars')?.value || '');
+  const startCommand = document.getElementById('create-start-cmd')?.value.trim() || null;
+  const result = await api(`/projects/${importedProjectId}/deploy-detected`, {
+    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand }),
+  });
+  return result;
+}
 
+document.getElementById('create-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
   const logPanel = document.getElementById('deploy-log-panel');
-  const logPlaceholder = document.getElementById('create-log-placeholder');
-  logPlaceholder?.classList.add('hidden');
-  logPanel?.classList.remove('hidden');
-  clearLogPanel(logPanel);
-
+  const placeholder = document.getElementById('create-log-placeholder');
+  placeholder?.classList.add('hidden'); logPanel?.classList.remove('hidden'); clearLogPanel(logPanel);
   try {
-    const res = await api('/projects', {
-      method: 'POST',
-      body: JSON.stringify({
-        name,
-        stack: selectedCreateStack,
-        start_command: startCmd,
-        env_vars,
-      }),
-    });
-    appendLogLine(logPanel, res.message || 'Project created', 'log-info');
-    toast(`Deploying: ${res.project.name}`);
+    if (!importedProjectId) {
+      setProjectDeployButton('Importing source…', 'loader-circle', true);
+      const result = await importProjectSource();
+      importedProjectId = result.project.id;
+      appendLogLine(logPanel, result.message || 'Source imported', 'log-ok');
+      renderProjectAnalysis(result.analysis);
+      toast(`Detected ${result.analysis.framework || result.analysis.language || 'project'} application`);
+      return;
+    }
+    setProjectDeployButton('Deploying…', 'loader-circle', true);
+    const result = await deployImportedProject();
+    appendLogLine(logPanel, result.message || 'Deployment queued', 'log-info');
+    toast('Deployment queued');
     await loadProjects();
-    openService(res.project.id);
+    openService(importedProjectId);
     switchSvcTab('logs');
-    const logsEl = document.getElementById('svc-live-logs');
-    loadLogSnapshot(res.project.id, logsEl).then(() => {
-      startLogStream(res.project.id, logsEl, { liveOnly: true, clearFirst: false });
-    });
-  } catch (err) {
-    appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
-    toast('Deploy failed: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.querySelector('span').textContent = 'Create & Deploy';
+    const logs = document.getElementById('svc-live-logs');
+    loadLogSnapshot(importedProjectId, logs).then(() => startLogStream(importedProjectId, logs, { liveOnly: true, clearFirst: false }));
+  } catch (error) {
+    appendLogLine(logPanel, 'Error: ' + error.message, 'log-err');
+    toast(error.message);
+    if (!importedProjectId) setProjectDeployButton('Analyze source');
+    else setProjectDeployButton('Deploy project', 'rocket');
   }
 });
 
-document.getElementById('stack-picker')?.addEventListener('click', (e) => {
-  const card = e.target.closest('.stack-card');
-  if (!card?.dataset.stack) return;
-  selectCreateStack(card.dataset.stack);
+document.querySelectorAll('[data-import-source]').forEach(tab => tab.addEventListener('click', () => {
+  if (importedProjectId) return toast('Reset this draft before changing its source type.');
+  setProjectImportSource(tab.dataset.importSource);
+}));
+
+document.getElementById('github-connect-btn')?.addEventListener('click', () => {
+  const popup = window.open('', 'syte-github-connect', 'popup=yes,width=600,height=720');
+  if (!popup) return toast('Allow pop-ups for this site to connect GitHub.');
+  popup.document.title = 'Connecting GitHub…';
+  void connectGithubSource(popup);
 });
 
-document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-  head.addEventListener('click', () => toggleCreateAccordion(head));
+document.getElementById('github-disconnect-btn')?.addEventListener('click', () => void disconnectGithubSource());
+document.getElementById('github-repositories-refresh')?.addEventListener('click', () => void loadGithubRepositories());
+document.getElementById('github-repository-search')?.addEventListener('input', renderGithubRepositories);
+document.getElementById('github-repository-list')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-github-repository]');
+  if (button) void selectGithubRepository(button.dataset.githubRepository);
+});
+document.getElementById('github-branch-select')?.addEventListener('change', (event) => {
+  const branch = event.target.value;
+  const manualBranch = document.getElementById('create-branch');
+  if (manualBranch) manualBranch.value = branch;
+});
+document.getElementById('create-git-url')?.addEventListener('input', () => {
+  if (githubSourceSelection && document.getElementById('create-git-url')?.value !== githubSourceSelection.clone_url) resetGithubSourceSelection();
+});
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin || event.data?.type !== 'syte-github-oauth') return;
+  if (event.data.ok) {
+    toast(`GitHub connected${event.data.login ? ` as ${event.data.login}` : ''}`);
+    void loadGithubSourceStatus();
+  } else if (event.data.message) {
+    toast(event.data.message);
+  }
+});
+
+document.getElementById('reanalyze-source')?.addEventListener('click', async () => {
+  try { await reanalyzeImportedProject(); } catch (error) { toast('Analysis failed: ' + error.message); }
+});
+
+document.getElementById('deploy-env-suggestions')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-env-suggestion]');
+  if (button) appendSuggestedEnvironment(button.dataset.envSuggestion);
 });
 
 document.getElementById('create-name-focus')?.addEventListener('click', () => {
@@ -6403,6 +6634,7 @@ loadSystem();
 loadProjects();
 loadSettings();
 loadTokens();
+void loadGithubSourceStatus();
 appContext = getContext();
 applyContext();
 startStatsPoll();

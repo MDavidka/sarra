@@ -200,78 +200,65 @@
               <span class="create-brand-name">syte</span>
             </div>
 
-            <form id="create-form" class="create-form">
+            <form id="create-form" class="create-form vercel-create-form" novalidate>
+              <header class="deploy-create-header">
+                <p class="eyebrow">New deployment</p>
+                <h1>Ship from your source.</h1>
+                <p>Import a repository or ZIP archive. Syte detects the framework, creates a build plan, and lets you review environment keys before deployment.</p>
+              </header>
+
               <div class="create-name-field">
                 <div class="create-name-label-row">
                   <label for="create-name">project name</label>
-                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name">
-                    <i data-lucide="square-pen"></i>
-                  </button>
+                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name"><i data-lucide="square-pen"></i></button>
                 </div>
                 <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
               </div>
 
-              <div class="create-section">
-                <p class="create-section-label">deployment type</p>
-                <div class="stack-picker" id="stack-picker" role="listbox" aria-label="Deployment type">
-                  <button type="button" class="stack-card active" data-stack="nextjs" role="option" aria-selected="true">
-                    <span class="stack-card-icon stack-icon-nextjs">N</span>
-                    <span class="stack-card-label">next.js</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="python" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-python">Py</span>
-                    <span class="stack-card-label">python</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="javascript" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-javascript">JS</span>
-                    <span class="stack-card-label">javascript</span>
-                  </button>
-                  <button type="button" class="stack-card" data-stack="html5" role="option" aria-selected="false">
-                    <span class="stack-card-icon stack-icon-html5">5</span>
-                    <span class="stack-card-label">html5</span>
-                  </button>
+              <section class="deploy-source-section" aria-labelledby="source-import-title">
+                <div class="deploy-section-heading"><span class="deploy-step">1</span><div><p class="eyebrow">Source</p><h2 id="source-import-title">Import your code</h2></div></div>
+                <div class="deploy-source-tabs" role="tablist" aria-label="Project source">
+                  <button class="deploy-source-tab active" type="button" data-import-source="git" role="tab" aria-selected="true"><i data-lucide="git-branch"></i><span>Git repository</span></button>
+                  <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
                 </div>
-              </div>
+                <div class="deploy-source-fields" id="deploy-git-fields">
+                  <section class="github-source-connect" aria-labelledby="github-source-title">
+                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub Connected Source</strong><p id="github-source-description">Connect GitHub to browse repositories you can access, including private repositories.</p></div></div>
+                    <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
+                    <div id="github-source-account" class="github-source-account hidden"></div>
+                  </section>
+                  <section id="github-repository-browser" class="github-repository-browser hidden" aria-labelledby="github-repository-title">
+                    <div class="github-browser-toolbar"><div><p class="eyebrow">Connected repository</p><h3 id="github-repository-title">Choose code from GitHub</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
+                    <label for="github-repository-search">Search repositories<input id="github-repository-search" type="search" autocomplete="off" placeholder="Filter by owner, name, or description"></label>
+                    <div id="github-repository-list" class="github-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
+                    <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
+                  </section>
+                  <div class="github-manual-divider"><span>or use a public URL</span></div>
+                  <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
+                  <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
+                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Connected GitHub sources use an encrypted, ephemeral OAuth credential during clone. Manual URLs remain for public HTTPS repositories.</p>
+                </div>
+                <div class="deploy-source-fields hidden" id="deploy-zip-fields">
+                  <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>
+                  <label for="create-zip-base-directory">Base directory<input id="create-zip-base-directory" type="text" value="/" placeholder="/ or apps/web"></label>
+                </div>
+              </section>
 
-              <div class="create-accordion">
-                <button type="button" class="create-accordion-head" data-accordion="create-starter-panel" aria-expanded="false">
-                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
-                  <span>starter command</span>
-                </button>
-                <div class="create-accordion-body hidden" id="create-starter-panel">
-                  <input type="text" id="create-start-cmd" class="create-inline-input" placeholder="optional — runtime start command">
-                </div>
-              </div>
-
-              <div class="create-accordion">
-                <button type="button" class="create-accordion-head" data-accordion="create-build-panel" aria-expanded="false">
-                  <i data-lucide="chevron-right" class="accordion-chevron"></i>
-                  <span>build command</span>
-                </button>
-                <div class="create-accordion-body hidden" id="create-build-panel">
-                  <input type="text" id="create-build-cmd" class="create-inline-input" placeholder="optional — docker build arg or custom build step">
-                </div>
-              </div>
-
-              <div class="create-section create-server-section">
-                <button type="button" class="create-accordion-head create-accordion-static" tabindex="-1">
-                  <i data-lucide="chevron-right" class="accordion-chevron muted"></i>
-                  <span>server</span>
-                </button>
-                <div class="server-picker">
-                  <button type="button" class="server-pill active" disabled>This server (vps)</button>
-                  <button type="button" class="server-pill server-pill-add" disabled title="Coming soon">+ add server</button>
-                </div>
-              </div>
+              <section class="deploy-analysis hidden" id="deploy-analysis" aria-live="polite">
+                <div class="deploy-section-heading"><span class="deploy-step">2</span><div><p class="eyebrow">Detected configuration</p><h2>Review build plan</h2></div><button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm"><i data-lucide="refresh-cw"></i>Analyze again</button></div>
+                <div class="deploy-detection-grid" id="deploy-detection-grid"></div>
+                <div class="deploy-env-panel"><div><h3>Suggested environment variables</h3><p>Only variable names and source locations are detected. Values are never read or imported.</p></div><div id="deploy-env-suggestions" class="deploy-env-suggestions"></div></div>
+                <label class="deploy-env-editor" for="create-env-vars"><span>Environment values</span><textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea></label>
+                <details class="deploy-build-overrides"><summary>Build settings <i data-lucide="chevron-down"></i></summary><div><label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label><label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label></div></details>
+              </section>
 
               <div class="create-log-box logs-panel" id="create-log-wrap">
-                <div class="create-log-placeholder" id="create-log-placeholder">Deploy logs appear here…</div>
+                <div class="create-log-placeholder" id="create-log-placeholder">Import a source to see its deployment plan.</div>
                 <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
               </div>
 
               <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
-                <i data-lucide="rocket"></i>
-                <span>Create &amp; Deploy</span>
+                <i data-lucide="scan-search"></i><span>Analyze source</span>
               </button>
             </form>
           </div>
