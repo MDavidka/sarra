@@ -1,0 +1,3 @@
+/* Page-local styles for s3: bucket destination cards. */
+.page-s3 { --page-accent: #2563eb; }
+.page-s3 .ops-card { border-radius: 18px; }

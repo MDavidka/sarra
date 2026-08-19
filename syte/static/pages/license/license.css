@@ -1,0 +1,3 @@
+/* Page-local styles for license: certificate-like entitlement panel. */
+.page-license { --page-accent: #2563eb; }
+.page-license .ops-card { border-radius: 18px; }

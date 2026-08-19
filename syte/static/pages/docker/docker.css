@@ -1,0 +1,3 @@
+/* Page-local styles for docker: terminal-style container table. */
+.page-docker { --page-accent: #2563eb; }
+.page-docker .ops-card { border-radius: 18px; }

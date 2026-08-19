@@ -1,0 +1,3 @@
+/* Page-local styles for dns: zone and records. */
+.page-dns { --page-accent: #2563eb; }
+.page-dns .ops-card { border-radius: 18px; }

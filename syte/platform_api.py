@@ -204,13 +204,16 @@ async def restore_backup_execution(uuid: str) -> dict[str, Any]:
 
 
 _PLATFORM_NAV_PAGES: dict[str, dict[str, Any]] = {
+    "home": {"title": "Home", "description": "Ops command center for API, proxy, Docker, deploys, queues, certificates, and servers.", "tables": ["platform_projects", "platform_deployments", "platform_servers", "platform_webhook_events", "platform_certificates"]},
     "projects": {"title": "Projects", "description": "Applications, environments, and deployment resources managed by Syte.", "tables": ["platform_projects", "platform_applications"]},
     "overview": {"title": "Overview", "description": "Live platform inventory across projects, applications, databases, and backups.", "tables": ["platform_projects", "platform_applications", "platform_databases", "platform_backups"]},
     "schedules": {"title": "Schedules", "description": "Backup and scheduled-task records currently configured on this Syte instance.", "tables": ["platform_backups", "platform_scheduled_tasks"]},
     "traefik": {"title": "Traefik File System", "description": "Proxy configuration is generated from Syte domains and certificates.", "tables": ["platform_certificates", "platform_domains"]},
     "docker": {"title": "Docker", "description": "Managed containers, databases, and deployment runtime inventory.", "tables": ["platform_databases", "platform_applications", "platform_services"]},
+    "settings": {"title": "Settings", "description": "Instance settings for domains, proxy engine, updates, retention, backups, feature flags, locale, and diagnostics.", "tables": ["platform_webhook_events", "platform_servers"]},
     "profile": {"title": "Profile", "description": "Current operator and instance identity settings.", "tables": ["platform_operator_profiles"]},
     "sessions": {"title": "Sessions", "description": "Current operator session status and session policy.", "tables": []},
+    "users": {"title": "Users", "description": "Admin directory, roles, sessions, and audit slices for operators.", "tables": ["platform_operator_profiles", "platform_webhook_events"]},
     "remote-servers": {"title": "Remote Servers", "description": "Servers available for deployment and platform resource placement.", "tables": ["platform_servers"]},
     "audit-logs": {"title": "Audit Logs", "description": "Recent webhook and platform events retained by Syte.", "tables": ["platform_webhook_events"]},
     "ssh-keys": {"title": "SSH Keys", "description": "SSH key inventory used by remote deployment integrations.", "tables": ["platform_ssh_keys"]},
@@ -351,6 +354,8 @@ async def run_navigation_action(page: str, body: NavigationActionRequest) -> dic
     bootstrap = await ensure_bootstrap()
     now = utcnow()
     event = await insert("platform_webhook_events", {"uuid": new_uuid(), "source": "operator", "event": f"{page}.action", "accepted": 1, "message": body.action, "created_at": now})
+    if page == "home" and body.action == "home-actions":
+        return {"ok": True, "action": body.action, "message": "Command-center health snapshot refreshed.", "metrics": await overview_metrics(), "event": event}
     if page == "overview" and body.action == "overview-actions":
         counts = {table: len(await find(table, {})) for table in ("platform_projects", "platform_applications", "platform_databases", "platform_backups")}
         return {"ok": True, "action": body.action, "message": "Platform inventory refreshed.", "counts": counts, "event": event}

@@ -1,0 +1,3 @@
+/* Page-local styles for billing: self-host usage ledger. */
+.page-billing { --page-accent: #2563eb; }
+.page-billing .ops-card { border-radius: 18px; }
