@@ -7507,6 +7507,10 @@ function showLegacyAccountApp(account) {
   document.body.classList.remove('account-auth-pending');
   document.getElementById('account-login-screen')?.classList.add('hidden');
   renderLegacyAccountCorner(account);
+  // Project-source status may have been fetched before the HttpOnly account
+  // session existed. Refresh it after authentication so Connect GitHub does
+  // not remain disabled with a stale unauthenticated response.
+  void loadGithubSourceStatus();
 }
 
 function legacyAccountLoginMarkup(setup) {
