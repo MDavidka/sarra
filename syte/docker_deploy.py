@@ -401,7 +401,7 @@ def deploy_docker(
         "docker", "run", "-d",
         "--name", container,
         "--restart", "unless-stopped",
-        *_runtime_resource_args(project),
+        *_runtime_resource_args(),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
         *_runtime_env_args(repo, container_port, env_vars_raw),
