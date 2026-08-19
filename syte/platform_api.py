@@ -30,6 +30,7 @@ from syte.platform.store import (
     get,
     get_database,
     insert,
+    update,
 )
 from syte.platform.types import new_uuid, utcnow
 
@@ -57,6 +58,36 @@ class CreateBackupRequest(BaseModel):
 
 async def _operator(_: dict[str, Any] = Depends(verify_operator_session_or_token)) -> dict[str, Any]:
     return _
+
+
+class OperatorProfileRequest(BaseModel):
+    display_name: str = Field(default="", max_length=120)
+    email: str = Field(default="", max_length=254)
+
+
+@router.get("/operator/profile", dependencies=[Depends(_operator)])
+async def get_operator_profile() -> dict[str, Any]:
+    bootstrap = await ensure_bootstrap()
+    profiles = await find("platform_operator_profiles", {"team_uuid": bootstrap["team"]["uuid"]}, order_by="updated_at DESC")
+    if profiles:
+        return {"profile": profiles[0]}
+    now = utcnow()
+    profile = await insert("platform_operator_profiles", {
+        "uuid": new_uuid(), "team_uuid": bootstrap["team"]["uuid"], "display_name": "Operator",
+        "email": "", "role": "operator", "created_at": now, "updated_at": now,
+    })
+    return {"profile": profile}
+
+
+@router.put("/operator/profile", dependencies=[Depends(_operator)])
+async def update_operator_profile(body: OperatorProfileRequest) -> dict[str, Any]:
+    current = await get_operator_profile()
+    profile = current["profile"]
+    now = utcnow()
+    updated = await update("platform_operator_profiles", str(profile["uuid"]), {
+        "display_name": body.display_name.strip(), "email": body.email.strip(), "updated_at": now,
+    })
+    return {"ok": True, "profile": updated or profile, "message": "Profile updated."}
 
 
 @router.get("/databases/catalog")

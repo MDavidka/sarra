@@ -6,9 +6,9 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, Bot, Boxes, BrainCircuit, CalendarClock, ChevronRight, CircleHelp, Cloud,
   Database, FileCog, Gauge, Home, KeyRound, LayoutDashboard, Menu, Router,
-  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X,
+  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, setOperatorCsrfToken } from '@/lib/api';
 
 type NavItem = { href: string; label: string; icon: typeof Home; apiPage?: string };
 type MetricData = { cpu_percent?: number; memory_percent?: number; disk_percent?: number; api_requests?: number; internet_ping_ms?: number; project_count?: number; security_blocked_users?: number };
@@ -16,6 +16,8 @@ type ServiceHealth = { state?: string; healthy?: boolean; detail?: string };
 type OverviewHealth = { metrics?: MetricData; services?: Record<string, ServiceHealth>; overall?: 'healthy' | 'attention' | 'degraded' };
 type Resource = Record<string, unknown>;
 type PagePayload = { title?: string; description?: string; resource_count?: number; resources?: Resource[] };
+type OperatorSession = { authenticated?: boolean; csrf_token?: string; expires_in?: number };
+type OperatorProfile = { uuid?: string; display_name?: string; email?: string; role?: string; updated_at?: string };
 
 const primary: NavItem[] = [
   { href: '/home', label: 'Home', icon: Home },
@@ -124,6 +126,60 @@ function UsersPage() {
   return <><PageHeader eyebrow="Access management" title="Users & API tokens" description="Preserves the original FastAPI-backed access-token workflow in the Next.js operator UI." action={tokens.reload}/><section className="legacyPanel compact"><div><p className="eyebrow">Create automation access</p><h2>New API token</h2><p>Issue a token for CI, deployments, or external integrations.</p></div><div className="tokenCreate"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="ci-deploy"/><button onClick={create} className="darkButton">Create token</button></div></section>{message && <p className="notice">{message}</p>}<section className="resourceList">{tokens.data?.length ? tokens.data.map((token, index) => <article key={token.id || index}><span><strong>{token.name || 'Operator token'}</strong><small>{token.created_at || 'Created recently'}</small></span><ShieldCheck size={16}/></article>) : <p className="empty">No tokens returned. Operator authentication is required to manage tokens.</p>}</section></>;
 }
 
+function ProfilePage() {
+  const [session, setSession] = useState<OperatorSession | null>(null);
+  const [profile, setProfile] = useState<OperatorProfile | null>(null);
+  const [bootstrapToken, setBootstrapToken] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  const loadProfile = async () => {
+    const result = await api<{ profile: OperatorProfile }>('/platform/operator/profile');
+    setProfile(result.profile);
+    setDisplayName(result.profile.display_name || '');
+    setEmail(result.profile.email || '');
+  };
+  const refreshSession = async () => {
+    setBusy(true);
+    try {
+      const current = await api<OperatorSession>('/operator/session');
+      setSession(current);
+      setOperatorCsrfToken(current.csrf_token || null);
+      if (current.authenticated) await loadProfile();
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => { refreshSession(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const login = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setMessage(null);
+    try {
+      const result = await api<OperatorSession & { message?: string }>('/operator/session', { method: 'POST', body: JSON.stringify({ bootstrap_token: bootstrapToken }) });
+      setOperatorCsrfToken(result.csrf_token || null); setSession({ authenticated: true, csrf_token: result.csrf_token, expires_in: result.expires_in }); setBootstrapToken(''); await loadProfile();
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage(null);
+    try {
+      const result = await api<{ profile: OperatorProfile; message: string }>('/platform/operator/profile', { method: 'PUT', body: JSON.stringify({ display_name: displayName, email }) });
+      setProfile(result.profile); setMessage(result.message);
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const logout = async () => {
+    setBusy(true);
+    try { await api('/operator/session', { method: 'DELETE' }); setOperatorCsrfToken(null); setSession({ authenticated: false }); setProfile(null); setMessage(null); }
+    catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  if (busy && session === null) return <section className="profileGate"><p className="profileLoading">Checking operator session…</p></section>;
+  if (!session?.authenticated) return <section className="profileGate"><div className="shadcnCard loginCard"><div className="cardBrand"><span className="cardMark">S</span><div><p>Syte operator</p><h1>Welcome back</h1></div></div><p className="cardLead">Sign in to manage your operator profile and protected platform controls.</p><form onSubmit={login} className="shadcnForm"><label htmlFor="operator-key">Operator key</label><input id="operator-key" type="password" autoComplete="current-password" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} placeholder="Enter your operator key" required/><button disabled={busy} className="shadcnPrimary" type="submit">{busy ? 'Signing in…' : 'Sign in'}</button></form>{message && <p className="formMessage error">{message}</p>}<p className="cardFineprint">Your key is exchanged for an HttpOnly session cookie and is never stored in the browser.</p></div></section>;
+  return <section className="profilePage"><header className="profileHeader"><div className="avatarCircle">{(profile?.display_name || 'O').slice(0, 1).toUpperCase()}</div><div><p className="eyebrow">Authenticated operator</p><h1>{profile?.display_name || 'Operator'}</h1><p>{profile?.email || 'No email address configured'}</p></div><button className="shadcnOutline" onClick={logout} disabled={busy}><LogOut size={16}/>Sign out</button></header><div className="profileGrid"><section className="shadcnCard profileDetails"><div className="sectionTitle"><UserRound size={19}/><div><h2>Personal details</h2><p>These details identify this operator in the workspace.</p></div></div><form onSubmit={save} className="shadcnForm"><label htmlFor="profile-name">Display name</label><input id="profile-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Operator name" maxLength={120}/><label htmlFor="profile-email">Email address</label><div className="inputWithIcon"><Mail size={16}/><input id="profile-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@example.com" maxLength={254}/></div><button disabled={busy} className="shadcnPrimary" type="submit"><Save size={16}/>{busy ? 'Saving…' : 'Save changes'}</button></form>{message && <p className="formMessage">{message}</p>}</section><aside className="shadcnCard profileSecurity"><ShieldCheck size={21}/><h2>Session protected</h2><p>This profile uses the active operator session. Protected changes require a same-origin CSRF token.</p><dl><div><dt>Role</dt><dd>{profile?.role || 'operator'}</dd></div><div><dt>Session</dt><dd>{session.expires_in ? `${Math.ceil(session.expires_in / 60)} min remaining` : 'Active'}</dd></div></dl></aside></div></section>;
+}
+
 function BlankPage() {
   return <section className="intentionalBlank" aria-label="Blank workspace"/>;
 }
@@ -141,6 +197,6 @@ export default function Shell() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const page = useMemo(() => pathname === '/' ? 'home' : pathname.slice(1), [pathname]);
-  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <ProfilePage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="content">{content}</div></main>;
 }
