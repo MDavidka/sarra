@@ -1,8 +1,17 @@
 export type ApiError = Error & { status?: number };
 
+let csrfToken: string | null = null;
+
+export function setOperatorCsrfToken(token: string | null): void {
+  csrfToken = token;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
+  if (!['GET', 'HEAD', 'OPTIONS'].includes((init.method || 'GET').toUpperCase()) && csrfToken && !headers.has('X-Syte-CSRF')) {
+    headers.set('X-Syte-CSRF', csrfToken);
+  }
   const response = await fetch(`/api${path}`, { ...init, headers, cache: 'no-store' });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { detail?: { message?: string } | string } | null;

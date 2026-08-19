@@ -3609,6 +3609,49 @@ function renderOverviewHealth(data) {
   target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section>`;
 }
 
+async function renderProfileWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="legacy-profile-gate"><p class="profile-loading">Checking operator session…</p></section>';
+  try {
+    const session = await api('/operator/session');
+    syraCsrfToken = session.authenticated ? (session.csrf_token || '') : '';
+    if (!session.authenticated) {
+      target.innerHTML = `<section class="legacy-profile-gate"><div class="legacy-profile-card"><div class="legacy-profile-brand"><span>S</span><div><p>Syte operator</p><h1>Welcome back</h1></div></div><p>Sign in to manage your protected operator profile.</p><form id="legacy-profile-login" class="legacy-profile-form"><label for="legacy-profile-key">Operator key</label><input id="legacy-profile-key" type="password" autocomplete="current-password" placeholder="Enter your operator key" required><button class="btn-pill btn-primary" type="submit">Sign in</button></form><small id="legacy-profile-message">Your key is exchanged for a secure HttpOnly session cookie.</small></div></section>`;
+      target.querySelector('#legacy-profile-login')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const input = target.querySelector('#legacy-profile-key');
+        const message = target.querySelector('#legacy-profile-message');
+        try {
+          const result = await api('/operator/session', {method: 'POST', body: JSON.stringify({bootstrap_token: input?.value || ''})});
+          syraCsrfToken = result.csrf_token || '';
+          setSyraSessionState(true);
+          await renderProfileWorkspace();
+        } catch (error) { if (message) message.textContent = error.message; }
+      });
+      return;
+    }
+    setSyraSessionState(true);
+    const current = await api('/platform/operator/profile');
+    const profile = current.profile || {};
+    const name = profile.display_name || 'Operator';
+    target.innerHTML = `<section class="legacy-profile-page"><header><span class="legacy-profile-avatar">${esc(name.slice(0, 1).toUpperCase())}</span><div><p>Authenticated operator</p><h1>${esc(name)}</h1><small>${esc(profile.email || 'No email address configured')}</small></div><button type="button" class="btn-pill btn-ghost" id="legacy-profile-logout">Sign out</button></header><div class="legacy-profile-grid"><form id="legacy-profile-form" class="legacy-profile-card legacy-profile-form"><h2>Personal details</h2><p>These details identify this operator across the workspace.</p><label for="legacy-profile-name">Display name</label><input id="legacy-profile-name" value="${esc(profile.display_name || '')}" maxlength="120" placeholder="Operator name"><label for="legacy-profile-email">Email address</label><input id="legacy-profile-email" type="email" value="${esc(profile.email || '')}" maxlength="254" placeholder="operator@example.com"><button class="btn-pill btn-primary" type="submit">Save changes</button><small id="legacy-profile-save-message"></small></form><aside class="legacy-profile-card legacy-profile-security"><h2>Session protected</h2><p>Profile changes are protected by the active same-origin operator session.</p><dl><div><dt>Role</dt><dd>${esc(profile.role || 'operator')}</dd></div><div><dt>Session</dt><dd>${session.expires_in ? `${Math.ceil(session.expires_in / 60)} min remaining` : 'Active'}</dd></div></dl></aside></div></section>`;
+    target.querySelector('#legacy-profile-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const message = target.querySelector('#legacy-profile-save-message');
+      try {
+        const result = await api('/platform/operator/profile', {method: 'PUT', body: JSON.stringify({display_name: target.querySelector('#legacy-profile-name')?.value || '', email: target.querySelector('#legacy-profile-email')?.value || ''})});
+        if (message) message.textContent = result.message || 'Profile updated.';
+      } catch (error) { if (message) message.textContent = error.message; }
+    });
+    target.querySelector('#legacy-profile-logout')?.addEventListener('click', async () => {
+      try { await api('/operator/session', {method: 'DELETE'}); } finally { syraCsrfToken = ''; setSyraSessionState(false); await renderProfileWorkspace(); }
+    });
+  } catch (error) {
+    target.innerHTML = `<section class="legacy-profile-gate"><p class="profile-loading">${esc(error.message)}</p></section>`;
+  }
+}
+
 async function loadPlatformPage(page = 'overview') {
   const safePage = PLATFORM_PAGE_LABELS[page] ? page : 'overview';
   activePlatformPage = safePage;
@@ -3621,12 +3664,18 @@ async function loadPlatformPage(page = 'overview') {
   const message = document.getElementById('platform-page-message');
   const workspace = document.getElementById('platform-workspace');
   const isOverview = safePage === 'overview';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview;
+  const isProfile = safePage === 'profile';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
+  workspace?.classList.toggle('is-profile-workspace', isProfile);
   if (isBlankWorkspace) {
     const blankTarget = document.getElementById('platform-dedicated-page');
     if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
+    return;
+  }
+  if (isProfile) {
+    await renderProfileWorkspace();
     return;
   }
   if (isOverview) {
@@ -4098,7 +4147,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || (path === '/operator/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || (path === '/operator/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -4152,7 +4201,7 @@ async function restoreOperatorSession() {
 // Which UI routes require operator auth before their data loads.
 const OPERATOR_PROTECTED_VIEWS = ['ssl', 'router'];
 // REST prefixes that can be authenticated with an API key (session-stored).
-const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/router', '/settings/github', '/github', '/tokens'];
+const OPERATOR_API_KEY_PATHS = ['/ssl', '/settings/syra', '/settings/router', '/settings/github', '/github', '/tokens', '/platform/operator/profile'];
 
 function isOperatorView(name) {
   return OPERATOR_PROTECTED_VIEWS.includes(name);
