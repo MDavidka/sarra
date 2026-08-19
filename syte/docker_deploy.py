@@ -3,6 +3,8 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -64,6 +66,13 @@ def find_dockerfile(project_id: str) -> Path | None:
 
 
 def detect_container_port(dockerfile: Path) -> int:
+    """Return the port the application actually listens on at runtime.
+
+    Dockerfile ``EXPOSE`` is useful, but many Next.js projects hard-code their
+    ``next start -p`` port in ``package.json``. Prefer that explicit runtime
+    command when present so Syte does not proxy a healthy container to an idle
+    exposed port.
+    """
     port = 3000
     try:
         for line in dockerfile.read_text().splitlines():
@@ -73,6 +82,16 @@ def detect_container_port(dockerfile: Path) -> int:
                 if parts:
                     port = int(parts[0].split("/")[0])
     except (OSError, ValueError):
+        pass
+
+    package = dockerfile.parent / "package.json"
+    try:
+        scripts = json.loads(package.read_text()).get("scripts", {})
+        start = str(scripts.get("start") or "")
+        match = re.search(r"\bnext\s+start\b.*?(?:-p|--port)(?:=|\s+)(\d+)\b", start)
+        if match:
+            return int(match.group(1))
+    except (OSError, ValueError, json.JSONDecodeError, AttributeError):
         pass
     return port
 
@@ -215,17 +234,24 @@ def _workspace_file_listing(repo: Path) -> str:
     return f"{router_note}\n{_tree_summary(repo)}"
 
 
-def _runtime_env_args(repo: Path, container_port: int, env_vars_raw: str | dict) -> list[str]:
-    """Env vars passed to docker run (user env + sensible defaults)."""
-    env = read_env_vars(env_vars_raw)
+def _runtime_env(repo: Path, container_port: int, env_vars_raw: str | dict) -> dict[str, str]:
+    """Return the full runtime environment without exposing values in logs."""
+    raw = read_env_vars(env_vars_raw)
+    env = {str(key): str(value) for key, value in raw.items() if key and value is not None}
     env.setdefault("PORT", str(container_port))
     if _is_nextjs_repo(repo):
         env.setdefault("HOSTNAME", "0.0.0.0")
         env.setdefault("NODE_ENV", "production")
-    args: list[str] = []
-    for key, value in env.items():
-        args.extend(["-e", f"{key}={value}"])
-    return args
+    return env
+
+
+def _runtime_env_file(project_id: str, env: dict[str, str]) -> Path:
+    """Write a private Docker ``--env-file`` outside the cloned source tree."""
+    path = workspace_path(project_id) / ".runtime.env"
+    lines = [f"{key}={value}" for key, value in env.items()]
+    path.write_text("\n".join(lines) + ("\n" if lines else ""))
+    path.chmod(0o600)
+    return path
 
 
 def _container_logs(container: str, lines: int = 80) -> str:
@@ -273,6 +299,27 @@ def is_docker_running(project_id: str) -> bool:
         ["docker", "inspect", "-f", "{{.State.Running}}", name]
     )
     return code == 0 and out.strip().lower() == "true"
+
+
+def _wait_for_http_ready(host_port: int, timeout_seconds: float = 15.0) -> tuple[bool, str]:
+    """Wait for the new release to accept HTTP before reporting deployment success."""
+    url = f"http://127.0.0.1:{host_port}/"
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "no response"
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2.0) as response:
+                if response.status < 500:
+                    return True, f"HTTP {response.status}"
+                last_error = f"HTTP {response.status}"
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                return True, f"HTTP {exc.code}"
+            last_error = f"HTTP {exc.code}"
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(1)
+    return False, last_error
 
 
 def stop_docker(project_id: str) -> tuple[bool, str]:
@@ -346,7 +393,6 @@ def deploy_docker(
     repo = workspace_path(project_id) / "app"
     image = _image_name(project_id)
     container = _container_name(project_id)
-    container_port = detect_container_port(dockerfile)
     data_dir = workspace_path(project_id) / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -358,6 +404,9 @@ def deploy_docker(
     dockerfile = find_dockerfile(project_id) or dockerfile
     if not dockerfile or not dockerfile.is_file():
         return False, "Dockerfile not found in workspace."
+    container_port = detect_container_port(dockerfile)
+    runtime_env = _runtime_env(repo, container_port, env_vars_raw)
+    env_file = _runtime_env_file(project_id, runtime_env)
 
     ok, validate_msg = validate_nextjs_for_docker(repo)
     if not ok:
@@ -404,9 +453,14 @@ def deploy_docker(
         *_runtime_resource_args(),
         "-p", f"{host_port}:{container_port}",
         "-v", f"{data_dir}:/data",
-        *_runtime_env_args(repo, container_port, env_vars_raw),
+        "--env-file", str(env_file),
         image,
     ]
+    _append_build_log(
+        project_id,
+        "docker runtime configuration",
+        f"Port mapping: {host_port}:{container_port}\nEnvironment keys: {', '.join(sorted(runtime_env))}",
+    )
     _append_build_log(project_id, "docker run command", " ".join(run_cmd_list))
     code, out = run_cmd(run_cmd_list)
     _append_build_log(project_id, "docker run", out or "(no output)")
@@ -423,6 +477,16 @@ def deploy_docker(
             f"Container logs:\n{logs}\n\n"
             f"For Next.js apps ensure the Dockerfile CMD listens on 0.0.0.0 "
             f"and EXPOSE matches the app port (usually 3000)."
+        )
+
+    ready, readiness = _wait_for_http_ready(host_port)
+    if not ready:
+        logs = _container_logs(container)
+        _append_build_log(project_id, "release readiness failed", f"{readiness}\n{logs}")
+        stop_docker(project_id)
+        return False, (
+            f"Container started but the release did not become HTTP-ready on port {host_port}: {readiness}\n\n"
+            f"Container logs:\n{logs}"
         )
 
     rel = dockerfile.relative_to(repo)
