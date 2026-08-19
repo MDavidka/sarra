@@ -5047,6 +5047,7 @@ function updateActiveServiceMeta(p) {
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
     updateServiceConnLink(p);
+    renderDeploymentSitePreview(p);
   } else if (activeSvcTab === 'preview') {
     renderPreviewSection(p);
   }
@@ -5453,6 +5454,34 @@ function setPreviewFrameSrc(frame, url) {
 function renderServiceEmbed(p) {
   renderPreviewSection(p);
 }
+
+function renderDeploymentSitePreview(p) {
+  const frame = document.getElementById('svc-deploy-preview-frame');
+  const placeholder = document.getElementById('svc-deploy-preview-placeholder');
+  const previewLabel = document.getElementById('svc-preview-label');
+  const previewOpen = document.getElementById('svc-preview-open');
+  const url = p.url || '';
+  if (previewLabel) previewLabel.textContent = p.domain || connLabel(p) || 'Live site preview';
+  if (previewOpen) {
+    previewOpen.href = url || '#';
+    previewOpen.toggleAttribute('aria-disabled', !url);
+  }
+  if (!frame || !placeholder) return;
+  if (url) {
+    if (frame.dataset.previewUrl !== url) {
+      frame.src = url;
+      frame.dataset.previewUrl = url;
+    }
+    frame.classList.remove('hidden');
+    placeholder.classList.add('hidden');
+  } else {
+    frame.classList.add('hidden');
+    frame.removeAttribute('src');
+    delete frame.dataset.previewUrl;
+    placeholder.classList.remove('hidden');
+  }
+}
+
 async function loadServiceHealth(projectId) {
   const state = document.getElementById('svc-health-state');
   const detail = document.getElementById('svc-health-detail');
@@ -5535,6 +5564,11 @@ function renderServiceDashboard(p, resetLogs) {
   const deploymentSource = document.getElementById('svc-deploy-source');
   if (deploymentSource) deploymentSource.textContent = p.git_url ? p.git_url.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '') : 'Manual source';
   document.querySelectorAll('[data-svc-open]').forEach((button) => { button.onclick = () => switchSvcTab(button.dataset.svcOpen || 'logs'); });
+  const deployNow = document.getElementById('svc-deploy-now');
+  if (deployNow) deployNow.onclick = () => serviceDeploy(p.id);
+  const editDomain = document.getElementById('svc-domain-edit');
+  if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
+  renderDeploymentSitePreview(p);
 
   const envInput = document.getElementById('svc-env-input');
   if (envInput) envInput.value = formatEnv(p.env_vars);
