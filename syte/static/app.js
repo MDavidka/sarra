@@ -4189,7 +4189,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || path.startsWith('/projects/git/github') || path === '/projects/import/github' || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
