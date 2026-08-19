@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     last_used_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS operator_accounts (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    avatar_icon TEXT NOT NULL DEFAULT 'user',
+    role TEXT NOT NULL DEFAULT 'operator',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_login_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_operator_accounts_email
+    ON operator_accounts(email);
+
 CREATE TABLE IF NOT EXISTS deployment_runs (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -349,3 +364,54 @@ async def delete_api_token(token_id: str) -> bool:
         cursor = await db.execute("DELETE FROM api_tokens WHERE id = ?", (token_id,))
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def count_operator_accounts() -> int:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute("SELECT COUNT(*) FROM operator_accounts") as cur:
+            row = await cur.fetchone()
+            return int(row[0] if row else 0)
+
+
+async def get_operator_account_by_email(email: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM operator_accounts WHERE email = ? COLLATE NOCASE", (email.strip(),)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_operator_account(account_id: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM operator_accounts WHERE id = ?", (account_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def create_operator_account(data: dict[str, Any]) -> dict[str, Any]:
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO operator_accounts
+            (id, email, password_hash, display_name, avatar_icon, role, created_at, updated_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (data["id"], data["email"].strip().lower(), data["password_hash"], data.get("display_name", ""),
+             data.get("avatar_icon", "user"), data.get("role", "operator"), now, now, None),
+        )
+        await db.commit()
+    return (await get_operator_account(data["id"])) or data
+
+
+async def update_operator_account(account_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    allowed = {"display_name", "avatar_icon", "last_login_at", "password_hash"}
+    pairs = [(key, value) for key, value in updates.items() if key in allowed]
+    if not pairs:
+        return await get_operator_account(account_id)
+    pairs.append(("updated_at", _now()))
+    columns = ", ".join(f"{key} = ?" for key, _ in pairs)
+    values = [value for _, value in pairs] + [account_id]
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(f"UPDATE operator_accounts SET {columns} WHERE id = ?", values)
+        await db.commit()
+    return await get_operator_account(account_id)

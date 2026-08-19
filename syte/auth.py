@@ -6,10 +6,12 @@ project UUID on that host. Tenant isolation is expected at the host boundary
 (one Syte install per operator), not via per-token project ACLs.
 """
 
+import base64
 import hashlib
 import hmac
 import secrets
 import time
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -24,6 +26,9 @@ from syte.database import (
     list_api_tokens,
     touch_api_token,
     get_setting,
+    get_operator_account,
+    get_operator_account_by_email,
+    update_operator_account,
 )
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -31,7 +36,7 @@ BEARER_PREFIX = "Bearer "
 OPERATOR_SESSION_COOKIE = "__Host-syte-operator"
 OPERATOR_CSRF_HEADER = "X-Syte-CSRF"
 OPERATOR_SESSION_TTL_SECONDS = 8 * 60 * 60
-_operator_sessions: dict[str, tuple[float, str]] = {}
+_operator_sessions: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
 
 
 def hash_token(token: str) -> str:
@@ -123,7 +128,7 @@ def require_same_origin_if_present(request: Request) -> None:
 
 def _prune_operator_sessions(now: float | None = None) -> None:
     now = now if now is not None else time.time()
-    for session_id, (expires_at, _csrf_token) in tuple(_operator_sessions.items()):
+    for session_id, (expires_at, _csrf_token, _account) in tuple(_operator_sessions.items()):
         if expires_at <= now:
             _operator_sessions.pop(session_id, None)
 
@@ -150,7 +155,7 @@ def create_bootstrap_operator_session(bootstrap_token: str) -> dict[str, str | i
     _prune_operator_sessions()
     session_id = secrets.token_urlsafe(32)
     csrf_token = secrets.token_urlsafe(32)
-    _operator_sessions[session_id] = (time.time() + OPERATOR_SESSION_TTL_SECONDS, csrf_token)
+    _operator_sessions[session_id] = (time.time() + OPERATOR_SESSION_TTL_SECONDS, csrf_token, None)
     return {
         "session_id": session_id,
         "csrf_token": csrf_token,
@@ -166,15 +171,18 @@ def operator_session_status(request: Request) -> dict[str, str | int | bool]:
     entry = _operator_sessions.get(session_id)
     if not entry:
         return {"authenticated": False}
-    expires_at, csrf_token = entry
+    expires_at, csrf_token, account = entry
     if expires_at <= time.time():
         _operator_sessions.pop(session_id, None)
         return {"authenticated": False}
-    return {
+    result: dict[str, str | int | bool | dict[str, Any]] = {
         "authenticated": True,
         "csrf_token": csrf_token,
         "expires_in": max(0, int(expires_at - time.time())),
     }
+    if account:
+        result["account"] = account
+    return result
 
 
 def revoke_operator_session(request: Request) -> None:
@@ -208,6 +216,9 @@ async def verify_operator_session_or_token(
                 403,
                 detail={"error": "invalid_csrf_token", "message": "Refresh the Syra web UI and retry."},
             )
+    account = session.get("account") if isinstance(session, dict) else None
+    if isinstance(account, dict):
+        return {"id": str(account.get("id", "gui-session")), "name": str(account.get("email", "operator")), "auth": "account", "account": account}
     return {"id": "gui-session", "name": "gui-session", "auth": "session"}
 
 
@@ -280,3 +291,51 @@ async def verify_internal_service_request(request: Request) -> dict[str, Any]:
             },
         )
     return {"ok": True, "auth": "internal-secret"}
+
+
+PASSWORD_SCRYPT_N = 2**14
+PASSWORD_SCRYPT_R = 8
+PASSWORD_SCRYPT_P = 1
+
+
+def hash_password(password: str) -> str:
+    """Hash an operator password with salted scrypt using only the standard library."""
+    if len(password) < 12:
+        raise HTTPException(422, detail={"error": "weak_password", "message": "Password must contain at least 12 characters."})
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=PASSWORD_SCRYPT_N, r=PASSWORD_SCRYPT_R, p=PASSWORD_SCRYPT_P)
+    return "$".join(("scrypt", str(PASSWORD_SCRYPT_N), str(PASSWORD_SCRYPT_R), str(PASSWORD_SCRYPT_P), base64.urlsafe_b64encode(salt).decode(), base64.urlsafe_b64encode(digest).decode()))
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    try:
+        algorithm, n, r, p, salt, expected = encoded.split("$", 5)
+        if algorithm != "scrypt":
+            return False
+        digest = hashlib.scrypt(password.encode("utf-8"), salt=base64.urlsafe_b64decode(salt.encode()), n=int(n), r=int(r), p=int(p))
+        return hmac.compare_digest(digest, base64.urlsafe_b64decode(expected.encode()))
+    except (ValueError, TypeError):
+        return False
+
+
+def _public_account(account: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": account["id"], "email": account["email"], "display_name": account.get("display_name") or account["email"].split("@", 1)[0],
+        "avatar_icon": account.get("avatar_icon") or "user", "role": account.get("role") or "operator",
+    }
+
+
+def create_account_operator_session(account: dict[str, Any]) -> dict[str, str | int | dict[str, Any]]:
+    _prune_operator_sessions()
+    session_id = secrets.token_urlsafe(32)
+    csrf_token = secrets.token_urlsafe(32)
+    _operator_sessions[session_id] = (time.time() + OPERATOR_SESSION_TTL_SECONDS, csrf_token, _public_account(account))
+    return {"session_id": session_id, "csrf_token": csrf_token, "max_age": OPERATOR_SESSION_TTL_SECONDS, "account": _public_account(account)}
+
+
+async def authenticate_operator_account(email: str, password: str) -> dict[str, Any] | None:
+    account = await get_operator_account_by_email(email)
+    if not account or not verify_password(password, str(account.get("password_hash") or "")):
+        return None
+    await update_operator_account(str(account["id"]), {"last_login_at": datetime.now(timezone.utc).isoformat()})
+    return await get_operator_account(str(account["id"])) or account

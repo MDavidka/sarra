@@ -3632,20 +3632,28 @@ async function renderProfileWorkspace() {
       return;
     }
     setSyraSessionState(true);
-    const current = await api('/platform/operator/profile');
-    const profile = current.profile || {};
+    const current = await api('/auth/profile');
+    const profile = current.account || {};
     const name = profile.display_name || 'Operator';
-    target.innerHTML = `<section class="legacy-profile-page"><header><span class="legacy-profile-avatar">${esc(name.slice(0, 1).toUpperCase())}</span><div><p>Authenticated operator</p><h1>${esc(name)}</h1><small>${esc(profile.email || 'No email address configured')}</small></div><button type="button" class="btn-pill btn-ghost" id="legacy-profile-logout">Sign out</button></header><div class="legacy-profile-grid"><form id="legacy-profile-form" class="legacy-profile-card legacy-profile-form"><h2>Personal details</h2><p>These details identify this operator across the workspace.</p><label for="legacy-profile-name">Display name</label><input id="legacy-profile-name" value="${esc(profile.display_name || '')}" maxlength="120" placeholder="Operator name"><label for="legacy-profile-email">Email address</label><input id="legacy-profile-email" type="email" value="${esc(profile.email || '')}" maxlength="254" placeholder="operator@example.com"><button class="btn-pill btn-primary" type="submit">Save changes</button><small id="legacy-profile-save-message"></small></form><aside class="legacy-profile-card legacy-profile-security"><h2>Session protected</h2><p>Profile changes are protected by the active same-origin operator session.</p><dl><div><dt>Role</dt><dd>${esc(profile.role || 'operator')}</dd></div><div><dt>Session</dt><dd>${session.expires_in ? `${Math.ceil(session.expires_in / 60)} min remaining` : 'Active'}</dd></div></dl></aside></div></section>`;
+    let selectedAvatar = profile.avatar_icon || 'user';
+    const choices = Object.entries(SYTE_ACCOUNT_ICON).map(([key, icon]) => `<button type="button" data-avatar-icon="${key}" class="legacy-avatar-choice ${key === selectedAvatar ? 'selected' : ''}" aria-label="Use ${key} profile icon"><i data-lucide="${icon}"></i></button>`).join('');
+    target.innerHTML = `<section class="legacy-profile-page"><header><span class="legacy-profile-avatar"><i data-lucide="${SYTE_ACCOUNT_ICON[selectedAvatar] || 'user-round'}"></i></span><div><p>Authenticated Syte account</p><h1>${esc(name)}</h1><small>${esc(profile.email || 'No email address configured')}</small></div><button type="button" class="btn-pill btn-ghost" id="legacy-profile-logout">Sign out</button></header><div class="legacy-profile-grid"><form id="legacy-profile-form" class="legacy-profile-card legacy-profile-form"><h2>Profile</h2><p>Choose the identity shown across your Syte workspace.</p><label for="legacy-profile-name">Display name</label><input id="legacy-profile-name" value="${esc(profile.display_name || '')}" maxlength="120" placeholder="Your name"><label>Profile icon</label><div class="legacy-avatar-picker">${choices}</div><button class="btn-pill btn-primary" type="submit">Save profile</button><small id="legacy-profile-save-message"></small></form><aside class="legacy-profile-card legacy-profile-security"><h2>Account security</h2><p>Your email is your sign-in identity. The profile icon is displayed on every authenticated Syte page.</p><dl><div><dt>Email</dt><dd>${esc(profile.email || '')}</dd></div><div><dt>Role</dt><dd>${esc(profile.role || 'operator')}</dd></div></dl></aside></div></section>`;
+    target.querySelectorAll('[data-avatar-icon]').forEach((choice) => choice.addEventListener('click', () => {
+      selectedAvatar = choice.dataset.avatarIcon || 'user';
+      target.querySelectorAll('[data-avatar-icon]').forEach((item) => item.classList.toggle('selected', item.dataset.avatarIcon === selectedAvatar));
+    }));
     target.querySelector('#legacy-profile-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const message = target.querySelector('#legacy-profile-save-message');
       try {
-        const result = await api('/platform/operator/profile', {method: 'PUT', body: JSON.stringify({display_name: target.querySelector('#legacy-profile-name')?.value || '', email: target.querySelector('#legacy-profile-email')?.value || ''})});
+        const result = await api('/auth/profile', {method: 'PUT', body: JSON.stringify({display_name: target.querySelector('#legacy-profile-name')?.value || '', avatar_icon: selectedAvatar})});
+        syteAccount = result.account || syteAccount;
+        renderLegacyAccountCorner(syteAccount);
         if (message) message.textContent = result.message || 'Profile updated.';
       } catch (error) { if (message) message.textContent = error.message; }
     });
     target.querySelector('#legacy-profile-logout')?.addEventListener('click', async () => {
-      try { await api('/operator/session', {method: 'DELETE'}); } finally { syraCsrfToken = ''; setSyraSessionState(false); await renderProfileWorkspace(); }
+      try { await api('/auth/session', {method: 'DELETE'}); } finally { syraCsrfToken = ''; syteAccount = null; setSyraSessionState(false); document.getElementById('legacy-account-corner')?.classList.add('hidden'); document.getElementById('account-login-screen')?.classList.remove('hidden'); document.body.classList.add('account-auth-pending'); await initializeLegacyAccountGate(); }
     });
   } catch (error) {
     target.innerHTML = `<section class="legacy-profile-gate"><p class="profile-loading">${esc(error.message)}</p></section>`;
@@ -4147,7 +4155,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || (path === '/operator/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -4159,7 +4167,7 @@ async function api(path, opts = {}) {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
   }
   if (res.status === 401 && (
-    path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path === '/operator/session'
+    path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/auth/') || path === '/operator/session'
   )) {
     syraCsrfToken = '';
     setSyraSessionState(false);
@@ -7219,3 +7227,69 @@ document.querySelectorAll('.nav-placeholder[data-nav-placeholder]').forEach((ite
     toast(`${label} is available in the navigation and is being wired to the platform API.`);
   });
 });
+
+
+let syteAccount = null;
+const SYTE_ACCOUNT_ICON = {user: 'user-round', sparkles: 'sparkles', shield: 'shield-check', rocket: 'rocket', leaf: 'leaf', heart: 'heart', camera: 'camera'};
+
+function renderLegacyAccountCorner(account) {
+  const button = document.getElementById('legacy-account-corner');
+  if (!button || !account) return;
+  const icon = SYTE_ACCOUNT_ICON[account.avatar_icon] || 'user-round';
+  button.innerHTML = `<span class="legacy-account-icon"><i data-lucide="${icon}"></i></span><span>${esc(account.display_name || account.email)}</span>`;
+  button.classList.remove('hidden');
+  button.onclick = async () => { showView('platform'); await loadPlatformPage('profile'); };
+  refreshIcons();
+}
+
+function showLegacyAccountApp(account) {
+  syteAccount = account;
+  document.body.classList.remove('account-auth-pending');
+  document.getElementById('account-login-screen')?.classList.add('hidden');
+  renderLegacyAccountCorner(account);
+}
+
+function legacyAccountLoginMarkup(setup) {
+  return `<div class="account-login-card"><div class="account-login-icon"><i data-lucide="lock-keyhole"></i></div><p class="account-login-kicker">${setup ? 'First workspace account' : 'Syte secure workspace'}</p><h1>${setup ? 'Create your owner account' : 'Sign in to Syte'}</h1><p>${setup ? 'Set the email and password used to administer this Syte instance.' : 'Use your email and password to continue to your protected workspace.'}</p><form id="legacy-account-login-form" class="account-login-form">${setup ? '<label for="legacy-account-name">Display name</label><input id="legacy-account-name" maxlength="120" placeholder="Your name">' : ''}<label for="legacy-account-email">Email address</label><input id="legacy-account-email" type="email" autocomplete="email" placeholder="you@example.com" required><label for="legacy-account-password">Password</label><input id="legacy-account-password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" minlength="${setup ? 12 : 1}" placeholder="${setup ? 'At least 12 characters' : 'Your password'}" required><button class="btn-pill btn-primary" type="submit">${setup ? 'Create account' : 'Sign in'}</button></form><p id="legacy-account-login-error" class="account-login-error"></p>${!setup ? '<button id="legacy-account-setup-switch" class="account-login-switch" type="button">Need to set up this instance?</button>' : ''}</div>`;
+}
+
+async function initializeLegacyAccountGate() {
+  const screen = document.getElementById('account-login-screen');
+  if (!screen) return;
+  try {
+    const session = await api('/auth/session');
+    if (session.authenticated && session.account) {
+      syraCsrfToken = session.csrf_token || '';
+      setSyraSessionState(true);
+      showLegacyAccountApp(session.account);
+      return;
+    }
+    const setupState = await api('/auth/setup');
+    let setup = Boolean(setupState.needs_first_account);
+    const render = () => {
+      screen.innerHTML = legacyAccountLoginMarkup(setup);
+      screen.querySelector('#legacy-account-login-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const error = screen.querySelector('#legacy-account-login-error');
+        if (error) error.textContent = '';
+        const email = screen.querySelector('#legacy-account-email')?.value || '';
+        const password = screen.querySelector('#legacy-account-password')?.value || '';
+        const displayName = screen.querySelector('#legacy-account-name')?.value || '';
+        try {
+          const result = await api(setup ? '/auth/setup' : '/auth/login', {method: 'POST', body: JSON.stringify(setup ? {email, password, display_name: displayName} : {email, password})});
+          syraCsrfToken = result.csrf_token || '';
+          setSyraSessionState(true);
+          showLegacyAccountApp(result.account);
+        } catch (err) { if (error) error.textContent = err.message; }
+      });
+      screen.querySelector('#legacy-account-setup-switch')?.addEventListener('click', () => { setup = true; render(); });
+      refreshIcons();
+    };
+    render();
+  } catch (error) {
+    screen.innerHTML = `<div class="account-login-card"><div class="account-login-icon"><i data-lucide="triangle-alert"></i></div><p class="account-login-kicker">Syte secure workspace</p><h1>Unable to start sign in</h1><p class="account-login-error">${esc(error.message)}</p></div>`;
+    refreshIcons();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initializeLegacyAccountGate);

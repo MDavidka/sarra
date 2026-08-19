@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, Bot, Boxes, BrainCircuit, CalendarClock, ChevronRight, CircleHelp, Cloud,
   Database, FileCog, Gauge, Home, KeyRound, LayoutDashboard, Menu, Router,
-  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound,
+  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound, Rocket, Leaf, Heart, Camera, LockKeyhole, AtSign,
 } from 'lucide-react';
 import { api, setOperatorCsrfToken } from '@/lib/api';
 
@@ -18,6 +18,8 @@ type Resource = Record<string, unknown>;
 type PagePayload = { title?: string; description?: string; resource_count?: number; resources?: Resource[] };
 type OperatorSession = { authenticated?: boolean; csrf_token?: string; expires_in?: number };
 type OperatorProfile = { uuid?: string; display_name?: string; email?: string; role?: string; updated_at?: string };
+type Account = { id: string; email: string; display_name: string; avatar_icon: string; role: string };
+type AccountSession = { authenticated?: boolean; csrf_token?: string; expires_in?: number; account?: Account };
 
 const primary: NavItem[] = [
   { href: '/home', label: 'Home', icon: Home },
@@ -180,6 +182,45 @@ function ProfilePage() {
   return <section className="profilePage"><header className="profileHeader"><div className="avatarCircle">{(profile?.display_name || 'O').slice(0, 1).toUpperCase()}</div><div><p className="eyebrow">Authenticated operator</p><h1>{profile?.display_name || 'Operator'}</h1><p>{profile?.email || 'No email address configured'}</p></div><button className="shadcnOutline" onClick={logout} disabled={busy}><LogOut size={16}/>Sign out</button></header><div className="profileGrid"><section className="shadcnCard profileDetails"><div className="sectionTitle"><UserRound size={19}/><div><h2>Personal details</h2><p>These details identify this operator in the workspace.</p></div></div><form onSubmit={save} className="shadcnForm"><label htmlFor="profile-name">Display name</label><input id="profile-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Operator name" maxLength={120}/><label htmlFor="profile-email">Email address</label><div className="inputWithIcon"><Mail size={16}/><input id="profile-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@example.com" maxLength={254}/></div><button disabled={busy} className="shadcnPrimary" type="submit"><Save size={16}/>{busy ? 'Saving…' : 'Save changes'}</button></form>{message && <p className="formMessage">{message}</p>}</section><aside className="shadcnCard profileSecurity"><ShieldCheck size={21}/><h2>Session protected</h2><p>This profile uses the active operator session. Protected changes require a same-origin CSRF token.</p><dl><div><dt>Role</dt><dd>{profile?.role || 'operator'}</dd></div><div><dt>Session</dt><dd>{session.expires_in ? `${Math.ceil(session.expires_in / 60)} min remaining` : 'Active'}</dd></div></dl></aside></div></section>;
 }
 
+const avatarIcons: Record<string, typeof UserRound> = { user: UserRound, sparkles: Sparkles, shield: ShieldCheck, rocket: Rocket, leaf: Leaf, heart: Heart, camera: Camera };
+
+function AccountAvatar({ account, compact = false }: { account: Account; compact?: boolean }) {
+  const Icon = avatarIcons[account.avatar_icon] || UserRound;
+  return <span className={compact ? 'accountAvatar compact' : 'accountAvatar'} title={account.display_name}><Icon size={compact ? 17 : 23}/></span>;
+}
+
+function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AccountSession) => void }) {
+  const [setup, setSetup] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api<{ needs_first_account: boolean }>('/auth/setup').then((data) => { setNeedsSetup(data.needs_first_account); setSetup(data.needs_first_account); }).catch((error: Error) => setMessage(error.message)); }, []);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage(null);
+    try {
+      const path = setup ? '/auth/setup' : '/auth/login';
+      const payload = setup ? { email, password, display_name: displayName } : { email, password };
+      const result = await api<AccountSession>(path, { method: 'POST', body: JSON.stringify(payload) });
+      if (!result.account || !result.csrf_token) throw new Error('The account session could not be established.');
+      setOperatorCsrfToken(result.csrf_token); onAuthenticated({ ...result, authenticated: true });
+    } catch (error) { setMessage((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  return <main className="accountLogin"><section className="accountLoginBrand"><div className="loginLogo"><Sparkles size={28}/></div><p>Syte</p><h1>Run everything<br/>with confidence.</h1><span>Self-hosted applications, workflows, and infrastructure in one protected workspace.</span></section><section className="accountLoginPanel"><div className="authCard"><div className="authIcon"><LockKeyhole size={20}/></div><p className="eyebrow">{setup ? 'First workspace account' : 'Secure workspace access'}</p><h2>{setup ? 'Create your owner account' : 'Sign in to Syte'}</h2><p className="authLead">{setup ? 'Set the email and password used to administer this Syte instance.' : 'Use your email and password to continue to your workspace.'}</p><form onSubmit={submit} className="shadcnForm authForm">{setup && <><label htmlFor="account-name">Display name</label><input id="account-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your name" maxLength={120}/></>}<label htmlFor="account-email">Email address</label><div className="inputWithIcon"><AtSign size={16}/><input id="account-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required/></div><label htmlFor="account-password">Password</label><div className="inputWithIcon"><LockKeyhole size={16}/><input id="account-password" type="password" autoComplete={setup ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={setup ? 'At least 12 characters' : 'Your password'} minLength={setup ? 12 : 1} required/></div><button disabled={busy || needsSetup === null} className="shadcnPrimary authSubmit" type="submit">{busy ? 'Please wait…' : setup ? 'Create account' : 'Sign in'}</button></form>{message && <p className="formMessage error">{message}</p>}{needsSetup === false && <button className="authSwitch" type="button" onClick={() => { setSetup((value) => !value); setMessage(null); }}>{setup ? 'Already have an account? Sign in' : 'Need to set up this instance?'}</button>}<p className="cardFineprint">Email and password sessions use a secure HttpOnly cookie. Your password is never stored in the browser.</p></div></section></main>;
+}
+
+function AccountProfilePage({ account, onAccountChange, onSignOut }: { account: Account; onAccountChange: (account: Account) => void; onSignOut: () => void }) {
+  const [displayName, setDisplayName] = useState(account.display_name);
+  const [avatarIcon, setAvatarIcon] = useState(account.avatar_icon);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const save = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setMessage(null); try { const result = await api<{ account: Account; message: string }>('/auth/profile', { method: 'PUT', body: JSON.stringify({ display_name: displayName, avatar_icon: avatarIcon }) }); onAccountChange(result.account); setMessage(result.message); } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); } };
+  return <section className="accountProfilePage"><header className="profileHeader"><AccountAvatar account={{ ...account, avatar_icon: avatarIcon }}/><div><p className="eyebrow">Your Syte account</p><h1>{displayName || account.display_name}</h1><p>{account.email}</p></div><button className="shadcnOutline" onClick={onSignOut} disabled={busy}><LogOut size={16}/>Sign out</button></header><div className="profileGrid"><section className="shadcnCard profileDetails"><div className="sectionTitle"><UserRound size={19}/><div><h2>Profile</h2><p>Choose the identity shown across your Syte workspace.</p></div></div><form onSubmit={save} className="shadcnForm"><label htmlFor="account-display-name">Display name</label><input id="account-display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} placeholder="Your name"/><label>Profile icon</label><div className="avatarPicker">{Object.entries(avatarIcons).map(([key, Icon]) => <button aria-label={`Use ${key} profile icon`} type="button" key={key} className={avatarIcon === key ? 'avatarChoice selected' : 'avatarChoice'} onClick={() => setAvatarIcon(key)}><Icon size={18}/></button>)}</div><button disabled={busy} className="shadcnPrimary" type="submit"><Save size={16}/>{busy ? 'Saving…' : 'Save profile'}</button></form>{message && <p className="formMessage">{message}</p>}</section><aside className="shadcnCard profileSecurity"><ShieldCheck size={21}/><h2>Account security</h2><p>Your email is your sign-in identity. The profile icon is displayed on every authenticated Syte page.</p><dl><div><dt>Email</dt><dd>{account.email}</dd></div><div><dt>Role</dt><dd>{account.role}</dd></div></dl></aside></div></section>;
+}
+
 function BlankPage() {
   return <section className="intentionalBlank" aria-label="Blank workspace"/>;
 }
@@ -196,7 +237,14 @@ function InfoCard({ icon: Icon, title, body }: { icon: typeof Activity; title: s
 export default function Shell() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [accountSession, setAccountSession] = useState<AccountSession | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const page = useMemo(() => pathname === '/' ? 'home' : pathname.slice(1), [pathname]);
-  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <ProfilePage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
-  return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="content">{content}</div></main>;
+  useEffect(() => { api<AccountSession>('/auth/session').then((session) => { setAccountSession(session); setOperatorCsrfToken(session.csrf_token || null); }).catch(() => setAccountSession({ authenticated: false })).finally(() => setAuthLoading(false)); }, []);
+  const signOut = async () => { try { await api('/auth/session', { method: 'DELETE' }); } finally { setOperatorCsrfToken(null); setAccountSession({ authenticated: false }); } };
+  if (authLoading) return <main className="authBoot">Loading secure workspace…</main>;
+  if (!accountSession?.authenticated || !accountSession.account) return <LoginScreen onAuthenticated={setAccountSession}/>;
+  const account = accountSession.account;
+  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="appAccountCorner"><AccountAvatar account={account} compact/><button onClick={() => window.location.assign('/profile')} aria-label="Open profile">{account.display_name || account.email}</button></div><div className="content">{content}</div></main>;
 }
