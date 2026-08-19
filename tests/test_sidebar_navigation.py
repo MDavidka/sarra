@@ -27,3 +27,13 @@ def test_web_ui_has_no_bootstrap_key_overlay_or_old_unlock_copy() -> None:
     assert "Unlock Syra to manage API keys" not in app
     assert "unlock Syra first" not in docs
     assert "bootstrap key" not in html
+
+
+def test_remote_servers_is_exempt_from_legacy_blank_workspace() -> None:
+    app = Path("syte/static/app.js").read_text()
+    styles = Path("syte/static/style.css").read_text()
+
+    assert "const isRemoteServers = safePage === 'remote-servers';" in app
+    assert "!isRemoteServers" in app
+    assert "if (page === 'remote-servers') { renderRemoteServersWorkspace(target); return; }" in app
+    assert ".platform-workspace.is-remote-servers-workspace" in styles

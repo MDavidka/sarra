@@ -3701,10 +3701,12 @@ async function loadPlatformPage(page = 'overview') {
   const workspace = document.getElementById('platform-workspace');
   const isOverview = safePage === 'overview';
   const isProfile = safePage === 'profile';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile;
+  const isRemoteServers = safePage === 'remote-servers';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
+  workspace?.classList.toggle('is-remote-servers-workspace', isRemoteServers);
   if (isBlankWorkspace) {
     const blankTarget = document.getElementById('platform-dedicated-page');
     if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
