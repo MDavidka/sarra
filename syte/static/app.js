@@ -4184,7 +4184,8 @@ function setAiSettingsTab(tab) {
 }
 
 async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const isMultipart = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+  const headers = { ...(isMultipart ? {} : { 'Content-Type': 'application/json' }), ...(opts.headers || {}) };
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
@@ -5117,49 +5118,87 @@ function detectStack(p) {
   return 'shell';
 }
 
+let projectImportSource = 'git';
+let importedProjectId = null;
+let importedProjectAnalysis = null;
+
+function setProjectImportSource(source) {
+  projectImportSource = source === 'zip' ? 'zip' : 'git';
+  document.querySelectorAll('[data-import-source]').forEach(tab => {
+    const active = tab.dataset.importSource === projectImportSource;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.getElementById('deploy-git-fields')?.classList.toggle('hidden', projectImportSource !== 'git');
+  document.getElementById('deploy-zip-fields')?.classList.toggle('hidden', projectImportSource !== 'zip');
+  refreshIcons();
+}
+
+function setProjectDeployButton(label, icon = 'scan-search', disabled = false) {
+  const button = document.getElementById('deploy-btn');
+  if (!button) return;
+  button.disabled = disabled;
+  button.innerHTML = `<i data-lucide="${icon}"></i><span>${esc(label)}</span>`;
+  refreshIcons();
+}
+
+function renderProjectAnalysis(analysis) {
+  importedProjectAnalysis = analysis;
+  const panel = document.getElementById('deploy-analysis');
+  const grid = document.getElementById('deploy-detection-grid');
+  const suggestions = document.getElementById('deploy-env-suggestions');
+  panel?.classList.remove('hidden');
+  if (!analysis) return;
+  const fields = [
+    ['Framework', analysis.framework || 'Custom'], ['Language', analysis.language || 'Unknown'],
+    ['Build pack', analysis.build_pack || 'Manual'], ['Base directory', analysis.base_directory || '/'],
+    ['Port', analysis.exposed_port ? `:${analysis.exposed_port}` : 'Auto'], ['Source files', String(analysis.files_detected || 0)],
+  ];
+  if (grid) grid.innerHTML = fields.map(([label, value]) => `<article><span>${esc(label)}</span><strong>${esc(value)}</strong></article>`).join('');
+  const warningList = [...(analysis.warnings || []), ...(analysis.error ? [analysis.error] : [])];
+  if (grid && warningList.length) grid.insertAdjacentHTML('beforeend', `<aside class="deploy-analysis-warning"><i data-lucide="triangle-alert"></i><p>${warningList.map(esc).join('<br>')}</p></aside>`);
+  if (suggestions) {
+    const values = analysis.environment_suggestions || [];
+    suggestions.innerHTML = values.length ? values.map(item => `<button type="button" data-env-suggestion="${esc(item.key)}"><strong>${esc(item.key)}</strong><span>${esc(item.source || 'source')}</span><i data-lucide="plus"></i></button>`).join('') : '<p class="deploy-empty-hint">No referenced variable names were found. You can add them manually below.</p>';
+  }
+  const start = document.getElementById('create-start-cmd');
+  const build = document.getElementById('create-build-cmd');
+  if (start && !start.value) start.value = analysis.start_command || '';
+  if (build && !build.value) build.value = analysis.build_command || '';
+  setProjectDeployButton(analysis.status === 'ready' ? 'Deploy project' : 'Resolve configuration', analysis.status === 'ready' ? 'rocket' : 'sliders-horizontal', analysis.status !== 'ready');
+  refreshIcons();
+}
+
 function resetCreateForm() {
-  selectedCreateStack = 'nextjs';
-  document.querySelectorAll('.stack-card').forEach(card => {
-    const on = card.dataset.stack === 'nextjs';
-    card.classList.toggle('active', on);
-    card.setAttribute('aria-selected', on ? 'true' : 'false');
+  importedProjectId = null;
+  importedProjectAnalysis = null;
+  setProjectImportSource('git');
+  ['create-name', 'create-git-url', 'create-start-cmd', 'create-build-cmd', 'create-env-vars'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
   });
-  const nameInput = document.getElementById('create-name');
-  if (nameInput) nameInput.value = '';
-  const startCmd = document.getElementById('create-start-cmd');
-  if (startCmd) startCmd.value = '';
-  const buildCmd = document.getElementById('create-build-cmd');
-  if (buildCmd) buildCmd.value = '';
-  document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-    head.setAttribute('aria-expanded', 'false');
-    const panel = document.getElementById(head.dataset.accordion);
-    panel?.classList.add('hidden');
+  ['create-branch', 'create-base-directory', 'create-zip-base-directory'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = id === 'create-branch' ? 'main' : '/';
   });
+  const archive = document.getElementById('create-source-zip');
+  if (archive) archive.value = '';
+  document.getElementById('deploy-analysis')?.classList.add('hidden');
   const placeholder = document.getElementById('create-log-placeholder');
   const logPanel = document.getElementById('deploy-log-panel');
   placeholder?.classList.remove('hidden');
   logPanel?.classList.add('hidden');
   if (logPanel) clearLogPanel(logPanel);
+  setProjectDeployButton('Analyze source');
   refreshIcons();
 }
 
-function selectCreateStack(stack) {
-  selectedCreateStack = stack;
-  document.querySelectorAll('.stack-card').forEach(card => {
-    const on = card.dataset.stack === stack;
-    card.classList.toggle('active', on);
-    card.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-}
-
-function toggleCreateAccordion(head) {
-  const panelId = head.dataset.accordion;
-  if (!panelId) return;
-  const panel = document.getElementById(panelId);
-  if (!panel) return;
-  const open = panel.classList.toggle('hidden');
-  head.setAttribute('aria-expanded', open ? 'false' : 'true');
-  refreshIcons();
+function appendSuggestedEnvironment(key) {
+  const target = document.getElementById('create-env-vars');
+  if (!target || !key) return;
+  const current = target.value.trimEnd();
+  if (!new RegExp(`(^|\\n)${key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}=`).test(current)) target.value = `${current}${current ? '\\n' : ''}${key}=`;
+  target.focus();
 }
 
 function displayTitle(p) {
@@ -5666,62 +5705,86 @@ async function saveServiceEnv(id) {
   }
 }
 
-document.getElementById('create-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('deploy-btn');
+async function importProjectSource() {
   const name = document.getElementById('create-name')?.value.trim();
-  if (!name) return toast('Enter a project name');
+  if (!name) throw new Error('Enter a project name');
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  if (projectImportSource === 'git') {
+    const gitUrl = document.getElementById('create-git-url')?.value.trim();
+    const branch = document.getElementById('create-branch')?.value.trim() || 'main';
+    if (!gitUrl) throw new Error('Enter a repository URL');
+    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory }) });
+  }
+  const archive = document.getElementById('create-source-zip')?.files?.[0];
+  if (!archive) throw new Error('Choose a ZIP archive');
+  const form = new FormData();
+  form.set('name', name); form.set('base_directory', baseDirectory); form.set('archive', archive);
+  return api('/projects/import/zip', { method: 'POST', body: form });
+}
 
-  btn.disabled = true;
-  btn.querySelector('span').textContent = 'Creating…';
+async function reanalyzeImportedProject() {
+  if (!importedProjectId) return;
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const result = await api(`/projects/${importedProjectId}/analyze`, { method: 'POST', body: JSON.stringify({ base_directory: baseDirectory }) });
+  renderProjectAnalysis(result.analysis);
+  toast('Build plan refreshed');
+}
 
-  const startCmd = document.getElementById('create-start-cmd')?.value.trim() || null;
-  const buildCmd = document.getElementById('create-build-cmd')?.value.trim() || null;
-  const env_vars = {};
-  if (buildCmd) env_vars.SYTE_BUILD_COMMAND = buildCmd;
+async function deployImportedProject() {
+  if (!importedProjectId || !importedProjectAnalysis) throw new Error('Import a source before deployment');
+  const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const envVars = parseEnv(document.getElementById('create-env-vars')?.value || '');
+  const startCommand = document.getElementById('create-start-cmd')?.value.trim() || null;
+  const result = await api(`/projects/${importedProjectId}/deploy-detected`, {
+    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand }),
+  });
+  return result;
+}
 
+document.getElementById('create-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
   const logPanel = document.getElementById('deploy-log-panel');
-  const logPlaceholder = document.getElementById('create-log-placeholder');
-  logPlaceholder?.classList.add('hidden');
-  logPanel?.classList.remove('hidden');
-  clearLogPanel(logPanel);
-
+  const placeholder = document.getElementById('create-log-placeholder');
+  placeholder?.classList.add('hidden'); logPanel?.classList.remove('hidden'); clearLogPanel(logPanel);
   try {
-    const res = await api('/projects', {
-      method: 'POST',
-      body: JSON.stringify({
-        name,
-        stack: selectedCreateStack,
-        start_command: startCmd,
-        env_vars,
-      }),
-    });
-    appendLogLine(logPanel, res.message || 'Project created', 'log-info');
-    toast(`Deploying: ${res.project.name}`);
+    if (!importedProjectId) {
+      setProjectDeployButton('Importing source…', 'loader-circle', true);
+      const result = await importProjectSource();
+      importedProjectId = result.project.id;
+      appendLogLine(logPanel, result.message || 'Source imported', 'log-ok');
+      renderProjectAnalysis(result.analysis);
+      toast(`Detected ${result.analysis.framework || result.analysis.language || 'project'} application`);
+      return;
+    }
+    setProjectDeployButton('Deploying…', 'loader-circle', true);
+    const result = await deployImportedProject();
+    appendLogLine(logPanel, result.message || 'Deployment queued', 'log-info');
+    toast('Deployment queued');
     await loadProjects();
-    openService(res.project.id);
+    openService(importedProjectId);
     switchSvcTab('logs');
-    const logsEl = document.getElementById('svc-live-logs');
-    loadLogSnapshot(res.project.id, logsEl).then(() => {
-      startLogStream(res.project.id, logsEl, { liveOnly: true, clearFirst: false });
-    });
-  } catch (err) {
-    appendLogLine(logPanel, 'Error: ' + err.message, 'log-err');
-    toast('Deploy failed: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.querySelector('span').textContent = 'Create & Deploy';
+    const logs = document.getElementById('svc-live-logs');
+    loadLogSnapshot(importedProjectId, logs).then(() => startLogStream(importedProjectId, logs, { liveOnly: true, clearFirst: false }));
+  } catch (error) {
+    appendLogLine(logPanel, 'Error: ' + error.message, 'log-err');
+    toast(error.message);
+    if (!importedProjectId) setProjectDeployButton('Analyze source');
+    else setProjectDeployButton('Deploy project', 'rocket');
   }
 });
 
-document.getElementById('stack-picker')?.addEventListener('click', (e) => {
-  const card = e.target.closest('.stack-card');
-  if (!card?.dataset.stack) return;
-  selectCreateStack(card.dataset.stack);
+document.querySelectorAll('[data-import-source]').forEach(tab => tab.addEventListener('click', () => {
+  if (importedProjectId) return toast('Reset this draft before changing its source type.');
+  setProjectImportSource(tab.dataset.importSource);
+}));
+
+document.getElementById('reanalyze-source')?.addEventListener('click', async () => {
+  try { await reanalyzeImportedProject(); } catch (error) { toast('Analysis failed: ' + error.message); }
 });
 
-document.querySelectorAll('.create-accordion-head[data-accordion]').forEach(head => {
-  head.addEventListener('click', () => toggleCreateAccordion(head));
+document.getElementById('deploy-env-suggestions')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-env-suggestion]');
+  if (button) appendSuggestedEnvironment(button.dataset.envSuggestion);
 });
 
 document.getElementById('create-name-focus')?.addEventListener('click', () => {
