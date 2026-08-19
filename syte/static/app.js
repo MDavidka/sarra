@@ -5461,13 +5461,14 @@ function renderDeploymentSitePreview(p) {
   const previewLabel = document.getElementById('svc-preview-label');
   const previewOpen = document.getElementById('svc-preview-open');
   const url = p.url || '';
-  if (previewLabel) previewLabel.textContent = p.domain || connLabel(p) || 'Live site preview';
+  const live = Boolean(url && p.running);
+  if (previewLabel) previewLabel.textContent = live ? (p.domain || connLabel(p) || 'Live site preview') : 'Preparing live site';
   if (previewOpen) {
-    previewOpen.href = url || '#';
-    previewOpen.toggleAttribute('aria-disabled', !url);
+    previewOpen.href = live ? url : '#';
+    previewOpen.toggleAttribute('aria-disabled', !live);
   }
   if (!frame || !placeholder) return;
-  if (url) {
+  if (live) {
     if (frame.dataset.previewUrl !== url) {
       frame.src = url;
       frame.dataset.previewUrl = url;
@@ -5478,6 +5479,12 @@ function renderDeploymentSitePreview(p) {
     frame.classList.add('hidden');
     frame.removeAttribute('src');
     delete frame.dataset.previewUrl;
+    const title = placeholder.querySelector('strong');
+    const detail = placeholder.querySelector('span');
+    if (title) title.textContent = p.status === 'deploying' ? 'Deployment in progress' : 'Live preview unavailable';
+    if (detail) detail.textContent = p.status === 'deploying'
+      ? 'Your site will appear here as soon as the release starts.'
+      : 'Start or deploy this project to load its live site here.';
     placeholder.classList.remove('hidden');
   }
 }
