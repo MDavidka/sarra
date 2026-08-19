@@ -5052,8 +5052,12 @@ function updateServiceConnLink(p) {
   const conn = document.getElementById('svc-conn');
   if (!conn) return;
   const link = p.url || '#';
-  conn.textContent = connLabel(p);
+  const label = conn.querySelector('span');
+  if (label) label.textContent = 'Visit';
+  else conn.textContent = connLabel(p);
   conn.href = link;
+  conn.title = link === '#' ? 'Deployment URL is pending' : `Open ${connLabel(p)}`;
+  conn.toggleAttribute('aria-disabled', link === '#');
 }
 
 function sslBadgeHtml(p) {
@@ -5505,7 +5509,28 @@ function renderServiceDashboard(p, resetLogs) {
   if (branchLabel) branchLabel.textContent = p.branch || 'main';
 
   const uuidPill = document.getElementById('svc-uuid-pill');
-  if (uuidPill) uuidPill.textContent = `UUID: ${p.id}`;
+  if (uuidPill) uuidPill.textContent = `${p.name || 'deployment'} · ${String(p.id || '').slice(0, 8)}`;
+  const deployName = document.getElementById('svc-deploy-name');
+  if (deployName) deployName.textContent = displayTitle(p);
+  const deploymentStatus = statusLabel(p);
+  ['svc-deploy-status', 'svc-deploy-status-summary'].forEach((id) => {
+    const target = document.getElementById(id);
+    if (target) target.textContent = deploymentStatus;
+  });
+  const deploymentState = document.getElementById('svc-deploy-state-dot');
+  if (deploymentState) {
+    deploymentState.className = 'syte-state-dot';
+    deploymentState.classList.add(p.status === 'deploying' ? 'deploying' : p.running ? 'ready' : 'stopped');
+  }
+  const deploymentDomain = document.getElementById('svc-deploy-domain');
+  if (deploymentDomain) {
+    deploymentDomain.textContent = p.domain || connLabel(p);
+    deploymentDomain.href = p.url || '#';
+    deploymentDomain.toggleAttribute('aria-disabled', !p.url);
+  }
+  const deploymentSource = document.getElementById('svc-deploy-source');
+  if (deploymentSource) deploymentSource.textContent = p.git_url ? p.git_url.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '') : 'Manual source';
+  document.querySelectorAll('[data-svc-open]').forEach((button) => { button.onclick = () => switchSvcTab(button.dataset.svcOpen || 'logs'); });
 
   const envInput = document.getElementById('svc-env-input');
   if (envInput) envInput.value = formatEnv(p.env_vars);

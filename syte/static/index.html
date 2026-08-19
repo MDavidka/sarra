@@ -252,45 +252,58 @@
           <div class="svc-editor">
             <div class="svc-tab-panels">
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="layout-dashboard"></i></div>
-                  <div>
-                    <h2>Project overview</h2>
-                    <p>Check your project status, connection, and deployment actions at a glance.</p>
-                  </div>
-                </div>
-                <div class="svc-info-block">
-                  <div class="svc-identity">
-                    <div class="svc-identity-main">
-                      <div class="svc-name-row">
-                        <h1 class="svc-name" id="svc-title">service</h1>
-                        <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name & domain" aria-label="Edit">
-                          <i data-lucide="square-pen"></i>
-                        </button>
+                <section class="syte-deployment-shell" aria-label="Production deployment">
+                  <header class="syte-deployment-header">
+                    <div class="syte-deployment-title-group">
+                      <p>Production deployment</p>
+                      <div class="syte-project-name-line">
                         <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
+                        <h1 class="svc-name" id="svc-title">service</h1>
+                        <button type="button" class="svc-icon-btn" id="svc-edit-btn" title="Edit name and domain" aria-label="Edit project"><i data-lucide="square-pen"></i></button>
                       </div>
+                      <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span><i data-lucide="chevron-down" class="svc-branch-chevron"></i></button>
                     </div>
-                    <button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch">
-                      <i data-lucide="git-branch"></i>
-                      <span id="svc-branch-label">main</span>
-                      <i data-lucide="chevron-down" class="svc-branch-chevron"></i>
-                    </button>
+                    <div class="syte-deployment-header-actions">
+                      <button type="button" class="syte-deployment-icon-action" data-svc-open="logs" title="Deployment history"><i data-lucide="history"></i></button>
+                      <a class="syte-visit-button" id="svc-conn" href="#" target="_blank" rel="noopener"><span>Visit</span><i data-lucide="arrow-up-right"></i></a>
+                    </div>
+                  </header>
+
+                  <section class="syte-deployment-visual" aria-label="Live application">
+                    <div class="syte-deployment-visual-copy">
+                      <span class="syte-deployment-kicker"><i data-lucide="sparkles"></i> Syte production</span>
+                      <h2 id="svc-deploy-name">Your application</h2>
+                      <p>Deploy from a trusted source, monitor runtime health, and open the live release when it is ready.</p>
+                      <div class="syte-deployment-state"><span class="syte-state-dot" id="svc-deploy-state-dot"></span><strong id="svc-deploy-status">Preparing deployment</strong></div>
+                    </div>
+                    <div class="syte-deployment-device" aria-hidden="true">
+                      <div class="syte-device-top"><span></span><span></span><span></span></div>
+                      <div class="syte-device-orbit"></div>
+                      <div class="syte-device-content"><i data-lucide="rocket"></i><b>Syte</b><small>Live release</small></div>
+                    </div>
+                  </section>
+
+                  <div class="syte-deployment-actions" id="svc-quick-actions"></div>
+
+                  <section class="syte-deployment-facts" aria-label="Deployment details">
+                    <article><span>Deployment</span><strong id="svc-uuid-pill">—</strong></article>
+                    <article><span>Domain</span><a id="svc-deploy-domain" href="#" target="_blank" rel="noopener">Pending domain</a></article>
+                    <article><span>Status</span><strong id="svc-deploy-status-summary">Preparing</strong></article>
+                    <article><span>Source</span><strong id="svc-deploy-source">Repository pending</strong></article>
+                  </section>
+
+                  <div class="svc-management-grid syte-deployment-insights">
+                    <div class="svc-management-card">
+                      <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
+                      <div class="svc-health-state" id="svc-health-state">Not checked</div>
+                      <div class="svc-health-detail" id="svc-health-detail">Run a live probe to check the production release.</div>
+                    </div>
+                    <div class="svc-management-card">
+                      <div class="svc-management-head"><span><i data-lucide="history"></i> Deployment history</span><button type="button" class="logs-tool-btn" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button></div>
+                      <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
+                    </div>
                   </div>
-                  <a class="svc-conn" id="svc-conn" href="#" target="_blank" rel="noopener">—</a>
-                  <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
-                  <div class="svc-quick-actions" id="svc-quick-actions"></div>
-                </div>
-                <div class="svc-management-grid">
-                  <div class="svc-management-card">
-                    <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
-                    <div class="svc-health-state" id="svc-health-state">Not checked</div>
-                    <div class="svc-health-detail" id="svc-health-detail">Configure a path such as /health for a live probe.</div>
-                  </div>
-                  <div class="svc-management-card">
-                    <div class="svc-management-head"><span><i data-lucide="history"></i> Deployment history</span><button type="button" class="logs-tool-btn" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button></div>
-                    <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
-                  </div>
-                </div>
+                </section>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
