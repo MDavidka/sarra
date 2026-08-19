@@ -169,23 +169,7 @@
                 <i data-lucide="search" class="search-icon"></i>
               </div>
             </div>
-            <section class="overview-monitor-panel" aria-labelledby="overview-monitor-title">
-              <div class="platform-panel-head"><div><p class="eyebrow">Live operations</p><h2 id="overview-monitor-title">System monitor</h2></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-monitor-refresh"><i data-lucide="refresh-cw"></i>Refresh</button></div>
-              <div id="overview-monitor-grid" class="overview-monitor-grid"><div class="platform-loading">Loading system metrics…</div></div>
-            </section>
-
             <div id="services-list" class="projects-grid"></div>
-            <section class="platform-resources-panel" aria-labelledby="platform-resources-title">
-              <div class="platform-resources-head">
-                <div>
-                  <p class="eyebrow">Platform resources</p>
-                  <h2 id="platform-resources-title">Managed databases</h2>
-                  <p class="hint">Private Docker databases with persistent volumes. Public ports stay closed unless explicitly enabled.</p>
-                </div>
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="platform-databases-refresh"><i data-lucide="refresh-cw"></i>Refresh</button>
-              </div>
-              <div id="platform-databases-list" class="platform-databases-list"><span class="hint">Loading managed databases…</span></div>
-            </section>
             <div id="empty-state" class="projects-empty hidden">
               <i data-lucide="folder-input" class="empty-icon"></i>
               <p>No projects found</p>
@@ -296,7 +280,6 @@
                   <div class="svc-uuid-pill" id="svc-uuid-pill">UUID: —</div>
                   <div class="svc-quick-actions" id="svc-quick-actions"></div>
                 </div>
-                <div class="svc-info-grid" id="svc-info-body"></div>
                 <div class="svc-management-grid">
                   <div class="svc-management-card">
                     <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
