@@ -1,5 +1,6 @@
 import json
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,11 @@ from syte.database import (
     list_projects,
     set_setting,
     update_project,
+    count_operator_accounts,
+    create_operator_account,
+    get_operator_account,
+    get_operator_account_by_email,
+    update_operator_account,
 )
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
@@ -34,7 +40,10 @@ from syte.settings_tabs import get_registered_tabs
 from syte import auth
 from syte.auth import (
     OPERATOR_SESSION_COOKIE,
+    authenticate_operator_account,
+    create_account_operator_session,
     create_bootstrap_operator_session,
+    hash_password,
     operator_session_status,
     require_same_origin_if_present,
     revoke_operator_session,
@@ -177,6 +186,20 @@ class OperatorSessionRequest(BaseModel):
     bootstrap_token: str
 
 
+class AccountLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class FirstAccountRequest(AccountLoginRequest):
+    display_name: str = Field(default="", max_length=120)
+
+
+class AccountProfileRequest(BaseModel):
+    display_name: str = Field(default="", max_length=120)
+    avatar_icon: str = Field(default="user", max_length=40)
+
+
 class CreateServiceRequest(BaseModel):
     name: str
     git_url: str | None = None
@@ -307,6 +330,86 @@ async def sycord_api_documentation():
     html = (STATIC_DIR / "sycord-api-docs.html").read_text()
     html = html.replace("__VERSION__", __version__)
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+def _account_payload(account: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": account["id"], "email": account["email"], "display_name": account.get("display_name") or account["email"].split("@", 1)[0],
+        "avatar_icon": account.get("avatar_icon") or "user", "role": account.get("role") or "operator",
+    }
+
+
+def _set_account_session(response: JSONResponse, session: dict[str, Any]) -> JSONResponse:
+    response.set_cookie(
+        key=OPERATOR_SESSION_COOKIE, value=str(session["session_id"]), max_age=int(session["max_age"]), path="/",
+        secure=True, httponly=True, samesite="strict",
+    )
+    return response
+
+
+@app.get("/api/auth/setup")
+async def auth_setup_status() -> dict[str, Any]:
+    """Public status used only to determine whether the first admin account must be created."""
+    return {"needs_first_account": (await count_operator_accounts()) == 0}
+
+
+@app.post("/api/auth/setup")
+async def create_first_account(body: FirstAccountRequest, request: Request):
+    require_same_origin_if_present(request)
+    if await count_operator_accounts():
+        raise HTTPException(409, detail={"error": "account_setup_complete", "message": "An operator account already exists. Sign in instead."})
+    email = body.email.strip().lower()
+    if "@" not in email or email.startswith("@") or email.endswith("@"):
+        raise HTTPException(422, detail={"error": "invalid_email", "message": "Enter a valid email address."})
+    account = await create_operator_account({
+        "id": str(uuid.uuid4()), "email": email, "password_hash": hash_password(body.password),
+        "display_name": body.display_name.strip() or email.split("@", 1)[0], "avatar_icon": "user", "role": "owner",
+    })
+    session = create_account_operator_session(account)
+    return _set_account_session(JSONResponse({"ok": True, "csrf_token": session["csrf_token"], "expires_in": session["max_age"], "account": session["account"]}, headers={"Cache-Control": NO_CACHE}), session)
+
+
+@app.post("/api/auth/login")
+async def login_account(body: AccountLoginRequest, request: Request):
+    require_same_origin_if_present(request)
+    account = await authenticate_operator_account(body.email.strip().lower(), body.password)
+    if not account:
+        raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Email or password is incorrect."})
+    session = create_account_operator_session(account)
+    return _set_account_session(JSONResponse({"ok": True, "csrf_token": session["csrf_token"], "expires_in": session["max_age"], "account": session["account"]}, headers={"Cache-Control": NO_CACHE}), session)
+
+
+@app.get("/api/auth/session")
+async def get_account_session(request: Request):
+    return JSONResponse(operator_session_status(request), headers={"Cache-Control": NO_CACHE})
+
+
+@app.delete("/api/auth/session")
+async def end_account_session(request: Request, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    revoke_operator_session(request)
+    response = JSONResponse({"ok": True}, headers={"Cache-Control": NO_CACHE})
+    response.delete_cookie(key=OPERATOR_SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="strict")
+    return response
+
+
+@app.get("/api/auth/profile")
+async def get_account_profile(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)) -> dict[str, Any]:
+    account_id = str(_operator.get("id", ""))
+    account = await get_operator_account(account_id)
+    if not account:
+        raise HTTPException(401, detail={"error": "account_session_required", "message": "Sign in with an email and password to manage your profile."})
+    return {"account": _account_payload(account)}
+
+
+@app.put("/api/auth/profile")
+async def update_account_profile(body: AccountProfileRequest, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)) -> dict[str, Any]:
+    account_id = str(_operator.get("id", ""))
+    if body.avatar_icon not in {"user", "sparkles", "shield", "rocket", "leaf", "heart", "camera"}:
+        raise HTTPException(422, detail={"error": "invalid_avatar", "message": "Choose one of the supported profile icons."})
+    account = await update_operator_account(account_id, {"display_name": body.display_name.strip(), "avatar_icon": body.avatar_icon})
+    if not account:
+        raise HTTPException(401, detail={"error": "account_session_required", "message": "Sign in with an email and password to manage your profile."})
+    return {"ok": True, "account": _account_payload(account), "message": "Profile updated."}
 
 
 @app.get("/api/operator/session")

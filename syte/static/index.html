@@ -13,7 +13,9 @@
   <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js" crossorigin="anonymous"></script>
 </head>
-<body>
+<body class="account-auth-pending">
+  <div id="account-login-screen" class="account-login-screen" aria-live="polite"><div class="account-login-card"><div class="account-login-icon"><i data-lucide="lock-keyhole"></i></div><p class="account-login-kicker">Syte secure workspace</p><h1>Loading sign in…</h1><p>Checking your Syte account session.</p></div></div>
+  <button type="button" id="legacy-account-corner" class="legacy-account-corner hidden" aria-label="Open profile"></button>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
   <div class="app-shell">
     <aside class="app-sidebar" id="app-sidebar">
