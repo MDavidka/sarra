@@ -394,6 +394,159 @@ function PlatformPage({ page }: { page: string }) {
   return <><PageHeader eyebrow="Platform resource" title={payload.data?.title || page} description={payload.data?.description || 'Loading the current platform workspace.'} action={payload.reload}/><section className="legacyPanel compact"><div><p className="eyebrow">Live records</p><h2>{payload.data?.resource_count || 0} resources</h2><p>{payload.error || 'This page is served by the existing FastAPI platform API.'}</p></div></section><section className="resourceList">{resources.length ? resources.slice(0, 12).map((row, index) => <article key={String(row.uuid || index)}><span><strong>{String(row.name || row.title || row.uuid || 'Resource')}</strong><small>{String(row.status || row._table || 'tracked')}</small></span><ChevronRight size={16}/></article>) : <p className="empty">No resources are configured yet.</p>}</section></>;
 }
 
+function ProjectEditPage() {
+  const [project] = useState({
+    name: 'Production Deployment',
+    status: 'ready',
+    deployment_id: 'v0-new-project-nf4daafiw-mdavidkas',
+    created_at: 'Aug 14 by md',
+    domain: 'sycord.com',
+    alt_domain: 'developer.sycord.com',
+    preview_image: null,
+    mobile_preview: null
+  });
+
+  return (
+    <main className="projectEditPage">
+      {/* Header */}
+      <header className="projectEditHeader">
+        <button className="projectEditBackButton" aria-label="Back to projects">
+          <ChevronRight size={20} style={{ transform: 'rotate(180deg)' }}/>
+        </button>
+        <div className="projectEditTitle">
+          <span className={`projectEditStatusDot ${project.status === 'ready' ? 'ready' : ''}`}/>
+          <h1>{project.name}</h1>
+        </div>
+        <button className="projectEditMenuButton" aria-label="More options">
+          <Menu size={20}/>
+        </button>
+      </header>
+
+      {/* Main Section */}
+      <section className="projectEditSection">
+        <div className="projectEditSectionTitle">
+          <h2>{project.name}</h2>
+          <div className="projectEditSocialIcons">
+            <button className="projectEditIconButton" aria-label="Open in Vercel-like service">
+              <Network size={20}/>
+            </button>
+            <button className="projectEditIconButton" aria-label="View on GitHub">
+              <Github size={20}/>
+            </button>
+          </div>
+        </div>
+
+        {/* Preview with Mobile Frame */}
+        <div className="projectEditPreview">
+          {project.preview_image ? (
+            <img src={project.preview_image} alt="Project preview"/>
+          ) : (
+            <div className="projectEditPreviewPlaceholder">
+              <Sparkles size={40}/>
+              <p>The AI agent<br/>Intelligent is a differentiator</p>
+            </div>
+          )}
+          <div className="projectEditMobileFrame">
+            {project.mobile_preview ? (
+              <img src={project.mobile_preview} alt="Mobile preview"/>
+            ) : (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: '12px', textAlign: 'center', color: '#a1a1aa', fontSize: '10px' }}>
+                Mobile View
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="projectEditActions">
+          <button className="projectEditActionButton">
+            <RefreshCw size={20}/>
+            Instant Rollback
+          </button>
+          <button className="projectEditActionButton primary">
+            <TerminalSquare size={20}/>
+            Visit
+          </button>
+        </div>
+      </section>
+
+      {/* Deployment Info */}
+      <section className="projectEditSection">
+        <div className="projectEditSectionTitle">
+          <h2>Deployment</h2>
+        </div>
+        <div className="projectEditInfo">
+          <div className="projectEditInfoRow">
+            <span className="projectEditInfoLabel">Status</span>
+            <span className="projectEditInfoValue">
+              <span className={`projectEditStatusBadge ${project.status}`}>
+                <span className="projectEditStatusDot"/>
+                {project.status}
+              </span>
+            </span>
+          </div>
+          <div className="projectEditInfoRow">
+            <span className="projectEditInfoLabel">Created</span>
+            <span className="projectEditInfoValue">{project.created_at}</span>
+          </div>
+          <div className="projectEditInfoRow">
+            <span className="projectEditInfoLabel">Deployment</span>
+            <span className="projectEditInfoValue">
+              <code>{project.deployment_id}</code>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Domains */}
+      <section className="projectEditSection">
+        <div className="projectEditSectionTitle">
+          <h2>Domains</h2>
+          <button className="projectEditIconButton" aria-label="Add domain">
+            <Plus size={16}/>
+          </button>
+        </div>
+        <div className="projectEditDomains">
+          <div className="projectEditDomainChip">
+            <Check size={14} style={{ color: '#15803d' }}/>
+            {project.domain}
+          </div>
+          <div className="projectEditDomainChip">
+            <Check size={14} style={{ color: '#15803d' }}/>
+            {project.alt_domain}
+          </div>
+        </div>
+      </section>
+
+      {/* Source */}
+      <section className="projectEditSection">
+        <div className="projectEditSectionTitle">
+          <h2>Source</h2>
+        </div>
+        <div className="projectEditInfo">
+          <div className="projectEditInfoRow">
+            <span className="projectEditInfoLabel">Repository</span>
+            <span className="projectEditInfoValue">GitHub</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Bottom Bar */}
+      <div className="projectEditBottomBar">
+        <div className="projectEditBottomSearch">
+          <button className="projectEditSearchButton">
+            <ScanSearch size={20}/>
+            Find
+          </button>
+          <button className="projectEditMenuToggle" aria-label="Toggle menu">
+            <Menu size={22}/>
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: () => void }) { return <header className="pageHeader"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action && <button onClick={action} className="iconButton" aria-label="Refresh"><Activity size={17}/></button>}</header>; }
 function InfoCard({ icon: Icon, title, body }: { icon: typeof Activity; title: string; body: string }) { return <article className="infoCard"><Icon size={20}/><h3>{title}</h3><p>{body}</p></article>; }
 
@@ -408,6 +561,6 @@ export default function Shell() {
   if (authLoading) return <main className="authBoot">Loading secure workspace…</main>;
   if (!accountSession?.authenticated || !accountSession.account) return <LoginScreen onAuthenticated={setAccountSession}/>;
   const account = accountSession.account;
-  const content = page === 'home' ? <HomePage/> : page === 'projects' ? <ProjectsPage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === 'servers' ? <RemoteServersPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  const content = page === 'home' ? <HomePage/> : page === 'projects' ? <ProjectsPage/> : page === 'project-edit' ? <ProjectEditPage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === 'servers' ? <RemoteServersPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="appAccountCorner"><AccountAvatar account={account} compact/><button onClick={() => window.location.assign('/profile')} aria-label="Open profile">{account.display_name || account.email}</button></div><div className="content">{content}</div></main>;
 }
