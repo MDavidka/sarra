@@ -12,6 +12,8 @@ import { api } from '@/lib/api';
 
 type NavItem = { href: string; label: string; icon: typeof Home; apiPage?: string };
 type MetricData = { cpu_percent?: number; memory_percent?: number; disk_percent?: number; api_requests?: number; internet_ping_ms?: number; project_count?: number; security_blocked_users?: number };
+type ServiceHealth = { state?: string; healthy?: boolean; detail?: string };
+type OverviewHealth = { metrics?: MetricData; services?: Record<string, ServiceHealth>; overall?: 'healthy' | 'attention' | 'degraded' };
 type Resource = Record<string, unknown>;
 type PagePayload = { title?: string; description?: string; resource_count?: number; resources?: Resource[] };
 
@@ -79,6 +81,26 @@ function HomePage() {
   return <><PageHeader eyebrow="Operator home" title="Your platform at a glance" description="The familiar Syte command center, now backed by live FastAPI metrics." action={metrics.reload}/><div className="metricGrid">{cards.map(([label, value, Icon]) => <article className="metric" key={String(label)}><Icon size={19}/><span>{String(label)}</span><strong>{String(value)}</strong></article>)}</div><section className="legacyPanel"><div><p className="eyebrow">Deployment workspace</p><h2>Projects</h2><p>Open a project to deploy, inspect logs, and manage previews using the existing platform APIs.</p></div><Link className="darkButton" href="/projects">Open projects <ChevronRight size={16}/></Link></section></>;
 }
 
+function HealthGauge({ label, value }: { label: string; value?: number }) {
+  const numeric = Math.max(0, Math.min(100, Math.round(value || 0)));
+  const tone = numeric >= 85 ? 'danger' : numeric >= 70 ? 'warning' : 'healthy';
+  return <div className={`healthGauge ${tone}`} role="img" aria-label={`${label} ${numeric} percent`}><svg viewBox="0 0 120 70" aria-hidden="true"><path className="healthTrack" pathLength="100" d="M15 60 A45 45 0 0 1 105 60"/><path className="healthValue" pathLength="100" strokeDasharray={`${numeric} 100`} d="M15 60 A45 45 0 0 1 105 60"/></svg><strong>{numeric}%</strong><span>{label}</span></div>;
+}
+
+function HealthNode({ label, service }: { label: string; service?: ServiceHealth }) {
+  const state = service?.state || 'unavailable';
+  return <div className={`healthNode ${state}`} title={service?.detail || 'Status unavailable'}><i>{state === 'healthy' ? '✓' : state === 'attention' || state === 'warning' ? '!' : '×'}</i><strong>{label}</strong><small>{state}</small></div>;
+}
+
+function OverviewPage() {
+  const health = useApi<OverviewHealth>('/platform/overview/health');
+  const metrics = health.data?.metrics || {};
+  const services = health.data?.services || {};
+  const overall = health.data?.overall || 'attention';
+  const label = overall === 'healthy' ? 'everything up' : overall === 'attention' ? 'attention needed' : 'service degraded';
+  return <section className="healthOverview" aria-live="polite"><div className="healthTop"><span>Syte</span><button onClick={health.reload} className="iconButton" aria-label="Refresh Overview"><Activity size={17}/></button></div>{health.loading ? <p className="healthLoading">Loading system health…</p> : <><div className="healthGaugePanel"><HealthGauge label="CPU" value={metrics.cpu_percent}/><HealthGauge label="RAM" value={metrics.memory_percent}/><HealthGauge label="DISK" value={metrics.disk_percent}/></div><div className={`healthStatus ${overall}`}>{label}</div><div className="healthTopology"><HealthNode label="Web service" service={services.web}/><div className="healthBranches" aria-hidden="true"><span/><span/><span/></div><div className="healthChildren"><HealthNode label="API" service={services.api}/><HealthNode label="Apps" service={services.apps}/><HealthNode label="9Router" service={services.router}/></div></div></>}</section>;
+}
+
 function AgentPage() {
   const status = useApi<Record<string, unknown>>('/syra/status');
   return <><PageHeader eyebrow="AI workspace" title="Syte Agent" description="Restored as a first-class navigation destination for model, session, and agent workflows." action={status.reload}/><section className="agentCanvas"><div className="agentOrb"><Sparkles size={28}/></div><div><span className="statusPill">{status.loading ? 'Checking runtime' : status.error ? 'Runtime unavailable' : 'Agent runtime ready'}</span><h2>Plan, build, deploy.</h2><p>Use the Agent area to continue the original Syte AI workflows. FastAPI session and model endpoints remain the source of truth.</p><div className="agentActions"><button className="darkButton">Start a task <ChevronRight size={16}/></button><Link className="lightButton" href="/settings">Agent settings</Link></div></div></section><section className="twoColumn"><InfoCard icon={TerminalSquare} title="Active sessions" body="Agent sessions are served by the existing project and Turso session APIs."/><InfoCard icon={Bot} title="Model providers" body="Provider and model status continues to be managed by the FastAPI runtime."/></section></>;
@@ -119,6 +141,6 @@ export default function Shell() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const page = useMemo(() => pathname === '/' ? 'home' : pathname.slice(1), [pathname]);
-  const content = page === 'home' ? <HomePage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  const content = page === 'home' ? <HomePage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="content">{content}</div></main>;
 }

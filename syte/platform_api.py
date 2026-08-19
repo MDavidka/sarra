@@ -492,3 +492,39 @@ async def generate_ssh_key(body: GenerateSshKeyRequest) -> dict[str, Any]:
     now = utcnow()
     row = await insert("platform_private_keys", {"uuid": new_uuid(), "team_uuid": bootstrap["team"]["uuid"], "name": body.name, "description": f"Generated {body.algorithm} key", "private_key": private_key, "public_key": public_key, "fingerprint": public_key.split()[-1] if public_key else "", "created_at": now, "updated_at": now})
     return {"ok": True, "key": {"uuid": row["uuid"], "name": row["name"], "public_key": public_key, "fingerprint": row.get("fingerprint"), "algorithm": body.algorithm}, "private_key": private_key, "message": "Private key generated. Download it now; it will not be shown again by list endpoints."}
+
+
+@router.get("/overview/health")
+async def overview_health() -> dict[str, Any]:
+    """Return a safe, read-only command-center health snapshot for the overview UI."""
+    metrics = await overview_metrics()
+    services = await find("platform_services", {})
+    deployments = await find("platform_deployments", {})
+    failed_states = {"failed", "error", "unhealthy", "stopped"}
+    active_states = {"running", "healthy", "deployed", "success", "succeeded"}
+    app_states = [str(row.get("status") or row.get("state") or "").lower() for row in [*services, *deployments]]
+    if any(state in failed_states for state in app_states):
+        apps = {"state": "degraded", "healthy": False, "detail": "One or more managed applications need attention."}
+    elif any(state in active_states for state in app_states):
+        apps = {"state": "healthy", "healthy": True, "detail": f"{len(services)} managed services tracked."}
+    else:
+        apps = {"state": "attention", "healthy": False, "detail": "No active application workloads were detected."}
+
+    try:
+        from syte.nine_router_manager import router_status
+        router = await router_status()
+        router_running = bool(router.get("running") or router.get("healthy") or router.get("status") in {"running", "healthy"})
+        router_state = "healthy" if router_running else "attention"
+        router_detail = str(router.get("message") or ("9Router is running." if router_running else "9Router is not running."))
+    except Exception:
+        router_state, router_running, router_detail = "unavailable", False, "9Router status could not be collected."
+
+    services_snapshot = {
+        "web": {"state": "healthy", "healthy": True, "detail": "Syte web service is responding."},
+        "api": {"state": "healthy", "healthy": True, "detail": "FastAPI service is responding."},
+        "apps": apps,
+        "router": {"state": router_state, "healthy": router_running, "detail": router_detail},
+    }
+    states = {item["state"] for item in services_snapshot.values()}
+    overall = "healthy" if states == {"healthy"} else "degraded" if {"degraded", "unavailable"} & states else "attention"
+    return {"metrics": metrics, "services": services_snapshot, "overall": overall, "collected_at": utcnow()}
