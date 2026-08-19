@@ -112,13 +112,12 @@ def _litellm_mcp_instructions_compat_sql(schema: str) -> str:
         f"ALTER TABLE IF EXISTS {qualified_table} "
         'ADD COLUMN IF NOT EXISTS "instructions" TEXT; '
         "DO $$ BEGIN "
-        f"IF to_regclass({table_literal}) IS NULL THEN "
-        f"RAISE EXCEPTION 'LiteLLM MCP table is missing from schema %', {schema_literal}; "
-        "END IF; "
+        f"IF to_regclass({table_literal}) IS NOT NULL THEN "
         "IF NOT EXISTS (SELECT 1 FROM pg_attribute "
         f"WHERE attrelid = to_regclass({table_literal}) "
         "AND attname = 'instructions' AND NOT attisdropped) THEN "
         f"RAISE EXCEPTION 'LiteLLM MCP instructions column is missing from schema %', {schema_literal}; "
+        "END IF; "
         "END IF; "
         "END $$; COMMIT;"
     )
