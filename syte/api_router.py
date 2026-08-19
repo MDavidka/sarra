@@ -30,6 +30,7 @@ from syte.database import get_project, get_setting
 from syte.domain_utils import build_direct_url, normalize_domain
 from syte.upload_limits import UPLOAD_CHUNK_BYTES
 from syte import workspace_api
+from syte.stack_detector import preflight
 
 router = APIRouter(tags=["Syte API"])
 
@@ -292,6 +293,18 @@ async def api_server_info(_token: dict = Depends(verify_api_token)):
         "ai_spec_url": "/api/ai.json",
         "workspaces_dir": str(settings.resolved_workspaces_dir),
     }
+
+
+@router.get("/deploy_preflight")
+async def api_deploy_preflight(
+    uuid: str = Query(..., description="Project UUID"),
+    start_command: str | None = Query(None),
+    _token: dict = Depends(verify_api_token),
+):
+    project = await get_project(uuid)
+    if not project:
+        _http_error(404, "not_found", f"Project not found: {uuid}")
+    return {"ok": True, **preflight(uuid, project, start_command)}
 
 
 @router.get("/validate_design")
