@@ -3637,7 +3637,10 @@ function renderOverviewHealth(data) {
   const overallText = data.overall === 'healthy' ? 'everything up' : data.overall === 'attention' ? 'attention needed' : 'service degraded';
   const target = document.getElementById('platform-dedicated-page');
   if (!target) return;
-  target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section>`;
+  target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section><section class="overview-monitor-panel" aria-labelledby="overview-monitor-title"><div class="platform-panel-head"><div><p class="eyebrow">System metrics</p><h2 id="overview-monitor-title">System monitor</h2></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-monitor-refresh"><i data-lucide="refresh-cw"></i>Refresh</button></div><div id="overview-monitor-grid" class="overview-monitor-grid"><div class="platform-loading">Loading system metrics…</div></div></section>`;
+  target.querySelector('#overview-monitor-refresh')?.addEventListener('click', loadOverviewMonitor);
+  void loadOverviewMonitor();
+  refreshIcons();
 }
 
 async function renderProfileWorkspace() {
@@ -5512,24 +5515,6 @@ function renderServiceDashboard(p, resetLogs) {
     renderStackBadge(p);
     void loadServiceHealth(p.id);
     void loadDeploymentHistory(p.id);
-    document.getElementById('svc-info-body').innerHTML = `
-    <div class="info-cell"><span>status</span><strong>${esc(statusLabel(p))}</strong></div>
-    <div class="info-cell"><span>type</span><strong>${esc(p.deploy_type || 'shell')}</strong></div>
-    <div class="info-cell"><span>port</span><strong>${p.port}</strong></div>
-    <div class="info-cell"><span>stack</span><strong>${esc(detectStack(p))}</strong></div>
-    <div class="info-cell"><span>production ssl</span><strong>${esc(p.ssl?.production?.label || '—')}</strong></div>
-    <div class="info-cell"><span>preview ssl</span><strong>${esc(p.ssl?.preview?.label || '—')}</strong></div>
-    <div class="info-cell full"><span>domain</span><span>${esc(p.domain || '—')}</span></div>
-    <div class="info-cell full"><span>url</span><a href="${esc(p.url)}" target="_blank">${esc(p.url)}</a></div>
-    <div class="info-cell full"><span>git</span><span>${esc(p.git_url || '—')}</span></div>
-    <div class="info-cell"><span>branch</span><strong>${esc(p.branch || 'main')}</strong></div>
-    <div class="info-cell"><span>start cmd</span><span>${esc(p.start_command || '—')}</span></div>
-    <div class="info-cell full svc-danger-row">
-      <button type="button" class="btn-pill btn-danger btn-sm" onclick="serviceAction('${p.id}','delete')">
-        <i data-lucide="trash-2"></i><span>Remove project</span>
-      </button>
-    </div>
-  `;
   }
 
   if (activeSvcTab === 'preview') {
