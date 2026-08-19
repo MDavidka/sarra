@@ -18,7 +18,6 @@ type PagePayload = { title?: string; description?: string; resource_count?: numb
 const primary: NavItem[] = [
   { href: '/home', label: 'Home', icon: Home },
   { href: '/agent', label: 'Agent', icon: BrainCircuit },
-  { href: '/9router', label: '9Router', icon: Router },
   { href: '/projects', label: 'Projects', icon: LayoutDashboard, apiPage: 'projects' },
   { href: '/overview', label: 'Overview', icon: Gauge, apiPage: 'overview' },
   { href: '/schedules', label: 'Schedules', icon: CalendarClock, apiPage: 'schedules' },
@@ -35,11 +34,11 @@ const administration: NavItem[] = [
   { href: '/ssh-keys', label: 'SSH Keys', icon: KeyRound, apiPage: 'ssh-keys' },
 ];
 const resources: NavItem[] = [
-  { href: '/ai', label: 'AI Providers', icon: Bot, apiPage: 'ai' },
+  { href: '/ai', label: 'AI Providers', icon: Sparkles, apiPage: 'ai' },
   { href: '/tags', label: 'Tags', icon: LayoutDashboard, apiPage: 'tags' },
   { href: '/git', label: 'Git', icon: FileCog, apiPage: 'git' },
   { href: '/registry', label: 'Registry', icon: Boxes, apiPage: 'registry' },
-  { href: '/secrets', label: 'Secrets', icon: KeyRound, apiPage: 'secrets' },
+  { href: '/9router', label: '9Router', icon: Router },
   { href: '/dns-providers', label: 'DNS Providers', icon: Cloud, apiPage: 'dns-providers' },
   { href: '/s3-destinations', label: 'S3 Destinations', icon: Cloud, apiPage: 's3-destinations' },
   { href: '/certificates', label: 'Certificates', icon: ShieldCheck, apiPage: 'certificates' },
@@ -103,6 +102,10 @@ function UsersPage() {
   return <><PageHeader eyebrow="Access management" title="Users & API tokens" description="Preserves the original FastAPI-backed access-token workflow in the Next.js operator UI." action={tokens.reload}/><section className="legacyPanel compact"><div><p className="eyebrow">Create automation access</p><h2>New API token</h2><p>Issue a token for CI, deployments, or external integrations.</p></div><div className="tokenCreate"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="ci-deploy"/><button onClick={create} className="darkButton">Create token</button></div></section>{message && <p className="notice">{message}</p>}<section className="resourceList">{tokens.data?.length ? tokens.data.map((token, index) => <article key={token.id || index}><span><strong>{token.name || 'Operator token'}</strong><small>{token.created_at || 'Created recently'}</small></span><ShieldCheck size={16}/></article>) : <p className="empty">No tokens returned. Operator authentication is required to manage tokens.</p>}</section></>;
 }
 
+function BlankPage() {
+  return <section className="intentionalBlank" aria-label="Blank workspace"/>;
+}
+
 function PlatformPage({ page }: { page: string }) {
   const payload = useApi<PagePayload>(`/platform/navigation/${page}`);
   const resources = payload.data?.resources || [];
@@ -116,6 +119,6 @@ export default function Shell() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const page = useMemo(() => pathname === '/' ? 'home' : pathname.slice(1), [pathname]);
-  const content = page === 'home' ? <HomePage/> : page === 'agent' ? <AgentPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'users' ? <UsersPage/> : <PlatformPage page={page === 'servers' ? 'remote-servers' : page}/>;
+  const content = page === 'home' ? <HomePage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="content">{content}</div></main>;
 }

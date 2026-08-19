@@ -6,7 +6,7 @@ def test_coolify_style_sidebar_contains_requested_sections() -> None:
     for label in (
         "Home", "Projects", "Overview", "Schedules", "Traefik File System", "Docker",
         "Settings", "Profile", "Sessions", "Remote Servers", "Users", "Audit Logs",
-        "SSH Keys", "AI", "Tags", "Git", "Registry", "Secrets", "DNS Providers",
+        "SSH Keys", "AI", "Tags", "Git", "Registry", "9Router", "DNS Providers",
         "S3 Destinations", "Certificates", "Notifications", "Billing", "License",
         "SSO", "Documentation", "Support",
     ):

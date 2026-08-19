@@ -3547,8 +3547,9 @@ function renderIndependentMobilePage(page, data, target) {
 function renderDedicatedPage(page, data) {
   const target = document.getElementById('platform-dedicated-page');
   if (!target) return;
-  if (renderIndependentMobilePage(page, data, target)) return;
   if (page === 'docker') { target.innerHTML = ''; return; }
+  target.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
+  return;
   const rows = data.resources || [];
   if (['profile','sessions','remote-servers','audit-logs','ssh-keys'].includes(page)) {
     const configs = {
@@ -3598,6 +3599,14 @@ async function loadPlatformPage(page = 'overview') {
   const summary = document.getElementById('platform-summary-grid');
   const count = document.getElementById('platform-resource-count');
   const message = document.getElementById('platform-page-message');
+  const workspace = document.getElementById('platform-workspace');
+  const isBlankWorkspace = safePage !== 'docker';
+  workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
+  if (isBlankWorkspace) {
+    const blankTarget = document.getElementById('platform-dedicated-page');
+    if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
+    return;
+  }
   if (title) title.textContent = PLATFORM_PAGE_LABELS[safePage];
   if (list) list.innerHTML = '<div class="platform-loading">Loading live platform data…</div>';
   if (actions) actions.innerHTML = '';
