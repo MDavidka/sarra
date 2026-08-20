@@ -78,7 +78,7 @@
           </div>
           <div class="coolify-nav-section">
             <p class="nav-section-label">Resources</p>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="ai"><i data-lucide="brain-circuit"></i><span>AI</span></button>
+            <button type="button" class="nav-sublink" data-view="ai"><i data-lucide="brain-circuit"></i><span>AI</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="tags"><i data-lucide="tags"></i><span>Tags</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="git"><i data-lucide="git-branch"></i><span>Git</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="registry"><i data-lucide="box"></i><span>Registry</span></button>
@@ -124,9 +124,6 @@
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="debug-chat">
-                <i data-lucide="messages-square"></i><span>Agent chat</span>
               </button>
             </div>
           </div>
@@ -379,108 +376,6 @@
                 </div>
               </div>
 
-              <div class="svc-tab-panel" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
-                <div class="debug-chat-panel">
-                  <div class="debug-chat-header">
-                    <div>
-                      <h2>Agent chat</h2>
-                      <p>Describe what you want changed. The agent can use the tools you enable.</p>
-                    </div>
-                    <div class="debug-chat-header-actions" aria-label="Agent resources">
-                      <button type="button" class="debug-chat-tool-button" id="debug-chat-mcp" aria-controls="debug-chat-resources" aria-expanded="false">
-                        <i data-lucide="plug-zap"></i><span>MCP</span><b id="debug-chat-mcp-count">0</b>
-                      </button>
-                      <button type="button" class="debug-chat-tool-button" id="debug-chat-skills" aria-controls="debug-chat-resources" aria-expanded="false">
-                        <i data-lucide="sparkles"></i><span>Skills</span><b id="debug-chat-skills-count">0</b>
-                      </button>
-                    </div>
-                    <label class="debug-chat-profile-label" for="debug-chat-profile">
-                      <span>Model</span>
-                      <!-- Options are populated from the Models tab / router
-                           catalog by syncCustomModelOptions() in app.js. -->
-                      <select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile">
-                        <option value="auto" selected>auto</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div class="debug-chat-resources hidden" id="debug-chat-resources" aria-live="polite">
-                    <div class="debug-chat-resources-head">
-                      <div>
-                        <strong id="debug-chat-resources-title">Agent resources</strong>
-                        <span id="debug-chat-resources-subtitle">Connect tools and tune the agent's behavior.</span>
-                      </div>
-                      <button type="button" class="debug-chat-resource-close" id="debug-chat-resources-close" aria-label="Close agent resources">×</button>
-                    </div>
-                    <div class="debug-chat-resources-body" id="debug-chat-resources-body"></div>
-                  </div>
-                  <!-- Session failure log: every failed task/tool/request/subagent for
-                       this chat session. Opened by double-clicking the brain icon. -->
-                  <div class="debug-chat-resources debug-chat-failures hidden" id="debug-chat-failures" role="region" aria-label="Session failure log" aria-live="polite">
-                    <div class="debug-chat-resources-head">
-                      <div>
-                        <strong id="debug-chat-failures-title">Session failure log</strong>
-                        <span id="debug-chat-failures-subtitle">Failed tasks, tools, requests and subagents.</span>
-                      </div>
-                      <div class="debug-chat-failures-actions">
-                        <label class="debug-chat-failures-scope" for="debug-chat-failures-scope">
-                          <span>Scope</span>
-                          <select id="debug-chat-failures-scope" aria-label="Failure log scope">
-                            <option value="last" selected>This session</option>
-                            <option value="all">All sessions</option>
-                          </select>
-                        </label>
-                        <button type="button" class="debug-chat-resource-action" id="debug-chat-failures-refresh">Refresh</button>
-                        <button type="button" class="debug-chat-resource-action" id="debug-chat-failures-clear">Clear</button>
-                        <button type="button" class="debug-chat-resource-close" id="debug-chat-failures-close" aria-label="Close failure log">×</button>
-                      </div>
-                    </div>
-                    <div class="debug-chat-resources-body" id="debug-chat-failures-body"></div>
-                  </div>
-                  <div class="debug-chat-session-header hidden" id="debug-chat-session-header" role="status" aria-live="polite"></div>
-                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite">
-                    <span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span>
-                    <span class="debug-chat-activity-pulse" aria-hidden="true"></span>
-                    <span class="debug-chat-activity-icon" aria-hidden="true"><i data-lucide="sparkles"></i></span>
-                    <span class="debug-chat-activity-phase">
-                      <span class="debug-chat-activity-label">Connecting…</span>
-                      <span class="debug-chat-activity-detail"></span>
-                    </span>
-                    <span class="debug-chat-activity-model" id="debug-chat-activity-model" hidden></span>
-                    <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="Turso save status — double-click to open the session failure log">
-                      <i data-lucide="brain"></i>
-                      <b class="debug-chat-brain-badge hidden" id="debug-chat-brain-badge">0</b>
-                    </button>
-                  </div>
-                  <div class="debug-chat-tabs" id="debug-chat-tabs" role="tablist" aria-label="Agent activity lanes">
-                    <button type="button" class="debug-chat-tab is-active" id="debug-chat-tab-main" role="tab" aria-selected="true" aria-controls="debug-chat-messages" data-chat-lane="main">
-                      <span>Main</span>
-                    </button>
-                    <button type="button" class="debug-chat-tab hidden" id="debug-chat-tab-sub" role="tab" aria-selected="false" aria-controls="debug-chat-messages-sub" data-chat-lane="sub">
-                      <span>subagent</span>
-                      <b class="debug-chat-tab-badge hidden" id="debug-chat-tab-sub-badge">0</b>
-                    </button>
-                  </div>
-                  <div class="debug-chat-lanes" id="debug-chat-lanes">
-                    <div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Main agent conversation" aria-relevant="additions text" data-chat-lane="main">
-                      <div class="debug-chat-empty" id="debug-chat-empty">
-                        <p>What would you like to change?</p>
-                      </div>
-                    </div>
-                    <div class="debug-chat-messages hidden" id="debug-chat-messages-sub" role="log" aria-live="polite" aria-label="Subagent activity" aria-relevant="additions text" data-chat-lane="sub">
-                      <div class="debug-chat-empty" id="debug-chat-empty-sub">
-                        <p>No subagent has been started yet.</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="debug-chat-composer">
-                    <textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea>
-                    <div class="debug-chat-composer-actions">
-                      <button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button>
-                      <button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -500,6 +395,38 @@
               <div class="svc-edit-actions">
                 <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
                 <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-ai" class="view">
+          <div class="global-ai-workspace" aria-label="AI project assistant">
+            <header class="global-ai-header">
+              <div class="global-ai-title"><span class="global-ai-title-icon"><i data-lucide="sparkles"></i></span><div><p>Intelligence workspace</p><h1>AI project assistant</h1><span>Choose one project context, then let the agent plan, build, test, and diagnose.</span></div></div>
+              <a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a>
+            </header>
+            <section class="global-ai-context-card" aria-label="Project context">
+              <div class="global-ai-context-select"><label for="global-ai-project">Project context</label><select id="global-ai-project" aria-label="Choose a project for this AI conversation"><option value="">Choose a project</option></select></div>
+              <div class="global-ai-context-chip hidden" id="global-ai-context-chip"><span class="global-ai-context-avatar" id="global-ai-project-avatar">S</span><span><strong id="global-ai-project-name">Project</strong><small id="global-ai-project-meta">Conversation context</small></span><button type="button" id="global-ai-project-close" aria-label="Close project context" title="Close project context"><i data-lucide="x"></i></button></div>
+            </section>
+            <div class="global-ai-empty" id="global-ai-empty"><i data-lucide="messages-square"></i><h2>Open a project conversation</h2><p>Select a project to reuse its agent session, connected MCP resources, skills, and 9Router-backed model profile.</p></div>
+            <div class="global-ai-chat-host hidden" id="global-ai-chat-host">
+              <div class="svc-tab-panel active" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
+                <div class="debug-chat-panel">
+                  <div class="debug-chat-header">
+                    <div><h2>Project agent</h2><p>Describe a change, review, or issue in the selected project context.</p></div>
+                    <div class="debug-chat-header-actions" aria-label="Agent resources"><button type="button" class="debug-chat-tool-button" id="debug-chat-mcp" aria-controls="debug-chat-resources" aria-expanded="false"><i data-lucide="plug-zap"></i><span>MCP</span><b id="debug-chat-mcp-count">0</b></button><button type="button" class="debug-chat-tool-button" id="debug-chat-skills" aria-controls="debug-chat-resources" aria-expanded="false"><i data-lucide="sparkles"></i><span>Skills</span><b id="debug-chat-skills-count">0</b></button></div>
+                    <label class="debug-chat-profile-label" for="debug-chat-profile"><span>Model</span><select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile"><option value="auto" selected>auto</option></select></label>
+                  </div>
+                  <div class="debug-chat-resources hidden" id="debug-chat-resources" aria-live="polite"><div class="debug-chat-resources-head"><div><strong id="debug-chat-resources-title">Agent resources</strong><span id="debug-chat-resources-subtitle">Connect tools and tune the agent's behavior.</span></div><button type="button" class="debug-chat-resource-close" id="debug-chat-resources-close" aria-label="Close agent resources">×</button></div><div class="debug-chat-resources-body" id="debug-chat-resources-body"></div></div>
+                  <div class="debug-chat-resources debug-chat-failures hidden" id="debug-chat-failures" role="region" aria-label="Session failure log" aria-live="polite"><div class="debug-chat-resources-head"><div><strong id="debug-chat-failures-title">Session failure log</strong><span id="debug-chat-failures-subtitle">Failed tasks, tools, requests and subagents.</span></div><div class="debug-chat-failures-actions"><label class="debug-chat-failures-scope" for="debug-chat-failures-scope"><span>Scope</span><select id="debug-chat-failures-scope" aria-label="Failure log scope"><option value="last" selected>This session</option><option value="all">All sessions</option></select></label><button type="button" class="debug-chat-resource-action" id="debug-chat-failures-refresh">Refresh</button><button type="button" class="debug-chat-resource-action" id="debug-chat-failures-clear">Clear</button><button type="button" class="debug-chat-resource-close" id="debug-chat-failures-close" aria-label="Close failure log">×</button></div></div><div class="debug-chat-resources-body" id="debug-chat-failures-body"></div></div>
+                  <div class="debug-chat-session-header hidden" id="debug-chat-session-header" role="status" aria-live="polite"></div>
+                  <div class="debug-chat-activity" id="debug-chat-activity" role="status" aria-live="polite"><span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span><span class="debug-chat-activity-pulse" aria-hidden="true"></span><span class="debug-chat-activity-icon" aria-hidden="true"><i data-lucide="sparkles"></i></span><span class="debug-chat-activity-phase"><span class="debug-chat-activity-label">Connecting…</span><span class="debug-chat-activity-detail"></span></span><span class="debug-chat-activity-model" id="debug-chat-activity-model" hidden></span><button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Turso message save status: unknown" title="Turso save status — double-click to open the session failure log"><i data-lucide="brain"></i><b class="debug-chat-brain-badge hidden" id="debug-chat-brain-badge">0</b></button></div>
+                  <div class="debug-chat-tabs" id="debug-chat-tabs" role="tablist" aria-label="Agent activity lanes"><button type="button" class="debug-chat-tab is-active" id="debug-chat-tab-main" role="tab" aria-selected="true" aria-controls="debug-chat-messages" data-chat-lane="main"><span>Main</span></button><button type="button" class="debug-chat-tab hidden" id="debug-chat-tab-sub" role="tab" aria-selected="false" aria-controls="debug-chat-messages-sub" data-chat-lane="sub"><span>subagent</span><b class="debug-chat-tab-badge hidden" id="debug-chat-tab-sub-badge">0</b></button></div>
+                  <div class="debug-chat-lanes" id="debug-chat-lanes"><div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Main agent conversation" aria-relevant="additions text" data-chat-lane="main"><div class="debug-chat-empty" id="debug-chat-empty"><p>What would you like to change?</p></div></div><div class="debug-chat-messages hidden" id="debug-chat-messages-sub" role="log" aria-live="polite" aria-label="Subagent activity" aria-relevant="additions text" data-chat-lane="sub"><div class="debug-chat-empty" id="debug-chat-empty-sub"><p>No subagent has been started yet.</p></div></div></div>
+                  <div class="debug-chat-composer"><textarea id="debug-chat-input" class="debug-chat-input" rows="2" aria-label="Message to the workspace agent" placeholder="Ask the agent to change, review, or test something"></textarea><div class="debug-chat-composer-actions"><button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><span>Stop</span></button><button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send"><span>Send</span></button></div></div>
+                </div>
               </div>
             </div>
           </div>
@@ -615,6 +542,11 @@
                 <button type="button" class="btn-pill btn-danger" id="router-stop-btn"><i data-lucide="square"></i><span>Stop</span></button>
               </div>
             </div>
+            <section class="router-password-card" aria-labelledby="router-password-title">
+              <div class="router-password-icon"><i data-lucide="key-round"></i></div>
+              <div class="router-password-copy"><p class="router-password-eyebrow">WebGUI access</p><h2 id="router-password-title">Initial password</h2><p>This saved bootstrap credential is available only to signed-in operators. Change it in 9Router after first sign-in.</p></div>
+              <div class="router-password-value"><code id="router-initial-password" data-password="">••••••••••••</code><div class="router-password-actions"><button type="button" class="icon-btn" id="router-password-reveal-btn" aria-label="Reveal initial password" title="Reveal password"><i data-lucide="eye"></i></button><button type="button" class="icon-btn" id="router-password-copy-btn" aria-label="Copy initial password" title="Copy password"><i data-lucide="copy"></i></button></div><small id="router-password-status">Loading credential…</small></div>
+            </section>
             <div id="router-content" class="router-content" aria-live="polite">
               <p class="hint block">Loading 9Router status…</p>
             </div>

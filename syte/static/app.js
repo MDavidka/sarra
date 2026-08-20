@@ -276,12 +276,16 @@ async function pollDebugChatBrainOnce(projectId) {
   }
 }
 
+function isDebugChatWorkspaceActive() {
+  return activeSvcTab === 'debug-chat' || document.getElementById('view-ai')?.classList.contains('active');
+}
+
 function startDebugChatBrainPoll(projectId) {
   stopDebugChatBrainPoll();
   debugChatBrainLastLoggedState = '';
   void pollDebugChatBrainOnce(projectId);
   debugChatBrainPollTimer = setInterval(() => {
-    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+    if (!isDebugChatWorkspaceActive() || activeServiceId !== projectId) {
       stopDebugChatBrainPoll();
       return;
     }
@@ -2314,7 +2318,7 @@ function bindAgentActivityEventSource(es) {
 function startAgentActivityPollFallback(projectId) {
   if (agentActivityPollTimer) return;
   agentActivityPollTimer = setInterval(() => {
-    if (activeSvcTab !== 'debug-chat' || activeServiceId !== projectId) {
+    if (!isDebugChatWorkspaceActive() || activeServiceId !== projectId) {
       stopAgentActivityStream();
       return;
     }
@@ -2323,7 +2327,7 @@ function startAgentActivityPollFallback(projectId) {
 }
 
 function agentActivityStreamIsCurrent(projectId) {
-  return activeSvcTab === 'debug-chat'
+  return isDebugChatWorkspaceActive()
     && activeServiceId === projectId
     && agentActivityStreamProjectId === projectId;
 }
@@ -2446,7 +2450,7 @@ function applyDebugChatActivityEvent(event) {
 }
 
 async function reconnectDebugChatStream() {
-  if (!activeServiceId || activeSvcTab !== 'debug-chat') return;
+  if (!activeServiceId || !isDebugChatWorkspaceActive()) return;
   const projectId = activeServiceId;
   stopAgentActivityStream();
   setDebugChatConnectionState('connecting');
@@ -2797,7 +2801,7 @@ function warmProjectAgent(projectId) {
         result.ok
         && result.status === 'warming'
         && activeServiceId === projectId
-        && activeSvcTab === 'debug-chat'
+        && isDebugChatWorkspaceActive()
         && !debugChatBusy
         && !debugChatSendInFlight
       ) {
@@ -3768,6 +3772,65 @@ async function loadPlatformPage(page = 'overview') {
   }
 }
 
+async function openGlobalAiWorkspace() {
+  const host = document.getElementById('global-ai-chat-host');
+  const panel = document.getElementById('svc-panel-debug-chat');
+  const select = document.getElementById('global-ai-project');
+  if (!host || !panel || !select) return;
+  if (panel.parentElement !== host) host.appendChild(panel);
+
+  await loadProjects({ silent: true });
+  const previous = select.value || activeServiceId || '';
+  select.innerHTML = '<option value="">Choose a project</option>' + projects
+    .map(project => `<option value="${esc(project.id)}">${esc(displayTitle(project))}</option>`)
+    .join('');
+  select.value = projects.some(project => project.id === previous) ? previous : '';
+  if (select.value) await setGlobalAiProject(select.value, { focus: false });
+  else renderGlobalAiProjectContext(null);
+}
+
+function renderGlobalAiProjectContext(project) {
+  const chip = document.getElementById('global-ai-context-chip');
+  const empty = document.getElementById('global-ai-empty');
+  const host = document.getElementById('global-ai-chat-host');
+  const avatar = document.getElementById('global-ai-project-avatar');
+  const name = document.getElementById('global-ai-project-name');
+  const meta = document.getElementById('global-ai-project-meta');
+  chip?.classList.toggle('hidden', !project);
+  empty?.classList.toggle('hidden', Boolean(project));
+  host?.classList.toggle('hidden', !project);
+  if (!project) return;
+  if (avatar) avatar.textContent = ((project.name || project.domain || 'S').trim()[0] || 'S').toUpperCase();
+  if (name) name.textContent = displayTitle(project);
+  if (meta) meta.textContent = `${project.domain || project.branch || 'Project'} · ${project.running ? 'live' : 'not running'}`;
+}
+
+async function setGlobalAiProject(projectId, { focus = true } = {}) {
+  const project = projects.find(item => item.id === projectId);
+  const select = document.getElementById('global-ai-project');
+  if (!project) {
+    renderGlobalAiProjectContext(null);
+    return;
+  }
+  activeServiceId = project.id;
+  activeSvcTab = 'debug-chat';
+  if (select) select.value = project.id;
+  renderGlobalAiProjectContext(project);
+  await openDebugChatTab();
+  if (focus) document.getElementById('debug-chat-input')?.focus();
+}
+
+function clearGlobalAiProject() {
+  stopAgentActivityStream();
+  stopDebugChatBrainPoll();
+  activeServiceId = null;
+  activeSvcTab = 'general';
+  debugChatLoadedProjectId = '';
+  const select = document.getElementById('global-ai-project');
+  if (select) select.value = '';
+  renderGlobalAiProjectContext(null);
+}
+
 function showView(name) {
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
@@ -3790,7 +3853,7 @@ function showView(name) {
   }
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); }
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); void openGlobalAiWorkspace(); }
   if (name === 'models') { loadModelsTab(); }
   if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
@@ -5387,7 +5450,7 @@ function connLabel(p) {
 }
 
 function switchSvcTab(tab) {
-  const allowed = ['general', 'env', 'logs', 'preview', 'debug-chat'];
+  const allowed = ['general', 'env', 'logs', 'preview'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
@@ -5397,14 +5460,6 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
-  if (tab === 'debug-chat') {
-    void openDebugChatTab().catch((err) => {
-      console.error('[Syte][chat] Failed to open agent chat:', err);
-      toast(normalizeFetchError(err?.message) || 'Could not open agent chat');
-    });
-  } else if (prevTab === 'debug-chat') {
-    stopAgentActivityStream();
-  }
   if (tab === 'preview') {
     previewTabActive = true;
     const p = projects.find(x => x.id === activeServiceId);
@@ -6813,6 +6868,15 @@ document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) =
   if (!btn?.dataset.svcTab) return;
   switchSvcTab(btn.dataset.svcTab);
 });
+document.getElementById('global-ai-project')?.addEventListener('change', async (event) => {
+  const projectId = event.target.value;
+  if (!projectId) {
+    clearGlobalAiProject();
+    return;
+  }
+  await setGlobalAiProject(projectId);
+});
+document.getElementById('global-ai-project-close')?.addEventListener('click', clearGlobalAiProject);
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
 document.getElementById('debug-chat-messages')?.addEventListener(
@@ -7073,6 +7137,7 @@ window.addEventListener('resize', () => {
 
 let routerData = null;
 let routerInitialPassword = '';
+let routerPasswordRevealed = false;
 let routerInstallDebug = '';
 
 function renderRouterTab(data) {
@@ -7096,9 +7161,6 @@ function renderRouterTab(data) {
   const sslLabel = sslState === 'serving' ? (ssl.dedicated_cert === false ? 'Dedicated SSL missing' : 'HTTPS serving') : sslState === 'dedicated-cert-missing' ? 'Dedicated SSL missing' : sslState === 'invalid-cert' || sslState === 'cert-error' ? 'SSL error' : sslState === 'down' ? 'HTTPS not serving' : sslState;
   const sslClass = sslState === 'serving' && ssl.dedicated_cert !== false ? 'badge-running' : 'badge-warning';
   const initialDebug = routerInstallDebug || 'Load diagnostics to inspect AlmaLinux, Docker, Caddy, DNS, and container failures.';
-  const passwordNotice = routerInitialPassword
-    ? `<div class="router-secret-box"><strong>Initial dashboard password</strong><code>${esc(routerInitialPassword)}</code><span class="hint">Save this now. It is only shown after deployment and is not returned by status requests.</span></div>`
-    : '';
   const warning = routerData.warning
     ? `<div class="note router-warning"><strong>Important:</strong> ${esc(routerData.warning)}</div>`
     : '';
@@ -7124,7 +7186,6 @@ function renderRouterTab(data) {
       <div class="swarm-stat"><span class="swarm-label">Image</span><span class="swarm-value">${esc(routerData.image || 'decolua/9router:0.5.50')}</span></div>
       <div class="swarm-stat full"><span class="swarm-label">Data</span><span class="swarm-value"><code>/var/lib/syte/9router</code> · persistent across redeploys</span></div>
     </div>
-    ${passwordNotice}
     <p class="hint block router-help">The official 9Router web GUI is at <code>https://9router.sycord.site/dashboard</code> and its OpenAI-compatible API is at <code>/v1</code>. AlmaLinux prepares Docker, Caddy, firewalld, DNS, and HTTPS before deployment. The container listens on port <code>20128</code> internally and is bound to loopback host port <code>${esc(routerData.port || 20129)}</code>. A separate GUI domain is required so the Syte console remains reachable.</p>
     <details class="router-logs-details"><summary>Installation diagnostics</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-debug-refresh"><i data-lucide="refresh-cw"></i><span>Refresh diagnostics</span></button></div><pre id="router-install-debug" class="router-logs">${esc(initialDebug)}</pre></details>
     <details class="router-logs-details"><summary>Recent container logs</summary><div class="router-log-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="router-logs-refresh"><i data-lucide="refresh-cw"></i><span>Refresh logs</span></button></div><pre id="router-logs" class="router-logs">Load logs when needed.</pre></details>
@@ -7160,13 +7221,68 @@ function renderRouterTab(data) {
   refreshIcons();
 }
 
+async function loadRouterPassword() {
+  const passwordEl = document.getElementById('router-initial-password');
+  const statusEl = document.getElementById('router-password-status');
+  const revealBtn = document.getElementById('router-password-reveal-btn');
+  if (!passwordEl || !statusEl) return;
+  try {
+    const result = await api('/settings/router/password');
+    routerInitialPassword = result.password || '';
+    passwordEl.dataset.password = routerInitialPassword;
+    passwordEl.textContent = routerPasswordRevealed && routerInitialPassword
+      ? routerInitialPassword
+      : (routerInitialPassword ? '••••••••••••' : 'Not created yet');
+    statusEl.textContent = routerInitialPassword
+      ? (result.is_new ? 'Newly created credential' : 'Saved operator credential')
+      : 'Deploy 9Router to create its credential.';
+    if (revealBtn) {
+      revealBtn.disabled = !routerInitialPassword;
+      revealBtn.setAttribute('aria-label', routerPasswordRevealed ? 'Hide initial password' : 'Reveal initial password');
+      revealBtn.title = routerPasswordRevealed ? 'Hide password' : 'Reveal password';
+      revealBtn.innerHTML = `<i data-lucide="${routerPasswordRevealed ? 'eye-off' : 'eye'}"></i>`;
+    }
+  } catch (error) {
+    passwordEl.dataset.password = '';
+    passwordEl.textContent = 'Unavailable';
+    statusEl.textContent = isAuthError(error) ? 'Sign in to view this credential.' : 'Could not load credential.';
+    if (revealBtn) revealBtn.disabled = true;
+  }
+  refreshIcons();
+}
+
+function toggleRouterPassword() {
+  if (!routerInitialPassword) return;
+  routerPasswordRevealed = !routerPasswordRevealed;
+  const passwordEl = document.getElementById('router-initial-password');
+  const revealBtn = document.getElementById('router-password-reveal-btn');
+  if (passwordEl) passwordEl.textContent = routerPasswordRevealed ? routerInitialPassword : '••••••••••••';
+  if (revealBtn) {
+    revealBtn.setAttribute('aria-label', routerPasswordRevealed ? 'Hide initial password' : 'Reveal initial password');
+    revealBtn.title = routerPasswordRevealed ? 'Hide password' : 'Reveal password';
+    revealBtn.innerHTML = `<i data-lucide="${routerPasswordRevealed ? 'eye-off' : 'eye'}"></i>`;
+  }
+  refreshIcons();
+}
+
+async function copyRouterPassword() {
+  if (!routerInitialPassword) return;
+  try {
+    await navigator.clipboard.writeText(routerInitialPassword);
+    toast('9Router initial password copied');
+  } catch (error) {
+    toast('Could not copy the password. Reveal it and copy manually.');
+  }
+}
+
 async function loadRouterTab() {
   const content = document.getElementById('router-content');
   if (!content) return;
   if (!(await forceLoginForView('router'))) return;
   content.innerHTML = '<p class="hint block">Loading 9Router status…</p>';
   try {
-    renderRouterTab(await api('/settings/router/status'));
+    const [status] = await Promise.all([api('/settings/router/status'), loadRouterPassword()]);
+    renderRouterTab(status);
   } catch (error) {
     if (isAuthError(error)) {
       showLoginScreen('router');
@@ -7431,6 +7547,8 @@ async function loadSyraModels() {
 }
 
 document.getElementById('router-refresh-btn')?.addEventListener('click', loadRouterTab);
+document.getElementById('router-password-reveal-btn')?.addEventListener('click', toggleRouterPassword);
+document.getElementById('router-password-copy-btn')?.addEventListener('click', copyRouterPassword);
 document.getElementById('router-start-btn')?.addEventListener('click', () => routerAction('start'));
 document.getElementById('router-stop-btn')?.addEventListener('click', () => routerAction('stop'));
 document.getElementById('router-restart-btn')?.addEventListener('click', () => routerAction('restart'));
