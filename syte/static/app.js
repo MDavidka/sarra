@@ -4044,8 +4044,6 @@ function showView(name) {
   if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
-  const aiSettingsBtn = document.getElementById('ai-header-settings-btn');
-  if (aiSettingsBtn) aiSettingsBtn.classList.toggle('hidden', name !== 'ai');
   if (name === 'sycord') refreshIcons();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
@@ -4087,7 +4085,7 @@ function appendModelOptionGroups(select, models) {
     rows.forEach((model) => {
       const option = document.createElement('option');
       option.value = model.profile;
-      option.textContent = model.name;
+      option.textContent = `${provider} · ${model.name}`;
       option.dataset.customModel = '1';
       group.appendChild(option);
     });
@@ -4100,14 +4098,16 @@ function appendModelOptionGroups(select, models) {
 // added explicitly — otherwise a fresh install with no configured models and an
 // unreachable router would offer nothing but "auto".
 const STATIC_MODEL_PROFILES = [
-  { profile: 'syra-nano', provider: 'Syte', name: 'Go · Gemini 2.5 Flash' },
-  { profile: 'syra-ultra', provider: 'Syte', name: 'Air · Aliyun Qwen' },
-  { profile: 'syra-havy', provider: 'Syte', name: 'Metal · Claude Sonnet 4.6' },
+  { profile: 'syra-nano', provider: 'Google Gemini', name: 'Gemini 2.5 Flash' },
+  { profile: 'syra-ultra', provider: 'Aliyun', name: 'Qwen 3.7 Plus' },
+  { profile: 'syra-havy', provider: 'VyceAI', name: 'Claude Sonnet 4.6' },
 ];
 
 function syncCustomModelOptions(models) {
   const available = Array.isArray(models) ? models : [];
-  const selectable = [...available];
+  const selectable = [...STATIC_MODEL_PROFILES, ...available].filter((model, index, rows) =>
+    rows.findIndex((candidate) => candidate.profile === model.profile) === index,
+  );
   document.querySelectorAll('select[data-model-profile-select], #debug-chat-profile, #ai-test-profile, #agent-default-profile').forEach((select) => {
     const previous = select.value;
 
@@ -4375,20 +4375,15 @@ function updateAiApiWarning() {
 }
 
 function openAiSettings() {
-  const sheet = document.getElementById('ai-settings-sheet');
-  if (!sheet) return;
-  sheet.classList.remove('hidden');
-  document.body.classList.add('ai-settings-open');
-  loadSettings();
-  loadLegacySolarStatus();
-  refreshIcons();
+  // The legacy settings sheet was removed. Error-recovery and historical links
+  // now take operators to the single Model tab provider configuration surface.
+  showView('ai');
+  setGlobalAiTab('models');
+  void loadGlobalAiProviderCatalog();
 }
 
 function closeAiSettings() {
-  const sheet = document.getElementById('ai-settings-sheet');
-  if (!sheet) return;
-  sheet.classList.add('hidden');
-  document.body.classList.remove('ai-settings-open');
+  // Kept as a compatibility no-op for legacy save callbacks.
 }
 
 function renderLegacySolarStatus(status) {
@@ -7081,8 +7076,6 @@ document.getElementById('global-ai-session-model')?.addEventListener('change', (
   syncGlobalAiModelSelection(profile);
 });
 document.getElementById('global-ai-save-default-model')?.addEventListener('click', saveGlobalAiDefaultModel);
-document.getElementById('global-ai-provider-settings')?.addEventListener('click', openAiSettings);
-document.getElementById('global-ai-open-provider-settings')?.addEventListener('click', openAiSettings);
 document.getElementById('global-ai-open-model-manager')?.addEventListener('click', () => showView('models'));
 document.querySelectorAll('.global-ai-provider-type').forEach((button) => button.addEventListener('click', () => setGlobalAiProviderType(button.dataset.providerType)));
 document.getElementById('global-ai-save-provider')?.addEventListener('click', saveGlobalAiProvider);
@@ -7255,9 +7248,6 @@ document.addEventListener('input', (event) => {
   if (event.target.id === 'model-search') renderModelGroups();
 });
 
-document.getElementById('ai-header-settings-btn')?.addEventListener('click', openAiSettings);
-document.getElementById('ai-settings-close')?.addEventListener('click', closeAiSettings);
-document.getElementById('ai-settings-backdrop')?.addEventListener('click', closeAiSettings);
 document.getElementById('ai-tab-providers')?.addEventListener('click', () => setAiSettingsTab('providers'));
 document.getElementById('delete-solar-btn')?.addEventListener('click', deleteLegacySolar);
 
