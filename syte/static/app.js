@@ -3772,6 +3772,79 @@ async function loadPlatformPage(page = 'overview') {
   }
 }
 
+let globalAiActiveTab = 'chat';
+
+function updateGlobalAiModelSummary() {
+  const session = document.getElementById('global-ai-session-model');
+  const label = document.getElementById('global-ai-model-label');
+  const description = document.getElementById('global-ai-model-description');
+  const profile = session?.value || document.getElementById('debug-chat-profile')?.value || 'auto';
+  const option = session?.options?.[session.selectedIndex];
+  if (label) label.textContent = profile === 'auto' ? 'Automatic routing' : (option?.textContent || profile);
+  if (description) description.textContent = profile === 'auto'
+    ? 'Syte selects the best available model for each task.'
+    : 'This profile is applied to the next message in the selected project.';
+}
+
+function syncGlobalAiModelSelection(profile = document.getElementById('debug-chat-profile')?.value || 'auto') {
+  const chatProfile = document.getElementById('debug-chat-profile');
+  const sessionModel = document.getElementById('global-ai-session-model');
+  if (chatProfile && profile && [...chatProfile.options].some((option) => option.value === profile)) {
+    chatProfile.value = profile;
+  }
+  if (sessionModel && profile && [...sessionModel.options].some((option) => option.value === profile)) {
+    sessionModel.value = profile;
+  }
+  updateGlobalAiModelSummary();
+}
+
+function setGlobalAiTab(tab) {
+  const next = tab === 'models' ? 'models' : 'chat';
+  globalAiActiveTab = next;
+  const chatTab = document.getElementById('global-ai-tab-chat');
+  const modelsTab = document.getElementById('global-ai-tab-models');
+  const chatPanel = document.getElementById('global-ai-panel-chat');
+  const modelsPanel = document.getElementById('global-ai-panel-models');
+  chatTab?.classList.toggle('is-active', next === 'chat');
+  modelsTab?.classList.toggle('is-active', next === 'models');
+  chatTab?.setAttribute('aria-selected', String(next === 'chat'));
+  modelsTab?.setAttribute('aria-selected', String(next === 'models'));
+  chatPanel?.classList.toggle('hidden', next !== 'chat');
+  modelsPanel?.classList.toggle('hidden', next !== 'models');
+  if (next === 'models') {
+    syncGlobalAiModelSelection();
+    void loadSettings();
+  }
+  refreshIcons();
+}
+
+async function saveGlobalAiDefaultModel() {
+  const select = document.getElementById('global-ai-default-model');
+  const button = document.getElementById('global-ai-save-default-model');
+  const profile = select?.value;
+  if (!profile) return toast('Choose a default model first.');
+  if (button) {
+    button.disabled = true;
+    button.querySelector('span').textContent = 'Saving…';
+  }
+  try {
+    const result = await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ agent_default_model_profile: profile }),
+    });
+    const legacySelect = document.getElementById('agent-default-profile');
+    if (legacySelect && [...legacySelect.options].some((option) => option.value === profile)) legacySelect.value = profile;
+    toast(Array.isArray(result.messages) ? result.messages.join(' ') : 'Default model saved');
+  } catch (error) {
+    toast(`Could not save default model: ${normalizeFetchError(error.message)}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.querySelector('span').textContent = 'Save default';
+    }
+  }
+}
+
 async function openGlobalAiWorkspace() {
   const host = document.getElementById('global-ai-chat-host');
   const panel = document.getElementById('svc-panel-debug-chat');
@@ -3780,6 +3853,8 @@ async function openGlobalAiWorkspace() {
   if (panel.parentElement !== host) host.appendChild(panel);
 
   await loadProjects({ silent: true });
+  await ensureDebugChatModelOptions();
+  syncGlobalAiModelSelection();
   const previous = select.value || activeServiceId || '';
   select.innerHTML = '<option value="">Choose a project</option>' + projects
     .map(project => `<option value="${esc(project.id)}">${esc(displayTitle(project))}</option>`)
@@ -3853,7 +3928,7 @@ function showView(name) {
   }
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); void openGlobalAiWorkspace(); }
+  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); void openGlobalAiWorkspace(); setGlobalAiTab(globalAiActiveTab); }
   if (name === 'models') { loadModelsTab(); }
   if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
@@ -6469,6 +6544,11 @@ async function loadSettings() {
       ultra: Boolean(s.agent_syra_ultra_api_key_set),
     };
     await loadAvailableModels();
+    const globalDefaultModel = document.getElementById('global-ai-default-model');
+    if (globalDefaultModel && [...globalDefaultModel.options].some((option) => option.value === defaultProfile)) {
+      globalDefaultModel.value = defaultProfile;
+    }
+    syncGlobalAiModelSelection();
     if (syraInternalSecret) {
       syraInternalSecret.placeholder = s.syra_internal_secret_set
         ? 'internal secret saved — enter new value to replace'
@@ -6877,6 +6957,22 @@ document.getElementById('global-ai-project')?.addEventListener('change', async (
   await setGlobalAiProject(projectId);
 });
 document.getElementById('global-ai-project-close')?.addEventListener('click', clearGlobalAiProject);
+document.getElementById('global-ai-tab-chat')?.addEventListener('click', () => setGlobalAiTab('chat'));
+document.getElementById('global-ai-tab-models')?.addEventListener('click', () => setGlobalAiTab('models'));
+document.getElementById('global-ai-session-model')?.addEventListener('change', (event) => {
+  const profile = event.target.value || 'auto';
+  const chatProfile = document.getElementById('debug-chat-profile');
+  if (chatProfile) {
+    chatProfile.value = profile;
+    chatProfile.dataset.userSelected = '1';
+    chatProfile.dispatchEvent(new Event('change'));
+  }
+  syncGlobalAiModelSelection(profile);
+});
+document.getElementById('global-ai-save-default-model')?.addEventListener('click', saveGlobalAiDefaultModel);
+document.getElementById('global-ai-provider-settings')?.addEventListener('click', openAiSettings);
+document.getElementById('global-ai-open-provider-settings')?.addEventListener('click', openAiSettings);
+document.getElementById('global-ai-open-model-manager')?.addEventListener('click', () => showView('models'));
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
 document.getElementById('debug-chat-messages')?.addEventListener(
@@ -6921,7 +7017,10 @@ document.getElementById('debug-chat-failures-clear')?.addEventListener('click', 
 });
 document.getElementById('debug-chat-profile')?.addEventListener('change', () => {
   const select = document.getElementById('debug-chat-profile');
-  if (select) select.dataset.userSelected = '1';
+  if (select) {
+    select.dataset.userSelected = '1';
+    syncGlobalAiModelSelection(select.value || 'auto');
+  }
   if (debugChatBusy) {
     const modelEl = document.getElementById('debug-chat-activity-model');
     const profile = document.getElementById('debug-chat-profile')?.value || '';

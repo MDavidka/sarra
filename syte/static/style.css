@@ -5592,3 +5592,98 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   .router-password-actions { justify-content: flex-end; }
   .router-password-value small { grid-column: auto; }
 }
+
+/* Compact shadcn-style refinement for the global AI workspace */
+.global-ai-workspace { gap: 12px; max-width: 1080px; padding-top: 2px; }
+.global-ai-header { align-items: center; padding: 7px 2px 2px; }
+.global-ai-title-icon { width: 34px; height: 34px; border-radius: 7px; }
+.global-ai-title-icon svg { width: 16px; height: 16px; }
+.global-ai-title h1 { font-size: 19px; }
+.global-ai-title > div > span { margin-top: 3px; font-size: 12px; }
+.global-ai-header-actions { display: inline-flex; align-items: center; gap: 6px; }
+.global-ai-header-button, .global-ai-router-link { min-height: 34px; border-radius: 7px; font-size: 12px; }
+.global-ai-header-button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #d4d4d8; color: #3f3f46; background: #fff; font: inherit; font-weight: 650; cursor: pointer; }
+.global-ai-header-button:hover { color: #18181b; background: #fafafa; }
+.global-ai-header-button svg { width: 14px; height: 14px; }
+.global-ai-context-card { min-height: 0; gap: 10px; padding: 10px 12px; border-radius: 8px; }
+.global-ai-context-select { gap: 4px; }
+.global-ai-context-select select { height: 34px; border-radius: 6px; font-size: 12px; }
+.global-ai-context-chip { min-height: 34px; }
+.global-ai-tabs { width: max-content; display: inline-flex; gap: 2px; padding: 3px; border: 1px solid #e4e4e7; border-radius: 8px; background: #f4f4f5; }
+.global-ai-tab { min-height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; border-radius: 5px; color: #71717a; background: transparent; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.global-ai-tab svg { width: 14px; height: 14px; }
+.global-ai-tab.is-active { color: #18181b; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.global-ai-tab:hover:not(.is-active) { color: #3f3f46; }
+.global-ai-tab-panel { min-width: 0; }
+.global-ai-empty { min-height: 260px; border-radius: 8px; }
+.global-ai-chat-host #svc-panel-debug-chat { display: block; padding: 14px; border: 1px solid #d4d4d8; border-radius: 9px; background: #fff; }
+.global-ai-chat-host .debug-chat-panel { gap: 10px; }
+.global-ai-chat-host .debug-chat-header { align-items: center; gap: 10px; }
+.global-ai-chat-host .debug-chat-header h2 { font-size: 16px; letter-spacing: -.015em; }
+.global-ai-chat-host .debug-chat-header p { margin-top: 2px; font-size: 11px; }
+.global-ai-chat-host .debug-chat-header-actions { margin-left: auto; gap: 5px; }
+.global-ai-chat-host .debug-chat-tool-button { min-height: 32px; padding: 0 8px; border-radius: 999px; font-size: 12px; }
+.global-ai-chat-host .debug-chat-tool-button svg { width: 14px; height: 14px; }
+.global-ai-chat-host .debug-chat-profile-label { min-height: 32px; display: inline-flex; align-items: center; gap: 7px; margin: 0; color: #3f3f46; font-size: 12px; font-weight: 650; }
+.global-ai-chat-host .debug-chat-profile { width: 190px; min-height: 32px; padding: 0 28px 0 9px; border-radius: 6px; font-size: 12px; }
+.global-ai-chat-host .debug-chat-activity { min-height: 40px; padding: 7px 9px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fafafa; }
+.global-ai-chat-host .debug-chat-lanes { border: 1px solid #e4e4e7; border-radius: 8px; background: #fcfcfc; }
+.global-ai-chat-host .debug-chat-messages { min-height: 240px; max-height: 390px; padding: 12px; }
+.global-ai-chat-host .debug-chat-composer { gap: 8px; padding-top: 0; }
+.global-ai-chat-host .debug-chat-input { min-height: 68px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+.global-ai-chat-host .debug-chat-button { min-height: 34px; border-radius: 7px; font-size: 12px; }
+.global-ai-models-panel { display: grid; gap: 12px; padding: 16px; border: 1px solid #d4d4d8; border-radius: 9px; background: #fff; }
+.global-ai-models-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.global-ai-models-head p, .global-ai-models-head h2, .global-ai-models-head span { margin: 0; }
+.global-ai-models-head p { color: #71717a; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.global-ai-models-head h2 { margin-top: 2px; color: #18181b; font-size: 16px; letter-spacing: -.015em; }
+.global-ai-models-head span { display: block; max-width: 560px; margin-top: 3px; color: #71717a; font-size: 12px; line-height: 1.4; }
+.global-ai-models-head .btn-pill { min-height: 32px; border-radius: 7px; font-size: 12px; white-space: nowrap; }
+.global-ai-model-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(220px, .85fr); gap: 10px; }
+.global-ai-model-field { display: grid; gap: 5px; }
+.global-ai-model-field > span, .global-ai-default-row strong { color: #3f3f46; font-size: 12px; font-weight: 650; }
+.global-ai-model-field select, .global-ai-default-picker select { width: 100%; min-height: 36px; padding: 0 30px 0 10px; border: 1px solid #d4d4d8; border-radius: 7px; color: #18181b; background: #fff; font: inherit; font-size: 12px; outline: none; }
+.global-ai-model-field select:focus, .global-ai-default-picker select:focus { border-color: #18181b; box-shadow: 0 0 0 2px #e4e4e7; }
+.global-ai-model-field small, .global-ai-model-info small { color: #71717a; font-size: 11px; line-height: 1.35; }
+.global-ai-model-info { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fafafa; }
+.global-ai-model-info > svg { width: 17px; height: 17px; color: #52525b; flex: 0 0 auto; }
+.global-ai-model-info > div { display: grid; gap: 2px; }
+.global-ai-model-info strong { color: #27272a; font-size: 12px; }
+.global-ai-default-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 12px; border-top: 1px solid #e4e4e7; }
+.global-ai-default-row p { margin: 3px 0 0; color: #71717a; font-size: 11px; }
+.global-ai-default-picker { display: grid; grid-template-columns: minmax(180px, 280px) auto; align-items: center; gap: 7px; }
+.global-ai-default-picker .btn-pill { min-height: 36px; border-radius: 7px; font-size: 12px; white-space: nowrap; }
+.global-ai-model-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 1px; color: #71717a; font-size: 11px; }
+.global-ai-model-foot > span { display: inline-flex; align-items: center; gap: 5px; }
+.global-ai-model-foot svg { width: 13px; height: 13px; }
+.global-ai-model-foot .btn-link { border: 0; padding: 0; color: #27272a; background: transparent; font: inherit; font-size: 11px; font-weight: 650; text-decoration: underline; cursor: pointer; }
+
+@media (max-width: 700px) {
+  .global-ai-header { align-items: flex-start; gap: 8px; }
+  .global-ai-header-actions { width: 100%; }
+  .global-ai-header-button, .global-ai-router-link { flex: 1; justify-content: center; }
+  .global-ai-tabs { width: 100%; }
+  .global-ai-tab { flex: 1; justify-content: center; }
+  .global-ai-chat-host #svc-panel-debug-chat { padding: 12px; }
+  .global-ai-chat-host .debug-chat-header { align-items: flex-start; }
+  .global-ai-chat-host .debug-chat-header-actions { order: 3; width: 100%; margin-left: 0; }
+  .global-ai-chat-host .debug-chat-profile-label { order: 2; width: 100%; justify-content: space-between; }
+  .global-ai-chat-host .debug-chat-profile { flex: 1; width: auto; }
+  .global-ai-chat-host .debug-chat-messages { min-height: 235px; max-height: 350px; }
+  .global-ai-models-panel { padding: 13px; }
+  .global-ai-models-head, .global-ai-default-row { align-items: stretch; flex-direction: column; }
+  .global-ai-models-head .btn-pill { width: 100%; justify-content: center; }
+  .global-ai-model-grid { grid-template-columns: 1fr; }
+  .global-ai-default-picker { grid-template-columns: 1fr; }
+  .global-ai-default-picker .btn-pill { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 420px) {
+  .global-ai-title > div > span { display: none; }
+  .global-ai-header-button span { display: none; }
+  .global-ai-header-button { flex: 0 0 38px; padding: 0; }
+  .global-ai-router-link { flex: 1; }
+  .global-ai-tab { padding: 0 7px; font-size: 11px; }
+  .global-ai-chat-host .debug-chat-tool-button { flex: 1; justify-content: center; }
+  .global-ai-model-foot { align-items: flex-start; flex-direction: column; }
+}
