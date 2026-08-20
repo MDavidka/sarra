@@ -19,6 +19,10 @@ def test_global_ai_workspace_includes_accessible_model_settings_tab() -> None:
     assert 'data-provider-type="openai"' in html
     assert 'data-provider-type="anthropic"' in html
     assert 'id="global-ai-save-provider"' in html
+    assert 'ai-settings-sheet' not in html
+    assert 'ai-header-settings-btn' not in html
+    assert 'global-ai-provider-settings' not in html
+    assert 'global-ai-open-provider-settings' not in html
 
 
 def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis() -> None:
@@ -33,6 +37,10 @@ def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis(
     assert "agent_default_model_profile: profile" in script
     assert "document.getElementById('global-ai-session-model')?.addEventListener('change'" in script
     assert "document.getElementById('global-ai-save-default-model')?.addEventListener('click', saveGlobalAiDefaultModel)" in script
+    assert "option.textContent = `${provider} · ${model.name}`" in script
+    assert "provider: 'Google Gemini', name: 'Gemini 2.5 Flash'" in script
+    assert "showView('ai');" in script
+    assert "setGlobalAiTab('models');" in script
 
 
 def test_global_ai_workspace_has_compact_responsive_styles() -> None:

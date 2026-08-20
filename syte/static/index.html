@@ -137,11 +137,7 @@
           <i data-lucide="panel-left"></i>
         </button>
         <span class="breadcrumb" id="breadcrumb">Projects</span>
-        <div class="topbar-actions">
-          <button type="button" class="icon-btn hidden" id="ai-header-settings-btn" aria-label="AI provider settings">
-            <i data-lucide="settings"></i>
-          </button>
-        </div>
+        <div class="topbar-actions"></div>
       </header>
 
       <main class="content">
@@ -404,7 +400,7 @@
           <div class="global-ai-workspace" aria-label="AI project assistant">
             <header class="global-ai-header">
               <div class="global-ai-title"><span class="global-ai-title-icon"><i data-lucide="sparkles"></i></span><div><p>Intelligence workspace</p><h1>AI project assistant</h1><span>Choose one project context, then let the agent plan, build, test, and diagnose.</span></div></div>
-              <div class="global-ai-header-actions"><button type="button" class="global-ai-header-button" id="global-ai-provider-settings" aria-label="Open AI provider settings"><i data-lucide="settings-2"></i><span>Providers</span></button><a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a></div>
+              <div class="global-ai-header-actions"><a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a></div>
             </header>
             <section class="global-ai-context-card" aria-label="Project context">
               <div class="global-ai-context-select"><label for="global-ai-project">Project context</label><select id="global-ai-project" aria-label="Choose a project for this AI conversation"><option value="">Choose a project</option></select></div>
@@ -437,7 +433,7 @@
               <section class="global-ai-provider-overview" aria-labelledby="global-ai-provider-overview-title"><div class="global-ai-section-title"><div><h3 id="global-ai-provider-overview-title">Connected providers</h3><p>Credentials stay on the server and are never returned to the browser.</p></div><button type="button" class="btn-link" id="global-ai-refresh-providers"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div id="global-ai-provider-list" class="global-ai-provider-list" aria-live="polite"><p class="hint">Loading provider status…</p></div></section>
               <section class="global-ai-provider-onboarding" aria-labelledby="global-ai-provider-title"><div class="global-ai-section-title"><div><h3 id="global-ai-provider-title">Add provider</h3><p>Use 9Router, or connect an OpenAI-compatible provider with its own API key.</p></div></div><div class="global-ai-provider-types" role="radiogroup" aria-label="Provider type"><button type="button" class="global-ai-provider-type is-active" data-provider-type="9router" role="radio" aria-checked="true"><i data-lucide="route"></i><span>9Router</span></button><button type="button" class="global-ai-provider-type" data-provider-type="openai" role="radio" aria-checked="false"><i data-lucide="bot"></i><span>OpenAI</span></button><button type="button" class="global-ai-provider-type" data-provider-type="anthropic" role="radio" aria-checked="false"><i data-lucide="brain-circuit"></i><span>Anthropic</span></button><button type="button" class="global-ai-provider-type" data-provider-type="openrouter" role="radio" aria-checked="false"><i data-lucide="router"></i><span>OpenRouter</span></button><button type="button" class="global-ai-provider-type" data-provider-type="custom" role="radio" aria-checked="false"><i data-lucide="plug-zap"></i><span>Custom</span></button></div><div class="global-ai-provider-form"><div class="global-ai-provider-preset" id="global-ai-provider-preset"><i data-lucide="route"></i><span id="global-ai-provider-preset-copy">Add an API key from your 9Router dashboard. Enabled 9Router models appear in the model picker.</span></div><div class="global-ai-provider-fields hidden" id="global-ai-provider-fields"><label for="global-ai-provider-name"><span>Provider name</span><input id="global-ai-provider-name" maxlength="80" placeholder="Provider name"></label><label for="global-ai-provider-base"><span>API base URL</span><input id="global-ai-provider-base" type="url" maxlength="500" placeholder="https://api.example.com/v1"></label><label for="global-ai-provider-model"><span>Default model</span><input id="global-ai-provider-model" maxlength="200" placeholder="Model ID"></label></div><label class="global-ai-provider-key" for="global-ai-provider-api-key"><span>API key</span><input id="global-ai-provider-api-key" type="password" autocomplete="off" placeholder="Paste a provider API key"><small id="global-ai-provider-key-hint">Stored securely in Syte settings and sent only from the server.</small></label><button type="button" class="btn-pill btn-primary" id="global-ai-save-provider"><i data-lucide="plus"></i><span>Add provider</span></button></div></section>
               <section class="global-ai-model-selection" aria-labelledby="global-ai-model-selection-title"><div class="global-ai-section-title"><div><h3 id="global-ai-model-selection-title">Agent model</h3><p>Select the model for the current project chat and set a default for new sessions.</p></div></div><div class="global-ai-model-grid"><label class="global-ai-model-field" for="global-ai-session-model"><span>Conversation model</span><select id="global-ai-session-model" data-model-profile-select aria-label="Model for this conversation"><option value="auto" selected>auto</option></select><small>Used for the next message in the selected project.</small></label><div class="global-ai-model-info"><i data-lucide="sparkles"></i><div><strong id="global-ai-model-label">Automatic routing</strong><small id="global-ai-model-description">Syte selects the best available model for each task.</small></div></div></div><div class="global-ai-default-row"><div><strong>Default model</strong><p>Used when an Agent session starts without a model override.</p></div><label class="global-ai-default-picker" for="global-ai-default-model"><select id="global-ai-default-model" data-model-profile-select aria-label="Default model for new agent sessions"></select><button type="button" class="btn-pill btn-primary" id="global-ai-save-default-model"><span>Save default</span></button></label></div></section>
-              <div class="global-ai-model-foot"><span><i data-lucide="shield-check"></i> Provider keys and defaults are private to signed-in operators.</span><button type="button" class="btn-link" id="global-ai-open-provider-settings">Advanced provider settings</button></div>
+              <div class="global-ai-model-foot"><span><i data-lucide="shield-check"></i> Provider keys and defaults are private to signed-in operators.</span><span class="global-ai-model-foot-note">All provider configuration is managed here.</span></div>
             </section>
           </div>
         </section>
@@ -588,155 +584,6 @@
           </div>
         </section>
 
-        <div id="ai-settings-sheet" class="ai-settings-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
-          <div class="ai-settings-backdrop" id="ai-settings-backdrop"></div>
-          <div class="ai-settings-panel">
-            <div class="ai-settings-head">
-              <h2 id="ai-settings-title">AI provider settings</h2>
-              <button type="button" class="icon-btn" id="ai-settings-close" aria-label="Close">
-                <i data-lucide="x"></i>
-              </button>
-            </div>
-            <div class="ai-settings-body">
-              <div class="ai-settings-tabs" role="tablist" aria-label="AI setup">
-                <button type="button" class="ai-settings-tab is-active" id="ai-tab-providers" role="tab" aria-selected="true" aria-controls="ai-panel-providers">Providers</button>
-              </div>
-              <div id="ai-panel-providers" role="tabpanel" aria-labelledby="ai-tab-providers">
-              <p class="hint block">Main chat profiles think and build. Choose from Go (Gemini), Air (Aliyun Qwen), or Metal (VyceAI Claude). Prices are estimated USD per 1M tokens.</p>
-
-              <div class="ai-key-card" data-profile="syra-nano">
-                <div class="ai-key-head">
-                  <strong>Go · syra-nano</strong>
-                  <span class="ai-key-provider">Gemini · gemini-2.5-flash</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-nano-price-in">$0.25</b>/1M</span>
-                  <span>out <b id="agent-nano-price-out">$1.50</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://aiplatform.googleapis.com/v1/publishers/google/models</code>
-                <div class="form-group">
-                  <label for="agent-nano-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-nano-key" placeholder="Gemini API key" autocomplete="off">
-                  <span class="hint" id="agent-nano-key-hint">Required for Go. Use a Google Gemini / Vertex API key.</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card" data-profile="syra-havy">
-                <div class="ai-key-head">
-                  <strong>Metal · syra-havy</strong>
-                  <span class="ai-key-provider">VyceAI · claude-sonnet-4-6</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-havy-price-in">$3.00</b>/1M</span>
-                  <span>out <b id="agent-havy-price-out">$15.00</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://vyceai.com/v1</code>
-                <div class="form-group">
-                  <label for="agent-havy-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-havy-key" placeholder="VyceAI API key" autocomplete="off">
-                  <span class="hint" id="agent-havy-key-hint">Required for Metal. VyceAI OpenAI-compatible Claude endpoint.</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card" data-profile="syra-ultra">
-                <div class="ai-key-head">
-                  <strong>Air · syra-ultra</strong>
-                  <span class="ai-key-provider">Aliyun · qwen3.7-plus</span>
-                </div>
-                <div class="ai-key-price" aria-label="Estimated price">
-                  <span>in <b id="agent-ultra-price-in">$0.17</b>/1M</span>
-                  <span>out <b id="agent-ultra-price-out">$1.02</b>/1M</span>
-                </div>
-                <code class="ai-key-url">https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1</code>
-                <div class="form-group">
-                  <label for="agent-ultra-key">API key <span class="req-mark">*</span></label>
-                  <input type="password" id="agent-ultra-key" placeholder="sk-sp-… Token Plan key (or Model Studio sk-…)" autocomplete="off">
-                  <span class="hint" id="agent-ultra-key-hint">Aliyun Token Plan keys start with sk-sp-. OpenRouter sk-or- keys no longer work.</span>
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="agent-default-profile">Default profile</label>
-                  <select id="agent-default-profile">
-                    <option value="syra-nano">Go · Gemini 2.5 Flash</option>
-                    <option value="syra-ultra">Air · Aliyun Qwen</option>
-                    <option value="syra-havy">Metal · Claude Sonnet 4.6</option>
-                    <option value="syra-litellm">Syra · LiteLLM Proxy</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label for="agent-max-count">MNOA max agents</label>
-                  <input type="number" id="agent-max-count" min="1" max="800" placeholder="50">
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label for="syra-internal-secret">Internal API secret</label>
-                <input type="password" id="syra-internal-secret" placeholder="sycord.com → Syte" autocomplete="off">
-                <span class="hint">Header <code>X-Syra-Internal-Secret</code> for sycord.com server-to-server.</span>
-              </div>
-
-              <div class="ai-key-card">
-                <div class="ai-key-head">
-                  <strong>LiteLLM database</strong>
-                  <span class="ai-key-provider">PostgreSQL — virtual keys and spend tracking</span>
-                </div>
-                <p class="hint block">Optional. Enter an external PostgreSQL connection URL for LiteLLM. Leave blank to use Syte’s managed local PostgreSQL sidecar. Do not enter a <code>libsql://</code> Turso URL here.</p>
-                <div class="form-group">
-                  <label for="litellm-database-url">PostgreSQL database URL</label>
-                  <input type="url" id="litellm-database-url" placeholder="optional — postgresql://user:password@host:5432/database" autocomplete="off">
-                  <span class="hint">Use a direct PostgreSQL URL or Supabase session pooler on port <code>5432</code>; do not use Supabase transaction pooler port <code>6543</code> because LiteLLM Prisma migrations require advisory locks. Changing this setting requires restarting LiteLLM. The saved URL is never returned to the browser.</span>
-                </div>
-              </div>
-
-              <div class="ai-key-card">
-                <div class="ai-key-head">
-                  <strong>Turso (agent sessions)</strong>
-                  <span class="ai-key-provider">libSQL — durable activity storage</span>
-                </div>
-                <p class="hint block">Every agent turn (request, plan, tool calls, reply) is written to a durable Turso session keyed by UUID instead of a live stream. Clients fetch the session by id from the API. Leave blank to keep using local-only activity snapshots.</p>
-                <div class="form-group">
-                  <label for="turso-database-url">Database URL</label>
-                  <input type="text" id="turso-database-url" placeholder="libsql://your-db-name.turso.io" autocomplete="off">
-                  <span class="hint" id="turso-database-url-hint">Optional — from the Turso dashboard. <code>libsql://</code> pastes are rewritten to HTTPS automatically (required for AWS-hosted DBs).</span>
-                </div>
-                <div class="form-group">
-                  <label for="turso-auth-token">Auth token</label>
-                  <input type="password" id="turso-auth-token" placeholder="turso auth token" autocomplete="off">
-                  <span class="hint" id="turso-auth-token-hint">Required for remote Turso databases.</span>
-                </div>
-              </div>
-
-              <details class="ai-env-details" open>
-                <summary>Provider keys &amp; environment</summary>
-                <p class="hint block">Keys resolve from saved settings first, then process env. Values are masked.</p>
-                <div class="ai-env-grid" id="ai-provider-key-status">
-                  <div class="ai-env-row"><code>SYRA_NANO_API_KEY</code><span>Gemini · Go</span></div>
-                  <div class="ai-env-row"><code>SYRA_ULTRA_API_KEY</code><span>Aliyun · Air</span></div>
-                  <div class="ai-env-row"><code>SYRA_HAVY_API_KEY</code><span>VyceAI · Metal</span></div>
-                </div>
-              </details>
-
-              <div id="agent-runtime-status" class="hint"></div>
-              </div>
-
-              <div class="ai-key-card legacy-solar-cleanup-card">
-                  <div class="ai-key-head">
-                    <strong>Legacy Solar cleanup</strong>
-                    <span class="solar-status-badge" id="solar-status-badge">not configured</span>
-                  </div>
-                  <p class="hint block">Solar is no longer offered as a model. Remove its old Ollama download from this VM if it was installed by an earlier Syte release.</p>
-                  <div class="solar-model-meta"><span>Model</span><code>qwen2.5-coder:3b</code></div>
-                  <p class="hint" id="solar-status-message">Legacy Solar is not installed.</p>
-                  <button type="button" class="btn-pill btn-ghost" id="delete-solar-btn"><i data-lucide="trash-2"></i><span>Remove Solar from VM</span></button>
-                </div>
-            </div>
-            <div class="ai-settings-foot">
-              <button type="button" class="btn-pill btn-primary" id="save-ai-settings-btn">Save provider settings</button>
-            </div>
-          </div>
-        </div>
 
         <section id="view-platform" class="view">
           <div class="platform-workspace" id="platform-workspace">
