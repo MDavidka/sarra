@@ -1683,6 +1683,15 @@ async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_
     return result
 
 
+@app.get("/api/settings/router/password")
+async def api_router_password(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return the persisted initial 9Router WebGUI credential to an authenticated operator."""
+    from syte.nine_router_manager import _router_password
+
+    password, is_new = await _router_password()
+    return {"password": password, "is_new": is_new}
+
+
 @app.post("/api/settings/router/start")
 async def api_router_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     """Deploy the official 9Router image and publish it at 9router.sycord.site."""
