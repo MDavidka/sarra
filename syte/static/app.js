@@ -1424,7 +1424,7 @@ function addDebugChatErrorActions(bubble, event, presentation) {
     const settingsButton = document.createElement('button');
     settingsButton.type = 'button';
     settingsButton.className = 'debug-chat-error-button';
-    settingsButton.textContent = 'Provider settings';
+    settingsButton.textContent = 'Models & providers';
     settingsButton.addEventListener('click', openAiSettings);
     actions.appendChild(settingsButton);
   }
@@ -2462,8 +2462,15 @@ async function updateDebugChatAgentStatus() {
   if (!activeServiceId) return;
   try {
     const res = await api(`/projects/${activeServiceId}/agent`);
+    const activeProfile = res.agent_model?.profile || '';
+    if (activeProfile && activeProfile !== 'auto') {
+      const picker = document.getElementById('debug-chat-profile');
+      if (picker && [...picker.options].some((option) => option.value === activeProfile)) {
+        syncGlobalAiModelSelection(activeProfile);
+      }
+    }
     if (res.agent_running && res.agent_healthy) {
-      const model = res.agent_model?.profile || res.agent_model?.model || 'agent';
+      const model = activeProfile || res.agent_model?.model || 'agent';
       debugChatIdleStatus = `Ready · ${model}`;
     } else if (res.agent_status === 'starting' || res.agent_warming) {
       debugChatIdleStatus = 'Warming agent…';

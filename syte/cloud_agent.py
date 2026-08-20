@@ -5035,14 +5035,24 @@ async def communicate_with_agent(
     from syte.model_catalog import configured_models, model_profile as catalog_model_profile
     from syte.model_routing import normalize_explicit_profile, suggest_model_profile
 
-    resolved_profile = model_profile
+    resolved_profile = normalize_explicit_profile(model_profile)
     if not resolved_profile and model_id:
         for row in await configured_models():
             if row.get("id") == model_id:
                 resolved_profile = catalog_model_profile(row["id"])
                 break
 
-    model_profile = normalize_explicit_profile(resolved_profile)
+    # The UI sends no profile for its "auto" choice. When the project already
+    # has a concrete gateway/provider profile, that is an intentional endpoint
+    # selection, not permission to reroute the model to a built-in provider.
+    # Preserve it so a 9Router model keeps its 9Router base URL and API key.
+    if not resolved_profile:
+        project = await get_project(project_id)
+        persisted_profile = str((project or {}).get("agent_model_profile") or "").strip()
+        if persisted_profile == "9router" or persisted_profile.startswith(("9router:", "provider:")):
+            resolved_profile = persisted_profile
+
+    model_profile = resolved_profile
     routing = suggest_model_profile(
         message,
         explicit_profile=model_profile,

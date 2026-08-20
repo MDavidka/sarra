@@ -41,6 +41,7 @@ def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis(
     assert "provider: 'Google Gemini', name: 'Gemini 2.5 Flash'" in script
     assert "showView('ai');" in script
     assert "setGlobalAiTab('models');" in script
+    assert "settingsButton.textContent = 'Models & providers';" in script
 
 
 def test_global_ai_workspace_has_compact_responsive_styles() -> None:

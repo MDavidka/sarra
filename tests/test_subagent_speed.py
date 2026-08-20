@@ -301,10 +301,15 @@ async def test_communicate_auto_profile_alias(monkeypatch: pytest.MonkeyPatch) -
 
     captured: dict[str, Any] = {}
 
+    async def fake_get_project(project_id: str):
+        assert project_id == "p1"
+        return None
+
     async def fake_impl(project_id, message, **kwargs):
         captured.update(kwargs)
         return {"ok": True, "reply": "done"}
 
+    monkeypatch.setattr(cloud_agent, "get_project", fake_get_project)
     monkeypatch.setattr(cloud_agent, "_communicate_with_agent_impl", fake_impl)
     result = await cloud_agent.communicate_with_agent(
         "p1",
@@ -315,3 +320,58 @@ async def test_communicate_auto_profile_alias(monkeypatch: pytest.MonkeyPatch) -
     assert result["ok"] is True
     assert result["model_routing"]["auto_applied"] is True
     assert captured["model_profile"] == "syra-nano"
+
+
+@pytest.mark.asyncio
+async def test_communicate_auto_preserves_persisted_9router_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import cloud_agent
+
+    captured: dict[str, Any] = {}
+
+    async def fake_get_project(project_id: str):
+        assert project_id == "router-project"
+        return {"id": project_id, "agent_model_profile": "9router:router-model-id"}
+
+    async def fake_impl(project_id, message, **kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "reply": "done"}
+
+    monkeypatch.setattr(cloud_agent, "get_project", fake_get_project)
+    monkeypatch.setattr(cloud_agent, "_communicate_with_agent_impl", fake_impl)
+
+    result = await cloud_agent.communicate_with_agent(
+        "router-project",
+        "change button text to Go",
+        model_profile=None,
+        background=False,
+    )
+
+    assert result["ok"] is True
+    assert result["model_routing"]["auto_applied"] is False
+    assert captured["model_profile"] == "9router:router-model-id"
+
+
+@pytest.mark.asyncio
+async def test_communicate_auto_preserves_persisted_external_provider_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syte import cloud_agent
+
+    captured: dict[str, Any] = {}
+
+    async def fake_get_project(project_id: str):
+        return {"id": project_id, "agent_model_profile": "provider:openai"}
+
+    async def fake_impl(project_id, message, **kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "reply": "done"}
+
+    monkeypatch.setattr(cloud_agent, "get_project", fake_get_project)
+    monkeypatch.setattr(cloud_agent, "_communicate_with_agent_impl", fake_impl)
+
+    await cloud_agent.communicate_with_agent(
+        "external-project",
+        "change button text to Go",
+        model_profile="auto",
+        background=False,
+    )
+
+    assert captured["model_profile"] == "provider:openai"
