@@ -404,12 +404,14 @@
           <div class="global-ai-workspace" aria-label="AI project assistant">
             <header class="global-ai-header">
               <div class="global-ai-title"><span class="global-ai-title-icon"><i data-lucide="sparkles"></i></span><div><p>Intelligence workspace</p><h1>AI project assistant</h1><span>Choose one project context, then let the agent plan, build, test, and diagnose.</span></div></div>
-              <a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a>
+              <div class="global-ai-header-actions"><button type="button" class="global-ai-header-button" id="global-ai-provider-settings" aria-label="Open AI provider settings"><i data-lucide="settings-2"></i><span>Providers</span></button><a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a></div>
             </header>
             <section class="global-ai-context-card" aria-label="Project context">
               <div class="global-ai-context-select"><label for="global-ai-project">Project context</label><select id="global-ai-project" aria-label="Choose a project for this AI conversation"><option value="">Choose a project</option></select></div>
               <div class="global-ai-context-chip hidden" id="global-ai-context-chip"><span class="global-ai-context-avatar" id="global-ai-project-avatar">S</span><span><strong id="global-ai-project-name">Project</strong><small id="global-ai-project-meta">Conversation context</small></span><button type="button" id="global-ai-project-close" aria-label="Close project context" title="Close project context"><i data-lucide="x"></i></button></div>
             </section>
+            <div class="global-ai-tabs segmented-control" role="tablist" aria-label="AI workspace sections"><button type="button" id="global-ai-tab-chat" class="global-ai-tab is-active" role="tab" aria-selected="true" aria-controls="global-ai-panel-chat"><i data-lucide="messages-square"></i><span>Project chat</span></button><button type="button" id="global-ai-tab-models" class="global-ai-tab" role="tab" aria-selected="false" aria-controls="global-ai-panel-models"><i data-lucide="sliders-horizontal"></i><span>Model settings</span></button></div>
+            <div id="global-ai-panel-chat" class="global-ai-tab-panel" role="tabpanel" aria-labelledby="global-ai-tab-chat">
             <div class="global-ai-empty" id="global-ai-empty"><i data-lucide="messages-square"></i><h2>Open a project conversation</h2><p>Select a project to reuse its agent session, connected MCP resources, skills, and 9Router-backed model profile.</p></div>
             <div class="global-ai-chat-host hidden" id="global-ai-chat-host">
               <div class="svc-tab-panel active" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
@@ -429,6 +431,16 @@
                 </div>
               </div>
             </div>
+            </div>
+            <section id="global-ai-panel-models" class="global-ai-models-panel hidden" role="tabpanel" aria-labelledby="global-ai-tab-models">
+              <div class="global-ai-models-head"><div><p>Agent configuration</p><h2>Model settings</h2><span>Choose the model for this project conversation and save a default for new Agent sessions.</span></div><button type="button" class="btn-pill btn-ghost" id="global-ai-open-model-manager"><i data-lucide="library-big"></i><span>Manage models</span></button></div>
+              <div class="global-ai-model-grid">
+                <label class="global-ai-model-field" for="global-ai-session-model"><span>Conversation model</span><select id="global-ai-session-model" data-model-profile-select aria-label="Model for this conversation"><option value="auto" selected>auto</option></select><small>Used for the next message in the selected project.</small></label>
+                <div class="global-ai-model-info"><i data-lucide="sparkles"></i><div><strong id="global-ai-model-label">Automatic routing</strong><small id="global-ai-model-description">Syte selects the best available model for each task.</small></div></div>
+              </div>
+              <div class="global-ai-default-row"><div><strong>Default model</strong><p>Used when an Agent session starts without a model override.</p></div><label class="global-ai-default-picker" for="global-ai-default-model"><select id="global-ai-default-model" data-model-profile-select aria-label="Default model for new agent sessions"></select><button type="button" class="btn-pill btn-primary" id="global-ai-save-default-model"><span>Save default</span></button></label></div>
+              <div class="global-ai-model-foot"><span><i data-lucide="shield-check"></i> Saved settings remain private to operators.</span><button type="button" class="btn-link" id="global-ai-open-provider-settings">Configure providers</button></div>
+            </section>
           </div>
         </section>
 
