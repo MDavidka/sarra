@@ -737,6 +737,30 @@ def mask_secret(value: str, *, keep: int = 4) -> str:
 
 async def resolve_profile_api_key(profile: str) -> dict[str, str]:
     """Return the effective key plus where it came from (settings | env | none)."""
+    if profile.startswith("provider:"):
+        from syte.ai_providers import configured_external_providers, external_provider_key_setting
+
+        provider_id = profile.split(":", 1)[1].strip()
+        provider = next((row for row in await configured_external_providers() if row["id"] == provider_id), None)
+        if provider is None:
+            return {
+                "profile": profile, "setting_key": "", "secret_env": "", "api_key": "", "source": "none",
+                "settings_set": "", "env_set": "", "settings_hint": "", "env_hint": "", "api_key_hint": "",
+            }
+        setting_key = external_provider_key_setting(provider_id)
+        from_settings = (await get_setting(setting_key, "")).strip()
+        return {
+            "profile": profile,
+            "setting_key": setting_key,
+            "secret_env": "",
+            "api_key": from_settings,
+            "source": "settings" if from_settings else "none",
+            "settings_set": "1" if from_settings else "",
+            "env_set": "",
+            "settings_hint": mask_secret(from_settings),
+            "env_hint": "",
+            "api_key_hint": mask_secret(from_settings),
+        }
     spec = profile_provider(profile)
     if spec.get("local"):
         return {
@@ -829,7 +853,11 @@ async def provider_key_status() -> list[dict[str, str | bool]]:
 
 
 async def bridge_settings() -> dict[str, Any]:
-    from syte.ai_providers import aliyun_api_base_for_key
+    from syte.ai_providers import (
+        aliyun_api_base_for_key,
+        configured_external_providers,
+        external_provider_profile,
+    )
     from syte.model_catalog import configured_models, model_profile
 
     await migrate_provider_lineup_keys()
@@ -859,6 +887,32 @@ async def bridge_settings() -> dict[str, Any]:
         if name == "syra-ultra" and resolved["api_key"]:
             entry["api_base"] = aliyun_api_base_for_key(str(resolved["api_key"]))
         profiles[name] = entry
+    # External API-key providers use the same OpenAI-compatible request path as
+    # 9Router, but each profile resolves only its own saved server-side key.
+    for provider in await configured_external_providers():
+        profile = external_provider_profile(provider["id"])
+        resolved = await resolve_profile_api_key(profile)
+        profiles[profile] = {
+            "profile": profile,
+            "label": provider["name"],
+            "display_name": provider["name"],
+            "provider": "openai",
+            "api_base": provider["api_base"],
+            "model": provider["default_model"],
+            "role": "custom",
+            "setting_key": resolved["setting_key"],
+            "secret_env": "",
+            "api_key": resolved["api_key"],
+            "key_source": resolved["source"],
+            "api_key_hint": resolved["api_key_hint"],
+            "settings_set": bool(resolved["settings_set"]),
+            "env_set": False,
+            "settings_hint": resolved["settings_hint"],
+            "env_hint": "",
+            "enabled": bool(resolved["api_key"]),
+            "thinking_levels": "1,2,3,4,5,6",
+        }
+
     # Build the 9Router profile from the dynamic spec + catalog models.
     router_resolved = await resolve_profile_api_key("9router")
     primary = enabled_custom_models[0] if enabled_custom_models else None
@@ -1821,7 +1875,7 @@ async def update_agent_settings(
 ) -> dict[str, Any]:
     if model_profile is not None:
         profile = model_profile.strip() or DEFAULT_PROFILE
-        if not await is_catalog_model_profile(profile):
+        if not await is_available_model_profile(profile):
             raise ValueError(f"Unknown model profile: {profile}")
         await update_project(project_id, {"agent_model_profile": profile})
         project = await get_project(project_id)
@@ -6153,7 +6207,7 @@ async def test_agent(project_id: str, *, source: str = "api", model_profile: str
     try:
         if model_profile:
             profile = model_profile.strip() or DEFAULT_PROFILE
-            if not await is_catalog_model_profile(profile):
+            if not await is_available_model_profile(profile):
                 raise ValueError(f"Unknown model profile: {profile}")
             project = {**project, "agent_model_profile": profile}
         else:

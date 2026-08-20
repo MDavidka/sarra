@@ -302,7 +302,11 @@ class SyraSecretsRequest(BaseModel):
 
 
 class ModelProviderSetupRequest(BaseModel):
-    api_key: str = Field(min_length=1)
+    provider_type: str = Field(default="9router", min_length=1, max_length=32)
+    api_key: str = Field(min_length=1, max_length=4096)
+    name: str = Field(default="", max_length=80)
+    api_base: str = Field(default="", max_length=500)
+    default_model: str = Field(default="", max_length=200)
 
 
 class ModelConfigurationRequest(BaseModel):
@@ -716,8 +720,8 @@ async def _github_token_source() -> str:
 
 
 async def _model_configuration() -> dict[str, Any]:
-    """Return the user-managed 9Router catalog without exposing its key."""
-    from syte.ai_providers import resolved_nine_router_api_base
+    """Return user-managed model sources without exposing any API keys."""
+    from syte.ai_providers import external_provider_options, resolved_nine_router_api_base
     from syte.model_catalog import (
         configured_models,
         enabled_model_options,
@@ -737,7 +741,18 @@ async def _model_configuration() -> dict[str, Any]:
     # address rows by their stored id. Only explicitly enabled curated models are
     # offered in the picker — the live router catalog is not injected here so the
     # agent model picker stays in sync with what the user enabled in the Models tab.
-    available_models = enabled_model_options(curated)
+    external_providers = await external_provider_options()
+    external_models = [{
+        "id": f"provider-{row['id']}",
+        "profile": row["profile"],
+        "name": row["default_model"],
+        "provider": row["name"],
+        "thinking_levels": ["minimal", "low", "medium", "high", "max"],
+        "thinking_level": "medium",
+        "enabled": bool(row["api_key_set"]),
+        "source": "external",
+    } for row in external_providers]
+    available_models = enabled_model_options(curated) + [row for row in external_models if row["enabled"]]
     # Keep the former field while callers move to the catalog response.
     primary = curated[0] if curated else None
     api_base = await resolved_nine_router_api_base()
@@ -756,6 +771,8 @@ async def _model_configuration() -> dict[str, Any]:
         } if primary else None,
         "models": [{**row, "profile": model_profile(row["id"])} for row in curated],
         "router_models": enabled_model_options(router_models),
+        "external_providers": external_providers,
+        "external_models": external_models,
         "available_models": available_models,
     }
 
@@ -796,13 +813,35 @@ async def refresh_router_models():
 
 @app.put("/api/models/provider")
 async def save_model_provider(body: ModelProviderSetupRequest):
-    from syte.model_catalog import fetch_router_models, reset_router_models_cache
+    provider_type = body.provider_type.strip().lower()
+    if provider_type == "9router":
+        from syte.model_catalog import fetch_router_models, reset_router_models_cache
 
-    await set_setting("agent_9router_api_key", body.api_key.strip())
-    # The cached model list was fetched with the previous key.
-    reset_router_models_cache()
-    await fetch_router_models(force=True)
-    return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
+        await set_setting("agent_9router_api_key", body.api_key.strip())
+        # The cached model list was fetched with the previous key.
+        reset_router_models_cache()
+        await fetch_router_models(force=True)
+        return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
+
+    from syte.ai_providers import save_external_provider
+
+    try:
+        provider = await save_external_provider(
+            preset=provider_type,
+            name=body.name,
+            api_base=body.api_base,
+            default_model=body.default_model,
+            api_key=body.api_key,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    configuration = await _model_configuration()
+    return {
+        "ok": True,
+        "message": f"{provider['name']} API key saved.",
+        **configuration,
+        "saved_provider": provider,
+    }
 
 
 async def _save_model_records(records: list[dict[str, Any]]) -> None:
@@ -1127,10 +1166,10 @@ async def save_settings(body: SettingsRequest):
 
     if body.agent_default_model_profile is not None:
         from syte.ai_providers import DEFAULT_PROFILE
-        from syte.cloud_agent import is_catalog_model_profile
+        from syte.cloud_agent import is_available_model_profile
 
         profile = body.agent_default_model_profile.strip() or DEFAULT_PROFILE
-        if not await is_catalog_model_profile(profile):
+        if not await is_available_model_profile(profile):
             raise HTTPException(400, f"Unknown model profile: {profile}")
         await set_setting("agent_default_model_profile", profile)
         messages.append(f"Default Syte cloud model profile: {profile}")

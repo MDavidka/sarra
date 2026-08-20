@@ -9,7 +9,9 @@ Each public profile is a full think+build model — there is no separate thinker
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+import json
+import re
+from typing import Any, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
 from syte.litellm_config import LITELLM_INTERNAL_API_URL
@@ -34,6 +36,37 @@ NINE_ROUTER_API_BASE = "https://9router.sycord.site/v1"
 # the same public origin advertised to the 9Router application.
 NINE_ROUTER_MANAGED_API_BASE = "https://9router.sycord.site/v1"
 NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
+EXTERNAL_PROVIDER_SETTING = "agent_external_providers"
+_EXTERNAL_PROVIDER_ID = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+
+# These endpoints use the existing OpenAI-compatible Agent request path. Anthropic
+# publishes an OpenAI SDK compatibility endpoint at the supplied base URL.
+EXTERNAL_PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+    "openai": {
+        "id": "openai",
+        "name": "OpenAI",
+        "api_base": "https://api.openai.com/v1",
+        "default_model": "gpt-4.1-mini",
+    },
+    "anthropic": {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "api_base": "https://api.anthropic.com/v1",
+        "default_model": "claude-sonnet-4-6",
+    },
+    "openrouter": {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "api_base": OPENROUTER_API_BASE,
+        "default_model": "openai/gpt-4.1-mini",
+    },
+    "custom": {
+        "id": "custom",
+        "name": "Custom compatible API",
+        "api_base": "",
+        "default_model": "",
+    },
+}
 
 
 async def resolved_nine_router_api_base() -> str:
@@ -42,6 +75,100 @@ async def resolved_nine_router_api_base() -> str:
 
     enabled = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
     return NINE_ROUTER_MANAGED_API_BASE if enabled else NINE_ROUTER_API_BASE
+
+
+def external_provider_profile(provider_id: str) -> str:
+    """Return an opaque Agent profile for a saved external provider."""
+    return f"provider:{provider_id}"
+
+
+def external_provider_key_setting(provider_id: str) -> str:
+    return f"agent_external_provider_{provider_id}_api_key"
+
+
+def _provider_record(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    provider_id = str(raw.get("id") or "").strip().lower()
+    name = " ".join(str(raw.get("name") or "").split())
+    api_base = str(raw.get("api_base") or "").strip().rstrip("/")
+    default_model = str(raw.get("default_model") or "").strip()
+    parsed = urlsplit(api_base)
+    if not _EXTERNAL_PROVIDER_ID.fullmatch(provider_id) or not name or not default_model:
+        return None
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    return {
+        "id": provider_id,
+        "name": name[:80],
+        "api_base": api_base[:500],
+        "default_model": default_model[:200],
+    }
+
+
+async def configured_external_providers() -> list[dict[str, str]]:
+    """Return normalized external provider metadata without exposing API keys."""
+    from syte.database import get_setting
+
+    raw = (await get_setting(EXTERNAL_PROVIDER_SETTING, "")).strip()
+    try:
+        records = json.loads(raw) if raw else []
+    except json.JSONDecodeError:
+        records = []
+    if not isinstance(records, list):
+        return []
+    normalized = [_provider_record(record) for record in records]
+    return [record for record in normalized if record is not None]
+
+
+async def save_external_provider(
+    *,
+    preset: str,
+    name: str,
+    api_base: str,
+    default_model: str,
+    api_key: str,
+) -> dict[str, str]:
+    """Save one operator-provided external provider and its masked server-side key."""
+    from syte.database import set_setting
+
+    selected = EXTERNAL_PROVIDER_PRESETS.get(preset)
+    if selected is None:
+        raise ValueError("Choose a supported provider type.")
+    candidate_id = selected["id"]
+    candidate = _provider_record({
+        "id": candidate_id,
+        "name": name or selected["name"],
+        "api_base": api_base or selected["api_base"],
+        "default_model": default_model or selected["default_model"],
+    })
+    if candidate is None:
+        raise ValueError("Enter an HTTPS-compatible API base URL, provider name, and model ID.")
+    if not api_key.strip():
+        raise ValueError("Paste an API key before saving this provider.")
+
+    records = await configured_external_providers()
+    records = [record for record in records if record["id"] != candidate["id"]]
+    records.append(candidate)
+    await set_setting(EXTERNAL_PROVIDER_SETTING, json.dumps(records, separators=(",", ":")))
+    await set_setting(external_provider_key_setting(candidate["id"]), api_key.strip())
+    return candidate
+
+
+async def external_provider_options() -> list[dict[str, str]]:
+    """Return selectable external model profiles with key-status metadata only."""
+    from syte.database import get_setting
+
+    options: list[dict[str, str]] = []
+    for provider in await configured_external_providers():
+        key_set = bool((await get_setting(external_provider_key_setting(provider["id"]), "")).strip())
+        options.append({
+            **provider,
+            "profile": external_provider_profile(provider["id"]),
+            "api_key_set": key_set,
+        })
+    return options
+
 
 PROFILE_ORDER = (
     "syra-nano",
