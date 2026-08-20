@@ -3773,6 +3773,116 @@ async function loadPlatformPage(page = 'overview') {
 }
 
 let globalAiActiveTab = 'chat';
+let globalAiProviderType = '9router';
+
+const GLOBAL_AI_PROVIDER_PRESETS = {
+  '9router': { name: '9Router', apiBase: '', model: '', copy: 'Add an API key from your 9Router dashboard. Enabled 9Router models appear in the model picker.' },
+  openai: { name: 'OpenAI', apiBase: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', copy: 'Use an OpenAI project API key. The Agent sends requests from the Syte server using OpenAI-compatible chat completions.' },
+  anthropic: { name: 'Anthropic', apiBase: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-6', copy: 'Use an Anthropic API key. Anthropic’s OpenAI-compatible endpoint is used for Agent chat and tool calls.' },
+  openrouter: { name: 'OpenRouter', apiBase: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4.1-mini', copy: 'Use an OpenRouter API key and choose a provider/model identifier for the default model.' },
+  custom: { name: '', apiBase: '', model: '', copy: 'Connect any HTTPS OpenAI-compatible API with its server-side API key, base URL, and default model ID.' },
+};
+
+function setGlobalAiProviderType(providerType) {
+  const next = GLOBAL_AI_PROVIDER_PRESETS[providerType] ? providerType : '9router';
+  globalAiProviderType = next;
+  const preset = GLOBAL_AI_PROVIDER_PRESETS[next];
+  document.querySelectorAll('.global-ai-provider-type').forEach((button) => {
+    const active = button.dataset.providerType === next;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-checked', String(active));
+  });
+  const fields = document.getElementById('global-ai-provider-fields');
+  const copy = document.getElementById('global-ai-provider-preset-copy');
+  const presetIcon = document.querySelector('#global-ai-provider-preset i');
+  const name = document.getElementById('global-ai-provider-name');
+  const base = document.getElementById('global-ai-provider-base');
+  const model = document.getElementById('global-ai-provider-model');
+  const save = document.getElementById('global-ai-save-provider');
+  fields?.classList.toggle('hidden', next === '9router');
+  if (copy) copy.textContent = preset.copy;
+  if (presetIcon) presetIcon.setAttribute('data-lucide', next === '9router' ? 'route' : next === 'custom' ? 'plug-zap' : 'key-round');
+  if (name) name.value = preset.name;
+  if (base) base.value = preset.apiBase;
+  if (model) model.value = preset.model;
+  if (save) save.querySelector('span').textContent = next === '9router' ? 'Save 9Router key' : `Add ${preset.name || 'provider'}`;
+  refreshIcons();
+}
+
+function renderGlobalAiProviderList(data) {
+  const list = document.getElementById('global-ai-provider-list');
+  if (!list) return;
+  const router = data?.provider || {};
+  const routerCatalog = data?.router_catalog || {};
+  const external = Array.isArray(data?.external_providers) ? data.external_providers : [];
+  const cards = [{
+    name: '9Router',
+    type: 'Gateway',
+    detail: routerCatalog.count ? `${routerCatalog.count} discovered model${routerCatalog.count === 1 ? '' : 's'}` : 'Connect a 9Router key to load models',
+    connected: Boolean(router.api_key_set),
+    icon: 'route',
+  }, ...external.map((provider) => ({
+    name: provider.name,
+    type: provider.id === 'anthropic' ? 'Anthropic compatible' : 'OpenAI compatible',
+    detail: provider.default_model,
+    connected: Boolean(provider.api_key_set),
+    icon: provider.id === 'anthropic' ? 'brain-circuit' : 'key-round',
+  }))];
+  list.innerHTML = cards.map((provider) => `<article class="global-ai-provider-card ${provider.connected ? 'is-connected' : ''}"><span class="global-ai-provider-icon"><i data-lucide="${provider.icon}"></i></span><span class="global-ai-provider-card-copy"><strong>${esc(provider.name)}</strong><small>${esc(provider.type)} · ${esc(provider.detail)}</small></span><span class="global-ai-provider-state"><i data-lucide="${provider.connected ? 'check' : 'minus'}"></i>${provider.connected ? 'Connected' : 'Not connected'}</span></article>`).join('');
+  refreshIcons();
+}
+
+async function loadGlobalAiProviderCatalog() {
+  const list = document.getElementById('global-ai-provider-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading provider status…</p>';
+  try {
+    const data = await api('/models');
+    syncCustomModelOptions(data.available_models || []);
+    renderGlobalAiProviderList(data);
+    syncGlobalAiModelSelection();
+  } catch (error) {
+    list.innerHTML = `<p class="hint">Could not load providers: ${esc(normalizeFetchError(error.message))}</p>`;
+  }
+}
+
+async function saveGlobalAiProvider() {
+  const apiKey = document.getElementById('global-ai-provider-api-key')?.value?.trim() || '';
+  const button = document.getElementById('global-ai-save-provider');
+  const preset = GLOBAL_AI_PROVIDER_PRESETS[globalAiProviderType];
+  if (!apiKey) return toast('Paste an API key before saving this provider.');
+  if (button) {
+    button.disabled = true;
+    button.querySelector('span').textContent = 'Saving…';
+  }
+  try {
+    const data = await api('/models/provider', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider_type: globalAiProviderType,
+        api_key: apiKey,
+        name: document.getElementById('global-ai-provider-name')?.value?.trim() || preset.name,
+        api_base: document.getElementById('global-ai-provider-base')?.value?.trim() || preset.apiBase,
+        default_model: document.getElementById('global-ai-provider-model')?.value?.trim() || preset.model,
+      }),
+    });
+    const input = document.getElementById('global-ai-provider-api-key');
+    if (input) input.value = '';
+    toast(data.message || `${preset.name || 'Provider'} saved.`);
+    await loadGlobalAiProviderCatalog();
+    await loadSettings();
+  } catch (error) {
+    toast(`Could not save provider: ${normalizeFetchError(error.message)}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.querySelector('span').textContent = globalAiProviderType === '9router'
+        ? 'Save 9Router key'
+        : `Add ${preset.name || 'provider'}`;
+    }
+  }
+}
+
 
 function updateGlobalAiModelSummary() {
   const session = document.getElementById('global-ai-session-model');
@@ -3814,6 +3924,7 @@ function setGlobalAiTab(tab) {
   if (next === 'models') {
     syncGlobalAiModelSelection();
     void loadSettings();
+    void loadGlobalAiProviderCatalog();
   }
   refreshIcons();
 }
@@ -6973,6 +7084,9 @@ document.getElementById('global-ai-save-default-model')?.addEventListener('click
 document.getElementById('global-ai-provider-settings')?.addEventListener('click', openAiSettings);
 document.getElementById('global-ai-open-provider-settings')?.addEventListener('click', openAiSettings);
 document.getElementById('global-ai-open-model-manager')?.addEventListener('click', () => showView('models'));
+document.querySelectorAll('.global-ai-provider-type').forEach((button) => button.addEventListener('click', () => setGlobalAiProviderType(button.dataset.providerType)));
+document.getElementById('global-ai-save-provider')?.addEventListener('click', saveGlobalAiProvider);
+document.getElementById('global-ai-refresh-providers')?.addEventListener('click', loadGlobalAiProviderCatalog);
 document.getElementById('debug-chat-send')?.addEventListener('click', sendDebugChatMessage);
 document.getElementById('debug-chat-cancel')?.addEventListener('click', cancelDebugChatRequest);
 document.getElementById('debug-chat-messages')?.addEventListener(

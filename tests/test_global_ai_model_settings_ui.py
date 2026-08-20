@@ -15,6 +15,10 @@ def test_global_ai_workspace_includes_accessible_model_settings_tab() -> None:
     assert 'id="global-ai-session-model"' in html
     assert 'id="global-ai-default-model"' in html
     assert 'id="global-ai-save-default-model"' in html
+    assert 'id="global-ai-provider-list"' in html
+    assert 'data-provider-type="openai"' in html
+    assert 'data-provider-type="anthropic"' in html
+    assert 'id="global-ai-save-provider"' in html
 
 
 def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis() -> None:
@@ -23,6 +27,9 @@ def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis(
     assert "function setGlobalAiTab(tab)" in script
     assert "function syncGlobalAiModelSelection" in script
     assert "function saveGlobalAiDefaultModel" in script
+    assert "function saveGlobalAiProvider" in script
+    assert "function loadGlobalAiProviderCatalog" in script
+    assert "provider_type: globalAiProviderType" in script
     assert "agent_default_model_profile: profile" in script
     assert "document.getElementById('global-ai-session-model')?.addEventListener('change'" in script
     assert "document.getElementById('global-ai-save-default-model')?.addEventListener('click', saveGlobalAiDefaultModel)" in script
@@ -34,4 +41,6 @@ def test_global_ai_workspace_has_compact_responsive_styles() -> None:
     assert ".global-ai-tabs" in css
     assert ".global-ai-models-panel" in css
     assert ".global-ai-model-grid" in css
+    assert ".global-ai-provider-types" in css
+    assert ".global-ai-provider-card" in css
     assert ".global-ai-chat-host #svc-panel-debug-chat" in css
