@@ -193,6 +193,38 @@ def router_models_cached() -> list[dict[str, Any]]:
     return [dict(row) for row in _router_cache["models"]]
 
 
+def resolve_router_model_name(model_name: str, provider: str = "") -> str:
+    """Return the 9Router execution route for a saved model when known.
+
+    Earlier curated rows could save a bare model name such as
+    ``gemini-3-flash`` while 9Router exposes the executable route as
+    ``ag/gemini-3-flash``. Sending the bare name lets a gateway select an
+    unrelated upstream, so resolve to a provider-qualified router name only
+    when the cache gives an exact or unambiguous match.
+    """
+    requested = (model_name or "").strip()
+    if not requested:
+        return requested
+    rows = router_models_cached()
+    exact = next((str(row.get("name") or "").strip() for row in rows
+                  if str(row.get("name") or "").strip().casefold() == requested.casefold()), "")
+    if exact:
+        return exact
+
+    suffix = requested.rsplit("/", 1)[-1].casefold()
+    candidates = [str(row.get("name") or "").strip() for row in rows
+                  if str(row.get("name") or "").strip().rsplit("/", 1)[-1].casefold() == suffix]
+    normalized = normalize_provider(provider)
+    if normalized:
+        provider_matches = [name for name in candidates
+                            if normalize_provider(name.split("/", 1)[0] if "/" in name else "") == normalized]
+        if len(provider_matches) == 1:
+            return provider_matches[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    return requested
+
+
 def router_catalog_state() -> dict[str, Any]:
     """Cache metadata for API responses (freshness / last error)."""
     fetched_at = float(_router_cache["fetched_at"] or 0.0)

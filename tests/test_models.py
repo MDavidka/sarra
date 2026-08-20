@@ -132,3 +132,64 @@ async def test_same_model_can_be_added_once_per_provider(tmp_data_dir: Path) -> 
         provider="Gateway B", model_name="gpt-4.1",
     ))
     assert [row["provider"] for row in second["models"]] == ["OpenAI", "Gateway B"]
+
+
+def test_9router_bare_model_name_resolves_to_provider_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import model_catalog
+
+    monkeypatch.setattr(model_catalog, "_router_cache", {
+        "fetched_at": 1.0,
+        "models": [
+            {"id": "route-1", "name": "ag/gemini-3-flash", "provider": "Ag"},
+            {"id": "route-2", "name": "ag/claude-sonnet-4-6", "provider": "Ag"},
+        ],
+        "ok": True,
+        "error": "",
+    })
+
+    assert model_catalog.resolve_router_model_name(
+        "gemini-3-flash", "ag",
+    ) == "ag/gemini-3-flash"
+    assert model_catalog.resolve_router_model_name(
+        "ag/gemini-3-flash", "ag",
+    ) == "ag/gemini-3-flash"
+    assert model_catalog.resolve_router_model_name(
+        "unknown-model", "ag",
+    ) == "unknown-model"
+
+
+@pytest.mark.asyncio
+async def test_bridge_uses_provider_qualified_9router_route_for_curated_model(
+    tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte import model_catalog
+    from syte.cloud_agent import bridge_settings
+    from syte.database import init_db
+    from syte.main import ModelConfigurationRequest, ModelProviderSetupRequest, save_default_model, save_model_provider
+
+    await init_db()
+    await save_model_provider(ModelProviderSetupRequest(api_key="9router-test-key"))
+    saved = await save_default_model(ModelConfigurationRequest(
+        provider="ag",
+        model_name="gemini-3-flash",
+        thinking_levels=[3],
+        enabled=True,
+    ))
+
+    async def fake_fetch_router_models(*, force: bool = False) -> bool:
+        model_catalog._router_cache.update({
+            "fetched_at": 1.0,
+            "models": [{"id": "route-1", "name": "ag/gemini-3-flash", "provider": "Ag"}],
+            "ok": True,
+            "error": "",
+        })
+        return True
+
+    monkeypatch.setattr(model_catalog, "fetch_router_models", fake_fetch_router_models)
+    bridge = await bridge_settings()
+
+    assert bridge["profiles"]["9router"]["model"] == "ag/gemini-3-flash"
+    assert bridge["profiles"][saved["model"]["profile"]]["model"] == "ag/gemini-3-flash"

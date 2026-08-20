@@ -858,7 +858,12 @@ async def bridge_settings() -> dict[str, Any]:
         configured_external_providers,
         external_provider_profile,
     )
-    from syte.model_catalog import configured_models, model_profile
+    from syte.model_catalog import (
+        configured_models,
+        fetch_router_models,
+        model_profile,
+        resolve_router_model_name,
+    )
 
     await migrate_provider_lineup_keys()
     default_profile = (
@@ -913,9 +918,17 @@ async def bridge_settings() -> dict[str, Any]:
             "thinking_levels": "1,2,3,4,5,6",
         }
 
+    # Refresh the gateway catalog before resolving manually curated model names.
+    # Older rows may contain `gemini-3-flash`, while 9Router requires the
+    # provider-qualified route `ag/gemini-3-flash`.
+    if enabled_custom_models:
+        await fetch_router_models()
     # Build the 9Router profile from the dynamic spec + catalog models.
     router_resolved = await resolve_profile_api_key("9router")
     primary = enabled_custom_models[0] if enabled_custom_models else None
+    primary_model = resolve_router_model_name(
+        str(primary["name"]), str(primary.get("provider") or ""),
+    ) if primary else ""
     profiles["9router"] = {
         **NINE_ROUTER_PROFILE_SPEC,
         "api_base": await resolved_nine_router_api_base(),
@@ -926,7 +939,7 @@ async def bridge_settings() -> dict[str, Any]:
         "env_set": bool(router_resolved["env_set"]),
         "settings_hint": router_resolved["settings_hint"],
         "env_hint": router_resolved["env_hint"],
-        "model": primary["name"] if primary else "",
+        "model": primary_model,
         "enabled": bool(primary),
         "thinking_levels": ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5",
     }
@@ -938,7 +951,9 @@ async def bridge_settings() -> dict[str, Any]:
         profiles[profile] = {
             **base_custom,
             "profile": profile,
-            "model": row["name"],
+            "model": resolve_router_model_name(
+                str(row["name"]), str(row.get("provider") or ""),
+            ),
             "enabled": True,
             "thinking_levels": ",".join(map(str, row["thinking_levels"])),
         }
