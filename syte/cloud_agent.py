@@ -2303,6 +2303,14 @@ def _is_exploratory_environment_command(command: str) -> bool:
     ))
 
 
+def _is_project_source_path(path: str) -> bool:
+    """Return whether a path is an application source file rather than workspace metadata."""
+    normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
+    if not normalized.startswith("app/"):
+        return False
+    return normalized.endswith((".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"))
+
+
 def _is_webshop_feature_complete(content: str) -> bool:
     """Check that a requested webshop source contains its core user-facing flows."""
     normalized = str(content or "").lower()
@@ -2355,21 +2363,31 @@ async def _execute_tool(
     policy = ctx.get("agent_policy")
     if policy is not None and not policy.allows_tool(name, args):
         return policy.rejection(name)
-    if ctx.get("build_artifact_required") and not ctx.get("_delivery_requirements_complete"):
+    completion_write_required = bool(
+        ctx.get("completion_write_required") or ctx.get("build_artifact_required")
+    )
+    if completion_write_required and not ctx.get("_delivery_requirements_complete"):
         inspections = int(ctx.get("_prewrite_inspections") or 0)
         if (
-            ctx.get("webshop_requirements")
-            and name == "write_file"
-            and not _is_deliverable_web_source_path(str(args.get("path") or ""))
+            name == "write_file"
+            and (
+                (
+                    ctx.get("webshop_requirements")
+                    and not _is_deliverable_web_source_path(str(args.get("path") or ""))
+                )
+                or (
+                    ctx.get("source_change_required")
+                    and not _is_project_source_path(str(args.get("path") or ""))
+                )
+            )
         ):
             return {
                 "ok": False,
                 "error": "webshop_ui_source_required",
                 "retryable": True,
                 "message": (
-                    "Write the requested webshop UI first. Do not spend the bounded build turn on "
-                    "memory, package, configuration, or metadata files before an actual page/component "
-                    "with product listing, cart, and checkout flows exists."
+                    "Write the requested application source first. Do not spend the bounded build turn on "
+                    "memory, package, configuration, or metadata files before the requested UI change exists."
                 ),
             }
         if inspections >= 2 and name != "write_file":
@@ -2486,7 +2504,7 @@ async def _execute_tool(
                 if not ctx.get("build_artifact_required") or _is_deliverable_web_source_path(path):
                     ctx["_workspace_dirty_since_screenshot"] = True
                     ctx["_workspace_changed"] = True
-                    if ctx.get("build_artifact_required"):
+                    if ctx.get("completion_write_required"):
                         ctx["_deliverable_source_written"] = True
                         if not ctx.get("webshop_requirements") or _is_webshop_feature_complete(str(args.get("content") or "")):
                             ctx["_delivery_requirements_complete"] = True
@@ -5585,6 +5603,7 @@ async def _communicate_with_agent_impl(
     from syte.agent_skills import match_active_skills, skill_hint_block
     from syte.nextjs_layout import is_nextjs_repo
     from syte.site_planner import (
+        is_source_change_request,
         is_substantive_site_request,
         is_website_request,
         site_request_needs_clarification,
@@ -5598,6 +5617,7 @@ async def _communicate_with_agent_impl(
     site_question_required = bool(site_plan_required and site_needs_clarification and not is_website)
     message_normalized = " ".join(str(message or "").lower().split())
     webshop_requirements = all(marker in message_normalized for marker in ("webshop", "product", "cart", "checkout"))
+    source_change_required = bool(execution_policy.mode == "build" and is_source_change_request(message))
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
@@ -5921,10 +5941,12 @@ async def _communicate_with_agent_impl(
         "command_execution_forbidden": _request_forbids_command_execution(message),
         "simple_conversation": simple_conversation,
         "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
+        "source_change_required": source_change_required,
+        "completion_write_required": bool(execution_policy.mode == "build" and (site_plan_required or source_change_required)),
         "_prewrite_inspections": 0,
         "_deliverable_source_written": False,
         "webshop_requirements": webshop_requirements,
-        "_delivery_requirements_complete": not webshop_requirements,
+        "_delivery_requirements_complete": not (webshop_requirements or source_change_required),
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -5948,7 +5970,7 @@ async def _communicate_with_agent_impl(
             tools_for_step = TOOLS if allow_tools else []
             if (
                 allow_tools
-                and tool_context.get("build_artifact_required")
+                and tool_context.get("completion_write_required")
                 and not tool_context.get("_delivery_requirements_complete")
             ):
                 # Before requested delivery requirements are complete, expose only direct file and plan
@@ -6059,7 +6081,7 @@ async def _communicate_with_agent_impl(
                 )
             if not stored_calls:
                 if (
-                    tool_context.get("build_artifact_required")
+                    tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")
                     and step + 1 < max_tool_steps
                 ):
@@ -6068,9 +6090,8 @@ async def _communicate_with_agent_impl(
                     messages.append({
                         "role": "user",
                         "content": (
-                            "The requested webshop is incomplete. Do not finish. Call write_file now to create or "
-                            "replace actual UI source under app/app/, app/pages/, app/src/, or app/index.html with "
-                            "a product listing, cart flow, and checkout form."
+                            "The requested implementation change is incomplete. Do not finish. Call write_file now "
+                            "to create or edit the relevant application source under app/ so the requested change is implemented."
                         ),
                     })
                     continue
@@ -6147,7 +6168,7 @@ async def _communicate_with_agent_impl(
                     except Exception:
                         logger.debug("post-turn preview checks failed", exc_info=True)
 
-                if tool_context.get("build_artifact_required") and not tool_context.get("_delivery_requirements_complete"):
+                if tool_context.get("completion_write_required") and not tool_context.get("_delivery_requirements_complete"):
                     reply = (
                         "The Agent exhausted its bounded action budget before completing the required "
                         "deployable UI source and requested feature flows. Retry the build with a larger step budget."
