@@ -6,6 +6,7 @@ from syte.agent_turn_controls import normalize_turn_controls
 from syte.cloud_agent import _execute_tool
 from syte.opencode_agent_core import (
     agent_core_spec,
+    is_simple_conversation,
     normalize_agent_execution_policy,
     policy_prompt_block,
 )
@@ -39,6 +40,13 @@ def test_plan_mode_blocks_legacy_mutating_dispatch_before_workspace_access() -> 
     )
     assert result["error"] == "plan_mode_permission_denied"
     assert result["retryable"] is False
+
+
+def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> None:
+    assert is_simple_conversation("Say hello in Romanian, English, and Hungarian.")
+    assert is_simple_conversation("Please translate hello into Hungarian.")
+    assert not is_simple_conversation("Create a webshop with a product page.")
+    assert not is_simple_conversation("Fix the hello message component in my app.")
 
 
 def test_turn_controls_persist_core_mode_without_provider_changes() -> None:
