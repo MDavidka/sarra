@@ -42,6 +42,19 @@ def test_plan_mode_blocks_legacy_mutating_dispatch_before_workspace_access() -> 
     assert result["retryable"] is False
 
 
+def test_build_request_blocks_shell_before_first_source_change() -> None:
+    result = asyncio.run(
+        _execute_tool(
+            "unused",
+            "run_command",
+            {"command": "ls -la"},
+            context={"build_artifact_required": True},
+        )
+    )
+    assert result["error"] == "source_change_required_before_command"
+    assert result["retryable"] is True
+
+
 def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> None:
     assert is_simple_conversation("Say hello in Romanian, English, and Hungarian.")
     assert is_simple_conversation("Please translate hello into Hungarian.")

@@ -2442,6 +2442,17 @@ async def _execute_tool(
                 ctx["_workspace_changed"] = True
             return {"ok": ok, "message": message}
         if name == "run_command":
+            if ctx.get("build_artifact_required") and not ctx.get("_workspace_changed"):
+                return {
+                    "ok": False,
+                    "error": "source_change_required_before_command",
+                    "retryable": True,
+                    "message": (
+                        "This implementation request needs a deployable source change first. "
+                        "Do not explore with shell commands; write the requested source or configuration "
+                        "after minimal file inspection, then run one targeted validation command."
+                    ),
+                }
             if ctx.get("command_execution_forbidden"):
                 return {
                     "ok": False,
@@ -5701,6 +5712,15 @@ async def _communicate_with_agent_impl(
                 if simple_conversation
                 else ""
             ),
+            (
+                "## Delivery boundary\n"
+                "This is substantive implementation work. After the required plan, make at most two "
+                "direct file inspections, then write the requested source or deployment configuration. "
+                "Do not run shell commands, start services, or claim completion before a source change. "
+                "After an edit, run only one targeted validation command if needed.\n"
+                if execution_policy.mode == "build" and site_plan_required
+                else ""
+            ),
             *turn_hints,
         ]
         if part and str(part).strip()
@@ -5827,6 +5847,7 @@ async def _communicate_with_agent_impl(
         "preview_explicitly_requested": bool(re.search(r"\b(?:preview|running site|runtime|console)\b", message, re.IGNORECASE)),
         "command_execution_forbidden": _request_forbids_command_execution(message),
         "simple_conversation": simple_conversation,
+        "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -5847,10 +5868,25 @@ async def _communicate_with_agent_impl(
         for step in itertools.count():
             _raise_if_cancelled()
             allow_tools = not simple_conversation and step < max_tool_steps
+            tools_for_step = TOOLS if allow_tools else []
+            if (
+                allow_tools
+                and tool_context.get("build_artifact_required")
+                and not tool_context.get("_workspace_changed")
+            ):
+                # Before the first source change, present only direct workspace and
+                # planning tools. This makes the delivery-first rule deterministic
+                # instead of relying on provider compliance with prompt text.
+                tools_for_step = [
+                    tool for tool in TOOLS
+                    if tool["function"]["name"] not in {
+                        "run_command", "service", "inspect_preview", "screenshot_preview",
+                    }
+                ]
             assistant = await _provider_completion(
                 model,
                 messages,
-                tools=TOOLS if allow_tools else [],
+                tools=tools_for_step,
                 temperature=temperature,
                 thinking_config=gen,
                 stream=want_stream,
