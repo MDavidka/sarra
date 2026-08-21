@@ -6270,6 +6270,10 @@ async def _communicate_with_agent_impl(
                             "content": "The sandbox applied the requested source patch. Briefly summarize the completed change without further tools.",
                         })
                         tool_context["_text_patch_protocol_complete"] = True
+                        # The source edit is complete. Resume normal no-tool
+                        # completion for the requested concise summary instead of
+                        # parsing that prose as a second JSON patch.
+                        tool_context["_text_patch_protocol_requested"] = False
                         continue
                     if step + 1 < max_tool_steps:
                         messages.append({
