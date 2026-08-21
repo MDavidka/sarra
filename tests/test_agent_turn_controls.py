@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+
 from syte.agent_turn_controls import (
     normalize_turn_controls,
     requires_plan_before_actions,
     trim_history_to_context_budget,
 )
 from syte.agent_memory import memory_context_block
-from syte.cloud_agent import _website_enforcement_block
+from syte.cloud_agent import (
+    _execute_tool,
+    _request_forbids_command_execution,
+    _website_enforcement_block,
+)
 from syte.main import AgentChatRequest
 
 
@@ -74,6 +80,24 @@ def test_chat_request_exposes_reliability_controls() -> None:
     assert request.stream_max_tokens == 8_192
     assert request.memory_depth == "deep"
     assert request.plan_mode == "always"
+
+
+def test_explicit_no_command_request_is_detected_without_blocking_normal_read_only_work() -> None:
+    assert _request_forbids_command_execution("Do not run commands or deploy; inspect files only.")
+    assert _request_forbids_command_execution("Without executing shell commands, summarize the project.")
+    assert not _request_forbids_command_execution("Run the smallest useful lint command after inspection.")
+
+
+def test_no_command_guard_blocks_shell_and_preview_start_actions() -> None:
+    ctx = {"command_execution_forbidden": True}
+    shell = asyncio.run(
+        _execute_tool("unused", "run_command", {"command": "node -v"}, context=ctx)
+    )
+    preview = asyncio.run(
+        _execute_tool("unused", "service", {"action": "preview_start"}, context=ctx)
+    )
+    assert shell["error"] == "command_execution_forbidden"
+    assert preview["error"] == "command_execution_forbidden"
 
 
 def test_website_prompt_preserves_existing_framework() -> None:
