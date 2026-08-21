@@ -3685,6 +3685,11 @@ async def _parse_sse_completion(
             chunk = json.loads(data)
         except json.JSONDecodeError:
             continue
+        # The Antigravity bridge can emit null keepalive frames before an
+        # OpenAI-compatible chunk. They are not completion objects and must
+        # never abort a valid streamed no-tool patch turn.
+        if not isinstance(chunk, dict):
+            continue
         usage = chunk.get("usage")
         if isinstance(usage, dict):
             usage_acc["input_tokens"] = int(
