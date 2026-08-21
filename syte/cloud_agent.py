@@ -2350,7 +2350,16 @@ def _parse_text_patch_protocol(content: str) -> list[dict[str, str]]:
     try:
         payload = json.loads(text)
     except (TypeError, ValueError, json.JSONDecodeError):
-        return []
+        # Some smaller gateway models preface otherwise valid JSON with a brief
+        # sentence. Recover only the first JSON object; the bounded validation
+        # below still rejects any non-application-source or oversized patch.
+        start = text.find("{")
+        if start < 0:
+            return []
+        try:
+            payload, _end = json.JSONDecoder().raw_decode(text[start:])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
     raw_patches = payload.get("patches") if isinstance(payload, dict) else payload
     if not isinstance(raw_patches, list) or len(raw_patches) > 4:
         return []
