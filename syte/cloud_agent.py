@@ -6795,6 +6795,9 @@ async def _communicate_with_agent_impl(
             await close_turso_session(turso_session_id, status="cancelled")
         raise
     except Exception as exc:
+        logger.exception(
+            "Cloud Agent request %s failed for project %s", request_id, project_id
+        )
         error = str(exc) or "Cloud agent request failed"
         _write_log(project_id, f"request {request_id} failed: {error}")
         await _flush_hot_deltas()
