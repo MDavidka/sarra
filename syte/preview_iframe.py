@@ -25,6 +25,14 @@ _PROBE_CACHE: dict[str, tuple[float, bool]] = {}
 _PROBE_CACHE_TTL_SEC = 30.0
 
 
+def clear_https_probe_cache(url: str = "") -> None:
+    """Clear a cached HTTPS availability result after preview routing changes."""
+    if url:
+        _PROBE_CACHE.pop(url, None)
+    else:
+        _PROBE_CACHE.clear()
+
+
 def expected_frame_csp(gui_domain: str = "", *, allow_any: bool = False) -> str:
     return preview_frame_ancestors_csp(gui_domain, allow_any=allow_any)
 
