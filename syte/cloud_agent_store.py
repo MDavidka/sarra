@@ -373,6 +373,11 @@ def sanitize_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str,
     turn or a tool that raised before its result was stored). Also drops
     leading orphaned tool messages left by history-window truncation.
     """
+    # Durable history may contain malformed legacy rows (for example JSON `null`)
+    # after interrupted requests or a provider migration. Provider-facing history
+    # must contain mappings only; skip invalid rows rather than letting a `.get()`
+    # access fail before the Agent can run its bounded recovery path.
+    messages = [dict(message) for message in messages if isinstance(message, dict)]
     while messages and messages[0].get("role") == "tool":
         messages = messages[1:]
 

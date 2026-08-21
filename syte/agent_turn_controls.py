@@ -131,11 +131,12 @@ def trim_history_to_context_budget(
     four-characters-per-token estimate. The system instruction is always kept;
     callers sanitize tool-call/tool-result pairs after trimming.
     """
-    if not messages:
+    valid_messages = [dict(message) for message in messages if isinstance(message, dict)]
+    if not valid_messages:
         return []
     available_chars = max(4_000, (int(context_window_tokens) - int(reserved_output_tokens)) * 4)
-    system_messages = [dict(message) for message in messages if message.get("role") == "system"]
-    non_system = [dict(message) for message in messages if message.get("role") != "system"]
+    system_messages = [message for message in valid_messages if message.get("role") == "system"]
+    non_system = [message for message in valid_messages if message.get("role") != "system"]
     static_chars = sum(len(str(message.get("content") or "")) for message in system_messages)
     remaining = max(2_000, available_chars - static_chars)
     selected: list[dict[str, Any]] = []
