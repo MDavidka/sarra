@@ -14,6 +14,8 @@ CONTEXT_WINDOW_CHOICES = (8_000, 16_000, 32_000, 64_000, 128_000)
 STREAM_TOKEN_CHOICES = (512, 1_024, 2_048, 4_096, 8_192, 16_384)
 MEMORY_DEPTHS = ("focused", "balanced", "deep")
 PLAN_MODES = ("auto", "always", "off")
+AGENT_MODES = ("build", "plan")
+STEP_BUDGET_CHOICES = (4, 8, 12, 16)
 
 _MEMORY_PROFILES: dict[str, dict[str, int]] = {
     "focused": {
@@ -57,6 +59,8 @@ def normalize_turn_controls(
     memory_depth: str | None = None,
     plan_mode: str | None = None,
     deployment_readiness: bool | None = None,
+    agent_mode: str | None = None,
+    max_steps: int | str | None = None,
 ) -> dict[str, Any]:
     """Return a safe, explicit turn-control object suitable for persistence.
 
@@ -72,12 +76,18 @@ def normalize_turn_controls(
         raise ValueError(f"plan_mode must be one of: {', '.join(PLAN_MODES)}")
     context_window = _nearest_choice(context_window_tokens, CONTEXT_WINDOW_CHOICES, 32_000)
     stream_limit = _nearest_choice(stream_max_tokens, STREAM_TOKEN_CHOICES, 4_096)
+    execution_mode = str(agent_mode or "build").strip().lower()
+    if execution_mode not in AGENT_MODES:
+        raise ValueError(f"agent_mode must be one of: {', '.join(AGENT_MODES)}")
+    step_budget = _nearest_choice(max_steps, STEP_BUDGET_CHOICES, 16)
     return {
         "context_window_tokens": context_window,
         "stream_max_tokens": stream_limit,
         "memory_depth": depth,
         "plan_mode": mode,
         "deployment_readiness": True if deployment_readiness is None else bool(deployment_readiness),
+        "agent_mode": execution_mode,
+        "max_steps": step_budget,
         **_MEMORY_PROFILES[depth],
     }
 
@@ -152,5 +162,7 @@ def agent_turn_controls_spec() -> dict[str, Any]:
         "stream_max_tokens": list(STREAM_TOKEN_CHOICES),
         "memory_depth": list(MEMORY_DEPTHS),
         "plan_mode": list(PLAN_MODES),
+        "agent_mode": list(AGENT_MODES),
+        "max_steps": list(STEP_BUDGET_CHOICES),
         "deployment_readiness": True,
     }

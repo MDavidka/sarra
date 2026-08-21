@@ -2338,6 +2338,9 @@ async def _execute_tool(
     from syte.workspace_api import delete_file, execute_command, list_workspace_files, read_file, write_file
 
     ctx = context or {}
+    policy = ctx.get("agent_policy")
+    if policy is not None and not policy.allows_tool(name, args):
+        return policy.rejection(name)
     tool_chars = int(ctx.get("max_tool_result_chars") or _model_tool_result_chars(model))
     try:
         if (
@@ -5208,6 +5211,8 @@ async def communicate_with_agent(
     stream_max_tokens: int | str | None = None,
     memory_depth: str | None = None,
     plan_mode: str | None = None,
+    agent_mode: str | None = None,
+    max_steps: int | str | None = None,
     deployment_readiness: bool | None = None,
     idempotency_key: str | None = None,
     override_api_key: str | None = None,
@@ -5223,6 +5228,8 @@ async def communicate_with_agent(
         stream_max_tokens=stream_max_tokens,
         memory_depth=memory_depth,
         plan_mode=plan_mode,
+        agent_mode=agent_mode,
+        max_steps=max_steps,
         deployment_readiness=deployment_readiness,
     )
     resolved_profile = normalize_explicit_profile(model_profile)
@@ -5306,7 +5313,14 @@ async def _communicate_with_agent_impl(
         stream_max_tokens=raw_options.get("stream_max_tokens"),
         memory_depth=raw_options.get("memory_depth"),
         plan_mode=raw_options.get("plan_mode"),
+        agent_mode=raw_options.get("agent_mode"),
+        max_steps=raw_options.get("max_steps"),
         deployment_readiness=raw_options.get("deployment_readiness"),
+    )
+    from syte.opencode_agent_core import normalize_agent_execution_policy
+
+    execution_policy = normalize_agent_execution_policy(
+        turn_controls.get("agent_mode"), turn_controls.get("max_steps")
     )
     project = await get_project(project_id)
     if not project:
@@ -5670,8 +5684,11 @@ async def _communicate_with_agent_impl(
                 )
                 plan_already_seeded = True
 
+    from syte.opencode_agent_core import policy_prompt_block
+
     dynamic_instruction = "\n\n".join(
-        part for part in [dynamic_instruction, *turn_hints] if part and str(part).strip()
+        part for part in [dynamic_instruction, policy_prompt_block(execution_policy), *turn_hints]
+        if part and str(part).strip()
     )
 
     # Always inject the latest cross-session summary when the live history is thin
@@ -5795,9 +5812,11 @@ async def _communicate_with_agent_impl(
         "preview_explicitly_requested": bool(re.search(r"\b(?:preview|running site|runtime|console)\b", message, re.IGNORECASE)),
         "command_execution_forbidden": _request_forbids_command_execution(message),
         "turn_controls": turn_controls,
+        "agent_policy": execution_policy,
+        "agent_mode": execution_policy.mode,
     }
 
-    max_tool_steps = int(gen.get("max_tool_steps") or 48)
+    max_tool_steps = min(int(gen.get("max_tool_steps") or 48), execution_policy.max_steps)
     temperature = float(gen.get("temperature") or 0.2)
     want_stream = bool(gen.get("stream"))
     turn_usage: dict[str, int] = {
