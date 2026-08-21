@@ -5984,9 +5984,10 @@ async def _communicate_with_agent_impl(
                 # available action, making the delivery-first rule deterministic.
                 prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
                 if tool_context.get("source_change_required"):
-                    # Follow-up edits are intentionally narrow: inspect the target once,
-                    # then write the requested change rather than rediscovering the app.
-                    allowed_prewrite = {"read_file", "write_file"} if prewrite_inspections < 1 else {"write_file"}
+                    # A prior project build already established the workspace contract.
+                    # Follow-up requests must preserve their limited action budget for
+                    # the requested edit rather than rediscovering a large source file.
+                    allowed_prewrite = {"write_file"}
                 else:
                     allowed_prewrite = (
                         {"write_file"}
