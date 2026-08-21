@@ -414,6 +414,30 @@ def sanitize_provider_messages(messages: list[dict[str, Any]]) -> list[dict[str,
     return out
 
 
+def without_historical_tool_turns(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return replay-safe text history for providers with strict function turns.
+
+    Completed OpenAI tool-call/tool-response pairs are valid for most providers,
+    but Antigravity rejects them when a reconstructed historical function turn is
+    stale or separated from its response. This helper is called only before a new
+    9Router request is assembled. It retains user/assistant text context and
+    removes old function calls plus their results; fresh pairs created inside the
+    active Agent loop are appended afterwards and remain intact.
+    """
+    recovered: list[dict[str, Any]] = []
+    for message in sanitize_provider_messages(messages):
+        role = str(message.get("role") or "")
+        if role == "tool":
+            continue
+        if role == "assistant" and message.get("tool_calls"):
+            content = str(message.get("content") or "").strip()
+            if content:
+                recovered.append({"role": "assistant", "content": content})
+            continue
+        recovered.append(dict(message))
+    return recovered
+
+
 async def latest_message_session(project_id: str) -> int:
     """Return the highest ``session_number`` stored for the project (0 if none)."""
     await ensure_cloud_agent_tables()
