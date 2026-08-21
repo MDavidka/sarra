@@ -3332,6 +3332,42 @@ async def _tool_request_env(
     }
 
 
+def _normalize_tool_call_ids(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return replay-safe OpenAI tool calls with stable, unique identifiers.
+
+    Some OpenAI-compatible gateways omit a tool call ``id`` for Gemini-backed
+    models. A later ``role=tool`` response then cannot be associated with the
+    original function call, which Antigravity rejects as an invalid function
+    turn. Keep provider-assigned identifiers untouched, but deterministically
+    synthesize only missing or duplicate IDs from the function name and index.
+    """
+    normalized: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for index, raw_call in enumerate(calls):
+        if not isinstance(raw_call, dict):
+            continue
+        call = dict(raw_call)
+        function = call.get("function")
+        if isinstance(function, dict):
+            call["function"] = dict(function)
+        else:
+            call["function"] = {}
+        call_id = str(call.get("id") or "").strip()
+        if not call_id or call_id in used_ids:
+            name = str(call["function"].get("name") or "tool").strip()
+            safe_name = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in name)
+            base = f"call_{safe_name or 'tool'}_{index + 1}"
+            call_id = base
+            suffix = 2
+            while call_id in used_ids:
+                call_id = f"{base}_{suffix}"
+                suffix += 1
+            call["id"] = call_id
+        used_ids.add(call_id)
+        normalized.append(call)
+    return normalized
+
+
 def _merge_stream_tool_calls(
     acc: dict[int, dict[str, Any]], deltas: list[dict[str, Any]] | None
 ) -> None:
@@ -3433,7 +3469,9 @@ async def _parse_sse_completion(
     if reasoning_parts:
         message["reasoning_content"] = "".join(reasoning_parts)
     if tool_acc:
-        message["tool_calls"] = [tool_acc[i] for i in sorted(tool_acc)]
+        message["tool_calls"] = _normalize_tool_call_ids(
+            [tool_acc[i] for i in sorted(tool_acc)]
+        )
     if finish_reason:
         message["_finish_reason"] = finish_reason
     if any(usage_acc.values()):
@@ -4831,7 +4869,7 @@ async def _run_subagent_loop(
         if content.strip():
             last_substantive = content.strip()
         calls = assistant.get("tool_calls") or []
-        stored_calls = calls if isinstance(calls, list) else []
+        stored_calls = _normalize_tool_call_ids(calls) if isinstance(calls, list) else []
         next_assistant: dict[str, Any] = {"role": "assistant", "content": content}
         if stored_calls:
             next_assistant["tool_calls"] = stored_calls
@@ -5612,7 +5650,7 @@ async def _communicate_with_agent_impl(
             if isinstance(reasoning, str) and len(reasoning) > MAX_REASONING_HISTORY_CHARS:
                 reasoning = reasoning[:MAX_REASONING_HISTORY_CHARS] + "\n… [thinking truncated]"
             tool_calls = assistant.get("tool_calls") or []
-            stored_calls = tool_calls if isinstance(tool_calls, list) else []
+            stored_calls = _normalize_tool_call_ids(tool_calls) if isinstance(tool_calls, list) else []
             # Cap: ignore tool calls past the thinking-level budget.
             if not allow_tools:
                 stored_calls = []
