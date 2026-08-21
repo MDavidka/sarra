@@ -5618,12 +5618,18 @@ async def _communicate_with_agent_impl(
     app_root = workspace_path(project_id) / "app"
     is_website = is_nextjs_repo(app_root) or is_nextjs_repo(workspace_path(project_id))
     website_work = is_website or is_website_request(message)
-    site_plan_required = is_substantive_site_request(message)
+    source_change_required = bool(execution_policy.mode == "build" and is_source_change_request(message))
+    # A completed application can be named in a follow-up (for example,
+    # "add dark mode to the webshop") without turning the edit into a new
+    # webshop build. Preserve the narrow source-write path in that case.
+    site_plan_required = bool(is_substantive_site_request(message) and not source_change_required)
     site_needs_clarification = site_request_needs_clarification(message)
     site_question_required = bool(site_plan_required and site_needs_clarification and not is_website)
     message_normalized = " ".join(str(message or "").lower().split())
-    webshop_requirements = all(marker in message_normalized for marker in ("webshop", "product", "cart", "checkout"))
-    source_change_required = bool(execution_policy.mode == "build" and is_source_change_request(message))
+    webshop_requirements = bool(
+        not source_change_required
+        and all(marker in message_normalized for marker in ("webshop", "product", "cart", "checkout"))
+    )
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
