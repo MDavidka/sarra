@@ -6217,7 +6217,7 @@ async def _communicate_with_agent_impl(
                         continue
                     break
                 if (
-                    tool_context.get("source_change_required")
+                    tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")
                     and step + 1 < max_tool_steps
                 ):
