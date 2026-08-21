@@ -190,6 +190,7 @@ def test_text_patch_protocol_only_accepts_bounded_application_source_replacement
     ]
     assert _parse_text_patch_protocol(payload) == expected
     assert _parse_text_patch_protocol(f"```json\n{payload}\n```") == expected
+    assert _parse_text_patch_protocol(f"Here is the patch.\n{payload}\nDone.") == expected
     assert not _parse_text_patch_protocol('{"patches":[{"path":"syra/memory.md","find":"x","replace":"y"}]}')
     assert not _parse_text_patch_protocol("write a patch please")
 
