@@ -2344,7 +2344,7 @@ def _request_forbids_command_execution(message: str) -> bool:
 def _parse_text_patch_protocol(content: str) -> list[dict[str, str]]:
     """Parse a small-model text-only patch response without executing arbitrary code."""
     text = str(content or "").strip()
-    fence = re.search(r"```(?:json)?\\s*(.*?)\\s*```", text, re.DOTALL | re.IGNORECASE)
+    fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
     if fence:
         text = fence.group(1).strip()
     try:
@@ -2358,7 +2358,7 @@ def _parse_text_patch_protocol(content: str) -> list[dict[str, str]]:
     for raw in raw_patches:
         if not isinstance(raw, dict):
             return []
-        path = str(raw.get("path") or "").replace("\\\\", "/").lstrip("./")
+        path = str(raw.get("path") or "").replace("\\", "/").lstrip("./")
         find = raw.get("find")
         replace = raw.get("replace")
         if not _is_project_source_path(path) or not isinstance(find, str) or not isinstance(replace, str):
@@ -6254,7 +6254,21 @@ async def _communicate_with_agent_impl(
                         })
                         tool_context["_text_patch_protocol_complete"] = True
                         continue
-                    break
+                    if step + 1 < max_tool_steps:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Your previous response could not be applied because it was not a valid JSON "
+                                "source patch. Return ONLY a JSON object in this exact shape: "
+                                "{\"patches\":[{\"path\":\"app/index.html\",\"find\":\"exact existing text\",\"replace\":\"replacement text\"}]}. "
+                                "Do not describe a plan, do not read files, and do not use markdown. Implement the "
+                                "requested visible change using stable existing anchors such as </head> or </body>."
+                            ),
+                        })
+                        continue
+                    raise RuntimeError(
+                        "The selected model did not return a valid bounded application-source patch."
+                    )
                 if (
                     tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")
