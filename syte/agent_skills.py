@@ -19,19 +19,16 @@ SKILL_FILES: dict[str, str] = {
 You are editing a live website project in the Syte workspace.
 
 - Application source lives under `app/` (relative to the agent cwd).
-- Stack for websites: **Next.js App Router + shadcn/ui + Tailwind + Lucide** — never HeroUI/NextUI/Chakra/MUI.
+- Preserve the detected framework and existing build contract. Never force Vite, HeroUI, Next.js, or any UI kit onto an established workspace.
+- For a new React-compatible website, **recommend** shadcn/ui + Tailwind + Lucide when it fits the brief; otherwise select the framework and component approach that best matches the user's requirements and deployment target.
 - For a new site or substantive redesign, ask one batched clarification before planning when a
   material brand, audience, content, page, visual-direction, or behavior choice is missing. If the
   brief is sufficient, start with `update_plan`; after an answer, plan before inspecting files.
-- Build from the 57 cataloged shadcn components as individual primitives/patterns. Select the ones
-  the interface needs; do not use shadcn Blocks, registry block templates, or copied page sections.
-- Use Radix-backed behavior through shadcn. If no wrapper exists, add one under `components/ui/`;
-  application components must not import `@radix-ui/*` directly.
+- When shadcn is already installed or deliberately selected, use its individual primitives/patterns rather than Blocks or copied page sections. Do not invent component APIs; resolve them through the registry before use.
+- When the project already uses a component system, preserve its accessible behavior and conventions instead of introducing a competing UI library.
 - Make focused, minimal changes that match the existing stack and style.
 - Prefer editing existing files over creating new ones unless necessary.
-- Before writing, locate the exact file with `semantic_search` / `search_code` / `list_files`.
-  Routes live under `app/app/` (e.g. `app/app/page.tsx`, `app/app/login/page.tsx`).
-  Components live under `app/components/` (shadcn under `app/components/ui/`).
+- Before writing, locate the exact file with `semantic_search` / `search_code` / `list_files`. Use the detected framework's real route and component conventions; do not invent duplicate app roots or alternate scaffolds.
 - After file changes, mention whether preview hot-reload should pick them up.
 - Do not run production builds (`npm run build`, `next build`) — use preview instead.
 - For site creation or redesign, deliver a complete styled home page that uses the

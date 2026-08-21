@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections import defaultdict
 from typing import Any
@@ -104,6 +105,7 @@ async def submit_agent_request(
     idempotency_key: str | None = None,
     override_api_key: str | None = None,
     override_credentials: list[dict[str, Any]] | None = None,
+    generation_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Admit a durable agent request and return immediately.
 
@@ -127,6 +129,7 @@ async def submit_agent_request(
             model_profile=model_profile,
             source=source,
             auto_start=auto_start,
+            generation_options=generation_options,
         )
     except Exception:
         existing = await get_request(request_id)
@@ -193,6 +196,7 @@ async def submit_agent_request(
             turso_session_id=turso_session_id,
             override_api_key=override_api_key,
             override_credentials=override_credentials,
+            generation_options=generation_options,
         )
     )
     _running[project_id] = task
@@ -205,6 +209,7 @@ async def submit_agent_request(
         "project_id": project_id,
         "model_profile": model_profile,
         "thinking_level": thinking_level,
+        "generation_options": generation_options or {},
         "session_url": f"/api/agent_session/{turso_session_id}" if turso_session_id else None,
     }
 
@@ -266,6 +271,7 @@ async def _run_agent_attempt(
     turso_session_id: str | None,
     override_api_key: str | None,
     override_credentials: list[dict[str, Any]] | None = None,
+    generation_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the provider call and retry one transient external-API failure."""
     from syte.cloud_agent import _communicate_with_agent_impl, _failure_metadata
@@ -286,6 +292,7 @@ async def _run_agent_attempt(
                 turso_session_id=turso_session_id,
                 override_api_key=override_api_key,
                 override_credentials=override_credentials,
+                generation_options=generation_options,
             )
         except asyncio.CancelledError:
             raise
@@ -328,6 +335,7 @@ async def _run_job(
     turso_session_id: str | None = None,
     override_api_key: str | None = None,
     override_credentials: list[dict[str, Any]] | None = None,
+    generation_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     terminal_status: str | None = None
     async with project_agent_lock(project_id):
@@ -346,6 +354,7 @@ async def _run_job(
                 turso_session_id=turso_session_id,
                 override_api_key=override_api_key,
                 override_credentials=override_credentials,
+                generation_options=generation_options,
             )
             await mark_request(
                 request_id,
@@ -425,6 +434,17 @@ async def _run_job(
                 await close_turso_session(turso_session_id, status=terminal_status)
 
 
+def _parse_generation_options(value: Any) -> dict[str, Any]:
+    """Load persisted turn controls without letting a malformed row block recovery."""
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
 async def resume_pending_requests() -> int:
     """Resume requests admitted before a VM/service restart."""
     resumed = 0
@@ -451,6 +471,7 @@ async def resume_pending_requests() -> int:
                 model_profile=row.get("model_profile"),
                 source=str(row.get("source") or "recovery"),
                 auto_start=bool(row.get("auto_start", 1)),
+                generation_options=_parse_generation_options(row.get("generation_options")),
                 session_number=session_number,
                 message_index_start=1,
                 turso_session_id=turso_session_id,

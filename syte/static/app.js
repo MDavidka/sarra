@@ -791,7 +791,7 @@ function clearDebugChatPanel({ resetCursor = false } = {}) {
   }
   debugChatThinkingBuffers.clear();
   const laneEmptyText = {
-    main: 'What would you like to change?',
+    main: 'No messages in this project yet.',
     sub: 'No subagent has been started yet.',
   };
   for (const lane of ['main', 'sub']) {
@@ -2510,6 +2510,13 @@ function updateDebugChatControls() {
     input.setAttribute('aria-busy', debugChatBusy ? 'true' : 'false');
   }
   if (profile) profile.disabled = controlsBusy;
+  for (const id of [
+    'debug-chat-thinking-level', 'debug-chat-context-window', 'debug-chat-stream-limit',
+    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-deployment-readiness',
+  ]) {
+    const control = document.getElementById(id);
+    if (control) control.disabled = controlsBusy;
+  }
   if (cancel) {
     cancel.classList.toggle('hidden', !debugChatBusy);
     cancel.disabled = !debugChatBusy || debugChatStopping;
@@ -2621,6 +2628,31 @@ async function getDebugChatProfile() {
   const select = document.getElementById('debug-chat-profile');
   const value = select?.value || select?.getAttribute('value') || 'auto';
   return value;
+}
+
+function getDebugChatTurnControls() {
+  const numeric = (id, fallback) => {
+    const value = Number(document.getElementById(id)?.value || fallback);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  return {
+    thinking_level: numeric('debug-chat-thinking-level', 3),
+    context_window_tokens: numeric('debug-chat-context-window', 32000),
+    stream_max_tokens: numeric('debug-chat-stream-limit', 4096),
+    memory_depth: document.getElementById('debug-chat-memory-depth')?.value || 'balanced',
+    plan_mode: document.getElementById('debug-chat-plan-mode')?.value || 'auto',
+    deployment_readiness: Boolean(document.getElementById('debug-chat-deployment-readiness')?.checked),
+  };
+}
+
+function updateDebugChatContextSummary() {
+  const controls = getDebugChatTurnControls();
+  const windowLabel = document.getElementById('debug-chat-context-window-label');
+  const streamLabel = document.getElementById('debug-chat-stream-limit-label');
+  const memoryLabel = document.getElementById('debug-chat-memory-depth-label');
+  if (windowLabel) windowLabel.textContent = `${Math.round(controls.context_window_tokens / 1000)}k`;
+  if (streamLabel) streamLabel.textContent = `${Math.round(controls.stream_max_tokens / 1000)}k`;
+  if (memoryLabel) memoryLabel.textContent = controls.memory_depth[0].toUpperCase() + controls.memory_depth.slice(1);
 }
 
 function setDebugChatResourceButtons(mode) {
@@ -2891,6 +2923,7 @@ async function sendDebugChatMessage() {
   setDebugChatTyping(true);
 
   const profile = await getDebugChatProfile();
+  const turnControls = getDebugChatTurnControls();
   const sentMessage = message;
   if (input) {
     input.value = '';
@@ -2899,7 +2932,7 @@ async function sendDebugChatMessage() {
   let chatOk = false;
   let acceptedAsync = false;
   try {
-    const body = { message: sentMessage };
+    const body = { message: sentMessage, ...turnControls };
     // Omit model_profile for auto so backend heuristic routing can pick nano/base/pro.
     if (profile && profile !== 'auto') {
       body.model_profile = profile;
@@ -7149,12 +7182,29 @@ function bindDebugChatComposer() {
   const input = document.getElementById('debug-chat-input');
   if (!input) return;
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      sendDebugChatMessage();
+      void sendDebugChatMessage();
     }
   });
   input.addEventListener('input', updateDebugChatControls);
+  const contextToggle = document.getElementById('debug-chat-context-toggle');
+  const contextSummary = document.getElementById('debug-chat-context-summary');
+  contextToggle?.addEventListener('click', () => {
+    const isOpen = !contextSummary?.classList.contains('hidden');
+    contextSummary?.classList.toggle('hidden', isOpen);
+    contextToggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+  });
+  for (const id of [
+    'debug-chat-thinking-level', 'debug-chat-context-window', 'debug-chat-stream-limit',
+    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-deployment-readiness',
+  ]) {
+    document.getElementById(id)?.addEventListener('change', () => {
+      updateDebugChatContextSummary();
+      updateDebugChatControls();
+    });
+  }
+  updateDebugChatContextSummary();
   updateDebugChatControls();
 }
 bindDebugChatComposer();
