@@ -5317,11 +5317,15 @@ async def _communicate_with_agent_impl(
         max_steps=raw_options.get("max_steps"),
         deployment_readiness=raw_options.get("deployment_readiness"),
     )
-    from syte.opencode_agent_core import normalize_agent_execution_policy
+    from syte.opencode_agent_core import (
+        is_simple_conversation,
+        normalize_agent_execution_policy,
+    )
 
     execution_policy = normalize_agent_execution_policy(
         turn_controls.get("agent_mode"), turn_controls.get("max_steps")
     )
+    simple_conversation = is_simple_conversation(message)
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found", "request_id": request_id}
@@ -5687,7 +5691,18 @@ async def _communicate_with_agent_impl(
     from syte.opencode_agent_core import policy_prompt_block
 
     dynamic_instruction = "\n\n".join(
-        part for part in [dynamic_instruction, policy_prompt_block(execution_policy), *turn_hints]
+        part for part in [
+            dynamic_instruction,
+            policy_prompt_block(execution_policy),
+            (
+                "## Conversational turn\n"
+                "This is a short greeting or translation-only request. Reply directly and do not "
+                "inspect the workspace, call tools, or run commands.\n"
+                if simple_conversation
+                else ""
+            ),
+            *turn_hints,
+        ]
         if part and str(part).strip()
     )
 
@@ -5811,6 +5826,7 @@ async def _communicate_with_agent_impl(
         "deployment_oriented": _is_deployment_oriented_request(message),
         "preview_explicitly_requested": bool(re.search(r"\b(?:preview|running site|runtime|console)\b", message, re.IGNORECASE)),
         "command_execution_forbidden": _request_forbids_command_execution(message),
+        "simple_conversation": simple_conversation,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -5830,7 +5846,7 @@ async def _communicate_with_agent_impl(
     try:
         for step in itertools.count():
             _raise_if_cancelled()
-            allow_tools = step < max_tool_steps
+            allow_tools = not simple_conversation and step < max_tool_steps
             assistant = await _provider_completion(
                 model,
                 messages,

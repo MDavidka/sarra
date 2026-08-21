@@ -9,10 +9,42 @@ continue to work unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 AGENT_MODES = ("build", "plan")
 STEP_BUDGET_CHOICES = (4, 8, 12, 16)
+
+
+# This guard is deliberately narrow. It protects short greeting / translation
+# requests from unnecessary repository exploration without classifying genuine
+# implementation questions as chat-only work.
+_SIMPLE_CONVERSATION_ACTION = re.compile(
+    r"^(?:please\s+)?(?:say|write|translate|greet|reply|respond)\b"
+)
+_SIMPLE_CONVERSATION_TOPIC = re.compile(
+    r"\b(?:hello|hi|greeting|good\s+(?:morning|afternoon|evening)|thank(?:s|\s+you))\b"
+)
+_WORKSPACE_ACTION_TERMS = re.compile(
+    r"\b(?:app|application|website|webshop|project|repo(?:sitory)?|code|file|"
+    r"build|create|change|edit|implement|fix|deploy|test|lint|command|terminal|"
+    r"database|api|component|page|feature|bug)\b"
+)
+
+
+def is_simple_conversation(message: str | None) -> bool:
+    """Identify short greeting / translation-only turns that never need tools."""
+    normalized = " ".join(str(message or "").lower().split())
+    if not normalized or len(normalized) > 240:
+        return False
+    if _WORKSPACE_ACTION_TERMS.search(normalized):
+        return False
+    if normalized in {"hello", "hi", "thanks", "thank you"}:
+        return True
+    return bool(
+        _SIMPLE_CONVERSATION_ACTION.search(normalized)
+        and _SIMPLE_CONVERSATION_TOPIC.search(normalized)
+    )
 
 _READ_ONLY_TOOLS = frozenset(
     {
