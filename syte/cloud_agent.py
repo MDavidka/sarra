@@ -8,6 +8,8 @@ port allocation, or WebSocket transport is required.
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 import hashlib
 import itertools
@@ -2269,6 +2271,22 @@ def _record_screenshot_capture(
     ctx["_workspace_dirty_since_screenshot"] = False
 
 
+def _request_forbids_command_execution(message: str) -> bool:
+    """Return true only for an explicit user prohibition on command execution.
+
+    Read-only work often still legitimately needs lint or diagnostic commands. This
+    guard therefore keys off a clear prohibition such as "do not run commands"
+    rather than treating every read-only request as command-free.
+    """
+    normalized = " ".join(str(message or "").lower().split())
+    return bool(
+        re.search(
+            r"\b(?:do not|don't|without|no)\b[^.\n]{0,90}\b(?:run|execute|executing)\s+(?:any\s+)?(?:shell\s+)?commands?\b",
+            normalized,
+        )
+    )
+
+
 async def _execute_tool(
     project_id: str,
     name: str,
@@ -2389,6 +2407,13 @@ async def _execute_tool(
                 ctx["_workspace_changed"] = True
             return {"ok": ok, "message": message}
         if name == "run_command":
+            if ctx.get("command_execution_forbidden"):
+                return {
+                    "ok": False,
+                    "error": "command_execution_forbidden",
+                    "retryable": False,
+                    "message": "The user explicitly asked not to run commands in this turn. Use file, preview, or service-status tools only.",
+                }
             from syte.token_efficiency import filter_cli_output
 
             timeout_s = max(1, min(int(args.get("timeout") or 300), 900))
@@ -2412,6 +2437,14 @@ async def _execute_tool(
             # lint/test invocation; file writes above are the durable readiness trigger.
             return {"ok": code == 0, "exit_code": code, "output": truncated}
         if name == "service":
+            action = str(args.get("action") or "").strip().lower()
+            if ctx.get("command_execution_forbidden") and action not in {"status", "logs"}:
+                return {
+                    "ok": False,
+                    "error": "command_execution_forbidden",
+                    "retryable": False,
+                    "message": "The user explicitly asked not to run commands in this turn. Service start, restart, build, and preview actions are blocked; service status and logs remain available.",
+                }
             return await run_service_action(
                 project_id, str(args["action"]), command=args.get("command"),
                 cwd=str(args.get("cwd") or "app"), lines=int(args.get("lines") or 200),
@@ -5688,6 +5721,7 @@ async def _communicate_with_agent_impl(
         "override_api_key": override_api_key,
         "override_credentials": override_credentials or [],
         "deployment_readiness": bool(turn_controls["deployment_readiness"]),
+        "command_execution_forbidden": _request_forbids_command_execution(message),
         "turn_controls": turn_controls,
     }
 
