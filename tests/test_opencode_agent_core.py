@@ -49,6 +49,19 @@ def test_webshop_prompts_are_substantive_website_work() -> None:
     assert is_substantive_site_request(prompt)
 
 
+def test_build_request_requires_write_after_two_inspections() -> None:
+    result = asyncio.run(
+        _execute_tool(
+            "unused",
+            "list_mcp_addons",
+            {},
+            context={"build_artifact_required": True, "_prewrite_inspections": 2},
+        )
+    )
+    assert result["error"] == "source_write_required"
+    assert result["retryable"] is True
+
+
 def test_build_request_blocks_shell_before_first_source_change() -> None:
     result = asyncio.run(
         _execute_tool(
@@ -58,7 +71,7 @@ def test_build_request_blocks_shell_before_first_source_change() -> None:
             context={"build_artifact_required": True},
         )
     )
-    assert result["error"] == "source_change_required_before_command"
+    assert result["error"] == "prewrite_tool_not_allowed"
     assert result["retryable"] is True
 
 

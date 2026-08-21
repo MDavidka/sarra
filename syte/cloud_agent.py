@@ -2341,6 +2341,31 @@ async def _execute_tool(
     policy = ctx.get("agent_policy")
     if policy is not None and not policy.allows_tool(name, args):
         return policy.rejection(name)
+    if ctx.get("build_artifact_required") and not ctx.get("_workspace_changed"):
+        inspections = int(ctx.get("_prewrite_inspections") or 0)
+        if inspections >= 2 and name != "write_file":
+            return {
+                "ok": False,
+                "error": "source_write_required",
+                "retryable": True,
+                "message": (
+                    "Minimal inspection is complete. Write the requested deployable source now; "
+                    "no more planning, discovery, MCP, preview, service, or shell tools are allowed before the first write."
+                ),
+            }
+        if name not in {
+            "update_plan", "ask_question", "list_files", "read_file", "search_code",
+            "semantic_search", "write_file",
+        }:
+            return {
+                "ok": False,
+                "error": "prewrite_tool_not_allowed",
+                "retryable": True,
+                "message": (
+                    "This build request is delivery-first. Before the first source write, use only "
+                    "the plan, direct file inspection, or write_file tools."
+                ),
+            }
     tool_chars = int(ctx.get("max_tool_result_chars") or _model_tool_result_chars(model))
     try:
         if (
@@ -5715,9 +5740,10 @@ async def _communicate_with_agent_impl(
             (
                 "## Delivery boundary\n"
                 "This is substantive implementation work. After the required plan, make at most two "
-                "direct file inspections, then write the requested source or deployment configuration. "
-                "Do not run shell commands, start services, or claim completion before a source change. "
-                "After an edit, run only one targeted validation command if needed.\n"
+                "direct file inspections, then use write_file to create the requested complete source artifact. "
+                "The execution policy rejects MCP, shell, preview, service, or further discovery before that "
+                "first write. Do not claim completion before a source change. After an edit, run only one "
+                "targeted validation command if needed.\n"
                 if execution_policy.mode == "build" and site_plan_required
                 else ""
             ),
@@ -5848,6 +5874,7 @@ async def _communicate_with_agent_impl(
         "command_execution_forbidden": _request_forbids_command_execution(message),
         "simple_conversation": simple_conversation,
         "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
+        "_prewrite_inspections": 0,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -5874,14 +5901,21 @@ async def _communicate_with_agent_impl(
                 and tool_context.get("build_artifact_required")
                 and not tool_context.get("_workspace_changed")
             ):
-                # Before the first source change, present only direct workspace and
-                # planning tools. This makes the delivery-first rule deterministic
-                # instead of relying on provider compliance with prompt text.
+                # Before the first source change, expose only direct file and plan
+                # tools. After two successful inspections, write_file is the sole
+                # available action, making the delivery-first rule deterministic.
+                prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
+                allowed_prewrite = (
+                    {"write_file"}
+                    if prewrite_inspections >= 2
+                    else {
+                        "update_plan", "ask_question", "list_files", "read_file",
+                        "search_code", "semantic_search", "write_file",
+                    }
+                )
                 tools_for_step = [
                     tool for tool in TOOLS
-                    if tool["function"]["name"] not in {
-                        "run_command", "service", "inspect_preview", "screenshot_preview",
-                    }
+                    if tool["function"]["name"] in allowed_prewrite
                 ]
             assistant = await _provider_completion(
                 model,
@@ -6232,6 +6266,16 @@ async def _communicate_with_agent_impl(
                         "message": str(exc) or type(exc).__name__,
                         "retryable": False,
                     }
+                if (
+                    name in {"list_files", "read_file", "search_code", "semantic_search"}
+                    and isinstance(result, dict)
+                    and result.get("ok")
+                    and tool_context.get("build_artifact_required")
+                    and not tool_context.get("_workspace_changed")
+                ):
+                    tool_context["_prewrite_inspections"] = min(
+                        2, int(tool_context.get("_prewrite_inspections") or 0) + 1
+                    )
                 if isinstance(result, dict) and not result.get("ok", True):
                     await record_agent_event(
                         project_id,
