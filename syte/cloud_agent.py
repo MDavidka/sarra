@@ -2357,6 +2357,21 @@ async def _execute_tool(
         return policy.rejection(name)
     if ctx.get("build_artifact_required") and not ctx.get("_delivery_requirements_complete"):
         inspections = int(ctx.get("_prewrite_inspections") or 0)
+        if (
+            ctx.get("webshop_requirements")
+            and name == "write_file"
+            and not _is_deliverable_web_source_path(str(args.get("path") or ""))
+        ):
+            return {
+                "ok": False,
+                "error": "webshop_ui_source_required",
+                "retryable": True,
+                "message": (
+                    "Write the requested webshop UI first. Do not spend the bounded build turn on "
+                    "memory, package, configuration, or metadata files before an actual page/component "
+                    "with product listing, cart, and checkout flows exists."
+                ),
+            }
         if inspections >= 2 and name != "write_file":
             return {
                 "ok": False,
@@ -5772,7 +5787,10 @@ async def _communicate_with_agent_impl(
             (
                 "## Webshop acceptance criteria\n"
                 "The implementation is not complete until an actual UI source file contains product listing, "
-                "cart, and checkout flows. Do not stop after writing setup files, a header, or a placeholder.\n"
+                "cart, and checkout flows. In a fresh workspace, write that complete UI first: use app/index.html "
+                "for a standalone static site, or app/app/page.tsx / app/src/ for an established framework. "
+                "Do not write memory, package, config, or metadata files before the requested page/component. "
+                "Do not stop after writing a header or placeholder.\n"
                 if webshop_requirements
                 else ""
             ),
