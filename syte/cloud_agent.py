@@ -4003,11 +4003,19 @@ async def _provider_completion(
     # Preserve the Agent's planning policy, but omit only unsupported transport
     # parameters for that gateway so code-writing turns remain executable.
     is_9router_gateway = "9router.sycord.site" in str(model.get("api_base") or "")
-    if "thinking" in thinking_params and not (is_9router_gateway and use_tools):
+    # The Antigravity bridge spends the full completion budget on visible
+    # reasoning when its provider-native thinking fields accompany a narrow
+    # JSON patch turn. Preserve reasoning for normal responses, but omit those
+    # fields for tools and for the bounded no-tool patch grammar so the model can
+    # return a complete source patch inside the requested token limit.
+    suppress_gateway_reasoning = bool(
+        is_9router_gateway and (use_tools or cfg.get("text_patch_mode"))
+    )
+    if "thinking" in thinking_params and not suppress_gateway_reasoning:
         payload["thinking"] = thinking_params["thinking"]
     if thinking_params.get("cache_prompt") and not is_9router_gateway:
         payload["cache_prompt"] = True
-    if thinking_params.get("reasoning_effort") and not (is_9router_gateway and use_tools):
+    if thinking_params.get("reasoning_effort") and not suppress_gateway_reasoning:
         payload["reasoning_effort"] = thinking_params["reasoning_effort"]
 
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
@@ -6144,7 +6152,7 @@ async def _communicate_with_agent_impl(
                     else None
                 ),
                 temperature=temperature,
-                thinking_config=gen,
+                thinking_config={**gen, "text_patch_mode": text_patch_mode},
                 stream=want_stream,
                 on_token=_emit_token if want_stream else None,
                 on_reasoning=_emit_thinking if want_stream else None,
