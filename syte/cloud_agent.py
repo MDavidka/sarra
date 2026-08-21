@@ -3836,6 +3836,7 @@ async def _provider_completion(
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
+    force_tool_name: str | None = None,
     temperature: float = 0.2,
     thinking_config: dict[str, Any] | None = None,
     stream: bool = False,
@@ -3898,7 +3899,18 @@ async def _provider_completion(
             payload["max_tokens"] = max_tokens
     if use_tools:
         payload["tools"] = use_tools
-        payload["tool_choice"] = "auto"
+        allowed_tool_names = {
+            str(item.get("function", {}).get("name") or "")
+            for item in use_tools
+            if isinstance(item, dict)
+        }
+        if force_tool_name and force_tool_name in allowed_tool_names:
+            payload["tool_choice"] = {
+                "type": "function",
+                "function": {"name": force_tool_name},
+            }
+        else:
+            payload["tool_choice"] = "auto"
     # 9Router's Antigravity OpenAI-compatible bridge rejects tool calls when
     # accompanied by provider-native thinking fields (HTTP 400 INVALID_ARGUMENT).
     # Preserve the Agent's planning policy, but omit only unsupported transport
@@ -6020,6 +6032,12 @@ async def _communicate_with_agent_impl(
                 model,
                 messages,
                 tools=tools_for_step,
+                force_tool_name=(
+                    "write_file"
+                    if tool_context.get("source_change_required")
+                    and not tool_context.get("_delivery_requirements_complete")
+                    else None
+                ),
                 temperature=temperature,
                 thinking_config=gen,
                 stream=want_stream,
