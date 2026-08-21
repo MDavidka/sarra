@@ -7,6 +7,7 @@ from syte.cloud_agent import (
     _execute_tool,
     _is_deliverable_web_source_path,
     _is_webshop_feature_complete,
+    _normalize_completion_payload,
     _parse_text_patch_protocol,
 )
 from syte.site_planner import (
@@ -161,6 +162,12 @@ def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> N
     assert is_simple_conversation("Please translate hello into Hungarian.")
     assert not is_simple_conversation("Create a webshop with a product page.")
     assert not is_simple_conversation("Fix the hello message component in my app.")
+
+
+def test_ag_list_completion_envelope_normalizes_to_openai_choices() -> None:
+    choice = {"message": {"role": "assistant", "content": "{\"patches\": []}"}}
+    assert _normalize_completion_payload([choice]) == {"choices": [choice]}
+    assert _normalize_completion_payload([{"choices": [choice]}]) == {"choices": [choice]}
 
 
 def test_text_patch_protocol_only_accepts_bounded_application_source_replacements() -> None:

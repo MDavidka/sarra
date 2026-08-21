@@ -3887,6 +3887,23 @@ def _estimate_turn_cost(model: dict[str, Any], usage: dict[str, Any]) -> dict[st
     }
 
 
+def _normalize_completion_payload(payload: Any) -> dict[str, Any]:
+    """Normalize minor OpenAI-compatible envelope variations from model gateways.
+
+    Most providers return a mapping with ``choices``. Some gateway adapters return
+    the choice array itself for tool-free completions, especially when a response
+    is constrained to JSON. Treat that documented-compatible shorthand as
+    ``{\"choices\": [...]}`` while rejecting any other malformed response.
+    """
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
+        if len(payload) == 1 and isinstance(payload[0].get("choices"), list):
+            return dict(payload[0])
+        return {"choices": payload}
+    raise RuntimeError("Provider returned an invalid completion envelope")
+
+
 async def _provider_completion(
     model: dict[str, str],
     messages: list[dict[str, Any]],
@@ -4278,7 +4295,7 @@ async def _provider_completion(
                         detail,
                     )
                 )
-            data = response.json()
+            data = _normalize_completion_payload(response.json())
             choices = data.get("choices") or []
             if not choices or not isinstance(choices[0].get("message"), dict):
                 raise RuntimeError("Provider returned no assistant message")
