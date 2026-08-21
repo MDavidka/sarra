@@ -5793,12 +5793,20 @@ async def _communicate_with_agent_impl(
                 )
                 plan_already_seeded = True
 
-    from syte.opencode_agent_core import policy_prompt_block
+    from syte.opencode_agent_core import build_agent_task_spec, policy_prompt_block
+
+    task_spec = build_agent_task_spec(
+        execution_policy,
+        simple_conversation=simple_conversation,
+        source_change_required=source_change_required,
+        site_plan_required=site_plan_required,
+    )
 
     dynamic_instruction = "\n\n".join(
         part for part in [
             dynamic_instruction,
             policy_prompt_block(execution_policy),
+            task_spec.prompt_block(),
             (
                 "## Conversational turn\n"
                 "This is a short greeting or translation-only request. Reply directly and do not "
@@ -5962,6 +5970,7 @@ async def _communicate_with_agent_impl(
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
+        "task_spec": task_spec,
     }
 
     max_tool_steps = min(int(gen.get("max_tool_steps") or 48), execution_policy.max_steps)

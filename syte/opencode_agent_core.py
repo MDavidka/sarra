@@ -148,6 +148,85 @@ def policy_metadata(policy: AgentExecutionPolicy) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class AgentTaskSpec:
+    """A deterministic per-turn contract that reduces model-dependent tool planning."""
+
+    kind: str
+    workspace_root: str
+    app_root: str
+    first_action: str
+    permitted_prewrite_tools: tuple[str, ...]
+    completion_condition: str
+
+    def prompt_block(self) -> str:
+        permitted = ", ".join(self.permitted_prewrite_tools) or "none"
+        return (
+            "## Deterministic task and sandbox contract\n"
+            f"Task kind: {self.kind}.\n"
+            f"Sandbox: this is an isolated project workspace. All tool paths are relative to `{self.workspace_root}`; "
+            f"application source belongs under `{self.app_root}`. Do not use absolute paths, host paths, or write helper "
+            "scripts, memory, plans, package files, or metadata unless the user specifically requested them.\n"
+            f"First action: {self.first_action}\n"
+            f"Before the first source write, the only permitted tool choices are: {permitted}.\n"
+            f"Completion condition: {self.completion_condition}\n"
+        )
+
+
+def build_agent_task_spec(
+    policy: AgentExecutionPolicy,
+    *,
+    simple_conversation: bool = False,
+    source_change_required: bool = False,
+    site_plan_required: bool = False,
+) -> AgentTaskSpec:
+    """Return a small-model-friendly execution contract for one isolated Agent turn."""
+    if simple_conversation:
+        return AgentTaskSpec(
+            kind="conversation",
+            workspace_root="workspace/",
+            app_root="app/",
+            first_action="Reply directly without tools.",
+            permitted_prewrite_tools=(),
+            completion_condition="Answer the user directly; no workspace mutation is required.",
+        )
+    if policy.mode == "plan":
+        return AgentTaskSpec(
+            kind="plan",
+            workspace_root="workspace/",
+            app_root="app/",
+            first_action="Inspect one directly relevant source file, then return an executable plan.",
+            permitted_prewrite_tools=("list_files", "read_file", "search_code", "update_plan"),
+            completion_condition="Return a grounded plan without changing the workspace.",
+        )
+    if source_change_required:
+        return AgentTaskSpec(
+            kind="follow-up source edit",
+            workspace_root="workspace/",
+            app_root="app/",
+            first_action="Read one directly relevant application file only if needed; otherwise write the source edit now.",
+            permitted_prewrite_tools=("read_file", "write_file"),
+            completion_condition="Write the requested change to an actual application source file under app/.",
+        )
+    if site_plan_required:
+        return AgentTaskSpec(
+            kind="new application build",
+            workspace_root="workspace/",
+            app_root="app/",
+            first_action="Create the primary application page or component under app/ after the required plan.",
+            permitted_prewrite_tools=("update_plan", "list_files", "read_file", "write_file"),
+            completion_condition="Write a deployable primary source artifact under app/ before validation or preview.",
+        )
+    return AgentTaskSpec(
+        kind="focused coding task",
+        workspace_root="workspace/",
+        app_root="app/",
+        first_action="Inspect one relevant file, then write the requested source change.",
+        permitted_prewrite_tools=("read_file", "write_file"),
+        completion_condition="Write the requested change to application source before claiming completion.",
+    )
+
+
 def agent_core_spec() -> dict[str, Any]:
     """Public discovery data for the compact Agent workspace and API clients."""
     return {
@@ -158,5 +237,10 @@ def agent_core_spec() -> dict[str, Any]:
         "mode_summary": {
             "build": "Focused code changes, targeted validation, and isolated preview after edits.",
             "plan": "Read-only stack analysis and implementation planning; writes and shell actions are denied.",
+        },
+        "execution_contract": {
+            "sandbox": "Each turn operates in an isolated workspace; tool paths are relative and application source belongs under app/.",
+            "small_model_strategy": "The Agent supplies a deterministic task kind, first action, pre-write tool allowlist, and explicit completion condition.",
+            "follow_up_edit": "Completed-project changes receive a narrow source-write contract rather than a new-build planning flow.",
         },
     }
