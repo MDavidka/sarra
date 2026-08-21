@@ -2303,6 +2303,14 @@ def _is_exploratory_environment_command(command: str) -> bool:
     ))
 
 
+def _is_deliverable_web_source_path(path: str) -> bool:
+    """Return whether a workspace path is an actual web UI entry or component."""
+    normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
+    if normalized in {"app/index.html", "app/main.html"}:
+        return True
+    return normalized.startswith(("app/app/", "app/pages/", "app/src/"))
+
+
 def _request_forbids_command_execution(message: str) -> bool:
     """Return true only for an explicit user prohibition on command execution.
 
@@ -2452,9 +2460,13 @@ async def _execute_tool(
             if any(marker in path_l for marker in _UI_PATH_MARKERS):
                 ctx["_ui_edit_detected"] = True
             if ok:
-                # A new capture can only show something new after a write.
-                ctx["_workspace_dirty_since_screenshot"] = True
-                ctx["_workspace_changed"] = True
+                # A deployable website must contain an actual UI entry/component;
+                # package metadata and syra memory do not unlock validation tools.
+                if not ctx.get("build_artifact_required") or _is_deliverable_web_source_path(path):
+                    ctx["_workspace_dirty_since_screenshot"] = True
+                    ctx["_workspace_changed"] = True
+                    if ctx.get("build_artifact_required"):
+                        ctx["_deliverable_source_written"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
             locked = _reserved_file_error(project_id, str(args["path"]), ctx)
@@ -5875,6 +5887,7 @@ async def _communicate_with_agent_impl(
         "simple_conversation": simple_conversation,
         "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
         "_prewrite_inspections": 0,
+        "_deliverable_source_written": False,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -6008,6 +6021,22 @@ async def _communicate_with_agent_impl(
                     turso_session_id=turso_session_id,
                 )
             if not stored_calls:
+                if (
+                    tool_context.get("build_artifact_required")
+                    and not tool_context.get("_deliverable_source_written")
+                    and step + 1 < max_tool_steps
+                ):
+                    # A model may write package metadata and stop. Keep the turn
+                    # alive until it creates the requested visible application source.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "The requested webshop still has no deployable UI source file. "
+                            "Do not finish. Call write_file now to create the actual page/component "
+                            "under app/app/, app/pages/, app/src/, or app/index.html."
+                        ),
+                    })
+                    continue
                 # Auto-screenshot after UI edits when the agent forgot to capture one.
                 if (
                     tool_context.get("_ui_edit_detected")
@@ -6081,7 +6110,13 @@ async def _communicate_with_agent_impl(
                     except Exception:
                         logger.debug("post-turn preview checks failed", exc_info=True)
 
-                reply = content.strip() or "Done."
+                if tool_context.get("build_artifact_required") and not tool_context.get("_deliverable_source_written"):
+                    reply = (
+                        "The Agent exhausted its bounded action budget before creating the required "
+                        "deployable UI source. Retry the build with a larger step budget."
+                    )
+                else:
+                    reply = content.strip() or "Done."
                 cost_info = _estimate_turn_cost(model, turn_usage)
                 await _flush_hot_deltas()
                 await record_agent_event(
