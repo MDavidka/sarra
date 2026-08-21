@@ -5476,6 +5476,18 @@ async def _communicate_with_agent_impl(
 
     static_instruction, dynamic_instruction = await instruction_task
     history = await history_task
+    api_base = str(model.get("api_base") or "")
+    is_9router_history = (
+        "9router.sycord.site" in api_base
+        or str(model.get("profile") or "").startswith("9router:")
+    )
+    if is_9router_history:
+        from syte.cloud_agent_store import without_historical_tool_turns
+
+        # Antigravity requires fresh, adjacent function call/response turns.
+        # Never replay completed tool turns from an earlier request through the
+        # 9Router compatibility gateway; durable summaries preserve their facts.
+        history = without_historical_tool_turns(history)
     prior_summary = await summary_task
     matched_skills = await skills_task
     hinted = await lookup_task if lookup_task is not None else []
