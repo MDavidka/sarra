@@ -66,6 +66,23 @@ def test_webshop_delivery_requires_an_actual_ui_source_path() -> None:
     assert _is_deliverable_web_source_path("app/index.html")
 
 
+def test_fresh_webshop_blocks_setup_files_before_ui_source() -> None:
+    result = asyncio.run(
+        _execute_tool(
+            "unused",
+            "write_file",
+            {"path": "app/package.json", "content": "{}"},
+            context={
+                "build_artifact_required": True,
+                "webshop_requirements": True,
+                "_delivery_requirements_complete": False,
+            },
+        )
+    )
+    assert result["error"] == "webshop_ui_source_required"
+    assert result["retryable"] is True
+
+
 def test_build_request_requires_write_after_two_inspections() -> None:
     result = asyncio.run(
         _execute_tool(
