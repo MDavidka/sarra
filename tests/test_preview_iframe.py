@@ -3,7 +3,12 @@
 import pytest
 
 from syte.caddy_routes import preview_iframe_header_lines, reverse_proxy_lines
-from syte.preview_iframe import PREVIEW_STRIP_HEADERS, build_iframe_checklist
+from syte.preview_iframe import (
+    PREVIEW_STRIP_HEADERS,
+    _PROBE_CACHE,
+    build_iframe_checklist,
+    clear_https_probe_cache,
+)
 
 
 def test_preview_iframe_header_lines_strip_blocking_headers() -> None:
@@ -63,6 +68,20 @@ def test_probe_https_available_accepts_ok_response(monkeypatch: pytest.MonkeyPat
 
     pi._PROBE_CACHE.clear()
     assert pi.probe_https_available("https://preview.example.com") is True
+
+
+def test_clear_https_probe_cache_removes_only_requested_url() -> None:
+    first = "https://preview-one.example.test"
+    second = "https://preview-two.example.test"
+    _PROBE_CACHE.clear()
+    _PROBE_CACHE[first] = (1.0, False)
+    _PROBE_CACHE[second] = (1.0, True)
+
+    clear_https_probe_cache(first)
+
+    assert first not in _PROBE_CACHE
+    assert second in _PROBE_CACHE
+    clear_https_probe_cache()
 
 
 def test_iframe_checklist_detects_blocking_headers() -> None:
