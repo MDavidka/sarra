@@ -8,6 +8,7 @@ from syte.agent_turn_controls import (
     trim_history_to_context_budget,
 )
 from syte.agent_memory import memory_context_block
+from syte.cloud_agent_store import sanitize_provider_messages
 from syte.cloud_agent import (
     _execute_tool,
     _is_deployment_oriented_request,
@@ -57,6 +58,19 @@ def test_context_trimming_keeps_system_and_newest_messages() -> None:
     assert trimmed[0]["role"] == "system"
     assert trimmed[-1]["content"] == "latest request"
     assert not any(message.get("content", "").startswith("old ") for message in trimmed)
+
+
+def test_malformed_history_rows_are_ignored_before_provider_replay() -> None:
+    history = [None, ["legacy"], {"role": "system", "content": "keep"}, {"role": "user", "content": "edit"}]
+    sanitized = sanitize_provider_messages(history)  # type: ignore[arg-type]
+    assert sanitized == [
+        {"role": "system", "content": "keep"},
+        {"role": "user", "content": "edit"},
+    ]
+    trimmed = trim_history_to_context_budget(  # type: ignore[arg-type]
+        history, context_window_tokens=8_000, reserved_output_tokens=4_096
+    )
+    assert trimmed == sanitized
 
 
 def test_memory_depth_limits_are_applied_to_verified_memory() -> None:
