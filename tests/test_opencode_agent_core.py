@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 
 from syte.agent_turn_controls import normalize_turn_controls
-from syte.cloud_agent import _execute_tool, _is_deliverable_web_source_path
+from syte.cloud_agent import (
+    _execute_tool,
+    _is_deliverable_web_source_path,
+    _is_webshop_feature_complete,
+)
 from syte.site_planner import is_substantive_site_request, is_website_request
 from syte.opencode_agent_core import (
     agent_core_spec,
@@ -47,6 +51,11 @@ def test_webshop_prompts_are_substantive_website_work() -> None:
     prompt = "Create a responsive webshop with a product listing, cart, and checkout."
     assert is_website_request(prompt)
     assert is_substantive_site_request(prompt)
+
+
+def test_webshop_delivery_requires_core_feature_flows() -> None:
+    assert not _is_webshop_feature_complete("<main><h1>Welcome</h1></main>")
+    assert _is_webshop_feature_complete("product listing, cart drawer, checkout form")
 
 
 def test_webshop_delivery_requires_an_actual_ui_source_path() -> None:

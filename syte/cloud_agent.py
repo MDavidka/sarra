@@ -2303,6 +2303,12 @@ def _is_exploratory_environment_command(command: str) -> bool:
     ))
 
 
+def _is_webshop_feature_complete(content: str) -> bool:
+    """Check that a requested webshop source contains its core user-facing flows."""
+    normalized = str(content or "").lower()
+    return all(marker in normalized for marker in ("product", "cart", "checkout"))
+
+
 def _is_deliverable_web_source_path(path: str) -> bool:
     """Return whether a workspace path is an actual web UI entry or component."""
     normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
@@ -2349,7 +2355,7 @@ async def _execute_tool(
     policy = ctx.get("agent_policy")
     if policy is not None and not policy.allows_tool(name, args):
         return policy.rejection(name)
-    if ctx.get("build_artifact_required") and not ctx.get("_workspace_changed"):
+    if ctx.get("build_artifact_required") and not ctx.get("_delivery_requirements_complete"):
         inspections = int(ctx.get("_prewrite_inspections") or 0)
         if inspections >= 2 and name != "write_file":
             return {
@@ -2467,6 +2473,8 @@ async def _execute_tool(
                     ctx["_workspace_changed"] = True
                     if ctx.get("build_artifact_required"):
                         ctx["_deliverable_source_written"] = True
+                        if not ctx.get("webshop_requirements") or _is_webshop_feature_complete(str(args.get("content") or "")):
+                            ctx["_delivery_requirements_complete"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
             locked = _reserved_file_error(project_id, str(args["path"]), ctx)
@@ -5573,6 +5581,8 @@ async def _communicate_with_agent_impl(
     site_plan_required = is_substantive_site_request(message)
     site_needs_clarification = site_request_needs_clarification(message)
     site_question_required = bool(site_plan_required and site_needs_clarification and not is_website)
+    message_normalized = " ".join(str(message or "").lower().split())
+    webshop_requirements = all(marker in message_normalized for marker in ("webshop", "product", "cart", "checkout"))
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
@@ -5759,6 +5769,13 @@ async def _communicate_with_agent_impl(
                 if execution_policy.mode == "build" and site_plan_required
                 else ""
             ),
+            (
+                "## Webshop acceptance criteria\n"
+                "The implementation is not complete until an actual UI source file contains product listing, "
+                "cart, and checkout flows. Do not stop after writing setup files, a header, or a placeholder.\n"
+                if webshop_requirements
+                else ""
+            ),
             *turn_hints,
         ]
         if part and str(part).strip()
@@ -5888,6 +5905,8 @@ async def _communicate_with_agent_impl(
         "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
         "_prewrite_inspections": 0,
         "_deliverable_source_written": False,
+        "webshop_requirements": webshop_requirements,
+        "_delivery_requirements_complete": not webshop_requirements,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -5912,9 +5931,9 @@ async def _communicate_with_agent_impl(
             if (
                 allow_tools
                 and tool_context.get("build_artifact_required")
-                and not tool_context.get("_workspace_changed")
+                and not tool_context.get("_delivery_requirements_complete")
             ):
-                # Before the first source change, expose only direct file and plan
+                # Before requested delivery requirements are complete, expose only direct file and plan
                 # tools. After two successful inspections, write_file is the sole
                 # available action, making the delivery-first rule deterministic.
                 prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
@@ -6023,17 +6042,17 @@ async def _communicate_with_agent_impl(
             if not stored_calls:
                 if (
                     tool_context.get("build_artifact_required")
-                    and not tool_context.get("_deliverable_source_written")
+                    and not tool_context.get("_delivery_requirements_complete")
                     and step + 1 < max_tool_steps
                 ):
-                    # A model may write package metadata and stop. Keep the turn
-                    # alive until it creates the requested visible application source.
+                    # A model may write setup files or a placeholder and stop. Keep
+                    # the turn alive until it satisfies the requested visible flows.
                     messages.append({
                         "role": "user",
                         "content": (
-                            "The requested webshop still has no deployable UI source file. "
-                            "Do not finish. Call write_file now to create the actual page/component "
-                            "under app/app/, app/pages/, app/src/, or app/index.html."
+                            "The requested webshop is incomplete. Do not finish. Call write_file now to create or "
+                            "replace actual UI source under app/app/, app/pages/, app/src/, or app/index.html with "
+                            "a product listing, cart flow, and checkout form."
                         ),
                     })
                     continue
@@ -6110,10 +6129,10 @@ async def _communicate_with_agent_impl(
                     except Exception:
                         logger.debug("post-turn preview checks failed", exc_info=True)
 
-                if tool_context.get("build_artifact_required") and not tool_context.get("_deliverable_source_written"):
+                if tool_context.get("build_artifact_required") and not tool_context.get("_delivery_requirements_complete"):
                     reply = (
-                        "The Agent exhausted its bounded action budget before creating the required "
-                        "deployable UI source. Retry the build with a larger step budget."
+                        "The Agent exhausted its bounded action budget before completing the required "
+                        "deployable UI source and requested feature flows. Retry the build with a larger step budget."
                     )
                 else:
                     reply = content.strip() or "Done."
