@@ -6370,15 +6370,18 @@ async def _communicate_with_agent_impl(
                         "message": str(exc) or type(exc).__name__,
                         "retryable": False,
                     }
+                # An attempted inspection consumes the same action budget even if
+                # malformed provider arguments make the tool fail. Otherwise a bad
+                # search can bypass the follow-up write boundary and exhaust a turn.
                 if (
                     name in {"list_files", "read_file", "search_code", "semantic_search"}
-                    and isinstance(result, dict)
-                    and result.get("ok")
                     and tool_context.get("build_artifact_required")
                     and not tool_context.get("_workspace_changed")
                 ):
+                    inspection_limit = 1 if tool_context.get("source_change_required") else 2
                     tool_context["_prewrite_inspections"] = min(
-                        2, int(tool_context.get("_prewrite_inspections") or 0) + 1
+                        inspection_limit,
+                        int(tool_context.get("_prewrite_inspections") or 0) + 1,
                     )
                 if isinstance(result, dict) and not result.get("ok", True):
                     await record_agent_event(
