@@ -2341,6 +2341,62 @@ def _request_forbids_command_execution(message: str) -> bool:
     )
 
 
+def _parse_text_patch_protocol(content: str) -> list[dict[str, str]]:
+    """Parse a small-model text-only patch response without executing arbitrary code."""
+    text = str(content or "").strip()
+    fence = re.search(r"```(?:json)?\\s*(.*?)\\s*```", text, re.DOTALL | re.IGNORECASE)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    raw_patches = payload.get("patches") if isinstance(payload, dict) else payload
+    if not isinstance(raw_patches, list) or len(raw_patches) > 4:
+        return []
+    patches: list[dict[str, str]] = []
+    for raw in raw_patches:
+        if not isinstance(raw, dict):
+            return []
+        path = str(raw.get("path") or "").replace("\\\\", "/").lstrip("./")
+        find = raw.get("find")
+        replace = raw.get("replace")
+        if not _is_project_source_path(path) or not isinstance(find, str) or not isinstance(replace, str):
+            return []
+        if not find or len(find) > 24_000 or len(replace) > 32_000:
+            return []
+        patches.append({"path": path, "find": find, "replace": replace})
+    return patches
+
+
+async def _apply_text_patch_protocol(project_id: str, content: str) -> dict[str, Any]:
+    """Apply exact, bounded text replacements from an older model's JSON protocol."""
+    from syte.workspace_api import read_file, write_file
+
+    patches = _parse_text_patch_protocol(content)
+    if not patches:
+        return {"ok": False, "error": "invalid_text_patch_protocol", "retryable": True}
+    staged: dict[str, str] = {}
+    for patch in patches:
+        path = patch["path"]
+        current = staged.get(path)
+        if current is None:
+            ok, body, _detail = await read_file(project_id, path)
+            if not ok or not isinstance(body, str):
+                return {"ok": False, "error": "text_patch_read_failed", "path": path, "retryable": True}
+            current = body
+        if patch["find"] not in current:
+            return {"ok": False, "error": "text_patch_anchor_missing", "path": path, "retryable": True}
+        staged[path] = current.replace(patch["find"], patch["replace"], 1)
+    changed: list[str] = []
+    for path, body in staged.items():
+        ok, detail = await write_file(project_id, path, body)
+        if not ok:
+            return {"ok": False, "error": "text_patch_write_failed", "path": path, "message": detail, "retryable": True}
+        changed.append(path)
+    return {"ok": True, "paths": changed, "patch_count": len(patches)}
+
+
 async def _execute_tool(
     project_id: str,
     name: str,
@@ -5999,7 +6055,8 @@ async def _communicate_with_agent_impl(
     try:
         for step in itertools.count():
             _raise_if_cancelled()
-            allow_tools = not simple_conversation and step < max_tool_steps
+            text_patch_mode = bool(tool_context.get("_text_patch_protocol_requested"))
+            allow_tools = not simple_conversation and step < max_tool_steps and not text_patch_mode
             tools_for_step = TOOLS if allow_tools else []
             if (
                 allow_tools
@@ -6130,6 +6187,51 @@ async def _communicate_with_agent_impl(
                     turso_session_id=turso_session_id,
                 )
             if not stored_calls:
+                # Some older OpenAI-compatible models return prose even when a
+                # standards-compliant forced function is supplied. Give exactly one
+                # text-only retry using a narrow JSON patch grammar, then apply only
+                # bounded replacements under app/ through the normal workspace API.
+                if tool_context.get("_text_patch_protocol_requested"):
+                    patch_result = await _apply_text_patch_protocol(project_id, content)
+                    if patch_result.get("ok"):
+                        tool_context["_workspace_changed"] = True
+                        tool_context["_deliverable_source_written"] = True
+                        tool_context["_delivery_requirements_complete"] = True
+                        await record_agent_event(
+                            project_id,
+                            "tool_call_finished",
+                            title="Applied text patch",
+                            detail=", ".join(patch_result.get("paths") or []),
+                            payload=_mark_payload(
+                                status="d", kind="tool",
+                                base={"tool": "text_patch_protocol", "ok": True},
+                            ),
+                            source=source,
+                            turso_session_id=turso_session_id,
+                        )
+                        messages.append({
+                            "role": "user",
+                            "content": "The sandbox applied the requested source patch. Briefly summarize the completed change without further tools.",
+                        })
+                        tool_context["_text_patch_protocol_complete"] = True
+                        continue
+                    break
+                if (
+                    tool_context.get("source_change_required")
+                    and not tool_context.get("_delivery_requirements_complete")
+                    and step + 1 < max_tool_steps
+                ):
+                    tool_context["_text_patch_protocol_requested"] = True
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Native function calling was unavailable. Do not call tools. Return ONLY valid JSON with a `patches` array of at most 4 exact text replacements. "
+                            "Each item must be `{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
+                            "For this webpage, use stable HTML anchors such as `</head>` and `</body>` when needed. "
+                            "Implement the user's requested change; do not include markdown, explanation, shell commands, or any other text."
+                        ),
+                    })
+                    continue
                 if (
                     tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")

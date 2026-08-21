@@ -7,6 +7,7 @@ from syte.cloud_agent import (
     _execute_tool,
     _is_deliverable_web_source_path,
     _is_webshop_feature_complete,
+    _parse_text_patch_protocol,
 )
 from syte.site_planner import (
     is_source_change_request,
@@ -160,6 +161,15 @@ def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> N
     assert is_simple_conversation("Please translate hello into Hungarian.")
     assert not is_simple_conversation("Create a webshop with a product page.")
     assert not is_simple_conversation("Fix the hello message component in my app.")
+
+
+def test_text_patch_protocol_only_accepts_bounded_application_source_replacements() -> None:
+    payload = '''{"patches":[{"path":"app/index.html","find":"</body>","replace":"<script>ok()</script></body>"}]}'''
+    assert _parse_text_patch_protocol(payload) == [
+        {"path": "app/index.html", "find": "</body>", "replace": "<script>ok()</script></body>"}
+    ]
+    assert not _parse_text_patch_protocol('{"patches":[{"path":"syra/memory.md","find":"x","replace":"y"}]}')
+    assert not _parse_text_patch_protocol("write a patch please")
 
 
 def test_follow_up_task_contract_is_sandbox_aware_and_write_oriented() -> None:
