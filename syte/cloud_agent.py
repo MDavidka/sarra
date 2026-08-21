@@ -1198,41 +1198,26 @@ def _read_syterules(project_id: str) -> str:
 def _website_enforcement_block(*, is_website: bool) -> str:
     if is_website:
         return (
-            "## MANDATORY for this project: Next.js + shadcn/ui (NOT HeroUI)\n"
-            "This is a Next.js website project. You MUST:\n"
-            "- Use Next.js App Router (routes in app/app/ — double app/ is correct)\n"
-            "- Import shadcn/ui components from @/components/ui/* only\n"
-            "- Resolve every component's real API with shadcn_registry (info → search → view/docs) "
-            "BEFORE writing UI, and install missing primitives with shadcn_registry(action=add). "
-            "Never write a component's props or sub-component names from memory, and never "
-            "hand-roll a primitive the registry already provides\n"
-            "- State the creative direction (and one rejected alternative) before code; avoid the "
-            "banned slop signature (indigo/violet accent, purple gradient, centered hero + three "
-            "icon cards, gradient text, glassmorphism)\n"
-            "- Compose pages from the 57 cataloged components; never use shadcn Blocks or block templates\n"
-            "- Keep direct Radix imports inside components/ui wrappers; preserve keyboard/focus/ARIA behavior\n"
-            "- Use Tailwind CSS with design system tokens (var(--color-primary), etc.)\n"
-            "- NEVER use HeroUI, NextUI, Chakra, MUI, Ant Design, or invent alternate UI kits\n"
-            "- Never ship bare unstyled HTML scaffolds\n"
-            "- ONE stack only. Never create files that conflict with the Next.js app: no "
-            "index.html, no public/index.html, no vite.config.*, no src/main.tsx, and no "
-            "<script src=\"https://cdn.tailwindcss.com\"> — Tailwind is compiled from "
-            "app/tailwind.config.ts + app/app/globals.css. Syte quarantines these on deploy\n"
-            "- Keep exactly one page.tsx / layout.tsx / globals.css per route directory; never "
-            "add a duplicate copy at the app/ root beside app/app/\n"
-            "- Radix is used only inside app/components/ui/* wrappers (shadcn primitives); "
-            "application code imports @/components/ui/*\n"
-            "- Find the real file to edit with semantic_search / search_code / list_files BEFORE writing\n"
-            "- After UI changes: preview_start → inspect_preview (DevTools load/console) first; "
-            "screenshot_preview only when you need visual layout review. Use browse_url against the "
-            "dev server URL when you need the browser console for a non-default route or port\n"
-            "- Follow the Design Contract below strictly\n"
+            "## Website workspace: preserve the real stack\n"
+            "This workspace already contains a website. You MUST preserve its detected framework, "
+            "routing conventions, package manager, and build/dev command. Do not force Vite, HeroUI, "
+            "Next.js, or any replacement UI kit into an established project.\n"
+            "- For React-compatible new UI work, recommend shadcn/ui + Tailwind + Lucide when it fits, "
+            "but use the project’s existing component system when one already exists.\n"
+            "- Never create duplicate app roots, route trees, or framework config files. Discover the real "
+            "entry points with semantic_search / search_code / list_files before writing.\n"
+            "- State a concise plan before material edits. Keep accessibility, responsive behavior, and "
+            "the existing design language intact.\n"
+            "- After code changes, start or reuse the isolated preview and call inspect_preview. Resolve "
+            "page, console, and compile errors before saying work is ready to deploy.\n"
+            "- Never ship bare, unstyled scaffolds or fabricated workspace paths.\n"
         )
     return (
         "## Project type: general code\n"
-        "This is not detected as a Next.js website project. Match the stack to the existing "
-        "files and user request. Only apply the Design Contract if the user explicitly asks "
-        "for a website / web UI. When building a website, use Next.js + shadcn/ui — never HeroUI.\n"
+        "Match the existing files and the user’s requirements. For a new website, choose the framework "
+        "that best fits deployment and product needs; shadcn/ui is recommended for compatible React "
+        "projects, not a forced prerequisite. Never add Vite, HeroUI, Next.js, or another stack unless "
+        "the user or the existing workspace calls for it.\n"
     )
 
 
@@ -1266,11 +1251,10 @@ def _build_static_instruction(
         "You build ANY kind of code the user asks for — libraries, CLIs, APIs, scripts, backends, "
         "mobile, data jobs, infra, tests, or websites. Do NOT assume every request is a website "
         "unless this project's enforcement block says otherwise. "
-        "Match the stack to the request and existing files. Only when the work is a website / web UI "
-        "(Next.js, React, marketing pages, dashboards) you MUST follow the Sycord Design Contract: "
-        "shadcn/ui components under components/ui/*, Lucide icons, theme fonts via next/font, Tailwind tokens, "
-        "and a complete styled home page. Never ship a bare unstyled web scaffold. "
-        "Do NOT use HeroUI/NextUI/Chakra/MUI/Ant Design for websites.\n",
+        "Match the stack to the request and existing files. For website / web UI work, preserve the detected "
+        "framework and design system. For a new React-compatible project, recommend shadcn/ui, Lucide, and "
+        "Tailwind when they fit the requirements; do not force them into another stack. Never ship a bare "
+        "unstyled web scaffold or introduce a competing UI kit without a reason.\n",
         "Tools: list/read/write/delete files; run_command; update_plan (persisted); inspect_preview "
         "(preferred: Chromium DevTools — load_ok, console/page errors, network failures, page_summary "
         "without screenshots); screenshot_preview "
@@ -1292,8 +1276,9 @@ def _build_static_instruction(
         "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
         "semantic_search and/or search_code (or list_files on app/app and app/components). Prefer recently "
-        "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates "
-        "(e.g. writing app/page.tsx when the App Router file is app/app/page.tsx). Edit the file that "
+        "touched / prompt-matched indexed files. Do not invent paths or create parallel duplicates. For a "
+        "detected Next.js App Router project, preserve its actual route convention (often app/app/page.tsx); "
+        "for any other framework, use that framework's convention. Edit the file that "
         "actually renders the feature, then verify on disk with read_file.\n",
         "Token efficiency: prefer diffs and symbol lookups over dumping whole files or the repo. "
         "Start with `git diff --stat` / `--name-only` before reading full contents. Honor `.aiignore`. "
@@ -1326,19 +1311,20 @@ def _build_static_instruction(
         "If the user asks to 'create hosting', do not just create a static site — use the integration instead. Use generative thinking to create something genuinely creative and content-specific, avoiding general AI slop. After a subagent task completes (via await_subagent or a synchronous delegate_task), you must immediately trigger code verification (e.g. npm run lint) and start the preview. Never deploy, start, stop, update, or build the production service for testing, and never run "
         "production build commands such as npm run build or next build. Prefer the isolated preview for "
         "visual checks and workspace commands for lint/tests.\n",
-        "Paths: write_file paths are relative to the workspace root; application source lives in app/. "
-        "For Next.js App Router, routes live under app/app/ (e.g. app/app/login/page.tsx). write_file "
-        "overwrites the whole file — always send the complete body. After batches of writes, verify with "
+        "Paths: write_file paths are relative to the workspace root; application source usually lives in app/. "
+        "Use Next.js App Router paths such as app/app/login/page.tsx only when that framework is detected; "
+        "otherwise preserve the workspace's actual source layout. write_file overwrites the whole file — "
+        "always send the complete body. After batches of writes, verify with "
         "list_files/read_file. Preview caching: after fixing a compile error, preview_stop then "
         "preview_start before judging the result.\n",
-        "Website / web UI design contract (mandatory when building websites):\n"
+        "Website / web UI design guidance (apply only where compatible with the detected stack):\n"
         f"{DESIGN_CONTRACT_MARKDOWN}\n",
         f"{creative_direction_block()}\n",
         f"{slop_signature_block()}\n",
         f"{themes_prompt_block()}\n",
-        "shadcn/ui component catalog (import only these — never invent names). This list is the "
-        "allowed surface, NOT the API reference: resolve real sub-components, props and imports "
-        "with shadcn_registry (action=view / action=docs) before you write the file.\n"
+        "shadcn/ui component catalog (use only when shadcn is already present or deliberately selected). "
+        "It is not an API reference: resolve real sub-components, props and imports with shadcn_registry "
+        "(action=view / action=docs) before you write the file.\n"
         f"{shadcn_catalog_json()}\n",
         f"Syte workspace rules:\n{rule_lines}\n",
         f"{active_skills_block}\n",
@@ -1355,6 +1341,7 @@ async def _build_syte_instruction_parts(
     project_id: str,
     *,
     force_refresh: bool = False,
+    memory_depth: str = "balanced",
 ) -> tuple[str, str]:
     """Return ``(static_prefix, dynamic_suffix)`` for prompt-cache-friendly assembly.
 
@@ -1426,6 +1413,9 @@ async def _build_syte_instruction_parts(
         invalidate_instruction_cache(project_id)
         _instruction_cache[cache_key] = static
 
+    from syte.agent_turn_controls import normalize_turn_controls
+
+    turn_controls = normalize_turn_controls(memory_depth=memory_depth)
     from syte.agent_memory import (
         design_profile_prompt_block,
         get_design_profile,
@@ -1446,28 +1436,48 @@ async def _build_syte_instruction_parts(
         pass
 
     summary = await latest_summary(project_id)
+    if summary:
+        summary = dict(summary)
+        summary["summary_text"] = str(summary.get("summary_text") or "")[
+            : int(turn_controls["summary_chars"])
+        ]
     meta = await latest_session_meta(project_id)
-    active_files = list((meta or {}).get("active_files") or [])
-    memory_block = memory_context_block(summary, active_files)
-    file_memory_block = project_memory_md_prompt_block(project_id)
+    active_files = list((meta or {}).get("active_files") or [])[
+        -int(turn_controls["active_file_limit"]):
+    ]
+    memory_block = memory_context_block(
+        summary,
+        active_files,
+        summary_chars=int(turn_controls["summary_chars"]),
+        active_file_limit=int(turn_controls["active_file_limit"]),
+    )
+    file_memory_block = (
+        project_memory_md_prompt_block(project_id)
+        if turn_controls["memory_depth"] != "focused"
+        else ""
+    )
     design_block = design_profile_prompt_block(await get_design_profile(project_id))
     # Prefer layout/page/component index hits so the model edits real files.
     index_hits = await lookup_workspace_paths(
         project_id,
         tags=["page", "layout", "navbar", "hero", "colors"],
-        limit=20,
+        limit=int(turn_controls["workspace_map_limit"]),
     )
     if len(index_hits) < 8:
-        more = await lookup_workspace_paths(project_id, limit=20)
+        more = await lookup_workspace_paths(
+            project_id, limit=int(turn_controls["workspace_map_limit"])
+        )
         seen = {str(item.get("path")) for item in index_hits}
         for item in more:
             path = str(item.get("path") or "")
             if path and path not in seen:
                 index_hits.append(item)
                 seen.add(path)
-            if len(index_hits) >= 20:
+            if len(index_hits) >= int(turn_controls["workspace_map_limit"]):
                 break
-    map_block = workspace_map_block(index_hits, limit=20)
+    map_block = workspace_map_block(
+        index_hits, limit=int(turn_controls["workspace_map_limit"])
+    )
     dynamic = "\n\n".join(
         part
         for part in (file_memory_block, design_block, memory_block, map_block)
@@ -2366,6 +2376,7 @@ async def _execute_tool(
             if ok:
                 # A new capture can only show something new after a write.
                 ctx["_workspace_dirty_since_screenshot"] = True
+                ctx["_workspace_changed"] = True
             return {"ok": ok, "message": message}
         if name == "delete_file":
             locked = _reserved_file_error(project_id, str(args["path"]), ctx)
@@ -2375,6 +2386,7 @@ async def _execute_tool(
             await _track_touched_file(project_id, str(args["path"]), ctx)
             if ok:
                 ctx["_workspace_dirty_since_screenshot"] = True
+                ctx["_workspace_changed"] = True
             return {"ok": ok, "message": message}
         if name == "run_command":
             from syte.token_efficiency import filter_cli_output
@@ -2396,6 +2408,8 @@ async def _execute_tool(
                     "message": f"Command timed out after {timeout_s}s",
                     "output": truncated,
                 }
+            # Commands that mutate the workspace are not inferred from a read-only
+            # lint/test invocation; file writes above are the durable readiness trigger.
             return {"ok": code == 0, "exit_code": code, "output": truncated}
         if name == "service":
             return await run_service_action(
@@ -2431,7 +2445,10 @@ async def _execute_tool(
         if name == "env_get":
             return await _tool_env_get(project_id, args)
         if name == "env_set":
-            return await _tool_env_set(project_id, args)
+            result = await _tool_env_set(project_id, args)
+            if result.get("ok"):
+                ctx["_workspace_changed"] = True
+            return result
         if name == "request_env":
             return await _tool_request_env(project_id, args, ctx)
         if name == "list_mcp_addons":
@@ -3640,6 +3657,8 @@ async def _provider_completion(
     stream: bool = False,
     on_token: TokenEmitter | None = None,
     on_reasoning: TokenEmitter | None = None,
+    max_output_tokens: int | None = None,
+    context_window_tokens: int | None = None,
 ) -> dict[str, Any]:
     from syte.agent_errors import (
         ProviderError,
@@ -3661,8 +3680,19 @@ async def _provider_completion(
         api_base=str(model.get("api_base") or ""),
     )
     use_tools = TOOLS if tools is None else tools
+    provider_messages = sanitize_provider_messages(list(messages))
+    if context_window_tokens:
+        from syte.agent_turn_controls import trim_history_to_context_budget
+
+        provider_messages = sanitize_provider_messages(
+            trim_history_to_context_budget(
+                provider_messages,
+                context_window_tokens=int(context_window_tokens),
+                reserved_output_tokens=int(max_output_tokens or 4_096),
+            )
+        )
     cached_messages = apply_prompt_cache_markers(
-        sanitize_provider_messages(list(messages)),
+        provider_messages,
         provider=str(model.get("provider") or ""),
         model=str(model.get("model") or ""),
         api_base=str(model.get("api_base") or ""),
@@ -3675,6 +3705,8 @@ async def _provider_completion(
         "stream": bool(stream and (on_token is not None or on_reasoning is not None)),
     }
     max_tokens = _model_max_tokens(model)
+    if max_output_tokens:
+        max_tokens = min(max_tokens, int(max_output_tokens)) if max_tokens else int(max_output_tokens)
     if max_tokens is not None:
         if str(model.get("completion_token_param") or "") == "max_completion_tokens":
             payload["max_completion_tokens"] = max_tokens
@@ -5081,6 +5113,11 @@ async def communicate_with_agent(
     source: str = "api", auto_start: bool = True, background: bool = False,
     improve_from_screenshot: bool = False,
     visual_analysis_id: str | None = None,
+    context_window_tokens: int | str | None = None,
+    stream_max_tokens: int | str | None = None,
+    memory_depth: str | None = None,
+    plan_mode: str | None = None,
+    deployment_readiness: bool | None = None,
     idempotency_key: str | None = None,
     override_api_key: str | None = None,
     override_credentials: list[dict[str, Any]] | None = None,
@@ -5088,6 +5125,15 @@ async def communicate_with_agent(
     from syte.model_catalog import configured_models, model_profile as catalog_model_profile
     from syte.model_routing import normalize_explicit_profile, suggest_model_profile
 
+    from syte.agent_turn_controls import normalize_turn_controls
+
+    generation_options = normalize_turn_controls(
+        context_window_tokens=context_window_tokens,
+        stream_max_tokens=stream_max_tokens,
+        memory_depth=memory_depth,
+        plan_mode=plan_mode,
+        deployment_readiness=deployment_readiness,
+    )
     resolved_profile = normalize_explicit_profile(model_profile)
     if not resolved_profile and model_id:
         for row in await configured_models():
@@ -5127,8 +5173,9 @@ async def communicate_with_agent(
             idempotency_key=idempotency_key,
             override_api_key=override_api_key,
             override_credentials=override_credentials,
+            generation_options=generation_options,
         )
-        return {**result, "model_routing": routing}
+        return {**result, "model_routing": routing, "generation_options": generation_options}
     from syte.agent_jobs import new_request_id, project_agent_lock
     request_id = new_request_id()
     async with project_agent_lock(project_id):
@@ -5140,8 +5187,9 @@ async def communicate_with_agent(
             visual_analysis_id=visual_analysis_id,
             override_api_key=override_api_key,
             override_credentials=override_credentials,
+            generation_options=generation_options,
         )
-        return {**result, "model_routing": routing}
+        return {**result, "model_routing": routing, "generation_options": generation_options}
 
 
 async def _communicate_with_agent_impl(
@@ -5156,8 +5204,19 @@ async def _communicate_with_agent_impl(
     visual_analysis_id: str | None = None,
     override_api_key: str | None = None,
     override_credentials: list[dict[str, Any]] | None = None,
+    generation_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from syte.agent_turn_controls import normalize_turn_controls, requires_plan_before_actions
+
     request_id = request_id or f"req-{int(datetime.now().timestamp() * 1000)}"
+    raw_options = generation_options or {}
+    turn_controls = normalize_turn_controls(
+        context_window_tokens=raw_options.get("context_window_tokens"),
+        stream_max_tokens=raw_options.get("stream_max_tokens"),
+        memory_depth=raw_options.get("memory_depth"),
+        plan_mode=raw_options.get("plan_mode"),
+        deployment_readiness=raw_options.get("deployment_readiness"),
+    )
     project = await get_project(project_id)
     if not project:
         return {"ok": False, "error": "not_found", "message": "Project not found", "request_id": request_id}
@@ -5360,9 +5419,15 @@ async def _communicate_with_agent_impl(
     tags = prompt_tags_from_message(message)
 
     # Overlap independent reads so first provider byte is not gated on serial I/O.
-    history_limit = _model_history_limit(model)
+    history_limit = min(_model_history_limit(model), int(turn_controls["history_messages"]))
     tool_result_chars = _model_tool_result_chars(model)
-    instruction_task = asyncio.create_task(_build_syte_instruction_parts(project_id))
+    if int(turn_controls.get("index_scan_files") or 0) > 0:
+        from syte.agent_memory import scan_workspace_index
+
+        await scan_workspace_index(project_id, max_files=int(turn_controls["index_scan_files"]))
+    instruction_task = asyncio.create_task(
+        _build_syte_instruction_parts(project_id, memory_depth=str(turn_controls["memory_depth"]))
+    )
     history_task = asyncio.create_task(
         conversation_messages(project_id, limit=history_limit, last_session_only=True)
     )
@@ -5400,7 +5465,7 @@ async def _communicate_with_agent_impl(
                 "The request appears to omit a visual direction for a new site. Ask one concise "
                 "choice question using the named themes unless existing context supplies that choice."
             )
-    elif gen.get("mandatory_plan"):
+    elif gen.get("mandatory_plan") or requires_plan_before_actions(message, turn_controls):
         turn_hints.append(
             "Thinking mode: Deep/Max (hard gate). Your FIRST tool call MUST be "
             "update_plan with a concrete ordered plan. Other tools are rejected until "
@@ -5609,7 +5674,11 @@ async def _communicate_with_agent_impl(
         "turso_session_id": turso_session_id,
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
-        "mandatory_plan": bool(gen.get("mandatory_plan") or site_plan_required),
+        "mandatory_plan": bool(
+            gen.get("mandatory_plan")
+            or site_plan_required
+            or requires_plan_before_actions(message, turn_controls)
+        ),
         "plan_gate_reason": "website" if site_plan_required else "thinking",
         "question_required": site_question_required,
         "question_answered": False,
@@ -5618,6 +5687,8 @@ async def _communicate_with_agent_impl(
         "max_tool_result_chars": tool_result_chars,
         "override_api_key": override_api_key,
         "override_credentials": override_credentials or [],
+        "deployment_readiness": bool(turn_controls["deployment_readiness"]),
+        "turn_controls": turn_controls,
     }
 
     max_tool_steps = int(gen.get("max_tool_steps") or 48)
@@ -5644,6 +5715,8 @@ async def _communicate_with_agent_impl(
                 stream=want_stream,
                 on_token=_emit_token if want_stream else None,
                 on_reasoning=_emit_thinking if want_stream else None,
+                max_output_tokens=int(turn_controls["stream_max_tokens"]),
+                context_window_tokens=int(turn_controls["context_window_tokens"]),
             )
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
@@ -5774,7 +5847,11 @@ async def _communicate_with_agent_impl(
 
                 # Finish preview checks *before* marking the turn complete so the
                 # UI never shows "Completed" / session_stopped while work continues.
-                if is_website:
+                if (
+                    is_website
+                    and tool_context.get("deployment_readiness")
+                    and tool_context.get("_workspace_changed")
+                ):
                     try:
                         await asyncio.wait_for(
                             _post_turn_preview_checks(
@@ -6079,7 +6156,14 @@ async def _communicate_with_agent_impl(
                 _raise_if_cancelled()
                 await asyncio.sleep(0)
                 # Inject vision parts when the active provider can consume image_url parts.
-                supports_vision = "deepseek.com" not in (model.get("api_base") or "")
+                api_base = str(model.get("api_base") or "")
+                profile = str(model.get("profile") or "")
+                # Antigravity accepts functionResponse turns immediately after the
+                # preceding functionCall. Do not insert a second user/vision turn
+                # into that replay history; screenshots stay available in the tool
+                # result and activity timeline instead.
+                is_9router = "9router.sycord.site" in api_base or profile.startswith("9router:")
+                supports_vision = "deepseek.com" not in api_base and not is_9router
                 if vision_parts and supports_vision:
                     vision_message = {
                         "role": "user",

@@ -442,7 +442,13 @@ async def maybe_summarize_session(
     return summary
 
 
-def memory_context_block(project_id_summary: dict[str, Any] | None, active_files: list[str]) -> str:
+def memory_context_block(
+    project_id_summary: dict[str, Any] | None,
+    active_files: list[str],
+    *,
+    summary_chars: int = 3_500,
+    active_file_limit: int = 12,
+) -> str:
     """Build a compact system-prompt addon from the latest summary + ranked active files.
 
     Active files are MRU-ranked and capped so repeated LLM rounds stay token-cheap
@@ -454,7 +460,7 @@ def memory_context_block(project_id_summary: dict[str, Any] | None, active_files
         if summary_text:
             # Cap summary size in the dynamic system block (full text may still
             # be injected as a history system message on thin sessions).
-            parts.append(summary_text[:3500])
+            parts.append(summary_text[:max(400, int(summary_chars))])
         decisions = project_id_summary.get("key_decisions") or []
         if decisions:
             parts.append("Key decisions:\n- " + "\n- ".join(str(d) for d in decisions[:8]))
@@ -473,7 +479,7 @@ def memory_context_block(project_id_summary: dict[str, Any] | None, active_files
                 continue
             seen.add(key)
             unique.append(key)
-            if len(unique) >= 12:
+            if len(unique) >= max(1, int(active_file_limit)):
                 break
         parts.append(
             "Prefer these recently touched files (ranked, newest first) before listing the workspace:\n- "

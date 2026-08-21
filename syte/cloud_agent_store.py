@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS cloud_agent_requests (
     error TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     started_at TEXT,
-    finished_at TEXT
+    finished_at TEXT,
+    generation_options TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_cloud_agent_requests_pending
 ON cloud_agent_requests(status, created_at);
@@ -54,7 +55,7 @@ ON cloud_agent_requests(status, created_at);
 
 # Bump when additive column migrations change so long-lived processes re-run
 # ensure after an upgrade (the path cache alone would skip ALTER TABLE).
-_SCHEMA_EPOCH = 5
+_SCHEMA_EPOCH = 6
 _ensured_paths: dict[str, int] = {}
 
 
@@ -107,6 +108,10 @@ async def ensure_cloud_agent_tables() -> None:
         if "turso_session_id" not in request_cols:
             await db.execute(
                 "ALTER TABLE cloud_agent_requests ADD COLUMN turso_session_id TEXT"
+            )
+        if "generation_options" not in request_cols:
+            await db.execute(
+                "ALTER TABLE cloud_agent_requests ADD COLUMN generation_options TEXT NOT NULL DEFAULT '{}'"
             )
 
         # Indexes that require migrated columns — must run after ALTER TABLE.
@@ -512,14 +517,18 @@ async def enqueue_request(
     model_profile: str | None,
     source: str,
     auto_start: bool,
+    generation_options: dict[str, Any] | None = None,
 ) -> None:
     await ensure_cloud_agent_tables()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
             "INSERT INTO cloud_agent_requests "
-            "(request_id, project_id, message, model_profile, source, auto_start, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
-            (request_id, project_id, message, model_profile, source, int(auto_start), _now()),
+            "(request_id, project_id, message, model_profile, source, auto_start, status, created_at, generation_options) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (
+                request_id, project_id, message, model_profile, source, int(auto_start), _now(),
+                json.dumps(generation_options or {}, ensure_ascii=False),
+            ),
         )
         await db.commit()
 

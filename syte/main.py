@@ -2852,6 +2852,17 @@ class AgentChatRequest(BaseModel):
     message: str
     model_profile: str | None = None
     thinking_level: int | None = Field(None, ge=1, le=6, description="1 minimal … 6 xhigh")
+    context_window_tokens: int | None = Field(
+        None, ge=8_000, le=128_000, description="Requested provider context budget"
+    )
+    stream_max_tokens: int | None = Field(
+        None, ge=512, le=16_384, description="Maximum streamed completion tokens"
+    )
+    memory_depth: str | None = Field(
+        None, description="focused, balanced, or deep verified project memory"
+    )
+    plan_mode: str | None = Field(None, description="auto, always, or off")
+    deployment_readiness: bool = True
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
 
@@ -3529,6 +3540,14 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
     return await test_agent(project_id, source="gui", model_profile=profile)
 
 
+@app.get("/api/agent/turn-controls")
+async def api_agent_turn_controls():
+    """Return the bounded, provider-neutral Agent turn controls for API clients."""
+    from syte.agent_turn_controls import agent_turn_controls_spec
+
+    return agent_turn_controls_spec()
+
+
 @app.post("/api/projects/{project_id}/agent/chat")
 async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool = False):
     from syte.cloud_agent import communicate_with_agent
@@ -3544,6 +3563,11 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool
             body.message.strip(),
             model_profile=body.model_profile,
             thinking_level=body.thinking_level,
+            context_window_tokens=body.context_window_tokens,
+            stream_max_tokens=body.stream_max_tokens,
+            memory_depth=body.memory_depth,
+            plan_mode=body.plan_mode,
+            deployment_readiness=body.deployment_readiness,
             source="gui",
             background=not wait,
             improve_from_screenshot=bool(body.improve_from_screenshot),
