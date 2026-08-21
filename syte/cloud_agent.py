@@ -2390,7 +2390,8 @@ async def _execute_tool(
                     "memory, package, configuration, or metadata files before the requested UI change exists."
                 ),
             }
-        if inspections >= 2 and name != "write_file":
+        inspection_limit = 1 if ctx.get("source_change_required") else 2
+        if inspections >= inspection_limit and name != "write_file":
             return {
                 "ok": False,
                 "error": "source_write_required",
@@ -5977,14 +5978,19 @@ async def _communicate_with_agent_impl(
                 # tools. After two successful inspections, write_file is the sole
                 # available action, making the delivery-first rule deterministic.
                 prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
-                allowed_prewrite = (
-                    {"write_file"}
-                    if prewrite_inspections >= 2
-                    else {
-                        "update_plan", "ask_question", "list_files", "read_file",
-                        "search_code", "semantic_search", "write_file",
-                    }
-                )
+                if tool_context.get("source_change_required"):
+                    # Follow-up edits are intentionally narrow: inspect the target once,
+                    # then write the requested change rather than rediscovering the app.
+                    allowed_prewrite = {"read_file", "write_file"} if prewrite_inspections < 1 else {"write_file"}
+                else:
+                    allowed_prewrite = (
+                        {"write_file"}
+                        if prewrite_inspections >= 2
+                        else {
+                            "update_plan", "ask_question", "list_files", "read_file",
+                            "search_code", "semantic_search", "write_file",
+                        }
+                    )
                 tools_for_step = [
                     tool for tool in TOOLS
                     if tool["function"]["name"] in allowed_prewrite
@@ -6007,6 +6013,11 @@ async def _communicate_with_agent_impl(
                 reasoning = reasoning[:MAX_REASONING_HISTORY_CHARS] + "\n… [thinking truncated]"
             tool_calls = assistant.get("tool_calls") or []
             stored_calls = _normalize_tool_call_ids(tool_calls) if isinstance(tool_calls, list) else []
+            # One action per provider completion preserves a real bounded action
+            # budget; otherwise a model can send a batch of exploratory calls before
+            # the next completion sees the delivery-first tool filter.
+            if len(stored_calls) > 1:
+                stored_calls = stored_calls[:1]
             # Cap: ignore tool calls past the thinking-level budget.
             if not allow_tools:
                 stored_calls = []

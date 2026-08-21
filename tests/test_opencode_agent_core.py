@@ -93,6 +93,24 @@ def test_follow_up_change_blocks_metadata_before_application_source() -> None:
     assert result["retryable"] is True
 
 
+def test_follow_up_change_requires_write_after_one_inspection() -> None:
+    result = asyncio.run(
+        _execute_tool(
+            "unused",
+            "search_code",
+            {"query": "dark mode"},
+            context={
+                "completion_write_required": True,
+                "source_change_required": True,
+                "_delivery_requirements_complete": False,
+                "_prewrite_inspections": 1,
+            },
+        )
+    )
+    assert result["error"] == "source_write_required"
+    assert result["retryable"] is True
+
+
 def test_fresh_webshop_blocks_setup_files_before_ui_source() -> None:
     result = asyncio.run(
         _execute_tool(
