@@ -47,6 +47,17 @@ _SITE_SURFACES = (
     "navbar",
 )
 
+_SOURCE_CHANGE_ACTIONS = (
+    "add",
+    "change",
+    "update",
+    "modify",
+    "fix",
+    "remove",
+    "replace",
+    "edit",
+)
+
 _SUBSTANTIVE_ACTIONS = (
     "build",
     "create",
@@ -97,6 +108,14 @@ def is_website_request(user_message: str) -> bool:
     """Return whether the request itself clearly concerns a browser UI."""
     text = " ".join((user_message or "").lower().split())
     return any(surface in text for surface in _SITE_SURFACES)
+
+
+def is_source_change_request(user_message: str) -> bool:
+    """Return whether the user explicitly requests an implementation edit."""
+    text = " ".join((user_message or "").lower().split())
+    if not text:
+        return False
+    return any(re.search(rf"\b{re.escape(action)}\b", text) for action in _SOURCE_CHANGE_ACTIONS)
 
 
 def is_substantive_site_request(user_message: str) -> bool:
