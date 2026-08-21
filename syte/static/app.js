@@ -2512,7 +2512,8 @@ function updateDebugChatControls() {
   if (profile) profile.disabled = controlsBusy;
   for (const id of [
     'debug-chat-thinking-level', 'debug-chat-context-window', 'debug-chat-stream-limit',
-    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-deployment-readiness',
+    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-agent-mode',
+    'debug-chat-max-steps', 'debug-chat-deployment-readiness',
   ]) {
     const control = document.getElementById(id);
     if (control) control.disabled = controlsBusy;
@@ -2641,6 +2642,8 @@ function getDebugChatTurnControls() {
     stream_max_tokens: numeric('debug-chat-stream-limit', 4096),
     memory_depth: document.getElementById('debug-chat-memory-depth')?.value || 'balanced',
     plan_mode: document.getElementById('debug-chat-plan-mode')?.value || 'auto',
+    agent_mode: document.getElementById('debug-chat-agent-mode')?.value || 'build',
+    max_steps: Number(document.getElementById('debug-chat-max-steps')?.value || 8),
     deployment_readiness: Boolean(document.getElementById('debug-chat-deployment-readiness')?.checked),
   };
 }
@@ -7197,7 +7200,8 @@ function bindDebugChatComposer() {
   });
   for (const id of [
     'debug-chat-thinking-level', 'debug-chat-context-window', 'debug-chat-stream-limit',
-    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-deployment-readiness',
+    'debug-chat-memory-depth', 'debug-chat-plan-mode', 'debug-chat-agent-mode',
+    'debug-chat-max-steps', 'debug-chat-deployment-readiness',
   ]) {
     document.getElementById(id)?.addEventListener('change', () => {
       updateDebugChatContextSummary();

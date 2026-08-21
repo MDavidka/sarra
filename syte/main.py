@@ -2862,6 +2862,8 @@ class AgentChatRequest(BaseModel):
         None, description="focused, balanced, or deep verified project memory"
     )
     plan_mode: str | None = Field(None, description="auto, always, or off")
+    agent_mode: str = Field("build", description="build or read-only plan mode")
+    max_steps: int | None = Field(None, ge=4, le=16, description="Bounded Agent tool rounds")
     deployment_readiness: bool = True
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
@@ -3540,6 +3542,14 @@ async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = No
     return await test_agent(project_id, source="gui", model_profile=profile)
 
 
+@app.get("/api/agent/core")
+async def api_agent_core():
+    """Describe the compact Plan/Build Agent execution core."""
+    from syte.opencode_agent_core import agent_core_spec
+
+    return agent_core_spec()
+
+
 @app.get("/api/agent/turn-controls")
 async def api_agent_turn_controls():
     """Return the bounded, provider-neutral Agent turn controls for API clients."""
@@ -3567,6 +3577,8 @@ async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool
             stream_max_tokens=body.stream_max_tokens,
             memory_depth=body.memory_depth,
             plan_mode=body.plan_mode,
+            agent_mode=body.agent_mode,
+            max_steps=body.max_steps,
             deployment_readiness=body.deployment_readiness,
             source="gui",
             background=not wait,
