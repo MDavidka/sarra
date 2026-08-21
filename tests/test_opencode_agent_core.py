@@ -8,6 +8,7 @@ from syte.cloud_agent import (
     _is_deliverable_web_source_path,
     _is_webshop_feature_complete,
     _normalize_completion_payload,
+    _parse_sse_completion,
     _parse_text_patch_protocol,
 )
 from syte.site_planner import (
@@ -162,6 +163,18 @@ def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> N
     assert is_simple_conversation("Please translate hello into Hungarian.")
     assert not is_simple_conversation("Create a webshop with a product page.")
     assert not is_simple_conversation("Fix the hello message component in my app.")
+
+
+class _NullKeepaliveSseResponse:
+    async def aiter_lines(self):
+        yield "data: null"
+        yield 'data: {"choices":[{"delta":{"content":"{\\\"patches\\\": []}"}}]}'
+        yield "data: [DONE]"
+
+
+def test_ag_null_sse_keepalive_is_ignored_before_completion_chunk() -> None:
+    message = asyncio.run(_parse_sse_completion(_NullKeepaliveSseResponse()))
+    assert message == {"role": "assistant", "content": "{\"patches\": []}"}
 
 
 def test_ag_list_completion_envelope_normalizes_to_openai_choices() -> None:
