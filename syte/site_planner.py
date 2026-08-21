@@ -37,6 +37,12 @@ _SITE_SURFACES = (
     "login page",
     "signup page",
     "pricing page",
+    "webshop",
+    "online store",
+    "e-commerce",
+    "ecommerce",
+    "shopping cart",
+    "checkout",
     "hero section",
     "navbar",
 )

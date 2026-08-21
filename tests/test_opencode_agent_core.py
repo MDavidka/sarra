@@ -4,6 +4,7 @@ import asyncio
 
 from syte.agent_turn_controls import normalize_turn_controls
 from syte.cloud_agent import _execute_tool
+from syte.site_planner import is_substantive_site_request, is_website_request
 from syte.opencode_agent_core import (
     agent_core_spec,
     is_simple_conversation,
@@ -40,6 +41,12 @@ def test_plan_mode_blocks_legacy_mutating_dispatch_before_workspace_access() -> 
     )
     assert result["error"] == "plan_mode_permission_denied"
     assert result["retryable"] is False
+
+
+def test_webshop_prompts_are_substantive_website_work() -> None:
+    prompt = "Create a responsive webshop with a product listing, cart, and checkout."
+    assert is_website_request(prompt)
+    assert is_substantive_site_request(prompt)
 
 
 def test_build_request_blocks_shell_before_first_source_change() -> None:
