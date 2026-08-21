@@ -10,6 +10,8 @@ from syte.agent_turn_controls import (
 from syte.agent_memory import memory_context_block
 from syte.cloud_agent import (
     _execute_tool,
+    _is_deployment_oriented_request,
+    _is_exploratory_environment_command,
     _request_forbids_command_execution,
     _website_enforcement_block,
 )
@@ -100,8 +102,27 @@ def test_no_command_guard_blocks_shell_and_preview_start_actions() -> None:
     assert preview["error"] == "command_execution_forbidden"
 
 
+def test_deployment_requests_block_runtime_probes_and_premature_previews() -> None:
+    assert _is_deployment_oriented_request("Make this application deployable on Syte.")
+    assert _is_exploratory_environment_command("node -v")
+    assert _is_exploratory_environment_command("which npm")
+    assert not _is_exploratory_environment_command("npm run build")
+
+    context = {"deployment_oriented": True, "_workspace_changed": False}
+    probe = asyncio.run(
+        _execute_tool("unused", "run_command", {"command": "node -v"}, context=context)
+    )
+    preview = asyncio.run(
+        _execute_tool("unused", "service", {"action": "preview_start"}, context=context)
+    )
+    assert probe["error"] == "deployment_targeted_command_required"
+    assert preview["error"] == "deployment_change_required"
+
+
 def test_website_prompt_preserves_existing_framework() -> None:
     prompt = _website_enforcement_block(is_website=True)
     assert "Do not force Vite, HeroUI, Next.js" in prompt
     assert "recommend shadcn/ui" in prompt
     assert "ready to deploy" in prompt
+    assert "environment-probing commands" in prompt
+    assert "project-declared build" in prompt
