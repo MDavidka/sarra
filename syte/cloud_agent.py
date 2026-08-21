@@ -1210,8 +1210,15 @@ def _website_enforcement_block(*, is_website: bool) -> str:
             "entry points with semantic_search / search_code / list_files before writing.\n"
             "- State a concise plan before material edits. Keep accessibility, responsive behavior, and "
             "the existing design language intact.\n"
-            "- After code changes, start or reuse the isolated preview and call inspect_preview. Resolve "
-            "page, console, and compile errors before saying work is ready to deploy.\n"
+            "- For a request to make this project deployable, first read the real package/deployment "
+            "configuration and relevant entry point, then write or repair the smallest source and config "
+            "changes required by that actual stack. Do not substitute an unrelated framework.\n"
+            "- Do not run environment-probing commands such as node -v, which, pwd, ls, or package-manager "
+            "version checks. Use file tools to inspect the workspace. Run only the project-declared build, "
+            "test, lint, or type-check command when it directly verifies code you changed.\n"
+            "- Start or reuse the isolated preview only after code/configuration changes, unless the user "
+            "specifically asked to diagnose a running preview. Resolve page, console, and compile errors "
+            "before saying work is ready to deploy.\n"
             "- Never ship bare, unstyled scaffolds or fabricated workspace paths.\n"
         )
     return (
@@ -1310,9 +1317,14 @@ def _build_static_instruction(
         "the route loads and the browser console has no errors/exceptions; if console or load issues appear, "
         "fix them before finishing. Continue using tools until the request is actually complete; "
         "the user can interrupt a long turn.\n",
-        "If the user asks to 'create hosting', do not just create a static site — use the integration instead. Use generative thinking to create something genuinely creative and content-specific, avoiding general AI slop. After a subagent task completes (via await_subagent or a synchronous delegate_task), you must immediately trigger code verification (e.g. npm run lint) and start the preview. Never deploy, start, stop, update, or build the production service for testing, and never run "
-        "production build commands such as npm run build or next build. Prefer the isolated preview for "
-        "visual checks and workspace commands for lint/tests.\n",
+        "If the user asks to 'create hosting', do not just create a static site — use the integration instead. "
+        "For deployment-oriented coding tasks, work toward a concrete deployable artifact: inspect the actual "
+        "manifest, lockfile, deploy config, and entry points; write the missing code or configuration; then run "
+        "only the project-declared targeted validation (for example npm run build, npm run lint, pytest, or an "
+        "equivalent detected command) after relevant edits. Do not use shell commands to discover Node, npm, "
+        "PATH, or the operating environment: file inspection is authoritative. Never deploy, start, stop, or update "
+        "the production service for testing. Start an isolated preview only after a meaningful code/config "
+        "change or when the user explicitly asks to diagnose it.\n",
         "Paths: write_file paths are relative to the workspace root; application source usually lives in app/. "
         "Use Next.js App Router paths such as app/app/login/page.tsx only when that framework is detected; "
         "otherwise preserve the workspace's actual source layout. write_file overwrites the whole file — "
@@ -2271,6 +2283,26 @@ def _record_screenshot_capture(
     ctx["_workspace_dirty_since_screenshot"] = False
 
 
+def _is_deployment_oriented_request(message: str) -> bool:
+    """Identify requests that require a deployable code artifact, not exploration."""
+    normalized = " ".join(str(message or "").lower().split())
+    return bool(
+        re.search(
+            r"\b(?:deploy(?:able|ment)?|production[- ]ready|release|publish|hosting|ship|build(?:\s+(?:for|and)\s+deploy)?|syte)\b",
+            normalized,
+        )
+    )
+
+
+def _is_exploratory_environment_command(command: str) -> bool:
+    """Block shell probes when file inspection can provide the needed project facts."""
+    normalized = " ".join(str(command or "").strip().lower().split())
+    return bool(re.match(
+        r"^(?:node|npm|npx|pnpm|yarn|bun|python(?:3)?|pip|go|cargo)\s+(?:--?v(?:ersion)?|version)\b|^(?:which|whereis|pwd|printenv|env|ls|find|tree)\b",
+        normalized,
+    ))
+
+
 def _request_forbids_command_execution(message: str) -> bool:
     """Return true only for an explicit user prohibition on command execution.
 
@@ -2414,10 +2446,21 @@ async def _execute_tool(
                     "retryable": False,
                     "message": "The user explicitly asked not to run commands in this turn. Use file, preview, or service-status tools only.",
                 }
+            command = str(args["command"])
+            if ctx.get("deployment_oriented") and _is_exploratory_environment_command(command):
+                return {
+                    "ok": False,
+                    "error": "deployment_targeted_command_required",
+                    "retryable": True,
+                    "message": (
+                        "This is a deployment-oriented task. Do not probe the runtime with shell commands. "
+                        "Inspect project files, write the required source/configuration, then run only a "
+                        "declared build, test, lint, or type-check command that verifies those edits."
+                    ),
+                }
             from syte.token_efficiency import filter_cli_output
 
             timeout_s = max(1, min(int(args.get("timeout") or 300), 900))
-            command = str(args["command"])
             code, output = await execute_command(
                 project_id, command, cwd=str(args.get("cwd") or "app"),
                 timeout=timeout_s, source="agent",
@@ -2444,6 +2487,21 @@ async def _execute_tool(
                     "error": "command_execution_forbidden",
                     "retryable": False,
                     "message": "The user explicitly asked not to run commands in this turn. Service start, restart, build, and preview actions are blocked; service status and logs remain available.",
+                }
+            if (
+                ctx.get("deployment_oriented")
+                and action in {"preview_start", "preview_restart"}
+                and not ctx.get("_workspace_changed")
+                and not ctx.get("preview_explicitly_requested")
+            ):
+                return {
+                    "ok": False,
+                    "error": "deployment_change_required",
+                    "retryable": True,
+                    "message": (
+                        "For a deployment task, first write or repair the detected project source/configuration. "
+                        "Do not start a preview before there is a concrete change to validate."
+                    ),
                 }
             return await run_service_action(
                 project_id, str(args["action"]), command=args.get("command"),
@@ -5733,6 +5791,8 @@ async def _communicate_with_agent_impl(
         "override_api_key": override_api_key,
         "override_credentials": override_credentials or [],
         "deployment_readiness": bool(turn_controls["deployment_readiness"]),
+        "deployment_oriented": _is_deployment_oriented_request(message),
+        "preview_explicitly_requested": bool(re.search(r"\b(?:preview|running site|runtime|console)\b", message, re.IGNORECASE)),
         "command_execution_forbidden": _request_forbids_command_execution(message),
         "turn_controls": turn_controls,
     }
