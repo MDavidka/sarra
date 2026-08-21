@@ -15,6 +15,7 @@ from syte.site_planner import (
 )
 from syte.opencode_agent_core import (
     agent_core_spec,
+    build_agent_task_spec,
     is_simple_conversation,
     normalize_agent_execution_policy,
     policy_prompt_block,
@@ -161,6 +162,22 @@ def test_short_greeting_requests_are_classified_as_tool_free_conversation() -> N
     assert not is_simple_conversation("Fix the hello message component in my app.")
 
 
+def test_follow_up_task_contract_is_sandbox_aware_and_write_oriented() -> None:
+    contract = build_agent_task_spec(
+        normalize_agent_execution_policy("build", 8),
+        source_change_required=True,
+    )
+
+    assert contract.kind == "follow-up source edit"
+    assert contract.app_root == "app/"
+    assert contract.permitted_prewrite_tools == ("read_file", "write_file")
+    assert "actual application source file under app/" in contract.completion_condition
+    prompt = contract.prompt_block()
+    assert "isolated project workspace" in prompt
+    assert "Do not use absolute paths" in prompt
+    assert "memory, plans, package files" in prompt
+
+
 def test_turn_controls_persist_core_mode_without_provider_changes() -> None:
     controls = normalize_turn_controls(agent_mode="plan", max_steps=5)
     assert controls["agent_mode"] == "plan"
@@ -168,3 +185,4 @@ def test_turn_controls_persist_core_mode_without_provider_changes() -> None:
     spec = agent_core_spec()
     assert spec["agent_modes"] == ["build", "plan"]
     assert 8 in spec["max_steps"]
+    assert "small_model_strategy" in spec["execution_contract"]
