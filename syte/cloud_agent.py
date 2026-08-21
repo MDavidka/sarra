@@ -6381,7 +6381,7 @@ async def _communicate_with_agent_impl(
                 # search can bypass the follow-up write boundary and exhaust a turn.
                 if (
                     name in {"list_files", "read_file", "search_code", "semantic_search"}
-                    and tool_context.get("build_artifact_required")
+                    and tool_context.get("completion_write_required")
                     and not tool_context.get("_workspace_changed")
                 ):
                     inspection_limit = 1 if tool_context.get("source_change_required") else 2
