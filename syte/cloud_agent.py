@@ -5730,6 +5730,11 @@ async def _communicate_with_agent_impl(
         "9router.sycord.site" in api_base
         or str(model.get("profile") or "").startswith("9router:")
     )
+    # The Antigravity compatibility bridge may accept native tools but let a
+    # smaller ag model spend its bounded follow-up turn on irrelevant calls.
+    # For a narrow completed-project edit, begin with the sandboxed text-patch
+    # grammar instead of relying on function-call selection.
+    ag_followup_patch_protocol = bool(source_change_required and is_9router_history)
     if is_9router_history:
         from syte.cloud_agent_store import without_historical_tool_turns
 
@@ -5880,6 +5885,17 @@ async def _communicate_with_agent_impl(
                 "This is a short greeting or translation-only request. Reply directly and do not "
                 "inspect the workspace, call tools, or run commands.\n"
                 if simple_conversation
+                else ""
+            ),
+            (
+                "## ag follow-up patch protocol\n"
+                "This is a narrow edit to an existing application. Return ONLY valid JSON with a `patches` array "
+                "containing at most four exact application-source replacements; each patch is "
+                "`{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
+                "Use stable document anchors such as `</head>` and `</body>` if necessary. Do not call tools, "
+                "run commands, include markdown, or write explanation. The sandbox will validate and apply only "
+                "these bounded replacements.\n"
+                if ag_followup_patch_protocol
                 else ""
             ),
             (
@@ -6035,6 +6051,7 @@ async def _communicate_with_agent_impl(
         "_deliverable_source_written": False,
         "webshop_requirements": webshop_requirements,
         "_delivery_requirements_complete": not (webshop_requirements or source_change_required),
+        "_text_patch_protocol_requested": ag_followup_patch_protocol,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
