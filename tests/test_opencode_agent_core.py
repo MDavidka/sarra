@@ -185,9 +185,11 @@ def test_ag_list_completion_envelope_normalizes_to_openai_choices() -> None:
 
 def test_text_patch_protocol_only_accepts_bounded_application_source_replacements() -> None:
     payload = '''{"patches":[{"path":"app/index.html","find":"</body>","replace":"<script>ok()</script></body>"}]}'''
-    assert _parse_text_patch_protocol(payload) == [
+    expected = [
         {"path": "app/index.html", "find": "</body>", "replace": "<script>ok()</script></body>"}
     ]
+    assert _parse_text_patch_protocol(payload) == expected
+    assert _parse_text_patch_protocol(f"```json\n{payload}\n```") == expected
     assert not _parse_text_patch_protocol('{"patches":[{"path":"syra/memory.md","find":"x","replace":"y"}]}')
     assert not _parse_text_patch_protocol("write a patch please")
 
