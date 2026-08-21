@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from collections import defaultdict
 from typing import Any
@@ -389,6 +390,9 @@ async def _run_job(
             terminal_status = "cancelled"
             raise
         except Exception as exc:
+            logging.getLogger(__name__).exception(
+                "Durable Agent request %s failed for project %s", request_id, project_id
+            )
             error = str(exc) or "Agent request failed"
             from syte.cloud_agent import _failure_metadata
 
