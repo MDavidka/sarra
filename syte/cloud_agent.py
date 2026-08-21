@@ -3899,11 +3899,16 @@ async def _provider_completion(
     if use_tools:
         payload["tools"] = use_tools
         payload["tool_choice"] = "auto"
-    if "thinking" in thinking_params:
+    # 9Router's Antigravity OpenAI-compatible bridge rejects tool calls when
+    # accompanied by provider-native thinking fields (HTTP 400 INVALID_ARGUMENT).
+    # Preserve the Agent's planning policy, but omit only unsupported transport
+    # parameters for that gateway so code-writing turns remain executable.
+    is_9router_gateway = "9router.sycord.site" in str(model.get("api_base") or "")
+    if "thinking" in thinking_params and not (is_9router_gateway and use_tools):
         payload["thinking"] = thinking_params["thinking"]
-    if thinking_params.get("cache_prompt"):
+    if thinking_params.get("cache_prompt") and not is_9router_gateway:
         payload["cache_prompt"] = True
-    if thinking_params.get("reasoning_effort"):
+    if thinking_params.get("reasoning_effort") and not (is_9router_gateway and use_tools):
         payload["reasoning_effort"] = thinking_params["reasoning_effort"]
 
     headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
