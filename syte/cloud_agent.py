@@ -6123,9 +6123,12 @@ async def _communicate_with_agent_impl(
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
         "mandatory_plan": bool(
-            gen.get("mandatory_plan")
-            or site_plan_required
-            or requires_plan_before_actions(message, turn_controls)
+            not fresh_static_webshop_patch
+            and (
+                gen.get("mandatory_plan")
+                or site_plan_required
+                or requires_plan_before_actions(message, turn_controls)
+            )
         ),
         "plan_gate_reason": "website" if site_plan_required else "thinking",
         "question_required": site_question_required,
