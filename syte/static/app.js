@@ -847,10 +847,6 @@ const DEBUG_CHAT_ACTION_LABELS = {
   question_answered: 'Answer',
   agent_stopped: 'Stopped',
   session_stopped: 'Stopped',
-  subagent_scope: 'Delegated files',
-  subagent_started: 'Subagent started',
-  subagent_completed: 'Subagent finished',
-  subagent_failed: 'Subagent failed',
 };
 
 const DEBUG_CHAT_EVENT_ICONS = {
@@ -871,10 +867,6 @@ const DEBUG_CHAT_EVENT_ICONS = {
   question: 'circle-help',
   question_answered: 'message-circle',
   agent_stopped: 'square',
-  subagent_scope: 'git-fork',
-  subagent_started: 'git-fork',
-  subagent_completed: 'circle-check',
-  subagent_failed: 'circle-alert',
 };
 
 const DEBUG_CHAT_TOOL_META = {
@@ -894,8 +886,6 @@ const DEBUG_CHAT_TOOL_META = {
   list_mcp_addons: { label: 'List MCP', icon: 'plug' },
   connect_mcp: { label: 'Connect MCP', icon: 'plug' },
   call_mcp: { label: 'Call MCP', icon: 'plug' },
-  delegate_task: { label: 'Delegate task', icon: 'git-fork' },
-  await_subagent: { label: 'Await subagent', icon: 'timer' },
 };
 
 function debugChatActionMeta(event) {
@@ -1002,12 +992,6 @@ function debugChatActionSummaryText(groupKey, count, firstTarget, event) {
     const label = DEBUG_CHAT_TOOL_META[tool]?.label || tool;
     return count > 1 ? `${label} ×${count}` : label;
   }
-  if (event?.event_type === 'subagent_scope') {
-    const files = Array.isArray(event.payload?.files) ? event.payload.files : [];
-    return files.length
-      ? `Delegated ${files.length} ${files.length === 1 ? 'file' : 'files'} to subagent`
-      : 'Delegated a research task to subagent';
-  }
   const label = DEBUG_CHAT_ACTION_LABELS[event?.event_type];
   if (label) return count > 1 ? `${label} ×${count}` : label;
   return firstTarget || groupKey.replace(/^type:/, '').replace(/_/g, ' ');
@@ -1108,7 +1092,7 @@ function debugChatRoleForEvent(event) {
     'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
     'file_changed', 'tool_call', 'tool_call_started', 'tool_call_finished',
     'command_run', 'command_output', 'service_action', 'request_started',
-    'agent_stopped', 'subagent_scope',
+    'agent_stopped',
   ].includes(type)) {
     return 'action';
   }
@@ -2005,7 +1989,7 @@ function handleDebugChatActivity(event) {
     const where = debugChatThinkingWhere(event);
     setDebugChatActivity(
       'Planning…',
-      `${lane === 'sub' ? 'subagent · ' : ''}${where || String(event.detail || 'Preparing a plan').replace(/\s+/g, ' ')}`.slice(0, 160),
+      `${where || String(event.detail || 'Preparing a plan').replace(/\s+/g, ' ')}`.slice(0, 160),
     );
   }
   if (!debugChatReplayingHistory && event.event_type === 'screenshot') {
@@ -2030,20 +2014,10 @@ function handleDebugChatActivity(event) {
     const target = debugChatActionTarget(event);
     setDebugChatActivity(
       phase,
-      `${lane === 'sub' ? 'subagent · ' : ''}${debugChatActionTitle(event)}${
+      `${debugChatActionTitle(event)}${
         target ? ` · ${target}` : ''
       }`.slice(0, 200),
       event.event_type === 'tool_call_started' ? 'loader' : actionMeta.icon,
-    );
-  }
-  if (!debugChatReplayingHistory && isSubagentLifecycle) {
-    const label = event.event_type === 'subagent_started' ? 'Delegating…' : 'Working…';
-    setDebugChatActivity(
-      label,
-      `${DEBUG_CHAT_ACTION_LABELS[event.event_type] || 'Subagent'}${
-        event.detail ? ` · ${String(event.detail).replace(/\s+/g, ' ')}` : ''
-      }`.slice(0, 200),
-      'git-fork',
     );
   }
   const refreshTypes = [
@@ -2266,8 +2240,6 @@ const DEBUG_CHAT_SSE_EVENT_TYPES = [
   'file_changed', 'command_output', 'agent_started', 'agent_stopped', 'status',
   'processing', 'service_action', 'screenshot', 'question', 'question_answered',
   'session_stopped', 'plan', 'message',
-  // Subagent lane: scope hand-off (main tab) + subagent lifecycle (subagent tab).
-  'subagent_scope', 'subagent_started', 'subagent_completed', 'subagent_failed',
 ];
 
 function handleAgentActivitySseFrame(evt) {
