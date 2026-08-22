@@ -5924,17 +5924,14 @@ async def _communicate_with_agent_impl(
             ),
             (
                 (
-                    "## Fresh static webshop patch transaction\n"
-                    "Return ONLY one valid JSON object with exactly one patch. Replace the entire seeded "
-                    "`app/index.html` document in that one patch; do not plan, explain, use markdown, call tools, "
-                    "or split the change into head/body insertions. Your JSON must have this shape: "
-                    "`{\\\"patches\\\":[{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact seed below\\\",\\\"replace\\\":\\\"complete HTML\\\"}]}`. "
-                    "The `find` value must equal this exact JSON string literal, including its newlines:\n"
-                    f"{json.dumps(fresh_webshop_seed, ensure_ascii=False)}\n"
-                    "Keep `replace` below 16,000 characters. Write a self-contained responsive vanilla HTML/CSS/JS "
-                    "page with a visible product grid, add-to-cart controls, a working cart with totals and quantity "
-                    "updates, and a checkout form/confirmation flow. Do not use frameworks, CDNs, external assets, "
-                    "or placeholder-only interactions. The sandbox will validate and atomically apply this patch.\n"
+                    "## Fresh static webshop direct write\n"
+                    "Your first response is forced to the native `write_file` tool. Use it exactly once with "
+                    "`path` set to `app/index.html` and `content` set to the complete final page; do not return "
+                    "prose, JSON patches, a plan, markdown, or any other file. Keep `content` below 16,000 characters. "
+                    "Write a self-contained responsive vanilla HTML/CSS/JS page with a visible product grid, "
+                    "add-to-cart controls, a working cart with totals and quantity updates, and a checkout "
+                    "form/confirmation flow. Do not use frameworks, CDNs, external assets, or placeholder-only "
+                    "interactions.\n"
                 )
                 if fresh_static_webshop_patch
                 else (
@@ -6114,7 +6111,12 @@ async def _communicate_with_agent_impl(
         "_deliverable_source_written": False,
         "webshop_requirements": webshop_requirements,
         "_delivery_requirements_complete": not (webshop_requirements or source_change_required),
-        "_text_patch_protocol_requested": ag_followup_patch_protocol,
+        "_text_patch_protocol_requested": bool(
+            ag_followup_patch_protocol and not fresh_static_webshop_patch
+        ),
+        "_text_patch_attempts": 0,
+        "fresh_static_webshop_patch": fresh_static_webshop_patch,
+        "_fresh_native_write_attempted": False,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
         "agent_mode": execution_policy.mode,
@@ -6147,7 +6149,12 @@ async def _communicate_with_agent_impl(
                 # tools. After two successful inspections, write_file is the sole
                 # available action, making the delivery-first rule deterministic.
                 prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
-                if tool_context.get("source_change_required") or tool_context.get("plan_submitted"):
+                if tool_context.get("fresh_static_webshop_patch"):
+                    # A known static seed needs no model discovery. Give the gateway
+                    # exactly one forced source write before falling back to the
+                    # JSON patch grammar if native calls are unavailable.
+                    allowed_prewrite = {"write_file"}
+                elif tool_context.get("source_change_required") or tool_context.get("plan_submitted"):
                     # A completed follow-up or a new build with its required plan
                     # already recorded must spend the next action on the visible
                     # source artifact, not another discovery or metadata turn.
@@ -6165,6 +6172,12 @@ async def _communicate_with_agent_impl(
                     tool for tool in TOOLS
                     if tool["function"]["name"] in allowed_prewrite
                 ]
+            force_fresh_native_write = bool(
+                tool_context.get("fresh_static_webshop_patch")
+                and not tool_context.get("_fresh_native_write_attempted")
+            )
+            if force_fresh_native_write:
+                tool_context["_fresh_native_write_attempted"] = True
             assistant = await _provider_completion(
                 model,
                 messages,
@@ -6174,7 +6187,8 @@ async def _communicate_with_agent_impl(
                     if tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")
                     and (
-                        tool_context.get("source_change_required")
+                        force_fresh_native_write
+                        or tool_context.get("source_change_required")
                         or tool_context.get("plan_submitted")
                     )
                     else None
@@ -6276,6 +6290,9 @@ async def _communicate_with_agent_impl(
                 # text-only retry using a narrow JSON patch grammar, then apply only
                 # bounded replacements under app/ through the normal workspace API.
                 if tool_context.get("_text_patch_protocol_requested"):
+                    tool_context["_text_patch_attempts"] = int(
+                        tool_context.get("_text_patch_attempts") or 0
+                    ) + 1
                     patch_result = await _apply_text_patch_protocol(project_id, content)
                     if patch_result.get("ok"):
                         tool_context["_workspace_changed"] = True
@@ -6303,15 +6320,27 @@ async def _communicate_with_agent_impl(
                         # parsing that prose as a second JSON patch.
                         tool_context["_text_patch_protocol_requested"] = False
                         continue
-                    if step + 1 < max_tool_steps:
+                    if int(tool_context.get("_text_patch_attempts") or 0) < 2:
                         messages.append({
                             "role": "user",
                             "content": (
-                                "Your previous response could not be applied because it was not a valid JSON "
-                                "source patch. Return ONLY a JSON object in this exact shape: "
-                                "{\"patches\":[{\"path\":\"app/index.html\",\"find\":\"exact existing text\",\"replace\":\"replacement text\"}]}. "
-                                "Do not describe a plan, do not read files, and do not use markdown. Implement the "
-                                "requested visible change using stable existing anchors such as </head> or </body>."
+                                (
+                                    "Your previous response was not a valid patch. Return ONLY one JSON object with "
+                                    "one replacement of the complete seeded app/index.html. Use this exact JSON string "
+                                    "as `find`, including newlines: "
+                                    f"{json.dumps(fresh_webshop_seed, ensure_ascii=False)}. "
+                                    "Set `replace` to a compact, complete self-contained vanilla HTML/CSS/JS webshop "
+                                    "under 16,000 characters with product listing, functional cart, and checkout confirmation. "
+                                    "Do not use markdown, prose, tools, CDNs, or additional patches."
+                                )
+                                if tool_context.get("fresh_static_webshop_patch")
+                                else (
+                                    "Your previous response could not be applied because it was not a valid JSON "
+                                    "source patch. Return ONLY a JSON object in this exact shape: "
+                                    "{\"patches\":[{\"path\":\"app/index.html\",\"find\":\"exact existing text\",\"replace\":\"replacement text\"}]}. "
+                                    "Do not describe a plan, do not read files, and do not use markdown. Implement the "
+                                    "requested visible change using stable existing anchors such as </head> or </body>."
+                                )
                             ),
                         })
                         continue
@@ -6327,10 +6356,21 @@ async def _communicate_with_agent_impl(
                     messages.append({
                         "role": "user",
                         "content": (
-                            "Native function calling was unavailable. Do not call tools. Return ONLY valid JSON with a `patches` array of at most 4 exact text replacements. "
-                            "Each item must be `{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
-                            "For this webpage, use stable HTML anchors such as `</head>` and `</body>` when needed. "
-                            "Implement the user's requested change; do not include markdown, explanation, shell commands, or any other text."
+                            (
+                                "Native function calling was unavailable. Do not call tools. Return ONLY one JSON object "
+                                "with one patch for app/index.html. Set `find` to this exact JSON string, including newlines: "
+                                f"{json.dumps(fresh_webshop_seed, ensure_ascii=False)}. Set `replace` to a complete "
+                                "self-contained responsive vanilla HTML/CSS/JS webshop under 16,000 characters with product "
+                                "listing, functional cart totals/quantity updates, and checkout confirmation. Do not include "
+                                "markdown, prose, CDNs, or additional patches."
+                            )
+                            if tool_context.get("fresh_static_webshop_patch")
+                            else (
+                                "Native function calling was unavailable. Do not call tools. Return ONLY valid JSON with a `patches` array of at most 4 exact text replacements. "
+                                "Each item must be `{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
+                                "For this webpage, use stable HTML anchors such as `</head>` and `</body>` when needed. "
+                                "Implement the user's requested change; do not include markdown, explanation, shell commands, or any other text."
+                            )
                         ),
                     })
                     continue
