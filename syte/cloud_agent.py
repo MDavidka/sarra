@@ -1279,8 +1279,7 @@ def _build_static_instruction(
         "console logs, page exceptions, failed requests); shadcn_registry "
         "(info/search/view/docs/add/apply_preset — the live component registry); "
         "semantic_search (meaning-based workspace lookup); search_code (ripgrep); service (preview "
-        "status/start/stop/logs); update_plan with per-step assignee main|subagent; delegate_task + "
-        "await_subagent for subagent-assigned work using configured public profiles.\n"
+        "status/start/stop/logs); update_plan for direct main-agent execution.\n"
         "Keep `syra/memory.md` current with a short summary, stack, key paths, and conventions. "
         "Read it early; update it after lasting decisions so you do not re-scan basics.\n",
         "File targeting (mandatory for real changes): before editing UI/behavior, locate the exact path with "
@@ -1294,20 +1293,13 @@ def _build_static_instruction(
         "Command output is pre-filtered (passing tests / progress noise stripped) — re-run with a "
         "narrower command if you need a specific line.\n",
         "Use update_plan for multi-step work so the plan is visible in chat and saved. For any "
-        "request that needs 3+ distinct steps, call update_plan BEFORE other tools and assign each "
-        "step to main or subagent. main = you execute on the user's chosen model; subagent = call "
-        "delegate_task using configured public profiles. Prefer subagent for "
-        "parallel research, file location, audits, and bounded isolated edits; keep orchestration, "
-        "design decisions, final integration, and user questions on main. For a new website "
-        "or substantive redesign, ask one concise batched question BEFORE planning when brand, audience, "
-        "content, visual direction, pages, or behavior is materially unclear. If nothing is unclear, "
-        "start with update_plan; after an answer, update_plan is still required before inspection or edits. "
-        "Use ask_question whenever you need a preference, secret, numeric setting, or choice. "
-        "Delegation file scope (mandatory): every delegate_task call must list in `files` the exact "
-        "workspace paths the subagent may create or edit — decide the split BEFORE delegating. Those "
-        "paths are locked to that subagent: you and other subagents are blocked from writing them "
-        "until it finishes, so never delegate two tasks that share a file and never edit a reserved "
-        "file yourself — await the subagent first. "
+        "request that needs 3+ distinct steps, call update_plan BEFORE other tools. Every plan step "
+        "is executed directly by you on the user-selected model: do not delegate, fork, or create "
+        "background tasks. For a new website or substantive redesign, ask one concise batched question "
+        "BEFORE planning when brand, audience, content, visual direction, pages, or behavior is materially "
+        "unclear. If nothing is unclear, start with update_plan; after an answer, update_plan is still "
+        "required before inspection or edits. Use ask_question whenever you need a preference, secret, "
+        "numeric setting, or choice. "
         "Screenshots are rate-limited: at most "
         f"{MAX_SCREENSHOTS_PER_TURN} captures per turn, and a repeat of a route you already captured "
         "is refused while no file has been written since. Use inspect_preview for load/console "
@@ -1944,16 +1936,10 @@ TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {"name": "service", "description": "Inspect the project or control its isolated dev preview. Production lifecycle actions are unavailable to the agent.",
      "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["status", "preview_start", "preview_stop", "run", "logs", "preview_logs"]}, "command": {"type": "string"}, "cwd": {"type": "string"}, "lines": {"type": "integer"}, "timeout": {"type": "integer"}}, "required": ["action"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "update_plan", "description": (
-        "Publish or revise a concise execution plan BEFORE multi-step work. Each step must be "
-        "assigned: main (you, on the user's chosen model) or subagent (delegate_task / NVIDIA GLM 5.2). "
-        "Pass assignees aligned with steps, or prefix step text with [main]/[subagent]."),
+        "Publish or revise a concise execution plan BEFORE multi-step work. Every step is executed "
+        "directly by you on the user's chosen model; do not create delegated or background tasks."),
      "parameters": {"type": "object", "properties": {
          "steps": {"type": "array", "items": {"type": "string"}},
-         "assignees": {
-             "type": "array",
-             "items": {"type": "string", "enum": ["main", "subagent"]},
-             "description": "Same length as steps. main=chosen model; subagent=NVIDIA GLM 5.2",
-         },
          "note": {"type": "string"},
      }, "required": ["steps"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "screenshot_preview", "description": (
@@ -2102,45 +2088,6 @@ TOOLS: list[dict[str, Any]] = [
          "max_matches": {"type": "integer", "description": "Max matches to return (default 40, max 80)"},
          "case_insensitive": {"type": "boolean"},
      }, "required": ["pattern"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "delegate_task", "description": (
-        "Delegate one plan step assigned to subagent using a public profile "
-        "(falls back to Go). Use mode=research (default) for "
-        "read-only find/review; mode=implementation when the subagent must edit files. Set "
-        "background:true to run asynchronously, then call await_subagent with the returned task_id. "
-        "ALWAYS list in `files` every workspace file the subagent may create or edit — that scope "
-        "is reserved for it, and both you and other subagents are blocked from writing those "
-        "paths until it finishes, so two agents never edit the same file in parallel. For "
-        "mode=implementation, `files` is mandatory. Never delegate two tasks that share a file: "
-        "split by file, or run them one after another."),
-     "parameters": {"type": "object", "properties": {
-         "task": {"type": "string"},
-         "files": {
-             "type": "array",
-             "items": {"type": "string"},
-             "description": (
-                 "Workspace-relative paths the subagent owns, e.g. "
-                 "['app/app/pricing/page.tsx', 'app/components/pricing-table.tsx']. "
-                 "Required for mode=implementation; recommended for research."
-             ),
-         },
-         "background": {"type": "boolean"},
-         "mode": {
-             "type": "string",
-             "enum": ["research", "implementation"],
-             "description": "research=read-only/fast; implementation=can write files",
-         },
-         "max_steps": {
-             "type": "integer",
-             "description": "Optional tool-round budget (default 14 research / 28 implementation, max 48)",
-         },
-     }, "required": ["task", "files"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "await_subagent", "description": (
-        "Wait for a background subagent started by delegate_task and return its findings. "
-        "Pass the task_id from the delegate_task result."),
-     "parameters": {"type": "object", "properties": {
-         "task_id": {"type": "string"},
-         "timeout_s": {"type": "integer", "description": "Seconds to wait (default 120, max 600)"},
-     }, "required": ["task_id"], "additionalProperties": False}}},
 ]
 
 _SUBAGENT_MUTATING_TOOLS = frozenset({
@@ -2788,11 +2735,6 @@ async def _execute_tool(
             return {"ok": True, "query": query, "tags": tags, "results": hits}
         if name == "search_code":
             return await _tool_search_code(project_id, args)
-        if name == "delegate_task":
-            return await _tool_delegate_task(project_id, args, model=model, context=ctx)
-        if name == "await_subagent":
-            return await _tool_await_subagent(project_id, args)
-
         # Auto-connect MCP addons that expose this unknown tool name.
         from syte.agent_artifacts import call_mcp_addon, connect_mcp_addon, list_mcp_addons
 
@@ -3016,11 +2958,14 @@ async def _tool_update_plan(
     from syte.agent_artifacts import save_plan
     from syte.model_routing import normalize_plan_steps
 
-    normalized = normalize_plan_steps(args.get("steps"), args.get("assignees"))
+    normalized = normalize_plan_steps(args.get("steps"), None)
     if not normalized:
         return {"ok": False, "error": "empty_plan", "message": "Provide at least one plan step."}
-    # Persist display-friendly strings while keeping structured assignee metadata.
-    steps = [f"[{row['assignee']}] {row['text']}" for row in normalized]
+    # OpenCode-style single session runner: all plan work stays on the chosen
+    # model in one ordered execution lane. Ignore stale client assignees.
+    for row in normalized:
+        row["assignee"] = "main"
+    steps = [f"[main] {row['text']}" for row in normalized]
     note = str(args.get("note") or "")
     plan = await save_plan(
         project_id,
@@ -3037,10 +2982,9 @@ async def _tool_update_plan(
         "assignments": normalized,
         "note": note,
         "guidance": (
-            "Execute [main] steps yourself on the chosen model. "
-            "For each [subagent] step call delegate_task (then await_subagent if background) and "
-            "pass `files` — the exact paths that subagent owns. Two steps that touch the same file "
-            "must not run in parallel: give them disjoint file lists or run them sequentially."
+            "Execute every step yourself on the chosen model in the listed order. "
+            "Do not delegate, fork, or create background tasks. Keep the next action focused on "
+            "the user-requested source change and verify it before moving on."
         ),
     }
 
@@ -5784,6 +5728,22 @@ async def _communicate_with_agent_impl(
     prior_summary = await summary_task
     matched_skills = await skills_task
     hinted = await lookup_task if lookup_task is not None else []
+
+    # A narrow source follow-up already has a deterministic bounded patch
+    # grammar. Do not spend the model's input window replaying global design
+    # instructions, unrelated skills, durable history, or workspace-search
+    # hints. This mirrors OpenCode's focused session runner: only the current
+    # task contract reaches the selected execution model.
+    if ag_followup_patch_protocol:
+        static_instruction = (
+            "You are Syte's direct coding runner. Apply only the requested bounded "
+            "application-source patch and return the required JSON object."
+        )
+        dynamic_instruction = ""
+        history = []
+        prior_summary = None
+        matched_skills = []
+        hinted = []
 
     turn_hints: list[str] = []
     plan_already_seeded = False

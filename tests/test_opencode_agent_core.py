@@ -32,6 +32,8 @@ def test_build_and_plan_modes_have_explicit_permissions_and_bounded_steps() -> N
     assert build.mode == "build"
     assert build.max_steps == 12
     assert build.allows_tool("write_file", {"path": "app/page.tsx"})
+    assert not build.allows_tool("delegate_task", {"task": "legacy"})
+    assert build.rejection("delegate_task")["error"] == "delegation_disabled"
     assert plan.mode == "plan"
     assert plan.max_steps == 16
     assert plan.allows_tool("read_file", {"path": "app/package.json"})
@@ -219,3 +221,4 @@ def test_turn_controls_persist_core_mode_without_provider_changes() -> None:
     assert spec["agent_modes"] == ["build", "plan"]
     assert 8 in spec["max_steps"]
     assert "small_model_strategy" in spec["execution_contract"]
+    assert "direct_runner" in spec["execution_contract"]

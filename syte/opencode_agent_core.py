@@ -46,6 +46,11 @@ def is_simple_conversation(message: str | None) -> bool:
         and _SIMPLE_CONVERSATION_TOPIC.search(normalized)
     )
 
+# OpenCode keeps subagents out of the selectable default execution lane. Syte
+# intentionally runs one user-selected model per session, so these legacy tools
+# are never permitted even if a stale provider response mentions them.
+_DELEGATION_TOOLS = frozenset({"delegate_task", "await_subagent"})
+
 _READ_ONLY_TOOLS = frozenset(
     {
         "list_files",
@@ -78,6 +83,8 @@ class AgentExecutionPolicy:
 
     def allows_tool(self, tool_name: str, args: dict[str, Any] | None = None) -> bool:
         """Apply an OpenCode-style permission boundary before tool execution."""
+        if tool_name in _DELEGATION_TOOLS:
+            return False
         if self.mode == "build":
             return True
         if tool_name in _READ_ONLY_TOOLS:
@@ -88,6 +95,13 @@ class AgentExecutionPolicy:
         return False
 
     def rejection(self, tool_name: str) -> dict[str, Any]:
+        if tool_name in _DELEGATION_TOOLS:
+            return {
+                "ok": False,
+                "error": "delegation_disabled",
+                "retryable": False,
+                "message": "Subagent delegation is disabled. Execute the next relevant source action directly.",
+            }
         return {
             "ok": False,
             "error": "plan_mode_permission_denied",
@@ -241,6 +255,7 @@ def agent_core_spec() -> dict[str, Any]:
         "execution_contract": {
             "sandbox": "Each turn operates in an isolated workspace; tool paths are relative and application source belongs under app/.",
             "small_model_strategy": "The Agent supplies a deterministic task kind, first action, pre-write tool allowlist, and explicit completion condition.",
+            "direct_runner": "One selected model executes one ordered tool lane; delegated and background subagent tools are disabled.",
             "follow_up_edit": "Completed-project changes receive a narrow source-write contract rather than a new-build planning flow.",
         },
     }
