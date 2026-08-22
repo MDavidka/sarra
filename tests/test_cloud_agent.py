@@ -643,6 +643,30 @@ async def test_turso_sync_status_without_turso_reports_all_saved(
 
 
 @pytest.mark.asyncio
+async def test_simple_turn_keeps_current_user_message_after_history_load(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syte.cloud_agent import _communicate_with_agent_impl
+
+    project = await _project("compact-current-user")
+    captured: dict[str, object] = {}
+
+    async def fake_provider(_model, messages, **_kwargs):
+        captured["messages"] = [dict(item) for item in messages]
+        return {"role": "assistant", "content": "Salut! Hello! Szia!"}
+
+    monkeypatch.setattr("syte.cloud_agent._provider_completion", fake_provider)
+    prompt = "Say hello in Romanian, English, and Hungarian."
+    result = await _communicate_with_agent_impl(project["id"], prompt, request_id="req-compact-user")
+
+    assert result["ok"] is True
+    messages = captured["messages"]
+    assert isinstance(messages, list)
+    assert messages[-1] == {"role": "user", "content": prompt}
+    assert "direct response runner" in str(messages[0].get("content") or "")
+
+
+@pytest.mark.asyncio
 async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir: Path) -> None:
     from syte.cloud_agent import _build_syte_instruction
 
