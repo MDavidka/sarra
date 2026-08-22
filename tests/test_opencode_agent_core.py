@@ -4,6 +4,7 @@ import asyncio
 
 from syte.agent_turn_controls import normalize_turn_controls
 from syte.cloud_agent import (
+    _add_static_webshop_search,
     _execute_tool,
     _is_deliverable_web_source_path,
     _is_webshop_feature_complete,
@@ -75,6 +76,17 @@ def test_follow_up_source_change_requests_are_classified() -> None:
 def test_webshop_delivery_requires_core_feature_flows() -> None:
     assert not _is_webshop_feature_complete("<main><h1>Welcome</h1></main>")
     assert _is_webshop_feature_complete("product listing, cart drawer, checkout form")
+
+
+def test_static_webshop_search_transform_adds_live_filter_once() -> None:
+    source = _static_webshop_bootstrap_html()
+    enhanced = _add_static_webshop_search(source)
+
+    assert enhanced is not None
+    assert 'id="product-search"' in enhanced
+    assert "addEventListener('input'" in enhanced
+    assert "card.hidden" in enhanced
+    assert _add_static_webshop_search(enhanced) is None
 
 
 def test_static_webshop_bootstrap_is_compact_and_contains_required_flows() -> None:
