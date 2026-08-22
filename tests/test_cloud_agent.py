@@ -650,8 +650,9 @@ async def test_instruction_describes_preview_planning_and_homepage(tmp_data_dir:
     instruction = await _build_syte_instruction(project["id"])
 
     assert "update_plan" in instruction
-    assert "delegate_task" in instruction
-    assert "await_subagent" in instruction
+    assert "delegate_task" not in instruction
+    assert "await_subagent" not in instruction
+    assert "directly by you" in instruction
     assert "isolated preview" in instruction or "development preview" in instruction
     assert "Never deploy" in instruction
     assert "shadcn" in instruction.lower()
@@ -667,6 +668,7 @@ async def test_update_plan_tool_returns_structured_plan(tmp_data_dir: Path) -> N
 
     assert result["ok"] is True
     assert result["steps"] == ["[main] Inspect", "[main] Verify"]
+    assert all(row["assignee"] == "main" for row in result["assignments"])
     assert result["note"] == ""
     assert result.get("plan_id")
     assert result["assignments"][0]["assignee"] == "main"

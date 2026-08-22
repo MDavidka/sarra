@@ -273,7 +273,7 @@ async def test_subagent_uses_routed_cheaper_model(
 
 
 @pytest.mark.asyncio
-async def test_update_plan_assigns_main_and_subagent(
+async def test_update_plan_forces_main_only_execution(
     tmp_data_dir: Path,
 ) -> None:
     from syte.cloud_agent import _tool_update_plan
@@ -289,10 +289,9 @@ async def test_update_plan_assigns_main_and_subagent(
         {"request_id": "req-plan", "session_number": 1},
     )
     assert result["ok"] is True
-    assert result["assignments"][0]["assignee"] == "subagent"
-    assert result["assignments"][1]["assignee"] == "main"
-    assert result["steps"][0].startswith("[subagent]")
-    assert "delegate_task" in result["guidance"]
+    assert [row["assignee"] for row in result["assignments"]] == ["main", "main"]
+    assert all(step.startswith("[main]") for step in result["steps"])
+    assert "Do not delegate" in result["guidance"]
 
 
 @pytest.mark.asyncio
