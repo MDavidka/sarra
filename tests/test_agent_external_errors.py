@@ -97,3 +97,20 @@ def test_failure_metadata_malformed_agent_error_keeps_specific_message() -> None
     assert meta["error_type"] == "malformed_request"
     assert "xy" in meta["message"]
     assert meta["detail"]["profile"] == "syra-nano"
+
+
+def test_incomplete_delivery_is_retryable_and_not_a_success_state() -> None:
+    from syte.agent_errors import ToolExecutionError
+    from syte.cloud_agent import _failure_metadata
+
+    meta = _failure_metadata(
+        ToolExecutionError(
+            "Required source was not delivered.",
+            error_type="delivery_incomplete",
+            retryable=True,
+        )
+    )
+
+    assert meta["error_type"] == "delivery_incomplete"
+    assert meta["retryable"] is True
+    assert meta["title"] == "Request failed"
