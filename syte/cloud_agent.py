@@ -5743,6 +5743,24 @@ async def _communicate_with_agent_impl(
     # instructions, unrelated skills, durable history, or workspace-search hints.
     # This mirrors OpenCode's focused session runner: only the current task
     # contract reaches the selected execution model.
+    # A fresh static webshop has a known small seed document. Read it in the
+    # runner (not through a model tool) and make its complete replacement one
+    # atomic, bounded transaction. This gives small OpenAI-compatible models an
+    # exact anchor without asking them to discover files or stitch together a
+    # fragile sequence of head/body insertions.
+    fresh_webshop_seed = ""
+    fresh_static_webshop_patch = False
+    if ag_followup_patch_protocol and webshop_requirements and not source_change_required:
+        try:
+            from syte.workspace_api import read_file
+
+            seed_ok, seed_body, _seed_detail = await read_file(project_id, "app/index.html")
+            if seed_ok and isinstance(seed_body, str) and 0 < len(seed_body) <= 8_000:
+                fresh_webshop_seed = seed_body
+                fresh_static_webshop_patch = True
+        except Exception:
+            logger.debug("fresh webshop seed read failed", exc_info=True)
+
     if ag_followup_patch_protocol or simple_conversation:
         static_instruction = (
             "You are Syte's direct response runner. Answer the user's short conversational "
@@ -5905,13 +5923,29 @@ async def _communicate_with_agent_impl(
                 else ""
             ),
             (
-                "## ag follow-up patch protocol\n"
-                "This is a narrow edit to an existing application. Return ONLY valid JSON with a `patches` array "
-                "containing at most four exact application-source replacements; each patch is "
-                "`{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
-                "Use stable document anchors such as `</head>` and `</body>` if necessary. Do not call tools, "
-                "run commands, include markdown, or write explanation. The sandbox will validate and apply only "
-                "these bounded replacements.\n"
+                (
+                    "## Fresh static webshop patch transaction\n"
+                    "Return ONLY one valid JSON object with exactly one patch. Replace the entire seeded "
+                    "`app/index.html` document in that one patch; do not plan, explain, use markdown, call tools, "
+                    "or split the change into head/body insertions. Your JSON must have this shape: "
+                    "`{\\\"patches\\\":[{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact seed below\\\",\\\"replace\\\":\\\"complete HTML\\\"}]}`. "
+                    "The `find` value must equal this exact JSON string literal, including its newlines:\n"
+                    f"{json.dumps(fresh_webshop_seed, ensure_ascii=False)}\n"
+                    "Keep `replace` below 16,000 characters. Write a self-contained responsive vanilla HTML/CSS/JS "
+                    "page with a visible product grid, add-to-cart controls, a working cart with totals and quantity "
+                    "updates, and a checkout form/confirmation flow. Do not use frameworks, CDNs, external assets, "
+                    "or placeholder-only interactions. The sandbox will validate and atomically apply this patch.\n"
+                )
+                if fresh_static_webshop_patch
+                else (
+                    "## ag follow-up patch protocol\n"
+                    "This is a narrow edit to an existing application. Return ONLY valid JSON with a `patches` array "
+                    "containing at most four exact application-source replacements; each patch is "
+                    "`{\\\"path\\\":\\\"app/index.html\\\",\\\"find\\\":\\\"exact existing text\\\",\\\"replace\\\":\\\"replacement text\\\"}`. "
+                    "Use stable document anchors such as `</head>` and `</body>` if necessary. Do not call tools, "
+                    "run commands, include markdown, or write explanation. The sandbox will validate and apply only "
+                    "these bounded replacements.\n"
+                )
                 if ag_followup_patch_protocol
                 else ""
             ),
