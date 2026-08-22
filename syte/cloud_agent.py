@@ -5766,6 +5766,12 @@ async def _communicate_with_agent_impl(
                 "The request appears to omit a visual direction for a new site. Ask one concise "
                 "choice question using the named themes unless existing context supplies that choice."
             )
+        elif webshop_requirements:
+            turn_hints.append(
+                "No visual direction was specified for this webshop. Use the built-in professional light-commerce "
+                "default: clean white surfaces, dark readable text, restrained blue accent, responsive product grid, "
+                "and accessible cart and checkout interactions. Do not ask a style question."
+            )
     elif gen.get("mandatory_plan") or requires_plan_before_actions(message, turn_controls):
         turn_hints.append(
             "Thinking mode: Deep/Max (hard gate). Your FIRST tool call MUST be "

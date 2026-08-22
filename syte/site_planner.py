@@ -142,7 +142,12 @@ def site_request_needs_clarification(user_message: str) -> bool:
         return False
     has_direction = any(signal in text for signal in _VISUAL_DIRECTION_SIGNALS)
     is_new_build = any(action in text for action in ("build", "create", "scaffold", "make a"))
-    return is_new_build and not has_direction
+    # A webshop already implies a recognizable information architecture and can
+    # use Syte's professional light-commerce default without a blocking prompt.
+    # This keeps simple coding requests in the direct runner instead of waiting
+    # for an avoidable design-choice turn.
+    is_webshop = any(marker in text for marker in ("webshop", "online store", "e-commerce", "ecommerce"))
+    return is_new_build and not has_direction and not is_webshop
 
 
 def _extract_json_array(text: str) -> list[dict[str, Any]] | None:
