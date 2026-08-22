@@ -5958,6 +5958,15 @@ async def _communicate_with_agent_impl(
             *history[-12:],
         ]
     messages = [_system_message_for_provider(static_instruction, dynamic_instruction, model), *history]
+    # History loading starts before the current user message is persisted. Always
+    # append this turn explicitly so a compact direct-response session cannot
+    # lose the actual request to an async history race.
+    if not any(
+        item.get("role") == "user" and str(item.get("content") or "") == message
+        for item in history[-2:]
+        if isinstance(item, dict)
+    ):
+        messages.append({"role": "user", "content": message})
     current = asyncio.current_task()
     if current:
         _active_turns[project_id] = current
