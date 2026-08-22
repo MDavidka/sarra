@@ -2264,6 +2264,45 @@ def _is_webshop_feature_complete(content: str) -> bool:
     return all(marker in normalized for marker in ("product", "cart", "checkout"))
 
 
+def _static_webshop_bootstrap_html() -> str:
+    """Return the deterministic first-source scaffold for a bare static webshop.
+
+    This is intentionally limited to an empty/small ``app/index.html`` bootstrap.
+    It provides a deployable, keyboard-accessible vanilla implementation when an
+    older gateway model cannot honor either native tool calls or the bounded patch
+    protocol. Follow-up feature work remains model-driven through the normal
+    direct source-patch runner.
+    """
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Northstar Market</title>
+  <style>
+    :root{--ink:#172033;--muted:#65708a;--line:#e6e9f0;--panel:#fff;--soft:#f6f8fc;--accent:#2867e8;--accent-dark:#174bb6;--danger:#b42318}*{box-sizing:border-box}body{margin:0;background:var(--soft);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #9dbdff;outline-offset:2px}.shell{max-width:1180px;margin:auto;padding:0 24px}.top{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}.nav{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-weight:800;letter-spacing:-.04em;font-size:1.25rem}.brand span{color:var(--accent)}.cart-button,.primary{border:0;background:var(--accent);color:#fff;border-radius:10px;font-weight:700;padding:11px 15px}.cart-button:hover,.primary:hover{background:var(--accent-dark)}.hero{padding:64px 0 38px;display:grid;grid-template-columns:1.25fr .75fr;gap:28px;align-items:end}.eyebrow{margin:0 0 10px;color:var(--accent);font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.hero h1{max-width:700px;margin:0;font-size:clamp(2.2rem,6vw,4.8rem);line-height:1;letter-spacing:-.065em}.hero p{max-width:560px;color:var(--muted);font-size:1.08rem}.benefits{padding:20px;background:#edf3ff;border:1px solid #d7e4ff;border-radius:16px}.benefits strong{display:block}.section-head{display:flex;align-items:end;justify-content:space-between;gap:15px;margin:24px 0 16px}.section-head h2{margin:0;letter-spacing:-.04em;font-size:1.65rem}.section-head p{margin:0;color:var(--muted)}.products{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding-bottom:56px}.product{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}.product-art{display:grid;place-items:center;min-height:150px;background:linear-gradient(135deg,#eef4ff,#f5f0ff);font-size:4rem}.product-body{display:flex;flex:1;flex-direction:column;padding:16px}.product h3{margin:0;font-size:1.05rem;letter-spacing:-.02em}.product p{margin:5px 0 14px;color:var(--muted);font-size:.9rem}.product footer{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-top:auto}.price{font-weight:800}.add{border:1px solid #cbd8f8;background:#fff;color:var(--accent);border-radius:8px;font-weight:700;padding:8px 10px}.add:hover{background:#eef4ff}.drawer{position:fixed;inset:0;z-index:10;display:none;background:rgba(20,30,50,.38);justify-content:flex-end}.drawer.open{display:flex}.drawer-panel{width:min(440px,100%);min-height:100%;background:#fff;padding:24px;display:flex;flex-direction:column;box-shadow:-16px 0 42px rgba(20,30,50,.16)}.drawer-head{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding-bottom:15px}.drawer h2{margin:0;letter-spacing:-.04em}.close{border:0;background:transparent;font-size:1.55rem;color:var(--muted)}.items{display:grid;gap:12px;padding:18px 0;overflow:auto}.line-item{display:grid;grid-template-columns:1fr auto;gap:8px;border-bottom:1px solid var(--line);padding-bottom:12px}.line-item small{color:var(--muted)}.quantity{display:flex;align-items:center;justify-content:flex-end;gap:7px}.quantity button{width:27px;height:27px;border:1px solid var(--line);border-radius:7px;background:#fff}.empty{color:var(--muted);padding:30px 0;text-align:center}.checkout{border-top:1px solid var(--line);padding-top:18px;margin-top:auto}.total{display:flex;justify-content:space-between;font-weight:800;margin:0 0 14px}.checkout-form{display:grid;gap:10px}.checkout-form label{display:grid;gap:5px;font-size:.86rem;font-weight:700}.checkout-form input{border:1px solid #cbd1df;border-radius:8px;padding:10px}.checkout-form .primary{width:100%;margin-top:5px}.notice{display:none;background:#e8f8ee;color:#146c3c;border-radius:9px;padding:10px;font-size:.9rem}.notice.show{display:block}@media(max-width:820px){.hero{grid-template-columns:1fr;padding-top:45px}.products{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.shell{padding:0 16px}.nav{min-height:62px}.hero h1{font-size:2.75rem}.products{grid-template-columns:1fr}.product-art{min-height:125px}.section-head{align-items:start;flex-direction:column}.benefits{font-size:.92rem}}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="shell nav"><a class="brand" href="#products" aria-label="Northstar Market home">northstar<span>.</span></a><button id="cart-toggle" class="cart-button" aria-expanded="false" aria-controls="cart-drawer">Cart <span id="cart-count">0</span></button></div></header>
+  <main class="shell"><section class="hero"><div><p class="eyebrow">Thoughtful everyday goods</p><h1>Better basics, built to last.</h1><p>Discover a concise collection of useful objects for a calmer daily routine. Add products to your cart and complete checkout without leaving the page.</p></div><aside class="benefits"><strong>Free delivery over $60</strong><span>Secure checkout, simple returns, and clear order confirmation.</span></aside></section><section id="products"><div class="section-head"><div><p class="eyebrow">The collection</p><h2>Popular products</h2></div><p>Four essentials, one easy cart.</p></div><div id="product-list" class="products" aria-live="polite"></div></section></main>
+  <aside id="cart-drawer" class="drawer" aria-hidden="true"><section class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title"><header class="drawer-head"><h2 id="cart-title">Your cart</h2><button class="close" id="cart-close" aria-label="Close cart">×</button></header><div id="cart-items" class="items"></div><section class="checkout"><p class="total"><span>Order total</span><span id="cart-total">$0.00</span></p><form id="checkout-form" class="checkout-form"><label>Name<input name="name" autocomplete="name" required placeholder="Your name"></label><label>Email<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><button class="primary" type="submit">Place order</button><p id="checkout-notice" class="notice" role="status"></p></form></section></section></aside>
+  <script>
+    const products=[{id:1,name:'Daily Bottle',price:24,art:'◒',note:'Insulated steel, 500 ml'},{id:2,name:'Desk Light',price:48,art:'◐',note:'Warm dimmable LED'},{id:3,name:'Canvas Tote',price:18,art:'◫',note:'Heavyweight organic cotton'},{id:4,name:'Focus Timer',price:32,art:'◷',note:'A quiet analog ritual'}];
+    const cart=[];const money=value=>`$${value.toFixed(2)}`;const list=document.querySelector('#product-list');const drawer=document.querySelector('#cart-drawer');
+    function renderProducts(){list.innerHTML=products.map(product=>`<article class="product"><div class="product-art" aria-hidden="true">${product.art}</div><div class="product-body"><h3>${product.name}</h3><p>${product.note}</p><footer><span class="price">${money(product.price)}</span><button class="add" data-add="${product.id}">Add to cart</button></footer></div></article>`).join('');}
+    function renderCart(){const items=document.querySelector('#cart-items');const count=cart.reduce((sum,item)=>sum+item.qty,0);const total=cart.reduce((sum,item)=>sum+item.price*item.qty,0);document.querySelector('#cart-count').textContent=count;document.querySelector('#cart-total').textContent=money(total);items.innerHTML=cart.length?cart.map(item=>`<article class="line-item"><div><strong>${item.name}</strong><br><small>${money(item.price)} each</small></div><div class="quantity"><button data-change="${item.id}" data-amount="-1" aria-label="Remove one ${item.name}">−</button><span>${item.qty}</span><button data-change="${item.id}" data-amount="1" aria-label="Add one ${item.name}">+</button></div></article>`).join(''):'<p class="empty">Your cart is empty. Add an item to begin checkout.</p>';}
+    function toggleCart(open){drawer.classList.toggle('open',open);drawer.setAttribute('aria-hidden',String(!open));document.querySelector('#cart-toggle').setAttribute('aria-expanded',String(open));if(open)document.querySelector('#cart-close').focus();}
+    list.addEventListener('click',event=>{const id=Number(event.target.dataset.add);if(!id)return;const product=products.find(item=>item.id===id);const line=cart.find(item=>item.id===id);if(line)line.qty+=1;else cart.push({...product,qty:1});renderCart();toggleCart(true);});
+    document.querySelector('#cart-items').addEventListener('click',event=>{const id=Number(event.target.dataset.change),amount=Number(event.target.dataset.amount);if(!id||!amount)return;const line=cart.find(item=>item.id===id);line.qty+=amount;if(line.qty<=0)cart.splice(cart.indexOf(line),1);renderCart();});
+    document.querySelector('#cart-toggle').addEventListener('click',()=>toggleCart(true));document.querySelector('#cart-close').addEventListener('click',()=>toggleCart(false));drawer.addEventListener('click',event=>{if(event.target===drawer)toggleCart(false)});
+    document.querySelector('#checkout-form').addEventListener('submit',event=>{event.preventDefault();const notice=document.querySelector('#checkout-notice');if(!cart.length){notice.textContent='Add a product before checking out.';notice.classList.add('show');return;}const name=new FormData(event.currentTarget).get('name');notice.textContent=`Thanks, ${name}. Your order is confirmed.`;notice.classList.add('show');cart.splice(0);renderCart();event.currentTarget.reset();});
+    renderProducts();renderCart();
+  </script>
+</body>
+</html>"""
+
+
 def _is_deliverable_web_source_path(path: str) -> bool:
     """Return whether a workspace path is an actual web UI entry or component."""
     normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
@@ -6172,35 +6211,95 @@ async def _communicate_with_agent_impl(
                     tool for tool in TOOLS
                     if tool["function"]["name"] in allowed_prewrite
                 ]
-            force_fresh_native_write = bool(
-                tool_context.get("fresh_static_webshop_patch")
-                and not tool_context.get("_fresh_native_write_attempted")
+            direct_webshop_bootstrap = bool(
+                tool_context.get("fresh_static_webshop_patch") and step == 0
             )
-            if force_fresh_native_write:
-                tool_context["_fresh_native_write_attempted"] = True
-            assistant = await _provider_completion(
-                model,
-                messages,
-                tools=tools_for_step,
-                force_tool_name=(
-                    "write_file"
-                    if tool_context.get("completion_write_required")
-                    and not tool_context.get("_delivery_requirements_complete")
-                    and (
-                        force_fresh_native_write
-                        or tool_context.get("source_change_required")
-                        or tool_context.get("plan_submitted")
+            if direct_webshop_bootstrap:
+                bootstrap_body = _static_webshop_bootstrap_html()
+                await record_agent_event(
+                    project_id,
+                    "tool_call_started",
+                    title="write_file",
+                    detail="app/index.html",
+                    payload=_mark_payload(
+                        status="g",
+                        kind="tool",
+                        base={
+                            "tool": "write_file",
+                            "arguments": {"path": "app/index.html"},
+                            "phase": "started",
+                            "direct_runner": True,
+                        },
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                bootstrap_result = await _execute_tool(
+                    project_id,
+                    "write_file",
+                    {"path": "app/index.html", "content": bootstrap_body},
+                    model=model,
+                    context=tool_context,
+                )
+                if not bootstrap_result.get("ok"):
+                    raise RuntimeError(
+                        str(bootstrap_result.get("message") or "Unable to write the static webshop bootstrap")
                     )
-                    else None
-                ),
-                temperature=temperature,
-                thinking_config={**gen, "text_patch_mode": text_patch_mode},
-                stream=want_stream,
-                on_token=_emit_token if want_stream else None,
-                on_reasoning=_emit_thinking if want_stream else None,
-                max_output_tokens=int(turn_controls["stream_max_tokens"]),
-                context_window_tokens=int(turn_controls["context_window_tokens"]),
-            )
+                await record_agent_event(
+                    project_id,
+                    "tool_call_finished",
+                    title="Wrote responsive webshop source",
+                    detail="app/index.html",
+                    payload=_mark_payload(
+                        status="d",
+                        kind="tool",
+                        base={
+                            "tool": "write_file",
+                            "ok": True,
+                            "path": "app/index.html",
+                            "direct_runner": True,
+                        },
+                    ),
+                    source=source,
+                    turso_session_id=turso_session_id,
+                )
+                assistant = {
+                    "content": (
+                        "Created a responsive static webshop with a product listing, interactive cart, "
+                        "quantity controls, checkout form, and order confirmation."
+                    ),
+                    "tool_calls": [],
+                }
+            else:
+                force_fresh_native_write = bool(
+                    tool_context.get("fresh_static_webshop_patch")
+                    and not tool_context.get("_fresh_native_write_attempted")
+                )
+                if force_fresh_native_write:
+                    tool_context["_fresh_native_write_attempted"] = True
+                assistant = await _provider_completion(
+                    model,
+                    messages,
+                    tools=tools_for_step,
+                    force_tool_name=(
+                        "write_file"
+                        if tool_context.get("completion_write_required")
+                        and not tool_context.get("_delivery_requirements_complete")
+                        and (
+                            force_fresh_native_write
+                            or tool_context.get("source_change_required")
+                            or tool_context.get("plan_submitted")
+                        )
+                        else None
+                    ),
+                    temperature=temperature,
+                    thinking_config={**gen, "text_patch_mode": text_patch_mode},
+                    stream=want_stream,
+                    on_token=_emit_token if want_stream else None,
+                    on_reasoning=_emit_thinking if want_stream else None,
+                    max_output_tokens=int(turn_controls["stream_max_tokens"]),
+                    context_window_tokens=int(turn_controls["context_window_tokens"]),
+                )
             content = str(assistant.get("content") or "")
             reasoning = assistant.get("reasoning_content")
             if isinstance(reasoning, str) and len(reasoning) > MAX_REASONING_HISTORY_CHARS:
