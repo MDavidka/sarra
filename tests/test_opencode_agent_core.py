@@ -187,6 +187,22 @@ def test_ag_list_completion_envelope_normalizes_to_openai_choices() -> None:
     assert _normalize_completion_payload([{"choices": [choice]}]) == {"choices": [choice]}
 
 
+def test_text_patch_protocol_accepts_one_complete_static_document_replacement() -> None:
+    seed = "<!doctype html>\n<html><body>Seed</body></html>"
+    replacement = "<!doctype html>\n<html><body><section>product listing</section><aside>cart</aside><form>checkout</form></body></html>"
+    payload = (
+        '{"patches":[{"path":"app/index.html","find":"'
+        + seed.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        + '","replace":"'
+        + replacement.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        + '"}]}'
+    )
+
+    assert _parse_text_patch_protocol(payload) == [
+        {"path": "app/index.html", "find": seed, "replace": replacement}
+    ]
+
+
 def test_text_patch_protocol_only_accepts_bounded_application_source_replacements() -> None:
     payload = '''{"patches":[{"path":"app/index.html","find":"</body>","replace":"<script>ok()</script></body>"}]}'''
     expected = [
