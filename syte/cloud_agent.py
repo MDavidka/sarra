@@ -3347,6 +3347,17 @@ async def _tool_inspect_preview(
             result["console_logs"] = console.get("console_logs") or []
             result["page_errors"] = console.get("page_errors") or []
 
+    # Preview inspection is diagnostic. A load, browser, or console error must
+    # return to the direct runner as a recoverable tool result so the selected
+    # model can inspect the attached evidence and fix or retry it; it is never a
+    # reason to abort the whole coding turn by itself.
+    if not result.get("ok"):
+        result["retryable"] = True
+        result["recovery"] = (
+            "Inspect the attached preview logs and DevTools details, repair the source or preview state, "
+            "then run one targeted preview check again."
+        )
+
     # Always attach recent preview server logs when inspect fails so the agent
     # can diagnose without a second tool round-trip (and when URL allow fails).
     if not result.get("ok"):
@@ -6623,12 +6634,20 @@ async def _communicate_with_agent_impl(
                         logger.debug("post-turn preview checks failed", exc_info=True)
 
                 if tool_context.get("completion_write_required") and not tool_context.get("_delivery_requirements_complete"):
-                    reply = (
+                    # Never emit request_completed for a task whose required
+                    # deployable source or visible flows were not delivered. This
+                    # remains retryable for the caller, but it is a true incomplete
+                    # delivery rather than a successful task.
+                    from syte.agent_errors import ToolExecutionError
+
+                    raise ToolExecutionError(
                         "The Agent exhausted its bounded action budget before completing the required "
-                        "deployable UI source and requested feature flows. Retry the build with a larger step budget."
+                        "deployable source and requested feature flows. Retry the build with a larger step budget.",
+                        error_type="delivery_incomplete",
+                        retryable=True,
+                        hint="The task was not marked done; retry the same request with more execution steps.",
                     )
-                else:
-                    reply = content.strip() or "Done."
+                reply = content.strip() or "Done."
                 cost_info = _estimate_turn_cost(model, turn_usage)
                 await _flush_hot_deltas()
                 await record_agent_event(
@@ -6807,11 +6826,15 @@ async def _communicate_with_agent_impl(
                         )
                     raise
                 except Exception as exc:
+                    # Unexpected individual tool faults are surfaced to the model
+                    # as retryable evidence. The runner preserves the matching tool
+                    # response and continues the turn instead of incorrectly
+                    # converting one small tool issue into a terminal task failure.
                     result = {
                         "ok": False,
                         "error": "tool_failed",
                         "message": str(exc) or type(exc).__name__,
-                        "retryable": False,
+                        "retryable": True,
                     }
                 # An attempted inspection consumes the same action budget even if
                 # malformed provider arguments make the tool fail. Otherwise a bad

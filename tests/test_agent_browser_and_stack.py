@@ -211,6 +211,8 @@ async def test_inspect_preview_captures_console_by_default(monkeypatch: pytest.M
     result = await cloud_agent._tool_inspect_preview("proj", {"route": "/"}, {})
     assert result["console_error_count"] == 1
     assert result["ok"] is False
+    assert result["retryable"] is True
+    assert "repair the source or preview state" in result["recovery"]
     assert result["console_logs"][0]["text"].startswith("ReferenceError")
     assert result["page_summary"]["body_text_length"] == 12
     assert result["page_summary"]["h1"] == "Demo"
