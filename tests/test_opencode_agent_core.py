@@ -7,6 +7,7 @@ from syte.cloud_agent import (
     _execute_tool,
     _is_deliverable_web_source_path,
     _is_webshop_feature_complete,
+    _static_webshop_bootstrap_html,
     _normalize_completion_payload,
     _parse_sse_completion,
     _parse_text_patch_protocol,
@@ -74,6 +75,16 @@ def test_follow_up_source_change_requests_are_classified() -> None:
 def test_webshop_delivery_requires_core_feature_flows() -> None:
     assert not _is_webshop_feature_complete("<main><h1>Welcome</h1></main>")
     assert _is_webshop_feature_complete("product listing, cart drawer, checkout form")
+
+
+def test_static_webshop_bootstrap_is_compact_and_contains_required_flows() -> None:
+    source = _static_webshop_bootstrap_html()
+
+    assert len(source) < 16_000
+    assert _is_webshop_feature_complete(source)
+    assert "addEventListener" in source
+    assert "checkout-form" in source
+    assert "cart-total" in source
 
 
 def test_webshop_delivery_requires_an_actual_ui_source_path() -> None:
