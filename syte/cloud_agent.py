@@ -5729,14 +5729,17 @@ async def _communicate_with_agent_impl(
     matched_skills = await skills_task
     hinted = await lookup_task if lookup_task is not None else []
 
-    # A narrow source follow-up already has a deterministic bounded patch
-    # grammar. Do not spend the model's input window replaying global design
-    # instructions, unrelated skills, durable history, or workspace-search
-    # hints. This mirrors OpenCode's focused session runner: only the current
-    # task contract reaches the selected execution model.
-    if ag_followup_patch_protocol:
+    # A simple conversation or narrow source follow-up already has a deterministic
+    # task contract. Do not spend the model's input window replaying global design
+    # instructions, unrelated skills, durable history, or workspace-search hints.
+    # This mirrors OpenCode's focused session runner: only the current task
+    # contract reaches the selected execution model.
+    if ag_followup_patch_protocol or simple_conversation:
         static_instruction = (
-            "You are Syte's direct coding runner. Apply only the requested bounded "
+            "You are Syte's direct response runner. Answer the user's short conversational "
+            "request directly without tools or workspace discussion."
+            if simple_conversation
+            else "You are Syte's direct coding runner. Apply only the requested bounded "
             "application-source patch and return the required JSON object."
         )
         dynamic_instruction = ""
