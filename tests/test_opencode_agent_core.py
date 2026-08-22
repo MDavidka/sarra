@@ -15,6 +15,7 @@ from syte.site_planner import (
     is_source_change_request,
     is_substantive_site_request,
     is_website_request,
+    site_request_needs_clarification,
 )
 from syte.opencode_agent_core import (
     agent_core_spec,
@@ -61,6 +62,7 @@ def test_webshop_prompts_are_substantive_website_work() -> None:
     prompt = "Create a responsive webshop with a product listing, cart, and checkout."
     assert is_website_request(prompt)
     assert is_substantive_site_request(prompt)
+    assert not site_request_needs_clarification(prompt)
 
 
 def test_follow_up_source_change_requests_are_classified() -> None:
