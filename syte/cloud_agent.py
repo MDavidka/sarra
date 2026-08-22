@@ -6320,6 +6320,10 @@ async def _communicate_with_agent_impl(
                     source=source,
                     turso_session_id=turso_session_id,
                 )
+                # The write has already completed through the direct runner.
+                # Do not send its human-readable completion message through the
+                # model JSON-patch parser that is otherwise enabled for follow-ups.
+                tool_context["_text_patch_protocol_requested"] = False
                 assistant = {
                     "content": (
                         "Added a product search bar with live product-card filtering."
