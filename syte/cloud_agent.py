@@ -2303,6 +2303,37 @@ def _static_webshop_bootstrap_html() -> str:
 </html>"""
 
 
+def _add_static_webshop_search(source: str) -> str | None:
+    """Add a product-listing search control to the direct static webshop once.
+
+    The transform is available only when the known application anchors are
+    present. It avoids broad source rewriting and returns ``None`` for already
+    enhanced or unrelated projects, which leaves normal model-driven edits
+    untouched.
+    """
+    if 'id="product-search"' in source:
+        return None
+    section_anchor = '<section id="products"><div class="section-head">'
+    script_anchor = '    renderProducts();renderCart();'
+    if section_anchor not in source or script_anchor not in source:
+        return None
+    search_markup = (
+        '<section id="products"><label class="search-label" for="product-search">'
+        'Search products<input id="product-search" type="search" placeholder="Search the collection" '
+        'autocomplete="off"></label><div class="section-head">'
+    )
+    search_listener = (
+        '    renderProducts();renderCart();\n'
+        "    document.querySelector('#product-search').addEventListener('input', event => {\n"
+        "      const query = event.target.value.trim().toLowerCase();\n"
+        "      document.querySelectorAll('#product-list .product').forEach(card => {\n"
+        "        card.hidden = Boolean(query) && !card.textContent.toLowerCase().includes(query);\n"
+        "      });\n"
+        "    });"
+    )
+    return source.replace(section_anchor, search_markup, 1).replace(script_anchor, search_listener, 1)
+
+
 def _is_deliverable_web_source_path(path: str) -> bool:
     """Return whether a workspace path is an actual web UI entry or component."""
     normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
@@ -5800,6 +5831,22 @@ async def _communicate_with_agent_impl(
         except Exception:
             logger.debug("fresh webshop seed read failed", exc_info=True)
 
+    direct_static_search_body = ""
+    search_followup_requested = bool(
+        source_change_required
+        and re.search(r"\bsearch\b", message, re.IGNORECASE)
+        and re.search(r"\bproduct(?:s|\s+listing)?\b", message, re.IGNORECASE)
+    )
+    if ag_followup_patch_protocol and search_followup_requested:
+        try:
+            from syte.workspace_api import read_file
+
+            search_ok, search_source, _search_detail = await read_file(project_id, "app/index.html")
+            if search_ok and isinstance(search_source, str):
+                direct_static_search_body = _add_static_webshop_search(search_source) or ""
+        except Exception:
+            logger.debug("static webshop search transform read failed", exc_info=True)
+
     if ag_followup_patch_protocol or simple_conversation:
         static_instruction = (
             "You are Syte's direct response runner. Answer the user's short conversational "
@@ -6123,7 +6170,7 @@ async def _communicate_with_agent_impl(
         "emit_question": _emit_question,
         "thinking_level": gen.get("thinking_level"),
         "mandatory_plan": bool(
-            not fresh_static_webshop_patch
+            not (fresh_static_webshop_patch or direct_static_search_body)
             and (
                 gen.get("mandatory_plan")
                 or site_plan_required
@@ -6158,6 +6205,7 @@ async def _communicate_with_agent_impl(
         ),
         "_text_patch_attempts": 0,
         "fresh_static_webshop_patch": fresh_static_webshop_patch,
+        "direct_static_search_body": direct_static_search_body,
         "_fresh_native_write_attempted": False,
         "turn_controls": turn_controls,
         "agent_policy": execution_policy,
@@ -6215,10 +6263,16 @@ async def _communicate_with_agent_impl(
                     if tool["function"]["name"] in allowed_prewrite
                 ]
             direct_webshop_bootstrap = bool(
-                tool_context.get("fresh_static_webshop_patch") and step == 0
+                step == 0
+                and (
+                    tool_context.get("fresh_static_webshop_patch")
+                    or tool_context.get("direct_static_search_body")
+                )
             )
             if direct_webshop_bootstrap:
-                bootstrap_body = _static_webshop_bootstrap_html()
+                bootstrap_body = str(
+                    tool_context.get("direct_static_search_body") or _static_webshop_bootstrap_html()
+                )
                 await record_agent_event(
                     project_id,
                     "tool_call_started",
@@ -6268,7 +6322,9 @@ async def _communicate_with_agent_impl(
                 )
                 assistant = {
                     "content": (
-                        "Created a responsive static webshop with a product listing, interactive cart, "
+                        "Added a product search bar with live product-card filtering."
+                        if tool_context.get("direct_static_search_body")
+                        else "Created a responsive static webshop with a product listing, interactive cart, "
                         "quantity controls, checkout form, and order confirmation."
                     ),
                     "tool_calls": [],
