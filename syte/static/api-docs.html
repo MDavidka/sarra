@@ -422,10 +422,6 @@
           <a href="#stream/screenshot" data-cat="stream" data-ep="screenshot">screenshot</a>
           <a href="#stream/question" data-cat="stream" data-ep="question">question</a>
           <a href="#stream/question-answered" data-cat="stream" data-ep="question-answered">question_answered</a>
-          <a href="#stream/subagent-scope" data-cat="stream" data-ep="subagent-scope">subagent_scope</a>
-          <a href="#stream/subagent-started" data-cat="stream" data-ep="subagent-started">subagent_started</a>
-          <a href="#stream/subagent-completed" data-cat="stream" data-ep="subagent-completed">subagent_completed</a>
-          <a href="#stream/subagent-failed" data-cat="stream" data-ep="subagent-failed">subagent_failed</a>
           <a href="#stream/request-completed" data-cat="stream" data-ep="request-completed">request_completed</a>
           <a href="#stream/request-failed" data-cat="stream" data-ep="request-failed">request_failed</a>
           <a href="#stream/session-stopped" data-cat="stream" data-ep="session-stopped">session_stopped</a>
@@ -550,10 +546,6 @@
         <a class="mini-tab" href="#stream/screenshot" data-cat="stream" data-ep="screenshot">screenshot</a>
         <a class="mini-tab" href="#stream/question" data-cat="stream" data-ep="question">question</a>
         <a class="mini-tab" href="#stream/question-answered" data-cat="stream" data-ep="question-answered">question_answered</a>
-        <a class="mini-tab" href="#stream/subagent-scope" data-cat="stream" data-ep="subagent-scope">subagent_scope</a>
-        <a class="mini-tab" href="#stream/subagent-started" data-cat="stream" data-ep="subagent-started">subagent_started</a>
-        <a class="mini-tab" href="#stream/subagent-completed" data-cat="stream" data-ep="subagent-completed">subagent_completed</a>
-        <a class="mini-tab" href="#stream/subagent-failed" data-cat="stream" data-ep="subagent-failed">subagent_failed</a>
         <a class="mini-tab" href="#stream/request-completed" data-cat="stream" data-ep="request-completed">request_completed</a>
         <a class="mini-tab" href="#stream/request-failed" data-cat="stream" data-ep="request-failed">request_failed</a>
         <a class="mini-tab" href="#stream/session-stopped" data-cat="stream" data-ep="session-stopped">session_stopped</a>
@@ -3065,134 +3057,6 @@ data: {…}</pre>
   &quot;created_at&quot;: &quot;2026-07-25T21:00:45Z&quot;
 }</pre><div class="seg-label">SSE frame</div><pre>id: …
 event: question_answered
-data: {…}</pre>
-            </div>
-          </div>
-          <div class="endpoint" id="subagent-scope" data-ep="subagent-scope">
-            <div class="endpoint-header">
-              <div class="endpoint-base">https://your-syte-host.com/api</div>
-              <div class="endpoint-row">
-                <span class="method sse">SSE</span>
-                <span class="endpoint-path">subagent_scope</span>
-              </div>
-              <div class="endpoint-name">File scope reserved before delegation.</div>
-            </div>
-            <div class="endpoint-body">
-<div class="field-desc">File scope reserved before delegation.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
-  &quot;id&quot;: 210,
-  &quot;event_type&quot;: &quot;subagent_scope&quot;,
-  &quot;role&quot;: &quot;system&quot;,
-  &quot;title&quot;: &quot;Subagent scope&quot;,
-  &quot;detail&quot;: &quot;Reserved 2 files&quot;,
-  &quot;payload&quot;: {
-    &quot;task_id&quot;: &quot;sub_3&quot;,
-    &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;, &quot;app/lib/plans.ts&quot;],
-    &quot;request_id&quot;: &quot;req_8f2a&quot;,
-    &quot;session&quot;: 3,
-    &quot;agent&quot;: &quot;main&quot;
-  },
-  &quot;source&quot;: &quot;agent&quot;,
-  &quot;created_at&quot;: &quot;2026-07-25T21:00:25Z&quot;
-}</pre><div class="seg-label">SSE frame</div><pre>id: …
-event: subagent_scope
-data: {…}</pre>
-            </div>
-          </div>
-          <div class="endpoint" id="subagent-started" data-ep="subagent-started">
-            <div class="endpoint-header">
-              <div class="endpoint-base">https://your-syte-host.com/api</div>
-              <div class="endpoint-row">
-                <span class="method sse">SSE</span>
-                <span class="endpoint-path">subagent_started</span>
-              </div>
-              <div class="endpoint-name">Delegated subagent began work.</div>
-            </div>
-            <div class="endpoint-body">
-<div class="field-desc">Delegated subagent began work.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
-  &quot;id&quot;: 211,
-  &quot;event_type&quot;: &quot;subagent_started&quot;,
-  &quot;role&quot;: &quot;system&quot;,
-  &quot;title&quot;: &quot;Subagent started&quot;,
-  &quot;detail&quot;: &quot;Implement PricingCard&quot;,
-  &quot;payload&quot;: {
-    &quot;task_id&quot;: &quot;sub_3&quot;,
-    &quot;task&quot;: &quot;Implement PricingCard&quot;,
-    &quot;mode&quot;: &quot;build&quot;,
-    &quot;profile&quot;: &quot;syra-nano&quot;,
-    &quot;files&quot;: [&quot;app/components/PricingCard.tsx&quot;],
-    &quot;request_id&quot;: &quot;req_8f2a&quot;,
-    &quot;session&quot;: 3,
-    &quot;agent&quot;: &quot;subagent&quot;,
-    &quot;subagent_task_id&quot;: &quot;sub_3&quot;
-  },
-  &quot;source&quot;: &quot;agent&quot;,
-  &quot;created_at&quot;: &quot;2026-07-25T21:00:26Z&quot;
-}</pre><div class="seg-label">SSE frame</div><pre>id: …
-event: subagent_started
-data: {…}</pre>
-            </div>
-          </div>
-          <div class="endpoint" id="subagent-completed" data-ep="subagent-completed">
-            <div class="endpoint-header">
-              <div class="endpoint-base">https://your-syte-host.com/api</div>
-              <div class="endpoint-row">
-                <span class="method sse">SSE</span>
-                <span class="endpoint-path">subagent_completed</span>
-              </div>
-              <div class="endpoint-name">Subagent finished successfully.</div>
-            </div>
-            <div class="endpoint-body">
-<div class="field-desc">Subagent finished successfully.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
-  &quot;id&quot;: 220,
-  &quot;event_type&quot;: &quot;subagent_completed&quot;,
-  &quot;role&quot;: &quot;system&quot;,
-  &quot;title&quot;: &quot;Subagent completed&quot;,
-  &quot;detail&quot;: &quot;PricingCard ready&quot;,
-  &quot;payload&quot;: {
-    &quot;task_id&quot;: &quot;sub_3&quot;,
-    &quot;ok&quot;: true,
-    &quot;result&quot;: &quot;PricingCard ready&quot;,
-    &quot;request_id&quot;: &quot;req_8f2a&quot;,
-    &quot;session&quot;: 3,
-    &quot;agent&quot;: &quot;subagent&quot;,
-    &quot;subagent_task_id&quot;: &quot;sub_3&quot;
-  },
-  &quot;source&quot;: &quot;agent&quot;,
-  &quot;created_at&quot;: &quot;2026-07-25T21:00:55Z&quot;
-}</pre><div class="seg-label">SSE frame</div><pre>id: …
-event: subagent_completed
-data: {…}</pre>
-            </div>
-          </div>
-          <div class="endpoint" id="subagent-failed" data-ep="subagent-failed">
-            <div class="endpoint-header">
-              <div class="endpoint-base">https://your-syte-host.com/api</div>
-              <div class="endpoint-row">
-                <span class="method sse">SSE</span>
-                <span class="endpoint-path">subagent_failed</span>
-              </div>
-              <div class="endpoint-name">Subagent failed or cancelled.</div>
-            </div>
-            <div class="endpoint-body">
-<div class="field-desc">Subagent failed or cancelled.</div><div class="note">Cold event — full JSON; mirrored to Turso in background when a session is open.</div><div class="seg-label">JSON (data: payload)</div><pre>{
-  &quot;id&quot;: 221,
-  &quot;event_type&quot;: &quot;subagent_failed&quot;,
-  &quot;role&quot;: &quot;system&quot;,
-  &quot;title&quot;: &quot;Subagent failed&quot;,
-  &quot;detail&quot;: &quot;timeout&quot;,
-  &quot;payload&quot;: {
-    &quot;task_id&quot;: &quot;sub_4&quot;,
-    &quot;ok&quot;: false,
-    &quot;error&quot;: &quot;subagent_timeout&quot;,
-    &quot;request_id&quot;: &quot;req_8f2a&quot;,
-    &quot;session&quot;: 3,
-    &quot;agent&quot;: &quot;subagent&quot;,
-    &quot;subagent_task_id&quot;: &quot;sub_4&quot;
-  },
-  &quot;source&quot;: &quot;agent&quot;,
-  &quot;created_at&quot;: &quot;2026-07-25T21:01:00Z&quot;
-}</pre><div class="seg-label">SSE frame</div><pre>id: …
-event: subagent_failed
 data: {…}</pre>
             </div>
           </div>
