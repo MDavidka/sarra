@@ -6101,10 +6101,10 @@ async def _communicate_with_agent_impl(
                 # tools. After two successful inspections, write_file is the sole
                 # available action, making the delivery-first rule deterministic.
                 prewrite_inspections = int(tool_context.get("_prewrite_inspections") or 0)
-                if tool_context.get("source_change_required"):
-                    # A prior project build already established the workspace contract.
-                    # Follow-up requests must preserve their limited action budget for
-                    # the requested edit rather than rediscovering a large source file.
+                if tool_context.get("source_change_required") or tool_context.get("plan_submitted"):
+                    # A completed follow-up or a new build with its required plan
+                    # already recorded must spend the next action on the visible
+                    # source artifact, not another discovery or metadata turn.
                     allowed_prewrite = {"write_file"}
                 else:
                     allowed_prewrite = (
@@ -6125,8 +6125,12 @@ async def _communicate_with_agent_impl(
                 tools=tools_for_step,
                 force_tool_name=(
                     "write_file"
-                    if tool_context.get("source_change_required")
+                    if tool_context.get("completion_write_required")
                     and not tool_context.get("_delivery_requirements_complete")
+                    and (
+                        tool_context.get("source_change_required")
+                        or tool_context.get("plan_submitted")
+                    )
                     else None
                 ),
                 temperature=temperature,
