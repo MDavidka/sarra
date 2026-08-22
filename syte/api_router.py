@@ -143,6 +143,12 @@ class AgentChangeRequest(BaseModel):
     thinking_level: int | None = Field(
         None, ge=1, le=6, description="1 minimal … 6 xhigh — per-request depth (does not persist model_profile)"
     )
+    plan_mode: str | None = Field(
+        None, description="Per-turn planning policy: auto, always, or off"
+    )
+    agent_mode: str | None = Field(
+        None, description="Per-turn execution mode: build or plan"
+    )
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
     idempotency_key: str | None = Field(
@@ -1314,6 +1320,8 @@ async def api_agent_change(body: AgentChangeRequest, _token: dict = Depends(veri
         body.message,
         model_profile=profile,
         thinking_level=body.thinking_level,
+        plan_mode=body.plan_mode,
+        agent_mode=body.agent_mode,
         source="sycord",
         background=True,
         improve_from_screenshot=bool(body.improve_from_screenshot),

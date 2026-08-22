@@ -140,3 +140,29 @@ def test_website_prompt_preserves_existing_framework() -> None:
     assert "ready to deploy" in prompt
     assert "environment-probing commands" in prompt
     assert "project-declared build" in prompt
+
+
+def test_agent_change_forwards_direct_execution_controls(monkeypatch) -> None:
+    from syte import api_router
+
+    captured: dict[str, object] = {}
+
+    async def fake_communicate(project_id: str, message: str, **kwargs):
+        captured.update({"project_id": project_id, "message": message, **kwargs})
+        return {"ok": True, "request_id": "req_direct", "status": "accepted"}
+
+    monkeypatch.setattr(api_router, "communicate_with_agent", fake_communicate)
+    request = api_router.AgentChangeRequest(
+        uuid="project-direct",
+        message="Implement the requested change.",
+        plan_mode="off",
+        agent_mode="build",
+    )
+
+    result = asyncio.run(api_router.api_agent_change(request, {}))
+
+    assert result["ok"] is True
+    assert captured["project_id"] == "project-direct"
+    assert captured["plan_mode"] == "off"
+    assert captured["agent_mode"] == "build"
+    assert captured["background"] is True
