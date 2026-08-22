@@ -5714,10 +5714,19 @@ async def _communicate_with_agent_impl(
         or str(model.get("profile") or "").startswith("9router:")
     )
     # The Antigravity compatibility bridge may accept native tools but let a
-    # smaller ag model spend its bounded follow-up turn on irrelevant calls.
-    # For a narrow completed-project edit, begin with the sandboxed text-patch
-    # grammar instead of relying on function-call selection.
-    ag_followup_patch_protocol = bool(source_change_required and is_9router_history)
+    # smaller ag model spend its bounded turn on irrelevant calls or return an
+    # unbounded prose implementation. For a narrow follow-up or a complete
+    # bare-webshop brief, begin with the sandboxed text-patch grammar instead
+    # of relying on function-call selection.
+    ag_followup_patch_protocol = bool(
+        is_9router_history and (source_change_required or webshop_requirements)
+    )
+    if ag_followup_patch_protocol and webshop_requirements:
+        # The deterministic patch contract itself is the executable plan for a
+        # straightforward static webshop; do not spend an additional model turn
+        # planning, inspecting, or asking for a style preference.
+        site_plan_required = False
+        site_question_required = False
     if is_9router_history:
         from syte.cloud_agent_store import without_historical_tool_turns
 
@@ -6063,7 +6072,10 @@ async def _communicate_with_agent_impl(
         "simple_conversation": simple_conversation,
         "build_artifact_required": bool(execution_policy.mode == "build" and site_plan_required),
         "source_change_required": source_change_required,
-        "completion_write_required": bool(execution_policy.mode == "build" and (site_plan_required or source_change_required)),
+        "completion_write_required": bool(
+            execution_policy.mode == "build"
+            and (site_plan_required or source_change_required or webshop_requirements)
+        ),
         "_prewrite_inspections": 0,
         "_deliverable_source_written": False,
         "webshop_requirements": webshop_requirements,
