@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-CONTEXT_WINDOW_CHOICES = (8_000, 16_000, 32_000, 64_000, 128_000)
-STREAM_TOKEN_CHOICES = (512, 1_024, 2_048, 4_096, 8_192, 16_384)
+CONTEXT_WINDOW_CHOICES = (8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000)
+STREAM_TOKEN_CHOICES = (512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072)
 MEMORY_DEPTHS = ("focused", "balanced", "deep")
 PLAN_MODES = ("auto", "always", "off")
 AGENT_MODES = ("build", "plan")
-STEP_BUDGET_CHOICES = (4, 8, 12, 16)
+STEP_BUDGET_CHOICES = (4, 8, 12, 16, 32, 64, 128, 256, 512, 1000)
 
 _MEMORY_PROFILES: dict[str, dict[str, int]] = {
     "focused": {
@@ -79,7 +79,7 @@ def normalize_turn_controls(
     execution_mode = str(agent_mode or "build").strip().lower()
     if execution_mode not in AGENT_MODES:
         raise ValueError(f"agent_mode must be one of: {', '.join(AGENT_MODES)}")
-    step_budget = _nearest_choice(max_steps, STEP_BUDGET_CHOICES, 16)
+    step_budget = _nearest_choice(max_steps, STEP_BUDGET_CHOICES, 1000)
     return {
         "context_window_tokens": context_window,
         "stream_max_tokens": stream_limit,
