@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_requests_created ON agent_requests(created_
 
 
 async def ensure_agent_requests_table() -> None:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.executescript(REQUESTS_SCHEMA)
         await db.commit()
@@ -82,16 +83,23 @@ async def agents_online_count() -> int:
 
 async def get_dashboard_metrics() -> dict:
     from syte.cloud_agent import bridge_settings
+    from syte.database import init_db
     from syte.system_stats import get_system_stats
 
+    await init_db()
     await ensure_agent_requests_table()
     bridge = await bridge_settings()
     stats = get_system_stats()
     online = await agents_online_count()
     mnoa_max = await max_agents_allowed()
-    since_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    since_7d = (now_dt - timedelta(days=7)).isoformat()
+    since_30d = (now_dt - timedelta(days=30)).isoformat()
+    api_requests_7d = await _count_requests_since(since_7d)
     incoming = await _count_requests_since(since_30d)
     failed = await _count_requests_since(since_30d, status="error")
+    projects = await list_projects()
+    project_count = len(projects)
 
     dpfa_percent = min(100, int(stats.get("cpu_percent", 0)))
     mnoa_percent = min(100, int(round(online / max(1, mnoa_max) * 100)))
@@ -113,6 +121,18 @@ async def get_dashboard_metrics() -> dict:
     return {
         "agents_online": online,
         "incoming_requests_30d": incoming,
+        "api_requests_7d": api_requests_7d,
+        "api_requests_30d": incoming,
+        "project_count": project_count,
+        "cpu_percent": stats.get("cpu_percent", 0.0),
+        "ram_used_mb": stats.get("ram_used_mb", 0),
+        "ram_total_mb": stats.get("ram_total_mb", 0),
+        "ram_percent": stats.get("ram_percent", 0.0),
+        "disk_used_gb": stats.get("disk_used_gb", 0.0),
+        "disk_total_gb": stats.get("disk_total_gb", 0.0),
+        "disk_percent": stats.get("disk_percent", 0.0),
+        "ping_ms": stats.get("ping_ms"),
+        "internet_ping_ms": stats.get("ping_ms"),
         "failed_relationships_30d": failed,
         "dpfa": {
             "label": "DPFA",

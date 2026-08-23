@@ -3435,22 +3435,85 @@ function renderPlatformControls(page, data) {
   });
 }
 
+function renderDashboardMetrics(data) {
+  renderMonitorMetrics(data);
+  const homeTarget = document.getElementById('home-dashboard-metrics');
+  if (!homeTarget) return;
+
+  const ramLabel = data.ram_used_mb && data.ram_total_mb
+    ? `${Math.round(data.ram_percent || 0)}% (${(data.ram_used_mb / 1024).toFixed(1)}GB / ${(data.ram_total_mb / 1024).toFixed(1)}GB)`
+    : `${Math.round(data.ram_percent || data.memory_percent || 0)}%`;
+
+  const diskLabel = data.disk_used_gb != null && data.disk_total_gb
+    ? `${Math.round(data.disk_percent || 0)}% (${data.disk_used_gb}GB / ${data.disk_total_gb}GB)`
+    : `${Math.round(data.disk_percent || 0)}%`;
+
+  const pingVal = data.ping_ms ?? data.internet_ping_ms;
+  const pingLabel = pingVal != null ? `${Math.round(pingVal)} ms` : '—';
+
+  const cards = [
+    ['RAM', ramLabel, 'memory-stick'],
+    ['CPU', `${Math.round(data.cpu_percent || 0)}%`, 'cpu'],
+    ['Disk', diskLabel, 'hard-drive'],
+    ['Ping', pingLabel, 'wifi'],
+    ['API Requests (7d)', String(data.api_requests_7d ?? '0'), 'activity'],
+    ['API Requests (30d)', String(data.api_requests_30d ?? data.api_requests ?? '0'), 'bar-chart-2'],
+    ['Projects', String(data.project_count ?? projects.length ?? 0), 'layers'],
+  ];
+
+  homeTarget.innerHTML = cards.map(([label, value, icon]) => `
+    <div class="monitor-metric-card">
+      <i data-lucide="${icon}"></i>
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </div>
+  `).join('');
+  refreshIcons();
+}
+
 function renderMonitorMetrics(data) {
   const target = document.getElementById('overview-monitor-grid');
   if (!target) return;
+
+  const ramLabel = data.ram_used_mb && data.ram_total_mb
+    ? `${Math.round(data.ram_percent || 0)}% (${(data.ram_used_mb / 1024).toFixed(1)}GB / ${(data.ram_total_mb / 1024).toFixed(1)}GB)`
+    : `${Math.round(data.ram_percent || data.memory_percent || 0)}%`;
+
+  const diskLabel = data.disk_used_gb != null && data.disk_total_gb
+    ? `${Math.round(data.disk_percent || 0)}% (${data.disk_used_gb}GB / ${data.disk_total_gb}GB)`
+    : `${Math.round(data.disk_percent || 0)}%`;
+
+  const pingVal = data.ping_ms ?? data.internet_ping_ms;
+  const pingLabel = pingVal != null ? `${Math.round(pingVal)} ms` : '—';
+
   const cards = [
-    ['CPU', `${Math.round(data.cpu_percent || 0)}%`, 'cpu'], ['RAM', `${Math.round(data.memory_percent || 0)}%`, 'memory-stick'],
-    ['Storage', `${Math.round(data.disk_percent || 0)}%`, 'hard-drive'], ['API requests', String(data.api_requests || 0), 'activity'],
-    ['Internet ping', `${data.internet_ping_ms == null ? '—' : Math.round(data.internet_ping_ms) + ' ms'}`, 'wifi'], ['Projects', String(data.project_count || 0), 'layers'],
-    ['Security blocked', String(data.security_blocked_users || 0), 'shield-ban'],
+    ['RAM', ramLabel, 'memory-stick'],
+    ['CPU', `${Math.round(data.cpu_percent || 0)}%`, 'cpu'],
+    ['Disk', diskLabel, 'hard-drive'],
+    ['Ping', pingLabel, 'wifi'],
+    ['API Requests (7d)', String(data.api_requests_7d ?? '0'), 'activity'],
+    ['API Requests (30d)', String(data.api_requests_30d ?? data.api_requests ?? '0'), 'bar-chart-2'],
+    ['Projects', String(data.project_count ?? projects.length ?? 0), 'layers'],
   ];
-  target.innerHTML = cards.map(([label, value, icon]) => `<div class="monitor-metric-card"><i data-lucide="${icon}"></i><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
+
+  target.innerHTML = cards.map(([label, value, icon]) => `
+    <div class="monitor-metric-card">
+      <i data-lucide="${icon}"></i>
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </div>
+  `).join('');
   refreshIcons();
 }
 
 async function loadOverviewMonitor() {
-  try { renderMonitorMetrics(await api('/platform/overview/metrics')); }
-  catch (error) { const target = document.getElementById('overview-monitor-grid'); if (target) target.innerHTML = `<div class="platform-error">Metrics unavailable: ${esc(error.message)}</div>`; }
+  try {
+    const data = await api('/platform/overview/metrics');
+    renderDashboardMetrics(data);
+  } catch (error) {
+    const target = document.getElementById('overview-monitor-grid');
+    if (target) target.innerHTML = `<div class="platform-error">Metrics unavailable: ${esc(error.message)}</div>`;
+  }
 }
 
 async function loadDockerStore() {
@@ -3720,7 +3783,8 @@ async function loadPlatformPage(page = 'overview') {
   const isOverview = safePage === 'overview';
   const isProfile = safePage === 'profile';
   const isRemoteServers = safePage === 'remote-servers';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers;
+  const isGit = safePage === 'git';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
@@ -3732,6 +3796,10 @@ async function loadPlatformPage(page = 'overview') {
   }
   if (isProfile) {
     await renderProfileWorkspace();
+    return;
+  }
+  if (isGit) {
+    await renderGitWorkspace();
     return;
   }
   if (isOverview) {
@@ -5208,6 +5276,7 @@ async function loadProjects(options = {}) {
     renderServices();
     await loadPlatformDatabases();
     updateStats();
+    void loadOverviewMonitor();
     if (activeServiceId) {
       const p = projects.find(x => x.id === activeServiceId);
       if (p) {
@@ -5443,6 +5512,139 @@ function renderGithubSourceStatus(status) {
   refreshIcons();
 }
 
+async function fastAddGithubRepository(fullName) {
+  const repository = githubSourceRepositories.find((item) => item.full_name === fullName) || { full_name: fullName, name: fullName.split('/')[1] || fullName, default_branch: 'main' };
+  const repoName = repository.name || fullName.split('/')[1] || fullName;
+  const branch = repository.default_branch || 'main';
+  toast(`Fast adding repository ${fullName}…`);
+  try {
+    const result = await api('/projects/import/github', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: repoName,
+        repository: repository.full_name,
+        branch: branch,
+        base_directory: '/'
+      })
+    });
+    toast(`Successfully added project ${result.project?.name || repoName}`);
+    await loadProjects();
+    if (result.project?.id) {
+      openService(result.project.id);
+    } else {
+      showView('dashboard');
+    }
+  } catch (error) {
+    toast(normalizeFetchError(error?.message) || 'Could not fast add repository.');
+  }
+}
+
+async function renderGitWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading Git status…</p></section>';
+
+  try {
+    const status = await api('/projects/git/github/status');
+    githubSourceStatus = status;
+    let repos = [];
+    if (status.connected) {
+      const result = await api('/projects/git/github/repositories');
+      repos = result.repositories || [];
+      githubSourceRepositories = repos;
+    }
+
+    const accountHtml = status.connected
+      ? `<div class="github-source-account" style="display:flex;align-items:center;gap:12px;"><img src="${esc(status.avatar_url || '/static/syte-logo.png')}" alt="" style="width:36px;height:36px;border-radius:50%;"><span class="github-connected-dot"></span><span>Connected as <strong>${esc(status.login || 'GitHub account')}</strong></span><button type="button" class="btn-pill btn-ghost btn-sm" id="git-tab-disconnect-btn"><i data-lucide="unlink"></i>Disconnect</button></div>`
+      : `<div style="display:flex;align-items:center;justify-content:space-between;width:100%;"><p style="margin:0;color:#666;">Connect a GitHub account to fast add repositories directly as Syte projects.</p><button type="button" class="btn-pill btn-primary btn-sm" id="git-tab-connect-btn" ${status.configured ? '' : 'disabled'}><i data-lucide="github"></i>Connect GitHub</button></div>`;
+
+    const repoListHtml = repos.length
+      ? repos.map(repo => `
+        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+          <div style="min-width:0;flex:1;margin-right:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
+              ${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}
+            </div>
+            ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
+          </div>
+          <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
+            <i data-lucide="plus"></i><span>Fast Add</span>
+          </button>
+        </article>
+      `).join('')
+      : `<p class="dedicated-empty">${status.connected ? 'No repositories found in connected Git account.' : 'Connect GitHub above to list repositories that can be fast added.'}</p>`;
+
+    target.innerHTML = `
+      <section class="legacy-fleet-page">
+        <header class="legacy-fleet-header">
+          <div>
+            <p>Source & Integration</p>
+            <h2>Git Account & Repositories</h2>
+            <span>View connected Git account and fast add repositories to Syte.</span>
+          </div>
+        </header>
+        <section class="legacy-fleet-control-card" style="padding:18px;margin-bottom:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            ${accountHtml}
+          </div>
+        </section>
+        <section>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <h3 style="margin:0;font-size:18px;color:#111;">Repositories (${repos.length})</h3>
+            <label style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:4px 10px;background:#fff;">
+              <i data-lucide="search" style="width:16px;height:16px;color:#777;"></i>
+              <input type="search" id="git-tab-search" placeholder="Filter repositories..." style="border:0;outline:0;font-size:13px;">
+            </label>
+          </div>
+          <div id="git-tab-repo-list">${repoListHtml}</div>
+        </section>
+      </section>
+    `;
+
+    target.querySelector('#git-tab-connect-btn')?.addEventListener('click', () => connectGithubSource(window.open('', '_blank')));
+    target.querySelector('#git-tab-disconnect-btn')?.addEventListener('click', async () => { await disconnectGithubSource(); renderGitWorkspace(); });
+    target.querySelectorAll('.git-tab-fast-add').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const repo = e.currentTarget.dataset.fastAddRepo;
+        if (repo) fastAddGithubRepository(repo);
+      });
+    });
+
+    target.querySelector('#git-tab-search')?.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const listEl = target.querySelector('#git-tab-repo-list');
+      if (!listEl) return;
+      const filtered = repos.filter(r => !q || [r.full_name, r.description].join(' ').toLowerCase().includes(q));
+      listEl.innerHTML = filtered.map(repo => `
+        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+          <div style="min-width:0;flex:1;margin-right:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
+              ${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}
+            </div>
+            ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
+          </div>
+          <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
+            <i data-lucide="plus"></i><span>Fast Add</span>
+          </button>
+        </article>
+      `).join('') || '<p class="dedicated-empty">No repositories match filter.</p>';
+      target.querySelectorAll('.git-tab-fast-add').forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+          const repo = ev.currentTarget.dataset.fastAddRepo;
+          if (repo) fastAddGithubRepository(repo);
+        });
+      });
+      refreshIcons();
+    });
+
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Git workspace unavailable: ${esc(error.message)}</p></section>`;
+  }
+}
+
 function renderGithubRepositories() {
   const list = document.getElementById('github-repository-list');
   const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
@@ -5452,7 +5654,26 @@ function renderGithubRepositories() {
     list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
     return;
   }
-  list.innerHTML = repositories.map((repo) => `<button type="button" class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}"><span class="github-repository-name">${esc(repo.full_name)}</span>${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}${repo.description ? `<span class="github-repository-description">${esc(repo.description)}</span>` : ''}</button>`).join('');
+  list.innerHTML = repositories.map((repo) => `
+    <div class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+      <div style="min-width:0;flex:1;">
+        <span class="github-repository-name">${esc(repo.full_name)}</span>
+        ${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}
+        ${repo.description ? `<div class="github-repository-description">${esc(repo.description)}</div>` : ''}
+      </div>
+      <button type="button" class="btn-pill btn-primary btn-sm git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}" style="margin-left:8px;">
+        <i data-lucide="plus"></i><span>Fast Add</span>
+      </button>
+    </div>
+  `).join('');
+  list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const repo = e.currentTarget.dataset.fastAddRepo;
+      if (repo) fastAddGithubRepository(repo);
+    });
+  });
+  refreshIcons();
 }
 
 async function loadGithubRepositories() {
