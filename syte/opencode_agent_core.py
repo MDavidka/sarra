@@ -15,7 +15,7 @@ from typing import Any
 AGENT_MODES = ("build", "plan")
 # Conversational turns are not capped. Process, timeout, cancellation, and
 # provider/resource safeguards remain enforced in their owning layers.
-STEP_BUDGET_CHOICES = (0,)
+STEP_BUDGET_CHOICES = (4, 8, 12, 16, 32, 64, 128, 256, 512, 1000)
 
 
 # This guard is deliberately narrow. It protects short greeting / translation
@@ -116,8 +116,13 @@ class AgentExecutionPolicy:
 
 
 def _nearest_step_budget(value: int | str | None) -> int:
-    """Return the unbounded conversational policy sentinel."""
-    return 0
+    if value in (None, ""):
+        return 16
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return 16
+    return min(STEP_BUDGET_CHOICES, key=lambda item: abs(item - numeric))
 
 
 def normalize_agent_execution_policy(
