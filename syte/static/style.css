@@ -4069,6 +4069,119 @@ code {
   border-radius: var(--radius-sm);
 }
 
+/* Crash Screen Overlay */
+.crash-screen-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: crashFadeIn 0.2s ease-out;
+}
+
+@keyframes crashFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.crash-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-card, #18181b);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 30px rgba(239, 68, 68, 0.15);
+  padding: 1.75rem;
+  color: var(--fg-default, #f4f4f5);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.crash-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.crash-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  display: grid;
+  place-items: center;
+}
+
+.crash-header-text h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f4f4f5;
+}
+
+.crash-header-text p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.85rem;
+  color: #a1a1aa;
+  line-height: 1.4;
+}
+
+.crash-body {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.crash-message {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #f87171;
+  font-weight: 500;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.crash-details {
+  margin: 0.75rem 0 0 0;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #d4d4d8;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.crash-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Toast */
 .toast {
   position: fixed;

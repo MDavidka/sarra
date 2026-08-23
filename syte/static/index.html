@@ -827,6 +827,27 @@
     </div>
   </div>
 
+  <div id="crash-screen" class="crash-screen-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="crash-title">
+    <div class="crash-card">
+      <div class="crash-header">
+        <div class="crash-icon"><i data-lucide="alert-triangle"></i></div>
+        <div class="crash-header-text">
+          <h2 id="crash-title">Application Error</h2>
+          <p id="crash-subtitle">Syte encountered an issue under high server load or network disruption.</p>
+        </div>
+      </div>
+      <div id="crash-body" class="crash-body">
+        <p id="crash-message" class="crash-message"></p>
+        <pre id="crash-details" class="crash-details hidden"></pre>
+      </div>
+      <div class="crash-actions">
+        <button type="button" class="btn-pill btn-primary" id="crash-reload-btn"><i data-lucide="rotate-cw"></i><span>Reload Page</span></button>
+        <button type="button" class="btn-pill btn-ghost" id="crash-retry-btn"><i data-lucide="refresh-cw"></i><span>Retry Connection</span></button>
+        <button type="button" class="btn-pill btn-ghost" id="crash-dismiss-btn"><span>Dismiss</span></button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
 

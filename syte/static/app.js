@@ -85,6 +85,7 @@ const STACK_META = {
 };
 
 let selectedCreateStack = 'nextjs';
+let highLoadNetworkErrorCount = 0;
 
 function getApiKey() {
   try {
@@ -94,10 +95,64 @@ function getApiKey() {
   }
 }
 
+function showCrashScreen(info = {}) {
+  const overlay = document.getElementById('crash-screen');
+  if (!overlay) return;
+
+  const titleEl = document.getElementById('crash-title');
+  const subtitleEl = document.getElementById('crash-subtitle');
+  const msgEl = document.getElementById('crash-message');
+  const detailsEl = document.getElementById('crash-details');
+
+  if (titleEl) titleEl.textContent = info.title || 'Application Error';
+  if (subtitleEl) subtitleEl.textContent = info.subtitle || 'Syte encountered an issue under high server load or network disruption.';
+
+  const msgText = typeof info === 'string' ? info : (info.message || info.error?.message || String(info));
+  if (msgEl) msgEl.textContent = msgText || 'An unexpected application error occurred.';
+
+  const detailsText = info.details || info.stack || (info.error && info.error.stack) || '';
+  if (detailsEl) {
+    if (detailsText && detailsText !== msgText) {
+      detailsEl.textContent = detailsText;
+      detailsEl.classList.remove('hidden');
+    } else {
+      detailsEl.classList.add('hidden');
+    }
+  }
+
+  overlay.classList.remove('hidden');
+  if (typeof refreshIcons === 'function') {
+    try { refreshIcons(); } catch (_) {}
+  }
+}
+
+function hideCrashScreen() {
+  const overlay = document.getElementById('crash-screen');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function setupCrashScreenHandlers() {
+  document.getElementById('crash-reload-btn')?.addEventListener('click', () => {
+    window.location.reload();
+  });
+
+  document.getElementById('crash-retry-btn')?.addEventListener('click', async () => {
+    hideCrashScreen();
+    highLoadNetworkErrorCount = 0;
+    if (typeof showToast === 'function') showToast('Retrying server connection…');
+    if (typeof loadSystem === 'function') loadSystem();
+    if (typeof loadProjects === 'function') loadProjects();
+  });
+
+  document.getElementById('crash-dismiss-btn')?.addEventListener('click', () => {
+    hideCrashScreen();
+  });
+}
+
 function normalizeFetchError(message) {
   const msg = (message || '').trim();
   if (!msg || msg === 'Load failed' || msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
-    return 'Could not reach the Syte server. Your message is still available to retry when the connection returns.';
+    return 'Could not reach the Syte server. Server may be down or under high load.';
   }
   return msg;
 }
@@ -4448,13 +4503,34 @@ async function api(path, opts = {}) {
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
-  let res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
-  if (res.status === 401 && getApiKey()) {
-    setApiKey('');
-    const retryHeaders = { ...headers };
-    delete retryHeaders['X-API-Key'];
-    res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+  let res;
+  try {
+    res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
+    if (res.status === 401 && getApiKey()) {
+      setApiKey('');
+      const retryHeaders = { ...headers };
+      delete retryHeaders['X-API-Key'];
+      res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+    }
+  } catch (err) {
+    highLoadNetworkErrorCount++;
+    const rawMsg = String(err?.message || err || '');
+    const isNetwork = !rawMsg || rawMsg === 'TypeError' || rawMsg.includes('Load failed') || rawMsg.includes('Failed to fetch') || rawMsg.includes('NetworkError');
+    if (highLoadNetworkErrorCount >= 4) {
+      showCrashScreen({
+        title: 'Network / High Load Error',
+        subtitle: 'The server is unreachable or under high load.',
+        message: 'Multiple consecutive API requests failed due to high load or network loss.',
+        details: err?.stack || String(err)
+      });
+    }
+    const normalizedMsg = normalizeFetchError(rawMsg);
+    const apiErr = new Error(normalizedMsg);
+    apiErr.isNetworkError = isNetwork;
+    apiErr.originalError = err;
+    throw apiErr;
   }
+  highLoadNetworkErrorCount = 0;
   if (res.status === 401 && (
     path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/auth/') || path === '/operator/session'
   )) {
@@ -6968,6 +7044,7 @@ void loadGithubSourceStatus();
 appContext = getContext();
 applyContext();
 startStatsPoll();
+setupCrashScreenHandlers();
 refreshIcons();
 
 // Surface real errors instead of the blank cross-origin "Script error." toast/dialog.
@@ -6982,10 +7059,49 @@ window.addEventListener('error', (event) => {
       src ? `src=${src}` : '(no filename)',
       event,
     );
+    return;
   }
+  console.error('[Syte] Uncaught error:', event.error || msg);
+  showCrashScreen({
+    title: 'Application Crash',
+    subtitle: 'An uncaught runtime error occurred.',
+    message: msg,
+    details: event?.error?.stack || (event?.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '')
+  });
 });
+
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[Syte] Unhandled promise rejection:', event?.reason);
+  const reason = event?.reason;
+  const rawMsg = String(reason?.message || reason?.name || reason || '');
+  const isLoadFailed = !rawMsg || rawMsg === 'TypeError' || /^typeerror/i.test(rawMsg) || /load failed/i.test(rawMsg) || /failed to fetch/i.test(rawMsg) || /networkerror/i.test(rawMsg);
+
+  if (isLoadFailed) {
+    highLoadNetworkErrorCount++;
+    console.warn('[Syte] Handled network/load rejection:', rawMsg || 'Load failed');
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
+    if (highLoadNetworkErrorCount >= 4) {
+      showCrashScreen({
+        title: 'High Load / Connection Loss',
+        subtitle: 'The server is unreachable or failing under load.',
+        message: 'Could not reach the Syte server. Server may be down or experiencing high load.',
+        details: reason?.stack || String(reason || 'Load failed')
+      });
+    }
+    return;
+  }
+
+  console.error('[Syte] Unhandled promise rejection:', reason);
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
+  }
+  showCrashScreen({
+    title: 'Unhandled Async Error',
+    subtitle: 'An unexpected async error occurred in the application.',
+    message: reason?.message || String(reason || 'Unhandled Promise Rejection'),
+    details: reason?.stack || ''
+  });
 });
 
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
