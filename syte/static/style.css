@@ -5769,7 +5769,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 #view-ai #global-ai-tab-chat { display:none; }
 #view-ai .global-ai-tab-panel { border:0; background:transparent; padding:0; }
 #view-ai .agent-studio-empty { min-height:420px; border:1px solid #ededed; border-radius:12px; background:#fff; box-shadow:none; }
-#view-ai .opencode-agent-workbench { min-height:min(72vh,720px); display:block; border:1px solid #e6e6e6; border-radius:14px; background:#fff; overflow:hidden; }
+#view-ai .agent-workbench { min-height:min(72vh,720px); display:block; border:1px solid #e6e6e6; border-radius:14px; background:#fff; overflow:hidden; }
 #view-ai .opencode-agent-thread { min-height:inherit; display:flex; flex-direction:column; }
 #view-ai .opencode-agent-thread-head { display:flex; justify-content:space-between; align-items:center; padding:18px 20px 10px; }
 #view-ai .opencode-agent-thread-head h2 { margin:2px 0 0; font-size:17px; letter-spacing:-.02em; }
@@ -5805,6 +5805,6 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 #view-ai .debug-chat-send { min-width:88px; height:32px; border-radius:8px; background:#1b1b1b; color:#fff; box-shadow:none; }
 #view-ai .debug-chat-send:disabled { background:#e3e3e3; color:#aaa; }
 #view-ai .debug-chat-cancel { height:32px; border-radius:8px; }
-@media (max-width:720px){#view-ai .agent-studio{max-width:none}#view-ai .agent-studio-header{padding-top:4px}#view-ai .agent-studio-tabs{top:8px;right:14px}#view-ai .global-ai-tab{padding:7px 10px;font-size:12px}#view-ai .agent-studio-context{margin-top:2px}#view-ai .agent-studio-context-select{align-items:stretch;flex-direction:column;gap:4px}#view-ai .agent-studio-context-select select{max-width:100%;width:100%}#view-ai .opencode-agent-workbench{min-height:calc(100vh - 176px);border-radius:11px}#view-ai .opencode-agent-thread-head{padding:14px 14px 8px}#view-ai .debug-chat-messages{padding:10px 14px}#view-ai .opencode-composer{margin:auto 8px 8px;border-radius:12px}#view-ai .opencode-composer-controls{gap:5px}#view-ai .opencode-inline-field span{display:none}#view-ai .opencode-inline-field select{max-width:112px}#view-ai .opencode-resource-chip{padding:0 8px}#view-ai .debug-chat-input{min-height:62px}}
+@media (max-width:720px){#view-ai .agent-studio{max-width:none}#view-ai .agent-studio-header{padding-top:4px}#view-ai .agent-studio-tabs{top:8px;right:14px}#view-ai .global-ai-tab{padding:7px 10px;font-size:12px}#view-ai .agent-studio-context{margin-top:2px}#view-ai .agent-studio-context-select{align-items:stretch;flex-direction:column;gap:4px}#view-ai .agent-studio-context-select select{max-width:100%;width:100%}#view-ai .agent-workbench{min-height:calc(100vh - 176px);border-radius:11px}#view-ai .opencode-agent-thread-head{padding:14px 14px 8px}#view-ai .debug-chat-messages{padding:10px 14px}#view-ai .opencode-composer{margin:auto 8px 8px;border-radius:12px}#view-ai .opencode-composer-controls{gap:5px}#view-ai .opencode-inline-field span{display:none}#view-ai .opencode-inline-field select{max-width:112px}#view-ai .opencode-resource-chip{padding:0 8px}#view-ai .debug-chat-input{min-height:62px}}
 
 #view-ai .opencode-settings:not([open]) .opencode-settings-panel { display:none; }
