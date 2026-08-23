@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, Bot, Boxes, BrainCircuit, CalendarClock, ChevronRight, CircleHelp, Cloud,
   Database, FileCog, Gauge, Home, KeyRound, LayoutDashboard, Menu, Router,
-  Server, Settings2, ShieldCheck, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound, Rocket, Leaf, Heart, Camera, LockKeyhole, AtSign, Plus, Copy, Network, HardDrive, Cpu, Check, GitBranch, FileArchive, ScanSearch, CircleAlert, UploadCloud, RefreshCw, Github, Unlink,
+  Server, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, UsersRound, X, LogOut, Mail, Save, UserRound, Rocket, Leaf, Heart, Camera, LockKeyhole, AtSign, Plus, Copy, Network, HardDrive, Cpu, Check, GitBranch, FileArchive, ScanSearch, CircleAlert, UploadCloud, RefreshCw, Github, Unlink,
 } from 'lucide-react';
 import { api, setOperatorCsrfToken } from '@/lib/api';
 
@@ -41,6 +41,7 @@ const administration: NavItem[] = [
 ];
 const resources: NavItem[] = [
   { href: '/ai', label: 'AI Providers', icon: Sparkles, apiPage: 'ai' },
+  { href: '/models', label: 'Models & Providers', icon: SlidersHorizontal, apiPage: 'models' },
   { href: '/tags', label: 'Tags', icon: LayoutDashboard, apiPage: 'tags' },
   { href: '/git', label: 'Git', icon: FileCog, apiPage: 'git' },
   { href: '/registry', label: 'Registry', icon: Boxes, apiPage: 'registry' },
@@ -561,6 +562,6 @@ export default function Shell() {
   if (authLoading) return <main className="authBoot">Loading secure workspace…</main>;
   if (!accountSession?.authenticated || !accountSession.account) return <LoginScreen onAuthenticated={setAccountSession}/>;
   const account = accountSession.account;
-  const content = page === 'home' ? <HomePage/> : page === 'projects' ? <ProjectsPage/> : page === 'project-edit' ? <ProjectEditPage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === 'servers' ? <RemoteServersPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : <BlankPage/>;
+  const content = page === 'home' ? <HomePage/> : page === 'projects' ? <ProjectsPage/> : page === 'project-edit' ? <ProjectEditPage/> : page === 'overview' ? <OverviewPage/> : page === 'docker' ? <PlatformPage page="docker"/> : page === 'servers' ? <RemoteServersPage/> : page === '9router' ? <RouterPage/> : page === 'settings' ? <SettingsPage/> : page === 'profile' ? <AccountProfilePage account={account} onAccountChange={(updated) => setAccountSession((current) => current ? { ...current, account: updated } : current)} onSignOut={signOut}/> : page === 'users' ? <UsersPage/> : page === 'models' ? <PlatformPage page="models"/> : <BlankPage/>;
   return <main className="appShell"><button className="menuButton" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><aside className={open ? 'sidebar visible' : 'sidebar'}><button className="closeButton" onClick={() => setOpen(false)} aria-label="Close navigation"><X size={20}/></button><Navigation onNavigate={() => setOpen(false)}/></aside><div className="appAccountCorner"><AccountAvatar account={account} compact/><button onClick={() => window.location.assign('/profile')} aria-label="Open profile">{account.display_name || account.email}</button></div><div className="content">{content}</div></main>;
 }
