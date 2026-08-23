@@ -13,7 +13,9 @@ import re
 from typing import Any
 
 AGENT_MODES = ("build", "plan")
-STEP_BUDGET_CHOICES = (4, 8, 12, 16, 32, 64, 128, 256, 512, 1000)
+# Conversational turns are not capped. Process, timeout, cancellation, and
+# provider/resource safeguards remain enforced in their owning layers.
+STEP_BUDGET_CHOICES = (0,)
 
 
 # This guard is deliberately narrow. It protects short greeting / translation
@@ -114,13 +116,8 @@ class AgentExecutionPolicy:
 
 
 def _nearest_step_budget(value: int | str | None) -> int:
-    if value in (None, ""):
-        return 16
-    try:
-        numeric = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("max_steps must be one of: 4, 8, 12, 16") from exc
-    return min(STEP_BUDGET_CHOICES, key=lambda candidate: abs(candidate - numeric))
+    """Return the unbounded conversational policy sentinel."""
+    return 0
 
 
 def normalize_agent_execution_policy(
@@ -147,7 +144,7 @@ def policy_prompt_block(policy: AgentExecutionPolicy) -> str:
         "Complete the requested coding work in the actual project stack. Start with the smallest relevant "
         "file inspection, write the needed source or deployment configuration, then run one targeted declared "
         "validation command after edits. Do not perform runtime-probe commands or unrelated exploration. "
-        f"You have at most {policy.max_steps} tool rounds; use each one toward a concrete deliverable.\n"
+        "Continue until the requested deliverable is complete; process and cancellation safeguards still apply.\n"
     )
 
 

@@ -1051,7 +1051,8 @@ async def list_sessions_for_project(
     When Turso is configured we prefer its list. If it returns empty (or is
     unreachable), fall back to local sessions so resume/list still works.
     """
-    limit = max(1, min(limit, 500))
+    # One project conversation: always return only the newest persisted session.
+    limit = 1
     client = await get_turso_client()
     if client is not None:
         try:

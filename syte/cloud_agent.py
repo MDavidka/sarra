@@ -6222,7 +6222,10 @@ async def _communicate_with_agent_impl(
         "task_spec": task_spec,
     }
 
-    max_tool_steps = min(int(gen.get("max_tool_steps") or 48), execution_policy.max_steps)
+    # A zero policy value is the explicit unbounded mode. Provider, timeout,
+    # cancellation, and resource safeguards remain enforced elsewhere.
+    requested_tool_steps = int(gen.get("max_tool_steps") or 0)
+    max_tool_steps = 0 if execution_policy.max_steps == 0 else min(requested_tool_steps or execution_policy.max_steps, execution_policy.max_steps)
     temperature = float(gen.get("temperature") or 0.2)
     want_stream = bool(gen.get("stream"))
     turn_usage: dict[str, int] = {
@@ -6237,7 +6240,7 @@ async def _communicate_with_agent_impl(
         for step in itertools.count():
             _raise_if_cancelled()
             text_patch_mode = bool(tool_context.get("_text_patch_protocol_requested"))
-            allow_tools = not simple_conversation and step < max_tool_steps and not text_patch_mode
+            allow_tools = not simple_conversation and (max_tool_steps == 0 or step < max_tool_steps) and not text_patch_mode
             tools_for_step = TOOLS if allow_tools else []
             if (
                 allow_tools

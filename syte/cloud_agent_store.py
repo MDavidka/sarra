@@ -480,8 +480,8 @@ async def conversation_messages(
                 "SELECT role, content, tool_call_id, tool_calls, reasoning_content FROM "
                 "(SELECT id, role, content, tool_call_id, tool_calls, reasoning_content "
                 "FROM agent_messages WHERE project_id = ? AND session_number = ? "
-                "ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
-                (project_id, int(target_session), max(1, limit)),
+                "ORDER BY id ASC",
+                (project_id, int(target_session)),
             ) as cur:
                 rows = await cur.fetchall()
         else:
