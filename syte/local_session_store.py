@@ -248,8 +248,8 @@ async def list_local_sessions_for_project(
         async with db.execute(
             "SELECT id, session_number, model_profile, status, created_at, updated_at, "
             "ended_at FROM local_agent_session WHERE project_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (project_id, max(1, min(limit, 500))),
+            "ORDER BY updated_at DESC LIMIT 1",
+            (project_id,),
         ) as cur:
             rows = await cur.fetchall()
     return [

@@ -2604,19 +2604,12 @@ async function getDebugChatProfile() {
 }
 
 function getDebugChatTurnControls() {
-  const numeric = (id, fallback) => {
-    const value = Number(document.getElementById(id)?.value || fallback);
-    return Number.isFinite(value) ? value : fallback;
-  };
   return {
-    thinking_level: numeric('debug-chat-thinking-level', 3),
-    context_window_tokens: numeric('debug-chat-context-window', 32000),
-    stream_max_tokens: numeric('debug-chat-stream-limit', 4096),
-    memory_depth: document.getElementById('debug-chat-memory-depth')?.value || 'balanced',
-    plan_mode: document.getElementById('debug-chat-plan-mode')?.value || 'auto',
-    agent_mode: document.getElementById('debug-chat-agent-mode')?.value || 'build',
-    max_steps: Number(document.getElementById('debug-chat-max-steps')?.value || 8),
-    deployment_readiness: Boolean(document.getElementById('debug-chat-deployment-readiness')?.checked),
+  thinking_level: Number(document.getElementById('debug-chat-thinking-level')?.value || 3),
+  memory_depth: document.getElementById('debug-chat-memory-depth')?.value || 'balanced',
+  plan_mode: document.getElementById('debug-chat-plan-mode')?.value || 'auto',
+  agent_mode: document.getElementById('debug-chat-agent-mode')?.value || 'build',
+  deployment_readiness: Boolean(document.getElementById('debug-chat-deployment-readiness')?.checked),
   };
 }
 

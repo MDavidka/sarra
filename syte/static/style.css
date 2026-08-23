@@ -5808,3 +5808,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 @media (max-width:720px){#view-ai .agent-studio{max-width:none}#view-ai .agent-studio-header{padding-top:4px}#view-ai .agent-studio-tabs{top:8px;right:14px}#view-ai .global-ai-tab{padding:7px 10px;font-size:12px}#view-ai .agent-studio-context{margin-top:2px}#view-ai .agent-studio-context-select{align-items:stretch;flex-direction:column;gap:4px}#view-ai .agent-studio-context-select select{max-width:100%;width:100%}#view-ai .opencode-agent-workbench{min-height:calc(100vh - 176px);border-radius:11px}#view-ai .opencode-agent-thread-head{padding:14px 14px 8px}#view-ai .debug-chat-messages{padding:10px 14px}#view-ai .opencode-composer{margin:auto 8px 8px;border-radius:12px}#view-ai .opencode-composer-controls{gap:5px}#view-ai .opencode-inline-field span{display:none}#view-ai .opencode-inline-field select{max-width:112px}#view-ai .opencode-resource-chip{padding:0 8px}#view-ai .debug-chat-input{min-height:62px}}
 
 #view-ai .opencode-settings:not([open]) .opencode-settings-panel { display:none; }
+
+/* Full-screen agent canvas: shadcn-style bordered controls remain, the chat no longer sits in a small card. */
+#view-ai { min-height: 100dvh; padding: 0; }
+#view-ai .agent-studio { min-height: 100dvh; max-width: none; display: flex; flex-direction: column; gap: 0; }
+#view-ai .global-ai-chat-host, #view-ai #svc-panel-debug-chat, #view-ai .opencode-agent-workbench, #view-ai .opencode-agent-thread { min-height: 0; display: flex; flex: 1 1 auto; }
+#view-ai #svc-panel-debug-chat, #view-ai .opencode-agent-thread { padding: 0; border: 0; border-radius: 0; background: var(--bg-surface); }
+#view-ai .opencode-agent-thread { flex-direction: column; }
+#view-ai .opencode-thread-lanes { flex: 1 1 auto; min-height: 0; margin: 0; border: 0; border-radius: 0; }
+#view-ai .debug-chat-messages { height: 100%; max-height: none; overflow-y: auto; padding: clamp(16px, 3vw, 32px); }
+#view-ai .opencode-composer { flex: 0 0 auto; margin: 0; border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0; padding: 16px clamp(16px, 3vw, 32px) max(16px, env(safe-area-inset-bottom)); }
+#view-ai .debug-chat-input { min-height: 88px; max-height: none; font-size: 16px; }
+#view-ai .debug-chat-send, #view-ai .debug-chat-cancel { min-height: 44px; }
+@media (max-width: 720px) {
+  #view-ai .agent-studio-header, #view-ai .agent-studio-context { padding-inline: 16px; }
+  #view-ai .agent-studio-tabs { margin-inline: 16px; }
+  #view-ai .debug-chat-messages { padding: 16px; }
+  #view-ai .opencode-composer { padding-inline: 16px; }
+}
