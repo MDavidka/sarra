@@ -5769,9 +5769,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 #view-ai #global-ai-tab-chat { display:none; }
 #view-ai .global-ai-tab-panel { border:0; background:transparent; padding:0; }
 #view-ai .agent-studio-empty { min-height:420px; border:1px solid #ededed; border-radius:12px; background:#fff; box-shadow:none; }
-#view-ai .opencode-agent-workbench { min-height:min(72vh,720px); display:block; border:1px solid #e6e6e6; border-radius:14px; background:#fff; overflow:hidden; }
+#view-ai .opencode-agent-workbench { min-height:calc(100vh - 120px); display:block; border:0; border-radius:0; background:#fff; overflow:visible; box-shadow:none; }
 #view-ai .opencode-agent-thread { min-height:inherit; display:flex; flex-direction:column; }
-#view-ai .opencode-agent-thread-head { display:flex; justify-content:space-between; align-items:center; padding:18px 20px 10px; }
+#view-ai .opencode-agent-thread-head { display:none; }
 #view-ai .opencode-agent-thread-head h2 { margin:2px 0 0; font-size:17px; letter-spacing:-.02em; }
 #view-ai .opencode-agent-thread-head p { margin:3px 0 0; font-size:12px; color:#777; }
 #view-ai .opencode-kicker { font-size:10px; font-weight:800; letter-spacing:.12em; color:#aaa; }

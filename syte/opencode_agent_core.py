@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 AGENT_MODES = ("build", "plan")
-STEP_BUDGET_CHOICES = (4, 8, 12, 16)
+STEP_BUDGET_CHOICES = (4, 8, 12, 16, 32, 64, 128, 256, 512, 1000)
 
 
 # This guard is deliberately narrow. It protects short greeting / translation
