@@ -9,25 +9,25 @@
   <style>
 
     :root {
-      --bg: #ffffff;
-      --bg-sidebar: #fafafa;
-      --bg-card: #ffffff;
-      --bg-card-hover: #f4f4f5;
-      --bg-input: #f8fafc;
-      --border: #e4e4e7;
-      --border-subtle: #f4f4f5;
-      --text: #09090b;
-      --text-muted: #71717a;
-      --text-dim: #a1a1aa;
-      --accent-blue: #2563eb;
-      --accent-green: #16a34a;
-      --accent-orange: #ca8a04;
-      --accent-red: #dc2626;
-      --shadow-drawer: 8px 0 32px rgba(0, 0, 0, 0.12);
+      --bg: #09090b;
+      --bg-sidebar: #0c0c0e;
+      --bg-card: #121215;
+      --bg-card-hover: #18181b;
+      --bg-input: #18181b;
+      --border: #27272a;
+      --border-subtle: #1f1f23;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent-blue: #3b82f6;
+      --accent-green: #22c55e;
+      --accent-orange: #f59e0b;
+      --accent-red: #ef4444;
+      --shadow-drawer: 8px 0 32px rgba(0, 0, 0, 0.5);
       --radius: 10px;
       --radius-sm: 6px;
       --sidebar-w: 280px;
-      --font: 'Inter', system-ui, sans-serif;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
       --mono: 'JetBrains Mono', ui-monospace, monospace;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -133,7 +133,7 @@
       color: var(--text-muted); cursor: pointer; text-decoration: none; white-space: nowrap;
     }
     .mini-tab:hover { color: var(--text); background: var(--bg-card-hover); }
-    .mini-tab.active { color: var(--accent-blue); border-color: #bfdbfe; background: #eff6ff; font-weight: 500; }
+    .mini-tab.active { color: #60a5fa; border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.15); font-weight: 500; }
     .section { margin-bottom: 2.5rem; scroll-margin-top: 1.5rem; }
     .section-title {
       font-size: 1.25rem; font-weight: 600; margin-bottom: 0.35rem;
@@ -150,12 +150,14 @@
     .endpoint-base { font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-bottom: 0.5rem; }
     .endpoint-row { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
     .method {
-      font-size: 12px; font-weight: 700; font-family: var(--mono);
-      padding: 0.2rem 0.5rem; border-radius: 4px; flex-shrink: 0;
+      font-size: 11px; font-weight: 700; font-family: var(--mono);
+      padding: 0.2rem 0.55rem; border-radius: 5px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.03em;
     }
-    .method.post { color: var(--accent-blue); }
-    .method.get { color: var(--accent-green); }
-    .method.sse { color: var(--accent-orange); }
+    .method.post { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .method.get { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .method.put { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .method.delete { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .method.sse { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
     .endpoint-path { font-family: var(--mono); font-size: 14px; font-weight: 500; flex: 1; word-break: break-all; }
     .endpoint-name { font-size: 13px; color: var(--text-muted); margin-top: 0.35rem; }
     .endpoint-body { padding: 0 1.15rem 1.15rem; }
@@ -185,7 +187,7 @@
       background: var(--bg-input); border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm); padding: 0.85rem 1rem;
       font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
-      overflow-x: auto; color: #334155; margin-top: 0.5rem;
+      overflow-x: auto; color: #e4e4e7; margin-top: 0.5rem;
     }
     .note {
       font-size: 12px; color: var(--text-muted); padding: 0.65rem 0.85rem;
@@ -210,8 +212,9 @@
       margin-bottom: 0.55rem; background: var(--bg-card); font-size: 13px; color: var(--text-muted);
     }
     .flow-step::before {
+      border: 1px solid rgba(59, 130, 246, 0.3);
       content: counter(flow); position: absolute; left: 0.75rem; top: 0.7rem;
-      width: 1.4rem; height: 1.4rem; border-radius: 6px; background: #eff6ff; color: var(--accent-blue);
+      width: 1.4rem; height: 1.4rem; border-radius: 6px; background: rgba(59, 130, 246, 0.15); color: #60a5fa;
       font-family: var(--mono); font-size: 12px; font-weight: 600;
       display: flex; align-items: center; justify-content: center;
     }
@@ -321,6 +324,19 @@
           <a href="#auth/auth-token" data-cat="auth" data-ep="auth-token">POST /tokens</a>
           <a href="#auth/auth-header" data-cat="auth" data-ep="auth-header">X-API-Key</a>
           <a href="#auth/auth-errors" data-cat="auth" data-ep="auth-errors">Errors</a>
+        </div>
+                <button type="button" class="nav-cat" data-cat="platform">
+          <i data-lucide="database"></i><span class="lbl-full">Platform & DBs</span><span class="lbl-short">Databases</span>
+        </button>
+        <div class="nav-mini" data-mini-for="platform">
+          <a href="#platform/db-catalog" data-cat="platform" data-ep="db-catalog">Database catalog</a>
+          <a href="#platform/db-list" data-cat="platform" data-ep="db-list">List databases</a>
+          <a href="#platform/db-create" data-cat="platform" data-ep="db-create">Provision database</a>
+          <a href="#platform/db-connection" data-cat="platform" data-ep="db-connection">Connection string</a>
+          <a href="#platform/backup-list" data-cat="platform" data-ep="backup-list">List backups</a>
+          <a href="#platform/backup-create" data-cat="platform" data-ep="backup-create">Create schedule</a>
+          <a href="#platform/backup-run" data-cat="platform" data-ep="backup-run">Run backup dump</a>
+          <a href="#platform/backup-restore" data-cat="platform" data-ep="backup-restore">Restore backup</a>
         </div>
         <button type="button" class="nav-cat" data-cat="project">
           <i data-lucide="folder"></i><span>Project</span>
@@ -717,7 +733,219 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,&
         </section>
         </div>
 
-        <div class="cat-panel" id="panel-project" data-cat="project">
+
+      <!-- PLATFORM & DATABASES -->
+      <div class="cat-panel" id="panel-platform" data-cat="platform">
+        <section class="section">
+          <h2 class="section-title">Platform & Managed Databases</h2>
+          <p class="section-desc">Provision private database containers (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, KeyDB, Dragonfly, ClickHouse), view connections, and schedule logical backups.</p>
+
+          <div class="endpoint" id="db-catalog" data-ep="db-catalog">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/platform/databases/catalog</span>
+              </div>
+              <div class="endpoint-name">Get database engines catalog</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>{
+  "engines": [
+    { "id": "postgres", "name": "PostgreSQL", "default_version": "16", "default_port": 5432 },
+    { "id": "mysql", "name": "MySQL", "default_version": "8.0", "default_port": 3306 },
+    { "id": "redis", "name": "Redis", "default_version": "7.2", "default_port": 6379 }
+  ]
+}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="db-list" data-ep="db-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/platform/databases</span>
+              </div>
+              <div class="endpoint-name">List managed databases</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>[
+  {
+    "uuid": "db-pg-12345",
+    "name": "app-postgres",
+    "engine": "postgres",
+    "version": "16",
+    "status": "running",
+    "created_at": "2025-01-15T12:00:00Z"
+  }
+]</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="db-create" data-ep="db-create">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/platform/databases</span>
+              </div>
+              <div class="endpoint-name">Provision managed database</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">name<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Instance name.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">engine<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Engine type (e.g. postgres, mysql, redis, mongodb, mariadb, keydb, dragonfly, clickhouse).</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>{
+  "uuid": "db-pg-12345",
+  "name": "app-postgres",
+  "engine": "postgres",
+  "status": "running",
+  "connection_url": "postgres://postgres:password@db-pg-12345:5432/postgres"
+}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="db-connection" data-ep="db-connection">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/platform/databases/{uuid}/connection</span>
+              </div>
+              <div class="endpoint-name">Get connection details</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>{
+  "uuid": "db-pg-12345",
+  "DATABASE_URL": "postgres://postgres:secret@db-pg-12345:5432/postgres",
+  "internal_host": "db-pg-12345",
+  "port": 5432
+}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="backup-list" data-ep="backup-list">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method get">GET</span>
+                <span class="endpoint-path">/platform/backups</span>
+              </div>
+              <div class="endpoint-name">List backup schedules</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>[
+  {
+    "uuid": "bck-sched-01",
+    "database_uuid": "db-pg-12345",
+    "cron_expression": "0 2 * * *",
+    "enabled": true
+  }
+]</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="backup-create" data-ep="backup-create">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/platform/backups</span>
+              </div>
+              <div class="endpoint-name">Create backup schedule</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Request Body <span class="panel-meta">application/json</span></div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">database_uuid<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Target database UUID.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">cron_expression<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Cron schedule (e.g. "0 2 * * *").</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="backup-run" data-ep="backup-run">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/platform/backups/{uuid}/run</span>
+              </div>
+              <div class="endpoint-name">Run immediate database backup</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>{
+  "execution_id": "exec-991",
+  "status": "completed",
+  "file_path": "/var/lib/syte/backups/db-pg-12345-20250115.sql.gz"
+}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="endpoint" id="backup-restore" data-ep="backup-restore">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api</div>
+              <div class="endpoint-row">
+                <span class="method post">POST</span>
+                <span class="endpoint-path">/platform/backup-executions/{uuid}/restore</span>
+              </div>
+              <div class="endpoint-name">Restore database backup</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="panel">
+                <div class="panel-title">Response <span class="panel-meta">application/json</span></div>
+                <pre>{ "success": true, "message": "Database restored successfully from local artifact" }</pre>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="cat-panel" id="panel-project" data-cat="project">
         <section class="section">
           <h2 class="section-title">Project</h2>
           <p class="section-desc">Create, delete, start, and stop deployment projects.</p>
