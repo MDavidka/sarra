@@ -4055,7 +4055,7 @@ function showView(name) {
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
   if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); void openGlobalAiWorkspace(); setGlobalAiTab(globalAiActiveTab); }
-  if (name === 'models') { loadModelsTab(); }
+  if (name === 'models') { showView('ai'); setGlobalAiTab('models'); void loadGlobalAiProviderCatalog(); }
   if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
