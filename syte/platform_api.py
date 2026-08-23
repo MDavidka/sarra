@@ -709,19 +709,51 @@ async def _internet_ping_ms() -> float | None:
 
 @router.get("/overview/metrics")
 async def overview_metrics() -> dict[str, Any]:
+    from datetime import datetime, timedelta, timezone
+
+    from syte.agent_metrics import _count_requests_since
+    from syte.database import init_db, list_projects
+    from syte.platform.store import init_platform_db
+    from syte.system_stats import get_system_stats
+
+    await init_db()
+    await init_platform_db()
+    sys_stats = get_system_stats()
     projects = await find("platform_projects", {})
+    syte_projects = await list_projects()
+    total_projects = max(len(projects), len(syte_projects))
     deployments = await find("platform_deployments", {})
     webhooks = await find("platform_webhook_events", {})
     servers = await find("platform_servers", {})
     disk = shutil.disk_usage("/")
     blocked = sum(1 for row in webhooks if not bool(row.get("accepted", 1)))
+
+    now_dt = datetime.now(timezone.utc)
+    since_7d = (now_dt - timedelta(days=7)).isoformat()
+    since_30d = (now_dt - timedelta(days=30)).isoformat()
+    agent_req_7d = await _count_requests_since(since_7d)
+    agent_req_30d = await _count_requests_since(since_30d)
+
+    total_api_7d = agent_req_7d + len([w for w in webhooks if str(w.get("created_at", "")) >= since_7d])
+    total_api_30d = agent_req_30d + len(deployments) + len(webhooks)
+
+    ping = sys_stats.get("ping_ms") if sys_stats.get("ping_ms") is not None else await _internet_ping_ms()
+
     return {
-        "cpu_percent": _host_cpu_percent(),
-        "memory_percent": _host_memory_percent(),
-        "disk_percent": (disk.used / disk.total * 100) if disk.total else 0,
-        "api_requests": len(deployments) + len(webhooks),
-        "internet_ping_ms": await _internet_ping_ms(),
-        "project_count": len(projects),
+        "cpu_percent": sys_stats.get("cpu_percent") or _host_cpu_percent(),
+        "memory_percent": sys_stats.get("ram_percent") or _host_memory_percent(),
+        "ram_used_mb": sys_stats.get("ram_used_mb", 0),
+        "ram_total_mb": sys_stats.get("ram_total_mb", 0),
+        "ram_percent": sys_stats.get("ram_percent") or _host_memory_percent(),
+        "disk_percent": sys_stats.get("disk_percent") or ((disk.used / disk.total * 100) if disk.total else 0),
+        "disk_used_gb": sys_stats.get("disk_used_gb", round(disk.used / (1024**3), 1)),
+        "disk_total_gb": sys_stats.get("disk_total_gb", round(disk.total / (1024**3), 1)),
+        "api_requests": total_api_30d,
+        "api_requests_7d": total_api_7d,
+        "api_requests_30d": total_api_30d,
+        "internet_ping_ms": ping,
+        "ping_ms": ping,
+        "project_count": total_projects,
         "security_blocked_users": blocked,
         "server_count": len(servers),
         "collected_at": utcnow(),

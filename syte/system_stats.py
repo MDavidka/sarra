@@ -1,7 +1,9 @@
 """Host CPU/RAM metrics for the GUI sidebar load indicator."""
 
 import os
+import shutil
 import time
+import urllib.request
 from pathlib import Path
 
 
@@ -53,6 +55,35 @@ def _mem_stats() -> tuple[int, int, float]:
         return 0, 0, 0.0
 
 
+def _disk_stats() -> tuple[float, float, float]:
+    try:
+        usage = shutil.disk_usage("/")
+        total_gb = round(usage.total / (1024**3), 1)
+        used_gb = round(usage.used / (1024**3), 1)
+        percent = round((usage.used / usage.total) * 100, 1) if usage.total else 0.0
+        return used_gb, total_gb, percent
+    except Exception:
+        return 0.0, 0.0, 0.0
+
+
+def _ping_ms() -> float | None:
+    started = time.perf_counter()
+    try:
+        req = urllib.request.Request("https://1.1.1.1", headers={"User-Agent": "SytePing/1.0"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            resp.read(1)
+        return round((time.perf_counter() - started) * 1000, 1)
+    except Exception:
+        try:
+            started = time.perf_counter()
+            req = urllib.request.Request("https://www.cloudflare.com/cdn-cgi/trace", headers={"User-Agent": "SytePing/1.0"})
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                resp.read(1)
+            return round((time.perf_counter() - started) * 1000, 1)
+        except Exception:
+            return None
+
+
 def _load_dots(overload_percent: float) -> int:
     """Map 0–100% overload to 0–5 filled dots."""
     if overload_percent <= 0:
@@ -63,6 +94,8 @@ def _load_dots(overload_percent: float) -> int:
 def get_system_stats(*, sample_cpu: bool = True) -> dict:
     cpu = round(_cpu_percent(), 1) if sample_cpu else 0.0
     ram_used_mb, ram_total_mb, ram_percent = _mem_stats()
+    disk_used_gb, disk_total_gb, disk_percent = _disk_stats()
+    ping = _ping_ms()
     overload = max(cpu, ram_percent)
     dots = _load_dots(overload)
     return {
@@ -70,6 +103,10 @@ def get_system_stats(*, sample_cpu: bool = True) -> dict:
         "ram_used_mb": ram_used_mb,
         "ram_total_mb": ram_total_mb,
         "ram_percent": round(ram_percent, 1),
+        "disk_used_gb": disk_used_gb,
+        "disk_total_gb": disk_total_gb,
+        "disk_percent": round(disk_percent, 1),
+        "ping_ms": ping,
         "load_dots": dots,
         "load_dots_max": 5,
         "overload_percent": round(overload, 1),
