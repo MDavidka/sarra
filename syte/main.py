@@ -35,8 +35,6 @@ from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
 from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
 from syte.self_update import update_syte
-from syte.new_feature_agent import run_new_feature_agent
-from syte.settings_tabs import get_registered_tabs
 from syte import auth
 from syte.auth import (
     OPERATOR_SESSION_COOKIE,
@@ -55,7 +53,7 @@ from syte import workspace_api
 from syte import platform_api
 from syte.platform.backup_scheduler import backup_scheduler_loop
 from syte.platform.store import ensure_bootstrap, init_platform_db
-from syte.log_stream import stream_logs, stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
 
@@ -1406,19 +1404,6 @@ async def api_update_syte():
     if not ok:
         raise HTTPException(500, message)
     return {"ok": True, "message": message}
-
-
-@app.get("/api/settings/new-feature/info")
-async def api_new_feature_info():
-    """Return info for the new feature tab: current version, update target, and registered tabs."""
-    from syte.new_feature_agent import get_current_version, get_update_target_info
-
-    return {
-        "ok": True,
-        "version": get_current_version(),
-        "update_target": get_update_target_info(),
-        "tabs": get_registered_tabs(),
-    }
 
 
 # ---------------------------------------------------------------------------
