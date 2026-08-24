@@ -711,7 +711,6 @@ async def _internet_ping_ms() -> float | None:
 async def overview_metrics() -> dict[str, Any]:
     from datetime import datetime, timedelta, timezone
 
-    from syte.agent_metrics import _count_requests_since
     from syte.database import init_db, list_projects
     from syte.platform.store import init_platform_db
     from syte.system_stats import get_system_stats
@@ -731,12 +730,6 @@ async def overview_metrics() -> dict[str, Any]:
     now_dt = datetime.now(timezone.utc)
     since_7d = (now_dt - timedelta(days=7)).isoformat()
     since_30d = (now_dt - timedelta(days=30)).isoformat()
-    agent_req_7d = await _count_requests_since(since_7d)
-    agent_req_30d = await _count_requests_since(since_30d)
-
-    total_api_7d = agent_req_7d + len([w for w in webhooks if str(w.get("created_at", "")) >= since_7d])
-    total_api_30d = agent_req_30d + len(deployments) + len(webhooks)
-
     ping = sys_stats.get("ping_ms") if sys_stats.get("ping_ms") is not None else await _internet_ping_ms()
 
     return {
@@ -748,9 +741,9 @@ async def overview_metrics() -> dict[str, Any]:
         "disk_percent": sys_stats.get("disk_percent") or ((disk.used / disk.total * 100) if disk.total else 0),
         "disk_used_gb": sys_stats.get("disk_used_gb", round(disk.used / (1024**3), 1)),
         "disk_total_gb": sys_stats.get("disk_total_gb", round(disk.total / (1024**3), 1)),
-        "api_requests": total_api_30d,
-        "api_requests_7d": total_api_7d,
-        "api_requests_30d": total_api_30d,
+        "api_requests": 0,
+        "api_requests_7d": 0,
+        "api_requests_30d": 0,
         "internet_ping_ms": ping,
         "ping_ms": ping,
         "project_count": total_projects,

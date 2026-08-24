@@ -55,7 +55,7 @@ from syte import workspace_api
 from syte import platform_api
 from syte.platform.backup_scheduler import backup_scheduler_loop
 from syte.platform.store import ensure_bootstrap, init_platform_db
-from syte.log_stream import stream_agent_logs, stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_logs, stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
 
@@ -271,13 +271,13 @@ class SettingsRequest(BaseModel):
     custom_tls_port: str | None = None
     nine_router_backend_port: str | None = None
     nine_router_upstream: str | None = None
-    agent_default_model_profile: str | None = None
-    agent_syra_nano_api_key: str | None = None
-    agent_syra_havy_api_key: str | None = None
-    agent_syra_ultra_api_key: str | None = None
+    default_model_profile: str | None = None
+    syra_nano_api_key: str | None = None
+    syra_havy_api_key: str | None = None
+    syra_ultra_api_key: str | None = None
     litellm_proxy_url: str | None = None
     litellm_database_url: str | None = None
-    agent_max_count: int | None = None
+    max_count: int | None = None
     syra_internal_secret: str | None = None
     turso_database_url: str | None = None
     turso_auth_token: str | None = None
@@ -298,7 +298,7 @@ class SyraSecretsRequest(BaseModel):
 
     master_key: str | None = None
     salt_key: str | None = None
-    agent_api_key: str | None = None
+    api_key: str | None = None
 
 
 class ModelProviderSetupRequest(BaseModel):
@@ -637,19 +637,19 @@ async def get_settings():
         "nine_router_local_tls": nine_router_local_tls,
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
-        "agent_default_model_profile": bridge["default_profile"],
-        "agent_syra_nano_model": bridge["syra_nano_model"],
-        "agent_syra_havy_model": bridge["syra_havy_model"],
-        "agent_syra_ultra_model": bridge["syra_ultra_model"],
-        "agent_builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
-        "agent_thinker_profile": bridge.get("thinker_profile"),
-        "agent_syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
-        "agent_syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
-        "agent_syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
-        "agent_litellm_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
-        "agent_9router_api_key_set": bool((await get_setting("agent_9router_api_key", "")).strip()),
-        "agent_9router_model_name": (await get_setting("agent_9router_model_name", "")).strip(),
-        "agent_9router_enabled": (await get_setting("agent_9router_enabled", "0")).strip() == "1",
+        "default_model_profile": bridge["default_profile"],
+        "syra_nano_model": bridge["syra_nano_model"],
+        "syra_havy_model": bridge["syra_havy_model"],
+        "syra_ultra_model": bridge["syra_ultra_model"],
+        "builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
+        "thinker_profile": bridge.get("thinker_profile"),
+        "syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
+        "syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
+        "syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
+        "litellm_api_key_set": bool((await get_setting("litellm_api_key", "")).strip()),
+        "9router_api_key_set": bool((await get_setting("9router_api_key", "")).strip()),
+        "9router_model_name": (await get_setting("9router_model_name", "")).strip(),
+        "9router_enabled": (await get_setting("9router_enabled", "0")).strip() == "1",
         "litellm_proxy_url": LITELLM_PUBLIC_API_URL,
         "litellm_public_api_url": LITELLM_PUBLIC_API_URL,
         "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
@@ -667,7 +667,7 @@ async def get_settings():
             }
             for row in key_status
         ],
-        "agent_max_count": int((await get_setting("agent_max_count", "0")).strip() or "0") or None,
+        "max_count": int((await get_setting("max_count", "0")).strip() or "0") or None,
         "syra_internal_secret_set": syra_secret_set,
         "turso_database_url_set": bool(turso_database_url),
         "turso_auth_token_set": turso_auth_token_set,
@@ -731,7 +731,7 @@ async def _model_configuration() -> dict[str, Any]:
         router_models_cached,
     )
 
-    key_set = bool((await get_setting("agent_9router_api_key", "")).strip())
+    key_set = bool((await get_setting("9router_api_key", "")).strip())
     # Pull the live router catalog so pickers list everything the router serves,
     # not only models that were registered by hand. Failures are non-fatal.
     await fetch_router_models()
@@ -817,7 +817,7 @@ async def save_model_provider(body: ModelProviderSetupRequest):
     if provider_type == "9router":
         from syte.model_catalog import fetch_router_models, reset_router_models_cache
 
-        await set_setting("agent_9router_api_key", body.api_key.strip())
+        await set_setting("9router_api_key", body.api_key.strip())
         # The cached model list was fetched with the previous key.
         reset_router_models_cache()
         await fetch_router_models(force=True)
@@ -848,11 +848,11 @@ async def _save_model_records(records: list[dict[str, Any]]) -> None:
     """Persist catalog and retain single-model settings for old installations."""
     import json
 
-    await set_setting("agent_9router_models", json.dumps(records, separators=(",", ":")))
+    await set_setting("9router_models", json.dumps(records, separators=(",", ":")))
     primary = records[0] if records else None
-    await set_setting("agent_9router_model_name", primary["name"] if primary else "")
-    await set_setting("agent_9router_thinking_levels", ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5")
-    await set_setting("agent_9router_enabled", "1" if primary and primary["enabled"] else "0")
+    await set_setting("9router_model_name", primary["name"] if primary else "")
+    await set_setting("9router_thinking_levels", ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5")
+    await set_setting("9router_enabled", "1" if primary and primary["enabled"] else "0")
 
 
 def _checked_model(body: ModelConfigurationRequest) -> dict[str, Any]:
@@ -889,7 +889,7 @@ def _same_provider_model(left: dict[str, Any], right: dict[str, Any]) -> bool:
 
 
 async def _require_provider_key_if_enabled(records: list[dict[str, Any]]) -> None:
-    if any(record["enabled"] for record in records) and not (await get_setting("agent_9router_api_key", "")).strip():
+    if any(record["enabled"] for record in records) and not (await get_setting("9router_api_key", "")).strip():
         raise HTTPException(400, "Save the 9Router API key before enabling this model.")
 
 
@@ -1164,38 +1164,38 @@ async def save_settings(body: SettingsRequest):
             messages.append("9Router upstream reset to the real gateway (65.75.203.134:20128).")
         proxy_updated = True
 
-    if body.agent_default_model_profile is not None:
+    if body.default_model_profile is not None:
         from syte.ai_providers import DEFAULT_PROFILE
         from syte.cloud_agent import is_available_model_profile
 
-        profile = body.agent_default_model_profile.strip() or DEFAULT_PROFILE
+        profile = body.default_model_profile.strip() or DEFAULT_PROFILE
         if not await is_available_model_profile(profile):
             raise HTTPException(400, f"Unknown model profile: {profile}")
-        await set_setting("agent_default_model_profile", profile)
+        await set_setting("default_model_profile", profile)
         messages.append(f"Default Syte cloud model profile: {profile}")
-    if body.agent_syra_nano_api_key is not None:
-        await set_setting("agent_syra_nano_api_key", body.agent_syra_nano_api_key.strip())
+    if body.syra_nano_api_key is not None:
+        await set_setting("syra_nano_api_key", body.syra_nano_api_key.strip())
         messages.append(
             "Go (Gemini · gemini-2.5-flash) API key saved."
-            if body.agent_syra_nano_api_key.strip()
+            if body.syra_nano_api_key.strip()
             else "syra-nano API key cleared."
         )
-    if body.agent_syra_havy_api_key is not None:
-        await set_setting("agent_syra_havy_api_key", body.agent_syra_havy_api_key.strip())
+    if body.syra_havy_api_key is not None:
+        await set_setting("syra_havy_api_key", body.syra_havy_api_key.strip())
         messages.append(
             "Metal (VyceAI · claude-sonnet-4-6) API key saved."
-            if body.agent_syra_havy_api_key.strip()
+            if body.syra_havy_api_key.strip()
             else "syra-havy API key cleared."
         )
-    if body.agent_syra_ultra_api_key is not None:
-        ultra_key = body.agent_syra_ultra_api_key.strip()
+    if body.syra_ultra_api_key is not None:
+        ultra_key = body.syra_ultra_api_key.strip()
         if ultra_key.lower().startswith("sk-or-"):
             raise HTTPException(
                 400,
                 "syra-ultra no longer accepts OpenRouter keys (sk-or-…). "
                 "Paste an Aliyun Token Plan key (sk-sp-…) or a Model Studio sk- key.",
             )
-        await set_setting("agent_syra_ultra_api_key", ultra_key)
+        await set_setting("syra_ultra_api_key", ultra_key)
         messages.append(
             "Air (Aliyun · qwen3.7-plus) API key saved."
             if ultra_key
@@ -1226,9 +1226,9 @@ async def save_settings(body: SettingsRequest):
             if validated_database_url
             else "Custom LiteLLM database URL cleared; the managed PostgreSQL database will be used."
         )
-    if body.agent_max_count is not None:
-        count = max(1, int(body.agent_max_count))
-        await set_setting("agent_max_count", str(count))
+    if body.max_count is not None:
+        count = max(1, int(body.max_count))
+        await set_setting("max_count", str(count))
         messages.append(f"Maximum agents (MNOA): {count}")
     if body.syra_internal_secret is not None:
         await set_setting("syra_internal_secret", body.syra_internal_secret.strip())
@@ -1280,9 +1280,9 @@ async def _save_syra_secrets(body: SyraSecretsRequest) -> dict[str, Any]:
     if body.salt_key is not None:
         await set_setting("litellm_salt_key", body.salt_key.strip())
         messages.append("LiteLLM salt key saved." if body.salt_key.strip() else "LiteLLM salt key cleared.")
-    if body.agent_api_key is not None:
-        await set_setting("agent_litellm_api_key", body.agent_api_key.strip())
-        messages.append("LiteLLM virtual API key saved." if body.agent_api_key.strip() else "LiteLLM virtual API key cleared.")
+    if body.api_key is not None:
+        await set_setting("litellm_api_key", body.api_key.strip())
+        messages.append("LiteLLM virtual API key saved." if body.api_key.strip() else "LiteLLM virtual API key cleared.")
     if not messages:
         raise HTTPException(400, "Provide at least one LiteLLM credential to update.")
     return {"ok": True, "messages": messages}
@@ -1450,7 +1450,7 @@ async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_se
         ),
         "master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
         "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
-        "agent_api_key_set": bool((await get_setting("agent_litellm_api_key", "")).strip()),
+        "api_key_set": bool((await get_setting("litellm_api_key", "")).strip()),
     }
 
 
@@ -1991,35 +1991,6 @@ async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_se
     return result
 
 
-class NewFeatureAgentRequest(BaseModel):
-    message: str = Field(..., description="Message to the system agent")
-    model_profile: str = Field(..., min_length=1, description="Enabled model profile from the Models tab")
-    request_api_key: str | None = Field(None, description="Provider API key supplied by the requesting user")
-
-
-@app.post("/api/settings/new-feature/agent")
-async def api_new_feature_agent(body: NewFeatureAgentRequest):
-    """Run the new-feature system agent with file access.
-
-    After the agent finishes, an auto-update is triggered automatically.
-    """
-    from syte.cloud_agent import is_catalog_model_profile
-
-    if not await is_catalog_model_profile(body.model_profile):
-        raise HTTPException(400, "Choose an enabled model from the Models tab.")
-    result = await run_new_feature_agent(
-        message=body.message,
-        model_profile=body.model_profile,
-        request_api_key=body.request_api_key,
-    )
-    if result.get("ok"):
-        ok, update_message = update_syte()
-        result["triggered_update"] = True
-        result["update_message"] = update_message
-    return result
-
-
-def _running(project: dict) -> bool:
     return process_manager.is_running(
         project["id"], project.get("deploy_type", "shell")
     )
@@ -2443,1223 +2414,6 @@ async def api_preview_stop(project_id: str):
     await stop_preview_async(project_id)
     meta, _ = await get_preview_status(project_id)
     return {"ok": True, "message": "Preview stopped", **(meta or {})}
-
-
-@app.get("/api/projects/{project_id}/agent")
-async def api_agent_status_public(project_id: str, request: Request):
-    from syte.cloud_agent import get_agent_status
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/warm")
-async def api_agent_warm_public(project_id: str):
-    """Schedule the persistent Syte cloud runtime without blocking for startup."""
-    from syte.cloud_agent import warm_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await warm_agent(project_id, source="gui")
-    return {
-        **result,
-        "status_url": f"/api/projects/{project_id}/agent",
-        "sessions_url": f"/api/projects/{project_id}/agent/sessions",
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/start")
-async def api_agent_start_public(project_id: str, request: Request):
-    from syte.cloud_agent import get_agent_status, start_agent
-
-    ok, message, _meta = await start_agent(project_id)
-    if not ok:
-        raise HTTPException(400, message)
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/stop")
-async def api_agent_stop_public(project_id: str, request: Request):
-    from syte.agent_jobs import cancel_agent_job
-    from syte.cloud_agent import get_agent_status, stop_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    # Cancel the durable job first: stop_agent() alone leaves the background
-    # task in agent_jobs._running, which keeps reporting the agent as busy.
-    await cancel_agent_job(project_id)
-    ok, message = await stop_agent(project_id)
-    return {
-        "ok": ok,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/interrupt")
-async def api_agent_interrupt_public(project_id: str, request: Request):
-    """Cancel the active Syte cloud turn without discarding conversation history.
-
-    Routes through ``cancel_agent_job`` so the durable background task is
-    cancelled too. Calling ``interrupt_agent`` on its own only stopped the
-    in-process turn, so the job kept running and the agent stayed "busy" —
-    the Stop button appeared to do nothing.
-    """
-    from syte.agent_jobs import cancel_agent_job
-    from syte.cloud_agent import get_agent_status
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    _ok, message = await cancel_agent_job(project_id)
-    # "Nothing was running" is a successful stop from the caller's point of
-    # view: the turn is not active any more, which is all Stop has to
-    # guarantee. Raising 400 here surfaced a bogus "Could not stop response"
-    # error and left the composer locked.
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/restart")
-async def api_agent_restart_public(project_id: str, request: Request):
-    from syte.cloud_agent import get_agent_status, restart_agent
-
-    ok, message, _meta = await restart_agent(project_id)
-    if not ok:
-        raise HTTPException(400, message)
-    return {
-        "ok": True,
-        "message": message,
-        **(
-            await get_agent_status(
-                project_id,
-                request_base=str(request.base_url).rstrip("/"),
-                check_backend=False,
-            )
-        ),
-    }
-
-
-@app.get("/api/projects/{project_id}/agent/turso_sync")
-async def api_agent_turso_sync_public(project_id: str):
-    """Aggregate 'all messages saved to Turso' status for the brain indicator.
-
-    ``all_saved: true`` -> green brain (every message in the current session
-    was durably written to the shared Turso ``agent_message`` table).
-    ``all_saved: false`` -> red brain (at least one message failed to sync,
-    or Turso is unreachable for a message that was already appended
-    locally).
-    """
-    from syte.cloud_agent import turso_message_sync_status
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, **(await turso_message_sync_status(project_id))}
-
-
-@app.get("/api/projects/{project_id}/agent/turso_debug")
-async def api_agent_turso_debug_public(project_id: str):
-    """Diagnose why the 'brain' indicator is red — connectivity + schema check.
-
-    Returns whether Turso is configured, whether the configured
-    database/token pair is actually reachable right now (a live round-trip,
-    not just "is a URL set"), whether schema initialization succeeded for
-    every statement, and the specific error text for anything that failed.
-    Meant to be called from the browser console
-    (``fetch('/api/projects/<id>/agent/turso_debug').then(r=>r.json()).then(console.log)``)
-    or surfaced by the GUI when the brain icon is red, since ``all_saved:
-    false`` alone does not say *why* a message failed to sync.
-    """
-    from syte.turso_store import turso_debug_status
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, **(await turso_debug_status())}
-
-
-@app.get("/api/projects/{project_id}/agent/failures")
-async def api_agent_failures_public(
-    project_id: str,
-    session: str = "last",
-    limit: int = 200,
-    kind: str = "",
-):
-    """Per-session failure log — every failed task, tool, request and subagent.
-
-    Surfaced in the GUI by double-clicking the brain icon. Activity events are
-    pruned and replay-window limited, so this failure-only table is what answers
-    "what actually went wrong in this session?".
-
-    ``session``: ``last`` (default), a session number, or ``all``.
-    """
-    from syte.agent_failures import failure_summary, list_failures
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    scope = session or "last"
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "session": scope,
-        "failures": await list_failures(
-            project_id, session=scope, limit=max(1, min(limit, 1000)), kind=kind or ""
-        ),
-        "summary": await failure_summary(project_id, session=scope),
-    }
-
-
-@app.delete("/api/projects/{project_id}/agent/failures")
-async def api_agent_failures_clear_public(project_id: str, session: str = "last"):
-    """Clear the failure log for a session (or ``all``)."""
-    from syte.agent_failures import clear_failures
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    removed = await clear_failures(project_id, session=session or "last")
-    return {"ok": True, "project_id": project_id, "removed": removed}
-
-
-@app.get("/api/projects/{project_id}/agent/subagents")
-async def api_agent_subagents_public(
-    project_id: str, session: str = "last", limit: int = 50,
-):
-    """Durable list of delegated subagent tasks for this project/session.
-
-    The GUI subagent tab used to be revealed only by replayed activity events,
-    so a subagent whose events aged out of the replay window became invisible.
-    This endpoint is the durable source of truth the tab now checks on load.
-    """
-    from syte.subagent_store import list_tasks
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    tasks = await list_tasks(project_id, session=session or "last", limit=limit)
-    running = [t for t in tasks if t.get("status") == "running"]
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "session": session or "last",
-        "subagents": tasks,
-        "count": len(tasks),
-        "running": len(running),
-        "failed": len([t for t in tasks if t.get("status") in {"failed", "timeout"}]),
-    }
-
-
-@app.get("/api/projects/{project_id}/agent/logs")
-async def api_agent_logs_public(project_id: str, lines: int = 200):
-    from syte.cloud_agent import get_agent_logs
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "logs": get_agent_logs(project_id, max(1, min(lines, 2000)))}
-
-
-@app.get("/api/projects/{project_id}/agent/logs/stream")
-async def api_agent_logs_stream(project_id: str, request: Request, live: bool = False):
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
-    if key:
-        await auth.verify_api_token_from_request(request)
-    return StreamingResponse(
-        stream_agent_logs(project_id, live_only=live),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@app.get("/api/projects/{project_id}/agent/activity")
-async def api_agent_activity_public(
-    project_id: str,
-    request: Request,
-    since_id: int = 0,
-    limit: int = 200,
-    session: str = "",
-):
-    """Local SQLite activity snapshot (fast, always available; not durable across DB moves).
-
-    For the durable, UUID-addressable record of a turn use the Turso session
-    routes instead: ``GET /api/agent_session/{session_id}`` or
-    ``GET /api/projects/{project_id}/agent/sessions`` to list recent session ids.
-    """
-    from syte.agent_activity import list_agent_events
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    key = request.headers.get("x-api-key") or request.query_params.get("api_key")
-    if key:
-        await auth.verify_api_token_from_request(request)
-    events = await list_agent_events(
-        project_id,
-        since_id=since_id,
-        limit=limit,
-        session=session or None,
-    )
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "events": events,
-        "since_id": since_id,
-        "session": session or None,
-        "sessions_url": f"/api/projects/{project_id}/agent/sessions",
-    }
-
-
-@app.get("/api/projects/{project_id}/agent/sessions")
-async def api_agent_sessions_public(
-    project_id: str, limit: int = 50, resume: int = 0,
-):
-    """List durable Turso agent-session UUIDs plus layered memory for resume."""
-    from syte.agent_memory import project_memory_snapshot
-    from syte.turso_store import list_sessions_for_project, turso_configured
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    memory = await project_memory_snapshot(project_id)
-    base = {
-        "ok": True,
-        "project_id": project_id,
-        "memory": memory,
-        "resume_session": memory.get("resume_session"),
-        "open_session": memory.get("open_session"),
-        "last_work": memory.get("last_work"),
-        "active_files": memory.get("active_files") or [],
-        "latest_summary": memory.get("latest_summary"),
-    }
-    if resume:
-        base["resume"] = 1
-    configured = await turso_configured()
-    sessions = await list_sessions_for_project(project_id, limit=limit)
-    payload = {
-        **base,
-        "turso_configured": configured,
-        "sessions": [
-            {**s, "session_url": f"/api/agent_session/{s['id']}"} for s in sessions
-        ],
-    }
-    if not configured:
-        payload["message"] = (
-            "Remote Turso is not configured — sessions are stored locally on this deployer. "
-            "Set turso_database_url in Settings → AI for cross-host durability."
-        )
-    return payload
-
-
-@app.get("/api/projects/{project_id}/agent/activity/stream")
-async def api_agent_activity_stream_public(
-    project_id: str, request: Request, since_id: int = 0, session: str | None = None,
-):
-    """SSE stream for live agent activity (complements Turso session polling).
-
-    Frames for ``token_delta`` / ``thinking_delta`` are minimal-delta (raw text +
-    tiny header). The response body is gzip/brotli compressed when the client
-    sends ``Accept-Encoding``.
-    """
-    from syte.agent_activity import activity_sse_generator, sse_stream_response
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-
-    async def _gen():
-        async for frame in activity_sse_generator(
-            project_id, since_id=since_id, session=session,
-        ):
-            yield frame
-
-    return sse_stream_response(request, _gen())
-
-
-@app.get("/api/agent_session/{session_id}")
-async def api_get_agent_session(
-    session_id: str,
-    since_id: int = 0,
-    uuid: str | None = None,
-    project_id: str | None = None,
-):
-    """Fetch a durable agent activity session by UUID from Turso.
-
-    This is the Turso access route that replaces the old activity SSE stream.
-    Asking the agent something still happens over the normal request/response
-    API (``agent_communicate`` / ``agent_change`` / the GUI chat endpoint,
-    which return this session's ``id``); to observe what happened, poll this
-    route by that ``id`` instead of opening a streaming connection. Pass
-    ``since_id`` to fetch only events recorded after a previously-seen event
-    id (useful for polling a session that is still ``open``).
-    Tokens/cookies are host-global in this single-tenant service; pass ``uuid``
-    or ``project_id`` to additionally verify project ownership.
-    """
-    from syte.turso_store import get_session
-
-    session = await get_session(session_id, since_id=since_id)
-    if not session:
-        raise HTTPException(404, "Agent session not found")
-    expected_project_id = project_id or uuid
-    if expected_project_id and str(session.get("project_id") or "") != expected_project_id:
-        raise HTTPException(403, "Agent session does not belong to the requested project")
-    return {"ok": True, **session}
-
-
-class AgentChatRequest(BaseModel):
-    message: str
-    model_profile: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=6, description="1 minimal … 6 xhigh")
-    context_window_tokens: int | None = Field(
-        None, ge=8_000, le=128_000, description="Requested provider context budget"
-    )
-    stream_max_tokens: int | None = Field(
-        None, ge=512, le=16_384, description="Maximum streamed completion tokens"
-    )
-    memory_depth: str | None = Field(
-        None, description="focused, balanced, or deep verified project memory"
-    )
-    plan_mode: str | None = Field(None, description="auto, always, or off")
-    agent_mode: str = Field("build", description="build or read-only plan mode")
-    max_steps: int | None = Field(None, ge=4, le=16, description="Bounded Agent tool rounds")
-    deployment_readiness: bool = True
-    improve_from_screenshot: bool = False
-    visual_analysis_id: str | None = None
-
-
-class DesignProfileRequest(BaseModel):
-    theme_key: str | None = None
-    style_key: str | None = None
-
-
-class AgentTestRequest(BaseModel):
-    model_profile: str | None = None
-
-
-class AgentAccessRequest(BaseModel):
-    action: str
-    url: str | None = None
-    lines: int | None = None
-    include_screenshot: bool | None = None
-
-
-class AgentAccessConfigRequest(BaseModel):
-    custom_urls: list[str] = []
-
-
-class AgentServiceRequest(BaseModel):
-    action: str
-    command: str | None = None
-    cwd: str = "app"
-    lines: int | None = None
-    timeout: int | None = None
-
-
-class AgentQuestionAnswerRequest(BaseModel):
-    answer: str | int | float | list[str] | dict
-
-
-class AgentMcpRegisterRequest(BaseModel):
-    name: str
-    command: str
-    description: str = ""
-    args: list[str] = Field(default_factory=list)
-    env: dict[str, str] = Field(default_factory=dict)
-    transport: str = "stdio"
-
-
-class AgentMcpUpdateRequest(BaseModel):
-    name: str | None = None
-    command: str | None = None
-    description: str | None = None
-    args: list[str] | None = None
-    env: dict[str, str] | None = None
-    transport: str | None = None
-
-
-class AgentMcpConnectRequest(BaseModel):
-    addon: str
-
-
-class AgentMcpCallRequest(BaseModel):
-    addon: str
-    tool: str
-    arguments: dict = Field(default_factory=dict)
-
-
-class AgentSkillEnableRequest(BaseModel):
-    parameters: dict[str, str] = Field(default_factory=dict)
-
-
-class AgentSkillAddRequest(BaseModel):
-    name: str
-    content: str
-    description: str = ""
-    parameters: dict[str, str] = Field(default_factory=dict)
-    enable: bool = True
-    skill_id: str | None = None
-
-
-class AgentSkillUpdateRequest(BaseModel):
-    name: str | None = None
-    content: str | None = None
-    description: str | None = None
-    parameters: dict[str, str] | None = None
-
-
-class AgentProfileRequest(BaseModel):
-    name: str = ""
-    icon: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentMcpCredentialRequest(BaseModel):
-    service_name: str
-    display_name: str = ""
-    description: str = ""
-    api_key: str = ""
-    api_url: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentMcpCredentialBatchRequest(BaseModel):
-    """Accepted JSON for an external service to bulk-save credentials + profile.
-
-    This is the exact accepted format documented in docs/turso-persistence.md.
-    """
-    name: str = ""
-    icon: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    credentials: list[dict[str, Any]] = Field(default_factory=list)
-
-
-@app.get("/api/projects/{project_id}/agent/service")
-async def api_agent_service_capabilities(project_id: str):
-    from syte.agent_service import list_service_capabilities
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return await list_service_capabilities(project_id)
-
-
-@app.post("/api/projects/{project_id}/agent/service")
-async def api_agent_service_action(project_id: str, body: AgentServiceRequest):
-    from syte.agent_activity import record_agent_event
-    from syte.agent_service import run_service_action
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await run_service_action(
-        project_id,
-        body.action,
-        command=body.command,
-        cwd=body.cwd,
-        lines=body.lines or 200,
-        timeout=body.timeout or 300,
-        source="agent",
-    )
-    detail = body.command or result.get("message") or body.action
-    if result.get("output"):
-        detail = str(result.get("output"))[:4000]
-    elif result.get("logs"):
-        detail = str(result.get("logs"))[:4000]
-    await record_agent_event(
-        project_id,
-        "service_action",
-        role="assistant",
-        title=f"Service: {body.action}",
-        detail=detail[:4000],
-        payload={"action": body.action, "result": {k: result.get(k) for k in ("ok", "action", "exit_code")}},
-        source="agent",
-    )
-    return result
-
-
-@app.get("/api/projects/{project_id}/agent/access")
-async def api_agent_access_capabilities(project_id: str):
-    from syte.preview_access import list_access_capabilities
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return await list_access_capabilities(project_id)
-
-
-@app.get("/api/projects/{project_id}/agent/access-config")
-async def api_agent_access_config_get(project_id: str):
-    from syte.agent_skills import read_access_config
-    from syte.cloud_agent import agent_root
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, **(await read_access_config(project_id, agent_root(project_id)))}
-
-
-@app.put("/api/projects/{project_id}/agent/access-config")
-async def api_agent_access_config_put(project_id: str, body: AgentAccessConfigRequest):
-    from syte.agent_skills import read_access_config, write_access_config
-    from syte.cloud_agent import agent_root, write_agent_config
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    root = agent_root(project_id)
-    path = await write_access_config(project_id, body.model_dump(), root)
-    await write_agent_config(project)
-    return {"ok": True, "path": str(path), **(await read_access_config(project_id, root))}
-
-
-@app.post("/api/projects/{project_id}/agent/access")
-async def api_agent_access_action(project_id: str, body: AgentAccessRequest):
-    from syte.agent_activity import record_agent_event
-    from syte.preview_access import run_access_action
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await run_access_action(
-        project_id,
-        body.action,
-        url=body.url,
-        lines=body.lines or 200,
-        include_screenshot=bool(body.include_screenshot),
-    )
-    if result.get("ok"):
-        await record_agent_event(
-            project_id,
-            "service_action",
-            role="assistant",
-            title=f"Preview: {body.action}",
-            detail=(body.url or result.get("preview_url") or body.action)[:4000],
-            payload={"action": body.action, "access": True},
-            source="gui",
-        )
-    return result
-
-
-@app.get("/api/projects/{project_id}/agent/screenshots")
-async def api_agent_screenshots_list(project_id: str, limit: int = 50):
-    from syte.agent_artifacts import list_screenshots
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "screenshots": await list_screenshots(project_id, limit=limit)}
-
-
-@app.get("/api/projects/{project_id}/agent/screenshots/{screenshot_id}")
-async def api_agent_screenshot_get(project_id: str, screenshot_id: str, variant: str = "full"):
-    from fastapi.responses import Response
-
-    from syte.agent_artifacts import get_screenshot, read_screenshot_bytes
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    record = await get_screenshot(project_id, screenshot_id)
-    if not record:
-        raise HTTPException(404, "Screenshot not found")
-    data = read_screenshot_bytes(record, variant="thumb" if variant == "thumb" else "full")
-    if not data:
-        raise HTTPException(404, "Screenshot file missing")
-    return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
-
-
-@app.get("/api/projects/{project_id}/agent/plans")
-async def api_agent_plans_list(project_id: str, limit: int = 50):
-    from syte.agent_artifacts import list_plans
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "plans": await list_plans(project_id, limit=limit)}
-
-
-@app.get("/api/projects/{project_id}/agent/questions")
-async def api_agent_questions_list(project_id: str, status: str | None = None, limit: int = 50):
-    from syte.agent_artifacts import list_questions
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "questions": await list_questions(project_id, status=status, limit=limit),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/questions/{question_id}/answer")
-async def api_agent_question_answer(
-    project_id: str, question_id: str, body: AgentQuestionAnswerRequest
-):
-    from syte.agent_activity import record_agent_event
-    from syte.agent_artifacts import answer_question
-    from syte.cloud_agent_store import current_turso_session_id
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await answer_question(project_id, question_id, body.answer)
-    if not result.get("ok"):
-        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
-    if not result.get("already_answered"):
-        turso_session_id = await current_turso_session_id(project_id)
-        await record_agent_event(
-            project_id,
-            "question_answered",
-            role="user",
-            title="Answer",
-            detail=str(result.get("answer") or "")[:4000],
-            payload={"question_id": question_id, "answer": result.get("answer")},
-            source="gui",
-            turso_session_id=turso_session_id,
-        )
-    return result
-
-
-@app.get("/api/projects/{project_id}/agent/stops")
-async def api_agent_stops_list(project_id: str, limit: int = 50):
-    from syte.agent_artifacts import list_session_stops
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "stops": await list_session_stops(project_id, limit=limit)}
-
-
-@app.get("/api/projects/{project_id}/agent/mcp")
-async def api_agent_mcp_list(project_id: str):
-    from syte.agent_artifacts import list_mcp_addons
-    from syte.agent_skills import mcp_server_config
-    from syte.cloud_agent import agent_root
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "addons": await list_mcp_addons(project_id),
-        "mcp_server": mcp_server_config(project_id, agent_root(project_id)),
-        "documentation": "/api/#agent-mcp",
-        "project_routes": {
-            "skills": f"/api/projects/{project_id}/agent/skills",
-            "service": f"/api/projects/{project_id}/agent/service",
-            "access": f"/api/projects/{project_id}/agent/access",
-            "connect": f"/api/projects/{project_id}/agent/mcp/connect",
-            "call": f"/api/projects/{project_id}/agent/mcp/call",
-        },
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/mcp")
-async def api_agent_mcp_register(project_id: str, body: AgentMcpRegisterRequest):
-    from syte.agent_artifacts import register_mcp_addon
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    addon = await register_mcp_addon(
-        project_id,
-        name=body.name,
-        description=body.description,
-        command=body.command,
-        args=body.args,
-        env=body.env,
-        transport=body.transport,
-    )
-    return {"ok": True, **addon}
-
-
-@app.post("/api/projects/{project_id}/agent/mcp/connect")
-async def api_agent_mcp_connect(project_id: str, body: AgentMcpConnectRequest):
-    from syte.agent_artifacts import connect_mcp_addon
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await connect_mcp_addon(project_id, body.addon)
-    if not result.get("ok"):
-        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
-    return result
-
-
-@app.post("/api/projects/{project_id}/agent/mcp/call")
-async def api_agent_mcp_call(project_id: str, body: AgentMcpCallRequest):
-    from syte.agent_artifacts import call_mcp_addon
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return await call_mcp_addon(project_id, body.addon, body.tool, body.arguments)
-
-
-@app.put("/api/projects/{project_id}/agent/mcp/{addon_id}")
-async def api_agent_mcp_update(project_id: str, addon_id: str, body: AgentMcpUpdateRequest):
-    from syte.agent_artifacts import update_mcp_addon
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await update_mcp_addon(
-        project_id,
-        addon_id,
-        name=body.name,
-        description=body.description,
-        command=body.command,
-        args=body.args,
-        env=body.env,
-        transport=body.transport,
-    )
-    if not result.get("ok"):
-        status = 404 if result.get("error") == "not_found" else 400
-        raise HTTPException(status, result.get("message") or "Failed")
-    return result
-
-
-@app.delete("/api/projects/{project_id}/agent/mcp/{addon_id}")
-async def api_agent_mcp_disconnect(project_id: str, addon_id: str):
-    from syte.agent_artifacts import disconnect_mcp_addon
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await disconnect_mcp_addon(project_id, addon_id)
-    if not result.get("ok"):
-        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Project profile (Turso) — user-facing name + icon
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/projects/{project_id}/agent/profile")
-async def api_agent_profile_get(project_id: str):
-    from syte.turso_store import get_project_profile
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    profile = await get_project_profile(project_id)
-    if not profile:
-        return {"ok": True, "project_id": project_id, "profile": None, "note": "No Turso profile saved yet"}
-    return {"ok": True, "project_id": project_id, "profile": profile}
-
-
-@app.put("/api/projects/{project_id}/agent/profile")
-async def api_agent_profile_upsert(project_id: str, body: AgentProfileRequest):
-    from syte.turso_store import upsert_project_profile
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    profile = await upsert_project_profile(
-        project_id,
-        name=body.name,
-        icon=body.icon,
-        metadata=body.metadata,
-    )
-    if not profile:
-        return {
-            "ok": False,
-            "error": "turso_unavailable",
-            "message": "Turso is not configured — cannot save profile.",
-        }
-    return {"ok": True, "project_id": project_id, "profile": profile}
-
-
-# ---------------------------------------------------------------------------
-# MCP credentials (Turso) — external service API keys the agent can use
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/projects/{project_id}/agent/credentials")
-async def api_agent_credentials_list(project_id: str):
-    from syte.turso_store import list_mcp_credentials
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    creds = await list_mcp_credentials(project_id)
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "credentials": creds,
-        "documentation": "docs/turso-persistence.md#user-mcp-credentials",
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/credentials")
-async def api_agent_credential_save(project_id: str, body: AgentMcpCredentialRequest):
-    from syte.turso_store import save_mcp_credential
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await save_mcp_credential(
-        project_id,
-        service_name=body.service_name,
-        display_name=body.display_name,
-        description=body.description,
-        api_key=body.api_key,
-        api_url=body.api_url,
-        metadata=body.metadata,
-    )
-    if not result:
-        return {
-            "ok": False,
-            "error": "turso_unavailable",
-            "message": "Turso is not configured — cannot save credential.",
-        }
-    return {"ok": True, **result}
-
-
-@app.post("/api/projects/{project_id}/agent/credentials/batch")
-async def api_agent_credential_batch(project_id: str, body: AgentMcpCredentialBatchRequest):
-    """Accepted JSON for an external service to bulk-save credentials and profile.
-
-    Exact accepted JSON schema — see docs/turso-persistence.md.
-    """
-    from syte.turso_store import save_mcp_credential, upsert_project_profile
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-
-    results: dict[str, Any] = {"ok": True, "project_id": project_id, "profile": None, "credentials": []}
-
-    if body.name or body.icon or body.metadata:
-        profile = await upsert_project_profile(
-            project_id,
-            name=body.name,
-            icon=body.icon,
-            metadata=body.metadata,
-        )
-        results["profile"] = profile
-
-    for cred in body.credentials:
-        svc = str(cred.get("service_name") or "").strip()
-        if not svc:
-            continue
-        saved = await save_mcp_credential(
-            project_id,
-            service_name=svc,
-            display_name=str(cred.get("display_name") or svc),
-            description=str(cred.get("description") or ""),
-            api_key=str(cred.get("api_key") or ""),
-            api_url=str(cred.get("api_url") or ""),
-            metadata=cred.get("metadata") if isinstance(cred.get("metadata"), dict) else {},
-        )
-        if saved:
-            results["credentials"].append(saved)
-
-    return results
-
-
-@app.get("/api/projects/{project_id}/agent/credentials/{service_name}")
-async def api_agent_credential_get(project_id: str, service_name: str):
-    from syte.turso_store import get_mcp_credential
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    cred = await get_mcp_credential(project_id, service_name)
-    if not cred:
-        raise HTTPException(404, f"Credential not found for service '{service_name}'")
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "service_name": service_name,
-        "credential": cred,
-    }
-
-
-@app.delete("/api/projects/{project_id}/agent/credentials/{service_name}")
-async def api_agent_credential_delete(project_id: str, service_name: str):
-    from syte.turso_store import delete_mcp_credential
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    ok = await delete_mcp_credential(project_id, service_name)
-    return {"ok": ok, "project_id": project_id, "service_name": service_name}
-
-
-@app.get("/api/projects/{project_id}/agent/skills")
-async def api_agent_skills_list(project_id: str):
-    from syte.agent_skills import get_project_skills
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, "project_id": project_id, "skills": await get_project_skills(project_id)}
-
-
-@app.post("/api/projects/{project_id}/agent/skills")
-async def api_agent_skill_add(project_id: str, body: AgentSkillAddRequest):
-    from syte.agent_skills import add_custom_skill
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await add_custom_skill(
-        project_id,
-        name=body.name,
-        description=body.description,
-        content=body.content,
-        parameters=body.parameters,
-        enable=body.enable,
-        skill_id=body.skill_id,
-    )
-    if not result.get("ok"):
-        raise HTTPException(400, result.get("message") or "Failed to add skill")
-    return result
-
-
-@app.put("/api/projects/{project_id}/agent/skills/{skill_id}")
-async def api_agent_skill_update(project_id: str, skill_id: str, body: AgentSkillUpdateRequest):
-    from syte.agent_skills import update_custom_skill
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await update_custom_skill(
-        project_id,
-        skill_id,
-        name=body.name,
-        description=body.description,
-        content=body.content,
-        parameters=body.parameters,
-    )
-    if not result.get("ok"):
-        status = 404 if result.get("error") == "not_found" else 400
-        raise HTTPException(status, result.get("message") or "Failed")
-    return result
-
-
-@app.post("/api/projects/{project_id}/agent/skills/{skill_id}/enable")
-async def api_agent_skill_enable(project_id: str, skill_id: str, body: AgentSkillEnableRequest):
-    from syte.agent_skills import enable_skill
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    result = await enable_skill(project_id, skill_id, body.parameters)
-    if not result.get("ok"):
-        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
-    return result
-
-
-@app.delete("/api/projects/{project_id}/agent/skills/{skill_id}")
-async def api_agent_skill_disable(project_id: str, skill_id: str, purge: bool = False):
-    from syte.agent_skills import delete_custom_skill, disable_skill
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    if purge:
-        result = await delete_custom_skill(project_id, skill_id)
-    else:
-        result = await disable_skill(project_id, skill_id)
-    if not result.get("ok"):
-        raise HTTPException(404 if result.get("error") == "not_found" else 400, result.get("message") or "Failed")
-    return result
-
-
-@app.get("/api/agent_dashboard")
-async def api_agent_dashboard_gui():
-    from syte.agent_metrics import get_dashboard_metrics
-
-    return {"ok": True, **(await get_dashboard_metrics())}
-
-
-@app.get("/api/projects/{project_id}/agent/debug")
-async def api_agent_debug_gui(project_id: str, profile: str | None = None):
-    from syte.agent_debug import build_ai_debug_report
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    return {"ok": True, **(await build_ai_debug_report(project_id, model_profile=profile))}
-
-
-@app.post("/api/projects/{project_id}/agent/test")
-async def api_agent_test_gui(project_id: str, body: AgentTestRequest | None = None):
-    from syte.cloud_agent import test_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    profile = body.model_profile if body else None
-    return await test_agent(project_id, source="gui", model_profile=profile)
-
-
-@app.get("/api/agent/core")
-async def api_agent_core():
-    """Describe the compact Plan/Build Agent execution core."""
-    from syte.opencode_agent_core import agent_core_spec
-
-    return agent_core_spec()
-
-
-@app.get("/api/agent/turn-controls")
-async def api_agent_turn_controls():
-    """Return the bounded, provider-neutral Agent turn controls for API clients."""
-    from syte.agent_turn_controls import agent_turn_controls_spec
-
-    return agent_turn_controls_spec()
-
-
-@app.post("/api/projects/{project_id}/agent/chat")
-async def api_agent_chat_gui(project_id: str, body: AgentChatRequest, wait: bool = False):
-    from syte.cloud_agent import communicate_with_agent
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    if not (body.message or "").strip():
-        raise HTTPException(400, "Message cannot be empty")
-    try:
-        result = await communicate_with_agent(
-            project_id,
-            body.message.strip(),
-            model_profile=body.model_profile,
-            thinking_level=body.thinking_level,
-            context_window_tokens=body.context_window_tokens,
-            stream_max_tokens=body.stream_max_tokens,
-            memory_depth=body.memory_depth,
-            plan_mode=body.plan_mode,
-            agent_mode=body.agent_mode,
-            max_steps=body.max_steps,
-            deployment_readiness=body.deployment_readiness,
-            source="gui",
-            background=not wait,
-            improve_from_screenshot=bool(body.improve_from_screenshot),
-            visual_analysis_id=body.visual_analysis_id,
-        )
-    except Exception as exc:
-        return {"ok": False, "error": "agent_communicate_failed", "message": str(exc)}
-    if not result.get("ok"):
-        return result
-    return result
-
-
-@app.get("/api/projects/{project_id}/agent/visual_analyses")
-async def api_list_visual_analyses_gui(project_id: str, limit: int = 20):
-    from syte.agent_memory import list_visual_analyses
-
-    if not await get_project(project_id):
-        raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "analyses": await list_visual_analyses(project_id, limit=limit),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/visual_analyze")
-async def api_visual_analyze_gui(project_id: str, route: str = "/", capture: bool = True):
-    from syte.cloud_agent import _tool_screenshot_preview, selected_model_metadata
-
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    model = await selected_model_metadata(project)
-    result = await _tool_screenshot_preview(
-        project_id,
-        {"route": route, "viewports": ["desktop", "phone"]},
-        {"session_number": 0, "model": model},
-    )
-    from syte.agent_memory import get_visual_analysis
-
-    analyses = []
-    for shot in result.get("screenshots") or []:
-        aid = shot.get("visual_analysis_id")
-        if aid:
-            row = await get_visual_analysis(str(aid))
-            if row:
-                analyses.append(row)
-    if not analyses and not result.get("ok"):
-        raise HTTPException(400, result.get("message") or "Screenshot capture failed")
-    return {"ok": True, "project_id": project_id, "analyses": analyses, "capture": result}
-
-
-@app.get("/api/projects/{project_id}/agent/design_profile")
-async def api_get_design_profile_gui(project_id: str):
-    from syte.agent_memory import get_design_profile
-    from syte.design_profile import list_style_profiles
-
-    if not await get_project(project_id):
-        raise HTTPException(404, "Project not found")
-    return {
-        "ok": True,
-        "project_id": project_id,
-        "profile": await get_design_profile(project_id),
-        "style_profiles": list_style_profiles(),
-    }
-
-
-@app.post("/api/projects/{project_id}/agent/design_profile")
-async def api_set_design_profile_gui(project_id: str, body: DesignProfileRequest):
-    from syte.design_profile import apply_theme_profile
-
-    if not await get_project(project_id):
-        raise HTTPException(404, "Project not found")
-    profile = await apply_theme_profile(
-        project_id,
-        theme_key=body.theme_key,
-        style_key=body.style_key,
-        source="gui",
-    )
-    return {"ok": True, "project_id": project_id, "profile": profile}
 
 
 @app.get("/api/projects/{project_id}/preview/status")

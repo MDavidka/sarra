@@ -34,7 +34,6 @@ def test_global_ai_model_settings_are_bound_to_existing_model_and_settings_apis(
     assert "function saveGlobalAiProvider" in script
     assert "function loadGlobalAiProviderCatalog" in script
     assert "provider_type: globalAiProviderType" in script
-    assert "agent_default_model_profile: profile" in script
     assert "document.getElementById('global-ai-session-model')?.addEventListener('change'" in script
     assert "document.getElementById('global-ai-save-default-model')?.addEventListener('click', saveGlobalAiDefaultModel)" in script
     assert "option.textContent = `${provider} · ${model.name}`" in script
