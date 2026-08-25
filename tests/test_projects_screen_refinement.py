@@ -187,6 +187,22 @@ def test_deployment_uses_structured_repository_picker_without_replacing_certific
     assert ".deployment-structured-page" in css
     assert ".deployment-structured-repository" in css
     assert ".deployment-structured-repository-list { max-height:192px; overflow-x:hidden; overflow-y:auto;" in css
+    assert "repositoryFrameworkCatalog" in app
+    assert "function repositoryFramework(repo)" in app
+    assert "/static/vendor/frameworks/${framework.asset}?v=__VERSION__" in app
+    assert ".deployment-structured-framework-icon" in css
     assert "certificate-workspace" in app
     assert "Domains and automatic TLS" in app
     assert "certificate-structured-workspace" not in app
+
+
+def test_github_repository_metadata_and_svgl_framework_assets_are_available():
+    oauth = (ROOT / "syte/github_oauth.py").read_text(encoding="utf-8")
+    assets = (ROOT / "docs/external_assets.md").read_text(encoding="utf-8")
+    framework_dir = ROOT / "syte/static/vendor/frameworks"
+
+    assert '"language": str(item.get("language") or "")' in oauth
+    assert '"topics": [str(topic) for topic in (item.get("topics") or []) if str(topic)]' in oauth
+    assert "Deployment framework icons" in assets
+    for filename in ("nextjs-svgl.svg", "react-svgl.svg", "vite-svgl.svg", "vue-svgl.svg", "svelte-svgl.svg", "astro-svgl.svg", "django-svgl.svg", "laravel-svgl.svg"):
+        assert (framework_dir / filename).is_file()

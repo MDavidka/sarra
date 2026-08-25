@@ -6029,27 +6029,62 @@ async function renderNotificationWorkspace() {
   }
 }
 
+const repositoryFrameworkCatalog = [
+  {label: 'Next.js', asset: 'nextjs-svgl.svg', patterns: [/next\.?js\b/, /\bnext[-_]/]},
+  {label: 'Nuxt', asset: 'nuxt-svgl.svg', patterns: [/\bnuxt\b/]},
+  {label: 'Remix', asset: 'remix-svgl.svg', patterns: [/\bremix\b/]},
+  {label: 'Astro', asset: 'astro-svgl.svg', patterns: [/\bastro\b/]},
+  {label: 'Svelte', asset: 'svelte-svgl.svg', patterns: [/\bsvelte\b/]},
+  {label: 'Angular', asset: 'angular-svgl.svg', patterns: [/\bangular\b/]},
+  {label: 'Vue', asset: 'vue-svgl.svg', patterns: [/\bvue\b/]},
+  {label: 'Vite', asset: 'vite-svgl.svg', patterns: [/\bvite\b/]},
+  {label: 'React', asset: 'react-svgl.svg', patterns: [/\breact\b/]},
+  {label: 'Django', asset: 'django-svgl.svg', patterns: [/\bdjango\b/]},
+  {label: 'Flask', asset: 'flask-svgl.svg', patterns: [/\bflask\b/]},
+  {label: 'Laravel', asset: 'laravel-svgl.svg', patterns: [/\blaravel\b/]},
+  {label: 'Express', asset: 'express-svgl.svg', patterns: [/\bexpress\b/]},
+  {label: 'Node.js', asset: 'nodejs-svgl.svg', patterns: [/node\.?js/, /\bnode\b/]},
+  {label: 'TypeScript', asset: 'typescript-svgl.svg', patterns: [/\btypescript\b/]},
+  {label: 'JavaScript', asset: 'javascript-svgl.svg', patterns: [/\bjavascript\b/]},
+  {label: 'Python', asset: 'python-svgl.svg', patterns: [/\bpython\b/]},
+];
+
+function repositoryFramework(repo) {
+  const topics = Array.isArray(repo?.topics) ? repo.topics : [];
+  const fingerprint = [repo?.name, repo?.full_name, repo?.description, repo?.language, ...topics].filter(Boolean).join(' ').toLowerCase();
+  return repositoryFrameworkCatalog.find((framework) => framework.patterns.some((pattern) => pattern.test(fingerprint))) || null;
+}
+
+function renderRepositoryFrameworkIcon(framework) {
+  if (!framework) return '<span class="deployment-structured-repository-icon deployment-structured-repository-icon-fallback" aria-label="Code repository"><i data-lucide="code-2"></i></span>';
+  return `<span class="deployment-structured-repository-icon deployment-structured-framework-icon" title="${esc(framework.label)}"><img src="/static/vendor/frameworks/${framework.asset}?v=__VERSION__" alt="${esc(framework.label)}"></span>`;
+}
+
 function renderGithubRepositories() {
   const list = document.getElementById('github-repository-list');
   const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
   if (!list) return;
-  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description].join(' ').toLowerCase().includes(search));
+  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
   if (!repositories.length) {
     list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
     return;
   }
-  list.innerHTML = repositories.map((repo) => `
-    <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
-      <span class="deployment-structured-repository-icon"><i data-lucide="git-fork"></i></span>
-      <div class="deployment-structured-repository-copy">
-        <span class="github-repository-name">${esc(repo.full_name)}</span>
-        <span class="deployment-structured-repository-meta">${repo.private ? '<i data-lucide="lock-keyhole"></i> Private repository' : 'Public repository'}${repo.description ? ` · ${esc(repo.description)}` : ''}</span>
+  list.innerHTML = repositories.map((repo) => {
+    const framework = repositoryFramework(repo);
+    const details = [framework?.label || repo.language || '', repo.private ? '<i data-lucide="lock-keyhole"></i> Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    return `
+      <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+        ${renderRepositoryFrameworkIcon(framework)}
+        <div class="deployment-structured-repository-copy">
+          <span class="github-repository-name">${esc(repo.full_name)}</span>
+          <span class="deployment-structured-repository-meta">${details}</span>
+        </div>
+        <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
+          <span>Import</span>
+        </button>
       </div>
-      <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
-        <span>Import</span>
-      </button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
   list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();

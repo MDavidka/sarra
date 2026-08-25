@@ -183,6 +183,8 @@ async def list_repositories(account_id: str, query: str = "") -> list[dict[str, 
             "default_branch": str(item.get("default_branch", "main")),
             "private": bool(item.get("private", False)),
             "description": str(item.get("description") or ""),
+            "language": str(item.get("language") or ""),
+            "topics": [str(topic) for topic in (item.get("topics") or []) if str(topic)],
             "updated_at": str(item.get("updated_at", "")),
             "owner": str((item.get("owner") or {}).get("login", "")),
         })

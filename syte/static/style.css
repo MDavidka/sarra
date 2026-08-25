@@ -6249,3 +6249,40 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   #view-new-service .deployment-structured-repository-list { max-height:180px; }
   #view-new-service .deployment-structured-repository { min-height:60px; padding:8px 11px; }
 }
+
+/* Compact project/source controls and real framework logos for the Deployment flow. */
+#view-new-service .deployment-structured-page .create-brand { margin-bottom:10px; }
+#view-new-service .deployment-structured-header { padding-top:18px; margin-bottom:12px; }
+#view-new-service .deployment-structured-header h1 { font-size:29px; }
+#view-new-service .deployment-structured-page .create-name-field { margin-bottom:14px; }
+#view-new-service .deployment-structured-page .create-name-label-row { margin-bottom:4px; }
+#view-new-service .deployment-structured-page .create-name-input { height:44px; border-width:1px; border-radius:8px; font-size:16px; }
+#view-new-service .deployment-structured-page .deploy-source-section { gap:8px; }
+#view-new-service .deployment-structured-page .deploy-source-tabs { margin-bottom:10px; padding:3px; border-radius:8px; }
+#view-new-service .deployment-structured-page .deploy-source-tab { min-height:36px; gap:6px; padding:0 12px; font-size:12px; }
+#view-new-service .deployment-structured-page .deploy-source-tab svg { width:17px; height:17px; }
+#view-new-service .deployment-structured-page .deploy-source-fields { gap:10px; }
+#view-new-service .deployment-structured-account { gap:8px; padding:10px 0; }
+#view-new-service .deployment-structured-account .github-source-heading { align-items:center; }
+#view-new-service .deployment-structured-account .github-mark { width:32px; height:32px; }
+#view-new-service .deployment-structured-account .github-mark svg { width:17px; height:17px; }
+#view-new-service .deployment-structured-account #github-source-description { display:none; }
+#view-new-service .deployment-structured-account .github-source-actions .btn-pill { height:32px; padding:0 10px; font-size:11px; }
+#view-new-service .deployment-structured-account .github-source-account:not(.hidden) { min-height:40px; padding:7px 10px; border:1px solid #e4e4e4; border-radius:8px; background:#fafafa; }
+#view-new-service .deployment-structured-account .github-source-account img { width:24px; height:24px; }
+#view-new-service .deployment-structured-account .github-source-account strong { font-size:13px; }
+#view-new-service .deployment-structured-framework-icon { overflow:hidden; background:#f6f6f6; }
+#view-new-service .deployment-structured-framework-icon img { display:block; width:18px; height:18px; object-fit:contain; }
+#view-new-service .deployment-structured-repository-icon-fallback { color:#55555b; }
+
+@media (max-width:620px) {
+  #view-new-service .deployment-structured-page .create-brand { margin-bottom:6px; }
+  #view-new-service .deployment-structured-header { padding-top:14px; margin-bottom:10px; }
+  #view-new-service .deployment-structured-header h1 { font-size:25px; }
+  #view-new-service .deployment-structured-page .create-name-field { margin-bottom:12px; }
+  #view-new-service .deployment-structured-page .deploy-source-tabs { width:100%; }
+  #view-new-service .deployment-structured-page .deploy-source-tab { flex:1; padding:0 8px; }
+  #view-new-service .deployment-structured-account { grid-template-columns:minmax(0, 1fr) auto; }
+  #view-new-service .deployment-structured-account .github-source-account { grid-column:1 / -1; }
+  #view-new-service .deployment-structured-account .github-source-actions { justify-content:flex-end; }
+}
