@@ -69,6 +69,8 @@ let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
 let statsPollTimer = null;
+let liveSystemMetrics = null;
+const overviewMetricHistory = {ram: [], cpu: [], disk: []};
 let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
@@ -3674,41 +3676,52 @@ function renderIndependentMobilePage(page, data, target) {
   refreshIcons(); return true;
 }
 
-function renderServerNavigationPerformance(nodes = []) {
+function metricPercent(value) {
+  return Math.max(0, Math.min(100, Number(value || 0)));
+}
+
+function renderServerNavigationPerformance(metrics = liveSystemMetrics) {
   const indicator = document.getElementById('server-nav-performance');
   if (!indicator) return;
-  const reported = nodes.filter((node) => node.load_percent != null && Number.isFinite(Number(node.load_percent)));
-  if (!reported.length) {
+  if (!metrics || !Number.isFinite(Number(metrics.cpu_percent)) || !Number.isFinite(Number(metrics.ram_percent))) {
     indicator.className = 'nav-server-performance is-unavailable';
-    indicator.setAttribute('aria-label', 'Server performance waiting for a node report');
+    indicator.setAttribute('aria-label', 'Server performance is loading');
     indicator.setAttribute('aria-valuenow', '0');
-    indicator.title = 'Waiting for a server performance report';
+    indicator.title = 'Loading server performance';
     indicator.firstElementChild?.style.setProperty('width', '0%');
     return;
   }
-  const load = Math.round(reported.reduce((total, node) => total + Number(node.load_percent), 0) / reported.length);
+  const cpu = metricPercent(metrics.cpu_percent);
+  const ram = metricPercent(metrics.ram_percent);
+  const load = Math.round((cpu + ram) / 2);
   const tone = load >= 85 ? 'is-high' : load >= 65 ? 'is-elevated' : 'is-healthy';
   indicator.className = `nav-server-performance ${tone}`;
-  indicator.setAttribute('aria-label', `Average server load ${load} percent across ${reported.length} reporting ${reported.length === 1 ? 'node' : 'nodes'}`);
+  indicator.setAttribute('aria-label', `Combined server load ${load} percent, calculated from CPU ${Math.round(cpu)} percent and RAM ${Math.round(ram)} percent`);
   indicator.setAttribute('aria-valuenow', String(load));
-  indicator.title = `Average server load: ${load}% across ${reported.length} reporting ${reported.length === 1 ? 'node' : 'nodes'}`;
+  indicator.title = `Combined server load: ${load}% (CPU ${Math.round(cpu)}% + RAM ${Math.round(ram)}%)`;
   indicator.firstElementChild?.style.setProperty('width', `${load}%`);
 }
 
-async function loadServerNavigationPerformance() {
-  try {
-    const fleet = await api('/platform/fleet');
-    renderServerNavigationPerformance(fleet.nodes || []);
-  } catch (_) {
-    renderServerNavigationPerformance([]);
-  }
+function pushOverviewMetricSample(key, value) {
+  const values = overviewMetricHistory[key];
+  if (!values) return;
+  values.push(metricPercent(value));
+  if (values.length > 18) values.shift();
+}
+
+function recordLiveSystemMetrics(metrics) {
+  liveSystemMetrics = metrics;
+  pushOverviewMetricSample('ram', metrics.ram_percent);
+  pushOverviewMetricSample('cpu', metrics.cpu_percent);
+  pushOverviewMetricSample('disk', metrics.disk_percent);
+  renderServerNavigationPerformance(metrics);
+  renderOverviewLiveMetrics();
 }
 
 function renderRemoteServersWorkspace(target) {
   target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading fleet records…</p></section>';
   api('/platform/fleet').then(fleet => {
     const nodes = fleet.nodes || [];
-    renderServerNavigationPerformance(nodes);
     const balancer = fleet.load_balancer || {};
     const summary = fleet.summary || {};
     const nodeCards = nodes.map(node => {
@@ -3781,6 +3794,49 @@ function renderPlatformDetails(page, resources) {
   table.innerHTML = resources?.length ? `<table><thead><tr>${columns.map(column => `<th>${esc(column.replaceAll('_',' '))}</th>`).join('')}</tr></thead><tbody>${resources.map(row => `<tr>${columns.map(column => `<td>${esc(String(row[column] ?? '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<div class="platform-empty">No operational records yet.</div>';
 }
 
+function overviewMetricState(value) {
+  const percent = metricPercent(value);
+  if (percent >= 85) return ['critical', 'High'];
+  if (percent >= 65) return ['watch', 'Observe'];
+  return ['healthy', 'Healthy'];
+}
+
+function overviewSparklinePoints(values = []) {
+  const data = values.length > 1 ? values : [values[0] || 0, values[0] || 0];
+  return data.map((value, index) => `${(index / (data.length - 1)) * 100},${94 - metricPercent(value) * .82}`).join(' ');
+}
+
+function overviewMetricDetail(metric, key) {
+  if (key === 'ram' && metric.ram_used_mb != null && metric.ram_total_mb != null) {
+    return `${(Number(metric.ram_used_mb) / 1024).toFixed(1)} GB of ${(Number(metric.ram_total_mb) / 1024).toFixed(1)} GB`;
+  }
+  if (key === 'disk' && metric.disk_used_gb != null && metric.disk_total_gb != null) {
+    return `${Number(metric.disk_used_gb).toFixed(1)} GB of ${Number(metric.disk_total_gb).toFixed(1)} GB`;
+  }
+  return key === 'cpu' ? 'Live processor usage' : 'Live host capacity';
+}
+
+function renderOverviewLiveMetrics() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target || !target.querySelector('.overview-metric-grid') || !liveSystemMetrics) return;
+  const system = liveSystemMetrics;
+  [['ram', 'ram_percent'], ['cpu', 'cpu_percent'], ['disk', 'disk_percent']].forEach(([key, field]) => {
+    const card = target.querySelector(`[data-overview-metric="${key}"]`);
+    if (!card) return;
+    const percent = Math.round(metricPercent(system[field]));
+    const [tone, state] = overviewMetricState(percent);
+    card.className = `overview-metric-card ${tone}`;
+    card.querySelector('[data-overview-value]')?.replaceChildren(`${percent}%`);
+    card.querySelector('[data-overview-detail]')?.replaceChildren(overviewMetricDetail(system, key));
+    const status = card.querySelector('[data-overview-status]');
+    if (status) status.textContent = state;
+    const line = card.querySelector('polyline');
+    if (line) line.setAttribute('points', overviewSparklinePoints(overviewMetricHistory[key]));
+  });
+  const checked = target.querySelector('[data-overview-updated]');
+  if (checked) checked.textContent = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+}
+
 function renderOverviewHealth(data) {
   const metrics = data.metrics || {};
   const services = data.services || {};
@@ -3790,17 +3846,36 @@ function renderOverviewHealth(data) {
     : overall === 'degraded'
       ? 'A managed service needs attention.'
       : 'Review the workspace before the next deployment.';
+  const fallback = liveSystemMetrics || {
+    ram_percent: metrics.ram_percent ?? metrics.memory_percent,
+    cpu_percent: metrics.cpu_percent,
+    disk_percent: metrics.disk_percent,
+    ram_used_mb: metrics.ram_used_mb,
+    ram_total_mb: metrics.ram_total_mb,
+    disk_used_gb: metrics.disk_used_gb,
+    disk_total_gb: metrics.disk_total_gb,
+  };
+  if (!liveSystemMetrics) {
+    liveSystemMetrics = fallback;
+    pushOverviewMetricSample('ram', fallback.ram_percent);
+    pushOverviewMetricSample('cpu', fallback.cpu_percent);
+    pushOverviewMetricSample('disk', fallback.disk_percent);
+  }
+  const metricCard = (key, label, icon, field) => {
+    const percent = Math.round(metricPercent(fallback[field]));
+    const [tone, state] = overviewMetricState(percent);
+    return `<article class="overview-metric-card ${tone}" data-overview-metric="${key}"><header><span>${esc(label)}</span><strong data-overview-value>${percent}%</strong></header><div class="overview-sparkline" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M0 18H100M0 42H100M0 66H100M0 90H100"></path><polyline points="${overviewSparklinePoints(overviewMetricHistory[key])}"></polyline></svg></div><footer><span class="overview-metric-state" data-overview-status><i></i>${esc(state)}</span><small data-overview-detail>${esc(overviewMetricDetail(fallback, key))}</small></footer></article>`;
+  };
   const serviceRow = (key, label, icon) => {
     const service = services[key] || {state: 'unavailable', detail: 'Status unavailable.'};
     const state = String(service.state || 'unavailable');
     return `<article class="overview-service-row"><span class="overview-service-icon"><i data-lucide="${icon}"></i></span><div><strong>${esc(label)}</strong><small>${esc(service.detail || 'Status unavailable.')}</small></div><span class="overview-state ${esc(state)}"><i></i>${esc(state)}</span></article>`;
   };
-  const projectCount = Number(metrics.project_count || projects.length || 0);
-  const checkedAt = data.collected_at ? new Date(data.collected_at).toLocaleString() : 'Live check complete';
   const target = document.getElementById('platform-dedicated-page');
   if (!target) return;
-  target.innerHTML = `<section class="overview-workspace" aria-live="polite"><header class="overview-workspace-hero"><div><p>Workspace health</p><h2>Overview</h2><span>${esc(overallCopy)}</span></div><span class="overview-overall-state ${esc(overall)}"><i></i>${esc(overall === 'healthy' ? 'Operational' : overall === 'degraded' ? 'Attention required' : 'Review needed')}</span></header><div class="overview-status-grid"><article><span>Managed projects</span><strong>${esc(String(projectCount))}</strong><small>Projects in this workspace</small></article><article><span>Core services</span><strong>${esc(String(Object.keys(services).length || 0))}</strong><small>Live status checks</small></article><article><span>Last checked</span><strong>Live</strong><small>${esc(checkedAt)}</small></article></div><section class="overview-services-card" aria-labelledby="overview-services-title"><div class="overview-services-heading"><div><p>Service status</p><h3 id="overview-services-title">Core services</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-health-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div class="overview-service-list">${serviceRow('web', 'Web service', 'monitor-up')}${serviceRow('api', 'API', 'braces')}${serviceRow('apps', 'Managed apps', 'layers-3')}</div></section></section>`;
+  target.innerHTML = `<section class="overview-workspace" aria-live="polite"><header class="overview-workspace-hero"><div><p>Workspace health</p><h2>Overview</h2><span>${esc(overallCopy)}</span></div><span class="overview-overall-state ${esc(overall)}"><i></i>${esc(overall === 'healthy' ? 'Operational' : overall === 'degraded' ? 'Attention required' : 'Review needed')}</span></header><section class="overview-metric-grid" aria-label="Live host performance">${metricCard('ram', 'RAM', 'memory-stick', 'ram_percent')}${metricCard('cpu', 'CPU', 'cpu', 'cpu_percent')}${metricCard('disk', 'Disk', 'hard-drive', 'disk_percent')}</section><p class="overview-metric-updated" data-overview-updated>Waiting for the next metric sample</p><section class="overview-services-card" aria-labelledby="overview-services-title"><div class="overview-services-heading"><div><p>Service status</p><h3 id="overview-services-title">Core services</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-health-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div class="overview-service-list">${serviceRow('web', 'Web service', 'monitor-up')}${serviceRow('api', 'API', 'braces')}${serviceRow('apps', 'Managed apps', 'layers-3')}</div></section></section>`;
   target.querySelector('#overview-health-refresh')?.addEventListener('click', () => loadPlatformPage('overview'));
+  renderOverviewLiveMetrics();
   refreshIcons();
 }
 
@@ -4873,6 +4948,7 @@ async function loadSystem() {
     if (ver) ver.textContent = 'v' + sys.version;
     renderServerSwarm(sys);
     renderLoadStats(sys);
+    recordLiveSystemMetrics(sys);
     if (activeServiceId) {
       const p = projects.find(x => x.id === activeServiceId);
       if (p) {
@@ -7443,7 +7519,6 @@ loadProjects();
 loadSettings();
 loadTokens();
 void loadGithubSourceStatus();
-void loadServerNavigationPerformance();
 appContext = getContext();
 applyContext();
 startStatsPoll();
@@ -8459,7 +8534,6 @@ function showLegacyAccountApp(account) {
   // session existed. Refresh it after authentication so Connect GitHub does
   // not remain disabled with a stale unauthenticated response.
   void loadGithubSourceStatus();
-  void loadServerNavigationPerformance();
 }
 
 function legacyAccountLoginMarkup(setup) {

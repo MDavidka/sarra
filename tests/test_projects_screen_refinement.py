@@ -38,19 +38,37 @@ def test_selected_sidebar_card_and_overview_workspace_are_reference_aligned():
     assert "width:32px; height:32px" in css
     assert ".git-nav-logo { width:18px; height:18px; object-fit:contain; opacity:1; filter:invert(1); }" in css
     assert "rgba(24,24,27,.055)" in css
+    assert ".nav-sublink.active > span:not(.nav-server-performance) { background:transparent!important;" in css
     assert ".nav-sublink.active::before { display:none; }" in css
     assert "width:25px; border-radius:0 6px 6px 0" not in css
 
 
-def test_servers_navigation_has_live_database_backed_performance_bar():
+def test_servers_navigation_uses_globally_refreshed_combined_ram_and_cpu_load():
     index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
     app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
     css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
 
     assert 'id="server-nav-performance"' in index
     assert 'role="progressbar"' in index
-    assert "function renderServerNavigationPerformance(nodes = [])" in app
-    assert "api('/platform/fleet')" in app
-    assert "Average server load" in app
+    assert "function renderServerNavigationPerformance(metrics = liveSystemMetrics)" in app
+    assert "const load = Math.round((cpu + ram) / 2);" in app
+    assert "recordLiveSystemMetrics(sys);" in app
+    assert "setInterval(loadSystem, 10000)" in app
+    assert "Combined server load" in app
     assert ".nav-server-performance" in css
     assert "border-radius:999px" in css
+
+
+def test_overview_has_live_ram_cpu_disk_cards_and_system_disk_exposure():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+    main = (ROOT / "syte/main.py").read_text(encoding="utf-8")
+
+    assert "overviewMetricHistory" in app
+    assert "function renderOverviewLiveMetrics()" in app
+    assert "metricCard('ram', 'RAM'" in app
+    assert "metricCard('cpu', 'CPU'" in app
+    assert "metricCard('disk', 'Disk'" in app
+    assert '"disk_percent": stats["disk_percent"]' in main
+    assert ".overview-metric-grid" in css
+    assert ".overview-sparkline" in css
