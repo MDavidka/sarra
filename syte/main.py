@@ -1365,6 +1365,13 @@ def _parse_env(raw: Any) -> dict:
         return {}
 
 
+def _running(project: dict) -> bool:
+    """Return the live state for a project using the supported process manager."""
+    from syte.process_manager import is_running
+
+    return is_running(project["id"], project.get("deploy_type", "shell"))
+
+
 def _project_url(project: dict) -> str:
     if project.get("domain"):
         from syte.domain_utils import build_https_url
