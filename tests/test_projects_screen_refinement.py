@@ -177,13 +177,16 @@ def test_deployment_uses_structured_repository_picker_without_replacing_certific
     css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
 
     assert 'class="create-project deployment-structured-page"' in index
-    assert "Import Git Repository" in index
+    assert "Deploy a repository" in index
+    assert "Import Git Repository" not in index
     assert "deployment-structured-browser" in index
     assert "deployment-structured-search" in index
+    assert "deployment-structured-repository-list" in index
     assert "deployment-structured-repository" in app
     assert ">Import</span>" in app
     assert ".deployment-structured-page" in css
     assert ".deployment-structured-repository" in css
+    assert ".deployment-structured-repository-list { max-height:192px; overflow-x:hidden; overflow-y:auto;" in css
     assert "certificate-workspace" in app
     assert "Domains and automatic TLS" in app
     assert "certificate-structured-workspace" not in app

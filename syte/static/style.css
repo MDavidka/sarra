@@ -6216,3 +6216,36 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   #view-new-service .deployment-structured-import { min-width:65px; height:36px; padding:0 10px; }
   #view-new-service .deployment-structured-repository-meta { max-width:170px; }
 }
+
+/* Compact Deployment repository picker: show three repositories before scrolling. */
+#view-new-service .deployment-structured-header { padding-top:28px; margin-bottom:16px; }
+#view-new-service .deployment-structured-header h1 { font-size:31px; font-weight:760; letter-spacing:-.045em; }
+#view-new-service .deployment-structured-account { gap:12px; padding:14px 0; }
+#view-new-service .deployment-structured-account .github-source-heading { gap:10px; }
+#view-new-service .deployment-structured-account .github-source-heading strong { font-size:14px; }
+#view-new-service .deployment-structured-account .github-source-heading p { margin-top:2px; font-size:12px; }
+#view-new-service .deployment-structured-browser { gap:10px; }
+#view-new-service .deployment-structured-toolbar { align-items:center; padding-top:18px; }
+#view-new-service .deployment-structured-toolbar h3 { font-size:20px; font-weight:760; letter-spacing:-.025em; }
+#view-new-service .deployment-structured-toolbar .btn-pill { height:32px; padding:0 10px; }
+#view-new-service .deployment-structured-search { height:44px; }
+#view-new-service .deployment-structured-search>i { width:18px; height:18px; margin-left:12px; }
+#view-new-service .deployment-structured-search input { padding:0 9px; font-size:14px; }
+#view-new-service .deployment-structured-repository-list { max-height:192px; overflow-x:hidden; overflow-y:auto; scrollbar-gutter:stable; }
+#view-new-service .deployment-structured-repository { min-height:64px; grid-template-columns:36px minmax(0, 1fr) auto; gap:10px; padding:9px 13px; }
+#view-new-service .deployment-structured-repository-icon { width:32px; height:32px; }
+#view-new-service .deployment-structured-repository-icon svg { width:16px; height:16px; }
+#view-new-service .deployment-structured-repository-copy { gap:2px; }
+#view-new-service .deployment-structured-repository .github-repository-name { font-size:14px; }
+#view-new-service .deployment-structured-repository-meta { font-size:10px; }
+#view-new-service .deployment-structured-import { min-width:64px; height:34px; padding:0 10px; font-size:11px; }
+#view-new-service .deployment-structured-browser .deploy-field-row { margin-top:0; padding-top:14px; }
+
+@media (max-width:620px) {
+  #view-new-service .deployment-structured-header { padding-top:20px; margin-bottom:14px; }
+  #view-new-service .deployment-structured-header h1 { font-size:27px; }
+  #view-new-service .deployment-structured-toolbar { align-items:center; flex-direction:row; }
+  #view-new-service .deployment-structured-toolbar .btn-pill { width:auto; }
+  #view-new-service .deployment-structured-repository-list { max-height:180px; }
+  #view-new-service .deployment-structured-repository { min-height:60px; padding:8px 11px; }
+}
