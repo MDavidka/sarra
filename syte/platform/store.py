@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS platform_servers (
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
     ip TEXT NOT NULL DEFAULT '127.0.0.1',
+    country TEXT DEFAULT '',
     "user" TEXT NOT NULL DEFAULT 'root',
     port INTEGER NOT NULL DEFAULT 22,
     private_key_uuid TEXT,
@@ -625,6 +626,7 @@ CREATE TABLE IF NOT EXISTS platform_server_metrics (
     disk_used_gb REAL DEFAULT 0,
     disk_total_gb REAL DEFAULT 0,
     container_count INTEGER DEFAULT 0,
+    ping_ms REAL DEFAULT 0,
     recorded_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_platform_server_metrics_server
@@ -693,6 +695,8 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("platform_servers", "load_balancing_weight", "INTEGER DEFAULT 100"),
     ("platform_servers", "enrollment_token", "TEXT DEFAULT ''"),
     ("platform_servers", "helper_script_version", "TEXT DEFAULT '1'"),
+    ("platform_servers", "country", "TEXT DEFAULT ''"),
+    ("platform_server_metrics", "ping_ms", "REAL DEFAULT 0"),
     ("platform_deployments", "requested_by", "TEXT DEFAULT ''"),
     ("platform_deployments", "plan", "TEXT DEFAULT '{}'"),
 )
@@ -1097,7 +1101,7 @@ async def count(table: str, where: dict[str, Any] | None = None) -> int:
 DEFAULT_TEAM_NAME = "Default"
 DEFAULT_PROJECT_NAME = "default"
 DEFAULT_ENVIRONMENT_NAME = "production"
-LOCALHOST_SERVER_NAME = "localhost"
+LOCALHOST_SERVER_NAME = "Main"
 DEFAULT_NETWORK = "syte"
 
 
@@ -1126,6 +1130,7 @@ async def ensure_bootstrap() -> dict[str, Any]:
                 "name": LOCALHOST_SERVER_NAME,
                 "description": "The server Syte itself runs on",
                 "ip": "127.0.0.1",
+                "country": "Local",
                 "user": "root",
                 "port": 22,
                 "is_local": True,
@@ -1135,6 +1140,8 @@ async def ensure_bootstrap() -> dict[str, Any]:
                 "proxy_type": "CADDY",
             },
         )
+    elif bool(server.get("is_local")) and str(server.get("name") or "").strip().lower() == "localhost":
+        server = await update("platform_servers", str(server["uuid"]), {"name": LOCALHOST_SERVER_NAME, "country": server.get("country") or "Local"}) or server
 
     destination = await find_one("platform_destinations", {"server_uuid": server["uuid"], "is_default": True})
     if destination is None:
@@ -1433,8 +1440,8 @@ async def record_server_metrics(server_uuid: str, sample: dict[str, Any]) -> Non
         await db.execute(
             """INSERT INTO platform_server_metrics
                (server_uuid, cpu_percent, memory_percent, memory_used_mb, memory_total_mb,
-                disk_percent, disk_used_gb, disk_total_gb, container_count, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                disk_percent, disk_used_gb, disk_total_gb, container_count, ping_ms, recorded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 server_uuid,
                 float(sample.get("cpu_percent") or 0),
@@ -1445,6 +1452,7 @@ async def record_server_metrics(server_uuid: str, sample: dict[str, Any]) -> Non
                 float(sample.get("disk_used_gb") or 0),
                 float(sample.get("disk_total_gb") or 0),
                 int(sample.get("container_count") or 0),
+                float(sample.get("ping_ms") or 0),
                 utcnow(),
             ),
         )

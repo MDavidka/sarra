@@ -76,3 +76,22 @@ def test_overview_has_live_ram_cpu_disk_cards_and_system_disk_exposure():
     assert ".overview-workspace { display:grid; gap:16px; width:100%; max-width:none; margin:0; }" in css
     assert ".overview-services-card { width:100%; max-width:none;" in css
     assert "flex:0 0 76px" in css
+
+
+def test_servers_checklist_and_mobile_git_workspace_are_scoped_and_responsive():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert "function renderRemoteServersWorkspace(target)" in app
+    assert "server-checklist-page" in app
+    assert "data-server-enroll" in app
+    assert "data-server-country" in app
+    assert "data-server-save" in app
+    assert "server-checklist-metrics" in app
+    assert "function serverChecklistPing(value)" in app
+    assert ".server-checklist-page" in css
+    assert ".server-checklist-row" in css
+    assert ".git-workspace-page" in css
+    assert ".git-repository-card" in css
+    assert ".git-repository-toolbar" in css
+    assert ".nav-server-performance>span { display:block!important; background:#16a34a!important; }" in css

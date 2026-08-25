@@ -3718,34 +3718,84 @@ function recordLiveSystemMetrics(metrics) {
   renderOverviewLiveMetrics();
 }
 
+function serverChecklistCountryOptions(selected = '') {
+  const countries = ['Local', 'Australia', 'Brazil', 'Canada', 'France', 'Germany', 'India', 'Japan', 'Netherlands', 'Poland', 'Romania', 'Singapore', 'United Kingdom', 'United States', 'Unknown'];
+  const value = String(selected || 'Unknown');
+  const options = countries.includes(value) ? countries : [value, ...countries];
+  return options.map(country => `<option value="${esc(country)}" ${country === value ? 'selected' : ''}>${esc(country)}</option>`).join('');
+}
+
+function serverChecklistMetric(value) {
+  return value == null || Number(value) <= 0 ? '—' : `${Math.round(Number(value))}%`;
+}
+
+function serverChecklistPing(value) {
+  return value == null || Number(value) <= 0 ? 'Waiting' : `${Math.round(Number(value))} ms`;
+}
+
 function renderRemoteServersWorkspace(target) {
-  target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading fleet records…</p></section>';
+  target.innerHTML = '<section class="server-checklist-page"><p class="server-checklist-loading">Loading server checklist…</p></section>';
   api('/platform/fleet').then(fleet => {
     const nodes = fleet.nodes || [];
-    const balancer = fleet.load_balancer || {};
     const summary = fleet.summary || {};
-    const nodeCards = nodes.map(node => {
-      const load = node.load_percent == null ? 0 : Math.min(100, Math.max(0, Number(node.load_percent)));
-      const loadLabel = node.load_percent == null ? 'Waiting for first report' : `${Math.round(load)}% current load`;
-      return `<article class="legacy-fleet-node-row"><div class="legacy-fleet-node-identity"><span class="legacy-fleet-status-dot ${esc(node.status || 'pending')}"></span><div><h3>${esc(node.name || 'Unnamed server')}</h3><p>${esc(node.host || 'Host pending')} <span aria-hidden="true">·</span> ${esc(node.server_type || 'vps')}</p></div></div><div class="legacy-fleet-node-load"><div><span>Node load</span><strong>${esc(loadLabel)}</strong></div><div class="legacy-fleet-bar" aria-label="${esc(loadLabel)}"><span style="width:${load}%"></span></div></div><div class="legacy-fleet-node-roles"><span>Roles</span><div><button type="button" aria-pressed="${node.role_websites ? 'true' : 'false'}" data-fleet-role="websites" data-server-id="${esc(node.uuid)}" data-current="${node.role_websites ? '1' : '0'}" class="${node.role_websites ? 'active' : ''}">Websites</button><button type="button" aria-pressed="${node.role_router ? 'true' : 'false'}" data-fleet-role="router" data-server-id="${esc(node.uuid)}" data-current="${node.role_router ? '1' : '0'}" class="${node.role_router ? 'active' : ''}">Router</button><button type="button" aria-pressed="${node.role_workers ? 'true' : 'false'}" data-fleet-role="workers" data-server-id="${esc(node.uuid)}" data-current="${node.role_workers ? '1' : '0'}" class="${node.role_workers ? 'active' : ''}">Background</button></div></div><div class="legacy-fleet-node-actions"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-pool="1" data-server-id="${esc(node.uuid)}" ${node.load_balancing_enabled ? 'checked' : ''} ${node.role_websites ? '' : 'disabled'}><span></span>In web pool</label><button class="legacy-fleet-script" type="button" data-fleet-script="${esc(node.uuid)}"><i data-lucide="terminal-square"></i>Setup script</button></div></article>`;
-    }).join('') || '<div class="legacy-fleet-empty"><i data-lucide="server"></i><h3>No servers enrolled</h3><p>Add a server to create a website, router, or background-workload pool.</p><button class="dedicated-primary" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add first server</button></div>';
-    const eligible = (balancer.eligible_targets || []).length;
-    target.innerHTML = `<section class="legacy-fleet-page"><header class="legacy-fleet-header"><div><p>Infrastructure fleet</p><h2>Remote Servers</h2><span>Add servers, choose responsibilities, and route website traffic using reported node load.</span></div><button class="legacy-fleet-refresh" type="button" data-fleet-refresh="1" aria-label="Refresh fleet"><i data-lucide="refresh-cw"></i></button></header><section class="legacy-fleet-control-card"><div class="legacy-fleet-control-intro"><span class="legacy-fleet-icon"><i data-lucide="network"></i></span><div><p>Traffic routing</p><h3>${balancer.enabled ? `${eligible} healthy target${eligible === 1 ? '' : 's'} ready for traffic` : 'Traffic routing is paused'}</h3><small>Only online Website nodes in the web pool are eligible. Choose a policy and optional router below.</small></div></div><div class="legacy-fleet-control-fields"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-balancer="enabled" ${balancer.enabled ? 'checked' : ''}><span></span><b>Load balancer<small>${balancer.enabled ? 'Accepting traffic' : 'Not accepting traffic'}</small></b></label><label>Routing strategy<select data-fleet-balancer="strategy"><option value="least-load" ${balancer.strategy === 'least-load' ? 'selected' : ''}>Least load</option><option value="round-robin" ${balancer.strategy === 'round-robin' ? 'selected' : ''}>Round robin</option></select></label><label>Router node<select data-fleet-balancer="router"><option value="">Choose automatically</option>${nodes.filter(node => node.role_router).map(node => `<option value="${esc(node.uuid)}" ${balancer.router_server_uuid === node.uuid ? 'selected' : ''}>${esc(node.name)}</option>`).join('')}</select></label></div></section><section class="legacy-fleet-summary"><article><i data-lucide="server"></i><span>Servers</span><strong>${summary.total_nodes || 0}</strong></article><article><i data-lucide="activity"></i><span>Reporting</span><strong>${summary.online_nodes || 0}</strong></article><article><i data-lucide="network"></i><span>Website pool</span><strong>${summary.website_nodes || 0}</strong></article><article><i data-lucide="cpu"></i><span>Background</span><strong>${summary.worker_nodes || 0}</strong></article></section><div class="legacy-fleet-workspace"><section class="legacy-fleet-inventory"><header class="legacy-fleet-section-head"><div><p>Server inventory</p><h3>Nodes and responsibilities</h3><span>Enable one or more roles per node. Changes save immediately.</span></div><button class="legacy-fleet-compact-refresh" type="button" data-fleet-refresh="1"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><section class="legacy-fleet-grid">${nodeCards}</section></section><aside class="legacy-fleet-setup"><span class="legacy-fleet-setup-icon"><i data-lucide="server"></i></span><p>Server enrollment</p><h3>Add a node</h3><small>Enter a reachable host. Its generated setup script provides a scoped enrollment credential.</small><button class="dedicated-primary legacy-fleet-setup-open" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add server</button><form class="legacy-fleet-enroll" data-fleet-enroll="1" hidden><label>Node name<input name="name" required maxlength="120" placeholder="beta-web-01"></label><label>IP address or host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Server type<select name="server_type"><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><div><button type="button" class="legacy-fleet-enroll-cancel" data-fleet-enroll-toggle="1">Cancel</button><button class="dedicated-primary" type="submit"><i data-lucide="plus"></i>Enroll node</button></div></form></aside></div><div class="legacy-fleet-dialog-backdrop" data-fleet-script-panel="1" hidden><section class="legacy-fleet-script-panel" role="dialog" aria-modal="true" aria-label="Server helper script"><header><div><p>Secure enrollment helper</p><h3>syte-fleet-heartbeat.sh</h3><span>Copy the command, review it, then run it as root on this node.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close helper script"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1" tabindex="0"></pre><footer><button class="legacy-fleet-enroll-cancel" type="button" data-fleet-script-close="1">Cancel</button><button class="dedicated-primary" type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i>Copy script</button></footer></section></div></section>`;
-    const message = text => { const el = document.getElementById('platform-page-message'); if (el) el.textContent = text; };
+    const reporting = nodes.filter(node => node.metrics);
+    const averageLoad = reporting.length ? Math.round(reporting.reduce((sum, node) => sum + Number(node.load_percent || 0), 0) / reporting.length) : null;
+    const serverRows = nodes.map(node => {
+      const metrics = node.metrics || {};
+      const status = String(node.status || 'pending');
+      const isLocal = Boolean(node.is_local);
+      return `<article class="server-checklist-row" data-server-row="${esc(node.uuid)}">
+        <div class="server-checklist-identity"><span class="server-checklist-status ${esc(status)}" title="${esc(status)}"></span><div><input class="server-checklist-name" data-server-name="${esc(node.uuid)}" value="${esc(node.name || 'Unnamed server')}" aria-label="Server name"><small>${esc(node.host || 'Host pending')}${isLocal ? ' · Sycord host' : ''}</small></div></div>
+        <label class="server-checklist-field"><span>Country</span><select data-server-country="${esc(node.uuid)}" aria-label="Country for ${esc(node.name || 'server')}">${serverChecklistCountryOptions(node.country)}</select></label>
+        <div class="server-checklist-metrics" aria-label="Server resource usage"><span><small>CPU</small><b>${serverChecklistMetric(metrics.cpu_percent)}</b></span><span><small>RAM</small><b>${serverChecklistMetric(metrics.memory_percent)}</b></span><span><small>Disk</small><b>${serverChecklistMetric(metrics.disk_percent)}</b></span></div>
+        <div class="server-checklist-state"><span class="server-checklist-state-pill ${esc(status)}"><i></i>${esc(status)}</span><small>${serverChecklistPing(metrics.ping_ms)}</small></div>
+        <div class="server-checklist-actions"><button type="button" class="server-checklist-save" data-server-save="${esc(node.uuid)}">Save</button>${isLocal ? '<span class="server-checklist-main">Main</span>' : `<button type="button" class="server-checklist-setup" data-fleet-script="${esc(node.uuid)}">Setup</button>`}</div>
+      </article>`;
+    }).join('') || '<div class="server-checklist-empty"><i data-lucide="server"></i><h3>No servers yet</h3><p>Add the first server to begin monitoring its availability and resource usage.</p></div>';
+    target.innerHTML = `<section class="server-checklist-page">
+      <header class="server-checklist-header"><div><p>Infrastructure</p><h2>Servers</h2><span>Manage the Sycord host and every enrolled deployment server from one live checklist.</span></div><button class="server-checklist-refresh" type="button" data-server-refresh="1"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
+      <section class="server-checklist-summary" aria-label="Server status summary"><article><span>Servers</span><strong>${summary.total_nodes || 0}</strong></article><article><span>Online</span><strong>${summary.online_nodes || 0}</strong></article><article><span>Combined load</span><strong>${averageLoad == null ? '—' : `${averageLoad}%`}</strong><small>CPU + RAM average</small></article><article><span>Heartbeat</span><strong>${reporting.length}/${nodes.length}</strong><small>Reporting nodes</small></article></section>
+      <section class="server-checklist-add"><div><p>Add server</p><h3>Enroll a server</h3><span>Choose the display name and country yourself. Sycord stores the country locally and does not perform an external IP lookup.</span></div><form data-server-enroll="1"><label>Name<input name="name" required maxlength="120" placeholder="web-02"></label><label>Host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Country<select name="country">${serverChecklistCountryOptions('Unknown')}</select></label><label>Type<select name="server_type"><option value="vps">VPS</option><option value="micro">Micro server</option><option value="dedicated">Dedicated</option><option value="edge">Edge</option><option value="build">Build worker</option></select></label><button type="submit"><i data-lucide="plus"></i><span>Add server</span></button></form></section>
+      <section class="server-checklist-table"><header><div><p>Active servers</p><h3>Checklist</h3></div><span>${nodes.length} tracked</span></header><div class="server-checklist-columns" aria-hidden="true"><span>Server</span><span>Country</span><span>Performance</span><span>Status & ping</span><span>Actions</span></div><div class="server-checklist-list">${serverRows}</div></section>
+      <div class="server-checklist-dialog" data-fleet-script-panel="1" hidden><section role="dialog" aria-modal="true" aria-label="Server heartbeat setup"><header><div><p>Server heartbeat</p><h3>Install monitoring helper</h3><span>Review the script before running it as root on the enrolled server.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1" tabindex="0"></pre><footer><button type="button" data-fleet-script-close="1">Close</button><button type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i><span>Copy script</span></button></footer></section></div>
+    </section>`;
     const refresh = () => renderRemoteServersWorkspace(target);
-    target.querySelectorAll('[data-fleet-refresh]').forEach(button => button.addEventListener('click', refresh));
-    target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(button => button.addEventListener('click', event => { const form = target.querySelector('[data-fleet-enroll]'); form.hidden = !form.hidden; const isOpen = !form.hidden; target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(toggle => { toggle.innerHTML = isOpen ? '<i data-lucide="x"></i>Close enrollment' : '<i data-lucide="plus"></i>Add a server'; }); refreshIcons(); }));
-    target.querySelector('[data-fleet-enroll]')?.addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.currentTarget); const type = String(form.get('server_type') || 'micro'); try { await api('/platform/fleet/servers',{method:'POST',body:JSON.stringify({name:form.get('name'),host:form.get('host'),server_type:type,role_websites:true,role_router:type === 'edge',role_workers:type === 'build',load_balancing_enabled:type !== 'build'})}); message('Server enrolled. Generate its helper script to begin load reporting.'); refresh(); } catch(error) { message(`Enrollment failed: ${error.message}`); } });
-    target.querySelectorAll('[data-fleet-role]').forEach(button => button.addEventListener('click', async () => { const role = button.dataset.fleetRole; const active = button.dataset.current === '1'; const updates = {[`role_${role}`]: !active}; if (role === 'websites' && active) updates.load_balancing_enabled = false; try { await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify(updates)}); refresh(); } catch(error) { message(`Role update failed: ${error.message}`); } }));
-    target.querySelectorAll('[data-fleet-pool]').forEach(input => input.addEventListener('change', async () => { try { await api(`/platform/fleet/servers/${encodeURIComponent(input.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify({load_balancing_enabled:input.checked})}); refresh(); } catch(error) { message(`Pool update failed: ${error.message}`); refresh(); } }));
-    const saveBalancer = async () => { try { await api('/platform/fleet/load-balancer',{method:'PUT',body:JSON.stringify({load_balancing_enabled:target.querySelector('[data-fleet-balancer="enabled"]').checked,strategy:target.querySelector('[data-fleet-balancer="strategy"]').value,router_server_uuid:target.querySelector('[data-fleet-balancer="router"]').value,health_check_path:balancer.health_check_path || '/health'})}); refresh(); } catch(error) { message(`Load-balancer update failed: ${error.message}`); } };
-    target.querySelectorAll('[data-fleet-balancer]').forEach(input => input.addEventListener('change', saveBalancer));
-    target.querySelectorAll('[data-fleet-script]').forEach(button => button.addEventListener('click', async () => { try { const result = await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.fleetScript)}/setup-script`); const panel = target.querySelector('[data-fleet-script-panel]'); panel.hidden = false; target.querySelector('[data-fleet-script-content]').textContent = result.script; panel.scrollIntoView({behavior:'smooth',block:'center'}); } catch(error) { message(`Script generation failed: ${error.message}`); } }));
+    target.querySelectorAll('[data-server-refresh]').forEach(button => button.addEventListener('click', refresh));
+    target.querySelector('[data-server-enroll]')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const type = String(form.get('server_type') || 'vps');
+      try {
+        const result = await api('/platform/fleet/servers', {method: 'POST', body: JSON.stringify({name: form.get('name'), host: form.get('host'), country: form.get('country'), server_type: type, role_websites: type !== 'build', role_router: type === 'edge', role_workers: type === 'build', load_balancing_enabled: type !== 'build'})});
+        toast(result.message || 'Server added.');
+        refresh();
+      } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not add the server.'); }
+    });
+    target.querySelectorAll('[data-server-save]').forEach(button => button.addEventListener('click', async () => {
+      const id = button.dataset.serverSave;
+      const name = target.querySelector(`[data-server-name="${CSS.escape(id)}"]`)?.value?.trim();
+      const country = target.querySelector(`[data-server-country="${CSS.escape(id)}"]`)?.value;
+      if (!name || !country) { toast('Enter both a server name and country.'); return; }
+      button.disabled = true;
+      try { const result = await api(`/platform/fleet/servers/${encodeURIComponent(id)}`, {method: 'PUT', body: JSON.stringify({name, country})}); toast(result.message || 'Server details saved.'); refresh(); }
+      catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save server details.'); button.disabled = false; }
+    }));
+    target.querySelectorAll('[data-fleet-script]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        const result = await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.fleetScript)}/setup-script`);
+        const panel = target.querySelector('[data-fleet-script-panel]');
+        panel.hidden = false;
+        target.querySelector('[data-fleet-script-content]').textContent = result.script;
+      } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not generate the setup script.'); }
+    }));
     target.querySelectorAll('[data-fleet-script-close]').forEach(button => button.addEventListener('click', () => { target.querySelector('[data-fleet-script-panel]').hidden = true; }));
     target.querySelector('[data-fleet-script-panel]')?.addEventListener('mousedown', event => { if (event.target === event.currentTarget) event.currentTarget.hidden = true; });
-    target.querySelector('[data-fleet-script-copy]')?.addEventListener('click', async () => { const text = target.querySelector('[data-fleet-script-content]').textContent; try { await navigator.clipboard.writeText(text); message('Helper script copied. Review it before running as root.'); } catch(error) { message('Could not copy automatically. Select the helper script and copy it manually.'); } });
+    target.querySelector('[data-fleet-script-copy]')?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(target.querySelector('[data-fleet-script-content]').textContent); toast('Heartbeat setup script copied.'); }
+      catch (_) { toast('Select the script and copy it manually.'); }
+    });
     refreshIcons();
-  }).catch(error => { target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Fleet unavailable: ${esc(error.message)}</p></section>`; });
+  }).catch(error => { target.innerHTML = `<section class="server-checklist-page"><p class="platform-error">Servers are unavailable: ${esc(normalizeFetchError(error?.message) || 'Unknown error')}</p></section>`; });
 }
 
 function renderDedicatedPage(page, data) {
@@ -5764,7 +5814,7 @@ async function renderGitWorkspace() {
 
     const repoListHtml = repos.length
       ? repos.map(repo => `
-        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+        <article class="project-card git-repository-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
           <div style="min-width:0;flex:1;margin-right:12px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
@@ -5780,7 +5830,7 @@ async function renderGitWorkspace() {
       : `<p class="dedicated-empty">${status.connected ? 'No repositories found in connected Git account.' : 'Connect GitHub above to list repositories that can be fast added.'}</p>`;
 
     target.innerHTML = `
-      <section class="legacy-fleet-page">
+      <section class="legacy-fleet-page git-workspace-page">
         <header class="legacy-fleet-header">
           <div>
             <p>Source & Integration</p>
@@ -5788,15 +5838,15 @@ async function renderGitWorkspace() {
             <span>Connect GitHub, browse permitted repositories, quick deploy a detected build, or disconnect at any time.</span>
           </div>
         </header>
-        <section class="legacy-fleet-control-card" style="padding:18px;margin-bottom:20px;">
+        <section class="legacy-fleet-control-card git-source-card" style="padding:18px;margin-bottom:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             ${accountHtml}
           </div>
         </section>
         <section>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="git-repository-toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <h3 style="margin:0;font-size:18px;color:#111;">Repositories (${repos.length})</h3>
-            <label style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:4px 10px;background:#fff;">
+            <label class="git-repository-search" style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:4px 10px;background:#fff;">
               <i data-lucide="search" style="width:16px;height:16px;color:#777;"></i>
               <input type="search" id="git-tab-search" placeholder="Filter repositories..." style="border:0;outline:0;font-size:13px;">
             </label>
@@ -5821,7 +5871,7 @@ async function renderGitWorkspace() {
       if (!listEl) return;
       const filtered = repos.filter(r => !q || [r.full_name, r.description].join(' ').toLowerCase().includes(q));
       listEl.innerHTML = filtered.map(repo => `
-        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+        <article class="project-card git-repository-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
           <div style="min-width:0;flex:1;margin-right:12px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
