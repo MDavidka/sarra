@@ -83,8 +83,9 @@ def _exact_cert_path(hostname: str) -> Path | None:
     """Return the stored certificate whose subject is exactly ``hostname``.
 
     Deliberately does *not* fall back to the zone wildcard: this is how the
-    dashboard distinguishes a host with its own dedicated certificate (for
-    example, an isolated preview) from one covered by the shared wildcard.
+    dashboard distinguishes a host with its own dedicated certificate (e.g.
+    9router.sycord.site, isolated previews) from one merely covered by the
+    shared ``*.{zone}`` cert.
     """
     cert_root = _cert_dir()
     if not cert_root:
@@ -227,6 +228,20 @@ def project_ssl_summary(project: dict) -> dict:
 
 
 
+def litellm_api_ssl_status() -> dict:
+    """Return certificate status for the public Syra LiteLLM API endpoint."""
+    from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
+
+    active = _caddy_has_cert(LITELLM_PUBLIC_HOST)
+    return {
+        "configured": True,
+        "active": active,
+        "domain": LITELLM_PUBLIC_HOST,
+        "url": LITELLM_PUBLIC_API_URL,
+        "label": "HTTPS" if active else "SSL pending",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Aggregate SSL dashboard
 # ---------------------------------------------------------------------------
@@ -360,7 +375,15 @@ async def almalinux_monitor() -> dict:
 
     endpoints = [
         await monitor_endpoint("sycord.site", "sycord.site"),
+        # Wildcard canary: any *.sycord.site name resolves + gets a browser-
+        # trusted cert only when the wildcard DNS record and wildcard
+        # certificate are actually working.
         await monitor_endpoint("*.sycord.site (wildcard)", "probe.sycord.site"),
+        # 9Router is configured with its own dedicated certificate, so flag it
+        # when the wildcard is all that covers it.
+        await monitor_endpoint(
+            "9router.sycord.site", "9router.sycord.site", expect_dedicated=True
+        ),
     ]
     return {
         "os": os_name,
@@ -466,22 +489,30 @@ async def service_health_monitor() -> dict:
     These are the three things that can independently break:
 
     * **web** — the operator GUI on its custom domain,
+    * **api** — the public Syra / LiteLLM API host that agents call,
     * **projects** — every deployed project's production and preview hostname,
       aggregated because there can be many.
     """
     from syte.database import get_setting, list_projects
+    from syte.litellm_config import LITELLM_PUBLIC_HOST
     from syte.ssl_debug import live_probe_https
 
-    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
-    web = await _surface_health(
-        "web",
-        "Web GUI",
-        "Operator interface served over HTTPS",
-        gui_domain,
-    ) if gui_domain else {
-        "key": "web", "name": "Web GUI", "configured": False,
-        "health": HEALTH_UNCONFIGURED, "issues": [],
-    }
+    gui_domain = normalize_domain(await get_setting("gui_domain", "")) or LITELLM_PUBLIC_HOST
+
+    web, api = await asyncio.gather(
+        _surface_health(
+            "web",
+            "Web GUI",
+            "Operator interface served over HTTPS",
+            gui_domain,
+        ),
+        _surface_health(
+            "api",
+            "API",
+            f"Public agent API on {LITELLM_PUBLIC_HOST}",
+            LITELLM_PUBLIC_HOST,
+        ),
+    )
 
     # Projects: probe every configured production/preview host, then aggregate.
     projects = await list_projects()
@@ -550,7 +581,7 @@ async def service_health_monitor() -> dict:
         ),
     }
 
-    services = [web, projects_row]
+    services = [web, api, projects_row]
     return {
         "services": services,
         "overall": worst_health([s["health"] for s in services]),
@@ -590,9 +621,11 @@ class SslOverview:
     caddy: dict = field(default_factory=dict)
     cloudflare: dict = field(default_factory=dict)
     gui: dict = field(default_factory=dict)
+    litellm: dict = field(default_factory=dict)
     almalinux: dict = field(default_factory=dict)
     caddy_monitor: dict = field(default_factory=dict)
     health: dict = field(default_factory=dict)
+    nine_router: dict = field(default_factory=dict)
     projects: list[dict] = field(default_factory=list)
     pending_count: int = 0
     active_count: int = 0
@@ -622,6 +655,7 @@ async def build_ssl_overview() -> dict:
     """Build a single aggregate SSL status payload for the dashboard."""
     from syte.certificates import cloudflare_tls_status
     from syte.database import list_projects, get_setting
+    from syte.litellm_config import LITELLM_PUBLIC_HOST
     from syte.preview_domains import resolve_preview_zone
     from syte.ssl_debug import debug_endpoint
 
@@ -631,10 +665,13 @@ async def build_ssl_overview() -> dict:
             "active": await _caddy_active(),
         },
         cloudflare=await cloudflare_tls_status(),
-        gui=production_ssl_status({"domain": await get_setting("gui_domain", "")}),
+        gui=production_ssl_status(
+            {"domain": await get_setting("gui_domain", "") or LITELLM_PUBLIC_HOST}
+        ),
         projects=[],
     )
 
+    overview.litellm = litellm_api_ssl_status()
     overview.almalinux = await almalinux_monitor()
     overview.caddy_monitor = await caddy_server_monitor()
     overview.health = await service_health_monitor()
@@ -693,15 +730,88 @@ async def build_ssl_overview() -> dict:
             detail[key]["live_detail"] = row.get("detail")
             detail[key]["serving"] = row.get("reachable", False) or row.get("state") == "serving"
 
-    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
-    overview_debug: list[dict] = []
-    if gui_domain:
-        overview_debug.append(await debug_endpoint(
-            name="GUI",
-            domain=gui_domain,
-            configured=True,
-            cert_active=bool(overview.gui.get("active")),
-        ))
+    gui_domain = await get_setting("gui_domain", "") or LITELLM_PUBLIC_HOST
+    overview_debug = []
+    overview_debug.append(await debug_endpoint(
+        name="GUI",
+        domain=gui_domain,
+        configured=True,
+        cert_active=bool(overview.gui.get("active")),
+    ))
+    overview_debug.append(await debug_endpoint(
+        name="LiteLLM API",
+        domain=LITELLM_PUBLIC_HOST,
+        configured=True,
+        cert_active=bool(overview.litellm.get("active")),
+    ))
+    # 9Router AI gateway — a first-class Caddy host in this instance (auto SSL
+    # via the same wildcard DNS-01 flow). Certificate status comes from Caddy's
+    # store and reachability is probed live, exactly like the GUI / LiteLLM rows.
+    try:
+        from syte.ai_providers import NINE_ROUTER_API_BASE
+        _nine_host = normalize_domain(NINE_ROUTER_API_BASE)
+    except Exception:  # noqa: BLE001
+        _nine_host = "9router.sycord.site"
+    nine_configured = bool(_nine_host and is_safe_caddy_hostname(_nine_host))
+    # 9Router is issued its own single-subject certificate, so report on the
+    # dedicated cert rather than accepting shared-wildcard coverage.
+    nine_scope = cert_scope(_nine_host) if nine_configured else "none"
+    nine_dedicated = nine_scope == "dedicated"
+    nine_cert = nine_scope != "none"
+    nine_cert_meta = stored_host_cert(_nine_host) if nine_dedicated else None
+    from syte.certificates import nine_router_upstream
+    from syte.nine_router_manager import NINE_ROUTER_LOCAL_BASE_URL, router_status
+
+    nine_router_managed = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    nine_state = await router_status() if nine_router_managed else {}
+    nine_upstream = NINE_ROUTER_LOCAL_BASE_URL if nine_router_managed else await nine_router_upstream()
+    nine_route_note = (
+        "Managed local Docker GUI/API route through Caddy."
+        if nine_router_managed
+        else f"Legacy remote gateway upstream {nine_upstream}."
+    )
+    overview_debug.append(await debug_endpoint(
+        name="9Router API",
+        domain=_nine_host,
+        configured=nine_configured,
+        cert_active=nine_cert,
+        extra=(
+            f"Dedicated certificate (not the zone wildcard); TLS terminated by "
+            f"this Caddy instance. {nine_route_note}"
+        ),
+    ))
+    overview.nine_router = {
+        "configured": nine_configured,
+        "active": nine_cert,
+        "domain": _nine_host,
+        "url": f"{build_https_url(_nine_host)}/dashboard" if nine_configured else None,
+        "api_url": f"{build_https_url(_nine_host)}/v1" if nine_configured else None,
+        "upstream": nine_upstream,
+        "managed": nine_router_managed,
+        "running": bool(nine_state.get("running")),
+        "ready": bool(nine_state.get("ready")),
+        "cert_scope": nine_scope,
+        "dedicated_cert": nine_dedicated,
+        "cert": nine_cert_meta,
+        "label": (
+            "HTTPS (dedicated cert)" if nine_dedicated
+            else "Dedicated SSL missing" if nine_scope == "wildcard"
+            else "HTTPS (wildcard)" if nine_cert
+            else "SSL pending"
+        ),
+    }
+    if nine_configured and nine_scope == "wildcard":
+        overview.action_hints.append(
+            f"{_nine_host} is configured for a dedicated certificate but is currently "
+            "covered only by the zone wildcard. Run 'Apply & resolve SSL' so Caddy "
+            "issues its own single-subject certificate."
+        )
+    if nine_cert_meta and nine_cert_meta.get("self_signed"):
+        overview.action_hints.append(
+            f"The dedicated certificate for {_nine_host} was issued by Caddy's internal "
+            "authority, so browsers and API clients reject it. Verify the Cloudflare "
+            "DNS-01 token, then run 'Apply & resolve SSL'."
+        )
 
     # Surface everything the deep Caddy monitor found wrong — stale config,
     # missing :443 listener, unreachable admin API, untrusted certs.
@@ -753,6 +863,8 @@ async def build_ssl_overview() -> dict:
         "caddy": overview.caddy,
         "cloudflare": overview.cloudflare,
         "gui": overview.gui,
+        "litellm": overview.litellm,
+        "nine_router": overview.nine_router,
         "almalinux_monitor": overview.almalinux,
         "caddy_monitor": overview.caddy_monitor,
         "health": overview.health,
@@ -762,6 +874,7 @@ async def build_ssl_overview() -> dict:
         "wildcard_cert": wildcard_info,
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
+        "nine_router_upstream": overview.nine_router.get("upstream", ""),
         "gui_port": _gui_port,
         "totals": {
             "configured": overview.configured_count,

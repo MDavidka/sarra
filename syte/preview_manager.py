@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from syte.config import settings
+from syte.litellm_config import LITELLM_HOST_PORT
 from syte.database import get_project, list_projects, update_project
 from syte.domain_utils import normalize_domain
 from syte.preview_config import build_preview_command, prepare_preview_hosts
@@ -31,7 +32,7 @@ from syte.workspace import command_exists, ensure_workspace, read_env_vars, work
 
 PREVIEW_PORT_START = 4000
 PREVIEW_PORT_END = 4999
-PREVIEW_RESERVED_PORTS = frozenset()
+PREVIEW_RESERVED_PORTS = frozenset({LITELLM_HOST_PORT})
 PREVIEW_START_GRACE_SEC = 45
 PREVIEW_MAX_RUNTIME_SEC = 3600
 PREVIEW_NODE_MEMORY_MB = 4096
@@ -109,6 +110,75 @@ def _stored_preview_port(project: dict[str, object]) -> int:
         return int(project.get("preview_port") or 0)
     except (TypeError, ValueError):
         return 0
+
+
+async def relocate_litellm_preview_conflicts() -> dict[str, object]:
+    """Move stable previews away from LiteLLM's reserved loopback port.
+
+    Previews persist their assigned port, so simply reserving port 4000 for
+    future projects does not resolve installations created before LiteLLM.
+    Running previews are stopped, moved, and restarted with their existing
+    domain; stopped previews are moved without being started.
+    """
+    projects = await list_projects()
+    conflicts = [
+        project for project in projects
+        if _stored_preview_port(project) in PREVIEW_RESERVED_PORTS
+    ]
+    if not conflicts:
+        return {"ok": True, "moved": [], "message": "No preview port conflicts."}
+
+    moved: list[dict[str, object]] = []
+    for project in conflicts:
+        project_id = str(project["id"])
+        was_running = is_preview_running(project_id)
+        if was_running:
+            stop_preview(project_id)
+
+        # A migration failure must not abort the caller (LiteLLM start) with an
+        # opaque 500 — report it as a normal unsuccessful result instead.
+        try:
+            new_port = await next_preview_port()
+            await update_project(project_id, {
+                "preview_port": new_port,
+                "preview_status": "stopped",
+                "preview_started_at": None,
+            })
+        except Exception as error:
+            return {
+                "ok": False,
+                "moved": moved,
+                "message": f"Could not move preview {project_id} off port {LITELLM_HOST_PORT}: {error}",
+            }
+        moved.append({"project_id": project_id, "port": new_port, "restarted": was_running})
+
+        if was_running:
+            try:
+                restarted, message, _meta = await start_preview(project_id)
+            except Exception as error:
+                restarted, message = False, str(error)
+            if not restarted:
+                return {
+                    "ok": False,
+                    "moved": moved,
+                    "message": f"Moved preview {project_id} but could not restart it: {message}",
+                }
+
+    from syte.certificates import apply_proxy_config
+
+    try:
+        await apply_proxy_config()
+    except Exception as error:
+        return {
+            "ok": False,
+            "moved": moved,
+            "message": f"Moved {len(moved)} preview(s) but could not reapply Caddy routes: {error}",
+        }
+    return {
+        "ok": True,
+        "moved": moved,
+        "message": f"Moved {len(moved)} preview(s) off LiteLLM port {LITELLM_HOST_PORT}.",
+    }
 
 
 def _port_listening(port: int) -> bool:

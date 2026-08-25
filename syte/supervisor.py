@@ -91,3 +91,7 @@ async def startup() -> None:
     await apply_proxy_config()
     ensure_caddy()
     await maintain()
+    from syte.agent_jobs import resume_pending_requests
+    resumed = await resume_pending_requests()
+    if resumed:
+        logger.info("Resumed %d durable cloud-agent request(s)", resumed)
