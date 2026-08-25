@@ -1588,7 +1588,14 @@ def _project_url(project: dict) -> str:
     return f"http://{ip}:{project['port']}"
 
 
+def _running(project: dict) -> bool:
+    """Return the current project process state through the canonical manager."""
+    from syte.process_manager import is_running
+    return is_running(str(project.get("id") or ""), str(project.get("deploy_type") or "shell"))
+
+
 def _enrich(project: dict) -> dict:
+
     from syte.preview_manager import preview_meta
     from syte.project_enrich import enrich_ssl
     from syte.workspace import ensure_workspace, workspace_path
