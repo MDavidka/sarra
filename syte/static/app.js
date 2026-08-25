@@ -4938,6 +4938,8 @@ async function loadSystem() {
   try {
     const sys = await api('/system');
     if (sys.public_ip) serverPublicIp = sys.public_ip;
+    // Keep navigation insight current independently of whichever subtab is open.
+    recordLiveSystemMetrics(sys);
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const directUrl = document.getElementById('direct-url');
@@ -4948,7 +4950,6 @@ async function loadSystem() {
     if (ver) ver.textContent = 'v' + sys.version;
     renderServerSwarm(sys);
     renderLoadStats(sys);
-    recordLiveSystemMetrics(sys);
     if (activeServiceId) {
       const p = projects.find(x => x.id === activeServiceId);
       if (p) {

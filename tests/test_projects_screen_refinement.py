@@ -53,6 +53,7 @@ def test_servers_navigation_uses_globally_refreshed_combined_ram_and_cpu_load():
     assert "function renderServerNavigationPerformance(metrics = liveSystemMetrics)" in app
     assert "const load = Math.round((cpu + ram) / 2);" in app
     assert "recordLiveSystemMetrics(sys);" in app
+    assert app.index("recordLiveSystemMetrics(sys);") < app.index("renderServerSwarm(sys);")
     assert "setInterval(loadSystem, 10000)" in app
     assert "Combined server load" in app
     assert ".nav-server-performance" in css
@@ -72,3 +73,6 @@ def test_overview_has_live_ram_cpu_disk_cards_and_system_disk_exposure():
     assert '"disk_percent": stats["disk_percent"]' in main
     assert ".overview-metric-grid" in css
     assert ".overview-sparkline" in css
+    assert ".overview-workspace { display:grid; gap:16px; width:100%; max-width:none; margin:0; }" in css
+    assert ".overview-services-card { width:100%; max-width:none;" in css
+    assert "flex:0 0 76px" in css
