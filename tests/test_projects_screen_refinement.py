@@ -156,4 +156,6 @@ def test_native_account_gate_renders_before_the_main_application_bundle():
     assert 'id="inline-account-login-form"' in index
     assert "fetch('/api/auth/session', {credentials: 'same-origin'})" in index
     assert "fetch('/api/auth/login'" in index
+    assert "new MutationObserver" in index
     assert index.index('id="inline-account-login-form"') < index.index('/static/app.js?v=__VERSION__')
+    assert index.index('new MutationObserver') < index.index('/static/style.css?v=__VERSION__')

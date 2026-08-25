@@ -8,6 +8,54 @@
   <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#ffffff">
+  <script>
+    (() => {
+      let started = false;
+      const start = () => {
+        const screen = document.getElementById('account-login-screen');
+        if (!screen || started) return Boolean(screen);
+        started = true;
+        const loading = (message) => {
+          screen.innerHTML = `<div class="account-login-card"><h1>Loading sign in…</h1><p class="account-auth-description">${message}</p></div>`;
+        };
+        const render = (message = '') => {
+          screen.innerHTML = `<div class="account-login-card"><p class="account-login-kicker">Sycord secure workspace</p><h1>Welcome back</h1><p class="account-auth-description">Enter your details to access your workspace.</p><form id="inline-account-login-form" class="account-login-form"><label for="inline-account-email">Email address</label><input id="inline-account-email" type="email" autocomplete="email" placeholder="name@example.com" required><label for="inline-account-password">Password</label><input id="inline-account-password" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="account-auth-submit" type="submit">Sign in</button></form><p id="inline-account-login-error" class="account-login-error">${message}</p></div>`;
+          screen.querySelector('#inline-account-login-form')?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const error = screen.querySelector('#inline-account-login-error');
+            if (error) error.textContent = '';
+            const email = screen.querySelector('#inline-account-email')?.value || '';
+            const password = screen.querySelector('#inline-account-password')?.value || '';
+            try {
+              const response = await fetch('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({email, password})});
+              if (!response.ok) throw new Error('Invalid email or password.');
+              loading('Opening your workspace…');
+              window.location.reload();
+            } catch (err) {
+              if (error) error.textContent = err?.message || 'Could not sign in. Please try again.';
+            }
+          });
+        };
+        fetch('/api/auth/session', {credentials: 'same-origin'})
+          .then((response) => response.ok ? response.json() : Promise.reject(new Error('Could not check the account session.')))
+          .then((session) => {
+            if (session.authenticated) {
+              loading('Opening your workspace…');
+              return;
+            }
+            render();
+          })
+          .catch(() => render('Could not reach the account service. Please try again.'));
+        return true;
+      };
+      if (!start()) {
+        const observer = new MutationObserver(() => {
+          if (start()) observer.disconnect();
+        });
+        observer.observe(document.documentElement, {childList: true, subtree: true});
+      }
+    })();
+  </script>
   <link rel="apple-touch-icon" href="/static/syte-logo.png?v=__VERSION__">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
   <link rel="stylesheet" href="/static/auth.css?v=__VERSION__">
@@ -15,43 +63,6 @@
 </head>
 <body class="account-auth-pending">
   <div id="account-login-screen" class="account-login-screen" aria-live="polite"><div class="account-login-card"><h1>Loading sign in…</h1><p class="account-auth-description">Checking your Sycord account session.</p></div></div>
-  <script>
-    (() => {
-      const screen = document.getElementById('account-login-screen');
-      if (!screen) return;
-      const loading = (message) => {
-        screen.innerHTML = `<div class="account-login-card"><h1>Loading sign in…</h1><p class="account-auth-description">${message}</p></div>`;
-      };
-      const render = (message = '') => {
-        screen.innerHTML = `<div class="account-login-card"><p class="account-login-kicker">Sycord secure workspace</p><h1>Welcome back</h1><p class="account-auth-description">Enter your details to access your workspace.</p><form id="inline-account-login-form" class="account-login-form"><label for="inline-account-email">Email address</label><input id="inline-account-email" type="email" autocomplete="email" placeholder="name@example.com" required><label for="inline-account-password">Password</label><input id="inline-account-password" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="account-auth-submit" type="submit">Sign in</button></form><p id="inline-account-login-error" class="account-login-error">${message}</p></div>`;
-        screen.querySelector('#inline-account-login-form')?.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const error = screen.querySelector('#inline-account-login-error');
-          if (error) error.textContent = '';
-          const email = screen.querySelector('#inline-account-email')?.value || '';
-          const password = screen.querySelector('#inline-account-password')?.value || '';
-          try {
-            const response = await fetch('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({email, password})});
-            if (!response.ok) throw new Error('Invalid email or password.');
-            loading('Opening your workspace…');
-            window.location.reload();
-          } catch (err) {
-            if (error) error.textContent = err?.message || 'Could not sign in. Please try again.';
-          }
-        });
-      };
-      fetch('/api/auth/session', {credentials: 'same-origin'})
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error('Could not check the account session.')))
-        .then((session) => {
-          if (session.authenticated) {
-            loading('Opening your workspace…');
-            return;
-          }
-          render();
-        })
-        .catch(() => render('Could not reach the account service. Please try again.'));
-    })();
-  </script>
   <button type="button" id="legacy-account-corner" class="legacy-account-corner hidden" aria-label="Open profile"></button>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
   <div class="app-shell">

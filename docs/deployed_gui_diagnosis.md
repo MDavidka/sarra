@@ -15,3 +15,5 @@ The VM is healthy on revision `aa36054e`, but the browser still reported no inte
 After an extended wait, the browser displayed the built-in Application Error overlay while the login screen remained on the static loading message. This confirms a frontend runtime failure after the asset load completes, rather than a server-side authentication failure. The next step is to obtain the runtime exception from the browser or service logs and correct that specific failure.
 
 Revision `76a9ceb2` is active and healthy after 435 passing tests locally. It adds a native account-gate fallback before the large application bundle. A fresh browser navigation initially displayed the safe loading state; the next check will allow the same-origin account-session request to complete and verify the native gate’s rendered state.
+
+On the final deployed revision, a four-second in-page wait showed that `document.body` existed but the inline account-gate form had not yet been parsed or executed; the browser document remained in the loading state. This points to an earlier head resource still blocking the HTML parser, despite removal of the remote module and font resources.
