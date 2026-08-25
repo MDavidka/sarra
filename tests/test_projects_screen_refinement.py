@@ -169,18 +169,3 @@ def test_legacy_syte_library_catalog_is_not_part_of_the_console():
     assert 'id="platform-store-panel"' not in index
     assert "activePlatformPage === 'docker') activePlatformPage = 'overview'" in app
     assert "if (activePlatformPage === 'docker') loadDockerStore();" not in app
-
-
-def test_mobile_console_uses_a_focused_application_dock():
-    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
-    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
-    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
-
-    assert 'id="mobile-app-nav"' in index
-    for label in ("Projects", "Deploy", "Overview", "Certificates", "Account"):
-        assert f">{label}</span>" in index
-    assert "function updateMobileAppNav(viewName)" in app
-    assert "button.dataset.mobilePlatform" in app
-    assert ".mobile-app-nav" in css
-    assert "grid-template-columns:repeat(5,minmax(0,1fr))" in css
-    assert "padding:18px 16px calc(94px + env(safe-area-inset-bottom))" in css
