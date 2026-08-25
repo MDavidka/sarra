@@ -5978,3 +5978,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .sycord-notification-row small { color:#98a2b3; font-size:11px; }
 @media (max-width:1100px) { .sycord-notify-grid { grid-template-columns:1fr; } .sycord-notify-card { min-height:auto; } }
 @media (max-width:600px) { .sycord-notify-card, .sycord-notification-history { padding:15px; } .sycord-notify-history-head { align-items:flex-start; flex-direction:column; } .sycord-notify-form-row { grid-template-columns:1fr; } .sycord-notify-actions .btn-pill { width:100%; justify-content:center; } }
+
+/* Connected Git profile in the global projects header. */
+.topbar-git-profile { display:grid; place-items:center; width:40px; height:40px; border:0; border-radius:50%; overflow:hidden; padding:0; background:#18181b; cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,.06); }
+.topbar-git-profile.hidden { display:none; }
+.topbar-git-profile:hover { box-shadow:0 0 0 3px #e4e4e7; }
+.topbar-git-profile img { width:100%; height:100%; object-fit:cover; }
+.topbar-git-profile img[src$="github-svgl.svg"] { width:21px; height:21px; filter:invert(1); object-fit:contain; }
+.git-nav-logo { width:18px; height:18px; object-fit:contain; opacity:.82; }
+.nav-sublink.active .git-nav-logo, .nav-sublink:hover .git-nav-logo { opacity:1; }

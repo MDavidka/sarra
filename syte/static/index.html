@@ -72,7 +72,7 @@
             <button type="button" class="nav-sublink" data-view="settings"><i data-lucide="settings-2"></i><span>Settings</span></button>
             <button type="button" class="nav-sublink" data-view="users"><i data-lucide="braces"></i><span>API</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="sessions"><i data-lucide="smartphone"></i><span>Session</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="git"><i data-lucide="git-branch"></i><span>Git</span></button>
+            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="git"><img src="/static/vendor/github-svgl.svg?v=__VERSION__" class="nav-sublink-img git-nav-logo" alt=""><span>Git</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="dns-providers"><i data-lucide="globe-2"></i><span>DNS</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="notifications"><i data-lucide="bell-ring"></i><span>Notify</span></button>
           </div>
@@ -128,7 +128,7 @@
           <i data-lucide="panel-left"></i>
         </button>
         <span class="breadcrumb" id="breadcrumb">Projects</span>
-        <div class="topbar-actions"></div>
+        <div class="topbar-actions"><button type="button" class="topbar-git-profile hidden" id="topbar-git-profile" aria-label="Open Git connection" title="Git connection"></button></div>
       </header>
 
       <main class="content">
@@ -153,7 +153,6 @@
                 <i data-lucide="search" class="search-icon"></i>
               </div>
             </div>
-            <div id="home-dashboard-metrics" class="overview-monitor-grid dashboard-metrics-grid"></div>
             <div id="services-list" class="projects-grid"></div>
             <div id="empty-state" class="projects-empty hidden">
               <i data-lucide="folder-input" class="empty-icon"></i>

@@ -4165,7 +4165,7 @@ function showView(name) {
   updateSidebarNav(name);
 
   if (name === 'users') loadTokens();
-  if (name === 'dashboard') { activeServiceId = null; loadOverviewMonitor(); }
+  if (name === 'dashboard') { activeServiceId = null; }
   if (name === 'platform') {
     document.getElementById('platform-workspace')?.classList.toggle('docker-library-mode', activePlatformPage === 'docker');
     document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
@@ -5562,8 +5562,24 @@ let githubSourceStatus = null;
 let githubSourceRepositories = [];
 let githubSourceSelection = null;
 
+function renderTopbarGitProfile(status) {
+  const profile = document.getElementById('topbar-git-profile');
+  if (!profile) return;
+  const connected = Boolean(status?.connected);
+  profile.classList.toggle('hidden', !connected);
+  if (!connected) { profile.innerHTML = ''; return; }
+  const login = String(status?.login || 'GitHub');
+  const avatar = String(status?.avatar_url || '').trim();
+  profile.setAttribute('aria-label', `Open Git connection for ${login}`);
+  profile.title = `GitHub: ${login}`;
+  profile.innerHTML = avatar
+    ? `<img src="${esc(avatar)}" alt="${esc(login)}">`
+    : '<img src="/static/vendor/github-svgl.svg" alt="GitHub">';
+}
+
 function renderGithubSourceStatus(status) {
   githubSourceStatus = status || { configured: false, connected: false };
+  renderTopbarGitProfile(githubSourceStatus);
   const connect = document.getElementById('github-connect-btn');
   const disconnect = document.getElementById('github-disconnect-btn');
   const account = document.getElementById('github-source-account');
@@ -7384,6 +7400,11 @@ document.getElementById('create-token-btn')?.addEventListener('click', async () 
   } catch (e) {
     toast('Error: ' + e.message);
   }
+});
+
+document.getElementById('topbar-git-profile')?.addEventListener('click', () => {
+  activePlatformPage = 'git';
+  showView('platform');
 });
 
 loadSystem();
