@@ -9,3 +9,5 @@ The live DOM confirms that the page contains the full application shell and an `
 After deploying the locally served Lucide library, the VM reports the full 357,796-byte local asset and a healthy service. The browser’s initial post-deploy extraction still has no interactive elements, so the next check will distinguish delayed startup from a remaining runtime issue before using the supplied account credentials.
 
 The post-hotfix browser navigation remains unstable: a direct DOM check briefly found no `document.body`, and subsequent views still returned no interactive elements. This indicates the console document is not completing its navigation lifecycle in the browser, despite the server returning the correct healthy static asset.
+
+The VM is healthy on revision `aa36054e`, but the browser still reported no interactive elements immediately after reload. The investigation therefore continues with a document-lifecycle check rather than treating the server restart as sufficient evidence of a corrected administrator experience.
