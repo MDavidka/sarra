@@ -3260,6 +3260,17 @@ function refreshIcons(_root) {
   }
 }
 
+function updateMobileAppNav(viewName) {
+  const nav = document.getElementById('mobile-app-nav');
+  if (!nav) return;
+  nav.querySelectorAll('.mobile-app-nav-item').forEach((button) => {
+    const isPlatform = viewName === 'platform';
+    const matchesView = button.dataset.mobileView === viewName;
+    const matchesPlatform = isPlatform && button.dataset.mobilePlatform === activePlatformPage;
+    button.classList.toggle('active', matchesView || matchesPlatform);
+  });
+}
+
 function updateSidebarNav(viewName) {
   const isService = viewName === 'service';
   const navView = viewName === 'new-service' ? 'dashboard' : viewName;
@@ -4323,6 +4334,7 @@ function showView(name) {
   document.getElementById('view-' + name)?.classList.add('active');
 
   updateSidebarNav(name);
+  updateMobileAppNav(name);
 
   if (name === 'users') loadTokens();
   if (name === 'dashboard') { activeServiceId = null; }
@@ -7932,6 +7944,18 @@ document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
     if (el.dataset.platformPage) activePlatformPage = el.dataset.platformPage;
     showView(el.dataset.view);
   });
+});
+document.getElementById('mobile-app-nav')?.addEventListener('click', (event) => {
+  const button = event.target.closest('.mobile-app-nav-item');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (button.dataset.mobilePlatform) {
+    activePlatformPage = button.dataset.mobilePlatform;
+    showView('platform');
+  } else if (button.dataset.mobileView) {
+    showView(button.dataset.mobileView);
+  }
 });
 document.getElementById('platform-page-refresh')?.addEventListener('click', () => loadPlatformPage(activePlatformPage));
 document.getElementById('overview-monitor-refresh')?.addEventListener('click', loadOverviewMonitor);
