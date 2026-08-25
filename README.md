@@ -27,6 +27,20 @@ chmod +x scripts/*.sh
 
 Open the GUI at **http://\<your-server-ip\>:8787**
 
+### Development and code health
+
+The active operator interface is the FastAPI-served static application in `syte/static/`; `syte.service` is the only application unit. Keep frontend, backend, and operational changes together in one branch and run the following checks before publishing a revision:
+
+```bash
+PYTHONPATH=. pytest -q
+PYTHONPATH=. python3 scripts/check_application_import.py
+PYTHONPATH=. python3 scripts/check_code_health.py
+node --check syte/static/app.js
+git diff --check
+```
+
+`check_code_health.py` rejects unresolved merge markers in active source files and duplicate Python definitions in the same scope, preventing accidental shadowing during future edits or conflict resolution.
+
 ### Production (systemd)
 
 ```bash
