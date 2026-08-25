@@ -159,3 +159,13 @@ def test_native_account_gate_renders_before_the_main_application_bundle():
     assert "new MutationObserver" in index
     assert index.index('id="inline-account-login-form"') < index.index('/static/app.js?v=__VERSION__')
     assert index.index('new MutationObserver') < index.index('/static/style.css?v=__VERSION__')
+
+
+def test_legacy_syte_library_catalog_is_not_part_of_the_console():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+
+    assert "Syte Library" not in index
+    assert 'id="platform-store-panel"' not in index
+    assert "activePlatformPage === 'docker') activePlatformPage = 'overview'" in app
+    assert "if (activePlatformPage === 'docker') loadDockerStore();" not in app

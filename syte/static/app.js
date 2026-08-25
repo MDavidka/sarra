@@ -3614,7 +3614,6 @@ const DEDICATED_PAGE_CONFIG = {
   overview:{icon:'layout-dashboard',eyebrow:'Command center',title:'Overview',intro:'See the health and activity of your self-hosted platform at a glance.',action:'Refresh metrics',tone:'blue'},
   schedules:{icon:'calendar-clock',eyebrow:'Automation',title:'Schedules',intro:'Create recurring backups, jobs, and deployment tasks.',action:'New schedule',fields:['Schedule name','Cron expression'],tone:'amber'},
   traefik:{icon:'route',eyebrow:'Networking',title:'Traefik',intro:'Inspect routes, certificates, and proxy readiness before traffic reaches your apps.',action:'Validate routes',tone:'cyan'},
-  docker:{icon:'box',eyebrow:'App marketplace',title:'Docker Library',intro:'Browse installable services.',action:'Browse catalog',tone:'blue'},
   profile:{icon:'user-round',eyebrow:'Account',title:'Profile',intro:'Manage your operator identity and workspace preferences.',action:'Save profile',fields:['Display name','Email'],tone:'violet'},
   sessions:{icon:'shield-check',eyebrow:'Security',title:'Sessions',intro:'Review active operator sessions and revoke stale access.',action:'Review sessions',tone:'rose'},
   'remote-servers':{icon:'server',eyebrow:'Infrastructure',title:'Remote Servers',intro:'Register deployment nodes and monitor their availability.',action:'Add server',fields:['Server name','Host/IP'],tone:'green'},
@@ -4328,10 +4327,9 @@ function showView(name) {
   if (name === 'users') loadTokens();
   if (name === 'dashboard') { activeServiceId = null; }
   if (name === 'platform') {
-    document.getElementById('platform-workspace')?.classList.toggle('docker-library-mode', activePlatformPage === 'docker');
-    document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
+    if (activePlatformPage === 'docker') activePlatformPage = 'overview';
+    document.getElementById('platform-workspace')?.classList.remove('docker-library-mode');
     loadPlatformPage(activePlatformPage);
-    if (activePlatformPage === 'docker') loadDockerStore();
     if (activePlatformPage === 'overview') loadOverviewMonitor();
   }
   if (name === 'server-swarm') renderServerSwarm();
