@@ -139,3 +139,11 @@ def test_lucide_is_locally_served_and_cannot_block_login_startup():
     assert "document.write" not in content
     assert "createIcons" in content
     assert "lucide@0.468.0" in assets
+
+
+def test_console_login_head_has_no_parser_blocking_shoelace_module():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+
+    assert "shoelace-autoloader.js" not in index
+    assert "@shoelace-style/shoelace" not in index
+    assert '/static/vendor/lucide.min.js?v=__VERSION__' in index

@@ -5,3 +5,7 @@
 - The user reports malformed elements entering the administrator web GUI. The supplied administrator credentials are treated as sensitive and are not recorded in this file.
 
 The live DOM confirms that the page contains the full application shell and an `#account-login-screen` overlay, but the overlay remains at the static “Loading sign in…” markup. The public authentication endpoints respond successfully with an unauthenticated session and a completed-account state, so the issue is in frontend startup completion rather than server health or missing account data.
+
+After deploying the locally served Lucide library, the VM reports the full 357,796-byte local asset and a healthy service. The browser’s initial post-deploy extraction still has no interactive elements, so the next check will distinguish delayed startup from a remaining runtime issue before using the supplied account credentials.
+
+The post-hotfix browser navigation remains unstable: a direct DOM check briefly found no `document.body`, and subsequent views still returned no interactive elements. This indicates the console document is not completing its navigation lifecycle in the browser, despite the server returning the correct healthy static asset.
