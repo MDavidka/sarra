@@ -171,21 +171,19 @@ def test_legacy_syte_library_catalog_is_not_part_of_the_console():
     assert "if (activePlatformPage === 'docker') loadDockerStore();" not in app
 
 
-def test_certification_is_a_dedicated_white_cloudflare_workspace():
+def test_deployment_uses_structured_repository_picker_without_replacing_certification():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
     app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
     css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
 
-    assert "is-certificates-workspace" in app
-    assert "certificate-structured-workspace" in app
-    assert "Certificate security" in app
-    assert "certificate-structured-provider" in app
-    assert "data-certificate-filter" in app
-    assert "data-certificate-use-domain" in app
-    assert "Issue certificate" in app
-    assert "data-certificate-issue" in app
-    assert "data-certificate-guide" in app
-    assert "/static/vendor/cloudflare-svgl.svg" in app
-    assert ".platform-workspace.is-certificates-workspace > .platform-page-head" in css
-    assert ".certificate-structured-workspace" in css
-    assert ".certificate-structured-list" in css
-    assert "background:#fff" in css
+    assert 'class="create-project deployment-structured-page"' in index
+    assert "Import Git Repository" in index
+    assert "deployment-structured-browser" in index
+    assert "deployment-structured-search" in index
+    assert "deployment-structured-repository" in app
+    assert ">Import</span>" in app
+    assert ".deployment-structured-page" in css
+    assert ".deployment-structured-repository" in css
+    assert "certificate-workspace" in app
+    assert "Domains and automatic TLS" in app
+    assert "certificate-structured-workspace" not in app

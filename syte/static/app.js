@@ -4001,7 +4001,6 @@ async function loadPlatformPage(page = 'overview') {
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
   workspace?.classList.toggle('is-remote-servers-workspace', isRemoteServers);
-  workspace?.classList.toggle('is-certificates-workspace', isCertificates);
   if (isBlankWorkspace) {
     const blankTarget = document.getElementById('platform-dedicated-page');
     if (blankTarget) blankTarget.innerHTML = '<section class="intentional-blank-page" aria-label="Blank workspace"></section>';
@@ -6040,14 +6039,14 @@ function renderGithubRepositories() {
     return;
   }
   list.innerHTML = repositories.map((repo) => `
-    <div class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
-      <div style="min-width:0;flex:1;">
+    <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+      <span class="deployment-structured-repository-icon"><i data-lucide="git-fork"></i></span>
+      <div class="deployment-structured-repository-copy">
         <span class="github-repository-name">${esc(repo.full_name)}</span>
-        ${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}
-        ${repo.description ? `<div class="github-repository-description">${esc(repo.description)}</div>` : ''}
+        <span class="deployment-structured-repository-meta">${repo.private ? '<i data-lucide="lock-keyhole"></i> Private repository' : 'Public repository'}${repo.description ? ` · ${esc(repo.description)}` : ''}</span>
       </div>
-      <button type="button" class="btn-pill btn-primary btn-sm git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}" style="margin-left:8px;">
-        <i data-lucide="plus"></i><span>Fast Add</span>
+      <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
+        <span>Import</span>
       </button>
     </div>
   `).join('');
@@ -8919,36 +8918,17 @@ async function renderCertificateWorkspace() {
     const projectRows = projects.length
       ? projects.map(project => {
         const production = project.production || {};
-        const domain = production.domain || '';
-        const label = production.badge_label || project.badge_label || (domain ? 'pending' : 'not configured');
-        const action = domain ? 'Manage' : 'Issue';
-        return `<article class="certificate-structured-row" data-certificate-row="${esc(`${project.name || project.id} ${domain} ${label}`.toLowerCase())}"><span class="certificate-structured-row-icon"><i data-lucide="${domain ? 'shield-check' : 'shield'}"></i></span><div><strong>${esc(project.name || project.id)}</strong><span>${esc(domain || 'No production domain')}</span></div><em>${esc(label)}</em><button type="button" data-certificate-use-domain data-project-id="${esc(project.id)}" data-domain="${esc(domain)}">${action}</button></article>`;
+        const label = production.badge_label || project.badge_label || (production.domain ? 'pending' : 'not configured');
+        return `<article class="certificate-project-state"><div><strong>${esc(project.name || project.id)}</strong><span>${esc(production.domain || 'No production domain')}</span></div><em>${esc(label)}</em></article>`;
       }).join('')
       : '<p class="certificate-empty">Add a project and domain to begin certificate issuance.</p>';
-    target.innerHTML = `<section class="certificate-structured-workspace" aria-label="Certificate management">
-      <header class="certificate-structured-title"><p>Security</p><h2>Certificate security</h2></header>
-      <button type="button" class="certificate-structured-provider" data-certificate-refresh aria-label="Refresh Cloudflare certificate state"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span><i data-lucide="chevron-down"></i></button>
-      <label class="certificate-structured-search"><i data-lucide="search"></i><input type="search" data-certificate-filter placeholder="Search applications or domains" autocomplete="off"><span>Search</span></label>
-      <section class="certificate-structured-list" aria-label="Project certificate status">${projectRows}</section>
+    target.innerHTML = `<section class="certificate-workspace" aria-label="Certificate management">
+      <header class="certificate-workspace-header"><div><p>Certification</p><h2>Domains and automatic TLS</h2><span>Check DNS before issuing. Normal certificates require a direct record; wildcards use Cloudflare DNS-01.</span></div><div class="certificate-workspace-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span></div></header>
       ${certificateIssuanceHtml(data)}
+      <section class="certificate-project-statuses" aria-label="Project certificate status"><div class="certificate-status-heading"><h3>Project certificate status</h3><button type="button" class="btn-pill btn-ghost btn-sm" data-certificate-refresh><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>${projectRows}</section>
     </section>`;
     wireCertificateIssuance();
     target.querySelector('[data-certificate-refresh]')?.addEventListener('click', () => loadPlatformPage('certificates'));
-    target.querySelector('[data-certificate-filter]')?.addEventListener('input', event => {
-      const term = event.target.value.trim().toLowerCase();
-      target.querySelectorAll('[data-certificate-row]').forEach(row => row.classList.toggle('hidden', !!term && !row.dataset.certificateRow.includes(term)));
-    });
-    target.querySelector('.certificate-structured-list')?.addEventListener('click', event => {
-      const button = event.target.closest('[data-certificate-use-domain]');
-      if (!button) return;
-      const form = target.querySelector('[data-certificate-issue]');
-      const project = form?.querySelector('[name="project_id"]');
-      const domain = form?.querySelector('[name="domain"]');
-      if (project) project.value = button.dataset.projectId || '';
-      if (domain) domain.value = button.dataset.domain || '';
-      form?.scrollIntoView({behavior:'smooth', block:'center'});
-      domain?.focus();
-    });
     refreshIcons();
   } catch (error) {
     target.innerHTML = `<section class="certificate-workspace-error">Could not load certificate readiness: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</section>`;
@@ -8958,10 +8938,10 @@ async function renderCertificateWorkspace() {
 function certificateIssuanceHtml(data) {
   const projects = data.projects || [];
   const projectOptions = projects.map(project => `<option value="${esc(project.id)}">${esc(project.name || project.id)}</option>`).join('');
-  return `<section class="certificate-structured-issuer" aria-label="Certificate issuance">
-    <header><p>Certificate operations</p><h3>Issue certificate</h3><span>Normal certificates require a direct DNS-only record. Wildcards use Cloudflare DNS-01.</span></header>
-    <form data-certificate-issue="1"><label><span>Application</span><select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label><span>Domain</span><input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-structured-wildcard"><input type="checkbox" name="wildcard"><span>Use wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Issue</span></button></form>
-    <div class="certificate-structured-guide" data-certificate-guide="1"><p>Enter a domain to check DNS readiness and receive copyable record guidance.</p></div>
+  return `<section class="certificate-issuance" aria-label="Certificate issuance">
+    <header><div><p>Certificate issue</p><h3>Issue a domain certificate</h3><span>Use a direct DNS-only record for normal domains. Wildcards use Cloudflare DNS-01 after a Cloudflare API token is configured.</span></div><div class="certificate-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare DNS</span></div></header>
+    <form data-certificate-issue="1"><label>Project<select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label>Domain<input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-wildcard"><input type="checkbox" name="wildcard"><span>Issue wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Request certificate</span></button></form>
+    <div class="certificate-dns-guide" data-certificate-guide="1"><p>Enter a domain to inspect DNS readiness and record guidance.</p></div>
   </section>`;
 }
 
