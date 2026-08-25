@@ -116,6 +116,97 @@ CREATE TABLE IF NOT EXISTS pwa_push_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_pwa_push_subscriptions_account
     ON pwa_push_subscriptions(account_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS release_environments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT 'main',
+    domain TEXT NOT NULL DEFAULT '',
+    auto_deploy INTEGER NOT NULL DEFAULT 0,
+    require_approval INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project_id, kind),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_release_environments_project
+    ON release_environments(project_id, kind);
+
+CREATE TABLE IF NOT EXISTS release_policies (
+    project_id TEXT PRIMARY KEY,
+    deployment_strategy TEXT NOT NULL DEFAULT 'rolling',
+    canary_percent INTEGER NOT NULL DEFAULT 10,
+    preview_enabled INTEGER NOT NULL DEFAULT 1,
+    preview_retention_days INTEGER NOT NULL DEFAULT 7,
+    resource_alert_percent INTEGER NOT NULL DEFAULT 85,
+    storage_limit_mb INTEGER NOT NULL DEFAULT 0,
+    backup_enabled INTEGER NOT NULL DEFAULT 0,
+    backup_schedule TEXT NOT NULL DEFAULT 'daily',
+    backup_retention_days INTEGER NOT NULL DEFAULT 14,
+    last_restore_check_at TEXT,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS release_approvals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    approved_by TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(environment_id) REFERENCES release_environments(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_release_approvals_project_status
+    ON release_approvals(project_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_team_members (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'viewer',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project_id, email),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_team_members_project
+    ON project_team_members(project_id, role);
+
+CREATE TABLE IF NOT EXISTS release_restore_points (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'deployment',
+    status TEXT NOT NULL DEFAULT 'available',
+    artifact_path TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    verified_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS release_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    environment_id TEXT,
+    event_type TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(environment_id) REFERENCES release_environments(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_release_events_project_created
+    ON release_events(project_id, created_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -205,6 +296,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN in_app_notifications INTEGER NOT NULL DEFAULT 0")
     if "compose_file" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN compose_file TEXT")
+    async with db.execute("PRAGMA table_info(release_restore_points)") as cur:
+        restore_cols = {row[1] for row in await cur.fetchall()}
+    if restore_cols and "artifact_path" not in restore_cols:
+        await db.execute("ALTER TABLE release_restore_points ADD COLUMN artifact_path TEXT NOT NULL DEFAULT ''")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
         await db.execute(
             "INSERT OR IGNORE INTO system_settings (key, value) "

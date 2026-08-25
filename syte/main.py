@@ -289,6 +289,50 @@ class DeploymentConfigRequest(BaseModel):
     env_vars: dict[str, str] | None = None
 
 
+class ReleaseEnvironmentRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    branch: str | None = Field(default=None, min_length=1, max_length=255)
+    domain: str | None = Field(default=None, max_length=255)
+    auto_deploy: bool | None = None
+    require_approval: bool | None = None
+
+
+class ReleasePolicyRequest(BaseModel):
+    deployment_strategy: str | None = None
+    canary_percent: int | None = Field(default=None, ge=1, le=100)
+    preview_enabled: bool | None = None
+    preview_retention_days: int | None = Field(default=None, ge=1, le=90)
+    resource_alert_percent: int | None = Field(default=None, ge=50, le=100)
+    storage_limit_mb: int | None = Field(default=None, ge=0, le=10_000_000)
+    backup_enabled: bool | None = None
+    backup_schedule: str | None = None
+    backup_retention_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ReleaseApprovalRequest(BaseModel):
+    environment_id: str = Field(min_length=1, max_length=64)
+    note: str = Field(default="", max_length=2000)
+
+
+class ReleaseApprovalDecisionRequest(BaseModel):
+    approved: bool
+    note: str = Field(default="", max_length=2000)
+
+
+class ReleaseTeamMemberRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(default="", max_length=160)
+    role: str = Field(default="viewer", max_length=32)
+
+
+class ReleaseRestorePointRequest(BaseModel):
+    label: str = Field(default="", max_length=160)
+
+
+class ReleaseDeployRequest(BaseModel):
+    environment_id: str = Field(min_length=1, max_length=64)
+
+
 class DomainRequest(BaseModel):
     domain: str
     email: str
@@ -1080,6 +1124,264 @@ async def api_get_project(project_id: str):
     return _enrich(project)
 
 
+def _release_actor(operator: dict[str, Any]) -> str:
+    return str(operator.get("email") or operator.get("id") or operator.get("auth") or "operator").strip()
+
+
+async def _release_project(project_id: str) -> dict[str, Any]:
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return project
+
+
+async def _release_can_manage(project_id: str, operator: dict[str, Any]) -> bool:
+    from syte.release_operations import list_team_members
+
+    actor = _release_actor(operator).lower()
+    if not actor or "@" not in actor:
+        return True
+    members = await list_team_members(project_id)
+    if not members:
+        return True
+    member = next((item for item in members if str(item.get("email") or "").lower() == actor), None)
+    return bool(member and str(member.get("role") or "viewer") in {"owner", "admin", "deployer"})
+
+
+async def _require_release_manager(project_id: str, operator: dict[str, Any]) -> None:
+    if not await _release_can_manage(project_id, operator):
+        raise HTTPException(403, "Your project role is view-only. Ask an owner or admin to make this change.")
+
+
+async def _require_release_approver(project_id: str, operator: dict[str, Any]) -> None:
+    from syte.release_operations import list_team_members
+
+    actor = _release_actor(operator).lower()
+    if not actor or "@" not in actor:
+        return
+    members = await list_team_members(project_id)
+    if not members:
+        return
+    member = next((item for item in members if str(item.get("email") or "").lower() == actor), None)
+    if not member or str(member.get("role") or "viewer") not in {"owner", "admin"}:
+        raise HTTPException(403, "Only a project owner or admin can approve a protected release.")
+
+
+@app.get("/api/projects/{project_id}/release")
+async def api_release_workspace(project_id: str, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    from syte.release_operations import workspace
+
+    project = await _release_project(project_id)
+    return {"project": _enrich(project), "workspace": await workspace(project_id), "can_manage": await _release_can_manage(project_id, _operator)}
+
+
+@app.put("/api/projects/{project_id}/release/environments/{environment_id}")
+async def api_update_release_environment(
+    project_id: str,
+    environment_id: str,
+    body: ReleaseEnvironmentRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import record_event, update_environment
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    try:
+        environment = await update_environment(project_id, environment_id, body.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not environment:
+        raise HTTPException(404, "Release environment not found")
+    await record_event(project_id, "release.environment_updated", f"{environment['name']} environment updated", severity="info", environment_id=environment_id)
+    return {"ok": True, "environment": environment}
+
+
+@app.put("/api/projects/{project_id}/release/policy")
+async def api_update_release_policy(
+    project_id: str,
+    body: ReleasePolicyRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import record_event, update_policy
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    try:
+        policy = await update_policy(project_id, body.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await record_event(project_id, "release.policy_updated", "Release policy updated", severity="info", payload={"changed_fields": sorted(body.model_dump(exclude_none=True))})
+    return {"ok": True, "policy": policy}
+
+
+@app.post("/api/projects/{project_id}/release/team")
+async def api_upsert_release_team_member(
+    project_id: str,
+    body: ReleaseTeamMemberRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import record_event, upsert_team_member
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    try:
+        member = await upsert_team_member(project_id, body.email, body.display_name, body.role)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await record_event(project_id, "access.member_upserted", f"Project role set for {member['email']}", severity="info", payload={"role": member["role"]})
+    return {"ok": True, "member": member}
+
+
+@app.delete("/api/projects/{project_id}/release/team/{member_id}")
+async def api_remove_release_team_member(
+    project_id: str,
+    member_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import record_event, remove_team_member
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    removed = await remove_team_member(project_id, member_id)
+    if not removed:
+        raise HTTPException(404, "Project member not found")
+    await record_event(project_id, "access.member_removed", "Project member removed", severity="warning")
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/release/approvals")
+async def api_request_release_approval(
+    project_id: str,
+    body: ReleaseApprovalRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import request_approval
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    try:
+        approval = await request_approval(project_id, body.environment_id, _release_actor(_operator), body.note)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ok": True, "approval": approval, "message": "Release approval requested."}
+
+
+@app.post("/api/projects/{project_id}/release/approvals/{approval_id}/decision")
+async def api_decide_release_approval(
+    project_id: str,
+    approval_id: str,
+    body: ReleaseApprovalDecisionRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import decide_approval
+
+    await _release_project(project_id)
+    await _require_release_approver(project_id, _operator)
+    approval = await decide_approval(project_id, approval_id, _release_actor(_operator), body.approved, body.note)
+    if not approval:
+        raise HTTPException(404, "Pending approval not found")
+    return {"ok": True, "approval": approval}
+
+
+@app.post("/api/projects/{project_id}/release/restore-points")
+async def api_create_release_restore_point(
+    project_id: str,
+    body: ReleaseRestorePointRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import create_workspace_backup
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    restore_point = await create_workspace_backup(project_id, body.label)
+    return {"ok": True, "restore_point": restore_point}
+
+
+@app.post("/api/projects/{project_id}/release/restore-points/{restore_point_id}/verify")
+async def api_verify_release_restore_point(
+    project_id: str,
+    restore_point_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import verify_restore_point
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    restore_point = await verify_restore_point(project_id, restore_point_id)
+    if not restore_point:
+        raise HTTPException(404, "Recovery point not found")
+    return {"ok": True, "restore_point": restore_point, "message": "Recovery point verification recorded."}
+
+
+@app.post("/api/projects/{project_id}/release/preview/start")
+async def api_start_release_preview(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.preview_manager import start_preview
+    from syte.release_operations import get_policy, record_event
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    if not (await get_policy(project_id)).get("preview_enabled"):
+        raise HTTPException(409, "Preview deployments are disabled by this project's release policy.")
+    ok, message, meta = await start_preview(project_id)
+    await record_event(project_id, "release.preview_started" if ok else "release.preview_failed", "Preview deployment started" if ok else "Preview deployment failed", detail=message, severity="success" if ok else "danger", payload=meta or {})
+    if not ok:
+        raise HTTPException(409, message)
+    return {"ok": True, "message": message, "preview": meta}
+
+
+@app.post("/api/projects/{project_id}/release/preview/stop")
+async def api_stop_release_preview(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.preview_manager import get_preview_status, stop_preview_async
+    from syte.release_operations import record_event
+
+    await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    await stop_preview_async(project_id)
+    meta, message = await get_preview_status(project_id)
+    await record_event(project_id, "release.preview_stopped", "Preview deployment stopped", detail=message, severity="info", payload=meta or {})
+    return {"ok": True, "message": message, "preview": meta}
+
+
+@app.post("/api/projects/{project_id}/release/deploy")
+async def api_release_deploy(
+    project_id: str,
+    body: ReleaseDeployRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.release_operations import consume_approved_release, get_environment, get_policy, has_approved_release, record_event, request_approval
+
+    project = await _release_project(project_id)
+    await _require_release_manager(project_id, _operator)
+    environment = await get_environment(project_id, body.environment_id)
+    if not environment:
+        raise HTTPException(404, "Release environment not found")
+    policy = await get_policy(project_id)
+    if environment["kind"] == "preview":
+        return await api_start_release_preview(project_id, _operator)
+    if environment.get("require_approval") and not await has_approved_release(project_id, environment["id"]):
+        approval = await request_approval(project_id, environment["id"], _release_actor(_operator), "Automatic request from protected release action.")
+        return JSONResponse(status_code=202, content={"ok": False, "approval_required": True, "approval": approval, "message": "Production release is protected. An approval request was created."})
+    if str(environment.get("branch") or "") != str(project.get("branch") or ""):
+        raise HTTPException(409, "This environment is configured for a different branch. Update the project branch through the existing deployment configuration before releasing it.")
+    from syte.release_operations import create_restore_point
+    prior_commit = str(project.get("last_deployed_commit") or "").strip()
+    if prior_commit:
+        await create_restore_point(project_id, f"Before {environment['name']} release · {prior_commit[:12]}", source=f"commit:{prior_commit}")
+    queued, message = await deployment.issue_deploy(project_id, trigger=f"release:{environment['kind']}")
+    if not queued:
+        raise HTTPException(409, message)
+    if environment.get("require_approval"):
+        await consume_approved_release(project_id, environment["id"])
+    await record_event(project_id, "release.queued", f"{environment['name']} release queued", detail=message, severity="info", environment_id=environment["id"], payload={"strategy": policy["deployment_strategy"]})
+    return {"ok": True, "project": _enrich(queued), "environment": environment, "strategy": policy["deployment_strategy"], "message": message, "stream_url": f"/api/projects/{project_id}/logs/stream?live=1"}
+
+
 @app.post("/api/projects")
 async def api_create_project(body: CreateServiceRequest):
     project, message = await deployment.begin_deploy_service(
@@ -1676,10 +1978,19 @@ async def api_project_health(project_id: str):
         result = {"healthy": False, "status_code": None, "detail": str(exc)}
     if not result["healthy"]:
         from syte.notifications import publish_project_event
+        from syte.release_operations import record_event
         await publish_project_event(
             "project.health_failed",
             project_id=project_id,
             message=f"Health check for {project.get('name', project_id)} failed: {result['detail']}",
+            payload={"url": url, **result},
+        )
+        await record_event(
+            project_id,
+            "observability.health_failed",
+            "Project health check failed",
+            detail=f"{result['status_code'] or 'No response'} · {result['detail']}",
+            severity="danger",
             payload={"url": url, **result},
         )
     return {"project_id": project_id, "url": url, **result}

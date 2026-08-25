@@ -127,7 +127,7 @@ def test_sidebar_selection_is_scoped_to_the_current_navigation_context():
     assert "viewName === 'platform' && isPlatformLink" in app
     assert "viewName !== 'platform' && !isPlatformLink" in app
     assert "event.stopPropagation();" in app
-    assert "const allowed = ['general', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];" in app
+    assert "const allowed = ['general', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];" in app
 
 
 def test_lucide_is_locally_served_and_cannot_block_login_startup():
@@ -194,6 +194,25 @@ def test_deployment_uses_structured_repository_picker_without_replacing_certific
     assert "certificate-workspace" in app
     assert "Domains and automatic TLS" in app
     assert "certificate-structured-workspace" not in app
+
+
+def test_release_workspace_exposes_integrated_operational_controls():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'data-svc-tab="release"' in index
+    assert 'id="svc-panel-release"' in index
+    assert 'id="release-workspace-content"' in index
+    assert "function renderReleaseWorkspace(project)" in app
+    assert "/release/deploy" in app
+    assert "/release/preview/" in app
+    assert "/release/restore-points" in app
+    assert "/release/team" in app
+    assert "'release'" in app
+    assert ".release-workspace" in css
+    assert ".release-environments-grid" in css
+    assert ".release-timeline" in css
 
 
 def test_github_repository_metadata_and_svgl_framework_assets_are_available():

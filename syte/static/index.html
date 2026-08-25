@@ -151,6 +151,9 @@
               <button type="button" class="nav-sublink active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>General</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="release">
+                <i data-lucide="rocket"></i><span>Release</span>
+              </button>
               <button type="button" class="nav-sublink" data-svc-tab="domains">
                 <i data-lucide="at-sign"></i><span>Domains</span>
               </button>
@@ -340,6 +343,13 @@
                       <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
                     </div>
                   </div>
+                </section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-release" data-svc-panel="release">
+                <section class="release-workspace" aria-label="Release workspace">
+                  <header class="release-workspace-header"><div><p>Operational release control</p><h2>Release workspace</h2><span>Review environments, promote a protected release, verify recovery readiness, and track release activity in one place.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
+                  <div id="release-workspace-content" class="release-workspace-content"><p class="hint">Open this workspace to load release controls.</p></div>
                 </section>
               </div>
 
