@@ -69,6 +69,8 @@ let projectFilterText = '';
 let projectSortMode = 'newest';
 let appContext = 'non-conected';
 let statsPollTimer = null;
+let liveSystemMetrics = null;
+const overviewMetricHistory = {ram: [], cpu: [], disk: []};
 let activeSvcTab = 'general';
 let logsAutoScroll = true;
 let serverPublicIp = '';
@@ -3171,7 +3173,7 @@ const BREADCRUMBS = {
   service: 'Project',
   sycord: 'Sycord',
   'server-swarm': 'Server Swarm',
-  users: 'Users',
+  users: 'API',
   logs: 'Logs',
   ai: 'AI',
   models: 'Models',
@@ -3674,6 +3676,48 @@ function renderIndependentMobilePage(page, data, target) {
   refreshIcons(); return true;
 }
 
+function metricPercent(value) {
+  return Math.max(0, Math.min(100, Number(value || 0)));
+}
+
+function renderServerNavigationPerformance(metrics = liveSystemMetrics) {
+  const indicator = document.getElementById('server-nav-performance');
+  if (!indicator) return;
+  if (!metrics || !Number.isFinite(Number(metrics.cpu_percent)) || !Number.isFinite(Number(metrics.ram_percent))) {
+    indicator.className = 'nav-server-performance is-unavailable';
+    indicator.setAttribute('aria-label', 'Server performance is loading');
+    indicator.setAttribute('aria-valuenow', '0');
+    indicator.title = 'Loading server performance';
+    indicator.firstElementChild?.style.setProperty('width', '0%');
+    return;
+  }
+  const cpu = metricPercent(metrics.cpu_percent);
+  const ram = metricPercent(metrics.ram_percent);
+  const load = Math.round((cpu + ram) / 2);
+  const tone = load >= 85 ? 'is-high' : load >= 65 ? 'is-elevated' : 'is-healthy';
+  indicator.className = `nav-server-performance ${tone}`;
+  indicator.setAttribute('aria-label', `Combined server load ${load} percent, calculated from CPU ${Math.round(cpu)} percent and RAM ${Math.round(ram)} percent`);
+  indicator.setAttribute('aria-valuenow', String(load));
+  indicator.title = `Combined server load: ${load}% (CPU ${Math.round(cpu)}% + RAM ${Math.round(ram)}%)`;
+  indicator.firstElementChild?.style.setProperty('width', `${load}%`);
+}
+
+function pushOverviewMetricSample(key, value) {
+  const values = overviewMetricHistory[key];
+  if (!values) return;
+  values.push(metricPercent(value));
+  if (values.length > 18) values.shift();
+}
+
+function recordLiveSystemMetrics(metrics) {
+  liveSystemMetrics = metrics;
+  pushOverviewMetricSample('ram', metrics.ram_percent);
+  pushOverviewMetricSample('cpu', metrics.cpu_percent);
+  pushOverviewMetricSample('disk', metrics.disk_percent);
+  renderServerNavigationPerformance(metrics);
+  renderOverviewLiveMetrics();
+}
+
 function renderRemoteServersWorkspace(target) {
   target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading fleet records…</p></section>';
   api('/platform/fleet').then(fleet => {
@@ -3750,26 +3794,88 @@ function renderPlatformDetails(page, resources) {
   table.innerHTML = resources?.length ? `<table><thead><tr>${columns.map(column => `<th>${esc(column.replaceAll('_',' '))}</th>`).join('')}</tr></thead><tbody>${resources.map(row => `<tr>${columns.map(column => `<td>${esc(String(row[column] ?? '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<div class="platform-empty">No operational records yet.</div>';
 }
 
+function overviewMetricState(value) {
+  const percent = metricPercent(value);
+  if (percent >= 85) return ['critical', 'High'];
+  if (percent >= 65) return ['watch', 'Observe'];
+  return ['healthy', 'Healthy'];
+}
+
+function overviewSparklinePoints(values = []) {
+  const data = values.length > 1 ? values : [values[0] || 0, values[0] || 0];
+  return data.map((value, index) => `${(index / (data.length - 1)) * 100},${94 - metricPercent(value) * .82}`).join(' ');
+}
+
+function overviewMetricDetail(metric, key) {
+  if (key === 'ram' && metric.ram_used_mb != null && metric.ram_total_mb != null) {
+    return `${(Number(metric.ram_used_mb) / 1024).toFixed(1)} GB of ${(Number(metric.ram_total_mb) / 1024).toFixed(1)} GB`;
+  }
+  if (key === 'disk' && metric.disk_used_gb != null && metric.disk_total_gb != null) {
+    return `${Number(metric.disk_used_gb).toFixed(1)} GB of ${Number(metric.disk_total_gb).toFixed(1)} GB`;
+  }
+  return key === 'cpu' ? 'Live processor usage' : 'Live host capacity';
+}
+
+function renderOverviewLiveMetrics() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target || !target.querySelector('.overview-metric-grid') || !liveSystemMetrics) return;
+  const system = liveSystemMetrics;
+  [['ram', 'ram_percent'], ['cpu', 'cpu_percent'], ['disk', 'disk_percent']].forEach(([key, field]) => {
+    const card = target.querySelector(`[data-overview-metric="${key}"]`);
+    if (!card) return;
+    const percent = Math.round(metricPercent(system[field]));
+    const [tone, state] = overviewMetricState(percent);
+    card.className = `overview-metric-card ${tone}`;
+    card.querySelector('[data-overview-value]')?.replaceChildren(`${percent}%`);
+    card.querySelector('[data-overview-detail]')?.replaceChildren(overviewMetricDetail(system, key));
+    const status = card.querySelector('[data-overview-status]');
+    if (status) status.textContent = state;
+    const line = card.querySelector('polyline');
+    if (line) line.setAttribute('points', overviewSparklinePoints(overviewMetricHistory[key]));
+  });
+  const checked = target.querySelector('[data-overview-updated]');
+  if (checked) checked.textContent = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+}
+
 function renderOverviewHealth(data) {
   const metrics = data.metrics || {};
   const services = data.services || {};
-  const toneFor = (value) => value >= 85 ? 'danger' : value >= 70 ? 'warning' : 'healthy';
-  const gauge = (label, value) => {
-    const numeric = Math.max(0, Math.min(100, Number(value || 0)));
-    const tone = toneFor(numeric);
-    const dash = `${numeric} 100`;
-    return `<div class="overview-gauge ${tone}" role="img" aria-label="${esc(label)} ${Math.round(numeric)} percent"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="overview-gauge-track" pathLength="100" d="M15 60 A45 45 0 0 1 105 60"/><path class="overview-gauge-value" pathLength="100" stroke-dasharray="${dash}" d="M15 60 A45 45 0 0 1 105 60"/></svg><strong>${Math.round(numeric)}%</strong><span>${esc(label)}</span></div>`;
+  const overall = String(data.overall || 'attention');
+  const overallCopy = overall === 'healthy'
+    ? 'All core services are responding normally.'
+    : overall === 'degraded'
+      ? 'A managed service needs attention.'
+      : 'Review the workspace before the next deployment.';
+  const fallback = liveSystemMetrics || {
+    ram_percent: metrics.ram_percent ?? metrics.memory_percent,
+    cpu_percent: metrics.cpu_percent,
+    disk_percent: metrics.disk_percent,
+    ram_used_mb: metrics.ram_used_mb,
+    ram_total_mb: metrics.ram_total_mb,
+    disk_used_gb: metrics.disk_used_gb,
+    disk_total_gb: metrics.disk_total_gb,
   };
-  const node = (key, label) => {
+  if (!liveSystemMetrics) {
+    liveSystemMetrics = fallback;
+    pushOverviewMetricSample('ram', fallback.ram_percent);
+    pushOverviewMetricSample('cpu', fallback.cpu_percent);
+    pushOverviewMetricSample('disk', fallback.disk_percent);
+  }
+  const metricCard = (key, label, icon, field) => {
+    const percent = Math.round(metricPercent(fallback[field]));
+    const [tone, state] = overviewMetricState(percent);
+    return `<article class="overview-metric-card ${tone}" data-overview-metric="${key}"><header><span>${esc(label)}</span><strong data-overview-value>${percent}%</strong></header><div class="overview-sparkline" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M0 18H100M0 42H100M0 66H100M0 90H100"></path><polyline points="${overviewSparklinePoints(overviewMetricHistory[key])}"></polyline></svg></div><footer><span class="overview-metric-state" data-overview-status><i></i>${esc(state)}</span><small data-overview-detail>${esc(overviewMetricDetail(fallback, key))}</small></footer></article>`;
+  };
+  const serviceRow = (key, label, icon) => {
     const service = services[key] || {state: 'unavailable', detail: 'Status unavailable.'};
-    return `<div class="overview-node ${esc(service.state || 'unavailable')}" title="${esc(service.detail || '')}"><i></i><strong>${esc(label)}</strong><small>${esc(service.state || 'unavailable')}</small></div>`;
+    const state = String(service.state || 'unavailable');
+    return `<article class="overview-service-row"><span class="overview-service-icon"><i data-lucide="${icon}"></i></span><div><strong>${esc(label)}</strong><small>${esc(service.detail || 'Status unavailable.')}</small></div><span class="overview-state ${esc(state)}"><i></i>${esc(state)}</span></article>`;
   };
-  const overallText = data.overall === 'healthy' ? 'everything up' : data.overall === 'attention' ? 'attention needed' : 'service degraded';
   const target = document.getElementById('platform-dedicated-page');
   if (!target) return;
-  target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section><section class="overview-monitor-panel" aria-labelledby="overview-monitor-title"><div class="platform-panel-head"><div><p class="eyebrow">System metrics</p><h2 id="overview-monitor-title">System monitor</h2></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-monitor-refresh"><i data-lucide="refresh-cw"></i>Refresh</button></div><div id="overview-monitor-grid" class="overview-monitor-grid"><div class="platform-loading">Loading system metrics…</div></div></section>`;
-  target.querySelector('#overview-monitor-refresh')?.addEventListener('click', loadOverviewMonitor);
-  void loadOverviewMonitor();
+  target.innerHTML = `<section class="overview-workspace" aria-live="polite"><header class="overview-workspace-hero"><div><p>Workspace health</p><h2>Overview</h2><span>${esc(overallCopy)}</span></div><span class="overview-overall-state ${esc(overall)}"><i></i>${esc(overall === 'healthy' ? 'Operational' : overall === 'degraded' ? 'Attention required' : 'Review needed')}</span></header><section class="overview-metric-grid" aria-label="Live host performance">${metricCard('ram', 'RAM', 'memory-stick', 'ram_percent')}${metricCard('cpu', 'CPU', 'cpu', 'cpu_percent')}${metricCard('disk', 'Disk', 'hard-drive', 'disk_percent')}</section><p class="overview-metric-updated" data-overview-updated>Waiting for the next metric sample</p><section class="overview-services-card" aria-labelledby="overview-services-title"><div class="overview-services-heading"><div><p>Service status</p><h3 id="overview-services-title">Core services</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-health-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div class="overview-service-list">${serviceRow('web', 'Web service', 'monitor-up')}${serviceRow('api', 'API', 'braces')}${serviceRow('apps', 'Managed apps', 'layers-3')}</div></section></section>`;
+  target.querySelector('#overview-health-refresh')?.addEventListener('click', () => loadPlatformPage('overview'));
+  renderOverviewLiveMetrics();
   refreshIcons();
 }
 
@@ -3839,7 +3945,8 @@ async function loadPlatformPage(page = 'overview') {
   const isProfile = safePage === 'profile';
   const isRemoteServers = safePage === 'remote-servers';
   const isGit = safePage === 'git';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit;
+  const isNotifications = safePage === 'notifications';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
@@ -3855,6 +3962,10 @@ async function loadPlatformPage(page = 'overview') {
   }
   if (isGit) {
     await renderGitWorkspace();
+    return;
+  }
+  if (isNotifications) {
+    await renderNotificationWorkspace();
     return;
   }
   if (isOverview) {
@@ -4160,7 +4271,7 @@ function showView(name) {
   updateSidebarNav(name);
 
   if (name === 'users') loadTokens();
-  if (name === 'dashboard') { activeServiceId = null; loadOverviewMonitor(); }
+  if (name === 'dashboard') { activeServiceId = null; }
   if (name === 'platform') {
     document.getElementById('platform-workspace')?.classList.toggle('docker-library-mode', activePlatformPage === 'docker');
     document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
@@ -4170,9 +4281,6 @@ function showView(name) {
   }
   if (name === 'server-swarm') renderServerSwarm();
   if (name === 'logs') renderLogsList();
-  if (name === 'ai') { loadSettings(); loadAiDashboard(); loadAiDebug(); void openGlobalAiWorkspace(); setGlobalAiTab(globalAiActiveTab); }
-  if (name === 'models') { showView('ai'); setGlobalAiTab('models'); void loadGlobalAiProviderCatalog(); }
-  if (name === 'router') { void loadRouterTab(); }
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'sycord') refreshIcons();
@@ -4830,6 +4938,8 @@ async function loadSystem() {
   try {
     const sys = await api('/system');
     if (sys.public_ip) serverPublicIp = sys.public_ip;
+    // Keep navigation insight current independently of whichever subtab is open.
+    recordLiveSystemMetrics(sys);
     const ipInput = document.getElementById('set-ip');
     if (ipInput && !ipInput.value) ipInput.placeholder = sys.public_ip;
     const directUrl = document.getElementById('direct-url');
@@ -5560,8 +5670,24 @@ let githubSourceStatus = null;
 let githubSourceRepositories = [];
 let githubSourceSelection = null;
 
+function renderTopbarGitProfile(status) {
+  const profile = document.getElementById('topbar-git-profile');
+  if (!profile) return;
+  const connected = Boolean(status?.connected);
+  profile.classList.toggle('hidden', !connected);
+  if (!connected) { profile.innerHTML = ''; return; }
+  const login = String(status?.login || 'GitHub');
+  const avatar = String(status?.avatar_url || '').trim();
+  profile.setAttribute('aria-label', `Open Git connection for ${login}`);
+  profile.title = `GitHub: ${login}`;
+  profile.innerHTML = avatar
+    ? `<img src="${esc(avatar)}" alt="${esc(login)}">`
+    : '<img src="/static/vendor/github-svgl.svg" alt="GitHub">';
+}
+
 function renderGithubSourceStatus(status) {
   githubSourceStatus = status || { configured: false, connected: false };
+  renderTopbarGitProfile(githubSourceStatus);
   const connect = document.getElementById('github-connect-btn');
   const disconnect = document.getElementById('github-disconnect-btn');
   const account = document.getElementById('github-source-account');
@@ -5592,26 +5718,28 @@ async function fastAddGithubRepository(fullName) {
   const repository = githubSourceRepositories.find((item) => item.full_name === fullName) || { full_name: fullName, name: fullName.split('/')[1] || fullName, default_branch: 'main' };
   const repoName = repository.name || fullName.split('/')[1] || fullName;
   const branch = repository.default_branch || 'main';
-  toast(`Fast adding repository ${fullName}…`);
+  toast(`Preparing quick deployment for ${fullName}…`);
   try {
     const result = await api('/projects/import/github', {
       method: 'POST',
       body: JSON.stringify({
         name: repoName,
         repository: repository.full_name,
-        branch: branch,
-        base_directory: '/'
+        branch,
+        base_directory: '/',
+        in_app_notifications: true,
       })
     });
-    toast(`Successfully added project ${result.project?.name || repoName}`);
+    if (!result.project?.id) throw new Error('The repository was imported but no project was created.');
+    await api(`/projects/${result.project.id}/deploy-detected`, {
+      method: 'POST',
+      body: JSON.stringify({base_directory: '/', env_vars: {}, in_app_notifications: true}),
+    });
+    toast(`Quick deployment queued for ${result.project.name || repoName}`);
     await loadProjects();
-    if (result.project?.id) {
-      openService(result.project.id);
-    } else {
-      showView('dashboard');
-    }
+    openService(result.project.id);
   } catch (error) {
-    toast(normalizeFetchError(error?.message) || 'Could not fast add repository.');
+    toast(normalizeFetchError(error?.message) || 'Could not quick deploy this repository.');
   }
 }
 
@@ -5645,7 +5773,7 @@ async function renderGitWorkspace() {
             ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
           </div>
           <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
-            <i data-lucide="plus"></i><span>Fast Add</span>
+            <i data-lucide="rocket"></i><span>Quick Deploy</span>
           </button>
         </article>
       `).join('')
@@ -5657,7 +5785,7 @@ async function renderGitWorkspace() {
           <div>
             <p>Source & Integration</p>
             <h2>Git Account & Repositories</h2>
-            <span>View connected Git account and fast add repositories to Syte.</span>
+            <span>Connect GitHub, browse permitted repositories, quick deploy a detected build, or disconnect at any time.</span>
           </div>
         </header>
         <section class="legacy-fleet-control-card" style="padding:18px;margin-bottom:20px;">
@@ -5702,7 +5830,7 @@ async function renderGitWorkspace() {
             ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
           </div>
           <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
-            <i data-lucide="plus"></i><span>Fast Add</span>
+            <i data-lucide="rocket"></i><span>Quick Deploy</span>
           </button>
         </article>
       `).join('') || '<p class="dedicated-empty">No repositories match filter.</p>';
@@ -5718,6 +5846,130 @@ async function renderGitWorkspace() {
     refreshIcons();
   } catch (error) {
     target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Git workspace unavailable: ${esc(error.message)}</p></section>`;
+  }
+}
+
+let sycordPwaRegistration = null;
+
+function base64UrlToUint8Array(value) {
+  const padded = `${value}${'='.repeat((4 - value.length % 4) % 4)}`.replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(padded);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function registerSycordPwa() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+  try {
+    sycordPwaRegistration = await navigator.serviceWorker.register('/service-worker.js', {scope: '/'});
+    return sycordPwaRegistration;
+  } catch (error) {
+    console.warn('Sycord PWA registration failed', error);
+    return null;
+  }
+}
+
+async function enableSycordPwaAlerts() {
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    throw new Error('This browser does not support PWA alerts.');
+  }
+  const registration = sycordPwaRegistration || await registerSycordPwa();
+  if (!registration) throw new Error('PWA registration is unavailable. Open Sycord over HTTPS and try again.');
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') throw new Error('Allow notifications in the browser or iPhone settings to enable alerts.');
+  const key = await api('/notifications/push/vapid-public-key');
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToUint8Array(key.public_key),
+    });
+  }
+  await api('/notifications/push-subscriptions', {method: 'POST', body: JSON.stringify({subscription: subscription.toJSON()})});
+  return 'This device can now receive Sycord PWA alerts.';
+}
+
+function notificationTime(value) {
+  if (!value) return 'Just now';
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString();
+}
+
+function notificationSettingValue(settings, section, key, fallback = '') {
+  return settings?.[section]?.[key] ?? fallback;
+}
+
+async function renderNotificationWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading notification settings…</p></section>';
+  try {
+    const [settings, eventData] = await Promise.all([api('/notifications/settings'), api('/notifications')]);
+    const notifications = eventData.notifications || [];
+    const browserSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator;
+    const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+    const eventRows = notifications.length ? notifications.map((item) => `<article class="sycord-notification-row ${item.is_read ? 'is-read' : ''}"><span class="sycord-notification-icon"><i data-lucide="${item.event.includes('failed') ? 'triangle-alert' : item.event.includes('deployment') ? 'rocket' : 'bell'}"></i></span><div><strong>${esc(item.title)}</strong><p>${esc(item.message)}</p><small>${esc(notificationTime(item.created_at))}</small></div></article>`).join('') : '<p class="dedicated-empty">No in-app notifications yet. Enable the PWA option while adding a web app, then project actions will appear here.</p>';
+    target.innerHTML = `
+      <section class="legacy-fleet-page sycord-notify-page">
+        <header class="legacy-fleet-header"><div><p>Delivery & alerts</p><h2>Notifications</h2><span>Choose how Sycord reports every supported project action.</span></div></header>
+        <div class="sycord-notify-grid">
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="smartphone"></i><div><h3>Sycord PWA alerts</h3><p>Installed PWA notifications and an in-app activity centre. On iPhone, add Sycord to Home Screen before enabling alerts.</p></div></div>
+            <div class="sycord-notify-status"><span class="${browserSupported ? 'is-ready' : 'is-muted'}">${browserSupported ? (permission === 'granted' ? 'Device permission granted' : 'Permission required') : 'Not supported by this browser'}</span></div>
+            <div class="sycord-notify-actions"><button type="button" class="btn-pill btn-primary" id="notify-enable-pwa" ${browserSupported ? '' : 'disabled'}><i data-lucide="bell-ring"></i><span>Enable device alerts</span></button><button type="button" class="btn-pill btn-ghost" id="notify-test"><i data-lucide="send"></i><span>Send test</span></button></div>
+          </section>
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="mail"></i><div><h3>Email delivery</h3><p>Send all supported actions to configured workspace recipients.</p></div></div>
+            <form id="notification-settings-form" class="sycord-notify-form">
+              <label class="sycord-toggle"><input type="checkbox" id="notify-email-enabled" ${notificationSettingValue(settings, 'email', 'enabled') ? 'checked' : ''}><span>Enable email delivery</span></label>
+              <label>Recipients<textarea id="notify-email-recipients" rows="2" placeholder="ops@example.com\nteam@example.com">${esc(notificationSettingValue(settings, 'email', 'recipients'))}</textarea></label>
+              <div class="sycord-notify-form-row"><label>SMTP host<input id="notify-smtp-host" value="${esc(notificationSettingValue(settings, 'email', 'smtp_host'))}" placeholder="smtp.example.com"></label><label>Port<input id="notify-smtp-port" type="number" min="1" max="65535" value="${esc(String(notificationSettingValue(settings, 'email', 'smtp_port', 587)))}"></label></div>
+              <div class="sycord-notify-form-row"><label>Sender<input id="notify-email-sender" type="email" value="${esc(notificationSettingValue(settings, 'email', 'sender'))}" placeholder="alerts@sycord.com"></label><label>SMTP username<input id="notify-smtp-username" value="${esc(notificationSettingValue(settings, 'email', 'smtp_username'))}" placeholder="optional"></label></div>
+              <label>SMTP password<input id="notify-smtp-password" type="password" autocomplete="new-password" placeholder="${notificationSettingValue(settings, 'email', 'password_set') ? 'Saved — leave blank to keep' : 'Optional if your SMTP server does not require it'}"></label>
+              <label class="sycord-toggle"><input type="checkbox" id="notify-smtp-tls" ${notificationSettingValue(settings, 'email', 'use_tls', true) ? 'checked' : ''}><span>Use STARTTLS</span></label>
+              <button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save channels</span></button>
+            </form>
+          </section>
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="webhook"></i><div><h3>Webhook delivery</h3><p>Post structured event data to automation, chat, or incident tools.</p></div></div>
+            <label class="sycord-toggle"><input type="checkbox" id="notify-webhook-enabled" ${notificationSettingValue(settings, 'webhook', 'enabled') ? 'checked' : ''}><span>Enable webhook delivery</span></label>
+            <label class="sycord-webhook-label">Destination URLs<textarea id="notify-webhook-urls" rows="7" placeholder="https://hooks.example.com/sycord">${esc(notificationSettingValue(settings, 'webhook', 'urls'))}</textarea><small>One HTTPS endpoint per line. Sycord posts the event, title, message, project, time, and safe action metadata.</small></label>
+          </section>
+        </div>
+        <section class="legacy-fleet-control-card sycord-notification-history"><div class="sycord-notify-history-head"><div><p>Installed app activity</p><h3>In-app notifications <span>${eventData.unread_count || 0} unread</span></h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="notify-read-all"><i data-lucide="check-check"></i><span>Mark all read</span></button></div><div class="sycord-notification-list">${eventRows}</div></section>
+      </section>`;
+    target.querySelector('#notify-enable-pwa')?.addEventListener('click', async () => {
+      try { toast(await enableSycordPwaAlerts()); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not enable PWA alerts.'); }
+    });
+    target.querySelector('#notify-test')?.addEventListener('click', async () => {
+      try { const result = await api('/notifications/test', {method: 'POST'}); toast(result.message); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not send test notification.'); }
+    });
+    target.querySelector('#notify-read-all')?.addEventListener('click', async () => {
+      await api('/notifications/read', {method: 'POST', body: JSON.stringify({event_ids: []})});
+      await renderNotificationWorkspace();
+    });
+    target.querySelector('#notification-settings-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = {email: {
+        enabled: Boolean(target.querySelector('#notify-email-enabled')?.checked),
+        recipients: target.querySelector('#notify-email-recipients')?.value || '',
+        smtp_host: target.querySelector('#notify-smtp-host')?.value || '',
+        smtp_port: Number(target.querySelector('#notify-smtp-port')?.value || 587),
+        smtp_username: target.querySelector('#notify-smtp-username')?.value || '',
+        smtp_password: target.querySelector('#notify-smtp-password')?.value || '',
+        sender: target.querySelector('#notify-email-sender')?.value || '',
+        use_tls: Boolean(target.querySelector('#notify-smtp-tls')?.checked),
+      }, webhook: {
+        enabled: Boolean(target.querySelector('#notify-webhook-enabled')?.checked),
+        urls: target.querySelector('#notify-webhook-urls')?.value || '',
+      }};
+      try { const result = await api('/notifications/settings', {method: 'PUT', body: JSON.stringify(payload)}); toast(result.message); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not save notification settings.'); }
+    });
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Notifications are unavailable: ${esc(error.message)}</p></section>`;
   }
 }
 
@@ -6458,20 +6710,21 @@ async function importProjectSource() {
   const name = document.getElementById('create-name')?.value.trim();
   if (!name) throw new Error('Enter a project name');
   const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const inAppNotifications = Boolean(document.getElementById('create-in-app-notifications')?.checked);
   if (projectImportSource === 'git') {
     const gitUrl = document.getElementById('create-git-url')?.value.trim();
     const branch = (githubSourceSelection ? document.getElementById('github-branch-select')?.value : document.getElementById('create-branch')?.value)?.trim() || 'main';
     if (githubSourceSelection) {
       if (!document.getElementById('github-branch-select')?.value) throw new Error('Choose a branch for the connected GitHub repository');
-      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory }) });
+      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory, in_app_notifications: inAppNotifications }) });
     }
     if (!gitUrl) throw new Error('Enter a repository URL or choose a connected GitHub repository');
-    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory }) });
+    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory, in_app_notifications: inAppNotifications }) });
   }
   const archive = document.getElementById('create-source-zip')?.files?.[0];
   if (!archive) throw new Error('Choose a ZIP archive');
   const form = new FormData();
-  form.set('name', name); form.set('base_directory', baseDirectory); form.set('archive', archive);
+  form.set('name', name); form.set('base_directory', baseDirectory); form.set('in_app_notifications', String(inAppNotifications)); form.set('archive', archive);
   return api('/projects/import/zip', { method: 'POST', body: form });
 }
 
@@ -6489,7 +6742,7 @@ async function deployImportedProject() {
   const envVars = parseEnv(document.getElementById('create-env-vars')?.value || '');
   const startCommand = document.getElementById('create-start-cmd')?.value.trim() || null;
   const result = await api(`/projects/${importedProjectId}/deploy-detected`, {
-    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand }),
+    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand, in_app_notifications: Boolean(document.getElementById('create-in-app-notifications')?.checked) }),
   });
   return result;
 }
@@ -7257,6 +7510,11 @@ document.getElementById('create-token-btn')?.addEventListener('click', async () 
   }
 });
 
+document.getElementById('topbar-git-profile')?.addEventListener('click', () => {
+  activePlatformPage = 'git';
+  showView('platform');
+});
+
 loadSystem();
 loadProjects();
 loadSettings();
@@ -7266,9 +7524,10 @@ appContext = getContext();
 applyContext();
 startStatsPoll();
 setupCrashScreenHandlers();
+void registerSycordPwa();
 refreshIcons();
-
 // Surface real errors instead of the blank cross-origin "Script error." toast/dialog.
+
 // Same-origin lucide is vendored under /static/vendor/; remaining CDN risk is Shoelace.
 window.addEventListener('error', (event) => {
   const msg = String(event?.message || event?.error?.message || '');
@@ -8279,7 +8538,41 @@ function showLegacyAccountApp(account) {
 }
 
 function legacyAccountLoginMarkup(setup) {
-  return `<div class="account-login-card"><div class="account-login-icon"><i data-lucide="lock-keyhole"></i></div><p class="account-login-kicker">${setup ? 'First workspace account' : 'Syte secure workspace'}</p><h1>${setup ? 'Create your owner account' : 'Sign in to Syte'}</h1><p>${setup ? 'Set the email and password used to administer this Syte instance.' : 'Use your email and password to continue to your protected workspace.'}</p><form id="legacy-account-login-form" class="account-login-form">${setup ? '<label for="legacy-account-name">Display name</label><input id="legacy-account-name" maxlength="120" placeholder="Your name">' : ''}<label for="legacy-account-email">Email address</label><input id="legacy-account-email" type="email" autocomplete="email" placeholder="you@example.com" required><label for="legacy-account-password">Password</label><input id="legacy-account-password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" minlength="${setup ? 12 : 1}" placeholder="${setup ? 'At least 12 characters' : 'Your password'}" required><button class="btn-pill btn-primary" type="submit">${setup ? 'Create account' : 'Sign in'}</button></form><p id="legacy-account-login-error" class="account-login-error"></p>${!setup ? '<button id="legacy-account-setup-switch" class="account-login-switch" type="button">Need to set up this instance?</button>' : ''}</div>`;
+  const title = setup ? 'Create an account' : 'Welcome back';
+  const description = setup
+    ? 'Create your Sycord workspace account to continue.'
+    : 'Enter your details to access your workspace.';
+  const switcher = setup
+    ? '<p class="account-auth-switch">Already have an account? <button id="legacy-account-login-switch" type="button">Log in</button></p>'
+    : '<p class="account-auth-switch">First time here? <button id="legacy-account-setup-switch" type="button">Create an account</button></p>';
+  return `<div class="account-auth-layout">
+    <aside class="account-auth-aside" aria-label="Sycord introduction">
+      <a class="account-auth-brand" href="/" aria-label="Sycord home"><img src="/static/syte-logo.png?v=__VERSION__" alt=""><span>Sycord</span></a>
+      <blockquote class="account-auth-quote">“A focused workspace for shipping projects with confidence.”<cite>— Sycord</cite></blockquote>
+    </aside>
+    <main class="account-auth-main">
+      <div class="account-auth-topbar">
+        <a class="account-auth-mobile-brand" href="/" aria-label="Sycord home"><img src="/static/syte-logo.png?v=__VERSION__" alt=""><span>Sycord</span></a>
+        ${switcher}
+      </div>
+      <section class="account-login-card" aria-labelledby="account-auth-title">
+        <div class="account-login-icon" aria-hidden="true"><i data-lucide="${setup ? 'user-round-plus' : 'lock-keyhole'}"></i></div>
+        <h1 id="account-auth-title">${title}</h1>
+        <p class="account-auth-description">${description}</p>
+        <form id="legacy-account-login-form" class="account-login-form">
+          ${setup ? '<label for="legacy-account-name">Name</label><input id="legacy-account-name" maxlength="120" autocomplete="name" placeholder="Your name" required>' : ''}
+          <label for="legacy-account-email">Email address</label>
+          <input id="legacy-account-email" type="email" autocomplete="email" placeholder="name@example.com" required>
+          <label for="legacy-account-password">Password</label>
+          <input id="legacy-account-password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" minlength="${setup ? 12 : 1}" placeholder="${setup ? 'At least 12 characters' : 'Enter your password'}" required>
+          <button class="account-auth-submit" type="submit">${setup ? 'Create account' : 'Sign in'}</button>
+        </form>
+        <div class="account-auth-divider" aria-hidden="true"><span></span><small>SECURE ACCESS</small><span></span></div>
+        <p class="account-auth-terms">By continuing, you agree to the workspace access policy and responsible-use terms.</p>
+        <p id="legacy-account-login-error" class="account-login-error" role="alert"></p>
+      </section>
+    </main>
+  </div>`;
 }
 
 async function initializeLegacyAccountGate() {
@@ -8312,6 +8605,7 @@ async function initializeLegacyAccountGate() {
         } catch (err) { if (error) error.textContent = err.message; }
       });
       screen.querySelector('#legacy-account-setup-switch')?.addEventListener('click', () => { setup = true; render(); });
+      screen.querySelector('#legacy-account-login-switch')?.addEventListener('click', () => { setup = false; render(); });
       refreshIcons();
     };
     render();

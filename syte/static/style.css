@@ -5939,3 +5939,91 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   #view-ai .debug-chat-messages { padding: 16px; }
   #view-ai .opencode-composer { padding-inline: 16px; }
 }
+
+/* Sycord PWA notification workspace */
+.deploy-notification-optin { display:flex; align-items:flex-start; gap:10px; margin-top:14px; padding:12px 14px; border:1px solid #dbe3ee; border-radius:10px; background:#f8fafc; color:#243041; cursor:pointer; }
+.deploy-notification-optin input { width:16px; height:16px; margin:2px 0 0; accent-color:#2563eb; }
+.deploy-notification-optin span { display:grid; gap:3px; }
+.deploy-notification-optin strong { font-size:13px; }
+.deploy-notification-optin small { color:#667085; font-size:12px; line-height:1.45; }
+.sycord-notify-page { display:grid; gap:20px; }
+.sycord-notify-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:start; }
+.sycord-notify-card { display:grid; gap:15px; min-height:230px; padding:20px; }
+.sycord-notify-card-heading { display:flex; align-items:flex-start; gap:11px; }
+.sycord-notify-card-heading > i { width:21px; height:21px; color:#334155; margin-top:2px; }
+.sycord-notify-card h3, .sycord-notification-history h3 { margin:0; color:#182230; font-size:15px; }
+.sycord-notify-card p { margin:4px 0 0; color:#667085; font-size:12px; line-height:1.45; }
+.sycord-notify-status span { display:inline-flex; padding:5px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+.sycord-notify-status .is-ready { color:#166534; background:#dcfce7; }
+.sycord-notify-status .is-muted { color:#6b7280; background:#f3f4f6; }
+.sycord-notify-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+.sycord-notify-form { display:grid; gap:11px; }
+.sycord-notify-form label, .sycord-webhook-label { display:grid; gap:5px; color:#344054; font-size:12px; font-weight:600; }
+.sycord-notify-form input:not([type="checkbox"]), .sycord-notify-form textarea, .sycord-webhook-label textarea { width:100%; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:7px; padding:8px 9px; background:#fff; color:#182230; font:inherit; font-size:12px; resize:vertical; }
+.sycord-notify-form-row { display:grid; grid-template-columns:minmax(0,1fr) 86px; gap:9px; }
+.sycord-toggle { display:flex !important; align-items:center; gap:8px !important; cursor:pointer; }
+.sycord-toggle input { width:15px; height:15px; accent-color:#2563eb; }
+.sycord-webhook-label small { color:#667085; font-size:11px; line-height:1.4; font-weight:400; }
+.sycord-notification-history { padding:20px; }
+.sycord-notify-history-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:15px; }
+.sycord-notify-history-head p { margin:0 0 3px; color:#667085; font-size:12px; }
+.sycord-notify-history-head h3 span { color:#667085; font-size:12px; font-weight:500; }
+.sycord-notification-list { display:grid; gap:8px; }
+.sycord-notification-row { display:flex; align-items:flex-start; gap:11px; padding:12px; border:1px solid #dbe3ee; border-radius:9px; background:#fff; }
+.sycord-notification-row.is-read { opacity:.68; }
+.sycord-notification-icon { display:grid; place-items:center; width:30px; height:30px; flex:0 0 30px; border-radius:8px; background:#eff6ff; color:#2563eb; }
+.sycord-notification-icon i { width:16px; height:16px; }
+.sycord-notification-row strong { color:#182230; font-size:13px; }
+.sycord-notification-row p { margin:3px 0; color:#475467; font-size:12px; line-height:1.4; }
+.sycord-notification-row small { color:#98a2b3; font-size:11px; }
+@media (max-width:1100px) { .sycord-notify-grid { grid-template-columns:1fr; } .sycord-notify-card { min-height:auto; } }
+@media (max-width:600px) { .sycord-notify-card, .sycord-notification-history { padding:15px; } .sycord-notify-history-head { align-items:flex-start; flex-direction:column; } .sycord-notify-form-row { grid-template-columns:1fr; } .sycord-notify-actions .btn-pill { width:100%; justify-content:center; } }
+
+/* Connected Git profile in the global projects header. */
+.topbar-git-profile { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:50%; overflow:hidden; padding:0; background:#18181b; cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,.06); }
+.topbar-git-profile.hidden { display:none; }
+.topbar-git-profile:hover { box-shadow:0 0 0 3px #e4e4e7; }
+.topbar-git-profile img { width:100%; height:100%; object-fit:cover; }
+.topbar-git-profile img[src$="github-svgl.svg"] { width:17px; height:17px; filter:invert(1); object-fit:contain; }
+.git-nav-logo { width:18px; height:18px; object-fit:contain; opacity:1; filter:invert(1); }
+.nav-sublink.active .git-nav-logo, .nav-sublink:hover .git-nav-logo { opacity:1; }
+
+/* Low-opacity selected subtab card, matched to the supplied sidebar reference. */
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active { background:rgba(24,24,27,.055)!important; border-radius:10px; color:#111!important; font-weight:600; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active > span:not(.nav-server-performance) { background:transparent!important; color:#111!important; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active svg { color:#111!important; opacity:1!important; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active::before { display:none; }
+
+/* Live CPU-plus-RAM performance insight beside the Servers subtab. */
+.nav-server-performance { display:inline-flex; flex:0 0 76px; align-items:center; width:76px; height:12px; margin-left:auto; overflow:hidden; border-radius:999px; background:#d4d4d8; pointer-events:none; }
+.nav-server-performance > span { display:block; width:0; height:100%; border-radius:inherit; background:#16a34a; transition:width .22s ease, background .22s ease; }
+.nav-server-performance.is-elevated > span { background:#d97706; }.nav-server-performance.is-high > span { background:#dc2626; }.nav-server-performance.is-unavailable > span { background:#a1a1aa; }
+.nav-sublink.active .nav-server-performance { background:#d4d4d8!important; }
+@media (max-width:768px) { .nav-server-performance { flex-basis:68px; width:68px; } }
+
+/* Compact service-first Overview workspace. */
+.overview-workspace { display:grid; gap:16px; width:100%; max-width:none; margin:0; }
+.overview-workspace-hero { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; padding:24px; border:1px solid #dedede; border-radius:16px; background:#fff; }
+.overview-workspace-hero p, .overview-services-heading p { margin:0 0 5px; color:#71717a; font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+.overview-workspace-hero h2 { margin:0; color:#111; font-size:28px; letter-spacing:-.04em; }
+.overview-workspace-hero span:not(.overview-overall-state) { display:block; max-width:540px; margin-top:7px; color:#555; font-size:13px; line-height:1.5; }
+.overview-overall-state, .overview-state { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; border-radius:999px; font-size:11px; font-weight:700; }
+.overview-overall-state { padding:7px 10px; background:#f4f4f5; color:#444; }
+.overview-overall-state i, .overview-state i { width:7px; height:7px; border-radius:50%; background:#9ca3af; }
+.overview-overall-state.healthy { color:#166534; background:#dcfce7; }.overview-overall-state.healthy i, .overview-state.healthy i { background:#16a34a; }
+.overview-overall-state.degraded { color:#991b1b; background:#fee2e2; }.overview-overall-state.degraded i, .overview-state.degraded i { background:#dc2626; }
+.overview-overall-state.attention { color:#854d0e; background:#fef3c7; }.overview-overall-state.attention i, .overview-state.attention i { background:#d97706; }
+.overview-metric-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.overview-metric-card { min-width:0; padding:17px; border:1px solid #e5e5e5; border-radius:18px; background:#fff; box-shadow:0 2px 8px rgba(24,24,27,.025); }
+.overview-metric-card header, .overview-metric-card footer { display:flex; align-items:center; justify-content:space-between; gap:10px; }.overview-metric-card header>span { color:#111; font-size:13px; text-transform:lowercase; }.overview-metric-card header strong { color:#111; font-size:21px; letter-spacing:-.04em; }
+.overview-sparkline { height:102px; margin:12px 0; overflow:hidden; border:1px solid #eeeeef; border-radius:15px; background:linear-gradient(180deg,#fff,#fbfbfb); }.overview-sparkline svg { display:block; width:100%; height:100%; }.overview-sparkline path { fill:none; stroke:#e7e7e9; stroke-width:.7; vector-effect:non-scaling-stroke; }.overview-sparkline polyline { fill:none; stroke:#4b6eaa; stroke-width:1.25; vector-effect:non-scaling-stroke; }
+.overview-metric-card footer { align-items:flex-start; flex-direction:column; }.overview-metric-state { display:inline-flex; align-items:center; gap:6px; color:#3f3f46; font-size:11px; font-weight:700; }.overview-metric-state i { width:8px; height:8px; border-radius:50%; background:#16a34a; }.overview-metric-card.watch .overview-metric-state i { background:#d97706; }.overview-metric-card.critical .overview-metric-state i { background:#dc2626; }.overview-metric-card small { color:#71717a; font-size:10px; }
+.overview-metric-updated { margin:-7px 0 1px; color:#a1a1aa; font-size:10px; text-align:right; }
+.overview-services-card { width:100%; max-width:none; padding:20px; border:1px solid #dedede; border-radius:18px; background:#fff; }
+.overview-services-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:5px; }.overview-services-heading h3 { margin:0; color:#111; font-size:17px; }
+.overview-service-list { display:grid; }.overview-service-row { display:grid; grid-template-columns:32px minmax(0,1fr) auto; align-items:center; gap:10px; padding:14px 0; border-top:1px solid #ededed; }
+.overview-service-icon { display:grid; place-items:center; width:32px; height:32px; border-radius:9px; background:#f4f4f5; color:#111; }.overview-service-icon svg { width:16px; height:16px; }
+.overview-service-row strong, .overview-service-row small { display:block; }.overview-service-row strong { color:#111; font-size:13px; }.overview-service-row small { margin-top:2px; overflow:hidden; color:#71717a; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.overview-state { padding:5px 8px; background:#f4f4f5; color:#555; }.overview-state.degraded { color:#991b1b; background:#fee2e2; }.overview-state.attention { color:#854d0e; background:#fef3c7; }
+@media (max-width:760px) { .overview-metric-grid { grid-template-columns:1fr; } }
+@media (max-width:650px) { .overview-workspace-hero { align-items:stretch; flex-direction:column; padding:18px; }.overview-services-card { padding:16px; }.overview-services-heading { align-items:flex-start; flex-direction:column; }.overview-service-row { grid-template-columns:30px minmax(0,1fr); }.overview-service-row .overview-state { grid-column:2; justify-self:start; } }

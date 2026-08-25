@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS projects (
     start_command TEXT NOT NULL DEFAULT '',
     env_vars TEXT DEFAULT '{}',
     status TEXT DEFAULT 'stopped',
+    in_app_notifications INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -89,6 +90,29 @@ CREATE TABLE IF NOT EXISTS github_connections (
     connected_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS notification_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    event TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notification_events_created
+    ON notification_events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS pwa_push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    subscription_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pwa_push_subscriptions_account
+    ON pwa_push_subscriptions(account_id, updated_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -160,6 +184,8 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN resource_cpus TEXT")
     if "docker_image" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN docker_image TEXT")
+    if "in_app_notifications" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN in_app_notifications INTEGER NOT NULL DEFAULT 0")
     if "compose_file" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN compose_file TEXT")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
@@ -220,8 +246,8 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
         await db.execute(
             """INSERT INTO projects
             (id, name, git_url, branch, port, domain, start_command, env_vars,
-             deploy_type, dockerfile_path, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             deploy_type, dockerfile_path, status, in_app_notifications, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["name"],
@@ -234,6 +260,7 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("deploy_type", "shell"),
                 data.get("dockerfile_path"),
                 "stopped",
+                int(bool(data.get("in_app_notifications", False))),
                 now,
                 now,
             ),
@@ -257,6 +284,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "custom_tls_domain", "custom_tls_enabled",
         "healthcheck_path", "healthcheck_interval", "auto_deploy",
         "resource_memory", "resource_cpus", "docker_image", "compose_file",
+        "in_app_notifications",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if "env_vars" in fields and isinstance(fields["env_vars"], dict):
@@ -508,3 +536,105 @@ async def delete_github_connection(account_id: str) -> bool:
         cursor = await db.execute("DELETE FROM github_connections WHERE account_id = ?", (account_id,))
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def create_notification_event(
+    *,
+    event: str,
+    title: str,
+    message: str,
+    project_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    import uuid
+
+    record = {
+        "id": uuid.uuid4().hex[:16],
+        "project_id": project_id,
+        "event": event,
+        "title": title,
+        "message": message,
+        "payload": json.dumps(payload or {}),
+        "is_read": 0,
+        "created_at": _now(),
+    }
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO notification_events
+            (id, project_id, event, title, message, payload, is_read, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(record.values()),
+        )
+        await db.commit()
+    return {**record, "payload": payload or {}, "is_read": False}
+
+
+async def list_notification_events(limit: int = 100) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(int(limit), 250))
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM notification_events ORDER BY created_at DESC LIMIT ?", (safe_limit,)
+        ) as cur:
+            rows = [dict(row) for row in await cur.fetchall()]
+    for row in rows:
+        try:
+            row["payload"] = json.loads(row.get("payload") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            row["payload"] = {}
+        row["is_read"] = bool(row.get("is_read"))
+    return rows
+
+
+async def mark_notification_events_read(event_ids: list[str] | None = None) -> int:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        if event_ids:
+            placeholders = ",".join("?" for _ in event_ids)
+            cursor = await db.execute(
+                f"UPDATE notification_events SET is_read = 1 WHERE id IN ({placeholders})", event_ids
+            )
+        else:
+            cursor = await db.execute("UPDATE notification_events SET is_read = 1 WHERE is_read = 0")
+        await db.commit()
+        return int(cursor.rowcount)
+
+
+async def upsert_pwa_push_subscription(account_id: str, subscription: dict[str, Any]) -> None:
+    endpoint = str(subscription.get("endpoint") or "").strip()
+    if not endpoint:
+        raise ValueError("A browser push subscription must include an endpoint.")
+    encoded = json.dumps(subscription, separators=(",", ":"))
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO pwa_push_subscriptions
+            (endpoint, account_id, subscription_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET
+              account_id = excluded.account_id,
+              subscription_json = excluded.subscription_json,
+              updated_at = excluded.updated_at""",
+            (endpoint, account_id, encoded, now, now),
+        )
+        await db.commit()
+
+
+async def list_pwa_push_subscriptions() -> list[dict[str, Any]]:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT endpoint, subscription_json FROM pwa_push_subscriptions") as cur:
+            rows = [dict(row) for row in await cur.fetchall()]
+    subscriptions: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            subscriptions.append(json.loads(row["subscription_json"]))
+        except (KeyError, TypeError, json.JSONDecodeError):
+            continue
+    return subscriptions
+
+
+async def delete_pwa_push_subscription(endpoint: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute("DELETE FROM pwa_push_subscriptions WHERE endpoint = ?", (endpoint,))
+        await db.commit()
+        return bool(cursor.rowcount)
