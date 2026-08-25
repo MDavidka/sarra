@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from syte.caddy_routes import render_all_service_routes
+from syte.caddy_routes import host_zone, render_all_service_routes
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import is_safe_caddy_hostname, normalize_domain
