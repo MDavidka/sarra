@@ -1,20 +1,7 @@
-"""Server-Sent Events (SSE) streaming for build/deploy/preview/runtime logs.
+"""Server-Sent Events (SSE) streaming for deployment and preview logs.
 
-This module contains the file-tailing log stream generators
-(:func:`stream_project_logs`, :func:`stream_preview_logs`,
-:func:`stream_agent_logs`) — they replay the tail of a log file, then poll the
-file for appended lines and emit each new line as an SSE ``data:`` frame. Used
-for build/deploy/preview/runtime console output.
-
-The structured, Cursor-like agent *activity* feed (durable per-turn events:
-requests, thinking, tool calls, replies) is **not** a live stream any more.
-Every agent turn now writes its activity to a durable Turso session
-(:mod:`syte.turso_store`) keyed by a UUID as it happens, and clients fetch
-that session by UUID from the Turso access routes
-(``GET /api/agent_session/{session_id}`` and its ``/api/internal`` and
-``/sycord/api`` mirrors) instead of opening a long-lived SSE connection.
-Asking the agent something is unchanged — still a normal request/response API
-call (``agent_communicate`` / ``agent_change`` / the GUI chat endpoint).
+The module tails project build, application, container, and preview log files,
+emitting each appended line as an SSE ``data:`` frame with periodic heartbeats.
 """
 
 import asyncio
@@ -133,47 +120,5 @@ async def stream_preview_logs(project_id: str, *, live_only: bool = False):
         elif size < offset:
             offset = 0
         if _ % 20 == 0:
-            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-        await asyncio.sleep(0.25)
-
-
-async def stream_agent_logs(project_id: str, *, live_only: bool = False):
-    """SSE generator — tails the Syte cloud agent runtime log.
-
-    Replays recent runtime output (unless ``live_only``), then polls the agent
-    log every 250ms, emitting each new line as an ``agent`` frame with periodic
-    ``ping`` heartbeats. This is raw runtime output; for structured per-turn
-    activity fetch the durable Turso session instead (see
-    :mod:`syte.turso_store` and ``GET /api/agent_session/{session_id}``).
-    """
-    from syte.cloud_agent import agent_log_path, get_agent_logs
-
-    log_path = agent_log_path(project_id)
-
-    if not live_only:
-        snapshot = get_agent_logs(project_id, 300)
-        if snapshot and snapshot != "No Syte cloud agent logs yet.":
-            for line in snapshot.splitlines():
-                yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
-
-    offset = log_path.stat().st_size if log_path.exists() else 0
-    if live_only:
-        yield f"data: {json.dumps({'type': 'session', 'text': 'Live Syte cloud agent session'})}\n\n"
-
-    for tick in range(7200):
-        if not log_path.exists():
-            await asyncio.sleep(0.25)
-            continue
-        size = log_path.stat().st_size
-        if size > offset:
-            with log_path.open("r", errors="replace") as f:
-                f.seek(offset)
-                chunk = f.read()
-                offset = f.tell()
-            for line in chunk.splitlines():
-                yield f"data: {json.dumps({'type': 'agent', 'text': line})}\n\n"
-        elif size < offset:
-            offset = 0
-        if tick % 20 == 0:
             yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         await asyncio.sleep(0.25)
