@@ -128,3 +128,14 @@ def test_sidebar_selection_is_scoped_to_the_current_navigation_context():
     assert "viewName !== 'platform' && !isPlatformLink" in app
     assert "event.stopPropagation();" in app
     assert "const allowed = ['general', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];" in app
+
+
+def test_lucide_is_locally_served_and_cannot_block_login_startup():
+    vendor = ROOT / "syte/static/vendor/lucide.min.js"
+    assets = (ROOT / "docs/external_assets.md").read_text(encoding="utf-8")
+
+    assert vendor.stat().st_size > 100_000
+    content = vendor.read_text(encoding="utf-8")
+    assert "document.write" not in content
+    assert "createIcons" in content
+    assert "lucide@0.468.0" in assets
