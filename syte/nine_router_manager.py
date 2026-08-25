@@ -1,0 +1,492 @@
+"""Lifecycle management for the local 9Router Docker gateway.
+
+The router is kept on loopback and published through Syte's Caddy route at
+``https://9router.sycord.site/v1``.  Its SQLite data is persisted outside the
+container so redeploying the image does not remove provider connections,
+models, or usage history.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import secrets
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from syte.config import settings
+from syte.database import get_setting, set_setting
+from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
+
+NINE_ROUTER_CONTAINER_NAME = "syte-9router"
+NINE_ROUTER_IMAGE = "decolua/9router:0.5.50"
+NINE_ROUTER_CONTAINER_PORT = 20128
+# Caddy already owns 127.0.0.1:20128 for the legacy remote-router TLS probe
+# when the managed route is disabled. Keep the Docker host binding separate;
+# the container can still listen on the upstream's documented port internally.
+NINE_ROUTER_HOST_PORT = 20129
+NINE_ROUTER_LOCAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_HOST_PORT}"
+NINE_ROUTER_INTERNAL_BASE_URL = f"http://127.0.0.1:{NINE_ROUTER_CONTAINER_PORT}"
+# 9Router is a Next.js app built and started from /app inside the official
+# image. Be explicit so Router-tab starts do not inherit a changed image
+# default working directory and fail to find the application bundle.
+NINE_ROUTER_CONTAINER_WORKDIR = "/app"
+NINE_ROUTER_PUBLIC_API_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}/v1"
+NINE_ROUTER_DASHBOARD_PATH = "/dashboard"
+NINE_ROUTER_DASHBOARD_URL = f"https://{NINE_ROUTER_PUBLIC_HOST}{NINE_ROUTER_DASHBOARD_PATH}"
+NINE_ROUTER_DATA_DIR_NAME = "9router"
+NINE_ROUTER_READINESS_TIMEOUT = 45.0
+NINE_ROUTER_READINESS_POLL_SECONDS = 1.0
+NINE_ROUTER_PASSWORD_SETTING = "nine_router_initial_password"
+NINE_ROUTER_PASSWORD_REVEALED_SETTING = "nine_router_initial_password_revealed"
+NINE_ROUTER_ENABLED_SETTING = "nine_router_public_enabled"
+NINE_ROUTER_DEBUG_FILE_NAME = "install-debug.log"
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)(\b(?:initial[_ -]?password|password|api[_ -]?key|token|secret)\b\s*[=:]\s*)([^\s,;]+)"
+)
+_BEARER_RE = re.compile(r"(?i)(\bbearer\s+)([^\s,;]+)")
+_KEY_SHAPE_RE = re.compile(r"(?i)\b(?:sk-[a-z0-9_-]{12,}|AIza[a-z0-9_-]{20,})\b")
+
+
+def _redact_router_diagnostic(value: str) -> str:
+    """Remove common credentials before Router logs are stored or returned."""
+    text = str(value or "")
+    text = _SECRET_ASSIGNMENT_RE.sub(r"\1[REDACTED]", text)
+    text = _BEARER_RE.sub(r"\1[REDACTED]", text)
+    return _KEY_SHAPE_RE.sub("[REDACTED]", text)
+
+
+def _debug_path() -> Path:
+    return _data_dir() / NINE_ROUTER_DEBUG_FILE_NAME
+
+
+def record_router_debug(phase: str, message: str, *, ok: bool | None = None) -> None:
+    """Persist a redacted, operator-facing deployment diagnostic.
+
+    The Router tab is often used precisely when deployment fails. A persistent
+    log means Docker/Caddy/AlmaLinux output remains available after the request
+    finishes or the service is restarted. Callers must not pass credentials.
+    """
+    try:
+        path = _debug_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(exist_ok=True)
+        path.chmod(0o600)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        state = "OK" if ok is True else "FAIL" if ok is False else "INFO"
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(
+                f"[{timestamp}] [{state}] {phase}: {_redact_router_diagnostic(message).strip()}\n"
+            )
+    except OSError:
+        # Diagnostics must never turn a deployment failure into a second error.
+        return
+
+
+async def router_debug_log(max_chars: int = 24000) -> dict[str, Any]:
+    """Return redacted Router and bootstrap installer diagnostics."""
+    paths = [settings.data_dir / "install.log", _debug_path()]
+    sections: list[str] = []
+    for path in paths:
+        try:
+            text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            sections.append(f"{path.name}: could not read ({type(error).__name__}: {error})")
+            continue
+        sections.append(f"=== {path.name} ===\n{_redact_router_diagnostic(text)}")
+    text = "\n\n".join(sections) or "No Router installation diagnostics have been recorded yet."
+    if len(text) > max_chars:
+        text = "[older diagnostics truncated]\n" + text[-max_chars:]
+    return {"ok": bool(sections), "log": text}
+
+
+async def _run_docker(args: list[str], timeout: float = 60.0) -> tuple[int, str]:
+    """Run one Docker command without blocking the event loop."""
+    command = ["docker", *args]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        output, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        return process.returncode or 0, output.decode("utf-8", errors="replace").strip()
+    except TimeoutError:
+        return 1, f"Docker command timed out: {' '.join(args)}"
+    except FileNotFoundError:
+        return 1, "Docker is not installed or not available in PATH."
+    except (OSError, RuntimeError, ValueError) as error:
+        return 1, f"Docker command failed: {error}"
+
+
+def _data_dir() -> Path:
+    return settings.data_dir / NINE_ROUTER_DATA_DIR_NAME
+
+
+def _parse_container(output: str) -> dict[str, Any] | None:
+    if not output.strip():
+        return None
+    try:
+        parsed: Any = json.loads(output)
+    except json.JSONDecodeError:
+        records: list[Any] = []
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        parsed = records
+    if isinstance(parsed, list):
+        return parsed[0] if parsed and isinstance(parsed[0], dict) else None
+    return parsed if isinstance(parsed, dict) else None
+
+
+async def _probe_router_http() -> dict[str, Any]:
+    """Verify that the official dashboard and OpenAI route answer locally.
+
+    Docker's ``running`` state only proves that the Node process has not exited.
+    The official deployment exposes the dashboard at ``/dashboard`` and the
+    OpenAI-compatible API at ``/v1``; probe both before publishing Caddy.
+    A 401/403 from ``/v1/models`` is still a reachable API when API-key
+    enforcement is enabled, but it is reported separately from authentication.
+    """
+    import httpx
+
+    api_key = (await get_setting("agent_9router_api_key", "")).strip()
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    dashboard_status: int | None = None
+    api_status: int | None = None
+    try:
+        async with httpx.AsyncClient(
+            base_url=NINE_ROUTER_LOCAL_BASE_URL,
+            timeout=3.0,
+            follow_redirects=True,
+        ) as client:
+            dashboard = await client.get(NINE_ROUTER_DASHBOARD_PATH)
+            api = await client.get("/v1/models", headers=headers)
+        dashboard_status = dashboard.status_code
+        api_status = api.status_code
+    except (httpx.HTTPError, OSError) as error:
+        return {
+            "web_gui_ready": False,
+            "api_ready": False,
+            "api_authenticated": False,
+            "dashboard_status": dashboard_status,
+            "api_status": api_status,
+            "readiness_message": f"9Router is still starting: {error}",
+        }
+
+    web_gui_ready = 200 <= dashboard_status < 400 or dashboard_status in {401, 403}
+    api_authenticated = 200 <= api_status < 400
+    api_ready = api_authenticated or api_status in {401, 403}
+    # glibc `getent` is a safer bet in minimal containers than nslookup/curl
+    dns_code, dns_output = await _run_docker(
+        ["exec", NINE_ROUTER_CONTAINER_NAME, "getent", "hosts", "oauth2.googleapis.com"]
+    )
+    dns_ready = dns_code == 0
+
+    outbound_code, outbound_output = await _run_docker(
+        ["exec", NINE_ROUTER_CONTAINER_NAME, "node", "-e", "fetch('https://oauth2.googleapis.com/').then(r => process.exit(0)).catch(e => process.exit(1))"]
+    )
+    outbound_ready = outbound_code == 0
+
+    if not web_gui_ready:
+        message = f"9Router dashboard is not ready (HTTP {dashboard_status})."
+    elif not api_ready:
+        message = f"9Router API is not ready (HTTP {api_status})."
+    elif not dns_ready:
+        message = "9Router cannot resolve external DNS (oauth2.googleapis.com)."
+    elif not outbound_ready:
+        message = "9Router cannot reach external HTTPS (oauth2.googleapis.com)."
+    elif not api_authenticated:
+        message = "9Router dashboard and API are ready; save an API key before making authenticated API calls."
+    else:
+        message = "9Router dashboard and authenticated API are ready."
+    return {
+        "web_gui_ready": web_gui_ready,
+        "api_ready": api_ready,
+        "dns_ready": dns_ready,
+        "outbound_ready": outbound_ready,
+        "api_authenticated": api_authenticated,
+        "dashboard_status": dashboard_status,
+        "api_status": api_status,
+        "readiness_message": message,
+    }
+
+
+async def router_status() -> dict[str, Any]:
+    """Return a safe, browser-facing status for the managed container."""
+    code, output = await _run_docker([
+        "ps", "-a", "--filter", f"name={NINE_ROUTER_CONTAINER_NAME}", "--format", "json",
+    ])
+    result: dict[str, Any] = {
+        "ok": code == 0,
+        "running": False,
+        "healthy": False,
+        "container_id": "",
+        "image": NINE_ROUTER_IMAGE,
+        "port": NINE_ROUTER_HOST_PORT,
+        "public_host": NINE_ROUTER_PUBLIC_HOST,
+        "public_api_url": NINE_ROUTER_PUBLIC_API_URL,
+        "dashboard_url": NINE_ROUTER_DASHBOARD_URL,
+        "web_gui_ready": False,
+        "api_ready": False,
+        "api_authenticated": False,
+        "dashboard_status": None,
+        "api_status": None,
+        "ready": False,
+        "message": "",
+        "enabled": (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")) == "1",
+        "initial_password_set": bool((await get_setting(NINE_ROUTER_PASSWORD_SETTING, "")).strip()),
+    }
+    if code != 0:
+        result["message"] = output or "Could not inspect the 9Router container."
+        return result
+    container = _parse_container(output)
+    if not container:
+        result["message"] = "9Router is not deployed."
+        return result
+
+    result["container_id"] = str(container.get("ID") or "")[:12]
+    state = str(container.get("State") or "").lower()
+    status = str(container.get("Status") or "")
+    result["running"] = state == "running"
+    if not result["running"]:
+        result["message"] = f"9Router container is {status or state or 'stopped'}."
+        return result
+
+    readiness = await _probe_router_http()
+    result.update(readiness)
+    result["ready"] = bool(
+        result["web_gui_ready"]
+        and result["api_ready"]
+        and result.get("dns_ready", True)
+        and result.get("outbound_ready", True)
+    )
+    result["healthy"] = bool(result["ready"] and "unhealthy" not in status.lower())
+    result["message"] = (
+        f"9Router is running: {status}. {readiness['readiness_message']}"
+        if result["ready"]
+        else readiness["readiness_message"]
+    )
+    return result
+
+
+async def _router_password() -> tuple[str, bool]:
+    """Return the persistent password and whether it still needs one-time reveal."""
+    password = (await get_setting(NINE_ROUTER_PASSWORD_SETTING, "")).strip()
+    if not password:
+        password = secrets.token_urlsafe(24)
+        await set_setting(NINE_ROUTER_PASSWORD_SETTING, password)
+    revealed = (await get_setting(NINE_ROUTER_PASSWORD_REVEALED_SETTING, "0")).strip() == "1"
+    return password, not revealed
+
+
+
+
+
+async def _get_host_resolvers() -> list[str]:
+    """Read valid IPv4 nameservers from /etc/resolv.conf."""
+    try:
+        import asyncio
+        import aiofiles
+        async with aiofiles.open("/etc/resolv.conf", mode="r") as f:
+            content = await f.read()
+    except (OSError, ImportError):
+        return []
+    import re
+    resolvers = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("nameserver "):
+            ip = line.split()[1]
+            if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", ip) and ip not in ("127.0.0.1", "127.0.0.53"):
+                resolvers.append(ip)
+    return resolvers
+
+async def _verify_dns(resolvers: list[str]) -> bool:
+    """Verify if a list of resolvers can resolve external domain."""
+    if not resolvers:
+        return False
+    try:
+        dns_args = []
+        for r in resolvers:
+            dns_args.extend(["--dns", r])
+        code, _ = await _run_docker(["run", "--rm"] + dns_args + [NINE_ROUTER_IMAGE, "getent", "hosts", "oauth2.googleapis.com"])
+        return code == 0
+    except Exception:
+        return False
+
+async def _determine_dns_args() -> list[str]:
+    """Determine which DNS strategy to use for the container."""
+    # 1. Native resolution (let docker/podman handle loopback)
+    code, _ = await _run_docker([
+        "run", "--rm", NINE_ROUTER_IMAGE, "getent", "hosts", "oauth2.googleapis.com"
+    ])
+    if code == 0:
+        record_router_debug("dns", "Host DNS configuration successfully resolved external domain natively.", ok=True)
+        return []
+
+    # 2. Extract valid non-loopback from host resolv.conf
+    host_resolvers = await _get_host_resolvers()
+    if host_resolvers and await _verify_dns(host_resolvers):
+        record_router_debug("dns", f"Using host DNS resolvers: {', '.join(host_resolvers)}", ok=True)
+        args = []
+        for r in host_resolvers:
+            args.extend(["--dns", r])
+        return args
+
+    # 3. Fallback
+    fallback = ["8.8.8.8", "1.1.1.1"]
+    if await _verify_dns(fallback):
+        record_router_debug("dns", "Host DNS failed or absent; using fallback public DNS (8.8.8.8, 1.1.1.1).", ok=True)
+        return ["--dns", "8.8.8.8", "--dns", "1.1.1.1"]
+
+    record_router_debug("dns", "Both host and fallback DNS failed to resolve oauth2.googleapis.com.", ok=False)
+    return []
+
+async def start_router() -> dict[str, Any]:
+    """Install/start the published 9Router image with persistent data."""
+    record_router_debug("start", "Beginning managed 9Router deployment.")
+    current = await router_status()
+    if current["running"] and current.get("ready"):
+        record_router_debug("readiness", "Existing container is already running and ready.", ok=True)
+        return {**current, "ok": True, "message": "9Router is already running and ready."}
+
+    data_dir = _data_dir()
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        record_router_debug("storage", f"Persistent data directory ready: {data_dir}.", ok=True)
+    except OSError as error:
+        message = f"Could not create {data_dir}: {error}"
+        record_router_debug("storage", message, ok=False)
+        return {**current, "ok": False, "message": message}
+
+    try:
+        password, reveal_password = await _router_password()
+    except Exception as error:  # noqa: BLE001 - preserve the failure in diagnostics
+        message = f"Could not create or read the persistent dashboard password: {type(error).__name__}: {error}"
+        record_router_debug("credentials", message, ok=False)
+        return {**current, "ok": False, "message": message}
+
+    dns_args = await _determine_dns_args()
+
+    remove_code, remove_output = await _run_docker(
+        ["rm", "-f", NINE_ROUTER_CONTAINER_NAME], timeout=30.0
+    )
+
+    version_code, version_out = await _run_docker(["--version"])
+    is_podman = version_code == 0 and "podman" in version_out.lower()
+
+    record_router_debug(
+        "container cleanup",
+        remove_output or "No previous container needed removal.",
+        ok=remove_code == 0 or "no such container" in remove_output.lower(),
+    )
+
+    run_args = ["run", "-d"]
+    if is_podman:
+        run_args.append("--replace")
+
+    run_args.extend([
+        "--name", NINE_ROUTER_CONTAINER_NAME,
+        "--workdir", NINE_ROUTER_CONTAINER_WORKDIR,
+        "-p", f"127.0.0.1:{NINE_ROUTER_HOST_PORT}:{NINE_ROUTER_CONTAINER_PORT}",
+        "-v", f"{data_dir}:/app/data",
+        "-e", "DATA_DIR=/app/data",
+        "-e", f"PORT={NINE_ROUTER_CONTAINER_PORT}",
+        "-e", "HOSTNAME=0.0.0.0",
+        "-e", "NODE_ENV=production",
+        "-e", f"BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
+        "-e", "AUTH_TRUST_HOST=true",
+        "-e", f"NEXTAUTH_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
+        "-e", f"NEXT_PUBLIC_BASE_URL=https://{NINE_ROUTER_PUBLIC_HOST}",
+        "-e", "AUTH_COOKIE_SECURE=true",
+        "-e", "REQUIRE_API_KEY=true",
+        "-e", f"INITIAL_PASSWORD={password}",
+        "--restart", "unless-stopped",
+        *dns_args,
+        NINE_ROUTER_IMAGE,
+    ])
+    code, output = await _run_docker(run_args, timeout=120.0)
+    if code != 0:
+        message = f"Failed to start 9Router: {output or 'unknown Docker error'}"
+        record_router_debug("docker run", message, ok=False)
+        return {**current, "ok": False, "message": message}
+    record_router_debug("docker run", output or "Container created.", ok=True)
+
+    deadline = asyncio.get_running_loop().time() + NINE_ROUTER_READINESS_TIMEOUT
+    status = await router_status()
+    while status["running"] and not status.get("ready"):
+        if asyncio.get_running_loop().time() >= deadline:
+            break
+        await asyncio.sleep(NINE_ROUTER_READINESS_POLL_SECONDS)
+        status = await router_status()
+    if not status["running"]:
+        message = f"9Router container started but is not running: {status['message']}"
+        record_router_debug("readiness", message, ok=False)
+        return {**status, "ok": False, "message": message}
+    if not status.get("ready"):
+        message = (
+            f"9Router container is running but did not become ready within "
+            f"{NINE_ROUTER_READINESS_TIMEOUT:.0f}s: {status['message']}"
+        )
+        log_result = await router_logs(200)
+        if log_result.get("logs"):
+            record_router_debug("container logs", log_result["logs"], ok=False)
+        record_router_debug("readiness", message, ok=False)
+        return {**status, "ok": False, "message": message}
+
+    result = {
+        **status,
+        "ok": True,
+        "message": (
+            f"9Router dashboard is ready at {NINE_ROUTER_DASHBOARD_URL}; "
+            f"the public OpenAI-compatible API is {NINE_ROUTER_PUBLIC_API_URL}."
+        ),
+    }
+    record_router_debug("readiness", result["message"], ok=True)
+    # Reveal the generated/admin password only after the first successful
+    # deployment. Subsequent restarts still need the persisted value in Docker
+    # environment metadata, but never send it back to the browser again.
+    if reveal_password:
+        await set_setting(NINE_ROUTER_PASSWORD_REVEALED_SETTING, "1")
+        result["initial_password"] = password
+    return result
+
+
+async def stop_router() -> dict[str, Any]:
+    """Stop the local 9Router container without deleting its data."""
+    current = await router_status()
+    if not current["running"]:
+        return {**current, "ok": True, "message": "9Router is not running."}
+    code, output = await _run_docker(["stop", NINE_ROUTER_CONTAINER_NAME], timeout=60.0)
+    if code != 0:
+        return {**current, "ok": False, "message": f"Failed to stop 9Router: {output or 'unknown Docker error'}"}
+    return {**current, "ok": True, "running": False, "healthy": False, "message": "9Router stopped; its data was preserved."}
+
+
+async def restart_router() -> dict[str, Any]:
+    """Restart 9Router using the same persistent data directory and settings."""
+    stopped = await stop_router()
+    if not stopped.get("ok"):
+        return stopped
+    return await start_router()
+
+
+async def router_logs(lines: int = 100) -> dict[str, Any]:
+    """Return recent container output for the Router tab."""
+    code, output = await _run_docker([
+        "logs", "--tail", str(max(1, min(int(lines), 500))), NINE_ROUTER_CONTAINER_NAME,
+    ], timeout=30.0)
+    return {
+        "ok": code == 0,
+        "logs": _redact_router_diagnostic(output),
+        "message": "" if code == 0 else _redact_router_diagnostic(output),
+    }

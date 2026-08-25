@@ -31,8 +31,11 @@ from syte.database import (
 )
 from syte import deployment, process_manager
 from syte.certificates import apply_proxy_config, set_gui_domain
+from syte.caddy_routes import NINE_ROUTER_PUBLIC_HOST
 from syte.domain_utils import build_direct_url, build_https_url, is_valid_ip, normalize_domain
+from syte.litellm_config import LITELLM_PUBLIC_API_URL, LITELLM_PUBLIC_HOST
 from syte.self_update import update_syte
+from syte.new_feature_agent import run_new_feature_agent
 from syte.settings_tabs import get_registered_tabs
 from syte import auth
 from syte.auth import (
@@ -47,17 +50,21 @@ from syte.auth import (
     verify_operator_session_or_token,
 )
 from syte import api_router
+from syte import internal_api
 from syte import workspace_api
 from syte import platform_api
 from syte.platform.backup_scheduler import backup_scheduler_loop
 from syte.platform.store import ensure_bootstrap, init_platform_db
-from syte.log_stream import stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_logs, stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
 
 from syte import supervisor
 
 logger = logging.getLogger("syte")
+
+_SYRA_START_LOCK = asyncio.Lock()
+_ROUTER_START_LOCK = asyncio.Lock()
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 NO_CACHE = "no-cache, no-store, must-revalidate"
@@ -164,6 +171,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 app.include_router(api_router.router, prefix="/api")
 app.include_router(platform_api.router, prefix="/api")
+app.include_router(internal_api.router, prefix="/api/internal")
+
+from syte.sycord.router import router as sycord_router
+
+app.include_router(sycord_router, prefix="/sycord/api")
 
 
 class CreateTokenRequest(BaseModel):
@@ -257,6 +269,19 @@ class SettingsRequest(BaseModel):
     preview_wildcard_tls: str | None = None
     custom_tls_host: str | None = None
     custom_tls_port: str | None = None
+    nine_router_backend_port: str | None = None
+    nine_router_upstream: str | None = None
+    default_model_profile: str | None = None
+    syra_nano_api_key: str | None = None
+    syra_havy_api_key: str | None = None
+    syra_ultra_api_key: str | None = None
+    litellm_proxy_url: str | None = None
+    litellm_database_url: str | None = None
+    max_count: int | None = None
+    syra_internal_secret: str | None = None
+    turso_database_url: str | None = None
+    turso_auth_token: str | None = None
+
 
 class GitHubSettingsRequest(BaseModel):
     repo: str | None = None
@@ -266,6 +291,39 @@ class GitHubSettingsRequest(BaseModel):
 class GitHubMergeRequest(BaseModel):
     method: str = "squash"
     force: bool = False
+
+
+class SyraSecretsRequest(BaseModel):
+    """Protected server-side LiteLLM credentials and Syra virtual key."""
+
+    master_key: str | None = None
+    salt_key: str | None = None
+    api_key: str | None = None
+
+
+class ModelProviderSetupRequest(BaseModel):
+    provider_type: str = Field(default="9router", min_length=1, max_length=32)
+    api_key: str = Field(min_length=1, max_length=4096)
+    name: str = Field(default="", max_length=80)
+    api_base: str = Field(default="", max_length=500)
+    default_model: str = Field(default="", max_length=200)
+
+
+class ModelConfigurationRequest(BaseModel):
+    model_name: str = Field(min_length=1, max_length=200)
+    provider: str = Field(default="9Router", min_length=1, max_length=100)
+    thinking_levels: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    thinking_level: str = Field(default="medium", min_length=1, max_length=20)
+    enabled: bool = True
+
+
+class BulkModelConfigurationRequest(BaseModel):
+    models: list[ModelConfigurationRequest] = Field(min_length=1, max_length=100)
+
+
+class ModelPlaygroundRequest(BaseModel):
+    model_profile: str = Field(min_length=1, max_length=240)
+    prompt: str = Field(min_length=1, max_length=12000)
 
 
 class UpdateProjectRequest(BaseModel):
@@ -282,11 +340,28 @@ async def health():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/api/ai.json", include_in_schema=False)
+async def api_ai_spec(request: Request):
+    """Machine-readable API spec for AI agents."""
+    from syte.ai_spec import build_ai_spec
+    base = str(request.base_url).rstrip("/")
+    return build_ai_spec(base)
+
+
 @app.get("/api", include_in_schema=False)
 @app.get("/api/", include_in_schema=False)
 async def api_documentation():
     """API reference documentation page."""
     html = (STATIC_DIR / "api-docs.html").read_text()
+    html = html.replace("__VERSION__", __version__)
+    return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/sycord/api", include_in_schema=False)
+@app.get("/sycord/api/", include_in_schema=False)
+async def sycord_api_documentation():
+    """Sycord deployer API documentation."""
+    html = (STATIC_DIR / "sycord-api-docs.html").read_text()
     html = html.replace("__VERSION__", __version__)
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
 
@@ -513,6 +588,8 @@ async def _gui_url() -> str:
 
 @app.get("/api/settings")
 async def get_settings():
+    from syte.ai_providers import provider_catalog
+    from syte.cloud_agent import bridge_settings, provider_key_status
     from syte.certificates import cloudflare_tls_status
     from syte.preview_domains import resolve_preview_zone
 
@@ -521,29 +598,118 @@ async def get_settings():
     preview_base_domain = normalize_domain(await get_setting("preview_base_domain", ""))
     preview_zone = await resolve_preview_zone()
     cf_status = await cloudflare_tls_status()
+    router_public_enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    if router_public_enabled:
+        from syte.ssl_status import monitor_endpoint
+
+        nine_router_local_tls = await monitor_endpoint(
+            "9Router dashboard",
+            NINE_ROUTER_PUBLIC_HOST,
+            expect_dedicated=True,
+        )
+    else:
+        nine_router_local_tls = {
+            "configured": False,
+            "serving": False,
+            "state": "unreachable",
+            "hostname": NINE_ROUTER_PUBLIC_HOST,
+            "target": "external-gateway",
+            "detail": "Remote gateway SNI verification requires public access.",
+        }
+    bridge = await bridge_settings()
+    key_status = await provider_key_status()
+    syra_secret_set = bool((await get_setting("syra_internal_secret", "")).strip())
+    turso_database_url = (await get_setting("turso_database_url", "")).strip()
+    turso_auth_token_set = bool((await get_setting("turso_auth_token", "")).strip())
     return {
         "public_ip": ip,
         "admin_email": await get_setting("admin_email", settings.admin_email),
         "gui_domain": gui_domain,
         "preview_base_domain": preview_base_domain,
         "preview_zone": preview_zone,
-        "preview_host_pattern": f"preview{{letter}}-appname.{preview_zone}" if preview_zone else "",
+        "preview_host_pattern": f"preview{{a-z}}-{{app}}.{preview_zone}" if preview_zone else "",
         "preview_wildcard_tls": await get_setting("preview_wildcard_tls", "auto"),
         "custom_tls_host": await get_setting("custom_tls_host", ""),
         "custom_tls_port": await get_setting("custom_tls_port", ""),
+        "nine_router_backend_port": await get_setting("nine_router_backend_port", ""),
+        "nine_router_upstream": await get_setting("nine_router_upstream", ""),
+        "nine_router_public_enabled": (await get_setting("nine_router_public_enabled", "0")).strip() == "1",
+        "nine_router_local_tls": nine_router_local_tls,
         "cloudflare_api_token_set": cf_status["token_configured"],
         "cloudflare_tls": cf_status,
+        "default_model_profile": bridge["default_profile"],
+        "syra_nano_model": bridge["syra_nano_model"],
+        "syra_havy_model": bridge["syra_havy_model"],
+        "syra_ultra_model": bridge["syra_ultra_model"],
+        "builder_profile": bridge.get("builder_profile") or bridge["default_profile"],
+        "thinker_profile": bridge.get("thinker_profile"),
+        "syra_nano_api_key_set": bool(bridge["syra_nano_api_key"]),
+        "syra_havy_api_key_set": bool(bridge["syra_havy_api_key"]),
+        "syra_ultra_api_key_set": bool(bridge["syra_ultra_api_key"]),
+        "litellm_api_key_set": bool((await get_setting("litellm_api_key", "")).strip()),
+        "9router_api_key_set": bool((await get_setting("9router_api_key", "")).strip()),
+        "9router_model_name": (await get_setting("9router_model_name", "")).strip(),
+        "9router_enabled": (await get_setting("9router_enabled", "0")).strip() == "1",
+        "litellm_proxy_url": LITELLM_PUBLIC_API_URL,
+        "litellm_public_api_url": LITELLM_PUBLIC_API_URL,
+        "litellm_master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
+        "litellm_salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
+        "litellm_database_url_set": bool((await get_setting("litellm_database_url", "")).strip()),
+        "ai_providers": provider_catalog(),
+        "provider_keys": key_status,
+        "provider_envs": [
+            {
+                "name": row["secret_env"],
+                "profile": row["profile"],
+                "set": bool(row["env_set"]),
+                "hint": row["env_hint"] or "",
+                "used": row["source"] == "env",
+            }
+            for row in key_status
+        ],
+        "max_count": int((await get_setting("max_count", "0")).strip() or "0") or None,
+        "syra_internal_secret_set": syra_secret_set,
+        "turso_database_url_set": bool(turso_database_url),
+        "turso_auth_token_set": turso_auth_token_set,
+        "turso_configured": bool(turso_database_url),
         "preview_dns_hint": (
-            f"Point wildcard *.{preview_zone} A record to this server (DNS only)."
-            if preview_zone else "Set a preview base domain or GUI domain for HTTPS previews."
+            f"Point wildcard *.{preview_zone} A record to this server (grey cloud / DNS only)."
+            if preview_zone
+            else "Set preview base domain or GUI domain for HTTPS previews."
         ),
         "direct_url": build_direct_url(ip, settings.port),
         "domain_url": build_https_url(gui_domain) if gui_domain else "",
         "github_repo": (await get_setting("github_repo", "")).strip(),
         "github_token_set": bool((await get_setting("github_token", "")).strip()),
-        "github_token_source": await _github_token_source(),
+        "github_token_source": (await _github_token_source()),
         "version": __version__,
     }
+
+
+@app.get("/api/settings/9router-tls")
+async def get_nine_router_local_tls():
+    """Check the active 9Router HTTPS path without probing a retired listener.
+    Note: the local loopback TLS listener was removed to prevent Caddy automation
+    policy conflicts. Thus, when not using the managed router, this status is
+    unavailable via local probe."""
+    enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+    if enabled:
+        from syte.ssl_status import monitor_endpoint
+
+        return await monitor_endpoint(
+            "9Router dashboard",
+            NINE_ROUTER_PUBLIC_HOST,
+            expect_dedicated=True,
+        )
+    return {
+        "configured": False,
+        "serving": False,
+        "state": "unreachable",
+        "hostname": NINE_ROUTER_PUBLIC_HOST,
+        "target": "external-gateway",
+        "detail": "Remote gateway SNI verification requires public access.",
+    }
+
 
 async def _github_token_source() -> str:
     """Return the configured GitHub token source without exposing its value."""
@@ -553,40 +719,365 @@ async def _github_token_source() -> str:
     return source
 
 
+async def _model_configuration() -> dict[str, Any]:
+    """Return user-managed model sources without exposing any API keys."""
+    from syte.ai_providers import external_provider_options, resolved_nine_router_api_base
+    from syte.model_catalog import (
+        configured_models,
+        enabled_model_options,
+        fetch_router_models,
+        model_profile,
+        router_catalog_state,
+        router_models_cached,
+    )
+
+    key_set = bool((await get_setting("9router_api_key", "")).strip())
+    # Pull the live router catalog so pickers list everything the router serves,
+    # not only models that were registered by hand. Failures are non-fatal.
+    await fetch_router_models()
+    curated = await configured_models()
+    router_models = router_models_cached()
+    # `models` stays the curated catalog because the Models tab CRUD routes
+    # address rows by their stored id. Only explicitly enabled curated models are
+    # offered in the picker — the live router catalog is not injected here so the
+    # agent model picker stays in sync with what the user enabled in the Models tab.
+    external_providers = await external_provider_options()
+    external_models = [{
+        "id": f"provider-{row['id']}",
+        "profile": row["profile"],
+        "name": row["default_model"],
+        "provider": row["name"],
+        "thinking_levels": ["minimal", "low", "medium", "high", "max"],
+        "thinking_level": "medium",
+        "enabled": bool(row["api_key_set"]),
+        "source": "external",
+    } for row in external_providers]
+    available_models = enabled_model_options(curated) + [row for row in external_models if row["enabled"]]
+    # Keep the former field while callers move to the catalog response.
+    primary = curated[0] if curated else None
+    api_base = await resolved_nine_router_api_base()
+    return {
+        "provider": {
+            "name": "9Router",
+            "api_base": api_base,
+            "api_key_set": key_set,
+        },
+        "router_catalog": router_catalog_state(),
+        "model": {
+            "profile": "9router",
+            "name": primary["name"],
+            "thinking_levels": primary["thinking_levels"],
+            "enabled": primary["enabled"],
+        } if primary else None,
+        "models": [{**row, "profile": model_profile(row["id"])} for row in curated],
+        "router_models": enabled_model_options(router_models),
+        "external_providers": external_providers,
+        "external_models": external_models,
+        "available_models": available_models,
+    }
+
+
+@app.get("/api/models")
+async def get_models():
+    return await _model_configuration()
+
+
+@app.get("/api/models/available")
+async def get_available_models():
+    """Models offered to agent pickers: curated catalog + live router catalog."""
+    config = await _model_configuration()
+    return {
+        "models": config["available_models"],
+        "router_models": config["router_models"],
+        "router_catalog": config["router_catalog"],
+        "provider": config["provider"],
+    }
+
+
+@app.post("/api/models/router/refresh")
+async def refresh_router_models():
+    """Force a re-read of the router's /v1/models list."""
+    from syte.model_catalog import fetch_router_models, router_catalog_state
+
+    ok = await fetch_router_models(force=True)
+    state = router_catalog_state()
+    return {
+        "ok": ok,
+        "message": (
+            f"Loaded {state['count']} models from the router."
+            if ok else (state["error"] or "Could not reach the router model list.")
+        ),
+        **(await _model_configuration()),
+    }
+
+
+@app.put("/api/models/provider")
+async def save_model_provider(body: ModelProviderSetupRequest):
+    provider_type = body.provider_type.strip().lower()
+    if provider_type == "9router":
+        from syte.model_catalog import fetch_router_models, reset_router_models_cache
+
+        await set_setting("9router_api_key", body.api_key.strip())
+        # The cached model list was fetched with the previous key.
+        reset_router_models_cache()
+        await fetch_router_models(force=True)
+        return {"ok": True, "message": "9Router API key saved.", **(await _model_configuration())}
+
+    from syte.ai_providers import save_external_provider
+
+    try:
+        provider = await save_external_provider(
+            preset=provider_type,
+            name=body.name,
+            api_base=body.api_base,
+            default_model=body.default_model,
+            api_key=body.api_key,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    configuration = await _model_configuration()
+    return {
+        "ok": True,
+        "message": f"{provider['name']} API key saved.",
+        **configuration,
+        "saved_provider": provider,
+    }
+
+
+async def _save_model_records(records: list[dict[str, Any]]) -> None:
+    """Persist catalog and retain single-model settings for old installations."""
+    import json
+
+    await set_setting("9router_models", json.dumps(records, separators=(",", ":")))
+    primary = records[0] if records else None
+    await set_setting("9router_model_name", primary["name"] if primary else "")
+    await set_setting("9router_thinking_levels", ",".join(map(str, primary["thinking_levels"])) if primary else "1,2,3,4,5")
+    await set_setting("9router_enabled", "1" if primary and primary["enabled"] else "0")
+
+
+def _checked_model(body: ModelConfigurationRequest) -> dict[str, Any]:
+    name = body.model_name.strip()
+    provider = " ".join(body.provider.split())
+    if not name:
+        raise HTTPException(400, "Enter a model name.")
+    if not provider:
+        raise HTTPException(400, "Enter a provider name.")
+    levels = sorted(set(body.thinking_levels))
+    if not levels or any(level < 1 or level > 5 for level in levels):
+        raise HTTPException(400, "Choose one or more thinking levels between 1 and 5.")
+    thinking_level = body.thinking_level.strip().lower()
+    if thinking_level not in {"minimal", "low", "medium", "high", "max", "xhigh"}:
+        raise HTTPException(400, "Choose Minimal, Low, Medium, High, Max, or Xhigh thinking.")
+    return {
+        "name": name,
+        "provider": provider,
+        "thinking_levels": levels,
+        "thinking_level": thinking_level,
+        "enabled": body.enabled,
+    }
+
+
+def _same_provider_model(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    from syte.model_catalog import normalize_provider
+
+    return (
+        normalize_provider(str(left.get("provider") or ""))
+        == normalize_provider(str(right.get("provider") or ""))
+        and str(left.get("name") or "").strip().casefold()
+        == str(right.get("name") or "").strip().casefold()
+    )
+
+
+async def _require_provider_key_if_enabled(records: list[dict[str, Any]]) -> None:
+    if any(record["enabled"] for record in records) and not (await get_setting("9router_api_key", "")).strip():
+        raise HTTPException(400, "Save the 9Router API key before enabling this model.")
+
+
+@app.post("/api/models")
+async def add_model(body: ModelConfigurationRequest):
+    from syte.model_catalog import configured_models, new_model_id
+
+    record = _checked_model(body)
+    records = await configured_models()
+    record["id"] = new_model_id(record["name"], record["provider"])
+    if any(_same_provider_model(item, record) for item in records):
+        raise HTTPException(400, "That provider already has this model in the list.")
+    records.append(record)
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model added.", **(await _model_configuration())}
+
+
+@app.post("/api/models/bulk")
+async def add_models_bulk(body: BulkModelConfigurationRequest):
+    from syte.model_catalog import configured_models, new_model_id
+
+    records = await configured_models()
+    added = 0
+    for item in body.models:
+        record = _checked_model(item)
+        record["id"] = new_model_id(record["name"], record["provider"])
+        if not any(_same_provider_model(existing, record) for existing in records):
+            records.append(record)
+            added += 1
+    if not added:
+        raise HTTPException(400, "All submitted models are already in the list.")
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": f"{added} models added.", **(await _model_configuration())}
+
+
+@app.put("/api/models/{model_id}")
+async def update_model(model_id: str, body: ModelConfigurationRequest):
+    from syte.model_catalog import configured_models
+
+    records = await configured_models()
+    record = _checked_model(body)
+    for index, existing in enumerate(records):
+        if existing["id"] == model_id:
+            if any(
+                other["id"] != model_id and _same_provider_model(other, record)
+                for other in records
+            ):
+                raise HTTPException(400, "That provider already has this model in the list.")
+            records[index] = {**record, "id": model_id}
+            break
+    else:
+        raise HTTPException(404, "Model not found.")
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model updated.", **(await _model_configuration())}
+
+
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a model from the catalog globally."""
+    from syte.model_catalog import configured_models
+
+    records = await configured_models()
+    found = False
+    for index, existing in enumerate(records):
+        if existing["id"] == model_id:
+            records.pop(index)
+            found = True
+            break
+    
+    if not found:
+        raise HTTPException(404, "Model not found.")
+    
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model deleted.", **(await _model_configuration())}
+
+
+@app.put("/api/models/default")
+async def save_default_model(body: ModelConfigurationRequest):
+    """Compatibility endpoint: create or update the first catalog model."""
+    from syte.model_catalog import configured_models, new_model_id
+
+    records = await configured_models()
+    record = _checked_model(body)
+    if records:
+        records[0] = {**record, "id": records[0]["id"]}
+    else:
+        records.append({**record, "id": new_model_id(record["name"])})
+    await _require_provider_key_if_enabled(records)
+    await _save_model_records(records)
+    return {"ok": True, "message": "Model saved.", **(await _model_configuration())}
+
+
+@app.post("/api/models/playground")
+async def run_model_playground(body: ModelPlaygroundRequest):
+    """Run a short, tool-free prompt with one enabled catalog model."""
+    from syte.cloud_agent import _provider_completion, is_catalog_model_profile, model_metadata_for_profile
+    from syte.thinking_levels import resolve_thinking_config
+
+    profile = body.model_profile.strip()
+    if not await is_catalog_model_profile(profile):
+        raise HTTPException(400, "Choose an enabled model from the Models tab.")
+    model = await model_metadata_for_profile(profile)
+    if not str(model.get("api_key") or "").strip():
+        raise HTTPException(400, "Update the provider API key before using this model.")
+    response = await _provider_completion(
+        model,
+        [
+            {"role": "system", "content": "You are the Sarra model playground. Answer directly and concisely."},
+            {"role": "user", "content": body.prompt.strip()},
+        ],
+        tools=[],
+        thinking_config=resolve_thinking_config(3, fallback_profile=profile),
+    )
+    return {
+        "ok": True,
+        "model": model.get("model") or "",
+        "provider": model.get("label") or "",
+        "response": str(response.get("content") or ""),
+        "usage": response.get("_usage") or {},
+    }
+
+
+async def _solar_status() -> dict[str, Any]:
+    from syte.solar_runtime import solar_status
+
+    return await solar_status()
+
+
+@app.get("/api/ai/solar/status")
+async def get_solar_status():
+    return await _solar_status()
+
+
+@app.delete("/api/ai/solar")
+async def delete_solar_model():
+    from syte.solar_runtime import delete_solar
+
+    return await delete_solar()
+
+
 @app.put("/api/settings")
 async def save_settings(body: SettingsRequest):
     from syte.certificates import cloudflare_tls_status
 
-    messages: list[str] = []
+    messages = []
     proxy_updated = False
+
     if body.public_ip is not None:
         ip = body.public_ip.strip()
         if ip and not is_valid_ip(ip):
-            raise HTTPException(400, "Public IP must be an IPv4 address.")
+            raise HTTPException(400, "Public IP must be an IPv4 address (e.g. 152.89.245.113), not a domain.")
         await set_setting("public_ip", ip)
         settings.public_ip = ip
-        messages.append(f"Public IP set to {ip}" if ip else "Public IP cleared (auto-detect).")
+        messages.append(f"Public IP set to {ip}" if ip else "Public IP cleared (auto-detect)")
         proxy_updated = True
+
     if body.admin_email is not None:
         await set_setting("admin_email", body.admin_email)
         settings.admin_email = body.admin_email
-        messages.append(f"Admin email set to {body.admin_email}.")
+        messages.append(f"Admin email set to {body.admin_email}")
+
     if body.gui_domain is not None:
         domain = normalize_domain(body.gui_domain)
         if domain:
             email = settings.admin_email
             if not email or "@" not in email or email.endswith("@localhost"):
-                raise HTTPException(400, "A valid admin email is required before setting a GUI domain.")
+                raise HTTPException(
+                    400,
+                    "A valid admin email is required before setting a GUI domain "
+                    "(used for TLS certificate registration).",
+                )
             await set_setting("gui_domain", domain)
-            ok, message = await set_gui_domain(domain, email)
+            try:
+                ok, msg = await set_gui_domain(domain, email)
+            except Exception as exc:
+                await set_setting("gui_domain", "")
+                raise HTTPException(500, f"Failed to configure domain: {exc}") from exc
             if not ok:
                 await set_setting("gui_domain", "")
-                raise HTTPException(500, message)
-            messages.append(message)
+                raise HTTPException(500, msg)
+            messages.append(msg)
         else:
             await set_setting("gui_domain", "")
-            ok, message = await apply_proxy_config()
-            messages.append("GUI domain removed." if ok else message)
+            ok, msg = await apply_proxy_config()
+            messages.append("GUI domain removed." if ok else msg)
         return {
             "ok": True,
             "messages": messages,
@@ -595,34 +1086,216 @@ async def save_settings(body: SettingsRequest):
             "domain_url": build_https_url(domain) if domain else "",
             "cloudflare_tls": await cloudflare_tls_status(),
         }
+
     if body.preview_base_domain is not None:
         zone = normalize_domain(body.preview_base_domain)
         await set_setting("preview_base_domain", zone)
         proxy_updated = True
-        messages.append(f"Preview base domain set to {zone}." if zone else "Preview base domain cleared.")
+        if zone:
+            messages.append(
+                f"Preview base domain set to {zone}. "
+                f"Previews use preview{{letter}}-appname.{zone} — "
+                f"ensure wildcard *.{zone} DNS points to this server."
+            )
+        else:
+            messages.append(
+                "Preview base domain cleared — previews use the same zone as the GUI domain."
+            )
+
     if body.cloudflare_api_token is not None:
-        await set_setting("cloudflare_api_token", body.cloudflare_api_token.strip())
+        token = body.cloudflare_api_token.strip()
+        await set_setting("cloudflare_api_token", token)
         proxy_updated = True
-        messages.append("Cloudflare API token saved." if body.cloudflare_api_token.strip() else "Cloudflare API token cleared.")
+        if token:
+            messages.append(
+                "Cloudflare API token saved — wildcard TLS via DNS challenge enabled for *.{zone}."
+            )
+        else:
+            messages.append("Cloudflare API token cleared — wildcard TLS disabled.")
+
     if body.preview_wildcard_tls is not None:
         mode = body.preview_wildcard_tls.strip().lower() or "auto"
         await set_setting("preview_wildcard_tls", mode)
         proxy_updated = True
-        messages.append(f"Preview wildcard TLS mode: {mode}.")
+        messages.append(f"Preview wildcard TLS mode: {mode}")
+
     if body.custom_tls_host is not None:
-        await set_setting("custom_tls_host", normalize_domain(body.custom_tls_host))
+        host = normalize_domain(body.custom_tls_host)
+        await set_setting("custom_tls_host", host)
         proxy_updated = True
-        messages.append("Global custom TLS host updated.")
+        messages.append(f"Global custom TLS host set to {host}" if host else "Global custom TLS host cleared.")
     if body.custom_tls_port is not None:
         await set_setting("custom_tls_port", body.custom_tls_port.strip())
         proxy_updated = True
-        messages.append("Global custom TLS port updated.")
+        messages.append("Global custom TLS port set.")
+
+    if body.nine_router_backend_port is not None:
+        raw = body.nine_router_backend_port.strip()
+        if raw:
+            try:
+                port = int(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(400, "9Router backend port must be an integer (1-65535).")
+            if not 1 <= port <= 65535:
+                raise HTTPException(400, "9Router backend port must be between 1 and 65535.")
+            await set_setting("nine_router_backend_port", str(port))
+            messages.append(f"Legacy 9Router backend port saved as {port}; public 9Router Caddy traffic remains on the remote gateway.")
+        else:
+            await set_setting("nine_router_backend_port", "")
+            messages.append("9Router backend port reset to the default gateway port.")
+        proxy_updated = True
+
+    if body.nine_router_upstream is not None:
+        raw = body.nine_router_upstream.strip()
+        if raw:
+            from syte.certificates import normalize_remote_nine_router_upstream
+
+            upstream = normalize_remote_nine_router_upstream(raw)
+            if not upstream:
+                raise HTTPException(
+                    400,
+                    "9Router upstream must be a remote hostname or global IPv4 address with port; "
+                    "localhost and private/local IPs are not allowed.",
+                )
+            await set_setting("nine_router_upstream", upstream)
+            messages.append(f"9Router upstream set to {upstream} — Caddy terminates SSL and forwards there.")
+        else:
+            await set_setting("nine_router_upstream", "")
+            messages.append("9Router upstream reset to the real gateway (65.75.203.134:20128).")
+        proxy_updated = True
+
+    if body.default_model_profile is not None:
+        from syte.ai_providers import DEFAULT_PROFILE
+        from syte.cloud_agent import is_available_model_profile
+
+        profile = body.default_model_profile.strip() or DEFAULT_PROFILE
+        if not await is_available_model_profile(profile):
+            raise HTTPException(400, f"Unknown model profile: {profile}")
+        await set_setting("default_model_profile", profile)
+        messages.append(f"Default Syte cloud model profile: {profile}")
+    if body.syra_nano_api_key is not None:
+        await set_setting("syra_nano_api_key", body.syra_nano_api_key.strip())
+        messages.append(
+            "Go (Gemini · gemini-2.5-flash) API key saved."
+            if body.syra_nano_api_key.strip()
+            else "syra-nano API key cleared."
+        )
+    if body.syra_havy_api_key is not None:
+        await set_setting("syra_havy_api_key", body.syra_havy_api_key.strip())
+        messages.append(
+            "Metal (VyceAI · claude-sonnet-4-6) API key saved."
+            if body.syra_havy_api_key.strip()
+            else "syra-havy API key cleared."
+        )
+    if body.syra_ultra_api_key is not None:
+        ultra_key = body.syra_ultra_api_key.strip()
+        if ultra_key.lower().startswith("sk-or-"):
+            raise HTTPException(
+                400,
+                "syra-ultra no longer accepts OpenRouter keys (sk-or-…). "
+                "Paste an Aliyun Token Plan key (sk-sp-…) or a Model Studio sk- key.",
+            )
+        await set_setting("syra_ultra_api_key", ultra_key)
+        messages.append(
+            "Air (Aliyun · qwen3.7-plus) API key saved."
+            if ultra_key
+            else "syra-ultra API key cleared."
+        )
+    if body.litellm_proxy_url is not None:
+        requested_url = body.litellm_proxy_url.strip().rstrip("/")
+        if requested_url and requested_url != LITELLM_PUBLIC_API_URL:
+            raise HTTPException(
+                400,
+                f"LiteLLM is deployed at {LITELLM_PUBLIC_API_URL}; custom proxy URLs are not supported.",
+            )
+        await set_setting("litellm_proxy_url", LITELLM_PUBLIC_API_URL)
+        proxy_updated = True
+        messages.append(f"LiteLLM public API URL: {LITELLM_PUBLIC_API_URL}")
+    if body.litellm_database_url is not None:
+        from syte.litellm_manager import validate_litellm_database_url
+
+        requested_database_url = body.litellm_database_url.strip()
+        try:
+            validated_database_url = validate_litellm_database_url(requested_database_url)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        await set_setting("litellm_database_url", validated_database_url)
+        proxy_updated = True
+        messages.append(
+            "Custom LiteLLM PostgreSQL database URL saved; restart LiteLLM to apply it."
+            if validated_database_url
+            else "Custom LiteLLM database URL cleared; the managed PostgreSQL database will be used."
+        )
+    if body.max_count is not None:
+        count = max(1, int(body.max_count))
+        await set_setting("max_count", str(count))
+        messages.append(f"Maximum agents (MNOA): {count}")
+    if body.syra_internal_secret is not None:
+        await set_setting("syra_internal_secret", body.syra_internal_secret.strip())
+        messages.append(
+            "Syra internal secret saved."
+            if body.syra_internal_secret.strip()
+            else "Syra internal secret cleared."
+        )
+    if body.turso_database_url is not None or body.turso_auth_token is not None:
+        from syte.turso_store import reset_client_cache
+
+        if body.turso_database_url is not None:
+            await set_setting("turso_database_url", body.turso_database_url.strip())
+            messages.append(
+                "Turso database URL saved."
+                if body.turso_database_url.strip()
+                else "Turso database URL cleared — agent sessions will not be persisted to Turso."
+            )
+        if body.turso_auth_token is not None:
+            await set_setting("turso_auth_token", body.turso_auth_token.strip())
+            messages.append(
+                "Turso auth token saved."
+                if body.turso_auth_token.strip()
+                else "Turso auth token cleared."
+            )
+        # Drop any cached client so the next agent session picks up the new
+        # connection details immediately instead of an out-of-date client.
+        reset_client_cache()
+
     if proxy_updated or not messages:
-        ok, message = await apply_proxy_config()
-        messages.append(message)
+        ok, msg = await apply_proxy_config()
+        messages.append(msg)
     else:
         ok = True
-    return {"ok": ok, "messages": messages, "cloudflare_tls": await cloudflare_tls_status()}
+
+    cf_status = await cloudflare_tls_status()
+    if cf_status["token_configured"] and cf_status["hints"]:
+        messages.extend(cf_status["hints"])
+
+    return {"ok": ok, "messages": messages, "cloudflare_tls": cf_status}
+
+
+async def _save_syra_secrets(body: SyraSecretsRequest) -> dict[str, Any]:
+    """Persist protected LiteLLM credentials without returning their values."""
+    messages: list[str] = []
+    if body.master_key is not None:
+        await set_setting("litellm_master_key", body.master_key.strip())
+        messages.append("LiteLLM master key saved." if body.master_key.strip() else "LiteLLM master key cleared.")
+    if body.salt_key is not None:
+        await set_setting("litellm_salt_key", body.salt_key.strip())
+        messages.append("LiteLLM salt key saved." if body.salt_key.strip() else "LiteLLM salt key cleared.")
+    if body.api_key is not None:
+        await set_setting("litellm_api_key", body.api_key.strip())
+        messages.append("LiteLLM virtual API key saved." if body.api_key.strip() else "LiteLLM virtual API key cleared.")
+    if not messages:
+        raise HTTPException(400, "Provide at least one LiteLLM credential to update.")
+    return {"ok": True, "messages": messages}
+
+
+@app.put("/api/settings/syra/secrets")
+async def api_syra_save_secrets(
+    body: SyraSecretsRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Save server-side LiteLLM credentials using an operator API token."""
+    return await _save_syra_secrets(body)
+
 
 @app.get("/api/settings/github")
 async def api_github_settings(
@@ -735,6 +1408,395 @@ async def api_update_syte():
     return {"ok": True, "message": message}
 
 
+@app.get("/api/settings/new-feature/info")
+async def api_new_feature_info():
+    """Return info for the new feature tab: current version, update target, and registered tabs."""
+    from syte.new_feature_agent import get_current_version, get_update_target_info
+
+    return {
+        "ok": True,
+        "version": get_current_version(),
+        "update_target": get_update_target_info(),
+        "tabs": get_registered_tabs(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Syra / LiteLLM proxy management
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/settings/syra/status")
+async def api_syra_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Get LiteLLM proxy status and configuration."""
+    from syte.litellm_manager import litellm_health, litellm_status
+    from syte.ssl_status import litellm_api_ssl_status
+
+    status = await litellm_status()
+    health = await litellm_health() if status["running"] else {"healthy": False}
+    ssl = litellm_api_ssl_status()
+    
+    return {
+        "ok": True,
+        **status,
+        "health": health,
+        "proxy_url": LITELLM_PUBLIC_API_URL,
+        "public_api_url": LITELLM_PUBLIC_API_URL,
+        "web_gui_url": f"https://{LITELLM_PUBLIC_HOST}/",
+        "public_host": LITELLM_PUBLIC_HOST,
+        "ssl": ssl,
+        "dns_hint": (
+            f"Start prepares AlmaLinux, Docker, Caddy, firewalld, DNS, and TLS for {LITELLM_PUBLIC_HOST}."
+        ),
+        "master_key_set": bool((await get_setting("litellm_master_key", "")).strip()),
+        "salt_key_set": bool((await get_setting("litellm_salt_key", "")).strip()),
+        "api_key_set": bool((await get_setting("litellm_api_key", "")).strip()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Managed 9Router deployment
+# ---------------------------------------------------------------------------
+
+def _suggested_gui_domain() -> str:
+    """A distinct subdomain on the same zone, offered as a one-click fix."""
+    from syte.caddy_routes import host_zone
+
+    zone = host_zone(NINE_ROUTER_PUBLIC_HOST)
+    return f"console.{zone}" if zone else ""
+
+
+async def _router_gui_guard() -> dict[str, Any] | None:
+    """Require a separate Syte origin before handing 9router.sycord.site to 9Router.
+
+    ``gui_domain`` may be unset or set to ``9router.sycord.site`` on fresh hosts,
+    and either state conflicts with the host the managed Router needs to take
+    over. Without this guard the operator would silently lose the Syte console;
+    the response instead carries enough information
+    (``gui_domain_conflict`` + ``suggested_gui_domain``) for the Router tab to
+    offer a one-click fix rather than sending the operator to hunt through
+    Settings for the cause.
+    """
+    from syte.nine_router_manager import router_status
+
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    if gui_domain and gui_domain != NINE_ROUTER_PUBLIC_HOST:
+        return None
+    status = await router_status()
+    return {
+        **status,
+        "ok": False,
+        "gui_domain_conflict": True,
+        "suggested_gui_domain": _suggested_gui_domain(),
+        "message": (
+            "Configure a separate GUI domain in Settings before deploying 9Router. "
+            f"The managed Router takes over https://{NINE_ROUTER_PUBLIC_HOST}/."
+        ),
+    }
+
+
+async def _set_router_public_state(enabled: bool, *, force: bool = False) -> tuple[bool, str]:
+    """Apply the Caddy route and roll the setting back if application fails."""
+    from syte.nine_router_manager import NINE_ROUTER_ENABLED_SETTING
+
+    previous = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
+    if previous == enabled and not force:
+        return True, "Router public route already has the requested state."
+    await set_setting(NINE_ROUTER_ENABLED_SETTING, "1" if enabled else "0")
+    ok, message = await apply_proxy_config()
+    if ok:
+        return True, message
+
+    await set_setting(NINE_ROUTER_ENABLED_SETTING, "1" if previous else "0")
+    rollback_ok, rollback_message = await apply_proxy_config()
+    if rollback_ok:
+        return False, f"{message}; previous Router route state was restored."
+    return False, f"{message}; route-state rollback also failed: {rollback_message}"
+
+
+async def _router_start() -> dict[str, Any]:
+    from syte.host_setup import prepare_router_host
+    from syte.nine_router_manager import (
+        record_router_debug,
+        router_status,
+        start_router,
+        stop_router,
+    )
+
+    async with _ROUTER_START_LOCK:
+        guard = await _router_gui_guard()
+        if guard:
+            record_router_debug("configuration", guard.get("message", "GUI domain conflict"), ok=False)
+            return guard
+
+        host_setup = await prepare_router_host()
+        for step in host_setup.get("steps", []):
+            record_router_debug("AlmaLinux host setup", step, ok=host_setup.get("ok"))
+        if not host_setup.get("ok"):
+            record_router_debug("AlmaLinux host setup", host_setup.get("message", "Host setup failed"), ok=False)
+            return {
+                **await router_status(),
+                "ok": False,
+                "host_setup": host_setup,
+                "message": host_setup.get("message", "Could not prepare the AlmaLinux host."),
+            }
+
+        before = await router_status()
+        result = await start_router()
+        result["host_setup"] = host_setup
+        if not result.get("ok"):
+            # If a previously enabled container failed to start, do not leave
+            # Caddy pointing at a dead upstream. Restore the fallback route.
+            if before.get("enabled"):
+                route_ok, route_message = await _set_router_public_state(False, force=True)
+                record_router_debug("Caddy fallback route", route_message, ok=route_ok)
+                result["proxy_configured"] = route_ok
+                result["proxy_message"] = route_message
+            return result
+
+        route_ok, route_message = await _set_router_public_state(True, force=True)
+        record_router_debug("Caddy managed Router route", route_message, ok=route_ok)
+        result["proxy_configured"] = route_ok
+        result["proxy_message"] = route_message
+        if not route_ok:
+            # First restore the fallback route. Only stop a newly-created
+            # container after the safe route is confirmed, otherwise a failed
+            # Caddy reload could leave the enabled flag pointing at a dead
+            # upstream.
+            fallback_ok, fallback_message = await _set_router_public_state(False, force=True)
+            record_router_debug("Caddy fallback route", fallback_message, ok=fallback_ok)
+            result["fallback_configured"] = fallback_ok
+            if not fallback_ok:
+                route_message += f" Fallback route restore also failed: {fallback_message}"
+            if fallback_ok and not before.get("running"):
+                cleanup = await stop_router()
+                record_router_debug("container cleanup", cleanup.get("message", ""), ok=cleanup.get("ok"))
+                if not cleanup.get("ok"):
+                    route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
+            result["ok"] = False
+            result["message"] = f"9Router is running, but its public route failed: {route_message}"
+        else:
+            from syte.ssl_status import monitor_endpoint
+
+            result["public_ssl"] = await monitor_endpoint(
+                "9Router dashboard",
+                NINE_ROUTER_PUBLIC_HOST,
+                expect_dedicated=True,
+            )
+            result["ssl_ready"] = result["public_ssl"].get("state") == "serving"
+            result["message"] = (
+                f"{result.get('message', '9Router started')} "
+                "9router.sycord.site now serves the 9Router dashboard and /v1 API over HTTPS."
+            )
+            if not result["ssl_ready"]:
+                result["message"] += (
+                    f" Public HTTPS status: {result['public_ssl'].get('detail', 'still pending')}. "
+                    "Refresh diagnostics after DNS/Caddy certificate issuance."
+                )
+        return result
+
+
+async def _router_stop() -> dict[str, Any]:
+    from syte.nine_router_manager import NINE_ROUTER_ENABLED_SETTING, router_status, stop_router
+
+    async with _ROUTER_START_LOCK:
+        enabled = (await get_setting(NINE_ROUTER_ENABLED_SETTING, "0")).strip() == "1"
+        if enabled:
+            # Move public traffic away before stopping the upstream. If this
+            # fails, keep the enabled flag and live route unchanged.
+            route_ok, route_message = await _set_router_public_state(False)
+            if not route_ok:
+                from syte.nine_router_manager import record_router_debug
+
+                record_router_debug("stop Caddy handoff", route_message, ok=False)
+                status = await router_status()
+                return {
+                    **status,
+                    "ok": False,
+                    "proxy_configured": False,
+                    "proxy_message": route_message,
+                    "message": f"Could not restore the LiteLLM route; 9Router remains enabled: {route_message}",
+                }
+
+        result = await stop_router()
+        result["proxy_configured"] = True
+        result["proxy_message"] = "LiteLLM/remote 9Router fallback route is active." if enabled else ""
+        if not result.get("ok"):
+            from syte.nine_router_manager import record_router_debug
+
+            record_router_debug("stop", result.get("message", "Failed to stop 9Router"), ok=False)
+            result["message"] = f"{result.get('message', 'Failed to stop 9Router')} Public fallback route is active."
+        return result
+
+
+async def _router_restart() -> dict[str, Any]:
+    from syte.host_setup import prepare_router_host
+    from syte.nine_router_manager import record_router_debug, start_router, stop_router, router_status
+
+    async with _ROUTER_START_LOCK:
+        guard = await _router_gui_guard()
+        if guard:
+            record_router_debug("configuration", guard.get("message", "GUI domain conflict"), ok=False)
+            return guard
+        host_setup = await prepare_router_host()
+        for step in host_setup.get("steps", []):
+            record_router_debug("AlmaLinux host setup", step, ok=host_setup.get("ok"))
+        if not host_setup.get("ok"):
+            message = host_setup.get("message", "Could not prepare the AlmaLinux host.")
+            record_router_debug("AlmaLinux host setup", message, ok=False)
+            return {**await router_status(), "ok": False, "host_setup": host_setup, "message": message}
+        # Use the same safe handoff as stop/start instead of restarting the
+        # container while Caddy still points at an unavailable upstream.
+        enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
+        if enabled:
+            route_ok, route_message = await _set_router_public_state(False)
+            if not route_ok:
+                record_router_debug("restart Caddy handoff", route_message, ok=False)
+                return {**await router_status(), "ok": False, "message": route_message}
+        stopped = await stop_router()
+        if not stopped.get("ok"):
+            record_router_debug("restart stop", stopped.get("message", "Failed to stop 9Router"), ok=False)
+            return stopped
+        started = await start_router()
+        started["host_setup"] = host_setup
+        if not started.get("ok"):
+            record_router_debug("restart start", started.get("message", "Failed to start 9Router"), ok=False)
+            return started
+        route_ok, route_message = await _set_router_public_state(True, force=True)
+        record_router_debug("Caddy managed Router route", route_message, ok=route_ok)
+        started["proxy_configured"] = route_ok
+        started["proxy_message"] = route_message
+        if not route_ok:
+            cleanup = await stop_router()
+            record_router_debug("restart cleanup", cleanup.get("message", ""), ok=cleanup.get("ok"))
+            if not cleanup.get("ok"):
+                route_message += f" Container cleanup also failed: {cleanup.get('message', '')}"
+            started["ok"] = False
+            started["message"] = f"9Router restarted, but its public route failed: {route_message}"
+        else:
+            from syte.ssl_status import monitor_endpoint
+
+            started["public_ssl"] = await monitor_endpoint(
+                "9Router dashboard",
+                NINE_ROUTER_PUBLIC_HOST,
+                expect_dedicated=True,
+            )
+            started["ssl_ready"] = started["public_ssl"].get("state") == "serving"
+            if not started["ssl_ready"]:
+                started["message"] = (
+                    f"{started.get('message', '9Router restarted')} "
+                    f"Public HTTPS status: {started['public_ssl'].get('detail', 'still pending')}."
+                )
+        return started
+
+
+@app.get("/api/settings/router/status")
+async def api_router_status(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return status for the managed local 9Router deployment and its public SSL."""
+    from syte.nine_router_manager import router_status
+    from syte.ssl_status import monitor_endpoint
+
+    result = await router_status()
+    result["syte_gui_url"] = await _gui_url()
+    result["ssl"] = await monitor_endpoint(
+        "9Router dashboard",
+        NINE_ROUTER_PUBLIC_HOST,
+        expect_dedicated=True,
+    )
+    if result.get("enabled"):
+        result["warning"] = (
+            "9router.sycord.site is currently owned by 9Router. "
+            "The Syte console is available at the configured separate GUI domain."
+        )
+    else:
+        result["warning"] = ""
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    result["gui_domain_conflict"] = not gui_domain or gui_domain == NINE_ROUTER_PUBLIC_HOST
+    if result["gui_domain_conflict"]:
+        result["suggested_gui_domain"] = _suggested_gui_domain()
+        if not result.get("enabled"):
+            result["warning"] = (
+                f"Set a separate GUI domain (e.g. {result['suggested_gui_domain']}) in Settings "
+                "before starting 9Router — it will otherwise be blocked."
+            )
+    return result
+
+
+@app.get("/api/settings/router/password")
+async def api_router_password(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return the persisted initial 9Router WebGUI credential to an authenticated operator."""
+    from syte.nine_router_manager import _router_password
+
+    password, is_new = await _router_password()
+    return {"password": password, "is_new": is_new}
+
+
+@app.post("/api/settings/router/start")
+async def api_router_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Deploy the official 9Router image and publish it at 9router.sycord.site."""
+    try:
+        return await _router_start()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router start failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("start exception", f"{type(error).__name__}: {error}", ok=False)
+        return {"ok": False, "running": False, "message": f"9Router start failed — {type(error).__name__}: {error}"}
+
+
+@app.post("/api/settings/router/stop")
+async def api_router_stop(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Stop the managed 9Router container and restore the previous API route."""
+    try:
+        return await _router_stop()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router stop failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("stop exception", f"{type(error).__name__}: {error}", ok=False)
+        return {"ok": False, "running": False, "message": f"9Router stop failed — {type(error).__name__}: {error}"}
+
+
+@app.post("/api/settings/router/restart")
+async def api_router_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Restart 9Router and re-apply its public Caddy route."""
+    try:
+        return await _router_restart()
+    except Exception as error:  # noqa: BLE001 - operator receives a useful diagnostic
+        logger.exception("9Router restart failed")
+        from syte.nine_router_manager import record_router_debug
+
+        record_router_debug("restart exception", f"{type(error).__name__}: {error}", ok=False)
+        return {"ok": False, "running": False, "message": f"9Router restart failed — {type(error).__name__}: {error}"}
+
+
+@app.get("/api/settings/router/logs")
+async def api_router_logs(
+    lines: int = 100,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Return recent logs from the managed 9Router container."""
+    from syte.nine_router_manager import router_logs
+
+    return await router_logs(lines)
+
+
+@app.get("/api/settings/router/debug")
+async def api_router_debug(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Return persistent install diagnostics plus recent container output."""
+    from syte.nine_router_manager import router_debug_log, router_logs, router_status
+
+    diagnostic_log = await router_debug_log()
+    container = await router_logs(200)
+    return {
+        "ok": bool(diagnostic_log.get("ok") or container.get("ok")),
+        "status": await router_status(),
+        "installation_log": diagnostic_log.get("log", ""),
+        "container_logs": container.get("logs", ""),
+        "container_log_error": container.get("message", "") if not container.get("ok") else "",
+    }
+
+
 # ---------------------------------------------------------------------------
 # SSL dashboard (monitor / configure / resolve)
 # ---------------------------------------------------------------------------
@@ -805,6 +1867,133 @@ async def api_project_custom_tls(
         "message": f"Custom TLS {'enabled' if body.custom_tls_enabled else 'disabled'} for {project.get('name', project_id)}"
         + (f" on {domain}" if domain and body.custom_tls_enabled else ""),
     }
+
+
+async def _syra_action(action: str, operation: Any) -> dict[str, Any]:
+    """Run a Syra lifecycle action, reporting failures as readable JSON.
+
+    Docker, Caddy, and preview migration all touch the host, so an unexpected
+    error must not reach the browser as an opaque 500.
+    """
+    try:
+        return await operation()
+    except Exception as error:  # noqa: BLE001 - surfaced to the operator UI
+        logger.exception("Syra %s failed", action)
+        return {
+            "ok": False,
+            "running": False,
+            "message": f"Syra {action} failed — {type(error).__name__}: {error}",
+        }
+
+
+async def _deploy_litellm_public_proxy_from(lifecycle: Any) -> dict[str, Any]:
+    """Run a LiteLLM lifecycle call, then publish its Caddy route."""
+    return await _deploy_litellm_public_proxy(await lifecycle())
+
+
+async def _start_syra_stack() -> dict[str, Any]:
+    """Prepare the AlmaLinux host, start LiteLLM, and publish the combined host."""
+    async with _SYRA_START_LOCK:
+        return await _start_syra_stack_locked()
+
+
+async def _start_syra_stack_locked() -> dict[str, Any]:
+    from syte.host_setup import prepare_syra_host
+    from syte.litellm_manager import start_litellm
+
+    host_setup = await prepare_syra_host()
+    if not host_setup["ok"]:
+        return {
+            "ok": False,
+            "running": False,
+            "message": host_setup["message"],
+            "host_setup": host_setup,
+        }
+    result = await _deploy_litellm_public_proxy_from(start_litellm)
+    result["host_setup"] = host_setup
+    return result
+
+
+async def _restart_syra_stack() -> dict[str, Any]:
+    """Prepare the host, restart LiteLLM, and publish the combined host."""
+    async with _SYRA_START_LOCK:
+        return await _restart_syra_stack_locked()
+
+
+async def _restart_syra_stack_locked() -> dict[str, Any]:
+    from syte.host_setup import prepare_syra_host
+    from syte.litellm_manager import restart_litellm
+
+    host_setup = await prepare_syra_host()
+    if not host_setup["ok"]:
+        return {
+            "ok": False,
+            "running": False,
+            "message": host_setup["message"],
+            "host_setup": host_setup,
+        }
+    result = await _deploy_litellm_public_proxy_from(restart_litellm)
+    result["host_setup"] = host_setup
+    return result
+
+
+async def _deploy_litellm_public_proxy(result: dict[str, Any]) -> dict[str, Any]:
+    """Apply Caddy's combined GUI/API public route after a LiteLLM lifecycle action."""
+    if not result.get("ok"):
+        return result
+    proxy_ok, proxy_message = await apply_proxy_config()
+    result["proxy_configured"] = proxy_ok
+    result["proxy_message"] = proxy_message
+    if not proxy_ok:
+        result["ok"] = False
+        result["message"] = f"{result.get('message', 'Action completed.')} Caddy route failed: {proxy_message}"
+    return result
+
+
+@app.post("/api/settings/syra/start")
+async def api_syra_start(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Prepare the AlmaLinux host, start LiteLLM, and publish https://api.sycord.site/."""
+    return await _syra_action("start", _start_syra_stack)
+
+
+@app.post("/api/settings/syra/stop")
+async def api_syra_stop(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Stop the LiteLLM proxy container."""
+    from syte.litellm_manager import stop_litellm
+
+    return await _syra_action("stop", stop_litellm)
+
+
+@app.post("/api/settings/syra/restart")
+async def api_syra_restart(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Prepare the AlmaLinux host, restart LiteLLM, and publish https://api.sycord.site/."""
+    return await _syra_action("restart", _restart_syra_stack)
+
+
+@app.get("/api/settings/syra/logs")
+async def api_syra_logs(
+    lines: int = 100,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Get logs from the LiteLLM proxy container."""
+    from syte.litellm_manager import litellm_logs
+
+    result = await litellm_logs(lines=max(1, min(lines, 500)))
+    return result
+
+
+@app.get("/api/settings/syra/models")
+async def api_syra_models(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    """Get list of configured models from LiteLLM."""
+    from syte.litellm_manager import litellm_models
+
+    result = await litellm_models()
+    return result
+
+
+    return process_manager.is_running(
+        project["id"], project.get("deploy_type", "shell")
+    )
 
 
 @app.get("/api/projects")
