@@ -3417,7 +3417,7 @@ let activePlatformPage = 'overview';
 const PLATFORM_PAGE_LABELS = {
   projects: 'Projects', overview: 'Overview', schedules: 'Schedules', traefik: 'Traefik File System', docker: 'Docker',
   profile: 'Profile', sessions: 'Sessions', 'remote-servers': 'Remote Servers', 'audit-logs': 'Audit Logs', 'ssh-keys': 'SSH Keys',
-  ai: 'AI', tags: 'Tags', git: 'Git', registry: 'Registry', secrets: 'Secrets', 'dns-providers': 'DNS Providers',
+  api: 'API Access', ai: 'AI', tags: 'Tags', git: 'Git', registry: 'Registry', secrets: 'Secrets', 'dns-providers': 'DNS Providers',
   's3-destinations': 'S3 Destinations', certificates: 'Certificates', notifications: 'Notifications', billing: 'Billing',
   license: 'License', sso: 'SSO', documentation: 'Documentation', support: 'Support',
 };
@@ -3433,6 +3433,7 @@ const PLATFORM_PAGE_BLUEPRINTS = {
   'remote-servers': {heading:'Deployment nodes', control:'server-form', columns:['name','status','ip','proxy']},
   'audit-logs': {heading:'Recent audit events', control:'audit-actions', columns:['created_at','event','source','status']},
   'ssh-keys': {heading:'Deployment credentials', control:'key-form', columns:['name','fingerprint','created_at']},
+  api: {heading:'API access', control:'documentation-actions', columns:['name','url','method','status']},
   ai: {heading:'Model providers', control:'ai-actions', columns:['provider','model','enabled','updated_at']},
   tags: {heading:'Resource tags', control:'tag-form', columns:['name','color','resource_count']},
   git: {heading:'Git providers and repositories', control:'git-form', columns:['name','provider','url','status']},
