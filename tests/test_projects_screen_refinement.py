@@ -147,3 +147,12 @@ def test_console_login_head_has_no_parser_blocking_shoelace_module():
     assert "shoelace-autoloader.js" not in index
     assert "@shoelace-style/shoelace" not in index
     assert '<script async src="/static/vendor/lucide.min.js?v=__VERSION__"></script>' in index
+
+
+def test_native_account_gate_renders_before_the_main_application_bundle():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+
+    assert 'id="inline-account-login-form"' in index
+    assert "fetch('/api/auth/session', {credentials: 'same-origin'})" in index
+    assert "fetch('/api/auth/login'" in index
+    assert index.index('id="inline-account-login-form"') < index.index('/static/app.js?v=__VERSION__')

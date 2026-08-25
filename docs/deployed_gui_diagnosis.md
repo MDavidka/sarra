@@ -11,3 +11,5 @@ After deploying the locally served Lucide library, the VM reports the full 357,7
 The post-hotfix browser navigation remains unstable: a direct DOM check briefly found no `document.body`, and subsequent views still returned no interactive elements. This indicates the console document is not completing its navigation lifecycle in the browser, despite the server returning the correct healthy static asset.
 
 The VM is healthy on revision `aa36054e`, but the browser still reported no interactive elements immediately after reload. The investigation therefore continues with a document-lifecycle check rather than treating the server restart as sufficient evidence of a corrected administrator experience.
+
+After an extended wait, the browser displayed the built-in Application Error overlay while the login screen remained on the static loading message. This confirms a frontend runtime failure after the asset load completes, rather than a server-side authentication failure. The next step is to obtain the runtime exception from the browser or service logs and correct that specific failure.
