@@ -1,6 +1,7 @@
 import json
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from syte.config import settings
 from syte.database import (
     create_deployment_run,
     get_project,
+    get_deployment_run,
     get_setting,
     init_db,
     list_deployment_runs,
@@ -103,7 +105,11 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(supervisor.supervisor_loop())
     backup_stop = asyncio.Event()
     backup_task = asyncio.create_task(backup_scheduler_loop(backup_stop))
+    branch_check_stop = asyncio.Event()
+    from syte.branch_deploy import periodic_branch_deploy_loop
+    branch_check_task = asyncio.create_task(periodic_branch_deploy_loop(branch_check_stop))
     yield
+    branch_check_stop.set()
     backup_stop.set()
     supervisor.stop_supervisor()
     task.cancel()
@@ -111,6 +117,10 @@ async def lifespan(app: FastAPI):
         await backup_task
     except asyncio.CancelledError:
         backup_task.cancel()
+    try:
+        await branch_check_task
+    except asyncio.CancelledError:
+        branch_check_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
@@ -167,7 +177,10 @@ app.include_router(platform_api.router, prefix="/api")
 
 
 class CreateTokenRequest(BaseModel):
-    name: str = "default"
+    name: str = Field(default="default", min_length=1, max_length=80)
+    expires_at: str | None = None
+    scopes: list[str] = Field(default_factory=lambda: ["read", "write", "deploy", "certificates", "settings"])
+    rate_limit_per_minute: int = Field(default=60, ge=1, le=1000)
 
 
 class OperatorSessionRequest(BaseModel):
@@ -563,13 +576,36 @@ async def create_token(
     body: CreateTokenRequest,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    row = await auth.create_token(body.name)
+    allowed_scopes = {"read", "write", "deploy", "certificates", "settings"}
+    scopes = [str(scope).strip().lower() for scope in body.scopes if str(scope).strip()]
+    if not scopes or any(scope not in allowed_scopes for scope in scopes):
+        raise HTTPException(422, "Choose at least one valid API permission.")
+    expires_at = (body.expires_at or "").strip() or None
+    if expires_at:
+        try:
+            parsed_expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(422, "Use a valid API key expiration date.") from exc
+        if parsed_expiry.tzinfo is None:
+            parsed_expiry = parsed_expiry.replace(tzinfo=timezone.utc)
+        if parsed_expiry <= datetime.now(timezone.utc):
+            raise HTTPException(422, "API key expiration must be in the future.")
+        expires_at = parsed_expiry.isoformat()
+    row = await auth.create_token(
+        body.name,
+        expires_at=expires_at,
+        scopes=list(dict.fromkeys(scopes)),
+        rate_limit_per_minute=body.rate_limit_per_minute,
+    )
     return {
         "ok": True,
         "token": row.pop("token"),
         "id": row["id"],
         "name": row["name"],
         "prefix": row["prefix"],
+        "expires_at": row["expires_at"],
+        "scopes": row["scopes"],
+        "rate_limit_per_minute": row["rate_limit_per_minute"],
         "message": "Save this token now — it will not be shown again.",
     }
 
@@ -941,6 +977,86 @@ async def api_project_custom_tls(
     }
 
 
+class CertificateIssueRequest(BaseModel):
+    project_id: str = Field(min_length=1, max_length=120)
+    domain: str = Field(min_length=1, max_length=255)
+    wildcard: bool = False
+
+
+async def _certificate_dns_guidance(domain: str) -> dict[str, Any]:
+    """Return DNS readiness and records without attempting to alter provider DNS."""
+    import socket
+    from syte.caddy_routes import host_zone
+
+    normalized = normalize_domain(domain)
+    zone = host_zone(normalized)
+    try:
+        ips = sorted({item[4][0] for item in await asyncio.to_thread(socket.getaddrinfo, normalized, None)})
+    except OSError:
+        ips = []
+    public_ip = settings.resolved_public_ip
+    return {
+        "domain": normalized,
+        "zone": zone,
+        "resolves": bool(ips),
+        "ips": ips,
+        "direct_to_sycord": public_ip in ips,
+        "proxy_must_be_off": True,
+        "normal_record": {"type": "A", "name": normalized, "value": public_ip, "proxy": "DNS only"},
+        "wildcard_record": {"type": "TXT", "name": f"_acme-challenge.{zone}", "value": "Created automatically by the Cloudflare DNS token during issuance", "proxy": "DNS only"},
+    }
+
+
+@app.get("/api/certificates/guide")
+async def api_certificate_guide(
+    domain: str = "",
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.certificates import cloudflare_tls_status
+
+    cleaned = normalize_domain(domain) if domain else ""
+    return {
+        "provider": {"name": "Cloudflare", "kind": "cloudflare", "icon": "/static/vendor/cloudflare-svgl.svg?v=__VERSION__"},
+        "cloudflare": await cloudflare_tls_status(),
+        "dns": await _certificate_dns_guidance(cleaned) if cleaned else None,
+    }
+
+
+@app.post("/api/certificates/issue")
+async def api_issue_certificate(
+    body: CertificateIssueRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.caddy_routes import host_zone
+    from syte.certificates import apply_proxy_config, cloudflare_tls_status
+    from syte.domain_utils import is_safe_caddy_hostname
+
+    project = await get_project(body.project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    domain = normalize_domain(body.domain)
+    if not is_safe_caddy_hostname(domain):
+        raise HTTPException(422, "Enter a valid domain without a scheme, port, or wildcard prefix.")
+    dns = await _certificate_dns_guidance(domain)
+    cloudflare = await cloudflare_tls_status()
+    if body.wildcard:
+        if not cloudflare.get("token_configured"):
+            raise HTTPException(409, "A Cloudflare DNS token is required before Sycord can issue a wildcard certificate.")
+        await set_setting("preview_base_domain", host_zone(domain))
+        await set_setting("preview_wildcard_tls", "auto")
+        await update_project(body.project_id, {"custom_tls_domain": domain, "custom_tls_enabled": 1})
+    else:
+        await update_project(body.project_id, {"custom_tls_domain": domain, "custom_tls_enabled": 1})
+    ok, message = await apply_proxy_config()
+    return {
+        "ok": ok,
+        "issued": ok,
+        "message": ("Certificate issuance requested. Caddy will complete ACME validation after DNS is correct. " if ok else "Certificate configuration was saved but Caddy could not apply it. ") + message,
+        "dns": dns,
+        "cloudflare": await cloudflare_tls_status(),
+    }
+
+
 @app.get("/api/projects")
 async def api_list_projects():
     from syte.preview_manager import ensure_preview_address
@@ -1143,7 +1259,7 @@ async def api_import_connected_github_project(
         analysis = await asyncio.to_thread(analyze_project_source, project["id"], source_type="github", base_directory=body.base_directory)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    await update_project(project["id"], {"env_vars": analysis_metadata(analysis), "status": "created"})
+    await update_project(project["id"], {"env_vars": analysis_metadata(analysis), "status": "created", "github_account_id": account_id})
     from syte.notifications import publish_project_event
     await publish_project_event(
         "project.imported",
@@ -1513,6 +1629,37 @@ async def api_deployment_history(project_id: str, limit: int = 20):
     return {"project_id": project_id, "deployments": await list_deployment_runs(project_id, limit)}
 
 
+@app.post("/api/projects/{project_id}/deployments/{run_id}/rollback")
+async def api_rollback_deployment(
+    project_id: str,
+    run_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    run = await get_deployment_run(run_id)
+    if not run or run.get("project_id") != project_id:
+        raise HTTPException(404, "Deployment record not found")
+    commit_sha = str(run.get("commit_sha") or "").strip()
+    if run.get("status") != "succeeded" or not commit_sha:
+        raise HTTPException(409, "Only a successful deployment with a recorded Git commit can be rolled back.")
+    queued, message = await deployment.issue_deploy(
+        project_id,
+        trigger=f"rollback:{run_id}",
+        commit_sha=commit_sha,
+    )
+    if not queued:
+        raise HTTPException(409, message)
+    return {
+        "ok": True,
+        "message": f"Rollback to {commit_sha[:12]} was queued. {message}",
+        "project": _enrich(queued),
+        "run_id": run_id,
+        "commit_sha": commit_sha,
+    }
+
+
 @app.get("/api/projects/{project_id}/health")
 async def api_project_health(project_id: str):
     project = await get_project(project_id)
@@ -1539,11 +1686,34 @@ async def api_project_health(project_id: str):
 
 
 @app.put("/api/projects/{project_id}/deployment-config")
-async def api_deployment_config(project_id: str, body: DeploymentConfigRequest):
+async def api_deployment_config(
+    project_id: str,
+    body: DeploymentConfigRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
     updates = body.model_dump(exclude_none=True)
+    if updates.get("auto_deploy") is True:
+        if not str(project.get("git_url") or "").strip():
+            raise HTTPException(400, "Automatic branch deployment requires a GitHub repository.")
+        if not str(project.get("github_account_id") or "").strip():
+            if _operator.get("auth") != "account":
+                raise HTTPException(
+                    409,
+                    "Sign in to a Sycord account with a connected GitHub account before enabling automatic branch deployment.",
+                )
+            from syte.github_oauth import connection_summary
+
+            account_id = str(_operator.get("id") or "").strip()
+            connection = await connection_summary(account_id)
+            if not connection.get("connected"):
+                raise HTTPException(409, "Connect GitHub before enabling automatic branch deployment.")
+            updates["github_account_id"] = account_id
+        # A fresh enable should deploy the branch head once, then record it to
+        # prevent duplicate redeploys until GitHub reports a newer commit.
+        updates["last_seen_git_commit"] = ""
     if "auto_deploy" in updates:
         updates["auto_deploy"] = int(updates["auto_deploy"])
     if updates.get("deploy_type") not in {None, "shell", "docker", "compose", "image"}:

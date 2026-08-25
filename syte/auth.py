@@ -7,11 +7,13 @@ project UUID on that host. Tenant isolation is expected at the host boundary
 """
 
 import base64
+import json
 import hashlib
 import hmac
 import secrets
 import time
 from datetime import datetime, timezone
+from collections import deque
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -37,6 +39,8 @@ OPERATOR_SESSION_COOKIE = "__Host-syte-operator"
 OPERATOR_CSRF_HEADER = "X-Syte-CSRF"
 OPERATOR_SESSION_TTL_SECONDS = 8 * 60 * 60
 _operator_sessions: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
+_token_request_windows: dict[str, deque[float]] = {}
+TOKEN_SCOPES = frozenset({"read", "write", "deploy", "certificates", "settings"})
 
 
 def hash_token(token: str) -> str:
@@ -50,9 +54,22 @@ def generate_token() -> tuple[str, str, str]:
     return full, prefix, hash_token(full)
 
 
-async def create_token(name: str) -> dict[str, Any]:
+async def create_token(
+    name: str,
+    *,
+    expires_at: str | None = None,
+    scopes: list[str] | None = None,
+    rate_limit_per_minute: int = 60,
+) -> dict[str, Any]:
     full, prefix, token_hash = generate_token()
-    row = await create_api_token(name=name, prefix=prefix, token_hash=token_hash)
+    row = await create_api_token(
+        name=name,
+        prefix=prefix,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        scopes=scopes,
+        rate_limit_per_minute=rate_limit_per_minute,
+    )
     row["token"] = full
     return row
 
@@ -79,6 +96,40 @@ def _extract_token(
     return None
 
 
+def _token_scopes(row: dict[str, Any]) -> set[str]:
+    raw = row.get("scopes") or ""
+    try:
+        values = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, json.JSONDecodeError):
+        values = []
+    selected = {str(value).strip().lower() for value in (values or [])}
+    return selected & TOKEN_SCOPES or set(TOKEN_SCOPES)
+
+
+def _required_scope(request: Request) -> str:
+    path = request.url.path.lower()
+    if request.method.upper() == "GET":
+        return "read"
+    if "/deploy" in path or "/rollback" in path:
+        return "deploy"
+    if "/certificate" in path or "/certificates" in path or "/domain" in path or "/dns" in path:
+        return "certificates"
+    if "/settings" in path or "/tokens" in path:
+        return "settings"
+    return "write"
+
+
+def _enforce_token_window(row: dict[str, Any]) -> None:
+    limit = max(1, min(int(row.get("rate_limit_per_minute") or 60), 1000))
+    now = time.monotonic()
+    window = _token_request_windows.setdefault(str(row["id"]), deque())
+    while window and now - window[0] >= 60:
+        window.popleft()
+    if len(window) >= limit:
+        raise HTTPException(429, detail={"error": "rate_limited", "message": "API key rate limit reached. Retry after one minute."})
+    window.append(now)
+
+
 async def verify_api_token(
     request: Request,
     x_api_key: str | None = Security(API_KEY_HEADER),
@@ -103,6 +154,20 @@ async def verify_api_token(
         )
     if not hmac.compare_digest(row["token_hash"], token_hash):
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key is invalid"})
+    expires_at = str(row.get("expires_at") or "").strip()
+    if expires_at:
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key expiration is invalid"})
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry <= datetime.now(timezone.utc):
+            raise HTTPException(401, detail={"error": "expired_api_key", "message": "API key has expired"})
+    required_scope = _required_scope(request)
+    if required_scope not in _token_scopes(row):
+        raise HTTPException(403, detail={"error": "insufficient_api_key_scope", "message": f"API key does not allow {required_scope} actions."})
+    _enforce_token_window(row)
     await touch_api_token(row["id"])
     return row
 
@@ -253,6 +318,20 @@ async def verify_api_token_from_request(request: Request) -> dict[str, Any]:
     row = await get_api_token_by_hash(token_hash)
     if not row:
         raise HTTPException(401, detail={"error": "invalid_api_key", "message": "Invalid API key"})
+    expires_at = str(row.get("expires_at") or "").strip()
+    if expires_at:
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(401, detail={"error": "invalid_api_key", "message": "API key expiration is invalid"})
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry <= datetime.now(timezone.utc):
+            raise HTTPException(401, detail={"error": "expired_api_key", "message": "API key has expired"})
+    required_scope = _required_scope(request)
+    if required_scope not in _token_scopes(row):
+        raise HTTPException(403, detail={"error": "insufficient_api_key_scope", "message": f"API key does not allow {required_scope} actions."})
+    _enforce_token_window(row)
     await touch_api_token(row["id"])
     return row
 

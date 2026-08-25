@@ -189,6 +189,19 @@ async def list_repositories(account_id: str, query: str = "") -> list[dict[str, 
     return result
 
 
+async def branch_head(account_id: str, full_name: str, branch: str) -> str:
+    """Return the current SHA for one tracked GitHub branch."""
+    owner, separator, repo = full_name.strip().partition("/")
+    if not separator or not owner or not repo or "/" in repo or not branch.strip():
+        raise GitHubOAuthError("Choose a valid GitHub repository and branch.")
+    token = await token_for_account(account_id)
+    item = await _github_api(token, f"/repos/{owner}/{repo}/commits/{branch.strip()}")
+    sha = str((item or {}).get("sha") or "")
+    if not sha:
+        raise GitHubOAuthError("GitHub did not return a commit for the configured branch.")
+    return sha
+
+
 async def list_branches(account_id: str, full_name: str) -> list[dict[str, str]]:
     owner, separator, repo = full_name.strip().partition("/")
     if not separator or not owner or not repo or "/" in repo:
@@ -207,6 +220,6 @@ async def list_branches(account_id: str, full_name: str) -> list[dict[str, str]]
 
 __all__ = [
     "GitHubOAuthError", "complete_github_authorization", "connection_summary",
-    "github_oauth_configured", "list_branches", "list_repositories",
+    "branch_head", "github_oauth_configured", "list_branches", "list_repositories",
     "start_github_authorization", "token_for_account",
 ]

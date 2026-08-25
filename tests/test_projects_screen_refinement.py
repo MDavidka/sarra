@@ -95,3 +95,36 @@ def test_servers_checklist_and_mobile_git_workspace_are_scoped_and_responsive():
     assert ".git-repository-card" in css
     assert ".git-repository-toolbar" in css
     assert ".nav-server-performance>span { display:block!important; background:#16a34a!important; }" in css
+
+
+def test_operational_project_workspaces_and_certificate_route_are_dedicated():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    for tab in ("domains", "env", "firewall", "cdn", "speed", "logs", "rollbacks", "settings"):
+        assert f'data-svc-tab="{tab}"' in index
+        assert f'data-svc-panel="{tab}"' in index
+    assert 'id="svc-env-cards"' in index
+    assert 'id="svc-env-modal"' in index
+    assert 'id="svc-settings-auto-deploy"' in index
+    assert 'id="svc-rollback-history"' in index
+    assert "function renderServiceManagementWorkspaces(project)" in app
+    assert "function renderServiceRollbackHistory(project)" in app
+    assert "function renderCertificateWorkspace()" in app
+    assert "if (isCertificates)" in app
+    assert "data-certificate-issue" in app
+    assert ".svc-domain-workspace" in css
+    assert ".svc-env-workspace" in css
+    assert ".svc-firewall-workspace" in css
+    assert ".svc-cdn-workspace" in css
+    assert ".certificate-workspace" in css
+
+
+def test_sidebar_selection_is_scoped_to_the_current_navigation_context():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+
+    assert "viewName === 'platform' && isPlatformLink" in app
+    assert "viewName !== 'platform' && !isPlatformLink" in app
+    assert "event.stopPropagation();" in app
+    assert "const allowed = ['general', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];" in app

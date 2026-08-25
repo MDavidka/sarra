@@ -107,14 +107,32 @@
               <button type="button" class="nav-sublink active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>General</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="domains">
+                <i data-lucide="at-sign"></i><span>Domains</span>
+              </button>
               <button type="button" class="nav-sublink" data-svc-tab="env">
                 <i data-lucide="braces"></i><span>Environment</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="firewall">
+                <i data-lucide="shield"></i><span>Firewall</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="cdn">
+                <i data-lucide="cloud"></i><span>CDN</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="speed">
+                <i data-lucide="gauge"></i><span>Speed</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="logs">
                 <i data-lucide="terminal-square"></i><span>Logs</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="rollbacks">
+                <i data-lucide="history"></i><span>Rollbacks</span>
+              </button>
               <button type="button" class="nav-sublink" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="settings">
+                <i data-lucide="settings-2"></i><span>Settings</span>
               </button>
             </div>
           </div>
@@ -284,22 +302,41 @@
                 </section>
               </div>
 
+              <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
+                <section class="svc-domain-workspace" aria-label="Project domains">
+                  <header class="svc-workspace-heading"><div><p>Traffic entry</p><h2>Domains and custom TLS</h2><span>Route this application through its production address and request Caddy-managed TLS.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" data-svc-edit-project><i data-lucide="pencil"></i><span>Edit primary domain</span></button></header>
+                  <div class="svc-primary-domain" id="svc-primary-domain"><span>Production domain</span><strong>Not configured</strong></div>
+                  <form class="svc-custom-domain-form" id="svc-custom-domain-form"><label>Custom domain<input id="svc-custom-tls-domain" placeholder="app.example.com" autocomplete="off"></label><label class="svc-switch-field"><input type="checkbox" id="svc-custom-tls-enabled"><span>Enable Caddy TLS for this domain</span></label><div class="svc-inline-actions"><button type="submit" class="btn-pill btn-primary"><i data-lucide="shield-check"></i><span>Save custom domain</span></button><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="badge-check"></i><span>Certificate readiness</span></button></div><p class="svc-domain-result" id="svc-custom-tls-result">DNS must point to this server before a trusted certificate can be issued.</p></form>
+                </section>
+              </div>
+
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="braces"></i></div>
-                  <div>
-                    <h2>Environment variables</h2>
-                    <p>Values here are available to your project at runtime. Keep one <code>KEY=value</code> pair per line.</p>
-                  </div>
-                </div>
-                <label class="svc-field-label" for="svc-env-input">Project environment</label>
-                <textarea id="svc-env-input" class="svc-env-textarea" rows="10" placeholder="NODE_ENV=production"></textarea>
-                <p class="svc-field-help"><i data-lucide="info"></i> Changes apply after the next deploy or restart.</p>
-                <div class="svc-panel-actions">
-                  <button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-save-btn">
-                    <i data-lucide="save"></i><span>Save environment</span>
-                  </button>
-                </div>
+                <section class="svc-env-workspace" aria-label="Environment variables">
+                  <header class="svc-workspace-heading"><div><p>Runtime configuration</p><h2>Environment variables</h2><span>Keys and values are stored for this project and applied when you deploy or restart.</span></div><button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add variable</span></button></header>
+                  <div class="svc-env-cards" id="svc-env-cards"></div>
+                  <p class="svc-field-help"><i data-lucide="info"></i> Save changes, then deploy or restart to apply the updated environment.</p>
+                </section>
+                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title"><div class="svc-env-modal-backdrop" data-svc-env-close></div><form class="svc-env-dialog" id="svc-env-form"><button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button><p>Environment variable</p><h3 id="svc-env-modal-title">Add variable</h3><input type="hidden" id="svc-env-original-key"><label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DATABASE_URL" autocomplete="off"></label><label>Value<input id="svc-env-value" required placeholder="Value" autocomplete="off"></label><div><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save variable</span></button></div></form></div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-firewall" data-svc-panel="firewall">
+                <section class="svc-firewall-workspace" aria-label="Application firewall boundary"><header><i data-lucide="shield-check"></i><div><p>Network boundary</p><h2>Firewall</h2><span>Project-level public-port rules are not managed here. Sycord routes public HTTP(S) through Caddy; host firewall policy stays server-level to avoid exposing an application port by accident.</span></div></header><div class="svc-firewall-lines"><div><strong>Public entry</strong><span>HTTPS via configured Caddy domain</span></div><div><strong>Direct application port</strong><span>Do not publish unless a server administrator explicitly configures it</span></div><div><strong>Change control</strong><span>Use the server workspace for host firewall changes</span></div></div></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
+                <section class="svc-cdn-workspace" aria-label="Content delivery guidance"><header><div><p>Delivery path</p><h2>CDN and Cloudflare</h2><span>CDN proxying is configured at your DNS provider, not silently enabled by Sycord. Keep Cloudflare proxying off while validating or issuing a certificate.</span></div><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"></header><div class="svc-cdn-flow"><span>Browser</span><i data-lucide="arrow-right"></i><span>Cloudflare DNS/CDN</span><i data-lucide="arrow-right"></i><span>Sycord Caddy</span></div><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review certificate DNS status</span></button></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
+                <section class="svc-speed-workspace" aria-label="Project runtime resources"><header class="svc-workspace-heading"><div><p>Runtime allocation</p><h2>Speed and resource limits</h2><span>Docker deployments apply these limits at the next deployment. Shell projects retain their host process limits.</span></div></header><form class="svc-speed-form" id="svc-speed-form"><label>Memory limit<select id="svc-resource-memory"><option value="">Server default</option><option value="256m">256 MB</option><option value="512m">512 MB</option><option value="1g">1 GB</option><option value="2g">2 GB</option></select></label><label>CPU limit<select id="svc-resource-cpus"><option value="">Server default</option><option value="0.5">0.5 CPU</option><option value="1.0">1 CPU</option><option value="2.0">2 CPU</option></select></label><button type="submit" class="btn-pill btn-primary"><i data-lucide="gauge"></i><span>Save deployment limits</span></button></form><p class="svc-speed-status" id="svc-speed-status">Current runtime status is shown on the General tab.</p></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-rollbacks" data-svc-panel="rollbacks">
+                <section class="svc-rollback-workspace" aria-label="Deployment rollback history"><header class="svc-workspace-heading"><div><p>Release recovery</p><h2>Rollbacks</h2><span>Re-deploy a successful recorded Git commit. Runs without a recorded commit cannot be safely rolled back.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><div class="svc-rollback-history" id="svc-rollback-history"><p class="hint">Load deployment history to choose a recorded release.</p></div></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
+                <section class="svc-project-settings-workspace" aria-label="Project deployment settings"><header class="svc-workspace-heading"><div><p>Deployment policy</p><h2>Project settings</h2><span>Configure source and automatic branch deployment for this application.</span></div></header><form id="svc-deployment-settings-form" class="svc-deployment-settings-form"><label>Branch<input id="svc-settings-branch" placeholder="main" autocomplete="off"></label><label>Start command<input id="svc-settings-start-command" placeholder="npm start" autocomplete="off"></label><label class="svc-auto-deploy-toggle"><input type="checkbox" id="svc-settings-auto-deploy"><span><strong>Automatically redeploy new branch commits</strong><small>Checks the configured GitHub branch every 5 minutes. First enable queues the current branch head once.</small></span></label><p class="svc-auto-deploy-state" id="svc-auto-deploy-state">Connect GitHub and select a repository before enabling.</p><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save deployment settings</span></button></form></section>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
@@ -444,7 +481,7 @@
           <div class="users-directory-page">
             <div class="users-directory-hero"><div class="users-directory-icon"><i data-lucide="users-round"></i></div><div><p class="dedicated-eyebrow">Administration</p><h1>People & access</h1><p>Manage operators, API access, and the credentials used by automation.</p></div><span class="users-live-badge"><i data-lucide="radio"></i>Live workspace</span></div>
             <div class="users-directory-grid"><div class="users-summary-card"><span>Workspace members</span><strong>Operator</strong><small>Current workspace identity</small></div><div class="users-summary-card"><span>API access</span><strong>Token vault</strong><small>Programmatic credentials</small></div><div class="users-summary-card"><span>Security</span><strong>Protected</strong><small>Tokens can be revoked anytime</small></div></div>
-            <section class="users-token-panel"><div><p class="dedicated-eyebrow">Automation credentials</p><h2>API tokens</h2><p>Create tokens for CI, deployments, and external integrations. See the <a href="/api/" class="link">API documentation</a>.</p></div><div class="users-token-form"><label for="token-name">Token name</label><div><input type="text" id="token-name" placeholder="ci-deploy"><button class="btn-pill btn-primary" id="create-token-btn"><i data-lucide="plus"></i><span>Create token</span></button></div></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="tokens-list"></div></section>
+            <section class="api-key-workspace"><header><div><p>Automation credentials</p><h2>API keys</h2><span>Issue narrowly scoped credentials for CI and external integrations. Each key is shown only once.</span></div><a href="/api/" class="api-key-doc-link">API documentation <i data-lucide="arrow-up-right"></i></a></header><div class="api-key-creator"><label>Key name<input type="text" id="token-name" placeholder="ci-deploy" maxlength="80"></label><label>Expires<input type="datetime-local" id="token-expires-at"></label><fieldset><legend>Allowed actions</legend><label><input type="checkbox" name="token-scope" value="read" checked> Read</label><label><input type="checkbox" name="token-scope" value="write" checked> Write</label><label><input type="checkbox" name="token-scope" value="deploy" checked> Deploy</label><label><input type="checkbox" name="token-scope" value="certificates" checked> Certificates</label><label><input type="checkbox" name="token-scope" value="settings" checked> Settings</label></fieldset><label class="api-key-rate">Rate limit <output id="token-rate-output">60 requests/min</output><input type="range" id="token-rate-limit" min="5" max="240" step="5" value="60"></label><button class="api-key-create" id="create-token-btn"><i data-lucide="key-round"></i><span>Create API key</span></button></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="api-key-list"></div></section>
           </div>
         </section>
 

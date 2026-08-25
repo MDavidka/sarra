@@ -3272,8 +3272,8 @@ function updateSidebarNav(viewName) {
 
   document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
     const isPlatformLink = el.dataset.view === 'platform';
-    const matchesPlatformPage = isPlatformLink && el.dataset.platformPage === activePlatformPage;
-    const matchesView = !isPlatformLink && el.dataset.view === navView;
+    const matchesPlatformPage = viewName === 'platform' && isPlatformLink && el.dataset.platformPage === activePlatformPage;
+    const matchesView = viewName !== 'platform' && !isPlatformLink && el.dataset.view === navView;
     el.classList.toggle('active', !isService && (matchesPlatformPage || matchesView));
   });
 }
@@ -3996,7 +3996,8 @@ async function loadPlatformPage(page = 'overview') {
   const isRemoteServers = safePage === 'remote-servers';
   const isGit = safePage === 'git';
   const isNotifications = safePage === 'notifications';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications;
+  const isCertificates = safePage === 'certificates';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications && !isCertificates;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
@@ -4016,6 +4017,10 @@ async function loadPlatformPage(page = 'overview') {
   }
   if (isNotifications) {
     await renderNotificationWorkspace();
+    return;
+  }
+  if (isCertificates) {
+    await renderCertificateWorkspace();
     return;
   }
   if (isOverview) {
@@ -5240,6 +5245,7 @@ function renderSslDashboard(d) {
   `).join('') || '<p class="hint block">No projects yet.</p>';
 
   const customTls = customTlsControlsHtml(d);
+  const issuance = certificateIssuanceHtml(d);
 
   const monitorCards = (monitor.endpoints || []).map(monitorEndpointHtml).join('');
 
@@ -5279,6 +5285,7 @@ function renderSslDashboard(d) {
       <div class="projects-title-block mb"><i data-lucide="shield-check" class="projects-icon"></i><div><h3>Certificates by project</h3></div></div>
       <div class="ssl-project-list">${rows}</div>
     </div>
+    ${issuance}
     <div class="projects-card panel-form">
       <div class="projects-title-block mb"><i data-lucide="key-round" class="projects-icon"></i><div><h3>Custom TLS <span class="hint">— per-app and sycord.site dedicated certs</span></h3></div></div>
       ${customTls}
@@ -5286,6 +5293,7 @@ function renderSslDashboard(d) {
   `;
   refreshIcons();
   wireCustomTls();
+  wireCertificateIssuance();
 }
 
 function monitorEndpointHtml(ep) {
@@ -6237,8 +6245,229 @@ function connLabel(p) {
   return hostPortLabel(p);
 }
 
+function serviceEnvironmentEntries(project) {
+  const values = project?.env_vars;
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return [];
+  return Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
+}
+
+function closeServiceEnvironmentModal() {
+  document.getElementById('svc-env-modal')?.classList.add('hidden');
+}
+
+function openServiceEnvironmentModal(project, key = '') {
+  const modal = document.getElementById('svc-env-modal');
+  const keyInput = document.getElementById('svc-env-key');
+  const valueInput = document.getElementById('svc-env-value');
+  const original = document.getElementById('svc-env-original-key');
+  const title = document.getElementById('svc-env-modal-title');
+  if (!modal || !keyInput || !valueInput || !original || !title) return;
+  const values = Object.fromEntries(serviceEnvironmentEntries(project));
+  original.value = key;
+  keyInput.value = key;
+  valueInput.value = key ? String(values[key] ?? '') : '';
+  title.textContent = key ? 'Edit variable' : 'Add variable';
+  modal.classList.remove('hidden');
+  keyInput.focus();
+}
+
+async function persistServiceEnvironment(project, env_vars) {
+  const result = await api(`/projects/${encodeURIComponent(project.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({env_vars}),
+  });
+  toast(result.message || 'Environment saved');
+  await loadProjects();
+  const refreshed = projects.find(item => item.id === project.id);
+  if (refreshed) renderServiceDashboard(refreshed, false);
+}
+
+async function renderServiceRollbackHistory(project) {
+  const target = document.getElementById('svc-rollback-history');
+  if (!target) return;
+  target.innerHTML = '<p class="hint">Loading deployment history…</p>';
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/deployments?limit=20`);
+    const rows = payload.deployments || [];
+    if (!rows.length) {
+      target.innerHTML = '<p class="hint">No deployments have been recorded for this project.</p>';
+      return;
+    }
+    target.innerHTML = rows.map((run) => {
+      const status = cssClassSafe(run.status || 'queued');
+      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
+      const canRollback = run.status === 'succeeded' && Boolean(run.commit_sha);
+      const detail = run.error || (run.commit_sha ? `Commit ${String(run.commit_sha).slice(0, 12)}` : 'No recorded Git commit');
+      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="btn-pill btn-ghost btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
+    }).join('');
+    target.querySelectorAll('[data-svc-rollback-run]').forEach(button => {
+      button.onclick = async () => {
+        const runId = button.dataset.svcRollbackRun;
+        if (!runId) return;
+        button.disabled = true;
+        try {
+          const result = await api(`/projects/${encodeURIComponent(project.id)}/deployments/${encodeURIComponent(runId)}/rollback`, {method: 'POST'});
+          toast(result.message || 'Rollback queued');
+          await renderServiceRollbackHistory(project);
+        } catch (error) {
+          toast(normalizeFetchError(error?.message) || 'Could not queue rollback.');
+        } finally {
+          button.disabled = false;
+        }
+      };
+    });
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load deployment history.')}</p>`;
+  }
+}
+
+function renderServiceManagementWorkspaces(project) {
+  const environmentCards = document.getElementById('svc-env-cards');
+  if (environmentCards) {
+    const entries = serviceEnvironmentEntries(project);
+    environmentCards.innerHTML = entries.length
+      ? entries.map(([key, value]) => `<article class="svc-env-card"><div><code>${esc(key)}</code><span>${esc(String(value))}</span></div><div><button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" aria-label="Edit ${esc(key)}"><i data-lucide="pencil"></i></button><button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" aria-label="Delete ${esc(key)}"><i data-lucide="trash-2"></i></button></div></article>`).join('')
+      : '<p class="svc-env-empty">No variables are configured. Add the first runtime value when your application needs one.</p>';
+    environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
+      button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
+    });
+    environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
+      button.onclick = async () => {
+        const key = button.dataset.svcEnvDelete || '';
+        if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
+        const next = Object.fromEntries(serviceEnvironmentEntries(project));
+        delete next[key];
+        try { await persistServiceEnvironment(project, next); }
+        catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
+      };
+    });
+  }
+
+  const addEnvironment = document.getElementById('svc-env-add-btn');
+  if (addEnvironment) addEnvironment.onclick = () => openServiceEnvironmentModal(project);
+  document.querySelectorAll('[data-svc-env-close]').forEach(button => { button.onclick = closeServiceEnvironmentModal; });
+  const envForm = document.getElementById('svc-env-form');
+  if (envForm) {
+    envForm.onsubmit = async event => {
+      event.preventDefault();
+      const original = document.getElementById('svc-env-original-key')?.value || '';
+      const key = document.getElementById('svc-env-key')?.value.trim() || '';
+      const value = document.getElementById('svc-env-value')?.value || '';
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return toast('Use a valid environment variable key.');
+      const next = Object.fromEntries(serviceEnvironmentEntries(project));
+      if (original && original !== key) delete next[original];
+      next[key] = value;
+      try {
+        await persistServiceEnvironment(project, next);
+        closeServiceEnvironmentModal();
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save variable.');
+      }
+    };
+  }
+
+  document.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+  const primaryDomain = document.getElementById('svc-primary-domain');
+  if (primaryDomain) {
+    const domain = project.domain || '';
+    primaryDomain.innerHTML = `<span>Production domain</span>${domain && project.url ? `<a href="${esc(project.url)}" target="_blank" rel="noopener">${esc(domain)}<i data-lucide="arrow-up-right"></i></a>` : `<strong>${esc(domain || 'Not configured')}</strong>`}`;
+  }
+  const customDomain = document.getElementById('svc-custom-tls-domain');
+  const customEnabled = document.getElementById('svc-custom-tls-enabled');
+  if (customDomain) customDomain.value = project.custom_tls_domain || '';
+  if (customEnabled) customEnabled.checked = Boolean(project.custom_tls_enabled);
+  const customDomainForm = document.getElementById('svc-custom-domain-form');
+  if (customDomainForm) {
+    customDomainForm.onsubmit = async event => {
+      event.preventDefault();
+      const status = document.getElementById('svc-custom-tls-result');
+      if (status) status.textContent = 'Applying domain configuration…';
+      try {
+        const result = await api(`/ssl/projects/${encodeURIComponent(project.id)}/custom-tls`, {
+          method: 'POST',
+          body: JSON.stringify({custom_tls_domain: customDomain?.value.trim() || '', custom_tls_enabled: Boolean(customEnabled?.checked)}),
+        });
+        if (status) status.textContent = result.message || 'Custom domain saved.';
+        toast(result.message || 'Custom domain saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        if (status) status.textContent = normalizeFetchError(error?.message) || 'Could not save custom domain.';
+      }
+    };
+  }
+  document.querySelectorAll('[data-svc-open-certificates]').forEach(button => {
+    button.onclick = () => { activePlatformPage = 'certificates'; showView('platform'); };
+  });
+
+  const memory = document.getElementById('svc-resource-memory');
+  const cpus = document.getElementById('svc-resource-cpus');
+  if (memory) memory.value = project.resource_memory || '';
+  if (cpus) cpus.value = project.resource_cpus || '';
+  const speedForm = document.getElementById('svc-speed-form');
+  if (speedForm) {
+    speedForm.onsubmit = async event => {
+      event.preventDefault();
+      const status = document.getElementById('svc-speed-status');
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}/deployment-config`, {
+          method: 'PUT',
+          body: JSON.stringify({resource_memory: memory?.value || '', resource_cpus: cpus?.value || ''}),
+        });
+        if (status) status.textContent = 'Deployment limits saved. Redeploy to apply them.';
+        toast(result.message || 'Deployment limits saved');
+        await loadProjects();
+      } catch (error) { if (status) status.textContent = normalizeFetchError(error?.message) || 'Could not save deployment limits.'; }
+    };
+  }
+
+  const branch = document.getElementById('svc-settings-branch');
+  const startCommand = document.getElementById('svc-settings-start-command');
+  const autoDeploy = document.getElementById('svc-settings-auto-deploy');
+  if (branch) branch.value = project.branch || 'main';
+  if (startCommand) startCommand.value = project.start_command || '';
+  if (autoDeploy) autoDeploy.checked = Boolean(project.auto_deploy);
+  const autoState = document.getElementById('svc-auto-deploy-state');
+  if (autoState) {
+    autoState.textContent = !project.git_url
+      ? 'Import a GitHub repository before automatic branch deployment can be enabled.'
+      : project.github_account_id
+        ? `GitHub account is linked. ${project.auto_deploy ? `Watching ${project.branch || 'main'} every 5 minutes.` : 'Enable to queue the current branch head once, then only newer commits.'}`
+        : 'Enable while signed in to the connected GitHub account to link this project securely.';
+  }
+  const settingsForm = document.getElementById('svc-deployment-settings-form');
+  if (settingsForm) {
+    settingsForm.onsubmit = async event => {
+      event.preventDefault();
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}/deployment-config`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            branch: branch?.value.trim() || 'main',
+            start_command: startCommand?.value.trim() || '',
+            auto_deploy: Boolean(autoDeploy?.checked),
+          }),
+        });
+        toast(result.message || 'Deployment settings saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save deployment settings.');
+      }
+    };
+  }
+
+  const refreshRollbackHistory = document.getElementById('svc-rollback-refresh');
+  if (refreshRollbackHistory) refreshRollbackHistory.onclick = () => renderServiceRollbackHistory(project);
+  if (activeSvcTab === 'rollbacks') void renderServiceRollbackHistory(project);
+  refreshIcons();
+}
+
 function switchSvcTab(tab) {
-  const allowed = ['general', 'env', 'logs', 'preview'];
+  const allowed = ['general', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
@@ -6252,6 +6481,9 @@ function switchSvcTab(tab) {
     previewTabActive = true;
     const p = projects.find(x => x.id === activeServiceId);
     if (p) renderPreviewSection(p);
+  } else if (tab === 'rollbacks') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) void renderServiceRollbackHistory(p);
   } else if (prevTab === 'preview') {
     previewTabActive = false;
     stopPreviewPoll();
@@ -6445,9 +6677,7 @@ function renderServiceDashboard(p, resetLogs) {
   const editDomain = document.getElementById('svc-domain-edit');
   if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
   renderDeploymentSitePreview(p);
-
-  const envInput = document.getElementById('svc-env-input');
-  if (envInput) envInput.value = formatEnv(p.env_vars);
+  renderServiceManagementWorkspaces(p);
 
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
@@ -6480,7 +6710,6 @@ function renderServiceDashboard(p, resetLogs) {
     renderQuickActions(p);
   }
 
-  document.getElementById('svc-env-save-btn').onclick = () => saveServiceEnv(p.id);
   document.getElementById('svc-edit-btn').onclick = () => openServiceEditModal(p);
   refreshIcons();
 }
@@ -7517,12 +7746,11 @@ async function loadTokens() {
       list.innerHTML = '<p class="hint">no tokens yet</p>';
       return;
     }
-    list.innerHTML = res.tokens.map(t => `
-      <div class="token-row">
-        <div><strong>${esc(t.name)}</strong><span class="hint"> ${esc(t.prefix)}…</span></div>
-        <button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button>
-      </div>
-    `).join('');
+    list.innerHTML = res.tokens.map(t => {
+      const scopes = Array.isArray(t.scopes) ? t.scopes : [];
+      const expiry = t.expires_at ? new Date(t.expires_at).toLocaleString() : 'No expiry';
+      return `<article class="api-key-row"><div><strong>${esc(t.name)}</strong><code>${esc(t.prefix)}…</code><span>Expires: ${esc(expiry)} · ${esc(String(t.rate_limit_per_minute || 60))} req/min</span><small>${scopes.map(scope => `<em>${esc(scope)}</em>`).join('')}</small></div><button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button></article>`;
+    }).join('');
     refreshIcons();
   } catch {
     list.innerHTML = '<p class="hint">could not load tokens</p>';
@@ -7543,13 +7771,23 @@ async function revokeToken(id) {
   }
 }
 
+document.getElementById('token-rate-limit')?.addEventListener('input', event => {
+  const output = document.getElementById('token-rate-output');
+  if (output) output.textContent = `${event.currentTarget.value} requests/min`;
+});
+
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
+  const expiresInput = document.getElementById('token-expires-at')?.value || '';
+  const scopes = [...document.querySelectorAll('input[name="token-scope"]:checked')].map(input => input.value);
+  const rateLimit = Number(document.getElementById('token-rate-limit')?.value || 60);
+  if (!scopes.length) return toast('Choose at least one API permission.');
   if (!await restoreOperatorSession()) {
     return toast('Protected API access is required to manage API keys');
   }
   try {
-    const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
+    const expiresAt = expiresInput ? new Date(expiresInput).toISOString() : null;
+    const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name, expires_at: expiresAt, scopes, rate_limit_per_minute: rateLimit }) });
     const box = document.getElementById('new-token-box');
     box.textContent = `Token (copy for external API use — not needed for the web GUI):\n${res.token}`;
     box.classList.remove('hidden');
@@ -7691,7 +7929,8 @@ document.getElementById('project-filter')?.addEventListener('input', (e) => {
 document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
   if (el.tagName === 'A' && !el.dataset.platformPage) return;
   el.addEventListener('click', (event) => {
-    if (el.dataset.platformPage) event.preventDefault();
+    event.preventDefault();
+    event.stopPropagation();
     if (el.dataset.platformPage) activePlatformPage = el.dataset.platformPage;
     showView(el.dataset.view);
   });
@@ -7703,9 +7942,11 @@ document.getElementById('platform-action-list')?.addEventListener('click', (even
 });
 document.getElementById('nav-group-main-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-main'));
 document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
-document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.nav-sublink[data-svc-tab]');
+document.getElementById('sidebar-service-tabs')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
+  event.preventDefault();
+  event.stopPropagation();
   switchSvcTab(btn.dataset.svcTab);
 });
 document.getElementById('global-ai-project')?.addEventListener('change', async (event) => {
@@ -8666,3 +8907,92 @@ async function initializeLegacyAccountGate() {
 }
 
 document.addEventListener('DOMContentLoaded', initializeLegacyAccountGate);
+
+
+async function renderCertificateWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="certificate-workspace-loading">Loading certificate readiness…</section>';
+  try {
+    const data = await api('/ssl');
+    sslData = data;
+    const projects = data.projects || [];
+    const projectRows = projects.length
+      ? projects.map(project => {
+        const production = project.production || {};
+        const label = production.badge_label || project.badge_label || (production.domain ? 'pending' : 'not configured');
+        return `<article class="certificate-project-state"><div><strong>${esc(project.name || project.id)}</strong><span>${esc(production.domain || 'No production domain')}</span></div><em>${esc(label)}</em></article>`;
+      }).join('')
+      : '<p class="certificate-empty">Add a project and domain to begin certificate issuance.</p>';
+    target.innerHTML = `<section class="certificate-workspace" aria-label="Certificate management">
+      <header class="certificate-workspace-header"><div><p>Certification</p><h2>Domains and automatic TLS</h2><span>Check DNS before issuing. Normal certificates require a direct record; wildcards use Cloudflare DNS-01.</span></div><div class="certificate-workspace-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span></div></header>
+      ${certificateIssuanceHtml(data)}
+      <section class="certificate-project-statuses" aria-label="Project certificate status"><div class="certificate-status-heading"><h3>Project certificate status</h3><button type="button" class="btn-pill btn-ghost btn-sm" data-certificate-refresh><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>${projectRows}</section>
+    </section>`;
+    wireCertificateIssuance();
+    target.querySelector('[data-certificate-refresh]')?.addEventListener('click', () => loadPlatformPage('certificates'));
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<section class="certificate-workspace-error">Could not load certificate readiness: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</section>`;
+  }
+}
+
+function certificateIssuanceHtml(data) {
+  const projects = data.projects || [];
+  const projectOptions = projects.map(project => `<option value="${esc(project.id)}">${esc(project.name || project.id)}</option>`).join('');
+  return `<section class="certificate-issuance" aria-label="Certificate issuance">
+    <header><div><p>Certificate issue</p><h3>Issue a domain certificate</h3><span>Use a direct DNS-only record for normal domains. Wildcards use Cloudflare DNS-01 after a Cloudflare API token is configured.</span></div><div class="certificate-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare DNS</span></div></header>
+    <form data-certificate-issue="1"><label>Project<select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label>Domain<input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-wildcard"><input type="checkbox" name="wildcard"><span>Issue wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Request certificate</span></button></form>
+    <div class="certificate-dns-guide" data-certificate-guide="1"><p>Enter a domain to inspect DNS readiness and record guidance.</p></div>
+  </section>`;
+}
+
+function certificateRecordLine(record) {
+  if (!record) return '';
+  const text = `${record.type}  ${record.name}  ${record.value}`;
+  return `<div class="certificate-record"><div><strong>${esc(record.type)}</strong><code>${esc(record.name)}</code><span>${esc(record.value)}</span><small>${esc(record.proxy || 'DNS only')}</small></div><button type="button" data-copy-certificate-record="${esc(text)}"><i data-lucide="copy"></i><span>Copy</span></button></div>`;
+}
+
+function renderCertificateDnsGuide(target, guide) {
+  const dns = guide?.dns;
+  const cf = guide?.cloudflare || {};
+  if (!dns) { target.innerHTML = '<p>Enter a domain to inspect DNS readiness and record guidance.</p>'; return; }
+  const dnsState = !dns.resolves ? ['needs DNS', 'bad'] : dns.direct_to_sycord ? ['direct to Sycord', 'ok'] : ['DNS does not point directly to Sycord', 'bad'];
+  target.innerHTML = `<div class="certificate-guide-head"><span class="certificate-dns-state ${dnsState[1]}">${esc(dnsState[0])}</span><span class="certificate-proxy-state">Cloudflare proxy: <b>off / DNS only</b></span></div><p class="certificate-guide-note">${dns.resolves ? `Resolved IPs: ${esc((dns.ips || []).join(', ') || 'none')}.` : 'No DNS answer was found yet.'} Normal certificate validation needs the A record to resolve directly to this Sycord host; turn the Cloudflare proxy off while issuing.</p><div class="certificate-records"><div><p>Normal domain record</p>${certificateRecordLine(dns.normal_record)}</div><div><p>Wildcard DNS-01 record</p>${certificateRecordLine(dns.wildcard_record)}</div></div><div class="certificate-provider-state"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt=""><span>Cloudflare DNS token ${cf.token_configured ? 'configured' : 'not configured'} · ${cf.caddy_plugin_installed ? 'Caddy plugin ready' : 'Caddy plugin required for wildcard issuance'}</span></div>`;
+  refreshIcons();
+}
+
+function wireCertificateIssuance() {
+  const form = document.querySelector('[data-certificate-issue]');
+  const guideTarget = document.querySelector('[data-certificate-guide]');
+  if (!form || !guideTarget) return;
+  const domainInput = form.querySelector('[name="domain"]');
+  let checkTimer = null;
+  const checkGuidance = async () => {
+    const domain = domainInput.value.trim();
+    if (!domain) { renderCertificateDnsGuide(guideTarget, null); return; }
+    guideTarget.innerHTML = '<p>Checking domain DNS…</p>';
+    try { renderCertificateDnsGuide(guideTarget, await api(`/certificates/guide?domain=${encodeURIComponent(domain)}`)); }
+    catch (error) { guideTarget.innerHTML = `<p>Could not check DNS: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</p>`; }
+  };
+  domainInput.addEventListener('input', () => { clearTimeout(checkTimer); checkTimer = setTimeout(checkGuidance, 500); });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const values = new FormData(form);
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const result = await api('/certificates/issue', {method: 'POST', body: JSON.stringify({project_id: values.get('project_id'), domain: values.get('domain'), wildcard: values.get('wildcard') === 'on'})});
+      renderCertificateDnsGuide(guideTarget, result);
+      toast(result.message || 'Certificate request applied.');
+      if (typeof loadSslDashboard === 'function') void loadSslDashboard();
+    } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not request the certificate.'); }
+    finally { button.disabled = false; }
+  });
+  guideTarget.addEventListener('click', async event => {
+    const button = event.target.closest('[data-copy-certificate-record]');
+    if (!button) return;
+    try { await navigator.clipboard.writeText(button.dataset.copyCertificateRecord); toast('DNS record copied.'); }
+    catch (_) { toast('Select the record and copy it manually.'); }
+  });
+}
