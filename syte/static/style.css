@@ -5988,12 +5988,19 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .git-nav-logo { width:18px; height:18px; object-fit:contain; opacity:1; filter:invert(1); }
 .nav-sublink.active .git-nav-logo, .nav-sublink:hover .git-nav-logo { opacity:1; }
 
-/* Main-navigation selection rail, matched to the supplied sidebar reference. */
+/* Low-opacity selected subtab card, matched to the supplied sidebar reference. */
 .app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active,
-.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active span { background:transparent!important; color:#111!important; font-weight:600; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active span { background:rgba(24,24,27,.055)!important; color:#111!important; font-weight:600; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active { border-radius:10px; }
 .app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active svg { color:#111!important; opacity:1!important; }
-.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active::before { content:''; position:absolute; z-index:0; left:-.62rem; top:0; bottom:0; width:25px; border-radius:0 6px 6px 0; background:#a3a3a3!important; }
-.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active > * { position:relative; z-index:1; }
+.app-sidebar #nav-block-home .coolify-nav-section .nav-sublink.active::before { display:none; }
+
+/* Live, database-backed performance insight beside the Servers subtab. */
+.nav-server-performance { display:inline-flex; align-items:center; width:76px; height:12px; margin-left:auto; overflow:hidden; border-radius:999px; background:#d4d4d8; pointer-events:none; }
+.nav-server-performance > span { display:block; width:0; height:100%; border-radius:inherit; background:#16a34a; transition:width .22s ease, background .22s ease; }
+.nav-server-performance.is-elevated > span { background:#d97706; }.nav-server-performance.is-high > span { background:#dc2626; }.nav-server-performance.is-unavailable > span { background:#a1a1aa; }
+.nav-sublink.active .nav-server-performance { background:#d4d4d8!important; }
+@media (max-width:768px) { .nav-server-performance { width:68px; } }
 
 /* Compact service-first Overview workspace. */
 .overview-workspace { display:grid; gap:16px; max-width:880px; margin:0 auto; }

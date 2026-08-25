@@ -3674,10 +3674,41 @@ function renderIndependentMobilePage(page, data, target) {
   refreshIcons(); return true;
 }
 
+function renderServerNavigationPerformance(nodes = []) {
+  const indicator = document.getElementById('server-nav-performance');
+  if (!indicator) return;
+  const reported = nodes.filter((node) => node.load_percent != null && Number.isFinite(Number(node.load_percent)));
+  if (!reported.length) {
+    indicator.className = 'nav-server-performance is-unavailable';
+    indicator.setAttribute('aria-label', 'Server performance waiting for a node report');
+    indicator.setAttribute('aria-valuenow', '0');
+    indicator.title = 'Waiting for a server performance report';
+    indicator.firstElementChild?.style.setProperty('width', '0%');
+    return;
+  }
+  const load = Math.round(reported.reduce((total, node) => total + Number(node.load_percent), 0) / reported.length);
+  const tone = load >= 85 ? 'is-high' : load >= 65 ? 'is-elevated' : 'is-healthy';
+  indicator.className = `nav-server-performance ${tone}`;
+  indicator.setAttribute('aria-label', `Average server load ${load} percent across ${reported.length} reporting ${reported.length === 1 ? 'node' : 'nodes'}`);
+  indicator.setAttribute('aria-valuenow', String(load));
+  indicator.title = `Average server load: ${load}% across ${reported.length} reporting ${reported.length === 1 ? 'node' : 'nodes'}`;
+  indicator.firstElementChild?.style.setProperty('width', `${load}%`);
+}
+
+async function loadServerNavigationPerformance() {
+  try {
+    const fleet = await api('/platform/fleet');
+    renderServerNavigationPerformance(fleet.nodes || []);
+  } catch (_) {
+    renderServerNavigationPerformance([]);
+  }
+}
+
 function renderRemoteServersWorkspace(target) {
   target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading fleet records…</p></section>';
   api('/platform/fleet').then(fleet => {
     const nodes = fleet.nodes || [];
+    renderServerNavigationPerformance(nodes);
     const balancer = fleet.load_balancer || {};
     const summary = fleet.summary || {};
     const nodeCards = nodes.map(node => {
@@ -7412,6 +7443,7 @@ loadProjects();
 loadSettings();
 loadTokens();
 void loadGithubSourceStatus();
+void loadServerNavigationPerformance();
 appContext = getContext();
 applyContext();
 startStatsPoll();
@@ -8427,6 +8459,7 @@ function showLegacyAccountApp(account) {
   // session existed. Refresh it after authentication so Connect GitHub does
   // not remain disabled with a stale unauthenticated response.
   void loadGithubSourceStatus();
+  void loadServerNavigationPerformance();
 }
 
 function legacyAccountLoginMarkup(setup) {
