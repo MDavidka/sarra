@@ -8276,7 +8276,41 @@ function showLegacyAccountApp(account) {
 }
 
 function legacyAccountLoginMarkup(setup) {
-  return `<div class="account-login-card"><div class="account-login-icon"><i data-lucide="lock-keyhole"></i></div><p class="account-login-kicker">${setup ? 'First workspace account' : 'Syte secure workspace'}</p><h1>${setup ? 'Create your owner account' : 'Sign in to Syte'}</h1><p>${setup ? 'Set the email and password used to administer this Syte instance.' : 'Use your email and password to continue to your protected workspace.'}</p><form id="legacy-account-login-form" class="account-login-form">${setup ? '<label for="legacy-account-name">Display name</label><input id="legacy-account-name" maxlength="120" placeholder="Your name">' : ''}<label for="legacy-account-email">Email address</label><input id="legacy-account-email" type="email" autocomplete="email" placeholder="you@example.com" required><label for="legacy-account-password">Password</label><input id="legacy-account-password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" minlength="${setup ? 12 : 1}" placeholder="${setup ? 'At least 12 characters' : 'Your password'}" required><button class="btn-pill btn-primary" type="submit">${setup ? 'Create account' : 'Sign in'}</button></form><p id="legacy-account-login-error" class="account-login-error"></p>${!setup ? '<button id="legacy-account-setup-switch" class="account-login-switch" type="button">Need to set up this instance?</button>' : ''}</div>`;
+  const title = setup ? 'Create an account' : 'Welcome back';
+  const description = setup
+    ? 'Create your Sycord workspace account to continue.'
+    : 'Enter your details to access your workspace.';
+  const switcher = setup
+    ? '<p class="account-auth-switch">Already have an account? <button id="legacy-account-login-switch" type="button">Log in</button></p>'
+    : '<p class="account-auth-switch">First time here? <button id="legacy-account-setup-switch" type="button">Create an account</button></p>';
+  return `<div class="account-auth-layout">
+    <aside class="account-auth-aside" aria-label="Sycord introduction">
+      <a class="account-auth-brand" href="/" aria-label="Sycord home"><img src="/static/syte-logo.png?v=__VERSION__" alt=""><span>Sycord</span></a>
+      <blockquote class="account-auth-quote">“A focused workspace for shipping projects with confidence.”<cite>— Sycord</cite></blockquote>
+    </aside>
+    <main class="account-auth-main">
+      <div class="account-auth-topbar">
+        <a class="account-auth-mobile-brand" href="/" aria-label="Sycord home"><img src="/static/syte-logo.png?v=__VERSION__" alt=""><span>Sycord</span></a>
+        ${switcher}
+      </div>
+      <section class="account-login-card" aria-labelledby="account-auth-title">
+        <div class="account-login-icon" aria-hidden="true"><i data-lucide="${setup ? 'user-round-plus' : 'lock-keyhole'}"></i></div>
+        <h1 id="account-auth-title">${title}</h1>
+        <p class="account-auth-description">${description}</p>
+        <form id="legacy-account-login-form" class="account-login-form">
+          ${setup ? '<label for="legacy-account-name">Name</label><input id="legacy-account-name" maxlength="120" autocomplete="name" placeholder="Your name" required>' : ''}
+          <label for="legacy-account-email">Email address</label>
+          <input id="legacy-account-email" type="email" autocomplete="email" placeholder="name@example.com" required>
+          <label for="legacy-account-password">Password</label>
+          <input id="legacy-account-password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" minlength="${setup ? 12 : 1}" placeholder="${setup ? 'At least 12 characters' : 'Enter your password'}" required>
+          <button class="account-auth-submit" type="submit">${setup ? 'Create account' : 'Sign in'}</button>
+        </form>
+        <div class="account-auth-divider" aria-hidden="true"><span></span><small>SECURE ACCESS</small><span></span></div>
+        <p class="account-auth-terms">By continuing, you agree to the workspace access policy and responsible-use terms.</p>
+        <p id="legacy-account-login-error" class="account-login-error" role="alert"></p>
+      </section>
+    </main>
+  </div>`;
 }
 
 async function initializeLegacyAccountGate() {
@@ -8309,6 +8343,7 @@ async function initializeLegacyAccountGate() {
         } catch (err) { if (error) error.textContent = err.message; }
       });
       screen.querySelector('#legacy-account-setup-switch')?.addEventListener('click', () => { setup = true; render(); });
+      screen.querySelector('#legacy-account-login-switch')?.addEventListener('click', () => { setup = false; render(); });
       refreshIcons();
     };
     render();
