@@ -6,6 +6,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Sycord</title>
   <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="apple-touch-icon" href="/static/syte-logo.png?v=__VERSION__">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
   <link rel="stylesheet" href="/static/auth.css?v=__VERSION__">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css" crossorigin="anonymous">
@@ -67,7 +70,7 @@
           <div class="coolify-nav-section">
             <p class="nav-section-label">Settings</p>
             <button type="button" class="nav-sublink" data-view="settings"><i data-lucide="settings-2"></i><span>Settings</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="api"><i data-lucide="braces"></i><span>API</span></button>
+            <button type="button" class="nav-sublink" data-view="users"><i data-lucide="braces"></i><span>API</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="sessions"><i data-lucide="smartphone"></i><span>Session</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="git"><i data-lucide="git-branch"></i><span>Git</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="dns-providers"><i data-lucide="globe-2"></i><span>DNS</span></button>
@@ -81,8 +84,8 @@
           </div>
           <div class="coolify-nav-section coolify-nav-section-bottom">
             <p class="nav-section-label">Help</p>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="documentation"><i data-lucide="book-open"></i><span>Documentation</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="support"><i data-lucide="life-buoy"></i><span>Support</span></button>
+            <a class="nav-sublink" href="/api/"><i data-lucide="book-open"></i><span>Documentation</span></a>
+            <a class="nav-sublink" href="mailto:support@sycord.com"><i data-lucide="life-buoy"></i><span>Support</span></a>
           </div>
           <div class="coolify-account-card">
             <span class="coolify-account-avatar"><i data-lucide="user-round"></i></span>
@@ -215,6 +218,8 @@
                 <div class="deploy-detection-grid" id="deploy-detection-grid"></div>
                 <div class="deploy-env-panel"><div><h3>Suggested environment variables</h3><p>Only variable names and source locations are detected. Values are never read or imported.</p></div><div id="deploy-env-suggestions" class="deploy-env-suggestions"></div></div>
                 <label class="deploy-env-editor" for="create-env-vars"><span>Environment values</span><textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea></label>
+                <label class="deploy-notification-optin" for="create-in-app-notifications"><input id="create-in-app-notifications" type="checkbox" checked><span><strong>Notify in Sycord PWA</strong><small>Show deployment, project, preview, domain, and health events in the installed app. On iPhone, install Sycord to Home Screen before enabling device alerts.</small></span></label>
+
                 <details class="deploy-build-overrides"><summary>Build settings <i data-lucide="chevron-down"></i></summary><div><label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label><label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label></div></details>
               </section>
 

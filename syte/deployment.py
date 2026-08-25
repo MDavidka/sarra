@@ -220,6 +220,7 @@ async def create_project_record(
     project_uuid: str | None = None,
     deploy_now: bool = False,
     stack: str | None = None,
+    in_app_notifications: bool = False,
 ) -> tuple[dict | None, str]:
     """Create an empty project workspace. Git and files are optional — add anytime, deploy anytime."""
     from syte.database import list_projects
@@ -255,6 +256,7 @@ async def create_project_record(
         "start_command": start_command or "",
         "env_vars": merged_env,
         "deploy_type": "docker",
+        "in_app_notifications": in_app_notifications,
     })
 
     ensure_workspace(project_id)
@@ -301,6 +303,7 @@ async def begin_deploy_service(
     git_provider: str | None = None,
     project_uuid: str | None = None,
     stack: str | None = None,
+    in_app_notifications: bool = False,
 ) -> tuple[dict | None, str]:
     """Create project and immediately start deploy (GUI flow)."""
     return await create_project_record(
@@ -314,6 +317,7 @@ async def begin_deploy_service(
         project_uuid=project_uuid,
         deploy_now=True,
         stack=stack,
+        in_app_notifications=in_app_notifications,
     )
 
 
@@ -333,6 +337,14 @@ async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
                 "error": None if status == "succeeded" else output[-1000:],
             },
         )
+        from syte.notifications import publish_project_event
+        project_name = str((project or {}).get("name") or project_id)
+        await publish_project_event(
+            f"deployment.{status}",
+            project_id=project_id,
+            message=f"Deployment for {project_name} {status}.",
+            payload={"run_id": run_id, "status": status},
+        )
         return output
     except asyncio.CancelledError:
         await update_deployment_run(
@@ -342,6 +354,13 @@ async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "duration_ms": int((time.monotonic() - started) * 1000),
             },
+        )
+        from syte.notifications import publish_project_event
+        await publish_project_event(
+            "deployment.cancelled",
+            project_id=project_id,
+            message=f"Deployment for {project_id} was cancelled.",
+            payload={"run_id": run_id},
         )
         raise
     except Exception as exc:
@@ -353,6 +372,13 @@ async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
                 "duration_ms": int((time.monotonic() - started) * 1000),
                 "error": str(exc),
             },
+        )
+        from syte.notifications import publish_project_event
+        await publish_project_event(
+            "deployment.failed",
+            project_id=project_id,
+            message=f"Deployment for {project_id} failed: {exc}",
+            payload={"run_id": run_id, "error": str(exc)},
         )
         raise
 
@@ -377,20 +403,13 @@ async def issue_deploy(project_id: str, trigger: str = "manual") -> tuple[dict |
             _deploy_running.pop(project_id, None)
 
     task.add_done_callback(_clear)
-    try:
-        from syte.webhooks import EVENT_SITE_DEPLOYED, emit_webhook
-
-        domain = project.get("domain") or ""
-        await emit_webhook(
-            EVENT_SITE_DEPLOYED,
-            {
-                "project_id": project_id,
-                "domain": domain,
-                "status": "deploying",
-            },
-        )
-    except Exception:
-        pass
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "deployment.queued",
+        project_id=project_id,
+        message=f"Deployment for {project.get('name', project_id)} was queued.",
+        payload={"trigger": trigger, "domain": project.get("domain") or ""},
+    )
     return project, (
         f"Deploy issued for {project_id}. "
         f"Stream logs: GET /api/projects/{project_id}/logs/stream"

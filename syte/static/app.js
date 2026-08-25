@@ -3171,7 +3171,7 @@ const BREADCRUMBS = {
   service: 'Project',
   sycord: 'Sycord',
   'server-swarm': 'Server Swarm',
-  users: 'Users',
+  users: 'API',
   logs: 'Logs',
   ai: 'AI',
   models: 'Models',
@@ -3417,7 +3417,7 @@ let activePlatformPage = 'overview';
 const PLATFORM_PAGE_LABELS = {
   projects: 'Projects', overview: 'Overview', schedules: 'Schedules', traefik: 'Traefik File System', docker: 'Docker',
   profile: 'Profile', sessions: 'Sessions', 'remote-servers': 'Remote Servers', 'audit-logs': 'Audit Logs', 'ssh-keys': 'SSH Keys',
-  api: 'API Access', ai: 'AI', tags: 'Tags', git: 'Git', registry: 'Registry', secrets: 'Secrets', 'dns-providers': 'DNS Providers',
+  ai: 'AI', tags: 'Tags', git: 'Git', registry: 'Registry', secrets: 'Secrets', 'dns-providers': 'DNS Providers',
   's3-destinations': 'S3 Destinations', certificates: 'Certificates', notifications: 'Notifications', billing: 'Billing',
   license: 'License', sso: 'SSO', documentation: 'Documentation', support: 'Support',
 };
@@ -3433,7 +3433,6 @@ const PLATFORM_PAGE_BLUEPRINTS = {
   'remote-servers': {heading:'Deployment nodes', control:'server-form', columns:['name','status','ip','proxy']},
   'audit-logs': {heading:'Recent audit events', control:'audit-actions', columns:['created_at','event','source','status']},
   'ssh-keys': {heading:'Deployment credentials', control:'key-form', columns:['name','fingerprint','created_at']},
-  api: {heading:'API access', control:'documentation-actions', columns:['name','url','method','status']},
   ai: {heading:'Model providers', control:'ai-actions', columns:['provider','model','enabled','updated_at']},
   tags: {heading:'Resource tags', control:'tag-form', columns:['name','color','resource_count']},
   git: {heading:'Git providers and repositories', control:'git-form', columns:['name','provider','url','status']},
@@ -3840,7 +3839,8 @@ async function loadPlatformPage(page = 'overview') {
   const isProfile = safePage === 'profile';
   const isRemoteServers = safePage === 'remote-servers';
   const isGit = safePage === 'git';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit;
+  const isNotifications = safePage === 'notifications';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
@@ -3856,6 +3856,10 @@ async function loadPlatformPage(page = 'overview') {
   }
   if (isGit) {
     await renderGitWorkspace();
+    return;
+  }
+  if (isNotifications) {
+    await renderNotificationWorkspace();
     return;
   }
   if (isOverview) {
@@ -5590,26 +5594,28 @@ async function fastAddGithubRepository(fullName) {
   const repository = githubSourceRepositories.find((item) => item.full_name === fullName) || { full_name: fullName, name: fullName.split('/')[1] || fullName, default_branch: 'main' };
   const repoName = repository.name || fullName.split('/')[1] || fullName;
   const branch = repository.default_branch || 'main';
-  toast(`Fast adding repository ${fullName}…`);
+  toast(`Preparing quick deployment for ${fullName}…`);
   try {
     const result = await api('/projects/import/github', {
       method: 'POST',
       body: JSON.stringify({
         name: repoName,
         repository: repository.full_name,
-        branch: branch,
-        base_directory: '/'
+        branch,
+        base_directory: '/',
+        in_app_notifications: true,
       })
     });
-    toast(`Successfully added project ${result.project?.name || repoName}`);
+    if (!result.project?.id) throw new Error('The repository was imported but no project was created.');
+    await api(`/projects/${result.project.id}/deploy-detected`, {
+      method: 'POST',
+      body: JSON.stringify({base_directory: '/', env_vars: {}, in_app_notifications: true}),
+    });
+    toast(`Quick deployment queued for ${result.project.name || repoName}`);
     await loadProjects();
-    if (result.project?.id) {
-      openService(result.project.id);
-    } else {
-      showView('dashboard');
-    }
+    openService(result.project.id);
   } catch (error) {
-    toast(normalizeFetchError(error?.message) || 'Could not fast add repository.');
+    toast(normalizeFetchError(error?.message) || 'Could not quick deploy this repository.');
   }
 }
 
@@ -5643,7 +5649,7 @@ async function renderGitWorkspace() {
             ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
           </div>
           <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
-            <i data-lucide="plus"></i><span>Fast Add</span>
+            <i data-lucide="rocket"></i><span>Quick Deploy</span>
           </button>
         </article>
       `).join('')
@@ -5655,7 +5661,7 @@ async function renderGitWorkspace() {
           <div>
             <p>Source & Integration</p>
             <h2>Git Account & Repositories</h2>
-            <span>View connected Git account and fast add repositories to Syte.</span>
+            <span>Connect GitHub, browse permitted repositories, quick deploy a detected build, or disconnect at any time.</span>
           </div>
         </header>
         <section class="legacy-fleet-control-card" style="padding:18px;margin-bottom:20px;">
@@ -5700,7 +5706,7 @@ async function renderGitWorkspace() {
             ${repo.description ? `<p style="margin:4px 0 0;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(repo.description)}</p>` : ''}
           </div>
           <button type="button" class="btn-pill btn-primary git-tab-fast-add" data-fast-add-repo="${esc(repo.full_name)}">
-            <i data-lucide="plus"></i><span>Fast Add</span>
+            <i data-lucide="rocket"></i><span>Quick Deploy</span>
           </button>
         </article>
       `).join('') || '<p class="dedicated-empty">No repositories match filter.</p>';
@@ -5716,6 +5722,130 @@ async function renderGitWorkspace() {
     refreshIcons();
   } catch (error) {
     target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Git workspace unavailable: ${esc(error.message)}</p></section>`;
+  }
+}
+
+let sycordPwaRegistration = null;
+
+function base64UrlToUint8Array(value) {
+  const padded = `${value}${'='.repeat((4 - value.length % 4) % 4)}`.replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(padded);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function registerSycordPwa() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+  try {
+    sycordPwaRegistration = await navigator.serviceWorker.register('/service-worker.js', {scope: '/'});
+    return sycordPwaRegistration;
+  } catch (error) {
+    console.warn('Sycord PWA registration failed', error);
+    return null;
+  }
+}
+
+async function enableSycordPwaAlerts() {
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    throw new Error('This browser does not support PWA alerts.');
+  }
+  const registration = sycordPwaRegistration || await registerSycordPwa();
+  if (!registration) throw new Error('PWA registration is unavailable. Open Sycord over HTTPS and try again.');
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') throw new Error('Allow notifications in the browser or iPhone settings to enable alerts.');
+  const key = await api('/notifications/push/vapid-public-key');
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToUint8Array(key.public_key),
+    });
+  }
+  await api('/notifications/push-subscriptions', {method: 'POST', body: JSON.stringify({subscription: subscription.toJSON()})});
+  return 'This device can now receive Sycord PWA alerts.';
+}
+
+function notificationTime(value) {
+  if (!value) return 'Just now';
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString();
+}
+
+function notificationSettingValue(settings, section, key, fallback = '') {
+  return settings?.[section]?.[key] ?? fallback;
+}
+
+async function renderNotificationWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading notification settings…</p></section>';
+  try {
+    const [settings, eventData] = await Promise.all([api('/notifications/settings'), api('/notifications')]);
+    const notifications = eventData.notifications || [];
+    const browserSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator;
+    const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+    const eventRows = notifications.length ? notifications.map((item) => `<article class="sycord-notification-row ${item.is_read ? 'is-read' : ''}"><span class="sycord-notification-icon"><i data-lucide="${item.event.includes('failed') ? 'triangle-alert' : item.event.includes('deployment') ? 'rocket' : 'bell'}"></i></span><div><strong>${esc(item.title)}</strong><p>${esc(item.message)}</p><small>${esc(notificationTime(item.created_at))}</small></div></article>`).join('') : '<p class="dedicated-empty">No in-app notifications yet. Enable the PWA option while adding a web app, then project actions will appear here.</p>';
+    target.innerHTML = `
+      <section class="legacy-fleet-page sycord-notify-page">
+        <header class="legacy-fleet-header"><div><p>Delivery & alerts</p><h2>Notifications</h2><span>Choose how Sycord reports every supported project action.</span></div></header>
+        <div class="sycord-notify-grid">
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="smartphone"></i><div><h3>Sycord PWA alerts</h3><p>Installed PWA notifications and an in-app activity centre. On iPhone, add Sycord to Home Screen before enabling alerts.</p></div></div>
+            <div class="sycord-notify-status"><span class="${browserSupported ? 'is-ready' : 'is-muted'}">${browserSupported ? (permission === 'granted' ? 'Device permission granted' : 'Permission required') : 'Not supported by this browser'}</span></div>
+            <div class="sycord-notify-actions"><button type="button" class="btn-pill btn-primary" id="notify-enable-pwa" ${browserSupported ? '' : 'disabled'}><i data-lucide="bell-ring"></i><span>Enable device alerts</span></button><button type="button" class="btn-pill btn-ghost" id="notify-test"><i data-lucide="send"></i><span>Send test</span></button></div>
+          </section>
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="mail"></i><div><h3>Email delivery</h3><p>Send all supported actions to configured workspace recipients.</p></div></div>
+            <form id="notification-settings-form" class="sycord-notify-form">
+              <label class="sycord-toggle"><input type="checkbox" id="notify-email-enabled" ${notificationSettingValue(settings, 'email', 'enabled') ? 'checked' : ''}><span>Enable email delivery</span></label>
+              <label>Recipients<textarea id="notify-email-recipients" rows="2" placeholder="ops@example.com\nteam@example.com">${esc(notificationSettingValue(settings, 'email', 'recipients'))}</textarea></label>
+              <div class="sycord-notify-form-row"><label>SMTP host<input id="notify-smtp-host" value="${esc(notificationSettingValue(settings, 'email', 'smtp_host'))}" placeholder="smtp.example.com"></label><label>Port<input id="notify-smtp-port" type="number" min="1" max="65535" value="${esc(String(notificationSettingValue(settings, 'email', 'smtp_port', 587)))}"></label></div>
+              <div class="sycord-notify-form-row"><label>Sender<input id="notify-email-sender" type="email" value="${esc(notificationSettingValue(settings, 'email', 'sender'))}" placeholder="alerts@sycord.com"></label><label>SMTP username<input id="notify-smtp-username" value="${esc(notificationSettingValue(settings, 'email', 'smtp_username'))}" placeholder="optional"></label></div>
+              <label>SMTP password<input id="notify-smtp-password" type="password" autocomplete="new-password" placeholder="${notificationSettingValue(settings, 'email', 'password_set') ? 'Saved — leave blank to keep' : 'Optional if your SMTP server does not require it'}"></label>
+              <label class="sycord-toggle"><input type="checkbox" id="notify-smtp-tls" ${notificationSettingValue(settings, 'email', 'use_tls', true) ? 'checked' : ''}><span>Use STARTTLS</span></label>
+              <button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save channels</span></button>
+            </form>
+          </section>
+          <section class="legacy-fleet-control-card sycord-notify-card">
+            <div class="sycord-notify-card-heading"><i data-lucide="webhook"></i><div><h3>Webhook delivery</h3><p>Post structured event data to automation, chat, or incident tools.</p></div></div>
+            <label class="sycord-toggle"><input type="checkbox" id="notify-webhook-enabled" ${notificationSettingValue(settings, 'webhook', 'enabled') ? 'checked' : ''}><span>Enable webhook delivery</span></label>
+            <label class="sycord-webhook-label">Destination URLs<textarea id="notify-webhook-urls" rows="7" placeholder="https://hooks.example.com/sycord">${esc(notificationSettingValue(settings, 'webhook', 'urls'))}</textarea><small>One HTTPS endpoint per line. Sycord posts the event, title, message, project, time, and safe action metadata.</small></label>
+          </section>
+        </div>
+        <section class="legacy-fleet-control-card sycord-notification-history"><div class="sycord-notify-history-head"><div><p>Installed app activity</p><h3>In-app notifications <span>${eventData.unread_count || 0} unread</span></h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="notify-read-all"><i data-lucide="check-check"></i><span>Mark all read</span></button></div><div class="sycord-notification-list">${eventRows}</div></section>
+      </section>`;
+    target.querySelector('#notify-enable-pwa')?.addEventListener('click', async () => {
+      try { toast(await enableSycordPwaAlerts()); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not enable PWA alerts.'); }
+    });
+    target.querySelector('#notify-test')?.addEventListener('click', async () => {
+      try { const result = await api('/notifications/test', {method: 'POST'}); toast(result.message); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not send test notification.'); }
+    });
+    target.querySelector('#notify-read-all')?.addEventListener('click', async () => {
+      await api('/notifications/read', {method: 'POST', body: JSON.stringify({event_ids: []})});
+      await renderNotificationWorkspace();
+    });
+    target.querySelector('#notification-settings-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = {email: {
+        enabled: Boolean(target.querySelector('#notify-email-enabled')?.checked),
+        recipients: target.querySelector('#notify-email-recipients')?.value || '',
+        smtp_host: target.querySelector('#notify-smtp-host')?.value || '',
+        smtp_port: Number(target.querySelector('#notify-smtp-port')?.value || 587),
+        smtp_username: target.querySelector('#notify-smtp-username')?.value || '',
+        smtp_password: target.querySelector('#notify-smtp-password')?.value || '',
+        sender: target.querySelector('#notify-email-sender')?.value || '',
+        use_tls: Boolean(target.querySelector('#notify-smtp-tls')?.checked),
+      }, webhook: {
+        enabled: Boolean(target.querySelector('#notify-webhook-enabled')?.checked),
+        urls: target.querySelector('#notify-webhook-urls')?.value || '',
+      }};
+      try { const result = await api('/notifications/settings', {method: 'PUT', body: JSON.stringify(payload)}); toast(result.message); await renderNotificationWorkspace(); }
+      catch (error) { toast(error.message || 'Could not save notification settings.'); }
+    });
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Notifications are unavailable: ${esc(error.message)}</p></section>`;
   }
 }
 
@@ -6456,20 +6586,21 @@ async function importProjectSource() {
   const name = document.getElementById('create-name')?.value.trim();
   if (!name) throw new Error('Enter a project name');
   const baseDirectory = (document.getElementById(projectImportSource === 'git' ? 'create-base-directory' : 'create-zip-base-directory')?.value || '/').trim() || '/';
+  const inAppNotifications = Boolean(document.getElementById('create-in-app-notifications')?.checked);
   if (projectImportSource === 'git') {
     const gitUrl = document.getElementById('create-git-url')?.value.trim();
     const branch = (githubSourceSelection ? document.getElementById('github-branch-select')?.value : document.getElementById('create-branch')?.value)?.trim() || 'main';
     if (githubSourceSelection) {
       if (!document.getElementById('github-branch-select')?.value) throw new Error('Choose a branch for the connected GitHub repository');
-      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory }) });
+      return api('/projects/import/github', { method: 'POST', body: JSON.stringify({ name, repository: githubSourceSelection.full_name, branch, base_directory: baseDirectory, in_app_notifications: inAppNotifications }) });
     }
     if (!gitUrl) throw new Error('Enter a repository URL or choose a connected GitHub repository');
-    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory }) });
+    return api('/projects/import/repository', { method: 'POST', body: JSON.stringify({ name, git_url: gitUrl, branch, base_directory: baseDirectory, in_app_notifications: inAppNotifications }) });
   }
   const archive = document.getElementById('create-source-zip')?.files?.[0];
   if (!archive) throw new Error('Choose a ZIP archive');
   const form = new FormData();
-  form.set('name', name); form.set('base_directory', baseDirectory); form.set('archive', archive);
+  form.set('name', name); form.set('base_directory', baseDirectory); form.set('in_app_notifications', String(inAppNotifications)); form.set('archive', archive);
   return api('/projects/import/zip', { method: 'POST', body: form });
 }
 
@@ -6487,7 +6618,7 @@ async function deployImportedProject() {
   const envVars = parseEnv(document.getElementById('create-env-vars')?.value || '');
   const startCommand = document.getElementById('create-start-cmd')?.value.trim() || null;
   const result = await api(`/projects/${importedProjectId}/deploy-detected`, {
-    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand }),
+    method: 'POST', body: JSON.stringify({ base_directory: baseDirectory, env_vars: envVars, start_command: startCommand, in_app_notifications: Boolean(document.getElementById('create-in-app-notifications')?.checked) }),
   });
   return result;
 }
@@ -7264,9 +7395,10 @@ appContext = getContext();
 applyContext();
 startStatsPoll();
 setupCrashScreenHandlers();
+void registerSycordPwa();
 refreshIcons();
-
 // Surface real errors instead of the blank cross-origin "Script error." toast/dialog.
+
 // Same-origin lucide is vendored under /static/vendor/; remaining CDN risk is Shoelace.
 window.addEventListener('error', (event) => {
   const msg = String(event?.message || event?.error?.message || '');

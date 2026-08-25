@@ -28,7 +28,9 @@ def test_main_navigation_has_exact_requested_subtab_groups():
     ]
 
 
-def test_api_navigation_target_is_registered():
+def test_api_navigation_target_uses_the_personal_token_screen():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
     app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
-    assert "api: 'API Access'" in app
-    assert "api: {heading:'API access'" in app
+    assert 'data-view="users"><i data-lucide="braces"></i><span>API</span>' in index
+    assert "users: 'API'" in app
+    assert "if (name === 'users') loadTokens();" in app

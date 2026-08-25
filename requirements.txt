@@ -8,3 +8,4 @@ python-multipart==0.0.20
 httpx[http2]>=0.28.1,<1
 h2>=4.1,<5
 cryptography>=43,<46
+pywebpush>=2.0,<3

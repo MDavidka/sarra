@@ -196,6 +196,7 @@ class CreateServiceRequest(BaseModel):
     env_vars: dict[str, str] = Field(default_factory=dict)
     domain: str | None = None
     stack: str | None = "nextjs"
+    in_app_notifications: bool = False
 
 
 class ProjectRepositoryImportRequest(BaseModel):
@@ -203,6 +204,7 @@ class ProjectRepositoryImportRequest(BaseModel):
     git_url: str = Field(min_length=8, max_length=2048)
     branch: str = Field(default="main", min_length=1, max_length=255)
     base_directory: str = Field(default="/", max_length=255)
+    in_app_notifications: bool = False
 
 
 class GitHubConnectedImportRequest(BaseModel):
@@ -210,6 +212,7 @@ class GitHubConnectedImportRequest(BaseModel):
     repository: str = Field(min_length=3, max_length=255)
     branch: str = Field(default="main", min_length=1, max_length=255)
     base_directory: str = Field(default="/", max_length=255)
+    in_app_notifications: bool = False
 
 
 class GitHubOAuthConfigRequest(BaseModel):
@@ -226,6 +229,36 @@ class DetectedDeploymentRequest(ProjectSourceAnalysisRequest):
     env_vars: dict[str, str] = Field(default_factory=dict)
     start_command: str | None = Field(default=None, max_length=1000)
     domain: str | None = Field(default=None, max_length=253)
+    in_app_notifications: bool | None = None
+
+
+class NotificationEmailSettingsRequest(BaseModel):
+    enabled: bool = False
+    recipients: str = Field(default="", max_length=2000)
+    smtp_host: str = Field(default="", max_length=255)
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = Field(default="", max_length=255)
+    smtp_password: str | None = Field(default=None, max_length=1024)
+    sender: str = Field(default="", max_length=320)
+    use_tls: bool = True
+
+
+class NotificationWebhookSettingsRequest(BaseModel):
+    enabled: bool = False
+    urls: str = Field(default="", max_length=5000)
+
+
+class NotificationSettingsRequest(BaseModel):
+    email: NotificationEmailSettingsRequest = Field(default_factory=NotificationEmailSettingsRequest)
+    webhook: NotificationWebhookSettingsRequest = Field(default_factory=NotificationWebhookSettingsRequest)
+
+
+class PwaPushSubscriptionRequest(BaseModel):
+    subscription: dict[str, Any]
+
+
+class NotificationReadRequest(BaseModel):
+    event_ids: list[str] = Field(default_factory=list, max_length=250)
 
 
 class DeploymentConfigRequest(BaseModel):
@@ -289,6 +322,104 @@ async def api_documentation():
     html = (STATIC_DIR / "api-docs.html").read_text()
     html = html.replace("__VERSION__", __version__)
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def pwa_manifest():
+    return HTMLResponse(
+        (STATIC_DIR / "manifest.webmanifest").read_text(),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": NO_CACHE},
+    )
+
+
+@app.get("/service-worker.js", include_in_schema=False)
+async def pwa_service_worker():
+    return HTMLResponse(
+        (STATIC_DIR / "service-worker.js").read_text(),
+        media_type="application/javascript",
+        headers={"Cache-Control": NO_CACHE},
+    )
+
+
+@app.get("/api/notifications/settings")
+async def api_notification_settings(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    from syte.notifications import notification_settings_payload
+
+    return await notification_settings_payload()
+
+
+@app.put("/api/notifications/settings")
+async def api_save_notification_settings(
+    body: NotificationSettingsRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.notifications import save_notification_settings
+
+    try:
+        settings_payload = await save_notification_settings(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ok": True, "settings": settings_payload, "message": "Notification settings saved."}
+
+
+@app.get("/api/notifications")
+async def api_list_notifications(
+    limit: int = 100,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.database import list_notification_events
+
+    events = await list_notification_events(limit)
+    return {"notifications": events, "unread_count": sum(1 for item in events if not item["is_read"])}
+
+
+@app.post("/api/notifications/read")
+async def api_mark_notifications_read(
+    body: NotificationReadRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from syte.database import mark_notification_events_read
+
+    return {"ok": True, "updated": await mark_notification_events_read(body.event_ids or None)}
+
+
+@app.get("/api/notifications/push/vapid-public-key")
+async def api_pwa_vapid_public_key(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    from syte.notifications import vapid_public_key
+
+    return {"public_key": await vapid_public_key()}
+
+
+@app.post("/api/notifications/push-subscriptions")
+async def api_save_pwa_push_subscription(
+    body: PwaPushSubscriptionRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    from urllib.parse import urlparse
+    from syte.database import upsert_pwa_push_subscription
+
+    subscription = body.subscription
+    endpoint = str(subscription.get("endpoint") or "")
+    keys = subscription.get("keys") or {}
+    parsed = urlparse(endpoint)
+    if parsed.scheme != "https" or not parsed.netloc or not keys.get("p256dh") or not keys.get("auth"):
+        raise HTTPException(422, "Use a valid HTTPS browser push subscription.")
+    await upsert_pwa_push_subscription(str(_operator["id"]), subscription)
+    return {"ok": True, "message": "This device is registered for Sycord PWA notifications."}
+
+
+@app.post("/api/notifications/test")
+async def api_test_notification(_operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    from syte.notifications import publish_project_event
+
+    await publish_project_event(
+        "notification.test",
+        project_id=None,
+        message="Sycord notifications are connected on this device.",
+        force_in_app=True,
+    )
+    return {"ok": True, "message": "Test notification queued for configured channels."}
 
 
 def _account_payload(account: dict[str, Any]) -> dict[str, Any]:
@@ -840,9 +971,17 @@ async def api_create_project(body: CreateServiceRequest):
         env_vars=body.env_vars,
         domain=body.domain,
         stack=body.stack,
+        in_app_notifications=body.in_app_notifications,
     )
     if not project:
         raise HTTPException(500, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.created",
+        project_id=project["id"],
+        message=f"Project {project.get('name', project['id'])} was created.",
+        payload={"source": "project-create"},
+    )
     project = _enrich(project)
     return {
         "project": project,
@@ -987,6 +1126,7 @@ async def api_import_connected_github_project(
         git_url=selected["clone_url"],
         branch=body.branch.strip(),
         deploy_now=False,
+        in_app_notifications=body.in_app_notifications,
     )
     if not project:
         raise HTTPException(400, message)
@@ -1001,6 +1141,13 @@ async def api_import_connected_github_project(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     await update_project(project["id"], {"env_vars": analysis_metadata(analysis), "status": "created"})
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.imported",
+        project_id=project["id"],
+        message=f"GitHub repository {selected['full_name']} was imported for {project.get('name', project['id'])}.",
+        payload={"repository": selected["full_name"], "branch": body.branch.strip()},
+    )
     refreshed = await get_project(project["id"])
     return {"project": _enrich(refreshed or project), "analysis": analysis, "message": "Connected GitHub repository imported."}
 
@@ -1020,6 +1167,7 @@ async def api_import_project_repository(body: ProjectRepositoryImportRequest):
         git_url=body.git_url.strip(),
         branch=body.branch.strip(),
         deploy_now=False,
+        in_app_notifications=body.in_app_notifications,
     )
     if not project:
         raise HTTPException(400, message)
@@ -1035,6 +1183,13 @@ async def api_import_project_repository(body: ProjectRepositoryImportRequest):
         raise HTTPException(400, str(exc)) from exc
     metadata = analysis_metadata(analysis)
     await update_project(project["id"], {"env_vars": metadata, "status": "created"})
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.imported",
+        project_id=project["id"],
+        message=f"Repository was imported for {project.get('name', project['id'])}.",
+        payload={"repository": body.git_url.strip(), "branch": body.branch.strip()},
+    )
     refreshed = await get_project(project["id"])
     return {
         "project": _enrich(refreshed or project),
@@ -1047,6 +1202,7 @@ async def api_import_project_repository(body: ProjectRepositoryImportRequest):
 async def api_import_project_zip(
     name: str = Form(...),
     base_directory: str = Form("/"),
+    in_app_notifications: bool = Form(False),
     archive: UploadFile = File(...),
 ):
     """Create a draft project and import a ZIP archive after path and size validation."""
@@ -1061,7 +1217,9 @@ async def api_import_project_zip(
     filename = (archive.filename or "").lower()
     if not filename.endswith(".zip"):
         raise HTTPException(400, "Upload a .zip project archive.")
-    project, message = await deployment.create_project_record(name=name.strip(), deploy_now=False)
+    project, message = await deployment.create_project_record(
+        name=name.strip(), deploy_now=False, in_app_notifications=in_app_notifications
+    )
     if not project:
         raise HTTPException(400, message)
     archive_path = ensure_workspace(project["id"]) / ".uploaded-source.zip"
@@ -1085,6 +1243,13 @@ async def api_import_project_zip(
         raise HTTPException(400, f"Could not import ZIP archive: {exc}") from exc
     finally:
         archive_path.unlink(missing_ok=True)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.imported",
+        project_id=project["id"],
+        message=f"ZIP source was imported for {project.get('name', project['id'])}.",
+        payload={"files": import_result["files"]},
+    )
     refreshed = await get_project(project["id"])
     return {
         "project": _enrich(refreshed or project),
@@ -1139,6 +1304,8 @@ async def api_deploy_detected_project(project_id: str, body: DetectedDeploymentR
     }
     if body.domain:
         updates["domain"] = normalize_domain(body.domain)
+    if body.in_app_notifications is not None:
+        updates["in_app_notifications"] = int(body.in_app_notifications)
     await update_project(project_id, updates)
     write_env_file(project_id, env_vars)
     updated, deploy_message = await deployment.issue_deploy(project_id, trigger="project-import")
@@ -1159,6 +1326,13 @@ async def api_update_project(project_id: str, body: UpdateProjectRequest):
     project = await update_project(project_id, updates)
     if not project:
         raise HTTPException(404, "Project not found")
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.updated",
+        project_id=project_id,
+        message=f"Project {project.get('name', project_id)} was updated.",
+        payload={"changed_fields": sorted(updates)},
+    )
     ok, msg = await apply_proxy_config()
     project = dict(project)
     project["running"] = _running(project)
@@ -1171,6 +1345,8 @@ async def api_start(project_id: str):
     project, message = await deployment.start_service(project_id)
     if not project:
         raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.started", project_id=project_id, message=f"Project {project.get('name', project_id)} was started.")
     return {"project": _enrich(project), "message": message}
 
 
@@ -1179,6 +1355,8 @@ async def api_stop(project_id: str):
     project, message = await deployment.stop_service(project_id)
     if not project:
         raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.stopped", project_id=project_id, message=f"Project {project.get('name', project_id)} was stopped.")
     return {"project": _enrich(project), "message": message}
 
 
@@ -1188,6 +1366,8 @@ async def api_git_update(project_id: str):
     project, message = await deployment.update_service(project_id)
     if not project:
         raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.repository_updated", project_id=project_id, message=f"Repository for {project.get('name', project_id)} was updated.")
     return {"project": _enrich(project), "message": message}
 
 
@@ -1198,14 +1378,25 @@ async def api_set_domain(project_id: str, body: DomainRequest):
     )
     if not project:
         raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.domain_updated", project_id=project_id, message=f"Domain for {project.get('name', project_id)} was updated to {project.get('domain') or body.domain}.")
     return {"project": _enrich(project), "message": message}
 
 
 @app.delete("/api/projects/{project_id}")
 async def api_delete(project_id: str):
+    project = await get_project(project_id)
     ok, message = await deployment.remove_service(project_id)
     if not ok:
         raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.deleted",
+        project_id=None,
+        message=f"Project {(project or {}).get('name', project_id)} was removed.",
+        payload={"project_id": project_id},
+        force_in_app=bool(project and project.get("in_app_notifications")),
+    )
     return {"ok": True, "message": message}
 
 
@@ -1215,6 +1406,9 @@ async def api_preview_start(project_id: str):
     ok, message, meta = await start_preview(project_id)
     if not ok:
         raise HTTPException(400, message)
+    from syte.notifications import publish_project_event
+    project = await get_project(project_id)
+    await publish_project_event("project.preview_started", project_id=project_id, message=f"Preview for {(project or {}).get('name', project_id)} was started.", payload=meta)
     return {"ok": True, "message": message, **meta}
 
 
@@ -1224,6 +1418,9 @@ async def api_preview_stop(project_id: str):
 
     await stop_preview_async(project_id)
     meta, _ = await get_preview_status(project_id)
+    from syte.notifications import publish_project_event
+    project = await get_project(project_id)
+    await publish_project_event("project.preview_stopped", project_id=project_id, message=f"Preview for {(project or {}).get('name', project_id)} was stopped.", payload=meta or {})
     return {"ok": True, "message": "Preview stopped", **(meta or {})}
 
 
@@ -1327,6 +1524,14 @@ async def api_project_health(project_id: str):
         result = {"healthy": response.status_code < 500, "status_code": response.status_code, "detail": response.reason_phrase}
     except Exception as exc:
         result = {"healthy": False, "status_code": None, "detail": str(exc)}
+    if not result["healthy"]:
+        from syte.notifications import publish_project_event
+        await publish_project_event(
+            "project.health_failed",
+            project_id=project_id,
+            message=f"Health check for {project.get('name', project_id)} failed: {result['detail']}",
+            payload={"url": url, **result},
+        )
     return {"project_id": project_id, "url": url, **result}
 
 
@@ -1341,6 +1546,13 @@ async def api_deployment_config(project_id: str, body: DeploymentConfigRequest):
     if updates.get("deploy_type") not in {None, "shell", "docker", "compose", "image"}:
         raise HTTPException(400, "deploy_type must be shell, docker, compose, or image")
     updated = await update_project(project_id, updates)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.deployment_config_updated",
+        project_id=project_id,
+        message=f"Deployment configuration for {project.get('name', project_id)} was updated.",
+        payload={"changed_fields": sorted(updates)},
+    )
     return {"ok": True, "project": _enrich(updated or project)}
 
 
