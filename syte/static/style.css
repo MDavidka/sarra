@@ -6144,3 +6144,59 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 @media (max-width:760px) { #view-service .svc-workspace-heading, #view-service .svc-cdn-workspace header, .certificate-workspace-header { align-items:stretch; flex-direction:column; } #view-service .svc-custom-domain-form, #view-service .svc-speed-form, #view-service .svc-deployment-settings-form { grid-template-columns:1fr; } #view-service .svc-env-cards { grid-template-columns:1fr; } #view-service .svc-firewall-lines>div { grid-template-columns:1fr; gap:5px; } #view-service .svc-speed-form>button, #view-service .svc-deployment-settings-form>button { width:100%; justify-content:center; } }
 @media (max-width:520px) { #view-service .svc-primary-domain { align-items:flex-start; flex-direction:column; } #view-service .svc-inline-actions { display:grid; grid-template-columns:1fr; } #view-service .svc-inline-actions .btn-pill { width:100%; justify-content:center; } #view-service .svc-rollback-run { grid-template-columns:9px minmax(0,1fr); } #view-service .svc-rollback-run>button, #view-service .svc-rollback-run>em { grid-column:2; justify-self:start; } .certificate-project-state { align-items:flex-start; flex-direction:column; } }
+
+/* Dedicated Certification screen: white, focused, and independent from generic platform panels. */
+.platform-workspace.is-certificates-workspace > .platform-page-head,
+.platform-workspace.is-certificates-workspace > .legacy-platform-panel,
+.platform-workspace.is-certificates-workspace > .platform-resource-grid,
+.platform-workspace.is-certificates-workspace > .platform-detail-panel,
+.platform-workspace.is-certificates-workspace > .platform-page-message { display:none!important; }
+.platform-workspace.is-certificates-workspace { width:100%; max-width:none; padding:0; background:#fff; }
+.platform-workspace.is-certificates-workspace > #platform-dedicated-page { width:100%; }
+.certificate-white-workspace { width:min(100%,860px); min-height:calc(100dvh - 180px); display:grid; align-content:start; gap:26px; margin:0 auto; padding:50px 30px 72px; background:#fff; }
+.certificate-white-hero { display:grid; grid-template-columns:58px minmax(0,1fr); align-items:center; gap:17px; padding:15px 0 8px; }
+.certificate-white-lock { display:grid; place-items:center; width:52px; height:52px; border-radius:14px; background:#eaf8ee; color:#26a757; }
+.certificate-white-lock svg { width:28px; height:28px; stroke-width:2.5; }
+.certificate-white-hero p, .certificate-white-issuer header p, .certificate-white-projects-head p { margin:0 0 5px; color:#8a8a8f; font-size:10px; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }
+.certificate-white-hero h2 { max-width:620px; margin:0; color:#171717; font-size:31px; line-height:1.13; letter-spacing:-.05em; }
+.certificate-white-hero h2 em { color:#32a85d; font-style:normal; }
+.certificate-white-hero span { display:block; max-width:620px; margin-top:8px; color:#737373; font-size:13px; line-height:1.55; }
+.certificate-white-provider { display:inline-flex; justify-self:start; align-items:center; gap:10px; min-height:46px; padding:0 15px; border:2px solid #dedede; border-radius:10px; background:#fff; color:#171717; font-size:15px; font-weight:800; }
+.certificate-white-provider img { width:26px; height:26px; object-fit:contain; }
+.certificate-white-provider small { margin-left:4px; padding-left:10px; border-left:1px solid #e3e3e3; color:#8a8a8f; font-size:10px; font-weight:750; }
+.certificate-white-issuer { display:grid; gap:18px; padding:23px 0 26px; border-top:1px solid #ececec; border-bottom:1px solid #ececec; }
+.certificate-white-issuer header h3, .certificate-white-projects-head h3 { margin:0; color:#171717; font-size:19px; letter-spacing:-.025em; }
+.certificate-white-issuer header span { display:block; max-width:590px; margin-top:5px; color:#737373; font-size:12px; line-height:1.5; }
+.certificate-white-issuer form { display:grid; grid-template-columns:minmax(170px,.9fr) minmax(210px,1.2fr) auto; gap:12px; align-items:end; }
+.certificate-white-issuer form label { display:grid; gap:7px; min-width:0; color:#626267; font-size:10px; font-weight:850; letter-spacing:.07em; text-transform:uppercase; }
+.certificate-white-issuer form select, .certificate-white-issuer form input:not([type="checkbox"]) { box-sizing:border-box; width:100%; height:47px; padding:0 13px; border:2px solid #dedede; border-radius:10px; background:#fff; color:#171717; font:inherit; font-size:14px; font-weight:700; letter-spacing:0; text-transform:none; }
+.certificate-white-issuer form select:focus, .certificate-white-issuer form input:not([type="checkbox"]):focus { outline:0; border-color:#32a85d; box-shadow:0 0 0 3px #eaf8ee; }
+.certificate-white-wildcard { grid-column:1/-1; display:flex!important; align-items:center; gap:9px; padding:1px 0; color:#616165!important; font-size:11px!important; letter-spacing:0!important; text-transform:none!important; cursor:pointer; }
+.certificate-white-wildcard input { width:16px; height:16px; accent-color:#32a85d; }
+.certificate-white-issuer form button { height:47px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 17px; border:0; border-radius:10px; background:#181818; color:#fff; font:inherit; font-size:12px; font-weight:850; white-space:nowrap; cursor:pointer; }
+.certificate-white-issuer form button:hover { background:#303030; }
+.certificate-white-issuer form button:disabled { cursor:not-allowed; opacity:.45; }
+.certificate-white-issuer form button svg { width:16px; height:16px; }
+.certificate-white-guide { min-height:20px; color:#717171; font-size:12px; line-height:1.55; }
+.certificate-white-guide > p { margin:0; }
+.certificate-white-guide .certificate-guide-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.certificate-white-guide .certificate-dns-state, .certificate-white-guide .certificate-proxy-state { display:inline-flex; padding:6px 9px; border-radius:999px; font-size:10px; font-weight:850; }
+.certificate-white-guide .certificate-dns-state.ok { background:#eaf8ee; color:#218c4d; }
+.certificate-white-guide .certificate-dns-state.bad { background:#fff2f0; color:#c24135; }
+.certificate-white-guide .certificate-proxy-state { background:#fff8e7; color:#9a6811; }
+.certificate-white-guide .certificate-guide-note { margin:10px 0!important; }
+.certificate-white-guide .certificate-records { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:14px; }
+.certificate-white-guide .certificate-records>div>p { margin:0 0 6px; color:#7b7b80; font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.certificate-white-guide .certificate-record { display:flex; justify-content:space-between; gap:11px; padding:12px; border:1px solid #e2e2e2; border-radius:10px; background:#fff; }
+.certificate-white-guide .certificate-record strong { color:#171717; font-size:10px; }.certificate-white-guide .certificate-record code { color:#2384bd; font-size:11px; }.certificate-white-guide .certificate-record span { color:#525257; font-size:11px; }.certificate-white-guide .certificate-record small { color:#9a6811; font-size:10px; }.certificate-white-guide .certificate-record button { align-self:start; padding:6px 8px; border:1px solid #dedede; border-radius:7px; background:#fafafa; color:#414146; font:inherit; font-size:10px; cursor:pointer; }
+.certificate-white-guide .certificate-provider-state { display:flex; align-items:center; gap:7px; margin-top:11px; color:#717171; font-size:11px; }.certificate-white-guide .certificate-provider-state img { width:20px; height:20px; }
+.certificate-white-projects { display:grid; gap:7px; }
+.certificate-white-projects-head { display:flex; align-items:end; justify-content:space-between; gap:15px; padding-top:4px; }
+.certificate-white-refresh { display:inline-flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid #dedede; border-radius:8px; background:#fff; color:#515156; font:inherit; font-size:11px; font-weight:800; cursor:pointer; }.certificate-white-refresh svg { width:14px; height:14px; }
+.certificate-white-projects .certificate-project-state { padding:13px 0; border-top:1px solid #ececec; }.certificate-white-projects .certificate-project-state em { background:#f4f4f5; }
+@media (max-width:620px) {
+  .certificate-white-workspace { min-height:calc(100dvh - 112px); gap:27px; padding:46px 20px 44px; }
+  .certificate-white-hero { grid-template-columns:48px minmax(0,1fr); gap:13px; }.certificate-white-lock { width:46px; height:46px; border-radius:13px; }.certificate-white-lock svg { width:25px; height:25px; }.certificate-white-hero h2 { font-size:25px; }.certificate-white-hero span { font-size:12px; }
+  .certificate-white-provider { min-height:43px; font-size:14px; }.certificate-white-provider small { display:none; }
+  .certificate-white-issuer form { grid-template-columns:1fr; }.certificate-white-issuer form button { width:100%; }.certificate-white-guide .certificate-records { grid-template-columns:1fr; }.certificate-white-projects-head { align-items:flex-start; flex-direction:column; }.certificate-white-refresh { width:100%; justify-content:center; }
+}
