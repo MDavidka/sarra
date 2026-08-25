@@ -21,14 +21,13 @@ def test_application_exposes_no_ai_provider_or_router_routes():
 
 def test_home_and_navigation_are_minimal_and_modular():
     index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
-    nav_css = (ROOT / "syte/static/styles/navigation.css").read_text(encoding="utf-8")
-    home_css = (ROOT / "syte/static/styles/home.css").read_text(encoding="utf-8")
+    legacy_css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+    compat_css = (ROOT / "syte/static/legacy-compat.css").read_text(encoding="utf-8")
 
     assert "home-dashboard-metrics" not in index
     assert "Models &amp; Providers" not in index
     assert "data-view=\"remote-servers\"" in index
-    assert "navigation.css" in index and "home.css" in index and "projects.css" in index
-    assert ".nav-item.is-active::before" in nav_css
-    assert 'content: "|"' in nav_css
-    assert "background: transparent" in nav_css
-    assert ".home-intro" in home_css
+    assert "style.css" in index and "legacy-compat.css" in index
+    assert ".nav-item.is-active" in compat_css
+    assert "background: #292929" in compat_css
+    assert "--bg-sidebar" in legacy_css
