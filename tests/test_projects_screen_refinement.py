@@ -146,6 +146,7 @@ def test_console_login_head_has_no_parser_blocking_shoelace_module():
 
     assert "shoelace-autoloader.js" not in index
     assert "@shoelace-style/shoelace" not in index
+    assert "fonts.googleapis.com" not in index
     assert '<script async src="/static/vendor/lucide.min.js?v=__VERSION__"></script>' in index
 
 
