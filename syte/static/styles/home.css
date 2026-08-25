@@ -1,0 +1,5 @@
+.home-intro { border-bottom: 1px solid var(--border); max-width: 760px; padding: clamp(1rem, 3vw, 2.5rem) 0 2.5rem; }
+.home-intro h2 { font-size: clamp(1.8rem, 4vw, 3rem); letter-spacing: -.055em; line-height: 1.06; margin-bottom: .8rem; }
+.home-intro p { font-size: 1.02rem; max-width: 660px; }
+.home-section { margin-top: 2.5rem; }
+#home-project-list .project-card { background: color-mix(in srgb, var(--surface) 68%, transparent); }

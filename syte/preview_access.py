@@ -16,7 +16,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from syte.agent_skills import read_access_config
 from syte.database import get_project
 from syte.preview_manager import get_preview_logs, get_preview_status, preview_meta
 
@@ -214,7 +213,7 @@ async def _preview_context(project_id: str) -> tuple[dict | None, dict[str, Any]
     if not project:
         return None, {}
     meta, _ = await get_preview_status(project_id)
-    access = await read_access_config(project_id)
+    access: dict[str, Any] = {}
     urls = preview_meta(project)
     if meta:
         urls.update(meta)

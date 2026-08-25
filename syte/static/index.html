@@ -1,857 +1,98 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>Syte</title>
-  <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
-  <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css" crossorigin="anonymous">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js" crossorigin="anonymous"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Syte — Deployment Workspace</title>
+  <link rel="icon" href="/static/icon.png?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/base.css?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/navigation.css?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/home.css?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/projects.css?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/remote-servers.css?v=__VERSION__">
+  <link rel="stylesheet" href="/static/styles/settings.css?v=__VERSION__">
 </head>
-<body class="account-auth-pending">
-  <div id="account-login-screen" class="account-login-screen" aria-live="polite"><div class="account-login-card"><div class="account-login-icon"><i data-lucide="lock-keyhole"></i></div><p class="account-login-kicker">Syte secure workspace</p><h1>Loading sign in…</h1><p>Checking your Syte account session.</p></div></div>
-  <button type="button" id="legacy-account-corner" class="legacy-account-corner hidden" aria-label="Open profile"></button>
-  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+<body>
   <div class="app-shell">
-    <aside class="app-sidebar" id="app-sidebar">
-      <div class="sidebar-head">
-        <div class="sidebar-brand-row">
-          <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="sidebar-logo">
-          <span class="sidebar-brand-name">Syte</span>
-        </div>
-
-        <div class="context-switcher-wrap">
-          <button type="button" class="context-switcher" id="context-switcher-btn" aria-expanded="false" aria-haspopup="listbox">
-            <i data-lucide="book-open" class="context-switcher-leading"></i>
-            <span class="context-switcher-label" id="context-label">non-conected</span>
-            <i data-lucide="chevron-down" class="context-chevron"></i>
-          </button>
-          <div class="context-menu hidden" id="context-menu" role="listbox">
-            <button type="button" class="context-option" data-context="non-conected" role="option">
-              <i data-lucide="book-open"></i><span>non-conected</span>
-            </button>
-            <button type="button" class="context-option" data-context="xwf" role="option">
-              <img src="/static/icon.png?v=__VERSION__" alt="" class="context-xwf-icon"><span>xwf</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="sidebar-divider" aria-hidden="true"></div>
-
-        <div class="sidebar-load-row">
-          <div class="load-dots" id="load-dots" aria-label="Server load indicator"></div>
-          <span class="load-stats" id="load-stats">— cpu — Ram</span>
-        </div>
-      </div>
-
-      <nav class="sidebar-menu" id="sidebar-menu" aria-label="Main navigation">
-        <div id="nav-block-home" class="nav-block coolify-nav-block">
-          <div class="coolify-org-head">
-            <span class="coolify-org-icon"><i data-lucide="layers-3"></i></span>
-            <span class="coolify-org-name">My Organization</span>
-            <i data-lucide="chevrons-up-down" class="coolify-org-switch"></i>
-            <i data-lucide="bell" class="coolify-org-bell"></i>
-          </div>
-          <div class="coolify-nav-section">
-            <p class="nav-section-label">Workspace</p>
-            <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard"><i data-lucide="home"></i><span>Home</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="projects"><i data-lucide="layers"></i><span>Projects</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="schedules"><i data-lucide="calendar-clock"></i><span>Schedules</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="traefik"><i data-lucide="file-cog"></i><span>Traefik File System</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="docker"><i data-lucide="container"></i><span>Docker</span></button>
-          </div>
-          <div class="coolify-nav-section">
-            <p class="nav-section-label">Administration</p>
-            <button type="button" class="nav-sublink" data-view="settings"><i data-lucide="settings-2"></i><span>Settings</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="profile"><i data-lucide="circle-user-round"></i><span>Profile</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="sessions"><i data-lucide="smartphone"></i><span>Sessions</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="remote-servers"><i data-lucide="server"></i><span>Remote Servers</span></button>
-            <button type="button" class="nav-sublink" data-view="users"><i data-lucide="users-round"></i><span>Users</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="audit-logs"><i data-lucide="clipboard-list"></i><span>Audit Logs</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="ssh-keys"><i data-lucide="key-round"></i><span>SSH Keys</span></button>
-          </div>
-          <div class="coolify-nav-section">
-            <p class="nav-section-label">Resources</p>
-            <button type="button" class="nav-sublink" data-view="ai"><i data-lucide="brain-circuit"></i><span>AI</span></button>
-            <button type="button" class="nav-sublink" data-view="models"><i data-lucide="sliders-horizontal"></i><span>Models &amp; Providers</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="tags"><i data-lucide="tags"></i><span>Tags</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="git"><i data-lucide="git-branch"></i><span>Git</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="registry"><i data-lucide="box"></i><span>Registry</span></button>
-            <button type="button" class="nav-sublink" data-view="router"><i data-lucide="router"></i><span>9Router</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="dns-providers"><i data-lucide="globe-2"></i><span>DNS Providers</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="s3-destinations"><i data-lucide="archive"></i><span>S3 Destinations</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="certificates"><i data-lucide="badge-check"></i><span>Certificates</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="notifications"><i data-lucide="bell-ring"></i><span>Notifications</span></button>
-          </div>
-          <div class="coolify-nav-section coolify-nav-section-bottom">
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="billing"><i data-lucide="credit-card"></i><span>Billing</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="license"><i data-lucide="badge-dollar-sign"></i><span>License</span></button>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="sso"><i data-lucide="scan-face"></i><span>SSO</span></button>
-            <p class="nav-section-label">Extra</p>
-            <a class="nav-sublink" href="/docs" data-view="platform" data-platform-page="documentation" id="nav-api-link"><i data-lucide="book-open"></i><span>Documentation</span></a>
-            <button type="button" class="nav-sublink" data-view="platform" data-platform-page="support"><i data-lucide="life-buoy"></i><span>Support</span></button>
-          </div>
-          <div class="coolify-account-card">
-            <span class="coolify-account-avatar"><i data-lucide="user-round"></i></span>
-            <span><strong>Account</strong><small>Operator workspace</small></span>
-            <i data-lucide="chevrons-up-down" class="coolify-org-switch"></i>
-          </div>
-          <div class="coolify-version">Syte v__VERSION__</div>
-        </div>
-
-        <div id="nav-block-service" class="nav-block hidden">
-          <p class="nav-section-label">Project</p>
-          <div class="nav-group expanded" id="nav-group-service">
-            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
-              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
-              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
-              <span class="nav-group-title" id="nav-service-title">Service</span>
-            </button>
-            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
-              <button type="button" class="nav-sublink active" data-svc-tab="general">
-                <i data-lucide="layout-dashboard"></i><span>General</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="env">
-                <i data-lucide="braces"></i><span>Environment</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="logs">
-                <i data-lucide="terminal-square"></i><span>Logs</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="preview">
-                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
-              </button>
-            </div>
-          </div>
-        </div>
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#home" aria-label="Syte home">
+        <img src="/static/syte-logo.png?v=__VERSION__" alt="" width="28" height="28">
+        <span>Syte</span>
+      </a>
+      <nav class="navigation" id="navigation">
+        <p class="navigation-label">Workspace</p>
+        <button class="nav-item is-active" type="button" data-view="home"><span>Home</span></button>
+        <button class="nav-item" type="button" data-view="projects"><span>Projects</span></button>
+        <p class="navigation-label">Administration</p>
+        <button class="nav-item" type="button" data-view="remote-servers"><span>Remote Servers</span></button>
+        <button class="nav-item" type="button" data-view="settings"><span>Settings</span></button>
       </nav>
+      <div class="sidebar-footer">Syte v__VERSION__</div>
     </aside>
 
-    <div class="app-main">
-      <header class="main-topbar">
-        <button type="button" class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="Toggle menu">
-          <i data-lucide="panel-left"></i>
-        </button>
-        <span class="breadcrumb" id="breadcrumb">Projects</span>
-        <div class="topbar-actions"></div>
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="view-kicker">Workspace</p>
+          <h1 id="page-title">Home</h1>
+        </div>
+        <span class="connection-state" id="connection-state" aria-live="polite">Connecting</span>
       </header>
 
-      <main class="content">
-        <section id="view-dashboard" class="view active">
-          <div class="projects-page">
-            <div class="projects-hero-card">
-              <div class="projects-title-block">
-                <i data-lucide="folder-input" class="projects-icon"></i>
-                <div>
-                  <h1>Projects</h1>
-                  <p class="projects-sub">Create and manage your projects</p>
-                </div>
-              </div>
+      <div class="flash-region" id="flash-region" aria-live="polite"></div>
 
-              <button type="button" class="btn-create" onclick="showView('new-service')">
-                <i data-lucide="plus"></i>
-                <span>Create Project</span>
-              </button>
-
-              <div class="search-field">
-                <input type="search" id="project-filter" placeholder="Filter projects..." autocomplete="off">
-                <i data-lucide="search" class="search-icon"></i>
-              </div>
-            </div>
-            <div id="home-dashboard-metrics" class="overview-monitor-grid dashboard-metrics-grid"></div>
-            <div id="services-list" class="projects-grid"></div>
-            <div id="empty-state" class="projects-empty hidden">
-              <i data-lucide="folder-input" class="empty-icon"></i>
-              <p>No projects found</p>
-            </div>
+      <section class="view is-active" id="view-home" data-view-panel="home">
+        <div class="home-intro">
+          <p class="eyebrow">Deployment workspace</p>
+          <h2>Manage projects without provider configuration.</h2>
+          <p>Syte is configured for projects, previews, domains, and service operations. The home screen intentionally contains no usage or server statistics.</p>
+          <button class="button button-primary" type="button" data-go="projects">Create or manage a project</button>
+        </div>
+        <div class="home-section">
+          <div class="section-heading">
+            <div><h3>Recent projects</h3><p>Projects currently registered on this server.</p></div>
+            <button class="button button-secondary" type="button" data-refresh="projects">Refresh</button>
           </div>
-        </section>
-
-        <section id="view-new-service" class="view">
-          <div class="create-project">
-            <div class="create-brand">
-              <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
-              <span class="create-brand-name">syte</span>
-            </div>
-
-            <form id="create-form" class="create-form vercel-create-form" novalidate>
-              <header class="deploy-create-header">
-                <p class="eyebrow">New deployment</p>
-                <h1>Ship from your source.</h1>
-                <p>Import a repository or ZIP archive. Syte detects the framework, creates a build plan, and lets you review environment keys before deployment.</p>
-              </header>
-
-              <div class="create-name-field">
-                <div class="create-name-label-row">
-                  <label for="create-name">project name</label>
-                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name"><i data-lucide="square-pen"></i></button>
-                </div>
-                <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
-              </div>
-
-              <section class="deploy-source-section" aria-labelledby="source-import-title">
-                <div class="deploy-section-heading"><span class="deploy-step">1</span><div><p class="eyebrow">Source</p><h2 id="source-import-title">Import your code</h2></div></div>
-                <div class="deploy-source-tabs" role="tablist" aria-label="Project source">
-                  <button class="deploy-source-tab active" type="button" data-import-source="git" role="tab" aria-selected="true"><i data-lucide="git-branch"></i><span>Git repository</span></button>
-                  <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
-                </div>
-                <div class="deploy-source-fields" id="deploy-git-fields">
-                  <section class="github-source-connect" aria-labelledby="github-source-title">
-                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub Connected Source</strong><p id="github-source-description">Connect GitHub to browse repositories you can access, including private repositories.</p></div></div>
-                    <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
-                    <div id="github-source-account" class="github-source-account hidden"></div>
-                  </section>
-                  <section id="github-repository-browser" class="github-repository-browser hidden" aria-labelledby="github-repository-title">
-                    <div class="github-browser-toolbar"><div><p class="eyebrow">Connected repository</p><h3 id="github-repository-title">Choose code from GitHub</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
-                    <label for="github-repository-search">Search repositories<input id="github-repository-search" type="search" autocomplete="off" placeholder="Filter by owner, name, or description"></label>
-                    <div id="github-repository-list" class="github-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
-                    <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
-                  </section>
-                  <div class="github-manual-divider"><span>or use a public URL</span></div>
-                  <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
-                  <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
-                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Connected GitHub sources use an encrypted, ephemeral OAuth credential during clone. Manual URLs remain for public HTTPS repositories.</p>
-                </div>
-                <div class="deploy-source-fields hidden" id="deploy-zip-fields">
-                  <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>
-                  <label for="create-zip-base-directory">Base directory<input id="create-zip-base-directory" type="text" value="/" placeholder="/ or apps/web"></label>
-                </div>
-              </section>
-
-              <section class="deploy-analysis hidden" id="deploy-analysis" aria-live="polite">
-                <div class="deploy-section-heading"><span class="deploy-step">2</span><div><p class="eyebrow">Detected configuration</p><h2>Review build plan</h2></div><button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm"><i data-lucide="refresh-cw"></i>Analyze again</button></div>
-                <div class="deploy-detection-grid" id="deploy-detection-grid"></div>
-                <div class="deploy-env-panel"><div><h3>Suggested environment variables</h3><p>Only variable names and source locations are detected. Values are never read or imported.</p></div><div id="deploy-env-suggestions" class="deploy-env-suggestions"></div></div>
-                <label class="deploy-env-editor" for="create-env-vars"><span>Environment values</span><textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea></label>
-                <details class="deploy-build-overrides"><summary>Build settings <i data-lucide="chevron-down"></i></summary><div><label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label><label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label></div></details>
-              </section>
-
-              <div class="create-log-box logs-panel" id="create-log-wrap">
-                <div class="create-log-placeholder" id="create-log-placeholder">Import a source to see its deployment plan.</div>
-                <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
-              </div>
-
-              <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
-                <i data-lucide="scan-search"></i><span>Analyze source</span>
-              </button>
-            </form>
-          </div>
-        </section>
-
-        <section id="view-service" class="view">
-          <div class="svc-editor">
-            <div class="svc-tab-panels">
-              <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
-                <section class="syte-deployment-shell syte-reference-deployment" aria-label="Production deployment">
-                  <header class="syte-reference-header">
-                    <div>
-                      <p>Production deployment</p>
-                      <div class="syte-reference-project-line"><span class="svc-status-dot" id="svc-status-dot" title="Status"></span><h1 class="svc-name" id="svc-title">service</h1></div>
-                    </div>
-                    <div class="syte-reference-header-actions">
-                      <button type="button" class="syte-reference-icon-button" id="svc-deploy-now" title="Deploy latest source" aria-label="Deploy latest source"><i data-lucide="rocket"></i></button>
-                      <button type="button" class="syte-reference-icon-button" data-svc-open="logs" title="Deployment history" aria-label="Deployment history"><i data-lucide="history"></i></button>
-                      <button type="button" class="syte-reference-icon-button" id="svc-edit-btn" title="Edit project and domain" aria-label="Edit project"><i data-lucide="ellipsis"></i></button>
-                    </div>
-                  </header>
-
-                  <section class="syte-live-site-preview" aria-label="Live site preview">
-                    <div class="syte-preview-browserbar"><span class="syte-preview-browser-dots"><i></i><i></i><i></i></span><span id="svc-preview-label">Live site preview</span><a id="svc-preview-open" href="#" target="_blank" rel="noopener" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a></div>
-                    <div class="syte-preview-canvas">
-                      <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
-                      <div id="svc-deploy-preview-placeholder" class="syte-preview-placeholder"><i data-lucide="monitor-up"></i><strong>Preparing live preview</strong><span>Your site will appear here after the deployment is reachable.</span></div>
-                    </div>
-                  </section>
-
-                  <div class="syte-reference-actions" aria-label="Deployment actions">
-                    <button type="button" class="syte-rollback-button" id="svc-rollback-btn" disabled title="A previous image is required before rollback can be enabled"><i data-lucide="rotate-ccw"></i><span>Instant rollback</span></button>
-                    <a class="syte-visit-split-button" id="svc-conn" href="#" target="_blank" rel="noopener"><span>Visit</span><i data-lucide="chevron-down"></i></a>
-                  </div>
-
-                  <section class="syte-reference-details" aria-label="Deployment details">
-                    <div class="syte-detail-line"><span>Deployment</span><strong id="svc-uuid-pill">—</strong><button type="button" class="syte-detail-pulse" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button></div>
-                    <div class="syte-domain-line"><span>Domain</span><button type="button" class="syte-domain-add" id="svc-domain-edit" title="Set domain" aria-label="Set domain"><i data-lucide="plus"></i></button><a id="svc-deploy-domain" href="#" target="_blank" rel="noopener">Pending domain</a></div>
-                    <dl class="syte-compact-meta"><div><dt>Status</dt><dd><span class="syte-state-dot" id="svc-deploy-state-dot"></span><strong id="svc-deploy-status-summary">Preparing</strong></dd></div><div><dt>Source</dt><dd id="svc-deploy-source">Repository pending</dd></div><div><dt>Branch</dt><dd><button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button></dd></div></dl>
-                  </section>
-
-                  <div class="svc-management-grid syte-deployment-insights">
-                    <div class="svc-management-card">
-                      <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
-                      <div class="svc-health-state" id="svc-health-state">Not checked</div>
-                      <div class="svc-health-detail" id="svc-health-detail">Run a live probe to check the production release.</div>
-                    </div>
-                    <div class="svc-management-card">
-                      <div class="svc-management-head"><span><i data-lucide="history"></i> Deployment history</span><button type="button" class="logs-tool-btn" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button></div>
-                      <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="braces"></i></div>
-                  <div>
-                    <h2>Environment variables</h2>
-                    <p>Values here are available to your project at runtime. Keep one <code>KEY=value</code> pair per line.</p>
-                  </div>
-                </div>
-                <label class="svc-field-label" for="svc-env-input">Project environment</label>
-                <textarea id="svc-env-input" class="svc-env-textarea" rows="10" placeholder="NODE_ENV=production"></textarea>
-                <p class="svc-field-help"><i data-lucide="info"></i> Changes apply after the next deploy or restart.</p>
-                <div class="svc-panel-actions">
-                  <button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-save-btn">
-                    <i data-lucide="save"></i><span>Save environment</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
-                <div class="svc-panel-intro svc-panel-intro-compact">
-                  <div class="svc-panel-intro-icon"><i data-lucide="terminal-square"></i></div>
-                  <div>
-                    <h2>Deployment logs</h2>
-                    <p>Follow the latest build and runtime output in real time.</p>
-                  </div>
-                </div>
-                <div class="logs-panel">
-                  <div class="logs-toolbar">
-                    <div class="logs-toolbar-left">
-                      <span class="logs-live-dot" id="svc-logs-live" title="Stream status"></span>
-                      <span class="logs-toolbar-label" id="svc-log-hint">Deployment log</span>
-                    </div>
-                    <div class="logs-toolbar-right">
-                      <button type="button" class="logs-tool-btn" id="svc-logs-refresh" title="Refresh logs">
-                        <i data-lucide="refresh-cw"></i>
-                      </button>
-                      <button type="button" class="logs-tool-btn active" id="svc-logs-autoscroll" title="Auto-scroll">
-                        <i data-lucide="arrow-down-to-line"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="logs-terminal logs-terminal-dark" id="svc-live-logs"></div>
-                </div>
-              </div>
-
-              <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="monitor-smartphone"></i></div>
-                  <div>
-                    <h2>Live preview</h2>
-                    <p>Open a temporary dev server to check your website before sharing it.</p>
-                  </div>
-                </div>
-                <div class="svc-preview-domain-row" id="svc-preview-domain-row">
-                  <span class="hint">Preview domain</span>
-                  <code id="svc-preview-domain">—</code>
-                </div>
-                <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab</p>
-                <div class="svc-actions" id="svc-preview-actions"></div>
-                <div class="svc-preview-card" id="svc-preview-card">
-                  <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                  <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                    <i data-lucide="layout-template"></i>
-                    <span>Start preview to see your site here</span>
-                  </div>
-                  <div class="svc-stack-badge" id="svc-stack-badge">
-                    <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                    <span id="svc-stack-label">next.js</span>
-                  </div>
-                </div>
-                <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap">
-                  <div class="logs-toolbar logs-toolbar-compact">
-                    <div class="logs-toolbar-left">
-                      <span class="logs-live-dot" id="svc-preview-logs-live"></span>
-                      <span class="logs-toolbar-label">Preview server log</span>
-                    </div>
-                  </div>
-                  <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          <div id="svc-edit-modal" class="svc-edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="svc-edit-title">
-            <div class="svc-edit-backdrop" id="svc-edit-backdrop"></div>
-            <div class="svc-edit-dialog">
-              <h3 id="svc-edit-title">Edit project</h3>
-              <div class="form-group">
-                <label for="svc-edit-name-input">Name</label>
-                <input type="text" id="svc-edit-name-input" placeholder="my-app">
-              </div>
-              <div class="form-group">
-                <label for="svc-edit-domain-input">Domain</label>
-                <input type="text" id="svc-edit-domain-input" placeholder="app.example.com">
-                <span class="hint">HTTPS via Caddy once DNS points here</span>
-              </div>
-              <div class="svc-edit-actions">
-                <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
-                <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-ai" class="view">
-          <div class="agent-studio" aria-label="AI project assistant">
-            <header class="agent-studio-header">
-              <div class="agent-studio-title"><span class="agent-studio-title-icon"><i data-lucide="bot-message-square"></i></span><div><p>Agent workspace</p><h1>Build, inspect, and verify</h1><span>Grounded project context, inspectable actions, and durable execution controls.</span></div></div>
-              <div class="agent-studio-header-actions"><span class="agent-studio-connection" id="debug-chat-connection" aria-live="polite"><i data-lucide="radio"></i><span>Connecting</span></span><a class="global-ai-router-link" href="https://9router.sycord.site/dashboard" target="_blank" rel="noopener"><i data-lucide="route"></i><span>9Router</span><i data-lucide="arrow-up-right"></i></a></div>
-            </header>
-            <section class="agent-studio-context" aria-label="Project context">
-              <div class="agent-studio-context-select"><label for="global-ai-project">Project context</label><select id="global-ai-project" aria-label="Choose a project for this AI conversation"><option value="">Choose a project</option></select></div>
-              <div class="agent-studio-context-chip hidden" id="global-ai-context-chip"><span class="global-ai-context-avatar" id="global-ai-project-avatar">S</span><span><strong id="global-ai-project-name">Project</strong><small id="global-ai-project-meta">Verified workspace context</small></span><button type="button" id="global-ai-project-close" aria-label="Close project context" title="Close project context"><i data-lucide="x"></i></button></div>
-            </section>
-            <div class="agent-studio-tabs segmented-control" role="tablist" aria-label="AI workspace sections"><button type="button" id="global-ai-tab-chat" class="global-ai-tab is-active" role="tab" aria-selected="true" aria-controls="global-ai-panel-chat"><i data-lucide="messages-square"></i><span>Agent</span></button><button type="button" id="global-ai-tab-models" class="global-ai-tab" role="tab" aria-selected="false" aria-controls="global-ai-panel-models"><i data-lucide="sliders-horizontal"></i><span>Models &amp; providers</span></button></div>
-            <div id="global-ai-panel-chat" class="global-ai-tab-panel" role="tabpanel" aria-labelledby="global-ai-tab-chat">
-              <div class="agent-studio-empty" id="global-ai-empty"><i data-lucide="messages-square"></i><h2>Start with a real project</h2><p>Select a project to load its saved conversation, live status, verified memory, and available tools. No sample workspace data is shown here.</p></div>
-              <div class="global-ai-chat-host hidden" id="global-ai-chat-host">
-                <div class="svc-tab-panel active" id="svc-panel-debug-chat" data-svc-panel="debug-chat">
-                                      <div class="opencode-agent-workbench">
-                      <main class="opencode-agent-thread">
-                        <header class="opencode-agent-thread-head">
-                          <div><span class="opencode-kicker">SESSION</span><h2 id="debug-chat-session-title">Agent</h2><p id="debug-chat-session-subtitle">A focused coding session for the selected project.</p></div>
-                          <button type="button" class="debug-chat-brain" id="debug-chat-brain" aria-label="Message save status" title="Message save status"><i data-lucide="brain"></i><b class="debug-chat-brain-badge hidden" id="debug-chat-brain-badge">0</b></button>
-                        </header>
-                        <div class="debug-chat-resources hidden" id="debug-chat-resources" aria-live="polite"><div class="debug-chat-resources-head"><div><strong id="debug-chat-resources-title">Resources</strong><span id="debug-chat-resources-subtitle">Connected tools and project skills.</span></div><button type="button" class="debug-chat-resource-close" id="debug-chat-resources-close" aria-label="Close resources">×</button></div><div class="debug-chat-resources-body" id="debug-chat-resources-body"></div></div>
-                        <div class="debug-chat-resources debug-chat-failures hidden" id="debug-chat-failures" role="region" aria-label="Session failure log" aria-live="polite"><div class="debug-chat-resources-head"><div><strong id="debug-chat-failures-title">Failure log</strong><span id="debug-chat-failures-subtitle">The current session only.</span></div><div class="debug-chat-failures-actions"><label class="debug-chat-failures-scope" for="debug-chat-failures-scope"><span>Scope</span><select id="debug-chat-failures-scope" aria-label="Failure log scope"><option value="last" selected>This session</option><option value="all">All sessions</option></select></label><button type="button" class="debug-chat-resource-action" id="debug-chat-failures-refresh">Refresh</button><button type="button" class="debug-chat-resource-action" id="debug-chat-failures-clear">Clear</button><button type="button" class="debug-chat-resource-close" id="debug-chat-failures-close" aria-label="Close failure log">×</button></div></div><div class="debug-chat-resources-body" id="debug-chat-failures-body"></div></div>
-                        <div class="debug-chat-session-header hidden" id="debug-chat-session-header" role="status" aria-live="polite"></div>
-                        <div class="opencode-run-status" id="debug-chat-activity" role="status" aria-live="polite"><span class="logs-live-dot" id="debug-chat-live" title="Activity stream" aria-label="Activity stream disconnected"></span><span class="debug-chat-activity-phase"><span class="debug-chat-activity-label">Ready</span><span class="debug-chat-activity-detail"></span></span><span class="debug-chat-activity-model" id="debug-chat-activity-model" hidden></span></div>
-                        <div class="debug-chat-tabs hidden" id="debug-chat-tabs" role="tablist" aria-label="Agent lanes"><button type="button" class="debug-chat-tab is-active" id="debug-chat-tab-main" role="tab" aria-selected="true" aria-controls="debug-chat-messages" data-chat-lane="main"><span>Thread</span></button><button type="button" class="debug-chat-tab hidden" id="debug-chat-tab-sub" role="tab" aria-selected="false" aria-controls="debug-chat-messages-sub" data-chat-lane="sub"><span>Subagents</span><b class="debug-chat-tab-badge hidden" id="debug-chat-tab-sub-badge">0</b></button></div>
-                        <div class="debug-chat-lanes opencode-thread-lanes" id="debug-chat-lanes"><div class="debug-chat-messages" id="debug-chat-messages" role="log" aria-live="polite" aria-label="Agent conversation" aria-relevant="additions text" data-chat-lane="main"><div class="debug-chat-empty" id="debug-chat-empty"><h3>Start a build session</h3><p>Describe the product or change. Build mode writes and validates code; Plan mode stays read-only.</p></div></div><div class="debug-chat-messages hidden" id="debug-chat-messages-sub" role="log" aria-live="polite" aria-label="Subagent activity" aria-relevant="additions text" data-chat-lane="sub"><div class="debug-chat-empty" id="debug-chat-empty-sub"><p>No delegated work in this session.</p></div></div></div>
-                        <div class="opencode-composer" id="assistant-composer">
-                          <div class="opencode-composer-controls">
-                            <label class="opencode-inline-field" for="debug-chat-profile"><span>Model</span><select id="debug-chat-profile" class="debug-chat-profile" aria-label="Model profile"><option value="auto" selected>auto</option></select></label>
-                            <details class="opencode-settings"><summary aria-label="Agent settings"><i data-lucide="settings-2"></i></summary><div class="opencode-settings-panel"><label for="debug-chat-thinking-level">Thinking<select id="debug-chat-thinking-level"><option value="1">Minimal</option><option value="2">Low</option><option value="3" selected>Balanced</option><option value="4">High</option><option value="5">Max</option><option value="6">Extended</option></select></label><label for="debug-chat-memory-depth">Memory<select id="debug-chat-memory-depth"><option value="focused">Focused</option><option value="balanced" selected>Balanced</option><option value="deep">Deep</option></select></label><label for="debug-chat-plan-mode">Planning<select id="debug-chat-plan-mode"><option value="auto" selected>Auto</option><option value="always">Always</option><option value="off">Off</option></select></label><label class="opencode-check" for="debug-chat-deployment-readiness"><input id="debug-chat-deployment-readiness" type="checkbox" checked>Verify before ready</label></div></details>
-                          </div>
-                          <textarea id="debug-chat-input" class="debug-chat-input" rows="3" aria-label="Message to the workspace agent" placeholder="Describe what to build, change, or plan"></textarea>
-                          <div class="opencode-composer-footer"><button type="button" id="debug-chat-context-toggle" class="opencode-context-button" aria-expanded="false" aria-controls="debug-chat-context-summary">Context</button><div class="assistant-composer-context-summary hidden" id="debug-chat-context-summary"><div><span>Window</span><strong id="debug-chat-context-window-label">32k</strong></div><div><span>Output</span><strong id="debug-chat-stream-limit-label">4k</strong></div><div><span>Memory</span><strong id="debug-chat-memory-depth-label">Balanced</strong></div></div><div class="debug-chat-composer-actions"><button type="button" id="debug-chat-cancel" class="debug-chat-button debug-chat-cancel hidden" aria-label="Stop the current response"><i data-lucide="square"></i><span>Stop</span></button><button type="button" id="debug-chat-send" class="debug-chat-button debug-chat-send" aria-label="Send message"><i data-lucide="arrow-up"></i><span>Send</span></button></div></div>
-                        </div>
-                      </main>
-                    </div>
-                  </div>
-                </div>
-              </div>
-<section id="global-ai-panel-models" class="global-ai-models-panel hidden" role="tabpanel" aria-labelledby="global-ai-tab-models">
-              <div class="global-ai-models-head"><div><p>Agent configuration</p><h2>Models &amp; providers</h2><span>Connect a model source with a server-side API key, then choose its model for this project or as your default.</span></div><button type="button" class="btn-pill btn-ghost" id="global-ai-open-model-manager"><i data-lucide="library-big"></i><span>Model library</span></button></div>
-              <section class="global-ai-provider-overview" aria-labelledby="global-ai-provider-overview-title"><div class="global-ai-section-title"><div><h3 id="global-ai-provider-overview-title">Connected providers</h3><p>Credentials stay on the server and are never returned to the browser.</p></div><button type="button" class="btn-link" id="global-ai-refresh-providers"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div id="global-ai-provider-list" class="global-ai-provider-list" aria-live="polite"><p class="hint">Loading provider status…</p></div></section>
-              <section class="global-ai-provider-onboarding" aria-labelledby="global-ai-provider-title"><div class="global-ai-section-title"><div><h3 id="global-ai-provider-title">Add provider</h3><p>Use 9Router, or connect an OpenAI-compatible provider with its own API key.</p></div></div><div class="global-ai-provider-types" role="radiogroup" aria-label="Provider type"><button type="button" class="global-ai-provider-type is-active" data-provider-type="9router" role="radio" aria-checked="true"><i data-lucide="route"></i><span>9Router</span></button><button type="button" class="global-ai-provider-type" data-provider-type="openai" role="radio" aria-checked="false"><i data-lucide="bot"></i><span>OpenAI</span></button><button type="button" class="global-ai-provider-type" data-provider-type="anthropic" role="radio" aria-checked="false"><i data-lucide="brain-circuit"></i><span>Anthropic</span></button><button type="button" class="global-ai-provider-type" data-provider-type="openrouter" role="radio" aria-checked="false"><i data-lucide="router"></i><span>OpenRouter</span></button><button type="button" class="global-ai-provider-type" data-provider-type="custom" role="radio" aria-checked="false"><i data-lucide="plug-zap"></i><span>Custom</span></button></div><div class="global-ai-provider-form"><div class="global-ai-provider-preset" id="global-ai-provider-preset"><i data-lucide="route"></i><span id="global-ai-provider-preset-copy">Add an API key from your 9Router dashboard. Enabled 9Router models appear in the model picker.</span></div><div class="global-ai-provider-fields hidden" id="global-ai-provider-fields"><label for="global-ai-provider-name"><span>Provider name</span><input id="global-ai-provider-name" maxlength="80" placeholder="Provider name"></label><label for="global-ai-provider-base"><span>API base URL</span><input id="global-ai-provider-base" type="url" maxlength="500" placeholder="https://api.example.com/v1"></label><label for="global-ai-provider-model"><span>Default model</span><input id="global-ai-provider-model" maxlength="200" placeholder="Model ID"></label></div><label class="global-ai-provider-key" for="global-ai-provider-api-key"><span>API key</span><input id="global-ai-provider-api-key" type="password" autocomplete="off" placeholder="Paste a provider API key"><small id="global-ai-provider-key-hint">Stored securely in Syte settings and sent only from the server.</small></label><button type="button" class="btn-pill btn-primary" id="global-ai-save-provider"><i data-lucide="plus"></i><span>Add provider</span></button></div></section>
-              <section class="global-ai-model-selection" aria-labelledby="global-ai-model-selection-title"><div class="global-ai-section-title"><div><h3 id="global-ai-model-selection-title">Agent model</h3><p>Select the model for the current project chat and set a default for new sessions.</p></div></div><div class="global-ai-model-grid"><label class="global-ai-model-field" for="global-ai-session-model"><span>Conversation model</span><select id="global-ai-session-model" data-model-profile-select aria-label="Model for this conversation"><option value="auto" selected>auto</option></select><small>Used for the next message in the selected project.</small></label><div class="global-ai-model-info"><i data-lucide="sparkles"></i><div><strong id="global-ai-model-label">Automatic routing</strong><small id="global-ai-model-description">Syte selects the best available model for each task.</small></div></div></div><div class="global-ai-default-row"><div><strong>Default model</strong><p>Used when an Agent session starts without a model override.</p></div><label class="global-ai-default-picker" for="global-ai-default-model"><select id="global-ai-default-model" data-model-profile-select aria-label="Default model for new agent sessions"></select><button type="button" class="btn-pill btn-primary" id="global-ai-save-default-model"><span>Save default</span></button></label></div></section>
-              <div class="global-ai-model-foot"><span><i data-lucide="shield-check"></i> Provider keys and defaults are private to signed-in operators.</span><span class="global-ai-model-foot-note">All provider configuration is managed here.</span></div>
-            </section>
-          </div>
-        </section>
-
-        <section id="view-sycord" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <img src="/static/icon.png?v=__VERSION__" alt="" class="sidebar-xwf-icon" style="width:22px;height:22px">
-                <div>
-                  <h1>Sycord</h1>
-                  <p class="projects-sub">External deployer API for Sycord websites and connected projects</p>
-                </div>
-              </div>
-              <a href="/sycord/api/" class="btn-create" style="text-decoration:none">
-                <i data-lucide="book-open"></i>
-                <span>API Docs</span>
-              </a>
-            </div>
-            <div class="note" style="margin:0 0 1rem;padding:0.85rem;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;font-size:13px;color:#71717a">
-              Base URL: <code>/sycord/api</code> · <a href="/sycord/api/integration.json" class="link">integration.json</a> · <a href="/sycord/api/spec.json" class="link">spec.json</a>
-            </div>
-            <div class="swarm-grid">
-              <div class="swarm-stat full"><span class="swarm-label">project_connect</span><span class="swarm-value">POST — returns <code>uuid</code> to save + subdomain</span></div>
-              <div class="swarm-stat"><span class="swarm-label">container_get</span><span class="swarm-value">GET — Docker status</span></div>
-              <div class="swarm-stat"><span class="swarm-label">upload</span><span class="swarm-value">POST — multipart files</span></div>
-              <div class="swarm-stat"><span class="swarm-label">domain</span><span class="swarm-value">POST — set hostname</span></div>
-              <div class="swarm-stat full"><span class="swarm-label">issue_deployment</span><span class="swarm-value">POST — docker build + deploy</span></div>
-            </div>
-            <p class="hint" style="margin-top:1rem">Stacks: <strong>nextjs</strong> (default), <strong>python</strong>, <strong>javascript</strong></p>
-          </div>
-        </section>
-
-        <section id="view-server-swarm" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="boxes" class="projects-icon"></i>
-                <div>
-                  <h1>Server Swarm</h1>
-                  <p class="projects-sub">Server status and deployment overview</p>
-                </div>
-              </div>
-            </div>
-            <div class="swarm-grid" id="swarm-stats">
-              <div class="swarm-stat"><span class="swarm-label">Public IP</span><span class="swarm-value" id="swarm-ip">—</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Version</span><span class="swarm-value" id="swarm-version">—</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Projects</span><span class="swarm-value" id="swarm-total">0</span></div>
-              <div class="swarm-stat"><span class="swarm-label">Running</span><span class="swarm-value" id="swarm-running">0</span></div>
-              <div class="swarm-stat full"><span class="swarm-label">GUI URL</span><span class="swarm-value" id="swarm-gui-url">—</span></div>
-              <div class="swarm-stat full"><span class="swarm-label">Direct URL</span><span class="swarm-value" id="swarm-direct-url">—</span></div>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-users" class="view">
-          <div class="users-directory-page">
-            <div class="users-directory-hero"><div class="users-directory-icon"><i data-lucide="users-round"></i></div><div><p class="dedicated-eyebrow">Administration</p><h1>People & access</h1><p>Manage operators, API access, and the credentials used by automation.</p></div><span class="users-live-badge"><i data-lucide="radio"></i>Live workspace</span></div>
-            <div class="users-directory-grid"><div class="users-summary-card"><span>Workspace members</span><strong>Operator</strong><small>Current workspace identity</small></div><div class="users-summary-card"><span>API access</span><strong>Token vault</strong><small>Programmatic credentials</small></div><div class="users-summary-card"><span>Security</span><strong>Protected</strong><small>Tokens can be revoked anytime</small></div></div>
-            <section class="users-token-panel"><div><p class="dedicated-eyebrow">Automation credentials</p><h2>API tokens</h2><p>Create tokens for CI, deployments, and external integrations. See the <a href="/api/" class="link">API documentation</a>.</p></div><div class="users-token-form"><label for="token-name">Token name</label><div><input type="text" id="token-name" placeholder="ci-deploy"><button class="btn-pill btn-primary" id="create-token-btn"><i data-lucide="plus"></i><span>Create token</span></button></div></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="tokens-list"></div></section>
-          </div>
-        </section>
-
-        <section id="view-logs" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="scroll-text" class="projects-icon"></i>
-                <div>
-                  <h1>Logs</h1>
-                  <p class="projects-sub">Deployment logs across all projects</p>
-                </div>
-              </div>
-            </div>
-            <div id="logs-project-list" class="logs-list"></div>
-            <div id="logs-empty" class="projects-empty hidden">
-              <i data-lucide="scroll-text" class="empty-icon"></i>
-              <p>No projects yet</p>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-models" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="bot" class="projects-icon"></i>
-                <div>
-                  <h1>Models</h1>
-                  <p class="projects-sub">Set up your model provider, then choose the model and thinking levels your agents can use.</p>
-                </div>
-              </div>
-            </div>
-            <div id="models-content" class="models-content" aria-live="polite"></div>
-          </div>
-        </section>
-
-        <section id="view-router" class="view">
-          <div class="projects-card router-page-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="route" class="projects-icon"></i>
-                <div>
-                  <h1>9Router</h1>
-                  <p class="projects-sub">Deploy the official 9Router gateway and open its HTTPS web GUI at <code>https://9router.sycord.site/dashboard</code>. Its OpenAI-compatible API is at <code>/v1</code>.</p>
-                </div>
-              </div>
-              <div class="router-actions">
-                <button type="button" class="btn-pill btn-ghost" id="router-refresh-btn"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
-                <button type="button" class="btn-pill btn-primary" id="router-start-btn"><i data-lucide="rocket"></i><span>Deploy 9Router</span></button>
-                <button type="button" class="btn-pill btn-ghost" id="router-restart-btn"><i data-lucide="rotate-cw"></i><span>Restart</span></button>
-                <button type="button" class="btn-pill btn-danger" id="router-stop-btn"><i data-lucide="square"></i><span>Stop</span></button>
-              </div>
-            </div>
-            <section class="router-password-card" aria-labelledby="router-password-title">
-              <div class="router-password-icon"><i data-lucide="key-round"></i></div>
-              <div class="router-password-copy"><p class="router-password-eyebrow">WebGUI access</p><h2 id="router-password-title">Initial password</h2><p>This saved bootstrap credential is available only to signed-in operators. Change it in 9Router after first sign-in.</p></div>
-              <div class="router-password-value"><code id="router-initial-password" data-password="">••••••••••••</code><div class="router-password-actions"><button type="button" class="icon-btn" id="router-password-reveal-btn" aria-label="Reveal initial password" title="Reveal password"><i data-lucide="eye"></i></button><button type="button" class="icon-btn" id="router-password-copy-btn" aria-label="Copy initial password" title="Copy password"><i data-lucide="copy"></i></button></div><small id="router-password-status">Loading credential…</small></div>
-            </section>
-            <div id="router-content" class="router-content" aria-live="polite">
-              <p class="hint block">Loading 9Router status…</p>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-ssl" class="view">
-          <div class="projects-card">
-            <div class="projects-header">
-              <div class="projects-title-block">
-                <i data-lucide="shield-check" class="projects-icon"></i>
-                <div>
-                  <h1>SSL &amp; Certificates</h1>
-                  <p class="projects-sub">AlmaLinux status monitor for sycord.site surfaces, Caddy server settings, and certificate resolution.</p>
-                </div>
-              </div>
-              <div class="ssl-header-actions">
-                <button type="button" class="btn-pill btn-ghost" id="ssl-refresh-btn">
-                  <i data-lucide="refresh-cw"></i><span>Refresh</span>
-                </button>
-                <button type="button" class="btn-pill btn-primary" id="ssl-resolve-btn">
-                  <i data-lucide="shield-check"></i><span>Apply &amp; resolve SSL</span>
-                </button>
-              </div>
-            </div>
-            <div id="ssl-content" class="ssl-content" aria-live="polite">
-              <p class="hint block">Loading SSL status…</p>
-            </div>
-          </div>
-        </section>
-
-
-        <section id="view-platform" class="view">
-          <div class="platform-workspace" id="platform-workspace">
-            <div class="platform-page-head">
-              <div>
-                <p class="platform-eyebrow" id="platform-page-kicker">Platform</p>
-                <h1 id="platform-page-title">Workspace</h1>
-                <p id="platform-page-description" class="platform-page-description">Manage this platform resource from a real, database-backed workspace.</p>
-              </div>
-              <button type="button" class="btn-pill btn-ghost" id="platform-page-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
-            </div>
-            <div id="platform-dedicated-page" class="platform-dedicated-page"></div>
-            <div class="platform-summary-grid legacy-platform-panel" id="platform-summary-grid"></div>
-            <div id="platform-page-controls" class="platform-page-controls legacy-platform-panel"></div>
-            <section id="platform-store-panel" class="docker-library-page hidden" aria-labelledby="docker-library-title">
-              <div class="docker-library-toolbar"><div class="docker-library-brand"><span class="docker-library-mark"><i data-lucide="box"></i></span><div><p class="docker-library-kicker">Syte Library</p><h1 id="docker-library-title">Find your next service</h1><p>Curated Docker apps, ready to configure and deploy.</p></div></div><button type="button" class="btn-pill btn-ghost" id="docker-library-refresh"><i data-lucide="refresh-cw"></i>Refresh catalog</button></div>
-              <div class="docker-library-search-row"><label class="docker-library-search"><i data-lucide="search"></i><input id="platform-store-filter" type="search" placeholder="Search applications, databases, monitoring…" autocomplete="off"></label><button type="button" class="docker-library-sort" id="docker-library-sort"><i data-lucide="sliders-horizontal"></i><span>Popular</span><i data-lucide="chevron-down"></i></button></div>
-              <div id="docker-library-categories" class="docker-library-categories"></div>
-              <div id="docker-library-featured" class="docker-library-featured"></div>
-              <div class="docker-library-section-head"><div><p class="docker-library-kicker">Explore the catalog</p><h2>Popular with operators</h2></div><span id="docker-library-count"></span></div>
-              <div id="platform-store-grid" class="docker-library-grid"></div>
-            </section>
-            <div class="platform-resource-grid">
-              <div class="platform-resource-panel"><div class="platform-panel-head"><h2 id="platform-resource-heading">Resources</h2><span id="platform-resource-count" class="platform-count">0</span></div><div id="platform-resource-list" class="platform-resource-list"></div></div>
-              <div class="platform-resource-panel"><div class="platform-panel-head"><h2>Operations</h2></div><div id="platform-action-list" class="platform-action-list"></div></div>
-            </div>
-            <div class="platform-resource-panel platform-detail-panel"><div class="platform-panel-head"><h2>Operational details</h2></div><div id="platform-detail-table" class="platform-detail-table"></div></div>
-            <div id="platform-page-message" class="platform-page-message"></div>
-          </div>
-        </section>
-        <section id="view-settings" class="view">
-          <div class="settings-mini-tabs" id="settings-mini-tabs" role="tablist" aria-label="Settings sections">
-            <button type="button" class="settings-mini-tab is-active" data-settings-tab="general" role="tab" aria-selected="true">
-              <i data-lucide="sliders-horizontal"></i><span>General</span>
-            </button>
-            <button type="button" class="settings-mini-tab" data-settings-tab="git" role="tab" aria-selected="false">
-              <i data-lucide="git-branch"></i><span>Git &amp; updates</span>
-            </button>
-            <button type="button" class="settings-mini-tab" data-settings-tab="advanced" role="tab" aria-selected="false">
-              <i data-lucide="settings-2"></i><span>Advanced</span>
-            </button>
-          </div>
-          <div class="settings-tab-hint" id="settings-tab-hint">Server, domains, and preview access</div>
-          <div class="settings-stack">
-            <div class="projects-card panel-form" data-settings-panel="general">
-              <div class="projects-title-block mb">
-                <i data-lucide="server" class="projects-icon"></i>
-                <div><h1>Server</h1></div>
-              </div>
-              <div class="form-inner">
-                <div class="form-group">
-                  <label for="set-ip">Public IP</label>
-                  <input type="text" id="set-ip" placeholder="152.89.245.113">
-                  <span class="hint">IPv4 only — not a domain name</span>
-                </div>
-                <div class="form-group">
-                  <label for="set-email">Admin email</label>
-                  <input type="email" id="set-email" placeholder="admin@example.com">
-                </div>
-                <button class="btn-pill btn-primary" id="save-server-btn">Save</button>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form" data-settings-panel="general">
-              <div class="projects-title-block mb">
-                <i data-lucide="globe" class="projects-icon"></i>
-                <div><h1>Web GUI domain</h1></div>
-              </div>
-              <div class="form-inner">
-                <p class="hint block">Custom domain for this interface — TLS via Caddy</p>
-                <div class="form-group">
-                  <label for="set-domain">Domain</label>
-                  <input type="text" id="set-domain" placeholder="sycord.site">
-                  <span class="hint">Enter domain only — no https:// prefix</span>
-                </div>
-                <div class="form-group">
-                  <label>Direct access (IP)</label>
-                  <div class="gui-url" id="direct-url">—</div>
-                </div>
-                <div class="form-group">
-                  <label>Custom domain</label>
-                  <div class="gui-url gui-url-domain" id="gui-url">not configured</div>
-                </div>
-                <button class="btn-pill btn-primary" id="save-domain-btn">Apply domain</button>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form" data-settings-panel="general">
-              <div class="projects-title-block mb">
-                <i data-lucide="monitor-play" class="projects-icon"></i>
-                <div><h1>Preview domain</h1></div>
-              </div>
-              <div class="form-inner">
-                <p class="hint block">Wildcard zone for production and preview HTTPS on <code>*.{zone}</code>.</p>
-                <div class="form-group">
-                  <label for="set-preview-domain">Preview base domain</label>
-                  <input type="text" id="set-preview-domain" placeholder="e.g. sycord.site">
-                  <span class="hint" id="preview-dns-hint">Wildcard DNS <code>*.{zone}</code> → server. Hosts: <code id="preview-host-example">previewa-myapp.sycord.site</code></span>
-                </div>
-                <div class="form-group">
-                  <label for="set-cf-token">Cloudflare API token (wildcard SSL)</label>
-                  <input type="password" id="set-cf-token" placeholder="Zone DNS Edit token for *.sycord.site" autocomplete="off">
-                  <span class="hint">Create in Cloudflare → My Profile → API Tokens → Zone DNS Edit for your preview zone.</span>
-                  <div id="cf-token-status" class="hint cf-token-status hidden"></div>
-                </div>
-                <div class="form-actions">
-                  <button class="btn-pill btn-primary" id="save-preview-domain-btn">Save preview zone</button>
-                  <button class="btn-pill btn-ghost" id="save-cf-token-btn">Save Cloudflare token</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form" data-settings-panel="general" id="nine-router-tls-card">
-              <div class="projects-title-block mb">
-                <i data-lucide="shield-check" class="projects-icon"></i>
-                <div><h1>9Router local SSL</h1></div>
-              </div>
-              <div class="form-inner">
-                <p class="hint block">Checks that Caddy is serving <code>9router.sycord.site</code> with the correct TLS certificate and SNI through the local listener <code>127.0.0.1:20128</code>.</p>
-                <div class="version-row">
-                  <div>
-                    <span class="version-label">Caddy TLS status</span>
-                    <span class="version-value" id="nine-router-local-tls-badge"><span class="badge badge-ssl badge-ssl-preview-pending">checking…</span></span>
-                  </div>
-                  <button type="button" class="btn-pill btn-ghost" id="check-nine-router-tls-btn"><i data-lucide="refresh-cw"></i><span>Check now</span></button>
-                </div>
-                <p class="hint" id="nine-router-local-tls-detail">Checking 127.0.0.1:20128…</p>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form" data-settings-panel="git">
-              <div class="projects-title-block mb">
-                <i data-lucide="refresh-cw" class="projects-icon"></i>
-                <div><h1>Update Syte</h1></div>
-              </div>
-              <div class="form-inner">
-                <p class="hint block">Pull newest version from the latest open GitHub PR, refresh dependencies, and restart automatically — data preserved</p>
-                <div class="version-row">
-                  <div>
-                    <span class="version-label">Installed</span>
-                    <span class="version-value" id="syte-version">—</span>
-                  </div>
-                  <button class="btn-pill btn-primary" id="update-syte-btn">
-                    <i data-lucide="download"></i>
-                    <span>Update Syte</span>
-                  </button>
-                </div>
-                <p class="hint" id="syte-update-source">Checking update source…</p>
-                <div class="update-mergeable-commits hidden" id="syte-mergeable-commits" aria-live="polite"></div>
-                <div id="update-result" class="result-box hidden"></div>
-              </div>
-            </div>
-
-            <div class="projects-card panel-form" data-settings-panel="git" id="github-tracking-card">
-              <div class="projects-title-block mb">
-                <i data-lucide="git-pull-request" class="projects-icon"></i>
-                <div>
-                  <h1>GitHub tracking</h1>
-                  <p class="settings-card-subtitle">Follow branches and review merge readiness without leaving Syte.</p>
-                </div>
-              </div>
-              <div class="form-inner">
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="github-repo">Repository</label>
-                    <input type="text" id="github-repo" placeholder="owner/repository" autocomplete="off">
-                    <span class="hint">Use <code>owner/repo</code> or a GitHub URL.</span>
-                  </div>
-                  <div class="form-group">
-                    <label for="github-token">GitHub token</label>
-                    <input type="password" id="github-token" placeholder="token saved — enter to replace" autocomplete="off">
-                    <span class="hint" id="github-token-status">Token is not configured.</span>
-                  </div>
-                </div>
-                <div class="form-actions settings-git-actions">
-                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Git settings</button>
-                  <button type="button" class="btn-pill btn-ghost" id="refresh-github-tracking-btn">
-                    <i data-lucide="refresh-cw"></i><span>Refresh tracking</span>
-                  </button>
-                </div>
-                <div class="git-tracking-summary" id="github-tracking-summary">
-                  <p class="hint">Sign in to load branch and pull request status.</p>
-                </div>
-                <div class="github-pr-list" id="github-pr-list"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="projects-card panel-form" id="new-feature-card" data-settings-panel="advanced">
-            <div class="projects-title-block mb">
-              <i data-lucide="sparkles" class="projects-icon"></i>
-              <div><h1>New feature?</h1></div>
-            </div>
-            <div class="form-inner">
-              <p class="hint block">Describe what you want to build or change. The system agent uses the selected AI model, can read and write system files, and will trigger an auto-update when finished.</p>
-              <div class="version-row">
-                <div>
-                  <span class="version-label">Current version</span>
-                  <span class="version-value" id="new-feature-version">—</span>
-                </div>
-              </div>
-              <div class="form-group">
-                <label for="new-feature-model">Built-in agent model</label>
-                <select id="new-feature-model" class="debug-chat-profile" aria-label="Model profile for new feature agent">
-                  <option value="" selected disabled>Select a model from the Models tab</option>
-                </select>
-                <span class="hint">Only enabled models configured in the Models tab can run this built-in agent.</span>
-              </div>
-              <div class="form-group">
-                <label for="new-feature-input">Agent instruction</label>
-                <textarea id="new-feature-input" class="svc-env-textarea" rows="4" placeholder="e.g. Add a new API endpoint for user management"></textarea>
-              </div>
-              <div class="form-group">
-                <label for="new-feature-api-key">Provider API key (optional — your own key)</label>
-                <input id="new-feature-api-key" type="password" class="svc-env-textarea" rows="1" placeholder="Paste your provider API key here">
-              </div>
-              <div class="svc-panel-actions">
-                <button type="button" class="btn-pill btn-primary" id="new-feature-run-btn">
-                  <i data-lucide="zap"></i><span>Run agent</span>
-                </button>
-                <button type="button" class="btn-pill btn-ghost" id="new-feature-clear-btn">
-                  <i data-lucide="x"></i><span>Clear</span>
-                </button>
-              </div>
-              <div id="new-feature-status" class="hint"></div>
-              <div id="new-feature-result" class="result-box hidden"></div>
-              <div class="logs-panel logs-terminal logs-terminal-dark hidden" id="new-feature-log"></div>
-            </div>
-          </div>
+          <div class="project-list" id="home-project-list" aria-live="polite"></div>
         </div>
       </section>
-    </div>
-  </div>
 
-  <div id="crash-screen" class="crash-screen-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="crash-title">
-    <div class="crash-card">
-      <div class="crash-header">
-        <div class="crash-icon"><i data-lucide="alert-triangle"></i></div>
-        <div class="crash-header-text">
-          <h2 id="crash-title">Application Error</h2>
-          <p id="crash-subtitle">Syte encountered an issue under high server load or network disruption.</p>
+      <section class="view" id="view-projects" data-view-panel="projects" hidden>
+        <div class="section-heading">
+          <div><h2>Projects</h2><p>Create, deploy, start, and stop the services registered with Syte.</p></div>
+          <button class="button button-secondary" type="button" data-refresh="projects">Refresh projects</button>
         </div>
-      </div>
-      <div id="crash-body" class="crash-body">
-        <p id="crash-message" class="crash-message"></p>
-        <pre id="crash-details" class="crash-details hidden"></pre>
-      </div>
-      <div class="crash-actions">
-        <button type="button" class="btn-pill btn-primary" id="crash-reload-btn"><i data-lucide="rotate-cw"></i><span>Reload Page</span></button>
-        <button type="button" class="btn-pill btn-ghost" id="crash-retry-btn"><i data-lucide="refresh-cw"></i><span>Retry Connection</span></button>
-        <button type="button" class="btn-pill btn-ghost" id="crash-dismiss-btn"><span>Dismiss</span></button>
-      </div>
-    </div>
+        <form class="project-create-form" id="project-create-form">
+          <label>Project name<input name="name" required maxlength="120" placeholder="my-project"></label>
+          <label>Git repository URL<input name="git_url" type="url" placeholder="https://github.com/owner/repository.git"></label>
+          <label>Start command<input name="start_command" placeholder="npm start"></label>
+          <button class="button button-primary" type="submit">Create project</button>
+        </form>
+        <div class="project-list" id="project-list" aria-live="polite"></div>
+      </section>
+
+      <section class="view" id="view-remote-servers" data-view-panel="remote-servers" hidden>
+        <div class="section-heading"><div><h2>Remote Servers</h2><p>Connected deployment hosts and service access.</p></div></div>
+        <div class="server-card" id="server-card" aria-live="polite"></div>
+      </section>
+
+      <section class="view" id="view-settings" data-view-panel="settings" hidden>
+        <div class="section-heading"><div><h2>Settings</h2><p>Configure server identity, domains, preview TLS, and source control.</p></div></div>
+        <form class="settings-form" id="settings-form">
+          <label>Public IP<input name="public_ip" inputmode="numeric" placeholder="Auto-detect"></label>
+          <label>Administrator email<input name="admin_email" type="email" placeholder="admin@example.com"></label>
+          <label>GUI domain<input name="gui_domain" placeholder="deploy.example.com"></label>
+          <label>Preview base domain<input name="preview_base_domain" placeholder="preview.example.com"></label>
+          <label>Cloudflare API token<input name="cloudflare_api_token" type="password" placeholder="Leave empty to retain current token"></label>
+          <label>Preview TLS mode<select name="preview_wildcard_tls"><option value="auto">Automatic</option><option value="on">Enabled</option><option value="off">Disabled</option></select></label>
+          <label>Custom TLS host<input name="custom_tls_host" placeholder="service.example.com"></label>
+          <label>Custom TLS port<input name="custom_tls_port" inputmode="numeric" placeholder="8787"></label>
+          <button class="button button-primary" type="submit">Save settings</button>
+        </form>
+      </section>
+    </main>
   </div>
-
-  <div id="toast" class="toast hidden"></div>
-
-
-  <script src="/static/app.js?v=__VERSION__"></script>
+  <script type="module" src="/static/app.js?v=__VERSION__"></script>
 </body>
 </html>

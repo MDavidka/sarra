@@ -1,0 +1,8 @@
+.project-card { align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: .6rem; display: grid; gap: .9rem; grid-template-columns: minmax(0, 1fr) auto; padding: 1rem 1.1rem; }
+.project-card h3 { margin: 0 0 .2rem; overflow-wrap: anywhere; }
+.project-meta { color: var(--muted); font-size: .86rem; margin: 0; overflow-wrap: anywhere; }
+.project-status { color: var(--accent); font-size: .78rem; font-weight: 700; text-transform: capitalize; }
+.project-actions { display: flex; flex-wrap: wrap; gap: .45rem; justify-content: flex-end; }
+.project-actions .button { font-size: .82rem; padding: .48rem .65rem; }
+
+@media (max-width: 650px) { .project-card { grid-template-columns: 1fr; } .project-actions { justify-content: flex-start; } }

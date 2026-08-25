@@ -1,0 +1,5 @@
+.server-card { background: var(--surface); border: 1px solid var(--border); border-radius: .65rem; display: grid; gap: .7rem; max-width: 720px; padding: 1.25rem; }
+.server-card dl { display: grid; gap: .5rem; grid-template-columns: 160px minmax(0, 1fr); margin: 0; }
+.server-card dt { color: var(--muted); }
+.server-card dd { margin: 0; overflow-wrap: anywhere; }
+.server-card a { color: var(--accent); }
