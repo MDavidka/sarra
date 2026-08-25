@@ -55,7 +55,7 @@ from syte import workspace_api
 from syte import platform_api
 from syte.platform.backup_scheduler import backup_scheduler_loop
 from syte.platform.store import ensure_bootstrap, init_platform_db
-from syte.log_stream import stream_preview_logs, stream_project_logs
+from syte.log_stream import stream_logs, stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
 
