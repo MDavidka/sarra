@@ -3753,23 +3753,23 @@ function renderPlatformDetails(page, resources) {
 function renderOverviewHealth(data) {
   const metrics = data.metrics || {};
   const services = data.services || {};
-  const toneFor = (value) => value >= 85 ? 'danger' : value >= 70 ? 'warning' : 'healthy';
-  const gauge = (label, value) => {
-    const numeric = Math.max(0, Math.min(100, Number(value || 0)));
-    const tone = toneFor(numeric);
-    const dash = `${numeric} 100`;
-    return `<div class="overview-gauge ${tone}" role="img" aria-label="${esc(label)} ${Math.round(numeric)} percent"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="overview-gauge-track" pathLength="100" d="M15 60 A45 45 0 0 1 105 60"/><path class="overview-gauge-value" pathLength="100" stroke-dasharray="${dash}" d="M15 60 A45 45 0 0 1 105 60"/></svg><strong>${Math.round(numeric)}%</strong><span>${esc(label)}</span></div>`;
-  };
-  const node = (key, label) => {
+  const overall = String(data.overall || 'attention');
+  const overallCopy = overall === 'healthy'
+    ? 'All core services are responding normally.'
+    : overall === 'degraded'
+      ? 'A managed service needs attention.'
+      : 'Review the workspace before the next deployment.';
+  const serviceRow = (key, label, icon) => {
     const service = services[key] || {state: 'unavailable', detail: 'Status unavailable.'};
-    return `<div class="overview-node ${esc(service.state || 'unavailable')}" title="${esc(service.detail || '')}"><i></i><strong>${esc(label)}</strong><small>${esc(service.state || 'unavailable')}</small></div>`;
+    const state = String(service.state || 'unavailable');
+    return `<article class="overview-service-row"><span class="overview-service-icon"><i data-lucide="${icon}"></i></span><div><strong>${esc(label)}</strong><small>${esc(service.detail || 'Status unavailable.')}</small></div><span class="overview-state ${esc(state)}"><i></i>${esc(state)}</span></article>`;
   };
-  const overallText = data.overall === 'healthy' ? 'everything up' : data.overall === 'attention' ? 'attention needed' : 'service degraded';
+  const projectCount = Number(metrics.project_count || projects.length || 0);
+  const checkedAt = data.collected_at ? new Date(data.collected_at).toLocaleString() : 'Live check complete';
   const target = document.getElementById('platform-dedicated-page');
   if (!target) return;
-  target.innerHTML = `<section class="overview-health" aria-live="polite"><div class="overview-gauges">${gauge('CPU', metrics.cpu_percent)}${gauge('RAM', metrics.memory_percent)}${gauge('DISK', metrics.disk_percent)}</div><div class="overview-status ${esc(data.overall || 'attention')}">${esc(overallText)}</div><div class="overview-topology"><div class="overview-root">${node('web', 'Web service')}</div><div class="overview-branches" aria-hidden="true"><span></span><span></span><span></span></div><div class="overview-children">${node('api', 'API')}${node('apps', 'Apps')}${node('router', '9Router')}</div></div></section><section class="overview-monitor-panel" aria-labelledby="overview-monitor-title"><div class="platform-panel-head"><div><p class="eyebrow">System metrics</p><h2 id="overview-monitor-title">System monitor</h2></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-monitor-refresh"><i data-lucide="refresh-cw"></i>Refresh</button></div><div id="overview-monitor-grid" class="overview-monitor-grid"><div class="platform-loading">Loading system metrics…</div></div></section>`;
-  target.querySelector('#overview-monitor-refresh')?.addEventListener('click', loadOverviewMonitor);
-  void loadOverviewMonitor();
+  target.innerHTML = `<section class="overview-workspace" aria-live="polite"><header class="overview-workspace-hero"><div><p>Workspace health</p><h2>Overview</h2><span>${esc(overallCopy)}</span></div><span class="overview-overall-state ${esc(overall)}"><i></i>${esc(overall === 'healthy' ? 'Operational' : overall === 'degraded' ? 'Attention required' : 'Review needed')}</span></header><div class="overview-status-grid"><article><span>Managed projects</span><strong>${esc(String(projectCount))}</strong><small>Projects in this workspace</small></article><article><span>Core services</span><strong>${esc(String(Object.keys(services).length || 0))}</strong><small>Live status checks</small></article><article><span>Last checked</span><strong>Live</strong><small>${esc(checkedAt)}</small></article></div><section class="overview-services-card" aria-labelledby="overview-services-title"><div class="overview-services-heading"><div><p>Service status</p><h3 id="overview-services-title">Core services</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="overview-health-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div><div class="overview-service-list">${serviceRow('web', 'Web service', 'monitor-up')}${serviceRow('api', 'API', 'braces')}${serviceRow('apps', 'Managed apps', 'layers-3')}</div></section></section>`;
+  target.querySelector('#overview-health-refresh')?.addEventListener('click', () => loadPlatformPage('overview'));
   refreshIcons();
 }
 
