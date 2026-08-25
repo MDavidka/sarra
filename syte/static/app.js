@@ -6655,18 +6655,115 @@ function renderQuickActions(p) {
   `;
 }
 
-function openServiceEditModal(p) {
-  const modal = document.getElementById('svc-edit-modal');
-  const nameInput = document.getElementById('svc-edit-name-input');
-  const domainInput = document.getElementById('svc-edit-domain-input');
-  if (!modal || !nameInput || !domainInput) return;
-  nameInput.value = p.name || '';
-  domainInput.value = p.domain || '';
-  modal.classList.remove('hidden');
-  modal.dataset.projectId = p.id;
-  nameInput.focus();
+function projectEditField(id) {
+  return document.getElementById(id);
 }
 
+function setProjectEditTab(tab) {
+  document.querySelectorAll('[data-project-settings-tab]').forEach(button => {
+    button.classList.toggle('active', button.dataset.projectSettingsTab === tab);
+  });
+  document.querySelectorAll('[data-project-settings-panel]').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.projectSettingsPanel === tab);
+  });
+  document.querySelector('.project-settings-panels')?.scrollTo({top: 0, behavior: 'auto'});
+}
+
+async function copyProjectEditText(value, successMessage) {
+  if (!value) return toast('Nothing is available to copy.');
+  try {
+    await navigator.clipboard.writeText(value);
+    const result = projectEditField('svc-edit-utility-result');
+    if (result) result.textContent = successMessage;
+    toast(successMessage);
+  } catch (_) {
+    toast('Copy is unavailable in this browser context.');
+  }
+}
+
+function projectEditSnapshot(project) {
+  return JSON.stringify({
+    project_id: project.id,
+    name: project.name,
+    repository: project.git_url || null,
+    branch: project.branch || 'main',
+    domain: project.domain || null,
+    deploy_type: project.deploy_type || 'auto',
+    start_command: project.start_command || null,
+    healthcheck_path: project.healthcheck_path || '/',
+    healthcheck_interval: project.healthcheck_interval || null,
+    auto_deploy: Boolean(project.auto_deploy),
+    resource_memory: project.resource_memory || null,
+    resource_cpus: project.resource_cpus || null,
+  }, null, 2);
+}
+
+function openServiceEditModal(p) {
+  const modal = projectEditField('svc-edit-modal');
+  const nameInput = projectEditField('svc-edit-name-input');
+  const domainInput = projectEditField('svc-edit-domain-input');
+  if (!modal || !nameInput || !domainInput) return;
+  const setValue = (id, value) => { const input = projectEditField(id); if (input) input.value = value ?? ''; };
+  nameInput.value = p.name || '';
+  domainInput.value = p.domain || '';
+  setValue('svc-edit-healthcheck-path', p.healthcheck_path || '/');
+  setValue('svc-edit-git-url', p.git_url || 'No repository connected');
+  setValue('svc-edit-branch', p.branch || 'main');
+  setValue('svc-edit-start-command', p.start_command || '');
+  setValue('svc-edit-deploy-type', p.deploy_type || 'auto');
+  setValue('svc-edit-healthcheck-interval', p.healthcheck_interval || '');
+  setValue('svc-edit-resource-memory', p.resource_memory || '');
+  setValue('svc-edit-resource-cpus', p.resource_cpus || '');
+  setValue('svc-edit-dockerfile-path', p.dockerfile_path || '');
+  setValue('svc-edit-compose-file', p.compose_file || '');
+  setValue('svc-edit-docker-image', p.docker_image || '');
+  const autoDeploy = projectEditField('svc-edit-auto-deploy');
+  if (autoDeploy) autoDeploy.checked = Boolean(p.auto_deploy);
+  const mark = projectEditField('svc-edit-project-mark');
+  if (mark) mark.textContent = displayTitle(p).slice(0, 1).toUpperCase() || 'S';
+  const title = projectEditField('svc-edit-title');
+  if (title) title.textContent = displayTitle(p);
+  const meta = projectEditField('svc-edit-project-meta');
+  if (meta) meta.textContent = `${p.running ? 'Production running' : 'Project stopped'} · ${p.branch || 'main'} · ${p.status || 'ready'}`;
+  const environmentCount = projectEditField('svc-edit-env-count');
+  if (environmentCount) environmentCount.textContent = String(Object.keys(p.env_vars || {}).length);
+  const releaseSummary = projectEditField('svc-edit-release-summary');
+  if (releaseSummary) releaseSummary.textContent = p.git_url ? 'Protection and recovery ready' : 'Connect Git to govern releases';
+  const liveLink = projectEditField('svc-edit-open-live');
+  if (liveLink) { liveLink.href = p.url || '#'; liveLink.toggleAttribute('aria-disabled', !p.url); }
+  const copyGit = projectEditField('svc-edit-copy-git');
+  if (copyGit) { copyGit.disabled = !p.git_url; copyGit.onclick = () => copyProjectEditText(p.git_url || '', 'Repository URL copied'); }
+  const copyId = projectEditField('svc-edit-copy-id');
+  if (copyId) copyId.onclick = () => copyProjectEditText(p.id, 'Project ID copied');
+  const copyConfig = projectEditField('svc-edit-copy-config');
+  if (copyConfig) copyConfig.onclick = () => copyProjectEditText(projectEditSnapshot(p), 'Safe configuration copied');
+  const runHealth = projectEditField('svc-edit-run-health');
+  if (runHealth) runHealth.onclick = async () => {
+    const result = projectEditField('svc-edit-utility-result');
+    runHealth.disabled = true;
+    if (result) result.textContent = 'Running health check…';
+    try {
+      const health = await api(`/projects/${encodeURIComponent(p.id)}/health`);
+      const text = health.healthy ? `Healthy · ${health.status_code || 'reachable'} · ${health.detail || ''}` : `Unhealthy · ${health.detail || 'No response'}`;
+      if (result) result.textContent = text;
+      toast(text);
+    } catch (error) {
+      const text = normalizeFetchError(error?.message) || 'Health check could not run.';
+      if (result) result.textContent = text;
+      toast(text);
+    } finally { runHealth.disabled = false; }
+  };
+  const openEnvironment = projectEditField('svc-edit-open-environment');
+  if (openEnvironment) openEnvironment.onclick = () => { closeServiceEditModal(); switchSvcTab('env'); };
+  const openRelease = projectEditField('svc-edit-open-release');
+  if (openRelease) openRelease.onclick = () => { closeServiceEditModal(); switchSvcTab('release'); };
+  document.querySelectorAll('[data-project-settings-tab]').forEach(button => { button.onclick = () => setProjectEditTab(button.dataset.projectSettingsTab || 'general'); });
+  modal.classList.remove('hidden');
+  modal.dataset.projectId = p.id;
+  setProjectEditTab('general');
+  nameInput.focus();
+  refreshIcons();
+}
 function closeServiceEditModal() {
   document.getElementById('svc-edit-modal')?.classList.add('hidden');
 }
@@ -7081,38 +7178,51 @@ async function serviceAction(id, action) {
 }
 
 async function saveServiceEdit() {
-  const modal = document.getElementById('svc-edit-modal');
+  const modal = projectEditField('svc-edit-modal');
   const id = modal?.dataset.projectId;
   if (!id) return;
-
-  const name = document.getElementById('svc-edit-name-input')?.value.trim();
-  let domain = document.getElementById('svc-edit-domain-input')?.value.trim() || '';
+  const value = id => projectEditField(id)?.value.trim() || '';
+  const name = value('svc-edit-name-input');
+  let domain = value('svc-edit-domain-input');
   domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-
   if (!name) return toast('Name is required');
-
+  const saveButton = projectEditField('svc-edit-save-btn');
+  const state = projectEditField('svc-edit-save-state');
+  if (saveButton) saveButton.disabled = true;
+  if (state) state.textContent = 'Saving project configuration…';
   try {
-    await api(`/projects/${id}`, {
+    await api(`/projects/${encodeURIComponent(id)}`, {method: 'PUT', body: JSON.stringify({name})});
+    await api(`/projects/${encodeURIComponent(id)}/deployment-config`, {
       method: 'PUT',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({
+        branch: value('svc-edit-branch') || 'main',
+        start_command: value('svc-edit-start-command'),
+        deploy_type: value('svc-edit-deploy-type') || 'auto',
+        dockerfile_path: value('svc-edit-dockerfile-path'),
+        docker_image: value('svc-edit-docker-image'),
+        compose_file: value('svc-edit-compose-file'),
+        healthcheck_path: value('svc-edit-healthcheck-path') || '/',
+        healthcheck_interval: Number(value('svc-edit-healthcheck-interval')) || null,
+        auto_deploy: Boolean(projectEditField('svc-edit-auto-deploy')?.checked),
+        resource_memory: value('svc-edit-resource-memory'),
+        resource_cpus: value('svc-edit-resource-cpus'),
+      }),
     });
     if (domain) {
       const email = (await api('/settings')).admin_email;
-      await api(`/projects/${id}/domain`, {
-        method: 'POST',
-        body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
-      });
+      await api(`/projects/${encodeURIComponent(id)}/domain`, {method: 'POST', body: JSON.stringify({domain, email: email || 'admin@localhost'})});
     }
-    toast('Project updated');
-    closeServiceEditModal();
+    if (state) state.textContent = 'Saved. Runtime limits and build settings apply on the next deployment.';
+    toast('Project configuration saved');
     await loadProjects();
-    const p = projects.find(x => x.id === id);
-    if (p) {
-      renderServiceDashboard(p, false);
-      setBreadcrumb(displayTitle(p));
-    }
-  } catch (e) {
-    toast('Error: ' + e.message);
+    const p = projects.find(item => item.id === id);
+    if (p) { renderServiceDashboard(p, false); setBreadcrumb(displayTitle(p)); }
+  } catch (error) {
+    const message = normalizeFetchError(error?.message) || 'Could not save project configuration.';
+    if (state) state.textContent = message;
+    toast(message);
+  } finally {
+    if (saveButton) saveButton.disabled = false;
   }
 }
 
@@ -8378,6 +8488,7 @@ document.getElementById('svc-logs-autoscroll')?.addEventListener('click', (e) =>
 });
 
 document.getElementById('svc-edit-cancel-btn')?.addEventListener('click', closeServiceEditModal);
+document.getElementById('svc-edit-close-btn')?.addEventListener('click', closeServiceEditModal);
 document.getElementById('svc-edit-backdrop')?.addEventListener('click', closeServiceEditModal);
 document.getElementById('svc-edit-save-btn')?.addEventListener('click', saveServiceEdit);
 

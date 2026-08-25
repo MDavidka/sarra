@@ -458,21 +458,54 @@
 
           <div id="svc-edit-modal" class="svc-edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="svc-edit-title">
             <div class="svc-edit-backdrop" id="svc-edit-backdrop"></div>
-            <div class="svc-edit-dialog">
-              <h3 id="svc-edit-title">Edit project</h3>
-              <div class="form-group">
-                <label for="svc-edit-name-input">Name</label>
-                <input type="text" id="svc-edit-name-input" placeholder="my-app">
+            <div class="svc-edit-dialog project-settings-dialog">
+              <header class="project-settings-header">
+                <div class="project-settings-identity"><span class="project-settings-mark" id="svc-edit-project-mark">S</span><div><p>Project settings</p><h3 id="svc-edit-title">Configure project</h3><span id="svc-edit-project-meta">Saved configuration for this project</span></div></div>
+                <button type="button" class="project-settings-close" id="svc-edit-close-btn" aria-label="Close project settings"><i data-lucide="x"></i></button>
+              </header>
+              <div class="project-settings-layout">
+                <nav class="project-settings-nav" aria-label="Project settings">
+                  <button type="button" class="active" data-project-settings-tab="general"><i data-lucide="sliders-horizontal"></i><span>General</span></button>
+                  <button type="button" data-project-settings-tab="deployment"><i data-lucide="git-branch"></i><span>Deployment</span></button>
+                  <button type="button" data-project-settings-tab="runtime"><i data-lucide="container"></i><span>Runtime</span></button>
+                  <button type="button" data-project-settings-tab="environment"><i data-lucide="braces"></i><span>Environment</span></button>
+                  <button type="button" data-project-settings-tab="release"><i data-lucide="shield-check"></i><span>Release & access</span></button>
+                  <button type="button" data-project-settings-tab="utilities"><i data-lucide="wand-sparkles"></i><span>Utilities</span></button>
+                </nav>
+                <div class="project-settings-panels">
+                  <section class="project-settings-panel active" data-project-settings-panel="general">
+                    <header><div><p>Project identity</p><h4>General</h4><span>Set the stable project name, production address, and health endpoint.</span></div></header>
+                    <div class="project-settings-grid"><label>Project name<input type="text" id="svc-edit-name-input" placeholder="my-app" autocomplete="off"></label><label>Production domain<input type="text" id="svc-edit-domain-input" placeholder="app.example.com" autocomplete="off"><small>HTTPS is issued after DNS points to this server.</small></label><label>Health check path<input type="text" id="svc-edit-healthcheck-path" placeholder="/health" autocomplete="off"><small>Used by the live health utility and release timeline.</small></label></div>
+                    <div class="project-settings-callout"><i data-lucide="info"></i><span>Project ID stays stable when the name changes, so deployment history, domains, and release controls remain linked.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="deployment">
+                    <header><div><p>Source and build</p><h4>Deployment</h4><span>Control the branch watcher and the command used to start this service.</span></div></header>
+                    <div class="project-settings-source"><label>Connected repository<input type="text" id="svc-edit-git-url" readonly></label><button type="button" class="project-utility-btn" id="svc-edit-copy-git"><i data-lucide="copy"></i><span>Copy URL</span></button></div>
+                    <div class="project-settings-grid"><label>Production branch<input type="text" id="svc-edit-branch" placeholder="main" autocomplete="off"></label><label>Start command<input type="text" id="svc-edit-start-command" placeholder="npm start" autocomplete="off"></label><label>Deployment type<select id="svc-edit-deploy-type"><option value="auto">Auto-detect</option><option value="dockerfile">Dockerfile</option><option value="image">Container image</option><option value="compose">Compose</option></select></label><label>Health interval (seconds)<input type="number" id="svc-edit-healthcheck-interval" min="5" max="3600" placeholder="30"></label></div>
+                    <label class="project-settings-switch"><input type="checkbox" id="svc-edit-auto-deploy"><span><strong>Automatically deploy new commits</strong><small>Watch the configured production branch on the existing interval.</small></span></label>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="runtime">
+                    <header><div><p>Container limits</p><h4>Runtime</h4><span>Set safe resource limits and advanced source paths for the next deployment.</span></div></header>
+                    <div class="project-settings-grid"><label>Memory limit<input type="text" id="svc-edit-resource-memory" placeholder="512m"><small>Example: 512m or 1g</small></label><label>CPU limit<input type="text" id="svc-edit-resource-cpus" placeholder="1.0"><small>Example: 0.5 or 1.0</small></label><label>Dockerfile path<input type="text" id="svc-edit-dockerfile-path" placeholder="Dockerfile"></label><label>Compose file<input type="text" id="svc-edit-compose-file" placeholder="docker-compose.yml"></label><label>Container image<input type="text" id="svc-edit-docker-image" placeholder="registry.example/app:latest"></label></div>
+                    <div class="project-settings-callout"><i data-lucide="triangle-alert"></i><span>Runtime limits are applied on the next deployment. Use the Release workspace for production protections and recovery points.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="environment">
+                    <header><div><p>Runtime configuration</p><h4>Environment</h4><span>Manage runtime variables without exposing secret values in this settings view.</span></div></header>
+                    <div class="project-settings-stat"><div><span>Configured variables</span><strong id="svc-edit-env-count">0</strong></div><p>Variables are stored in the existing encrypted project configuration path and become available on the next deployment.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-environment"><i data-lucide="braces"></i><span>Manage variables</span></button></div>
+                    <div class="project-settings-callout"><i data-lucide="lock-keyhole"></i><span>Secret values are not rendered in this editor. Use Environment to create, update, or remove them deliberately.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="release">
+                    <header><div><p>Operational safeguards</p><h4>Release & access</h4><span>Configure environments, promotion approvals, project roles, data snapshots, and host governance.</span></div></header>
+                    <div class="project-settings-stat"><div><span>Release workspace</span><strong id="svc-edit-release-summary">Production protection available</strong></div><p>Production approvals, preview lifecycle, recovery points, activity, and team roles are managed in the dedicated Release workspace.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-release"><i data-lucide="rocket"></i><span>Open Release</span></button></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="utilities">
+                    <header><div><p>Operator tools</p><h4>Utilities</h4><span>Quick actions that make project review and handoff faster without changing a deployment.</span></div></header>
+                    <div class="project-utilities-grid"><button type="button" class="project-utility-card" id="svc-edit-copy-id"><i data-lucide="fingerprint"></i><span>Copy project ID</span><small>Stable identifier for API and support workflows.</small></button><button type="button" class="project-utility-card" id="svc-edit-copy-config"><i data-lucide="file-json-2"></i><span>Copy configuration</span><small>Create a safe, secret-free settings snapshot.</small></button><button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe the current production endpoint now.</small></button><a class="project-utility-card" id="svc-edit-open-live" href="#" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open live project</span><small>Open the current production URL in a new tab.</small></a></div>
+                    <p class="project-utility-result" id="svc-edit-utility-result" aria-live="polite"></p>
+                  </section>
+                </div>
               </div>
-              <div class="form-group">
-                <label for="svc-edit-domain-input">Domain</label>
-                <input type="text" id="svc-edit-domain-input" placeholder="app.example.com">
-                <span class="hint">HTTPS via Caddy once DNS points here</span>
-              </div>
-              <div class="svc-edit-actions">
-                <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
-                <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
-              </div>
+              <footer class="project-settings-footer"><span id="svc-edit-save-state">Changes are saved together.</span><div><button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button><button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn"><i data-lucide="save"></i><span>Save changes</span></button></div></footer>
             </div>
           </div>
         </section>

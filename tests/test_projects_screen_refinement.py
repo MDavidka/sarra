@@ -225,3 +225,24 @@ def test_github_repository_metadata_and_svgl_framework_assets_are_available():
     assert "Deployment framework icons" in assets
     for filename in ("nextjs-svgl.svg", "react-svgl.svg", "vite-svgl.svg", "vue-svgl.svg", "svelte-svgl.svg", "astro-svgl.svg", "django-svgl.svg", "laravel-svgl.svg"):
         assert (framework_dir / filename).is_file()
+
+
+def test_project_editor_is_a_scoped_operational_settings_workspace():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'class="svc-edit-dialog project-settings-dialog"' in index
+    for tab in ("general", "deployment", "runtime", "environment", "release", "utilities"):
+        assert f'data-project-settings-tab="{tab}"' in index
+        assert f'data-project-settings-panel="{tab}"' in index
+    for control in ("svc-edit-healthcheck-path", "svc-edit-branch", "svc-edit-auto-deploy", "svc-edit-resource-memory", "svc-edit-open-environment", "svc-edit-open-release", "svc-edit-copy-config", "svc-edit-run-health"):
+        assert f'id="{control}"' in index
+    assert "function setProjectEditTab(tab)" in app
+    assert "function projectEditSnapshot(project)" in app
+    assert "function copyProjectEditText(value, successMessage)" in app
+    assert "/deployment-config" in app
+    assert "/health`" in app
+    assert ".project-settings-dialog" in css
+    assert ".project-settings-nav" in css
+    assert ".project-utilities-grid" in css
