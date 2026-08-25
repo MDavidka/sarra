@@ -176,12 +176,16 @@ def test_certification_is_a_dedicated_white_cloudflare_workspace():
     css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
 
     assert "is-certificates-workspace" in app
-    assert "certificate-white-workspace" in app
-    assert "Application protection, <em>powered by Cloudflare</em>" in app
-    assert "Protect domain" in app
+    assert "certificate-structured-workspace" in app
+    assert "Certificate security" in app
+    assert "certificate-structured-provider" in app
+    assert "data-certificate-filter" in app
+    assert "data-certificate-use-domain" in app
+    assert "Issue certificate" in app
     assert "data-certificate-issue" in app
     assert "data-certificate-guide" in app
     assert "/static/vendor/cloudflare-svgl.svg" in app
     assert ".platform-workspace.is-certificates-workspace > .platform-page-head" in css
-    assert ".certificate-white-workspace" in css
+    assert ".certificate-structured-workspace" in css
+    assert ".certificate-structured-list" in css
     assert "background:#fff" in css

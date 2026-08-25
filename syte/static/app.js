@@ -8919,18 +8919,36 @@ async function renderCertificateWorkspace() {
     const projectRows = projects.length
       ? projects.map(project => {
         const production = project.production || {};
-        const label = production.badge_label || project.badge_label || (production.domain ? 'pending' : 'not configured');
-        return `<article class="certificate-project-state"><div><strong>${esc(project.name || project.id)}</strong><span>${esc(production.domain || 'No production domain')}</span></div><em>${esc(label)}</em></article>`;
+        const domain = production.domain || '';
+        const label = production.badge_label || project.badge_label || (domain ? 'pending' : 'not configured');
+        const action = domain ? 'Manage' : 'Issue';
+        return `<article class="certificate-structured-row" data-certificate-row="${esc(`${project.name || project.id} ${domain} ${label}`.toLowerCase())}"><span class="certificate-structured-row-icon"><i data-lucide="${domain ? 'shield-check' : 'shield'}"></i></span><div><strong>${esc(project.name || project.id)}</strong><span>${esc(domain || 'No production domain')}</span></div><em>${esc(label)}</em><button type="button" data-certificate-use-domain data-project-id="${esc(project.id)}" data-domain="${esc(domain)}">${action}</button></article>`;
       }).join('')
       : '<p class="certificate-empty">Add a project and domain to begin certificate issuance.</p>';
-    target.innerHTML = `<section class="certificate-white-workspace" aria-label="Certificate management">
-      <header class="certificate-white-hero"><div class="certificate-white-lock" aria-hidden="true"><i data-lucide="lock-keyhole"></i></div><div><p>Certification</p><h2>Application protection, <em>powered by Cloudflare</em></h2><span>Issue trusted certificates and keep DNS validation clear before traffic reaches your applications.</span></div></header>
-      <div class="certificate-white-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span><small>DNS only while issuing</small></div>
+    target.innerHTML = `<section class="certificate-structured-workspace" aria-label="Certificate management">
+      <header class="certificate-structured-title"><p>Security</p><h2>Certificate security</h2></header>
+      <button type="button" class="certificate-structured-provider" data-certificate-refresh aria-label="Refresh Cloudflare certificate state"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span><i data-lucide="chevron-down"></i></button>
+      <label class="certificate-structured-search"><i data-lucide="search"></i><input type="search" data-certificate-filter placeholder="Search applications or domains" autocomplete="off"><span>Search</span></label>
+      <section class="certificate-structured-list" aria-label="Project certificate status">${projectRows}</section>
       ${certificateIssuanceHtml(data)}
-      <section class="certificate-white-projects" aria-label="Project certificate status"><div class="certificate-white-projects-head"><div><p>Protected applications</p><h3>Certificate status</h3></div><button type="button" class="certificate-white-refresh" data-certificate-refresh><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>${projectRows}</section>
     </section>`;
     wireCertificateIssuance();
     target.querySelector('[data-certificate-refresh]')?.addEventListener('click', () => loadPlatformPage('certificates'));
+    target.querySelector('[data-certificate-filter]')?.addEventListener('input', event => {
+      const term = event.target.value.trim().toLowerCase();
+      target.querySelectorAll('[data-certificate-row]').forEach(row => row.classList.toggle('hidden', !!term && !row.dataset.certificateRow.includes(term)));
+    });
+    target.querySelector('.certificate-structured-list')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-certificate-use-domain]');
+      if (!button) return;
+      const form = target.querySelector('[data-certificate-issue]');
+      const project = form?.querySelector('[name="project_id"]');
+      const domain = form?.querySelector('[name="domain"]');
+      if (project) project.value = button.dataset.projectId || '';
+      if (domain) domain.value = button.dataset.domain || '';
+      form?.scrollIntoView({behavior:'smooth', block:'center'});
+      domain?.focus();
+    });
     refreshIcons();
   } catch (error) {
     target.innerHTML = `<section class="certificate-workspace-error">Could not load certificate readiness: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</section>`;
@@ -8940,10 +8958,10 @@ async function renderCertificateWorkspace() {
 function certificateIssuanceHtml(data) {
   const projects = data.projects || [];
   const projectOptions = projects.map(project => `<option value="${esc(project.id)}">${esc(project.name || project.id)}</option>`).join('');
-  return `<section class="certificate-white-issuer" aria-label="Certificate issuance">
-    <header><div><p>Domain certificate</p><h3>Protect a domain</h3><span>Use DNS-only records for normal certificates. Wildcard certificates use Cloudflare DNS-01.</span></div></header>
-    <form data-certificate-issue="1"><label><span>Application</span><select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label><span>Domain</span><input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-white-wildcard"><input type="checkbox" name="wildcard"><span>Use wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Protect domain</span></button></form>
-    <div class="certificate-white-guide" data-certificate-guide="1"><p>Enter a domain to check DNS readiness and receive copyable record guidance.</p></div>
+  return `<section class="certificate-structured-issuer" aria-label="Certificate issuance">
+    <header><p>Certificate operations</p><h3>Issue certificate</h3><span>Normal certificates require a direct DNS-only record. Wildcards use Cloudflare DNS-01.</span></header>
+    <form data-certificate-issue="1"><label><span>Application</span><select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label><span>Domain</span><input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-structured-wildcard"><input type="checkbox" name="wildcard"><span>Use wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Issue</span></button></form>
+    <div class="certificate-structured-guide" data-certificate-guide="1"><p>Enter a domain to check DNS readiness and receive copyable record guidance.</p></div>
   </section>`;
 }
 
