@@ -263,7 +263,7 @@ async def create_project_record(
 
     scaffold_msg = ""
     if stack and not resolved_git:
-        from syte.sycord.scaffold import STACKS, scaffold_project
+        from syte.scaffold import STACKS, scaffold_project
 
         chosen = stack.strip().lower()
         if chosen in STACKS:
@@ -274,12 +274,10 @@ async def create_project_record(
     await update_project(project_id, {"status": "created"})
     project = await get_project(project_id)
 
-    from syte.cloud_agent import ensure_agent_runtime
     from syte.certificates import apply_proxy_config
     from syte.preview_manager import ensure_preview_address
 
     project = await ensure_preview_address(project or {"id": project_id, "name": name})
-    project = await ensure_agent_runtime(project or {"id": project_id, "name": name})
     await apply_proxy_config()
 
     if deploy_now:
@@ -599,11 +597,9 @@ async def remove_service(project_id: str) -> tuple[bool, str]:
     project = await get_project(project_id)
     if not project:
         return False, "Project not found."
-    from syte.cloud_agent import stop_agent
     from syte.preview_manager import stop_preview_async
 
     await stop_preview_async(project_id)
-    await stop_agent(project_id)
     await asyncio.to_thread(process_manager.stop_project, project_id, project.get("deploy_type", "shell"))
     await delete_project(project_id)
     await apply_proxy_config()

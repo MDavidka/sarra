@@ -5,20 +5,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from syte.caddy_routes import (
-    NINE_ROUTER_PUBLIC_HOST,
-    NINE_ROUTER_UPSTREAM_DEFAULT,
-    host_zone,
-    render_9router_route,
-    render_all_service_routes,
-    render_litellm_api_route,
-    render_managed_9router_route,
-)
+from syte.caddy_routes import render_all_service_routes
 from syte.config import settings
 from syte.database import get_setting, list_projects
 from syte.domain_utils import is_safe_caddy_hostname, normalize_domain
-from syte.litellm_config import LITELLM_HOST_PORT, LITELLM_PUBLIC_HOST
-from syte.nine_router_manager import NINE_ROUTER_HOST_PORT
 from syte.preview_domains import preview_frame_ancestors_csp
 
 CADDY_DROPIN_DIR = Path("/etc/systemd/system/caddy.service.d")
@@ -215,66 +205,6 @@ async def _use_wildcard_tls() -> bool:
     return bool(cf_token) and mode in ("1", "true", "yes", "on", "auto")
 
 
-async def nine_router_backend_port() -> int:
-    """Loopback port of the local 9Router AI gateway behind Caddy.
-
-    Legacy helper — kept for backwards compatibility. New installs proxy
-    9Router to a dedicated remote gateway host via ``nine_router_upstream``;
-    this only applies when the legacy ``nine_router_backend_port`` setting is
-    explicitly configured.
-    """
-    raw = (await get_setting("nine_router_backend_port", "")).strip()
-    if not raw:
-        return LITELLM_HOST_PORT
-    try:
-        port = int(raw)
-    except (TypeError, ValueError):
-        return LITELLM_HOST_PORT
-    if 1 <= port <= 65535:
-        return port
-    return LITELLM_HOST_PORT
-
-
-def normalize_remote_nine_router_upstream(raw: str) -> str:
-    """Validate a 9Router upstream and reject local/private destinations."""
-    host, separator, port_str = (raw or "").strip().rpartition(":")
-    if not separator:
-        return ""
-    host = normalize_domain(host)
-    if not host or not is_safe_caddy_hostname(host):
-        return ""
-    lowered = host.lower()
-    if lowered in {"localhost", "localhost.localdomain", "local"} or lowered.endswith((".localhost", ".local")):
-        return ""
-    try:
-        port = int(port_str)
-    except (TypeError, ValueError):
-        return ""
-    if not 1 <= port <= 65535:
-        return ""
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        # Hostnames are allowed when they are not obvious local-only names.
-        return f"{host}:{port}"
-    if address.version != 4 or not address.is_global:
-        return ""
-    return f"{address}:{port}"
-
-
-async def nine_router_upstream() -> str:
-    """Upstream host:port the 9Router gateway is proxied to.
-
-    Defaults to ``65.75.203.134:20128`` — the dedicated gateway host. An
-    explicit ``nine_router_upstream`` may override it with a remote hostname
-    or global IPv4 address. Legacy local backend-port settings are deliberately
-    ignored because they point Caddy at localhost and break the public route.
-    """
-    raw = (await get_setting("nine_router_upstream", "")).strip()
-    upstream = normalize_remote_nine_router_upstream(raw)
-    return upstream or NINE_ROUTER_UPSTREAM_DEFAULT
-
-
 async def async_generate_caddyfile() -> str:
     from syte.caddy_routes import preview_cors_origin
 
@@ -309,7 +239,7 @@ async def async_generate_caddyfile() -> str:
             "",
         ])
 
-    if gui_domain and gui_domain != LITELLM_PUBLIC_HOST:
+    if gui_domain:
         if gui_domain == host_zone(gui_domain) or not use_wildcard_tls:
             lines.extend([
                 f"{gui_domain} {{",
@@ -325,49 +255,6 @@ async def async_generate_caddyfile() -> str:
                 "}",
                 "",
             ])
-    else:
-        lines.extend([
-            f"# GUI: https://{LITELLM_PUBLIC_HOST}/",
-            "",
-        ])
-
-    managed_router_enabled = (await get_setting("nine_router_public_enabled", "0")).strip() == "1"
-    if managed_router_enabled:
-        # The Router tab temporarily owns 9router.sycord.site so the dashboard and
-        # /v1 API share the origin advertised by the official Docker image.
-        # Operators should configure a separate gui_domain before enabling it.
-        lines.extend(
-            render_managed_9router_route(
-                NINE_ROUTER_PUBLIC_HOST,
-                NINE_ROUTER_HOST_PORT,
-                use_wildcard_tls=use_wildcard_tls,
-            )
-        )
-    else:
-        lines.extend(
-            render_litellm_api_route(
-                LITELLM_PUBLIC_HOST,
-                LITELLM_HOST_PORT,
-                use_wildcard_tls=use_wildcard_tls,
-                gui_port=settings.port,
-            )
-        )
-
-        # Keep the existing remote 9Router gateway route when the managed
-        # container is not enabled. Its loopback TLS probe would conflict with
-        # the local Docker binding while the managed service is running.
-        from syte.ai_providers import NINE_ROUTER_API_BASE
-
-        nine_host = normalize_domain(NINE_ROUTER_API_BASE)
-        if is_safe_caddy_hostname(nine_host):
-            lines.extend(
-                render_9router_route(
-                    nine_host,
-                    await nine_router_upstream(),
-                    use_wildcard_tls=use_wildcard_tls,
-                )
-            )
-
     projects = await list_projects()
     lines.extend(
         render_all_service_routes(

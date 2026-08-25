@@ -808,20 +808,10 @@ async def overview_health() -> dict[str, Any]:
     else:
         apps = {"state": "attention", "healthy": False, "detail": "No active application workloads were detected."}
 
-    try:
-        from syte.nine_router_manager import router_status
-        router = await router_status()
-        router_running = bool(router.get("running") or router.get("healthy") or router.get("status") in {"running", "healthy"})
-        router_state = "healthy" if router_running else "attention"
-        router_detail = str(router.get("message") or ("9Router is running." if router_running else "9Router is not running."))
-    except Exception:
-        router_state, router_running, router_detail = "unavailable", False, "9Router status could not be collected."
-
     services_snapshot = {
         "web": {"state": "healthy", "healthy": True, "detail": "Syte web service is responding."},
         "api": {"state": "healthy", "healthy": True, "detail": "FastAPI service is responding."},
         "apps": apps,
-        "router": {"state": router_state, "healthy": router_running, "detail": router_detail},
     }
     states = {item["state"] for item in services_snapshot.values()}
     overall = "healthy" if states == {"healthy"} else "degraded" if {"degraded", "unavailable"} & states else "attention"

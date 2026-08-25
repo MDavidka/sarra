@@ -256,14 +256,12 @@ def _append_command_log(project_id: str, command: str, cwd: str, exit_code: int)
 
 async def workspace_get(project_id: str) -> dict | None:
     from syte import process_manager
-    from syte.cloud_agent import ensure_agent_runtime, get_agent_status
     from syte.preview_manager import ensure_preview_address, preview_meta
 
     project = await get_project(project_id)
     if not project:
         return None
     project = await ensure_preview_address(project)
-    project = await ensure_agent_runtime(project)
     ws = workspace_path(project_id)
     ip = settings.resolved_public_ip
     domain = project.get("domain") or ""
@@ -289,7 +287,6 @@ async def workspace_get(project_id: str) -> dict | None:
         "data_path": str(ws / "data"),
         "stream_url": f"/api/projects/{project_id}/logs/stream?live=1",
         **preview_meta(project),
-        "agent": await get_agent_status(project_id),
         "ssl": enrich_ssl(project),
     }
 
@@ -440,15 +437,6 @@ async def write_file(project_id: str, file_path: str, content: str) -> tuple[boo
             f"does not match the {len(content)} chars sent. The file was not saved reliably."
         )
 
-    from syte.agent_activity import record_workspace_activity
-
-    await record_workspace_activity(
-        project_id,
-        "create_file" if not existed else "write_file",
-        path=file_path,
-        source="api",
-    )
-
     rel = str(target.relative_to(workspace_path(project_id)))
     message = f"Wrote and verified {len(content)} chars to {rel}"
     if not content.strip():
@@ -477,9 +465,6 @@ async def delete_file(project_id: str, file_path: str) -> tuple[bool, str]:
     if target == ws or target == ws / "app":
         return False, "Cannot delete workspace root"
     target.unlink()
-    from syte.agent_activity import record_workspace_activity
-
-    await record_workspace_activity(project_id, "delete_file", path=file_path, source="api")
     return True, f"Deleted {file_path}"
 
 
@@ -530,9 +515,6 @@ async def upload_file_stream(
         tmp.unlink(missing_ok=True)
         return False, f"Upload failed for {file_path}: {exc}", written
 
-    from syte.agent_activity import record_workspace_activity
-
-    await record_workspace_activity(project_id, "upload_file", path=file_path, source="api")
     return True, f"Uploaded {written} bytes to {file_path}", written
 
 
@@ -582,7 +564,7 @@ async def execute_command(
     if disallowed:
         return 1, f"Command blocked (unsupported binary): {disallowed}"
 
-    build_blocked = _is_forbidden_build(cmd) if source not in ("gui", "mcp") else None
+    build_blocked = _is_forbidden_build(cmd)
     if build_blocked:
         return 1, (
             "Build commands are not allowed via execute_command. "
@@ -590,12 +572,6 @@ async def execute_command(
             "that runs git pull + docker build (npm run build inside Dockerfile) + restart. "
             "For testing, use: npm run lint"
         )
-
-    # Agent / MCP shells must stay inside the tenant workspace (cwd alone is not enough).
-    if source in ("agent", "mcp"):
-        path_blocked = _shell_path_violation(project_id, cmd, cwd=cwd)
-        if path_blocked:
-            return 1, f"Command blocked (workspace boundary): {path_blocked}"
 
     try:
         workdir = _resolve_workspace_path(project_id, cwd)
@@ -645,15 +621,6 @@ async def execute_command(
         code = int(proc.returncode or 0)
         output = out.strip() or "(no output)"
         _append_command_log(project_id, cmd, cwd, code)
-        from syte.agent_activity import record_workspace_activity
-
-        await record_workspace_activity(
-            project_id,
-            "execute_command",
-            command=cmd,
-            source=source,
-            detail=output[:500] if output else "",
-        )
         return code, output
     except OSError as exc:
         _append_command_log(project_id, cmd, cwd, 1)
