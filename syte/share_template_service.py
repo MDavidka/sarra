@@ -88,9 +88,9 @@ def _platform_url() -> str:
     domain = str(getattr(settings, "gui_domain", "") or "").strip()
     if domain:
         return f"https://{domain}"
-    # Containers cannot reach Syte's loopback-bound Uvicorn port directly;
-    # the Syte HTTPS entrypoint is reachable from hosted workloads.
-    return "https://sycord.site"
+    # Hosted Docker workloads reach the host-bound Syte service via the
+    # default bridge gateway. The URL and instance key remain server-only.
+    return "http://172.17.0.1:8787"
 
 
 async def provision_share_template(template_id: str, name: str, owner_account_id: str = "") -> tuple[dict[str, Any], str]:
