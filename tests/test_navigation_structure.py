@@ -21,7 +21,7 @@ def test_main_navigation_has_exact_requested_subtab_groups():
 
     assert group_labels == ["Overview", "Settings", "Account", "Help"]
     assert entries == [
-        "Home", "Overview", "Servers", "Certification",
+        "Home", "Share It", "Overview", "Servers", "Certification",
         "Settings", "API", "Session", "Git", "DNS", "Notify",
         "Bill", "License", "SSO",
         "Documentation", "Support",

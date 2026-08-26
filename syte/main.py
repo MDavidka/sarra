@@ -51,6 +51,7 @@ from syte.auth import (
 from syte import api_router
 from syte import workspace_api
 from syte import platform_api
+from syte import share_api
 from syte.platform.backup_scheduler import backup_scheduler_loop
 from syte.platform.store import ensure_bootstrap, init_platform_db
 from syte.log_stream import stream_preview_logs, stream_project_logs
@@ -174,6 +175,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 app.include_router(api_router.router, prefix="/api")
 app.include_router(platform_api.router, prefix="/api")
+app.include_router(share_api.router, prefix="/api")
 
 
 class CreateTokenRequest(BaseModel):

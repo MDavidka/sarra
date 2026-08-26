@@ -4337,6 +4337,7 @@ function showView(name) {
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'sycord') refreshIcons();
+  if (name === 'share-it') loadShareItTemplates();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
@@ -9255,3 +9256,53 @@ function wireCertificateIssuance() {
     catch (_) { toast('Select the record and copy it manually.'); }
   });
 }
+
+// Share It — Syte-hosted template catalog.
+let shareItTemplates = [];
+let selectedShareTemplate = null;
+async function loadShareItTemplates() {
+  const list = document.getElementById('share-it-template-list');
+  if (!list) return;
+  list.innerHTML = '<div class="share-it-loading">Loading Syte-hosted templates…</div>';
+  try {
+    const payload = await api('/share/templates');
+    shareItTemplates = payload.templates || [];
+    renderShareItTemplates();
+  } catch (error) { list.innerHTML = `<div class="share-it-loading">${escapeHtml(normalizeFetchError(error?.message) || 'Unable to load templates.')}</div>`; }
+}
+function renderShareItTemplates() {
+  const list = document.getElementById('share-it-template-list');
+  const query = (document.getElementById('share-it-filter')?.value || '').trim().toLowerCase();
+  if (!list) return;
+  const rows = shareItTemplates.filter(t => !query || `${t.name} ${t.summary} ${t.framework}`.toLowerCase().includes(query));
+  list.innerHTML = rows.length ? rows.map(template => `<article class="share-it-template-card"><div class="share-it-template-icon"><i data-lucide="${escapeHtml(template.icon || 'layout-template')}"></i></div><div><span>${escapeHtml(template.framework)}</span><h2>${escapeHtml(template.name)}</h2><p>${escapeHtml(template.summary)}</p><small>${escapeHtml(template.runtime)} · Syte hosted source</small></div><button type="button" class="btn-pill btn-primary" data-share-template="${escapeHtml(template.id)}">Use template</button></article>`).join('') : '<div class="share-it-loading">No matching Syte-hosted templates.</div>';
+  list.querySelectorAll('[data-share-template]').forEach(button => { button.onclick = () => openShareItProvision(button.dataset.shareTemplate); });
+  refreshIcons();
+}
+function openShareItProvision(templateId) {
+  selectedShareTemplate = shareItTemplates.find(template => template.id === templateId) || null;
+  if (!selectedShareTemplate) return;
+  document.getElementById('share-it-provision-title').textContent = selectedShareTemplate.name;
+  document.getElementById('share-it-provision-copy').textContent = `${selectedShareTemplate.description} Its scoped server credential is injected only as a hosted runtime variable.`;
+  document.getElementById('share-it-instance-name').value = '';
+  document.getElementById('share-it-provision').classList.remove('hidden');
+  document.getElementById('share-it-instance-name').focus();
+}
+async function provisionShareItTemplate() {
+  const name = document.getElementById('share-it-instance-name')?.value.trim();
+  const button = document.getElementById('share-it-provision-submit');
+  if (!selectedShareTemplate || !name) return toast('Provide a hosted project name.');
+  button.disabled = true;
+  try {
+    const result = await api(`/share/templates/${encodeURIComponent(selectedShareTemplate.id)}/provision`, { method: 'POST', body: JSON.stringify({name}) });
+    toast(result.message || 'Hosted template created.');
+    document.getElementById('share-it-provision').classList.add('hidden');
+    await loadProjects();
+    const project = projects.find(item => item.id === result.project?.id);
+    if (project) openService(project.id);
+  } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not create the hosted template.'); }
+  finally { button.disabled = false; }
+}
+document.getElementById('share-it-filter')?.addEventListener('input', renderShareItTemplates);
+document.getElementById('share-it-provision-cancel')?.addEventListener('click', () => document.getElementById('share-it-provision')?.classList.add('hidden'));
+document.getElementById('share-it-provision-submit')?.addEventListener('click', provisionShareItTemplate);

@@ -107,6 +107,7 @@
           <div class="coolify-nav-section">
             <p class="nav-section-label">Overview</p>
             <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard"><i data-lucide="home"></i><span>Home</span></button>
+            <button type="button" class="nav-sublink" data-view="share-it"><i data-lucide="share-2"></i><span>Share It</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="remote-servers"><i data-lucide="server"></i><span>Servers</span><span id="server-nav-performance" class="nav-server-performance" role="progressbar" aria-label="Server performance unavailable" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="certificates"><i data-lucide="badge-check"></i><span>Certification</span></button>
@@ -510,6 +511,7 @@
           </div>
         </section>
 
+        <section id="view-share-it" class="view"><div class="share-it-page"><header><p class="share-it-eyebrow">Syte hosted templates</p><h1>Share It!</h1><p>Let external users host their own control workspace on your server with a verified Syte-hosted template.</p><label class="share-it-search"><i data-lucide="search"></i><input id="share-it-filter" placeholder="Filter templates…" autocomplete="off"></label></header><div id="share-it-template-list" class="share-it-template-list" aria-live="polite"></div><div id="share-it-provision" class="share-it-provision hidden"><div><p>Deploy template</p><h2 id="share-it-provision-title">Control Plane</h2><span id="share-it-provision-copy">A server-side management credential will be injected into this hosted template.</span></div><label>Instance name<input id="share-it-instance-name" placeholder="client-control-plane" maxlength="120"></label><div><button class="btn-pill btn-ghost" id="share-it-provision-cancel">Cancel</button><button class="btn-pill btn-primary" id="share-it-provision-submit">Create hosted project</button></div></div></div></section>
         <section id="view-sycord" class="view">
           <div class="projects-card">
             <div class="projects-header">

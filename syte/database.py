@@ -207,6 +207,37 @@ CREATE TABLE IF NOT EXISTS release_events (
 );
 CREATE INDEX IF NOT EXISTS idx_release_events_project_created
     ON release_events(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS share_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    description TEXT NOT NULL,
+    framework TEXT NOT NULL,
+    runtime TEXT NOT NULL,
+    source_dir TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'layout-template',
+    is_syte_hosted INTEGER NOT NULL DEFAULT 1,
+    is_available INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS share_instances (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL,
+    project_id TEXT NOT NULL UNIQUE,
+    owner_account_id TEXT NOT NULL DEFAULT '',
+    instance_key_hash TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'provisioning',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT,
+    FOREIGN KEY(template_id) REFERENCES share_templates(id) ON DELETE RESTRICT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_share_instances_owner
+    ON share_instances(owner_account_id, created_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
