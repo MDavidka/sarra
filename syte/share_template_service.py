@@ -104,6 +104,19 @@ def _platform_url() -> str:
     return "http://172.17.0.1:8787"
 
 
+def _copy_template_source(source: Path, destination: Path) -> None:
+    """Copy a Syte-owned template into the empty app directory Syte creates.
+
+    ``ensure_workspace`` deliberately creates ``workspace/app`` before a
+    project receives source.  Accept that owned, empty directory, but never
+    merge a template into any non-empty project source tree.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    if any(destination.iterdir()):
+        raise ValueError("The new project workspace is not empty; template source was not replaced.")
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
 async def provision_share_template(template_id: str, name: str, owner_account_id: str = "", access_password: str = "") -> tuple[dict[str, Any], str]:
     template = await get_share_template(template_id)
     if not template:
@@ -123,7 +136,7 @@ async def provision_share_template(template_id: str, name: str, owner_account_id
     # Syte's deployment engine builds the workspace `app` directory.
     destination = workspace / "app"
     try:
-        shutil.copytree(source, destination, dirs_exist_ok=False)
+        _copy_template_source(source, destination)
         env_vars = {
             "SYTE_SHARE_INSTANCE_ID": instance_id,
             "SYTE_SHARE_INSTANCE_KEY": instance_key,

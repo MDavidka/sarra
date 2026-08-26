@@ -57,3 +57,40 @@ def test_generated_diagnostics_beacon_template_is_internal_and_scoped():
     assert "fetch('/api/overview'" in server
     assert "server-side scoped channel" in server
     assert "@clerk" not in (template / "package.json").read_text(encoding="utf-8")
+
+
+def test_template_source_copies_into_syte_precreated_empty_app_directory(tmp_path: Path):
+    from syte.share_template_service import _copy_template_source
+
+    source = tmp_path / "template"
+    source.mkdir()
+    (source / "package.json").write_text('{"name":"test-template"}\n', encoding="utf-8")
+    (source / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    destination = tmp_path / "workspace" / "app"
+    destination.mkdir(parents=True)
+
+    _copy_template_source(source, destination)
+
+    assert (destination / "package.json").is_file()
+    assert (destination / "Dockerfile").is_file()
+    assert list(destination.iterdir())
+
+
+def test_template_source_does_not_merge_into_nonempty_app_directory(tmp_path: Path):
+    from syte.share_template_service import _copy_template_source
+
+    source = tmp_path / "template"
+    source.mkdir()
+    (source / "package.json").write_text('{"name":"test-template"}\n', encoding="utf-8")
+    destination = tmp_path / "workspace" / "app"
+    destination.mkdir(parents=True)
+    (destination / "existing.txt").write_text("retain\n", encoding="utf-8")
+
+    try:
+        _copy_template_source(source, destination)
+    except ValueError as error:
+        assert "not empty" in str(error)
+    else:
+        raise AssertionError("Expected non-empty app directory to be protected")
+
+    assert (destination / "existing.txt").read_text(encoding="utf-8") == "retain\n"
