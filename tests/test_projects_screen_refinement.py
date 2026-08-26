@@ -76,3 +76,173 @@ def test_overview_has_live_ram_cpu_disk_cards_and_system_disk_exposure():
     assert ".overview-workspace { display:grid; gap:16px; width:100%; max-width:none; margin:0; }" in css
     assert ".overview-services-card { width:100%; max-width:none;" in css
     assert "flex:0 0 76px" in css
+
+
+def test_servers_checklist_and_mobile_git_workspace_are_scoped_and_responsive():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert "function renderRemoteServersWorkspace(target)" in app
+    assert "server-checklist-page" in app
+    assert "data-server-enroll" in app
+    assert "data-server-country" in app
+    assert "data-server-save" in app
+    assert "server-checklist-metrics" in app
+    assert "function serverChecklistPing(value)" in app
+    assert ".server-checklist-page" in css
+    assert ".server-checklist-row" in css
+    assert ".git-workspace-page" in css
+    assert ".git-repository-card" in css
+    assert ".git-repository-toolbar" in css
+    assert ".nav-server-performance>span { display:block!important; background:#16a34a!important; }" in css
+
+
+def test_operational_project_workspaces_and_certificate_route_are_dedicated():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    for tab in ("domains", "env", "firewall", "cdn", "speed", "logs", "rollbacks", "settings"):
+        assert f'data-svc-tab="{tab}"' in index
+        assert f'data-svc-panel="{tab}"' in index
+    assert 'id="svc-env-cards"' in index
+    assert 'id="svc-env-modal"' in index
+    assert 'id="svc-settings-auto-deploy"' in index
+    assert 'id="svc-rollback-history"' in index
+    assert "function renderServiceManagementWorkspaces(project)" in app
+    assert "function renderServiceRollbackHistory(project)" in app
+    assert "function renderCertificateWorkspace()" in app
+    assert "if (isCertificates)" in app
+    assert "data-certificate-issue" in app
+    assert ".svc-domain-workspace" in css
+    assert ".svc-env-workspace" in css
+    assert ".svc-firewall-workspace" in css
+    assert ".svc-cdn-workspace" in css
+    assert ".certificate-workspace" in css
+
+
+def test_sidebar_selection_is_scoped_to_the_current_navigation_context():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+
+    assert "viewName === 'platform' && isPlatformLink" in app
+    assert "viewName !== 'platform' && !isPlatformLink" in app
+    assert "event.stopPropagation();" in app
+    assert "const allowed = ['general', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];" in app
+
+
+def test_lucide_is_locally_served_and_cannot_block_login_startup():
+    vendor = ROOT / "syte/static/vendor/lucide.min.js"
+    assets = (ROOT / "docs/external_assets.md").read_text(encoding="utf-8")
+
+    assert vendor.stat().st_size > 100_000
+    content = vendor.read_text(encoding="utf-8")
+    assert "document.write" not in content
+    assert "createIcons" in content
+    assert "lucide@0.468.0" in assets
+
+
+def test_console_login_head_has_no_parser_blocking_shoelace_module():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+
+    assert "shoelace-autoloader.js" not in index
+    assert "@shoelace-style/shoelace" not in index
+    assert "fonts.googleapis.com" not in index
+    assert '<script async src="/static/vendor/lucide.min.js?v=__VERSION__"></script>' in index
+
+
+def test_native_account_gate_renders_before_the_main_application_bundle():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+
+    assert 'id="inline-account-login-form"' in index
+    assert "fetch('/api/auth/session', {credentials: 'same-origin'})" in index
+    assert "fetch('/api/auth/login'" in index
+    assert "new MutationObserver" in index
+    assert index.index('id="inline-account-login-form"') < index.index('/static/app.js?v=__VERSION__')
+    assert index.index('new MutationObserver') < index.index('/static/style.css?v=__VERSION__')
+
+
+def test_legacy_syte_library_catalog_is_not_part_of_the_console():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+
+    assert "Syte Library" not in index
+    assert 'id="platform-store-panel"' not in index
+    assert "activePlatformPage === 'docker') activePlatformPage = 'overview'" in app
+    assert "if (activePlatformPage === 'docker') loadDockerStore();" not in app
+
+
+def test_deployment_uses_structured_repository_picker_without_replacing_certification():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'class="create-project deployment-structured-page"' in index
+    assert "Deploy a repository" in index
+    assert "Import Git Repository" not in index
+    assert "deployment-structured-browser" in index
+    assert "deployment-structured-search" in index
+    assert "deployment-structured-repository-list" in index
+    assert "deployment-structured-repository" in app
+    assert ">Import</span>" in app
+    assert ".deployment-structured-page" in css
+    assert ".deployment-structured-repository" in css
+    assert ".deployment-structured-repository-list { max-height:192px; overflow-x:hidden; overflow-y:auto;" in css
+    assert "repositoryFrameworkCatalog" in app
+    assert "function repositoryFramework(repo)" in app
+    assert "/static/vendor/frameworks/${framework.asset}?v=__VERSION__" in app
+    assert ".deployment-structured-framework-icon" in css
+    assert "certificate-workspace" in app
+    assert "Domains and automatic TLS" in app
+    assert "certificate-structured-workspace" not in app
+
+
+def test_release_workspace_exposes_integrated_operational_controls():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'data-svc-tab="release"' in index
+    assert 'id="svc-panel-release"' in index
+    assert 'id="release-workspace-content"' in index
+    assert "function renderReleaseWorkspace(project)" in app
+    assert "/release/deploy" in app
+    assert "/release/preview/" in app
+    assert "/release/restore-points" in app
+    assert "/release/team" in app
+    assert "'release'" in app
+    assert ".release-workspace" in css
+    assert ".release-environments-grid" in css
+    assert ".release-timeline" in css
+
+
+def test_github_repository_metadata_and_svgl_framework_assets_are_available():
+    oauth = (ROOT / "syte/github_oauth.py").read_text(encoding="utf-8")
+    assets = (ROOT / "docs/external_assets.md").read_text(encoding="utf-8")
+    framework_dir = ROOT / "syte/static/vendor/frameworks"
+
+    assert '"language": str(item.get("language") or "")' in oauth
+    assert '"topics": [str(topic) for topic in (item.get("topics") or []) if str(topic)]' in oauth
+    assert "Deployment framework icons" in assets
+    for filename in ("nextjs-svgl.svg", "react-svgl.svg", "vite-svgl.svg", "vue-svgl.svg", "svelte-svgl.svg", "astro-svgl.svg", "django-svgl.svg", "laravel-svgl.svg"):
+        assert (framework_dir / filename).is_file()
+
+
+def test_project_editor_is_a_scoped_operational_settings_workspace():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'class="svc-edit-dialog project-settings-dialog"' in index
+    for tab in ("general", "deployment", "runtime", "environment", "release", "utilities"):
+        assert f'data-project-settings-tab="{tab}"' in index
+        assert f'data-project-settings-panel="{tab}"' in index
+    for control in ("svc-edit-healthcheck-path", "svc-edit-branch", "svc-edit-auto-deploy", "svc-edit-resource-memory", "svc-edit-open-environment", "svc-edit-open-release", "svc-edit-copy-config", "svc-edit-run-health"):
+        assert f'id="{control}"' in index
+    assert "function setProjectEditTab(tab)" in app
+    assert "function projectEditSnapshot(project)" in app
+    assert "function copyProjectEditText(value, successMessage)" in app
+    assert "/deployment-config" in app
+    assert "/health`" in app
+    assert ".project-settings-dialog" in css
+    assert ".project-settings-nav" in css
+    assert ".project-utilities-grid" in css

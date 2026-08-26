@@ -36,6 +36,7 @@ from syte.platform.store import (
     record_server_metrics,
 )
 from syte.platform.types import new_uuid, utcnow
+from syte.system_stats import get_system_stats
 
 router = APIRouter(prefix="/platform", tags=["Platform resources"])
 
@@ -308,6 +309,7 @@ class NavigationActionRequest(BaseModel):
 class FleetServerRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     host: str = Field(min_length=1, max_length=255)
+    country: str = Field(default="Unknown", min_length=1, max_length=80)
     server_type: str = Field(default="vps", pattern="^(micro|vps|dedicated|edge|build)$")
     username: str = Field(default="root", min_length=1, max_length=80)
     port: int = Field(default=22, ge=1, le=65535)
@@ -316,6 +318,11 @@ class FleetServerRequest(BaseModel):
     role_workers: bool = False
     load_balancing_enabled: bool = False
     load_balancing_weight: int = Field(default=100, ge=1, le=1000)
+
+
+class FleetServerUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    country: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 class FleetRoleRequest(BaseModel):
@@ -339,6 +346,7 @@ class FleetHeartbeatRequest(BaseModel):
     memory_percent: float = Field(default=0, ge=0, le=100)
     disk_percent: float = Field(default=0, ge=0, le=100)
     container_count: int = Field(default=0, ge=0, le=100000)
+    ping_ms: float = Field(default=0, ge=0, le=60000)
 
 
 class StoreInstallRequest(BaseModel):
@@ -367,17 +375,31 @@ def _fleet_status(server: dict[str, Any], metrics: dict[str, Any] | None) -> str
 async def _fleet_node(server: dict[str, Any]) -> dict[str, Any]:
     samples = await server_metrics(str(server["uuid"]), limit=1)
     latest = samples[-1] if samples else None
+    if latest is None and bool(server.get("is_local")):
+        # The Sycord host reports directly from the same local source as the
+        # global navigation insight; it never needs a separate heartbeat agent.
+        system = get_system_stats()
+        latest = {
+            "cpu_percent": system.get("cpu_percent", 0),
+            "memory_percent": system.get("ram_percent", 0),
+            "memory_used_mb": system.get("ram_used_mb", 0),
+            "memory_total_mb": system.get("ram_total_mb", 0),
+            "disk_percent": system.get("disk_percent", 0),
+            "disk_used_gb": system.get("disk_used_gb", 0),
+            "disk_total_gb": system.get("disk_total_gb", 0),
+            "ping_ms": system.get("ping_ms", 0),
+            "recorded_at": utcnow(),
+        }
     load_percent = None
     if latest:
-        load_percent = round(max(
-            float(latest.get("cpu_percent") or 0),
-            float(latest.get("memory_percent") or 0),
-            float(latest.get("disk_percent") or 0),
-        ), 1)
+        load_percent = round((
+            float(latest.get("cpu_percent") or 0) + float(latest.get("memory_percent") or 0)
+        ) / 2, 1)
     status = _fleet_status(server, latest)
     return {
         "uuid": server["uuid"], "name": server.get("name") or "Unnamed server",
-        "host": server.get("ip") or "", "server_type": server.get("server_type") or "vps",
+        "host": server.get("ip") or "", "country": server.get("country") or ("Local" if server.get("is_local") else "Unknown"),
+        "is_local": bool(server.get("is_local")), "server_type": server.get("server_type") or "vps",
         "status": status, "last_seen_at": server.get("last_seen_at"),
         "role_websites": bool(server.get("role_websites")),
         "role_router": bool(server.get("role_router")),
@@ -390,6 +412,9 @@ async def _fleet_node(server: dict[str, Any]) -> dict[str, Any]:
             "cpu_percent": round(float(latest.get("cpu_percent") or 0), 1),
             "memory_percent": round(float(latest.get("memory_percent") or 0), 1),
             "disk_percent": round(float(latest.get("disk_percent") or 0), 1),
+            "disk_used_gb": round(float(latest.get("disk_used_gb") or 0), 1),
+            "disk_total_gb": round(float(latest.get("disk_total_gb") or 0), 1),
+            "ping_ms": round(float(latest.get("ping_ms") or 0), 1),
             "container_count": int(latest.get("container_count") or 0),
             "recorded_at": latest.get("recorded_at"),
         } if latest else None),
@@ -449,7 +474,7 @@ async def enroll_fleet_server(body: FleetServerRequest) -> dict[str, Any]:
     now = utcnow()
     server = await insert("platform_servers", {
         "uuid": new_uuid(), "team_uuid": bootstrap["team"]["uuid"], "name": body.name.strip(),
-        "ip": body.host.strip(), "user": body.username.strip(), "port": body.port,
+        "ip": body.host.strip(), "country": body.country.strip(), "user": body.username.strip(), "port": body.port,
         "status": "pending", "server_type": body.server_type,
         "role_websites": body.role_websites, "role_router": body.role_router,
         "role_workers": body.role_workers, "load_balancing_enabled": body.load_balancing_enabled,
@@ -458,6 +483,18 @@ async def enroll_fleet_server(body: FleetServerRequest) -> dict[str, Any]:
         "created_at": now, "updated_at": now,
     })
     return {"ok": True, "server": await _fleet_node(server), "message": "Server enrolled. Install its generated heartbeat helper to begin reporting load."}
+
+
+@router.put("/fleet/servers/{server_uuid}", dependencies=[Depends(_operator)])
+async def update_fleet_server(server_uuid: str, body: FleetServerUpdateRequest) -> dict[str, Any]:
+    server = await get("platform_servers", server_uuid, include_secrets=True)
+    if server is None:
+        raise HTTPException(404, "Server not found.")
+    updates = {key: value.strip() for key, value in body.model_dump().items() if value is not None}
+    if not updates:
+        raise HTTPException(400, "Provide a server name or country.")
+    updated = await update("platform_servers", server_uuid, updates)
+    return {"ok": True, "server": await _fleet_node(updated or server), "message": "Server details updated."}
 
 
 @router.put("/fleet/servers/{server_uuid}/roles", dependencies=[Depends(_operator)])
@@ -514,10 +551,11 @@ source /etc/syte-fleet/agent.env
 cpu=$(LC_ALL=C top -bn1 | awk '/Cpu[(]s[)]/ {{print 100-$8; exit}}' | tr ',' '.')
 mem=$(free | awk '/Mem:/ {{printf "%.1f", $3/$2*100}}')
 disk=$(df -P / | awk 'END {{gsub("%", "", $5); print $5}}')
+ping_ms=$(ping -n -c 1 -W 2 1.1.1.1 2>/dev/null | awk -F'time=' 'NF>1 {{split($2,a," "); print a[1]; exit}}' || true)
 containers=$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')
 curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \\
   -H 'Content-Type: application/json' \\
-  --data "{{\\\"token\\\":\\\"$SYTE_ENROLLMENT_TOKEN\\\",\\\"cpu_percent\\\":${{cpu:-0}},\\\"memory_percent\\\":${{mem:-0}},\\\"disk_percent\\\":${{disk:-0}},\\\"container_count\\\":${{containers:-0}}}}" \\
+  --data "{{\\\"token\\\":\\\"$SYTE_ENROLLMENT_TOKEN\\\",\\\"cpu_percent\\\":${{cpu:-0}},\\\"memory_percent\\\":${{mem:-0}},\\\"disk_percent\\\":${{disk:-0}},\\\"ping_ms\\\":${{ping_ms:-0}},\\\"container_count\\\":${{containers:-0}}}}" \\
   "$SYTE_HEARTBEAT_URL" >/dev/null
 EOF
 chmod 700 /usr/local/bin/syte-fleet-heartbeat

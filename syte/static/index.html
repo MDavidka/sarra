@@ -8,14 +8,58 @@
   <link rel="icon" href="/static/syte-logo.png?v=__VERSION__" type="image/png">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#ffffff">
+  <script>
+    (() => {
+      let started = false;
+      const start = () => {
+        const screen = document.getElementById('account-login-screen');
+        if (!screen || started) return Boolean(screen);
+        started = true;
+        const loading = (message) => {
+          screen.innerHTML = `<div class="account-login-card"><h1>Loading sign in…</h1><p class="account-auth-description">${message}</p></div>`;
+        };
+        const render = (message = '') => {
+          screen.innerHTML = `<div class="account-login-card"><p class="account-login-kicker">Sycord secure workspace</p><h1>Welcome back</h1><p class="account-auth-description">Enter your details to access your workspace.</p><form id="inline-account-login-form" class="account-login-form"><label for="inline-account-email">Email address</label><input id="inline-account-email" type="email" autocomplete="email" placeholder="name@example.com" required><label for="inline-account-password">Password</label><input id="inline-account-password" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="account-auth-submit" type="submit">Sign in</button></form><p id="inline-account-login-error" class="account-login-error">${message}</p></div>`;
+          screen.querySelector('#inline-account-login-form')?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const error = screen.querySelector('#inline-account-login-error');
+            if (error) error.textContent = '';
+            const email = screen.querySelector('#inline-account-email')?.value || '';
+            const password = screen.querySelector('#inline-account-password')?.value || '';
+            try {
+              const response = await fetch('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({email, password})});
+              if (!response.ok) throw new Error('Invalid email or password.');
+              loading('Opening your workspace…');
+              window.location.reload();
+            } catch (err) {
+              if (error) error.textContent = err?.message || 'Could not sign in. Please try again.';
+            }
+          });
+        };
+        fetch('/api/auth/session', {credentials: 'same-origin'})
+          .then((response) => response.ok ? response.json() : Promise.reject(new Error('Could not check the account session.')))
+          .then((session) => {
+            if (session.authenticated) {
+              loading('Opening your workspace…');
+              return;
+            }
+            render();
+          })
+          .catch(() => render('Could not reach the account service. Please try again.'));
+        return true;
+      };
+      if (!start()) {
+        const observer = new MutationObserver(() => {
+          if (start()) observer.disconnect();
+        });
+        observer.observe(document.documentElement, {childList: true, subtree: true});
+      }
+    })();
+  </script>
   <link rel="apple-touch-icon" href="/static/syte-logo.png?v=__VERSION__">
   <link rel="stylesheet" href="/static/style.css?v=__VERSION__">
   <link rel="stylesheet" href="/static/auth.css?v=__VERSION__">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css" crossorigin="anonymous">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js" crossorigin="anonymous"></script>
+  <script async src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
 </head>
 <body class="account-auth-pending">
   <div id="account-login-screen" class="account-login-screen" aria-live="polite"><div class="account-login-card"><h1>Loading sign in…</h1><p class="account-auth-description">Checking your Sycord account session.</p></div></div>
@@ -63,6 +107,7 @@
           <div class="coolify-nav-section">
             <p class="nav-section-label">Overview</p>
             <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard"><i data-lucide="home"></i><span>Home</span></button>
+            <button type="button" class="nav-sublink" data-view="share-it"><i data-lucide="share-2"></i><span>Share It</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="remote-servers"><i data-lucide="server"></i><span>Servers</span><span id="server-nav-performance" class="nav-server-performance" role="progressbar" aria-label="Server performance unavailable" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="certificates"><i data-lucide="badge-check"></i><span>Certification</span></button>
@@ -107,14 +152,35 @@
               <button type="button" class="nav-sublink active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>General</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="release">
+                <i data-lucide="rocket"></i><span>Release</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="domains">
+                <i data-lucide="at-sign"></i><span>Domains</span>
+              </button>
               <button type="button" class="nav-sublink" data-svc-tab="env">
                 <i data-lucide="braces"></i><span>Environment</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="firewall">
+                <i data-lucide="shield"></i><span>Firewall</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="cdn">
+                <i data-lucide="cloud"></i><span>CDN</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="speed">
+                <i data-lucide="gauge"></i><span>Speed</span>
               </button>
               <button type="button" class="nav-sublink" data-svc-tab="logs">
                 <i data-lucide="terminal-square"></i><span>Logs</span>
               </button>
+              <button type="button" class="nav-sublink" data-svc-tab="rollbacks">
+                <i data-lucide="history"></i><span>Rollbacks</span>
+              </button>
               <button type="button" class="nav-sublink" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
+              </button>
+              <button type="button" class="nav-sublink" data-svc-tab="settings">
+                <i data-lucide="settings-2"></i><span>Settings</span>
               </button>
             </div>
           </div>
@@ -162,17 +228,15 @@
         </section>
 
         <section id="view-new-service" class="view">
-          <div class="create-project">
+          <div class="create-project deployment-structured-page">
             <div class="create-brand">
               <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
               <span class="create-brand-name">syte</span>
             </div>
 
             <form id="create-form" class="create-form vercel-create-form" novalidate>
-              <header class="deploy-create-header">
-                <p class="eyebrow">New deployment</p>
-                <h1>Ship from your source.</h1>
-                <p>Import a repository or ZIP archive. Syte detects the framework, creates a build plan, and lets you review environment keys before deployment.</p>
+              <header class="deploy-create-header deployment-structured-header">
+                <h1>Deploy a repository</h1>
               </header>
 
               <div class="create-name-field">
@@ -183,28 +247,27 @@
                 <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
               </div>
 
-              <section class="deploy-source-section" aria-labelledby="source-import-title">
-                <div class="deploy-section-heading"><span class="deploy-step">1</span><div><p class="eyebrow">Source</p><h2 id="source-import-title">Import your code</h2></div></div>
+              <section class="deploy-source-section" aria-label="Project source">
                 <div class="deploy-source-tabs" role="tablist" aria-label="Project source">
                   <button class="deploy-source-tab active" type="button" data-import-source="git" role="tab" aria-selected="true"><i data-lucide="git-branch"></i><span>Git repository</span></button>
                   <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
                 </div>
                 <div class="deploy-source-fields" id="deploy-git-fields">
-                  <section class="github-source-connect" aria-labelledby="github-source-title">
-                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub Connected Source</strong><p id="github-source-description">Connect GitHub to browse repositories you can access, including private repositories.</p></div></div>
+                  <section class="github-source-connect deployment-structured-account" aria-labelledby="github-source-title">
+                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub</strong><p id="github-source-description">Connect an account to browse repositories.</p></div></div>
                     <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
                     <div id="github-source-account" class="github-source-account hidden"></div>
                   </section>
-                  <section id="github-repository-browser" class="github-repository-browser hidden" aria-labelledby="github-repository-title">
-                    <div class="github-browser-toolbar"><div><p class="eyebrow">Connected repository</p><h3 id="github-repository-title">Choose code from GitHub</h3></div><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
-                    <label for="github-repository-search">Search repositories<input id="github-repository-search" type="search" autocomplete="off" placeholder="Filter by owner, name, or description"></label>
-                    <div id="github-repository-list" class="github-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
+                  <section id="github-repository-browser" class="github-repository-browser deployment-structured-browser hidden" aria-labelledby="github-repository-title">
+                    <div class="github-browser-toolbar deployment-structured-toolbar"><h3 id="github-repository-title">Repositories</h3><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
+                    <label class="deployment-structured-search" for="github-repository-search"><i data-lucide="search"></i><input id="github-repository-search" type="search" autocomplete="off" placeholder="Search repositories"></label>
+                    <div id="github-repository-list" class="github-repository-list deployment-structured-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
                     <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
                   </section>
                   <div class="github-manual-divider"><span>or use a public URL</span></div>
                   <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
                   <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
-                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Connected GitHub sources use an encrypted, ephemeral OAuth credential during clone. Manual URLs remain for public HTTPS repositories.</p>
+                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Manual URLs are for public HTTPS repositories.</p>
                 </div>
                 <div class="deploy-source-fields hidden" id="deploy-zip-fields">
                   <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>
@@ -284,22 +347,48 @@
                 </section>
               </div>
 
+              <div class="svc-tab-panel" id="svc-panel-release" data-svc-panel="release">
+                <section class="release-workspace" aria-label="Release workspace">
+                  <header class="release-workspace-header"><div><p>Operational release control</p><h2>Release workspace</h2><span>Review environments, promote a protected release, verify recovery readiness, and track release activity in one place.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
+                  <div id="release-workspace-content" class="release-workspace-content"><p class="hint">Open this workspace to load release controls.</p></div>
+                </section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
+                <section class="svc-domain-workspace" aria-label="Project domains">
+                  <header class="svc-workspace-heading"><div><p>Traffic entry</p><h2>Domains and custom TLS</h2><span>Route this application through its production address and request Caddy-managed TLS.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" data-svc-edit-project><i data-lucide="pencil"></i><span>Edit primary domain</span></button></header>
+                  <div class="svc-primary-domain" id="svc-primary-domain"><span>Production domain</span><strong>Not configured</strong></div>
+                  <form class="svc-custom-domain-form" id="svc-custom-domain-form"><label>Custom domain<input id="svc-custom-tls-domain" placeholder="app.example.com" autocomplete="off"></label><label class="svc-switch-field"><input type="checkbox" id="svc-custom-tls-enabled"><span>Enable Caddy TLS for this domain</span></label><div class="svc-inline-actions"><button type="submit" class="btn-pill btn-primary"><i data-lucide="shield-check"></i><span>Save custom domain</span></button><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="badge-check"></i><span>Certificate readiness</span></button></div><p class="svc-domain-result" id="svc-custom-tls-result">DNS must point to this server before a trusted certificate can be issued.</p></form>
+                </section>
+              </div>
+
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="braces"></i></div>
-                  <div>
-                    <h2>Environment variables</h2>
-                    <p>Values here are available to your project at runtime. Keep one <code>KEY=value</code> pair per line.</p>
-                  </div>
-                </div>
-                <label class="svc-field-label" for="svc-env-input">Project environment</label>
-                <textarea id="svc-env-input" class="svc-env-textarea" rows="10" placeholder="NODE_ENV=production"></textarea>
-                <p class="svc-field-help"><i data-lucide="info"></i> Changes apply after the next deploy or restart.</p>
-                <div class="svc-panel-actions">
-                  <button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-save-btn">
-                    <i data-lucide="save"></i><span>Save environment</span>
-                  </button>
-                </div>
+                <section class="svc-env-workspace" aria-label="Environment variables">
+                  <header class="svc-workspace-heading"><div><p>Runtime configuration</p><h2>Environment variables</h2><span>Keys and values are stored for this project and applied when you deploy or restart.</span></div><button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add variable</span></button></header>
+                  <div class="svc-env-cards" id="svc-env-cards"></div>
+                  <p class="svc-field-help"><i data-lucide="info"></i> Save changes, then deploy or restart to apply the updated environment.</p>
+                </section>
+                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title"><div class="svc-env-modal-backdrop" data-svc-env-close></div><form class="svc-env-dialog" id="svc-env-form"><button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button><p>Environment variable</p><h3 id="svc-env-modal-title">Add variable</h3><input type="hidden" id="svc-env-original-key"><label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DATABASE_URL" autocomplete="off"></label><label>Value<input id="svc-env-value" required placeholder="Value" autocomplete="off"></label><div><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save variable</span></button></div></form></div>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-firewall" data-svc-panel="firewall">
+                <section class="svc-firewall-workspace" aria-label="Application firewall boundary"><header><i data-lucide="shield-check"></i><div><p>Network boundary</p><h2>Firewall</h2><span>Project-level public-port rules are not managed here. Sycord routes public HTTP(S) through Caddy; host firewall policy stays server-level to avoid exposing an application port by accident.</span></div></header><div class="svc-firewall-lines"><div><strong>Public entry</strong><span>HTTPS via configured Caddy domain</span></div><div><strong>Direct application port</strong><span>Do not publish unless a server administrator explicitly configures it</span></div><div><strong>Change control</strong><span>Use the server workspace for host firewall changes</span></div></div></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
+                <section class="svc-cdn-workspace" aria-label="Content delivery guidance"><header><div><p>Delivery path</p><h2>CDN and Cloudflare</h2><span>CDN proxying is configured at your DNS provider, not silently enabled by Sycord. Keep Cloudflare proxying off while validating or issuing a certificate.</span></div><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"></header><div class="svc-cdn-flow"><span>Browser</span><i data-lucide="arrow-right"></i><span>Cloudflare DNS/CDN</span><i data-lucide="arrow-right"></i><span>Sycord Caddy</span></div><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review certificate DNS status</span></button></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
+                <section class="svc-speed-workspace" aria-label="Project runtime resources"><header class="svc-workspace-heading"><div><p>Runtime allocation</p><h2>Speed and resource limits</h2><span>Docker deployments apply these limits at the next deployment. Shell projects retain their host process limits.</span></div></header><form class="svc-speed-form" id="svc-speed-form"><label>Memory limit<select id="svc-resource-memory"><option value="">Server default</option><option value="256m">256 MB</option><option value="512m">512 MB</option><option value="1g">1 GB</option><option value="2g">2 GB</option></select></label><label>CPU limit<select id="svc-resource-cpus"><option value="">Server default</option><option value="0.5">0.5 CPU</option><option value="1.0">1 CPU</option><option value="2.0">2 CPU</option></select></label><button type="submit" class="btn-pill btn-primary"><i data-lucide="gauge"></i><span>Save deployment limits</span></button></form><p class="svc-speed-status" id="svc-speed-status">Current runtime status is shown on the General tab.</p></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-rollbacks" data-svc-panel="rollbacks">
+                <section class="svc-rollback-workspace" aria-label="Deployment rollback history"><header class="svc-workspace-heading"><div><p>Release recovery</p><h2>Rollbacks</h2><span>Re-deploy a successful recorded Git commit. Runs without a recorded commit cannot be safely rolled back.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><div class="svc-rollback-history" id="svc-rollback-history"><p class="hint">Load deployment history to choose a recorded release.</p></div></section>
+              </div>
+
+              <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
+                <section class="svc-project-settings-workspace" aria-label="Project deployment settings"><header class="svc-workspace-heading"><div><p>Deployment policy</p><h2>Project settings</h2><span>Configure source and automatic branch deployment for this application.</span></div></header><form id="svc-deployment-settings-form" class="svc-deployment-settings-form"><label>Branch<input id="svc-settings-branch" placeholder="main" autocomplete="off"></label><label>Start command<input id="svc-settings-start-command" placeholder="npm start" autocomplete="off"></label><label class="svc-auto-deploy-toggle"><input type="checkbox" id="svc-settings-auto-deploy"><span><strong>Automatically redeploy new branch commits</strong><small>Checks the configured GitHub branch every 5 minutes. First enable queues the current branch head once.</small></span></label><p class="svc-auto-deploy-state" id="svc-auto-deploy-state">Connect GitHub and select a repository before enabling.</p><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save deployment settings</span></button></form></section>
               </div>
 
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
@@ -370,25 +459,59 @@
 
           <div id="svc-edit-modal" class="svc-edit-modal hidden" role="dialog" aria-modal="true" aria-labelledby="svc-edit-title">
             <div class="svc-edit-backdrop" id="svc-edit-backdrop"></div>
-            <div class="svc-edit-dialog">
-              <h3 id="svc-edit-title">Edit project</h3>
-              <div class="form-group">
-                <label for="svc-edit-name-input">Name</label>
-                <input type="text" id="svc-edit-name-input" placeholder="my-app">
+            <div class="svc-edit-dialog project-settings-dialog">
+              <header class="project-settings-header">
+                <div class="project-settings-identity"><span class="project-settings-mark" id="svc-edit-project-mark">S</span><div><p>Project settings</p><h3 id="svc-edit-title">Configure project</h3><span id="svc-edit-project-meta">Saved configuration for this project</span></div></div>
+                <button type="button" class="project-settings-close" id="svc-edit-close-btn" aria-label="Close project settings"><i data-lucide="x"></i></button>
+              </header>
+              <div class="project-settings-layout">
+                <nav class="project-settings-nav" aria-label="Project settings">
+                  <button type="button" class="active" data-project-settings-tab="general"><i data-lucide="sliders-horizontal"></i><span>General</span></button>
+                  <button type="button" data-project-settings-tab="deployment"><i data-lucide="git-branch"></i><span>Deployment</span></button>
+                  <button type="button" data-project-settings-tab="runtime"><i data-lucide="container"></i><span>Runtime</span></button>
+                  <button type="button" data-project-settings-tab="environment"><i data-lucide="braces"></i><span>Environment</span></button>
+                  <button type="button" data-project-settings-tab="release"><i data-lucide="shield-check"></i><span>Release & access</span></button>
+                  <button type="button" data-project-settings-tab="utilities"><i data-lucide="wand-sparkles"></i><span>Utilities</span></button>
+                </nav>
+                <div class="project-settings-panels">
+                  <section class="project-settings-panel active" data-project-settings-panel="general">
+                    <header><div><p>Project identity</p><h4>General</h4><span>Set the stable project name, production address, and health endpoint.</span></div></header>
+                    <div class="project-settings-grid"><label>Project name<input type="text" id="svc-edit-name-input" placeholder="my-app" autocomplete="off"></label><label>Production domain<input type="text" id="svc-edit-domain-input" placeholder="app.example.com" autocomplete="off"><small>HTTPS is issued after DNS points to this server.</small></label><label>Health check path<input type="text" id="svc-edit-healthcheck-path" placeholder="/health" autocomplete="off"><small>Used by the live health utility and release timeline.</small></label></div>
+                    <div class="project-settings-callout"><i data-lucide="info"></i><span>Project ID stays stable when the name changes, so deployment history, domains, and release controls remain linked.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="deployment">
+                    <header><div><p>Source and build</p><h4>Deployment</h4><span>Control the branch watcher and the command used to start this service.</span></div></header>
+                    <div class="project-settings-source"><label>Connected repository<input type="text" id="svc-edit-git-url" readonly></label><button type="button" class="project-utility-btn" id="svc-edit-copy-git"><i data-lucide="copy"></i><span>Copy URL</span></button></div>
+                    <div class="project-settings-grid"><label>Production branch<input type="text" id="svc-edit-branch" placeholder="main" autocomplete="off"></label><label>Start command<input type="text" id="svc-edit-start-command" placeholder="npm start" autocomplete="off"></label><label>Deployment type<select id="svc-edit-deploy-type"><option value="auto">Auto-detect</option><option value="dockerfile">Dockerfile</option><option value="image">Container image</option><option value="compose">Compose</option></select></label><label>Health interval (seconds)<input type="number" id="svc-edit-healthcheck-interval" min="5" max="3600" placeholder="30"></label></div>
+                    <label class="project-settings-switch"><input type="checkbox" id="svc-edit-auto-deploy"><span><strong>Automatically deploy new commits</strong><small>Watch the configured production branch on the existing interval.</small></span></label>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="runtime">
+                    <header><div><p>Container limits</p><h4>Runtime</h4><span>Set safe resource limits and advanced source paths for the next deployment.</span></div></header>
+                    <div class="project-settings-grid"><label>Memory limit<input type="text" id="svc-edit-resource-memory" placeholder="512m"><small>Example: 512m or 1g</small></label><label>CPU limit<input type="text" id="svc-edit-resource-cpus" placeholder="1.0"><small>Example: 0.5 or 1.0</small></label><label>Dockerfile path<input type="text" id="svc-edit-dockerfile-path" placeholder="Dockerfile"></label><label>Compose file<input type="text" id="svc-edit-compose-file" placeholder="docker-compose.yml"></label><label>Container image<input type="text" id="svc-edit-docker-image" placeholder="registry.example/app:latest"></label></div>
+                    <div class="project-settings-callout"><i data-lucide="triangle-alert"></i><span>Runtime limits are applied on the next deployment. Use the Release workspace for production protections and recovery points.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="environment">
+                    <header><div><p>Runtime configuration</p><h4>Environment</h4><span>Manage runtime variables without exposing secret values in this settings view.</span></div></header>
+                    <div class="project-settings-stat"><div><span>Configured variables</span><strong id="svc-edit-env-count">0</strong></div><p>Variables are stored in the existing encrypted project configuration path and become available on the next deployment.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-environment"><i data-lucide="braces"></i><span>Manage variables</span></button></div>
+                    <div class="project-settings-callout"><i data-lucide="lock-keyhole"></i><span>Secret values are not rendered in this editor. Use Environment to create, update, or remove them deliberately.</span></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="release">
+                    <header><div><p>Operational safeguards</p><h4>Release & access</h4><span>Configure environments, promotion approvals, project roles, data snapshots, and host governance.</span></div></header>
+                    <div class="project-settings-stat"><div><span>Release workspace</span><strong id="svc-edit-release-summary">Production protection available</strong></div><p>Production approvals, preview lifecycle, recovery points, activity, and team roles are managed in the dedicated Release workspace.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-release"><i data-lucide="rocket"></i><span>Open Release</span></button></div>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="utilities">
+                    <header><div><p>Operator tools</p><h4>Utilities</h4><span>Quick actions that make project review and handoff faster without changing a deployment.</span></div></header>
+                    <div class="project-utilities-grid"><button type="button" class="project-utility-card" id="svc-edit-copy-id"><i data-lucide="fingerprint"></i><span>Copy project ID</span><small>Stable identifier for API and support workflows.</small></button><button type="button" class="project-utility-card" id="svc-edit-copy-config"><i data-lucide="file-json-2"></i><span>Copy configuration</span><small>Create a safe, secret-free settings snapshot.</small></button><button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe the current production endpoint now.</small></button><a class="project-utility-card" id="svc-edit-open-live" href="#" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open live project</span><small>Open the current production URL in a new tab.</small></a></div>
+                    <p class="project-utility-result" id="svc-edit-utility-result" aria-live="polite"></p>
+                  </section>
+                </div>
               </div>
-              <div class="form-group">
-                <label for="svc-edit-domain-input">Domain</label>
-                <input type="text" id="svc-edit-domain-input" placeholder="app.example.com">
-                <span class="hint">HTTPS via Caddy once DNS points here</span>
-              </div>
-              <div class="svc-edit-actions">
-                <button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button>
-                <button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn">Save</button>
-              </div>
+              <footer class="project-settings-footer"><span id="svc-edit-save-state">Changes are saved together.</span><div><button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button><button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn"><i data-lucide="save"></i><span>Save changes</span></button></div></footer>
             </div>
           </div>
         </section>
 
+        <section id="view-share-it" class="view"><div class="share-it-page"><header><p class="share-it-eyebrow">Syte hosted templates</p><h1>Share It!</h1><p>Let external users host their own control workspace on your server with a verified Syte-hosted template.</p><label class="share-it-search"><i data-lucide="search"></i><input id="share-it-filter" placeholder="Filter templates…" autocomplete="off"></label></header><div id="share-it-template-list" class="share-it-template-list" aria-live="polite"></div><div id="share-it-provision" class="share-it-provision hidden"><div><p>Deploy template</p><h2 id="share-it-provision-title">Control Plane</h2><span id="share-it-provision-copy">A server-side management credential will be injected into this hosted template.</span></div><label>Instance name<input id="share-it-instance-name" placeholder="client-control-plane" maxlength="120"></label><label>Workspace access password<input id="share-it-access-password" type="password" placeholder="At least 12 characters" minlength="12" maxlength="200" autocomplete="new-password"></label><div><button class="btn-pill btn-ghost" id="share-it-provision-cancel">Cancel</button><button class="btn-pill btn-primary" id="share-it-provision-submit">Create hosted project</button></div></div></div></section>
         <section id="view-sycord" class="view">
           <div class="projects-card">
             <div class="projects-header">
@@ -444,7 +567,7 @@
           <div class="users-directory-page">
             <div class="users-directory-hero"><div class="users-directory-icon"><i data-lucide="users-round"></i></div><div><p class="dedicated-eyebrow">Administration</p><h1>People & access</h1><p>Manage operators, API access, and the credentials used by automation.</p></div><span class="users-live-badge"><i data-lucide="radio"></i>Live workspace</span></div>
             <div class="users-directory-grid"><div class="users-summary-card"><span>Workspace members</span><strong>Operator</strong><small>Current workspace identity</small></div><div class="users-summary-card"><span>API access</span><strong>Token vault</strong><small>Programmatic credentials</small></div><div class="users-summary-card"><span>Security</span><strong>Protected</strong><small>Tokens can be revoked anytime</small></div></div>
-            <section class="users-token-panel"><div><p class="dedicated-eyebrow">Automation credentials</p><h2>API tokens</h2><p>Create tokens for CI, deployments, and external integrations. See the <a href="/api/" class="link">API documentation</a>.</p></div><div class="users-token-form"><label for="token-name">Token name</label><div><input type="text" id="token-name" placeholder="ci-deploy"><button class="btn-pill btn-primary" id="create-token-btn"><i data-lucide="plus"></i><span>Create token</span></button></div></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="tokens-list"></div></section>
+            <section class="api-key-workspace"><header><div><p>Automation credentials</p><h2>API keys</h2><span>Issue narrowly scoped credentials for CI and external integrations. Each key is shown only once.</span></div><a href="/api/" class="api-key-doc-link">API documentation <i data-lucide="arrow-up-right"></i></a></header><div class="api-key-creator"><label>Key name<input type="text" id="token-name" placeholder="ci-deploy" maxlength="80"></label><label>Expires<input type="datetime-local" id="token-expires-at"></label><fieldset><legend>Allowed actions</legend><label><input type="checkbox" name="token-scope" value="read" checked> Read</label><label><input type="checkbox" name="token-scope" value="write" checked> Write</label><label><input type="checkbox" name="token-scope" value="deploy" checked> Deploy</label><label><input type="checkbox" name="token-scope" value="certificates" checked> Certificates</label><label><input type="checkbox" name="token-scope" value="settings" checked> Settings</label></fieldset><label class="api-key-rate">Rate limit <output id="token-rate-output">60 requests/min</output><input type="range" id="token-rate-limit" min="5" max="240" step="5" value="60"></label><button class="api-key-create" id="create-token-btn"><i data-lucide="key-round"></i><span>Create API key</span></button></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="api-key-list"></div></section>
           </div>
         </section>
 
@@ -506,14 +629,6 @@
             <div id="platform-dedicated-page" class="platform-dedicated-page"></div>
             <div class="platform-summary-grid legacy-platform-panel" id="platform-summary-grid"></div>
             <div id="platform-page-controls" class="platform-page-controls legacy-platform-panel"></div>
-            <section id="platform-store-panel" class="docker-library-page hidden" aria-labelledby="docker-library-title">
-              <div class="docker-library-toolbar"><div class="docker-library-brand"><span class="docker-library-mark"><i data-lucide="box"></i></span><div><p class="docker-library-kicker">Syte Library</p><h1 id="docker-library-title">Find your next service</h1><p>Curated Docker apps, ready to configure and deploy.</p></div></div><button type="button" class="btn-pill btn-ghost" id="docker-library-refresh"><i data-lucide="refresh-cw"></i>Refresh catalog</button></div>
-              <div class="docker-library-search-row"><label class="docker-library-search"><i data-lucide="search"></i><input id="platform-store-filter" type="search" placeholder="Search applications, databases, monitoring…" autocomplete="off"></label><button type="button" class="docker-library-sort" id="docker-library-sort"><i data-lucide="sliders-horizontal"></i><span>Popular</span><i data-lucide="chevron-down"></i></button></div>
-              <div id="docker-library-categories" class="docker-library-categories"></div>
-              <div id="docker-library-featured" class="docker-library-featured"></div>
-              <div class="docker-library-section-head"><div><p class="docker-library-kicker">Explore the catalog</p><h2>Popular with operators</h2></div><span id="docker-library-count"></span></div>
-              <div id="platform-store-grid" class="docker-library-grid"></div>
-            </section>
             <div class="platform-resource-grid">
               <div class="platform-resource-panel"><div class="platform-panel-head"><h2 id="platform-resource-heading">Resources</h2><span id="platform-resource-count" class="platform-count">0</span></div><div id="platform-resource-list" class="platform-resource-list"></div></div>
               <div class="platform-resource-panel"><div class="platform-panel-head"><h2>Operations</h2></div><div id="platform-action-list" class="platform-action-list"></div></div>

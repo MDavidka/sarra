@@ -146,13 +146,41 @@ def _git_auth_env(token: str | None) -> tuple[dict[str, str], Path | None]:
     }, askpass
 
 
-def clone_or_pull(project_id: str, git_url: str | None, branch: str, *, http_token: str | None = None) -> tuple[bool, str]:
+def clone_or_pull(
+    project_id: str,
+    git_url: str | None,
+    branch: str,
+    *,
+    http_token: str | None = None,
+    commit_sha: str = "",
+) -> tuple[bool, str]:
+    """Update a repository, optionally pinning the workspace to an observed commit.
+
+    Branch deployments record the GitHub head before queueing a build. Checking out
+    that immutable SHA after fetch keeps the deployed source aligned with the
+    recorded run, even when another push lands while the worker is waiting.
+    """
     ws = ensure_workspace(project_id)
     repo_dir = ws / "app"
+    requested_commit = commit_sha.strip()
 
     if not git_url:
         repo_dir.mkdir(parents=True, exist_ok=True)
         return True, "Workspace ready (no git repository configured)."
+
+    def checkout_requested_commit() -> tuple[bool, str]:
+        if not requested_commit:
+            return True, ""
+        code, output = run_cmd(git_cmd("checkout", "--detach", requested_commit), cwd=repo_dir, env=auth_env)
+        if code == 0:
+            return True, f"Repository pinned to {requested_commit[:12]}."
+        # Shallow clones can omit an older recorded commit; fetch it explicitly
+        # before retrying without changing the configured branch.
+        fetch_code, fetch_output = run_cmd(git_cmd("fetch", "--depth", "1", "origin", requested_commit), cwd=repo_dir, env=auth_env)
+        if fetch_code != 0:
+            return False, fetch_output or output
+        code, output = run_cmd(git_cmd("checkout", "--detach", requested_commit), cwd=repo_dir, env=auth_env)
+        return code == 0, (f"Repository pinned to {requested_commit[:12]}." if code == 0 else output)
 
     auth_env, askpass = _git_auth_env(http_token)
     try:
@@ -160,6 +188,8 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str, *, http_tok
             code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir, env=auth_env)
             if code != 0:
                 return False, out
+            if requested_commit:
+                return checkout_requested_commit()
             code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
             if code != 0:
                 return False, out
@@ -175,8 +205,12 @@ def clone_or_pull(project_id: str, git_url: str | None, branch: str, *, http_tok
         if code != 0:
             code, out = run_cmd(git_cmd("clone", git_url, str(repo_dir)), env=auth_env)
             if code == 0:
-                run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
-        return code == 0, out or "Repository cloned."
+                code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
+        if code != 0:
+            return False, out
+        if requested_commit:
+            return checkout_requested_commit()
+        return True, out or "Repository cloned."
     finally:
         if askpass:
             askpass.unlink(missing_ok=True)

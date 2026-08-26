@@ -122,13 +122,23 @@ async def _ensure_deploy_info(project: dict) -> dict:
     return await get_project(project_id) or project
 
 
-async def run_deploy_job(project_id: str, start_command: str | None = None) -> str:
+async def run_deploy_job(
+    project_id: str,
+    start_command: str | None = None,
+    *,
+    commit_sha: str = "",
+) -> str:
     """Execute deploy steps for an existing project (async, streamable logs)."""
     async with _deploy_locks[project_id]:
-        return await _run_deploy_job_unlocked(project_id, start_command)
+        return await _run_deploy_job_unlocked(project_id, start_command, commit_sha=commit_sha)
 
 
-async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = None) -> str:
+async def _run_deploy_job_unlocked(
+    project_id: str,
+    start_command: str | None = None,
+    *,
+    commit_sha: str = "",
+) -> str:
     """Execute deploy steps for an existing project (async, streamable logs)."""
     project = await get_project(project_id)
     if not project:
@@ -152,7 +162,25 @@ async def _run_deploy_job_unlocked(project_id: str, start_command: str | None = 
 
     if git_url:
         log("Cloning/updating git repository…")
-        ok, msg = await asyncio.to_thread(clone_or_pull, project_id, git_url, branch)
+        http_token = None
+        github_account_id = str(project.get("github_account_id") or "").strip()
+        if github_account_id:
+            from syte.github_oauth import GitHubOAuthError, token_for_account
+
+            try:
+                http_token = await token_for_account(github_account_id)
+            except GitHubOAuthError as exc:
+                log(f"GitHub checkout credentials are unavailable: {exc}")
+                await update_project(project_id, {"status": "stopped"})
+                return "\n".join(messages)
+        ok, msg = await asyncio.to_thread(
+            clone_or_pull,
+            project_id,
+            git_url,
+            branch,
+            http_token=http_token,
+            commit_sha=commit_sha,
+        )
         log(msg)
         if not ok:
             await update_project(project_id, {"status": "stopped"})
@@ -321,20 +349,42 @@ async def begin_deploy_service(
     )
 
 
-async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
+def _deployment_failure_reason(output: str) -> str:
+    """Return a short, actionable reason for a completed but non-running deploy."""
+    text = (output or "").strip()
+    lowered = text.lower()
+    if "no start command" in lowered:
+        return "No start command or Dockerfile was detected. Configure a start command, then redeploy."
+    if "address already in use" in lowered or "port is already allocated" in lowered:
+        return "The configured port is already in use. Choose another port or stop the conflicting service."
+    if "dockerfile" in lowered and ("not found" in lowered or "failed" in lowered):
+        return "Docker build could not use the configured Dockerfile. Check its path and build output."
+    if "clone" in lowered or "repository" in lowered:
+        return "Source checkout failed. Confirm the repository URL, branch, and Git connection."
+    if not text:
+        return "Deployment finished without starting the service. Review the deployment configuration and logs."
+    return text[-1000:]
+
+
+async def _run_recorded_deploy(project_id: str, run_id: str, commit_sha: str = "") -> str:
     started = time.monotonic()
     try:
         await update_deployment_run(run_id, {"status": "running"})
-        output = await run_deploy_job(project_id)
+        output = await run_deploy_job(project_id, commit_sha=commit_sha)
         project = await get_project(project_id)
         status = "succeeded" if project and project.get("status") == "running" else "failed"
+        failure_reason = None if status == "succeeded" else _deployment_failure_reason(output)
+        if status == "failed":
+            await update_project(project_id, {"status": "failed"})
+        elif commit_sha:
+            await update_project(project_id, {"last_deployed_commit": commit_sha})
         await update_deployment_run(
             run_id,
             {
                 "status": status,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "duration_ms": int((time.monotonic() - started) * 1000),
-                "error": None if status == "succeeded" else output[-1000:],
+                "error": failure_reason,
             },
         )
         from syte.notifications import publish_project_event
@@ -383,7 +433,7 @@ async def _run_recorded_deploy(project_id: str, run_id: str) -> str:
         raise
 
 
-async def issue_deploy(project_id: str, trigger: str = "manual") -> tuple[dict | None, str]:
+async def issue_deploy(project_id: str, trigger: str = "manual", commit_sha: str = "") -> tuple[dict | None, str]:
     """Re-run deploy for an existing project (background)."""
     project = await get_project(project_id)
     if not project:
@@ -394,8 +444,8 @@ async def issue_deploy(project_id: str, trigger: str = "manual") -> tuple[dict |
             f"Deploy already in progress for {project_id}. "
             f"Stream logs: GET /api/projects/{project_id}/logs/stream"
         )
-    run = await create_deployment_run(project_id, trigger=trigger)
-    task = asyncio.create_task(_run_recorded_deploy(project_id, run["id"]))
+    run = await create_deployment_run(project_id, trigger=trigger, commit_sha=commit_sha)
+    task = asyncio.create_task(_run_recorded_deploy(project_id, run["id"], commit_sha=commit_sha))
     _deploy_running[project_id] = task
 
     def _clear(done: asyncio.Task) -> None:
@@ -408,7 +458,7 @@ async def issue_deploy(project_id: str, trigger: str = "manual") -> tuple[dict |
         "deployment.queued",
         project_id=project_id,
         message=f"Deployment for {project.get('name', project_id)} was queued.",
-        payload={"trigger": trigger, "domain": project.get("domain") or ""},
+        payload={"trigger": trigger, "domain": project.get("domain") or "", "commit_sha": commit_sha},
     )
     return project, (
         f"Deploy issued for {project_id}. "

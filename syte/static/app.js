@@ -3272,8 +3272,8 @@ function updateSidebarNav(viewName) {
 
   document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
     const isPlatformLink = el.dataset.view === 'platform';
-    const matchesPlatformPage = isPlatformLink && el.dataset.platformPage === activePlatformPage;
-    const matchesView = !isPlatformLink && el.dataset.view === navView;
+    const matchesPlatformPage = viewName === 'platform' && isPlatformLink && el.dataset.platformPage === activePlatformPage;
+    const matchesView = viewName !== 'platform' && !isPlatformLink && el.dataset.view === navView;
     el.classList.toggle('active', !isService && (matchesPlatformPage || matchesView));
   });
 }
@@ -3614,7 +3614,6 @@ const DEDICATED_PAGE_CONFIG = {
   overview:{icon:'layout-dashboard',eyebrow:'Command center',title:'Overview',intro:'See the health and activity of your self-hosted platform at a glance.',action:'Refresh metrics',tone:'blue'},
   schedules:{icon:'calendar-clock',eyebrow:'Automation',title:'Schedules',intro:'Create recurring backups, jobs, and deployment tasks.',action:'New schedule',fields:['Schedule name','Cron expression'],tone:'amber'},
   traefik:{icon:'route',eyebrow:'Networking',title:'Traefik',intro:'Inspect routes, certificates, and proxy readiness before traffic reaches your apps.',action:'Validate routes',tone:'cyan'},
-  docker:{icon:'box',eyebrow:'App marketplace',title:'Docker Library',intro:'Browse installable services.',action:'Browse catalog',tone:'blue'},
   profile:{icon:'user-round',eyebrow:'Account',title:'Profile',intro:'Manage your operator identity and workspace preferences.',action:'Save profile',fields:['Display name','Email'],tone:'violet'},
   sessions:{icon:'shield-check',eyebrow:'Security',title:'Sessions',intro:'Review active operator sessions and revoke stale access.',action:'Review sessions',tone:'rose'},
   'remote-servers':{icon:'server',eyebrow:'Infrastructure',title:'Remote Servers',intro:'Register deployment nodes and monitor their availability.',action:'Add server',fields:['Server name','Host/IP'],tone:'green'},
@@ -3718,34 +3717,84 @@ function recordLiveSystemMetrics(metrics) {
   renderOverviewLiveMetrics();
 }
 
+function serverChecklistCountryOptions(selected = '') {
+  const countries = ['Local', 'Australia', 'Brazil', 'Canada', 'France', 'Germany', 'India', 'Japan', 'Netherlands', 'Poland', 'Romania', 'Singapore', 'United Kingdom', 'United States', 'Unknown'];
+  const value = String(selected || 'Unknown');
+  const options = countries.includes(value) ? countries : [value, ...countries];
+  return options.map(country => `<option value="${esc(country)}" ${country === value ? 'selected' : ''}>${esc(country)}</option>`).join('');
+}
+
+function serverChecklistMetric(value) {
+  return value == null || Number(value) <= 0 ? '—' : `${Math.round(Number(value))}%`;
+}
+
+function serverChecklistPing(value) {
+  return value == null || Number(value) <= 0 ? 'Waiting' : `${Math.round(Number(value))} ms`;
+}
+
 function renderRemoteServersWorkspace(target) {
-  target.innerHTML = '<section class="legacy-fleet-page"><p class="legacy-fleet-loading">Loading fleet records…</p></section>';
+  target.innerHTML = '<section class="server-checklist-page"><p class="server-checklist-loading">Loading server checklist…</p></section>';
   api('/platform/fleet').then(fleet => {
     const nodes = fleet.nodes || [];
-    const balancer = fleet.load_balancer || {};
     const summary = fleet.summary || {};
-    const nodeCards = nodes.map(node => {
-      const load = node.load_percent == null ? 0 : Math.min(100, Math.max(0, Number(node.load_percent)));
-      const loadLabel = node.load_percent == null ? 'Waiting for first report' : `${Math.round(load)}% current load`;
-      return `<article class="legacy-fleet-node-row"><div class="legacy-fleet-node-identity"><span class="legacy-fleet-status-dot ${esc(node.status || 'pending')}"></span><div><h3>${esc(node.name || 'Unnamed server')}</h3><p>${esc(node.host || 'Host pending')} <span aria-hidden="true">·</span> ${esc(node.server_type || 'vps')}</p></div></div><div class="legacy-fleet-node-load"><div><span>Node load</span><strong>${esc(loadLabel)}</strong></div><div class="legacy-fleet-bar" aria-label="${esc(loadLabel)}"><span style="width:${load}%"></span></div></div><div class="legacy-fleet-node-roles"><span>Roles</span><div><button type="button" aria-pressed="${node.role_websites ? 'true' : 'false'}" data-fleet-role="websites" data-server-id="${esc(node.uuid)}" data-current="${node.role_websites ? '1' : '0'}" class="${node.role_websites ? 'active' : ''}">Websites</button><button type="button" aria-pressed="${node.role_router ? 'true' : 'false'}" data-fleet-role="router" data-server-id="${esc(node.uuid)}" data-current="${node.role_router ? '1' : '0'}" class="${node.role_router ? 'active' : ''}">Router</button><button type="button" aria-pressed="${node.role_workers ? 'true' : 'false'}" data-fleet-role="workers" data-server-id="${esc(node.uuid)}" data-current="${node.role_workers ? '1' : '0'}" class="${node.role_workers ? 'active' : ''}">Background</button></div></div><div class="legacy-fleet-node-actions"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-pool="1" data-server-id="${esc(node.uuid)}" ${node.load_balancing_enabled ? 'checked' : ''} ${node.role_websites ? '' : 'disabled'}><span></span>In web pool</label><button class="legacy-fleet-script" type="button" data-fleet-script="${esc(node.uuid)}"><i data-lucide="terminal-square"></i>Setup script</button></div></article>`;
-    }).join('') || '<div class="legacy-fleet-empty"><i data-lucide="server"></i><h3>No servers enrolled</h3><p>Add a server to create a website, router, or background-workload pool.</p><button class="dedicated-primary" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add first server</button></div>';
-    const eligible = (balancer.eligible_targets || []).length;
-    target.innerHTML = `<section class="legacy-fleet-page"><header class="legacy-fleet-header"><div><p>Infrastructure fleet</p><h2>Remote Servers</h2><span>Add servers, choose responsibilities, and route website traffic using reported node load.</span></div><button class="legacy-fleet-refresh" type="button" data-fleet-refresh="1" aria-label="Refresh fleet"><i data-lucide="refresh-cw"></i></button></header><section class="legacy-fleet-control-card"><div class="legacy-fleet-control-intro"><span class="legacy-fleet-icon"><i data-lucide="network"></i></span><div><p>Traffic routing</p><h3>${balancer.enabled ? `${eligible} healthy target${eligible === 1 ? '' : 's'} ready for traffic` : 'Traffic routing is paused'}</h3><small>Only online Website nodes in the web pool are eligible. Choose a policy and optional router below.</small></div></div><div class="legacy-fleet-control-fields"><label class="legacy-fleet-switch"><input type="checkbox" data-fleet-balancer="enabled" ${balancer.enabled ? 'checked' : ''}><span></span><b>Load balancer<small>${balancer.enabled ? 'Accepting traffic' : 'Not accepting traffic'}</small></b></label><label>Routing strategy<select data-fleet-balancer="strategy"><option value="least-load" ${balancer.strategy === 'least-load' ? 'selected' : ''}>Least load</option><option value="round-robin" ${balancer.strategy === 'round-robin' ? 'selected' : ''}>Round robin</option></select></label><label>Router node<select data-fleet-balancer="router"><option value="">Choose automatically</option>${nodes.filter(node => node.role_router).map(node => `<option value="${esc(node.uuid)}" ${balancer.router_server_uuid === node.uuid ? 'selected' : ''}>${esc(node.name)}</option>`).join('')}</select></label></div></section><section class="legacy-fleet-summary"><article><i data-lucide="server"></i><span>Servers</span><strong>${summary.total_nodes || 0}</strong></article><article><i data-lucide="activity"></i><span>Reporting</span><strong>${summary.online_nodes || 0}</strong></article><article><i data-lucide="network"></i><span>Website pool</span><strong>${summary.website_nodes || 0}</strong></article><article><i data-lucide="cpu"></i><span>Background</span><strong>${summary.worker_nodes || 0}</strong></article></section><div class="legacy-fleet-workspace"><section class="legacy-fleet-inventory"><header class="legacy-fleet-section-head"><div><p>Server inventory</p><h3>Nodes and responsibilities</h3><span>Enable one or more roles per node. Changes save immediately.</span></div><button class="legacy-fleet-compact-refresh" type="button" data-fleet-refresh="1"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><section class="legacy-fleet-grid">${nodeCards}</section></section><aside class="legacy-fleet-setup"><span class="legacy-fleet-setup-icon"><i data-lucide="server"></i></span><p>Server enrollment</p><h3>Add a node</h3><small>Enter a reachable host. Its generated setup script provides a scoped enrollment credential.</small><button class="dedicated-primary legacy-fleet-setup-open" type="button" data-fleet-enroll-toggle="1"><i data-lucide="plus"></i>Add server</button><form class="legacy-fleet-enroll" data-fleet-enroll="1" hidden><label>Node name<input name="name" required maxlength="120" placeholder="beta-web-01"></label><label>IP address or host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Server type<select name="server_type"><option value="micro">Micro server</option><option value="vps">VPS</option><option value="dedicated">Dedicated</option><option value="edge">Edge / router</option><option value="build">Build worker</option></select></label><div><button type="button" class="legacy-fleet-enroll-cancel" data-fleet-enroll-toggle="1">Cancel</button><button class="dedicated-primary" type="submit"><i data-lucide="plus"></i>Enroll node</button></div></form></aside></div><div class="legacy-fleet-dialog-backdrop" data-fleet-script-panel="1" hidden><section class="legacy-fleet-script-panel" role="dialog" aria-modal="true" aria-label="Server helper script"><header><div><p>Secure enrollment helper</p><h3>syte-fleet-heartbeat.sh</h3><span>Copy the command, review it, then run it as root on this node.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close helper script"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1" tabindex="0"></pre><footer><button class="legacy-fleet-enroll-cancel" type="button" data-fleet-script-close="1">Cancel</button><button class="dedicated-primary" type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i>Copy script</button></footer></section></div></section>`;
-    const message = text => { const el = document.getElementById('platform-page-message'); if (el) el.textContent = text; };
+    const reporting = nodes.filter(node => node.metrics);
+    const averageLoad = reporting.length ? Math.round(reporting.reduce((sum, node) => sum + Number(node.load_percent || 0), 0) / reporting.length) : null;
+    const serverRows = nodes.map(node => {
+      const metrics = node.metrics || {};
+      const status = String(node.status || 'pending');
+      const isLocal = Boolean(node.is_local);
+      return `<article class="server-checklist-row" data-server-row="${esc(node.uuid)}">
+        <div class="server-checklist-identity"><span class="server-checklist-status ${esc(status)}" title="${esc(status)}"></span><div><input class="server-checklist-name" data-server-name="${esc(node.uuid)}" value="${esc(node.name || 'Unnamed server')}" aria-label="Server name"><small>${esc(node.host || 'Host pending')}${isLocal ? ' · Sycord host' : ''}</small></div></div>
+        <label class="server-checklist-field"><span>Country</span><select data-server-country="${esc(node.uuid)}" aria-label="Country for ${esc(node.name || 'server')}">${serverChecklistCountryOptions(node.country)}</select></label>
+        <div class="server-checklist-metrics" aria-label="Server resource usage"><span><small>CPU</small><b>${serverChecklistMetric(metrics.cpu_percent)}</b></span><span><small>RAM</small><b>${serverChecklistMetric(metrics.memory_percent)}</b></span><span><small>Disk</small><b>${serverChecklistMetric(metrics.disk_percent)}</b></span></div>
+        <div class="server-checklist-state"><span class="server-checklist-state-pill ${esc(status)}"><i></i>${esc(status)}</span><small>${serverChecklistPing(metrics.ping_ms)}</small></div>
+        <div class="server-checklist-actions"><button type="button" class="server-checklist-save" data-server-save="${esc(node.uuid)}">Save</button>${isLocal ? '<span class="server-checklist-main">Main</span>' : `<button type="button" class="server-checklist-setup" data-fleet-script="${esc(node.uuid)}">Setup</button>`}</div>
+      </article>`;
+    }).join('') || '<div class="server-checklist-empty"><i data-lucide="server"></i><h3>No servers yet</h3><p>Add the first server to begin monitoring its availability and resource usage.</p></div>';
+    target.innerHTML = `<section class="server-checklist-page">
+      <header class="server-checklist-header"><div><p>Infrastructure</p><h2>Servers</h2><span>Manage the Sycord host and every enrolled deployment server from one live checklist.</span></div><button class="server-checklist-refresh" type="button" data-server-refresh="1"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
+      <section class="server-checklist-summary" aria-label="Server status summary"><article><span>Servers</span><strong>${summary.total_nodes || 0}</strong></article><article><span>Online</span><strong>${summary.online_nodes || 0}</strong></article><article><span>Combined load</span><strong>${averageLoad == null ? '—' : `${averageLoad}%`}</strong><small>CPU + RAM average</small></article><article><span>Heartbeat</span><strong>${reporting.length}/${nodes.length}</strong><small>Reporting nodes</small></article></section>
+      <section class="server-checklist-add"><div><p>Add server</p><h3>Enroll a server</h3><span>Choose the display name and country yourself. Sycord stores the country locally and does not perform an external IP lookup.</span></div><form data-server-enroll="1"><label>Name<input name="name" required maxlength="120" placeholder="web-02"></label><label>Host<input name="host" required maxlength="255" placeholder="203.0.113.10"></label><label>Country<select name="country">${serverChecklistCountryOptions('Unknown')}</select></label><label>Type<select name="server_type"><option value="vps">VPS</option><option value="micro">Micro server</option><option value="dedicated">Dedicated</option><option value="edge">Edge</option><option value="build">Build worker</option></select></label><button type="submit"><i data-lucide="plus"></i><span>Add server</span></button></form></section>
+      <section class="server-checklist-table"><header><div><p>Active servers</p><h3>Checklist</h3></div><span>${nodes.length} tracked</span></header><div class="server-checklist-columns" aria-hidden="true"><span>Server</span><span>Country</span><span>Performance</span><span>Status & ping</span><span>Actions</span></div><div class="server-checklist-list">${serverRows}</div></section>
+      <div class="server-checklist-dialog" data-fleet-script-panel="1" hidden><section role="dialog" aria-modal="true" aria-label="Server heartbeat setup"><header><div><p>Server heartbeat</p><h3>Install monitoring helper</h3><span>Review the script before running it as root on the enrolled server.</span></div><button type="button" data-fleet-script-close="1" aria-label="Close"><i data-lucide="x"></i></button></header><pre data-fleet-script-content="1" tabindex="0"></pre><footer><button type="button" data-fleet-script-close="1">Close</button><button type="button" data-fleet-script-copy="1"><i data-lucide="copy"></i><span>Copy script</span></button></footer></section></div>
+    </section>`;
     const refresh = () => renderRemoteServersWorkspace(target);
-    target.querySelectorAll('[data-fleet-refresh]').forEach(button => button.addEventListener('click', refresh));
-    target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(button => button.addEventListener('click', event => { const form = target.querySelector('[data-fleet-enroll]'); form.hidden = !form.hidden; const isOpen = !form.hidden; target.querySelectorAll('[data-fleet-enroll-toggle]').forEach(toggle => { toggle.innerHTML = isOpen ? '<i data-lucide="x"></i>Close enrollment' : '<i data-lucide="plus"></i>Add a server'; }); refreshIcons(); }));
-    target.querySelector('[data-fleet-enroll]')?.addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.currentTarget); const type = String(form.get('server_type') || 'micro'); try { await api('/platform/fleet/servers',{method:'POST',body:JSON.stringify({name:form.get('name'),host:form.get('host'),server_type:type,role_websites:true,role_router:type === 'edge',role_workers:type === 'build',load_balancing_enabled:type !== 'build'})}); message('Server enrolled. Generate its helper script to begin load reporting.'); refresh(); } catch(error) { message(`Enrollment failed: ${error.message}`); } });
-    target.querySelectorAll('[data-fleet-role]').forEach(button => button.addEventListener('click', async () => { const role = button.dataset.fleetRole; const active = button.dataset.current === '1'; const updates = {[`role_${role}`]: !active}; if (role === 'websites' && active) updates.load_balancing_enabled = false; try { await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify(updates)}); refresh(); } catch(error) { message(`Role update failed: ${error.message}`); } }));
-    target.querySelectorAll('[data-fleet-pool]').forEach(input => input.addEventListener('change', async () => { try { await api(`/platform/fleet/servers/${encodeURIComponent(input.dataset.serverId)}/roles`, {method:'PUT',body:JSON.stringify({load_balancing_enabled:input.checked})}); refresh(); } catch(error) { message(`Pool update failed: ${error.message}`); refresh(); } }));
-    const saveBalancer = async () => { try { await api('/platform/fleet/load-balancer',{method:'PUT',body:JSON.stringify({load_balancing_enabled:target.querySelector('[data-fleet-balancer="enabled"]').checked,strategy:target.querySelector('[data-fleet-balancer="strategy"]').value,router_server_uuid:target.querySelector('[data-fleet-balancer="router"]').value,health_check_path:balancer.health_check_path || '/health'})}); refresh(); } catch(error) { message(`Load-balancer update failed: ${error.message}`); } };
-    target.querySelectorAll('[data-fleet-balancer]').forEach(input => input.addEventListener('change', saveBalancer));
-    target.querySelectorAll('[data-fleet-script]').forEach(button => button.addEventListener('click', async () => { try { const result = await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.fleetScript)}/setup-script`); const panel = target.querySelector('[data-fleet-script-panel]'); panel.hidden = false; target.querySelector('[data-fleet-script-content]').textContent = result.script; panel.scrollIntoView({behavior:'smooth',block:'center'}); } catch(error) { message(`Script generation failed: ${error.message}`); } }));
+    target.querySelectorAll('[data-server-refresh]').forEach(button => button.addEventListener('click', refresh));
+    target.querySelector('[data-server-enroll]')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const type = String(form.get('server_type') || 'vps');
+      try {
+        const result = await api('/platform/fleet/servers', {method: 'POST', body: JSON.stringify({name: form.get('name'), host: form.get('host'), country: form.get('country'), server_type: type, role_websites: type !== 'build', role_router: type === 'edge', role_workers: type === 'build', load_balancing_enabled: type !== 'build'})});
+        toast(result.message || 'Server added.');
+        refresh();
+      } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not add the server.'); }
+    });
+    target.querySelectorAll('[data-server-save]').forEach(button => button.addEventListener('click', async () => {
+      const id = button.dataset.serverSave;
+      const name = target.querySelector(`[data-server-name="${CSS.escape(id)}"]`)?.value?.trim();
+      const country = target.querySelector(`[data-server-country="${CSS.escape(id)}"]`)?.value;
+      if (!name || !country) { toast('Enter both a server name and country.'); return; }
+      button.disabled = true;
+      try { const result = await api(`/platform/fleet/servers/${encodeURIComponent(id)}`, {method: 'PUT', body: JSON.stringify({name, country})}); toast(result.message || 'Server details saved.'); refresh(); }
+      catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save server details.'); button.disabled = false; }
+    }));
+    target.querySelectorAll('[data-fleet-script]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        const result = await api(`/platform/fleet/servers/${encodeURIComponent(button.dataset.fleetScript)}/setup-script`);
+        const panel = target.querySelector('[data-fleet-script-panel]');
+        panel.hidden = false;
+        target.querySelector('[data-fleet-script-content]').textContent = result.script;
+      } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not generate the setup script.'); }
+    }));
     target.querySelectorAll('[data-fleet-script-close]').forEach(button => button.addEventListener('click', () => { target.querySelector('[data-fleet-script-panel]').hidden = true; }));
     target.querySelector('[data-fleet-script-panel]')?.addEventListener('mousedown', event => { if (event.target === event.currentTarget) event.currentTarget.hidden = true; });
-    target.querySelector('[data-fleet-script-copy]')?.addEventListener('click', async () => { const text = target.querySelector('[data-fleet-script-content]').textContent; try { await navigator.clipboard.writeText(text); message('Helper script copied. Review it before running as root.'); } catch(error) { message('Could not copy automatically. Select the helper script and copy it manually.'); } });
+    target.querySelector('[data-fleet-script-copy]')?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(target.querySelector('[data-fleet-script-content]').textContent); toast('Heartbeat setup script copied.'); }
+      catch (_) { toast('Select the script and copy it manually.'); }
+    });
     refreshIcons();
-  }).catch(error => { target.innerHTML = `<section class="legacy-fleet-page"><p class="platform-error">Fleet unavailable: ${esc(error.message)}</p></section>`; });
+  }).catch(error => { target.innerHTML = `<section class="server-checklist-page"><p class="platform-error">Servers are unavailable: ${esc(normalizeFetchError(error?.message) || 'Unknown error')}</p></section>`; });
 }
 
 function renderDedicatedPage(page, data) {
@@ -3946,7 +3995,8 @@ async function loadPlatformPage(page = 'overview') {
   const isRemoteServers = safePage === 'remote-servers';
   const isGit = safePage === 'git';
   const isNotifications = safePage === 'notifications';
-  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications;
+  const isCertificates = safePage === 'certificates';
+  const isBlankWorkspace = safePage !== 'docker' && !isOverview && !isProfile && !isRemoteServers && !isGit && !isNotifications && !isCertificates;
   workspace?.classList.toggle('is-blank-workspace', isBlankWorkspace);
   workspace?.classList.toggle('is-overview-workspace', isOverview);
   workspace?.classList.toggle('is-profile-workspace', isProfile);
@@ -3966,6 +4016,10 @@ async function loadPlatformPage(page = 'overview') {
   }
   if (isNotifications) {
     await renderNotificationWorkspace();
+    return;
+  }
+  if (isCertificates) {
+    await renderCertificateWorkspace();
     return;
   }
   if (isOverview) {
@@ -4273,10 +4327,9 @@ function showView(name) {
   if (name === 'users') loadTokens();
   if (name === 'dashboard') { activeServiceId = null; }
   if (name === 'platform') {
-    document.getElementById('platform-workspace')?.classList.toggle('docker-library-mode', activePlatformPage === 'docker');
-    document.getElementById('platform-store-panel')?.classList.toggle('hidden', activePlatformPage !== 'docker');
+    if (activePlatformPage === 'docker') activePlatformPage = 'overview';
+    document.getElementById('platform-workspace')?.classList.remove('docker-library-mode');
     loadPlatformPage(activePlatformPage);
-    if (activePlatformPage === 'docker') loadDockerStore();
     if (activePlatformPage === 'overview') loadOverviewMonitor();
   }
   if (name === 'server-swarm') renderServerSwarm();
@@ -4284,6 +4337,7 @@ function showView(name) {
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'sycord') refreshIcons();
+  if (name === 'share-it') loadShareItTemplates();
   if (name === 'new-service') resetCreateForm();
   if (name === 'service') {
     const p = projects.find(x => x.id === activeServiceId);
@@ -4675,7 +4729,7 @@ async function api(path, opts = {}) {
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
   const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || path.startsWith('/projects/git/github') || path === '/projects/import/github' || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
+    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || path.startsWith('/projects/git/github') || path === '/projects/import/github' || path.startsWith('/share/templates/') || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   );
   if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
@@ -5190,6 +5244,7 @@ function renderSslDashboard(d) {
   `).join('') || '<p class="hint block">No projects yet.</p>';
 
   const customTls = customTlsControlsHtml(d);
+  const issuance = certificateIssuanceHtml(d);
 
   const monitorCards = (monitor.endpoints || []).map(monitorEndpointHtml).join('');
 
@@ -5229,6 +5284,7 @@ function renderSslDashboard(d) {
       <div class="projects-title-block mb"><i data-lucide="shield-check" class="projects-icon"></i><div><h3>Certificates by project</h3></div></div>
       <div class="ssl-project-list">${rows}</div>
     </div>
+    ${issuance}
     <div class="projects-card panel-form">
       <div class="projects-title-block mb"><i data-lucide="key-round" class="projects-icon"></i><div><h3>Custom TLS <span class="hint">— per-app and sycord.site dedicated certs</span></h3></div></div>
       ${customTls}
@@ -5236,6 +5292,7 @@ function renderSslDashboard(d) {
   `;
   refreshIcons();
   wireCustomTls();
+  wireCertificateIssuance();
 }
 
 function monitorEndpointHtml(ep) {
@@ -5766,7 +5823,7 @@ async function renderGitWorkspace() {
 
     const repoListHtml = repos.length
       ? repos.map(repo => `
-        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+        <article class="project-card git-repository-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
           <div style="min-width:0;flex:1;margin-right:12px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
@@ -5782,7 +5839,7 @@ async function renderGitWorkspace() {
       : `<p class="dedicated-empty">${status.connected ? 'No repositories found in connected Git account.' : 'Connect GitHub above to list repositories that can be fast added.'}</p>`;
 
     target.innerHTML = `
-      <section class="legacy-fleet-page">
+      <section class="legacy-fleet-page git-workspace-page">
         <header class="legacy-fleet-header">
           <div>
             <p>Source & Integration</p>
@@ -5790,15 +5847,15 @@ async function renderGitWorkspace() {
             <span>Connect GitHub, browse permitted repositories, quick deploy a detected build, or disconnect at any time.</span>
           </div>
         </header>
-        <section class="legacy-fleet-control-card" style="padding:18px;margin-bottom:20px;">
+        <section class="legacy-fleet-control-card git-source-card" style="padding:18px;margin-bottom:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             ${accountHtml}
           </div>
         </section>
         <section>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="git-repository-toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <h3 style="margin:0;font-size:18px;color:#111;">Repositories (${repos.length})</h3>
-            <label style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:4px 10px;background:#fff;">
+            <label class="git-repository-search" style="display:flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:8px;padding:4px 10px;background:#fff;">
               <i data-lucide="search" style="width:16px;height:16px;color:#777;"></i>
               <input type="search" id="git-tab-search" placeholder="Filter repositories..." style="border:0;outline:0;font-size:13px;">
             </label>
@@ -5823,7 +5880,7 @@ async function renderGitWorkspace() {
       if (!listEl) return;
       const filtered = repos.filter(r => !q || [r.full_name, r.description].join(' ').toLowerCase().includes(q));
       listEl.innerHTML = filtered.map(repo => `
-        <article class="project-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
+        <article class="project-card git-repository-card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:10px;">
           <div style="min-width:0;flex:1;margin-right:12px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <strong style="font-size:15px;color:#111;">${esc(repo.full_name)}</strong>
@@ -5975,27 +6032,62 @@ async function renderNotificationWorkspace() {
   }
 }
 
+const repositoryFrameworkCatalog = [
+  {label: 'Next.js', asset: 'nextjs-svgl.svg', patterns: [/next\.?js\b/, /\bnext[-_]/]},
+  {label: 'Nuxt', asset: 'nuxt-svgl.svg', patterns: [/\bnuxt\b/]},
+  {label: 'Remix', asset: 'remix-svgl.svg', patterns: [/\bremix\b/]},
+  {label: 'Astro', asset: 'astro-svgl.svg', patterns: [/\bastro\b/]},
+  {label: 'Svelte', asset: 'svelte-svgl.svg', patterns: [/\bsvelte\b/]},
+  {label: 'Angular', asset: 'angular-svgl.svg', patterns: [/\bangular\b/]},
+  {label: 'Vue', asset: 'vue-svgl.svg', patterns: [/\bvue\b/]},
+  {label: 'Vite', asset: 'vite-svgl.svg', patterns: [/\bvite\b/]},
+  {label: 'React', asset: 'react-svgl.svg', patterns: [/\breact\b/]},
+  {label: 'Django', asset: 'django-svgl.svg', patterns: [/\bdjango\b/]},
+  {label: 'Flask', asset: 'flask-svgl.svg', patterns: [/\bflask\b/]},
+  {label: 'Laravel', asset: 'laravel-svgl.svg', patterns: [/\blaravel\b/]},
+  {label: 'Express', asset: 'express-svgl.svg', patterns: [/\bexpress\b/]},
+  {label: 'Node.js', asset: 'nodejs-svgl.svg', patterns: [/node\.?js/, /\bnode\b/]},
+  {label: 'TypeScript', asset: 'typescript-svgl.svg', patterns: [/\btypescript\b/]},
+  {label: 'JavaScript', asset: 'javascript-svgl.svg', patterns: [/\bjavascript\b/]},
+  {label: 'Python', asset: 'python-svgl.svg', patterns: [/\bpython\b/]},
+];
+
+function repositoryFramework(repo) {
+  const topics = Array.isArray(repo?.topics) ? repo.topics : [];
+  const fingerprint = [repo?.name, repo?.full_name, repo?.description, repo?.language, ...topics].filter(Boolean).join(' ').toLowerCase();
+  return repositoryFrameworkCatalog.find((framework) => framework.patterns.some((pattern) => pattern.test(fingerprint))) || null;
+}
+
+function renderRepositoryFrameworkIcon(framework) {
+  if (!framework) return '<span class="deployment-structured-repository-icon deployment-structured-repository-icon-fallback" aria-label="Code repository"><i data-lucide="code-2"></i></span>';
+  return `<span class="deployment-structured-repository-icon deployment-structured-framework-icon" title="${esc(framework.label)}"><img src="/static/vendor/frameworks/${framework.asset}?v=__VERSION__" alt="${esc(framework.label)}"></span>`;
+}
+
 function renderGithubRepositories() {
   const list = document.getElementById('github-repository-list');
   const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
   if (!list) return;
-  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description].join(' ').toLowerCase().includes(search));
+  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
   if (!repositories.length) {
     list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
     return;
   }
-  list.innerHTML = repositories.map((repo) => `
-    <div class="github-repository-item ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
-      <div style="min-width:0;flex:1;">
-        <span class="github-repository-name">${esc(repo.full_name)}</span>
-        ${repo.private ? '<span class="github-private-badge">Private</span>' : '<span class="github-private-badge">Public</span>'}
-        ${repo.description ? `<div class="github-repository-description">${esc(repo.description)}</div>` : ''}
+  list.innerHTML = repositories.map((repo) => {
+    const framework = repositoryFramework(repo);
+    const details = [framework?.label || repo.language || '', repo.private ? '<i data-lucide="lock-keyhole"></i> Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    return `
+      <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+        ${renderRepositoryFrameworkIcon(framework)}
+        <div class="deployment-structured-repository-copy">
+          <span class="github-repository-name">${esc(repo.full_name)}</span>
+          <span class="deployment-structured-repository-meta">${details}</span>
+        </div>
+        <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
+          <span>Import</span>
+        </button>
       </div>
-      <button type="button" class="btn-pill btn-primary btn-sm git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}" style="margin-left:8px;">
-        <i data-lucide="plus"></i><span>Fast Add</span>
-      </button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
   list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -6189,8 +6281,341 @@ function connLabel(p) {
   return hostPortLabel(p);
 }
 
+function serviceEnvironmentEntries(project) {
+  const values = project?.env_vars;
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return [];
+  return Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
+}
+
+function closeServiceEnvironmentModal() {
+  document.getElementById('svc-env-modal')?.classList.add('hidden');
+}
+
+function openServiceEnvironmentModal(project, key = '') {
+  const modal = document.getElementById('svc-env-modal');
+  const keyInput = document.getElementById('svc-env-key');
+  const valueInput = document.getElementById('svc-env-value');
+  const original = document.getElementById('svc-env-original-key');
+  const title = document.getElementById('svc-env-modal-title');
+  if (!modal || !keyInput || !valueInput || !original || !title) return;
+  const values = Object.fromEntries(serviceEnvironmentEntries(project));
+  original.value = key;
+  keyInput.value = key;
+  valueInput.value = key ? String(values[key] ?? '') : '';
+  title.textContent = key ? 'Edit variable' : 'Add variable';
+  modal.classList.remove('hidden');
+  keyInput.focus();
+}
+
+async function persistServiceEnvironment(project, env_vars) {
+  const result = await api(`/projects/${encodeURIComponent(project.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({env_vars}),
+  });
+  toast(result.message || 'Environment saved');
+  await loadProjects();
+  const refreshed = projects.find(item => item.id === project.id);
+  if (refreshed) renderServiceDashboard(refreshed, false);
+}
+
+async function renderServiceRollbackHistory(project) {
+  const target = document.getElementById('svc-rollback-history');
+  if (!target) return;
+  target.innerHTML = '<p class="hint">Loading deployment history…</p>';
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/deployments?limit=20`);
+    const rows = payload.deployments || [];
+    if (!rows.length) {
+      target.innerHTML = '<p class="hint">No deployments have been recorded for this project.</p>';
+      return;
+    }
+    target.innerHTML = rows.map((run) => {
+      const status = cssClassSafe(run.status || 'queued');
+      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
+      const canRollback = run.status === 'succeeded' && Boolean(run.commit_sha);
+      const detail = run.error || (run.commit_sha ? `Commit ${String(run.commit_sha).slice(0, 12)}` : 'No recorded Git commit');
+      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="btn-pill btn-ghost btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
+    }).join('');
+    target.querySelectorAll('[data-svc-rollback-run]').forEach(button => {
+      button.onclick = async () => {
+        const runId = button.dataset.svcRollbackRun;
+        if (!runId) return;
+        button.disabled = true;
+        try {
+          const result = await api(`/projects/${encodeURIComponent(project.id)}/deployments/${encodeURIComponent(runId)}/rollback`, {method: 'POST'});
+          toast(result.message || 'Rollback queued');
+          await renderServiceRollbackHistory(project);
+        } catch (error) {
+          toast(normalizeFetchError(error?.message) || 'Could not queue rollback.');
+        } finally {
+          button.disabled = false;
+        }
+      };
+    });
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load deployment history.')}</p>`;
+  }
+}
+
+function renderServiceManagementWorkspaces(project) {
+  const environmentCards = document.getElementById('svc-env-cards');
+  if (environmentCards) {
+    const entries = serviceEnvironmentEntries(project);
+    environmentCards.innerHTML = entries.length
+      ? entries.map(([key, value]) => `<article class="svc-env-card"><div><code>${esc(key)}</code><span>${esc(String(value))}</span></div><div><button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" aria-label="Edit ${esc(key)}"><i data-lucide="pencil"></i></button><button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" aria-label="Delete ${esc(key)}"><i data-lucide="trash-2"></i></button></div></article>`).join('')
+      : '<p class="svc-env-empty">No variables are configured. Add the first runtime value when your application needs one.</p>';
+    environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
+      button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
+    });
+    environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
+      button.onclick = async () => {
+        const key = button.dataset.svcEnvDelete || '';
+        if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
+        const next = Object.fromEntries(serviceEnvironmentEntries(project));
+        delete next[key];
+        try { await persistServiceEnvironment(project, next); }
+        catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
+      };
+    });
+  }
+
+  const addEnvironment = document.getElementById('svc-env-add-btn');
+  if (addEnvironment) addEnvironment.onclick = () => openServiceEnvironmentModal(project);
+  document.querySelectorAll('[data-svc-env-close]').forEach(button => { button.onclick = closeServiceEnvironmentModal; });
+  const envForm = document.getElementById('svc-env-form');
+  if (envForm) {
+    envForm.onsubmit = async event => {
+      event.preventDefault();
+      const original = document.getElementById('svc-env-original-key')?.value || '';
+      const key = document.getElementById('svc-env-key')?.value.trim() || '';
+      const value = document.getElementById('svc-env-value')?.value || '';
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return toast('Use a valid environment variable key.');
+      const next = Object.fromEntries(serviceEnvironmentEntries(project));
+      if (original && original !== key) delete next[original];
+      next[key] = value;
+      try {
+        await persistServiceEnvironment(project, next);
+        closeServiceEnvironmentModal();
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save variable.');
+      }
+    };
+  }
+
+  document.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+  const primaryDomain = document.getElementById('svc-primary-domain');
+  if (primaryDomain) {
+    const domain = project.domain || '';
+    primaryDomain.innerHTML = `<span>Production domain</span>${domain && project.url ? `<a href="${esc(project.url)}" target="_blank" rel="noopener">${esc(domain)}<i data-lucide="arrow-up-right"></i></a>` : `<strong>${esc(domain || 'Not configured')}</strong>`}`;
+  }
+  const customDomain = document.getElementById('svc-custom-tls-domain');
+  const customEnabled = document.getElementById('svc-custom-tls-enabled');
+  if (customDomain) customDomain.value = project.custom_tls_domain || '';
+  if (customEnabled) customEnabled.checked = Boolean(project.custom_tls_enabled);
+  const customDomainForm = document.getElementById('svc-custom-domain-form');
+  if (customDomainForm) {
+    customDomainForm.onsubmit = async event => {
+      event.preventDefault();
+      const status = document.getElementById('svc-custom-tls-result');
+      if (status) status.textContent = 'Applying domain configuration…';
+      try {
+        const result = await api(`/ssl/projects/${encodeURIComponent(project.id)}/custom-tls`, {
+          method: 'POST',
+          body: JSON.stringify({custom_tls_domain: customDomain?.value.trim() || '', custom_tls_enabled: Boolean(customEnabled?.checked)}),
+        });
+        if (status) status.textContent = result.message || 'Custom domain saved.';
+        toast(result.message || 'Custom domain saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        if (status) status.textContent = normalizeFetchError(error?.message) || 'Could not save custom domain.';
+      }
+    };
+  }
+  document.querySelectorAll('[data-svc-open-certificates]').forEach(button => {
+    button.onclick = () => { activePlatformPage = 'certificates'; showView('platform'); };
+  });
+
+  const memory = document.getElementById('svc-resource-memory');
+  const cpus = document.getElementById('svc-resource-cpus');
+  if (memory) memory.value = project.resource_memory || '';
+  if (cpus) cpus.value = project.resource_cpus || '';
+  const speedForm = document.getElementById('svc-speed-form');
+  if (speedForm) {
+    speedForm.onsubmit = async event => {
+      event.preventDefault();
+      const status = document.getElementById('svc-speed-status');
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}/deployment-config`, {
+          method: 'PUT',
+          body: JSON.stringify({resource_memory: memory?.value || '', resource_cpus: cpus?.value || ''}),
+        });
+        if (status) status.textContent = 'Deployment limits saved. Redeploy to apply them.';
+        toast(result.message || 'Deployment limits saved');
+        await loadProjects();
+      } catch (error) { if (status) status.textContent = normalizeFetchError(error?.message) || 'Could not save deployment limits.'; }
+    };
+  }
+
+  const branch = document.getElementById('svc-settings-branch');
+  const startCommand = document.getElementById('svc-settings-start-command');
+  const autoDeploy = document.getElementById('svc-settings-auto-deploy');
+  if (branch) branch.value = project.branch || 'main';
+  if (startCommand) startCommand.value = project.start_command || '';
+  if (autoDeploy) autoDeploy.checked = Boolean(project.auto_deploy);
+  const autoState = document.getElementById('svc-auto-deploy-state');
+  if (autoState) {
+    autoState.textContent = !project.git_url
+      ? 'Import a GitHub repository before automatic branch deployment can be enabled.'
+      : project.github_account_id
+        ? `GitHub account is linked. ${project.auto_deploy ? `Watching ${project.branch || 'main'} every 5 minutes.` : 'Enable to queue the current branch head once, then only newer commits.'}`
+        : 'Enable while signed in to the connected GitHub account to link this project securely.';
+  }
+  const settingsForm = document.getElementById('svc-deployment-settings-form');
+  if (settingsForm) {
+    settingsForm.onsubmit = async event => {
+      event.preventDefault();
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}/deployment-config`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            branch: branch?.value.trim() || 'main',
+            start_command: startCommand?.value.trim() || '',
+            auto_deploy: Boolean(autoDeploy?.checked),
+          }),
+        });
+        toast(result.message || 'Deployment settings saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save deployment settings.');
+      }
+    };
+  }
+
+  const refreshRollbackHistory = document.getElementById('svc-rollback-refresh');
+  if (refreshRollbackHistory) refreshRollbackHistory.onclick = () => renderServiceRollbackHistory(project);
+  if (activeSvcTab === 'rollbacks') void renderServiceRollbackHistory(project);
+  if (activeSvcTab === 'release') void renderReleaseWorkspace(project);
+  refreshIcons();
+}
+
+function releaseEventTime(value) {
+  try { return value ? new Date(value).toLocaleString() : '—'; } catch (_) { return '—'; }
+}
+
+async function renderReleaseWorkspace(project) {
+  const target = document.getElementById('release-workspace-content');
+  if (!target) return;
+  target.innerHTML = '<p class="hint">Loading release controls…</p>';
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/release`);
+    const workspace = payload.workspace || {};
+    const policy = workspace.policy || {};
+    const environments = workspace.environments || [];
+    const approvals = workspace.approvals || [];
+    const team = workspace.team || [];
+    const restorePoints = workspace.restore_points || [];
+    const events = workspace.events || [];
+    const hostMetrics = workspace.host_metrics || {};
+    const hostPressure = Math.max(Number(hostMetrics.cpu_percent || 0), Number(hostMetrics.ram_percent || 0), Number(hostMetrics.disk_percent || 0));
+    const hostPressureState = hostPressure >= Number(policy.resource_alert_percent || 85) ? 'Attention' : 'Within policy';
+    const canManage = Boolean(payload.can_manage);
+    const disabled = canManage ? '' : ' disabled';
+    const envRows = environments.map((environment) => {
+      const isPreview = environment.kind === 'preview';
+      const action = isPreview
+        ? `<div class="release-row-actions"><button type="button" class="btn-pill btn-ghost btn-sm" data-release-preview="start"${disabled}><i data-lucide="monitor-up"></i><span>Start</span></button><button type="button" class="btn-pill btn-ghost btn-sm" data-release-preview="stop"${disabled}><i data-lucide="square"></i><span>Stop</span></button></div>`
+        : `<button type="button" class="btn-pill btn-primary btn-sm" data-release-deploy="${esc(environment.id)}"${disabled}><i data-lucide="rocket"></i><span>${environment.require_approval ? 'Request release' : 'Release'}</span></button>`;
+      return `<article class="release-environment-card release-${esc(environment.kind)}">
+        <header><div><span class="release-environment-kind">${esc(environment.kind)}</span><h3>${esc(environment.name)}</h3></div>${action}</header>
+        <form class="release-environment-form" data-release-environment="${esc(environment.id)}">
+          <label>Branch<input name="branch" value="${esc(environment.branch || 'main')}"${disabled}></label>
+          <label>Domain<input name="domain" value="${esc(environment.domain || '')}" placeholder="Optional domain"${disabled}></label>
+          <label class="release-switch"><input type="checkbox" name="auto_deploy"${environment.auto_deploy ? ' checked' : ''}${disabled}><span>Automatic deploy</span></label>
+          <label class="release-switch"><input type="checkbox" name="require_approval"${environment.require_approval ? ' checked' : ''}${disabled}><span>Require approval</span></label>
+          ${canManage ? '<button type="submit" class="release-inline-save">Save</button>' : ''}
+        </form>
+      </article>`;
+    }).join('');
+    const approvalRows = approvals.length
+      ? approvals.map((approval) => `<article class="release-list-row"><div><strong>${esc(approval.environment_name || 'Release')} · ${esc(approval.status)}</strong><span>${esc(approval.requested_by || 'operator')} · ${esc(releaseEventTime(approval.created_at))}${approval.note ? ` · ${esc(approval.note)}` : ''}</span></div>${approval.status === 'pending' && canManage ? `<div class="release-row-actions"><button type="button" data-release-approval="approve:${esc(approval.id)}">Approve</button><button type="button" data-release-approval="reject:${esc(approval.id)}">Reject</button></div>` : ''}</article>`).join('')
+      : '<p class="release-empty">No approval requests. Protected environments create one before they queue a release.</p>';
+    const restoreRows = restorePoints.length
+      ? restorePoints.map((point) => `<article class="release-list-row"><div><strong>${esc(point.label)}</strong><span>${esc(point.status)} · ${esc(releaseEventTime(point.created_at))}</span></div>${canManage && point.status !== 'verified' ? `<button type="button" data-release-verify="${esc(point.id)}">Verify</button>` : ''}</article>`).join('')
+      : '<p class="release-empty">No recovery points recorded yet.</p>';
+    const teamRows = team.length
+      ? team.map((member) => `<article class="release-list-row"><div><strong>${esc(member.display_name || member.email)}</strong><span>${esc(member.email)} · ${esc(member.role)}</span></div>${canManage ? `<button type="button" data-release-member-delete="${esc(member.id)}" aria-label="Remove ${esc(member.email)}"><i data-lucide="x"></i></button>` : ''}</article>`).join('')
+      : '<p class="release-empty">Only the current operator can manage this project until a project role is added.</p>';
+    const eventRows = events.length
+      ? events.slice(0, 12).map((event) => `<article class="release-timeline-row ${cssClassSafe(event.severity || 'info')}"><span></span><div><strong>${esc(event.title)}</strong><small>${esc(event.detail || event.event_type || '')} · ${esc(releaseEventTime(event.created_at))}</small></div></article>`).join('')
+      : '<p class="release-empty">Release, preview, recovery, and policy activity will appear here.</p>';
+    target.innerHTML = `
+      <div class="release-overview-strip">
+        <div><span>Strategy</span><strong>${esc(String(policy.deployment_strategy || 'rolling').replace('_', ' '))}</strong></div>
+        <div><span>Preview retention</span><strong>${esc(String(policy.preview_retention_days || 7))} days</strong></div>
+        <div><span>Host pressure</span><strong>${esc(String(Math.round(hostPressure)))}% · ${esc(hostPressureState)}</strong></div>
+        <div><span>Resource alert</span><strong>${esc(String(policy.resource_alert_percent || 85))}%</strong></div>
+        <div><span>Backup policy</span><strong>${policy.backup_enabled ? esc(policy.backup_schedule || 'daily') : 'Off'}</strong></div>
+      </div>
+      ${!canManage ? '<p class="release-readonly"><i data-lucide="lock"></i>You have view-only project access. Ask an owner, admin, or deployer to change release controls.</p>' : ''}
+      <section class="release-section"><header><div><p>Release path</p><h3>Environments</h3></div><span>Each environment keeps its own branch, domain, automation, and protection policy.</span></header><div class="release-environments-grid">${envRows}</div></section>
+      <section class="release-section release-protection-grid"><div><header><div><p>Production control</p><h3>Approvals</h3></div></header><div class="release-list">${approvalRows}</div></div><div><header><div><p>Release policy</p><h3>Strategy and guardrails</h3></div></header><form id="release-policy-form" class="release-policy-form"><label>Strategy<select name="deployment_strategy"${disabled}><option value="rolling"${policy.deployment_strategy === 'rolling' ? ' selected' : ''}>Rolling</option><option value="blue_green"${policy.deployment_strategy === 'blue_green' ? ' selected' : ''}>Blue-green</option><option value="canary"${policy.deployment_strategy === 'canary' ? ' selected' : ''}>Canary</option></select></label><label>Canary traffic<input name="canary_percent" type="number" min="1" max="100" value="${esc(String(policy.canary_percent || 10))}"${disabled}></label><label>Alert threshold<input name="resource_alert_percent" type="number" min="50" max="100" value="${esc(String(policy.resource_alert_percent || 85))}"${disabled}></label><label>Storage budget (MB)<input name="storage_limit_mb" type="number" min="0" value="${esc(String(policy.storage_limit_mb || 0))}"${disabled}></label><label class="release-switch"><input name="preview_enabled" type="checkbox"${policy.preview_enabled ? ' checked' : ''}${disabled}><span>Allow preview deployments</span></label><label class="release-switch"><input name="backup_enabled" type="checkbox"${policy.backup_enabled ? ' checked' : ''}${disabled}><span>Track backup policy</span></label><label>Backup cadence<select name="backup_schedule"${disabled}><option value="daily"${policy.backup_schedule === 'daily' ? ' selected' : ''}>Daily</option><option value="weekly"${policy.backup_schedule === 'weekly' ? ' selected' : ''}>Weekly</option></select></label><label>Keep backups<input name="backup_retention_days" type="number" min="1" max="3650" value="${esc(String(policy.backup_retention_days || 14))}"${disabled}></label>${canManage ? '<button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save policy</span></button>' : ''}</form></div></section>
+      <section class="release-section release-recovery-grid"><div><header><div><p>Recovery readiness</p><h3>Restore points</h3></div>${canManage ? '<button type="button" class="btn-pill btn-ghost btn-sm" id="release-create-restore"><i data-lucide="archive-restore"></i><span>Record point</span></button>' : ''}</header><div class="release-list">${restoreRows}</div></div><div><header><div><p>Project access</p><h3>Team roles</h3></div></header><div class="release-list">${teamRows}</div>${canManage ? '<form id="release-team-form" class="release-team-form"><input name="email" type="email" placeholder="teammate@example.com" required><input name="display_name" placeholder="Name"><select name="role"><option value="viewer">Viewer</option><option value="deployer">Deployer</option><option value="admin">Admin</option><option value="owner">Owner</option></select><button type="submit">Add role</button></form>' : ''}</div></section>
+      <section class="release-section"><header><div><p>Operational timeline</p><h3>Release activity</h3></div><span>Deploy queue, preview, policy, recovery, and access events.</span></header><div class="release-timeline">${eventRows}</div></section>`;
+
+    const refresh = document.getElementById('release-refresh');
+    if (refresh) refresh.onclick = () => renderReleaseWorkspace(project);
+    target.querySelectorAll('[data-release-environment]').forEach((form) => {
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        const data = new FormData(form);
+        try {
+          await api(`/projects/${encodeURIComponent(project.id)}/release/environments/${encodeURIComponent(form.dataset.releaseEnvironment)}`, {method: 'PUT', body: JSON.stringify({branch: data.get('branch'), domain: data.get('domain'), auto_deploy: data.get('auto_deploy') === 'on', require_approval: data.get('require_approval') === 'on'})});
+          toast('Environment saved');
+          await renderReleaseWorkspace(project);
+        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save environment.'); }
+      };
+    });
+    target.querySelectorAll('[data-release-deploy]').forEach((button) => {
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          const result = await api(`/projects/${encodeURIComponent(project.id)}/release/deploy`, {method: 'POST', body: JSON.stringify({environment_id: button.dataset.releaseDeploy})});
+          toast(result.message || (result.approval_required ? 'Approval requested' : 'Release queued'));
+          await renderReleaseWorkspace(project);
+          if (result.project) { await loadProjects(); }
+        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not queue release.'); } finally { button.disabled = false; }
+      };
+    });
+    target.querySelectorAll('[data-release-preview]').forEach((button) => {
+      button.onclick = async () => { try { const result = await api(`/projects/${encodeURIComponent(project.id)}/release/preview/${button.dataset.releasePreview}`, {method: 'POST'}); toast(result.message || 'Preview action complete'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Preview action failed.'); } };
+    });
+    const policyForm = document.getElementById('release-policy-form');
+    if (policyForm) policyForm.onsubmit = async (event) => {
+      event.preventDefault(); const data = new FormData(policyForm);
+      try { await api(`/projects/${encodeURIComponent(project.id)}/release/policy`, {method: 'PUT', body: JSON.stringify({deployment_strategy: data.get('deployment_strategy'), canary_percent: Number(data.get('canary_percent')), preview_enabled: data.get('preview_enabled') === 'on', resource_alert_percent: Number(data.get('resource_alert_percent')), storage_limit_mb: Number(data.get('storage_limit_mb')), backup_enabled: data.get('backup_enabled') === 'on', backup_schedule: data.get('backup_schedule'), backup_retention_days: Number(data.get('backup_retention_days'))})}); toast('Release policy saved'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save policy.'); }
+    };
+    target.querySelectorAll('[data-release-approval]').forEach((button) => {
+      button.onclick = async () => { const [decision, approvalId] = (button.dataset.releaseApproval || '').split(':'); try { await api(`/projects/${encodeURIComponent(project.id)}/release/approvals/${encodeURIComponent(approvalId)}/decision`, {method: 'POST', body: JSON.stringify({approved: decision === 'approve', note: ''})}); toast(`Release ${decision}d`); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not decide approval.'); } };
+    });
+    const restoreButton = document.getElementById('release-create-restore');
+    if (restoreButton) restoreButton.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/restore-points`, {method: 'POST', body: JSON.stringify({label: `Manual point · ${new Date().toLocaleString()}`})}); toast('Recovery point recorded'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not create recovery point.'); } };
+    target.querySelectorAll('[data-release-verify]').forEach((button) => { button.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/restore-points/${encodeURIComponent(button.dataset.releaseVerify)}/verify`, {method: 'POST'}); toast('Recovery point verified'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not verify recovery point.'); } }; });
+    const teamForm = document.getElementById('release-team-form');
+    if (teamForm) teamForm.onsubmit = async (event) => { event.preventDefault(); const data = new FormData(teamForm); try { await api(`/projects/${encodeURIComponent(project.id)}/release/team`, {method: 'POST', body: JSON.stringify({email: data.get('email'), display_name: data.get('display_name'), role: data.get('role')})}); toast('Project role saved'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save project role.'); } };
+    target.querySelectorAll('[data-release-member-delete]').forEach((button) => { button.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/team/${encodeURIComponent(button.dataset.releaseMemberDelete)}`, {method: 'DELETE'}); toast('Project role removed'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove project role.'); } }; });
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load release controls.')}</p>`;
+  }
+}
+
 function switchSvcTab(tab) {
-  const allowed = ['general', 'env', 'logs', 'preview'];
+  const allowed = ['general', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
@@ -6204,6 +6629,12 @@ function switchSvcTab(tab) {
     previewTabActive = true;
     const p = projects.find(x => x.id === activeServiceId);
     if (p) renderPreviewSection(p);
+  } else if (tab === 'release') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) void renderReleaseWorkspace(p);
+  } else if (tab === 'rollbacks') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) void renderServiceRollbackHistory(p);
   } else if (prevTab === 'preview') {
     previewTabActive = false;
     stopPreviewPoll();
@@ -6227,18 +6658,115 @@ function renderQuickActions(p) {
   `;
 }
 
-function openServiceEditModal(p) {
-  const modal = document.getElementById('svc-edit-modal');
-  const nameInput = document.getElementById('svc-edit-name-input');
-  const domainInput = document.getElementById('svc-edit-domain-input');
-  if (!modal || !nameInput || !domainInput) return;
-  nameInput.value = p.name || '';
-  domainInput.value = p.domain || '';
-  modal.classList.remove('hidden');
-  modal.dataset.projectId = p.id;
-  nameInput.focus();
+function projectEditField(id) {
+  return document.getElementById(id);
 }
 
+function setProjectEditTab(tab) {
+  document.querySelectorAll('[data-project-settings-tab]').forEach(button => {
+    button.classList.toggle('active', button.dataset.projectSettingsTab === tab);
+  });
+  document.querySelectorAll('[data-project-settings-panel]').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.projectSettingsPanel === tab);
+  });
+  document.querySelector('.project-settings-panels')?.scrollTo({top: 0, behavior: 'auto'});
+}
+
+async function copyProjectEditText(value, successMessage) {
+  if (!value) return toast('Nothing is available to copy.');
+  try {
+    await navigator.clipboard.writeText(value);
+    const result = projectEditField('svc-edit-utility-result');
+    if (result) result.textContent = successMessage;
+    toast(successMessage);
+  } catch (_) {
+    toast('Copy is unavailable in this browser context.');
+  }
+}
+
+function projectEditSnapshot(project) {
+  return JSON.stringify({
+    project_id: project.id,
+    name: project.name,
+    repository: project.git_url || null,
+    branch: project.branch || 'main',
+    domain: project.domain || null,
+    deploy_type: project.deploy_type || 'auto',
+    start_command: project.start_command || null,
+    healthcheck_path: project.healthcheck_path || '/',
+    healthcheck_interval: project.healthcheck_interval || null,
+    auto_deploy: Boolean(project.auto_deploy),
+    resource_memory: project.resource_memory || null,
+    resource_cpus: project.resource_cpus || null,
+  }, null, 2);
+}
+
+function openServiceEditModal(p) {
+  const modal = projectEditField('svc-edit-modal');
+  const nameInput = projectEditField('svc-edit-name-input');
+  const domainInput = projectEditField('svc-edit-domain-input');
+  if (!modal || !nameInput || !domainInput) return;
+  const setValue = (id, value) => { const input = projectEditField(id); if (input) input.value = value ?? ''; };
+  nameInput.value = p.name || '';
+  domainInput.value = p.domain || '';
+  setValue('svc-edit-healthcheck-path', p.healthcheck_path || '/');
+  setValue('svc-edit-git-url', p.git_url || 'No repository connected');
+  setValue('svc-edit-branch', p.branch || 'main');
+  setValue('svc-edit-start-command', p.start_command || '');
+  setValue('svc-edit-deploy-type', p.deploy_type || 'auto');
+  setValue('svc-edit-healthcheck-interval', p.healthcheck_interval || '');
+  setValue('svc-edit-resource-memory', p.resource_memory || '');
+  setValue('svc-edit-resource-cpus', p.resource_cpus || '');
+  setValue('svc-edit-dockerfile-path', p.dockerfile_path || '');
+  setValue('svc-edit-compose-file', p.compose_file || '');
+  setValue('svc-edit-docker-image', p.docker_image || '');
+  const autoDeploy = projectEditField('svc-edit-auto-deploy');
+  if (autoDeploy) autoDeploy.checked = Boolean(p.auto_deploy);
+  const mark = projectEditField('svc-edit-project-mark');
+  if (mark) mark.textContent = displayTitle(p).slice(0, 1).toUpperCase() || 'S';
+  const title = projectEditField('svc-edit-title');
+  if (title) title.textContent = displayTitle(p);
+  const meta = projectEditField('svc-edit-project-meta');
+  if (meta) meta.textContent = `${p.running ? 'Production running' : 'Project stopped'} · ${p.branch || 'main'} · ${p.status || 'ready'}`;
+  const environmentCount = projectEditField('svc-edit-env-count');
+  if (environmentCount) environmentCount.textContent = String(Object.keys(p.env_vars || {}).length);
+  const releaseSummary = projectEditField('svc-edit-release-summary');
+  if (releaseSummary) releaseSummary.textContent = p.git_url ? 'Protection and recovery ready' : 'Connect Git to govern releases';
+  const liveLink = projectEditField('svc-edit-open-live');
+  if (liveLink) { liveLink.href = p.url || '#'; liveLink.toggleAttribute('aria-disabled', !p.url); }
+  const copyGit = projectEditField('svc-edit-copy-git');
+  if (copyGit) { copyGit.disabled = !p.git_url; copyGit.onclick = () => copyProjectEditText(p.git_url || '', 'Repository URL copied'); }
+  const copyId = projectEditField('svc-edit-copy-id');
+  if (copyId) copyId.onclick = () => copyProjectEditText(p.id, 'Project ID copied');
+  const copyConfig = projectEditField('svc-edit-copy-config');
+  if (copyConfig) copyConfig.onclick = () => copyProjectEditText(projectEditSnapshot(p), 'Safe configuration copied');
+  const runHealth = projectEditField('svc-edit-run-health');
+  if (runHealth) runHealth.onclick = async () => {
+    const result = projectEditField('svc-edit-utility-result');
+    runHealth.disabled = true;
+    if (result) result.textContent = 'Running health check…';
+    try {
+      const health = await api(`/projects/${encodeURIComponent(p.id)}/health`);
+      const text = health.healthy ? `Healthy · ${health.status_code || 'reachable'} · ${health.detail || ''}` : `Unhealthy · ${health.detail || 'No response'}`;
+      if (result) result.textContent = text;
+      toast(text);
+    } catch (error) {
+      const text = normalizeFetchError(error?.message) || 'Health check could not run.';
+      if (result) result.textContent = text;
+      toast(text);
+    } finally { runHealth.disabled = false; }
+  };
+  const openEnvironment = projectEditField('svc-edit-open-environment');
+  if (openEnvironment) openEnvironment.onclick = () => { closeServiceEditModal(); switchSvcTab('env'); };
+  const openRelease = projectEditField('svc-edit-open-release');
+  if (openRelease) openRelease.onclick = () => { closeServiceEditModal(); switchSvcTab('release'); };
+  document.querySelectorAll('[data-project-settings-tab]').forEach(button => { button.onclick = () => setProjectEditTab(button.dataset.projectSettingsTab || 'general'); });
+  modal.classList.remove('hidden');
+  modal.dataset.projectId = p.id;
+  setProjectEditTab('general');
+  nameInput.focus();
+  refreshIcons();
+}
 function closeServiceEditModal() {
   document.getElementById('svc-edit-modal')?.classList.add('hidden');
 }
@@ -6397,9 +6925,7 @@ function renderServiceDashboard(p, resetLogs) {
   const editDomain = document.getElementById('svc-domain-edit');
   if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
   renderDeploymentSitePreview(p);
-
-  const envInput = document.getElementById('svc-env-input');
-  if (envInput) envInput.value = formatEnv(p.env_vars);
+  renderServiceManagementWorkspaces(p);
 
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
@@ -6432,7 +6958,6 @@ function renderServiceDashboard(p, resetLogs) {
     renderQuickActions(p);
   }
 
-  document.getElementById('svc-env-save-btn').onclick = () => saveServiceEnv(p.id);
   document.getElementById('svc-edit-btn').onclick = () => openServiceEditModal(p);
   refreshIcons();
 }
@@ -6656,38 +7181,51 @@ async function serviceAction(id, action) {
 }
 
 async function saveServiceEdit() {
-  const modal = document.getElementById('svc-edit-modal');
+  const modal = projectEditField('svc-edit-modal');
   const id = modal?.dataset.projectId;
   if (!id) return;
-
-  const name = document.getElementById('svc-edit-name-input')?.value.trim();
-  let domain = document.getElementById('svc-edit-domain-input')?.value.trim() || '';
+  const value = id => projectEditField(id)?.value.trim() || '';
+  const name = value('svc-edit-name-input');
+  let domain = value('svc-edit-domain-input');
   domain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-
   if (!name) return toast('Name is required');
-
+  const saveButton = projectEditField('svc-edit-save-btn');
+  const state = projectEditField('svc-edit-save-state');
+  if (saveButton) saveButton.disabled = true;
+  if (state) state.textContent = 'Saving project configuration…';
   try {
-    await api(`/projects/${id}`, {
+    await api(`/projects/${encodeURIComponent(id)}`, {method: 'PUT', body: JSON.stringify({name})});
+    await api(`/projects/${encodeURIComponent(id)}/deployment-config`, {
       method: 'PUT',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({
+        branch: value('svc-edit-branch') || 'main',
+        start_command: value('svc-edit-start-command'),
+        deploy_type: value('svc-edit-deploy-type') || 'auto',
+        dockerfile_path: value('svc-edit-dockerfile-path'),
+        docker_image: value('svc-edit-docker-image'),
+        compose_file: value('svc-edit-compose-file'),
+        healthcheck_path: value('svc-edit-healthcheck-path') || '/',
+        healthcheck_interval: Number(value('svc-edit-healthcheck-interval')) || null,
+        auto_deploy: Boolean(projectEditField('svc-edit-auto-deploy')?.checked),
+        resource_memory: value('svc-edit-resource-memory'),
+        resource_cpus: value('svc-edit-resource-cpus'),
+      }),
     });
     if (domain) {
       const email = (await api('/settings')).admin_email;
-      await api(`/projects/${id}/domain`, {
-        method: 'POST',
-        body: JSON.stringify({ domain, email: email || 'admin@localhost' }),
-      });
+      await api(`/projects/${encodeURIComponent(id)}/domain`, {method: 'POST', body: JSON.stringify({domain, email: email || 'admin@localhost'})});
     }
-    toast('Project updated');
-    closeServiceEditModal();
+    if (state) state.textContent = 'Saved. Runtime limits and build settings apply on the next deployment.';
+    toast('Project configuration saved');
     await loadProjects();
-    const p = projects.find(x => x.id === id);
-    if (p) {
-      renderServiceDashboard(p, false);
-      setBreadcrumb(displayTitle(p));
-    }
-  } catch (e) {
-    toast('Error: ' + e.message);
+    const p = projects.find(item => item.id === id);
+    if (p) { renderServiceDashboard(p, false); setBreadcrumb(displayTitle(p)); }
+  } catch (error) {
+    const message = normalizeFetchError(error?.message) || 'Could not save project configuration.';
+    if (state) state.textContent = message;
+    toast(message);
+  } finally {
+    if (saveButton) saveButton.disabled = false;
   }
 }
 
@@ -7469,12 +8007,11 @@ async function loadTokens() {
       list.innerHTML = '<p class="hint">no tokens yet</p>';
       return;
     }
-    list.innerHTML = res.tokens.map(t => `
-      <div class="token-row">
-        <div><strong>${esc(t.name)}</strong><span class="hint"> ${esc(t.prefix)}…</span></div>
-        <button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button>
-      </div>
-    `).join('');
+    list.innerHTML = res.tokens.map(t => {
+      const scopes = Array.isArray(t.scopes) ? t.scopes : [];
+      const expiry = t.expires_at ? new Date(t.expires_at).toLocaleString() : 'No expiry';
+      return `<article class="api-key-row"><div><strong>${esc(t.name)}</strong><code>${esc(t.prefix)}…</code><span>Expires: ${esc(expiry)} · ${esc(String(t.rate_limit_per_minute || 60))} req/min</span><small>${scopes.map(scope => `<em>${esc(scope)}</em>`).join('')}</small></div><button class="btn-pill btn-ghost btn-sm" onclick="revokeToken('${t.id}')">revoke</button></article>`;
+    }).join('');
     refreshIcons();
   } catch {
     list.innerHTML = '<p class="hint">could not load tokens</p>';
@@ -7495,13 +8032,23 @@ async function revokeToken(id) {
   }
 }
 
+document.getElementById('token-rate-limit')?.addEventListener('input', event => {
+  const output = document.getElementById('token-rate-output');
+  if (output) output.textContent = `${event.currentTarget.value} requests/min`;
+});
+
 document.getElementById('create-token-btn')?.addEventListener('click', async () => {
   const name = document.getElementById('token-name')?.value || 'default';
+  const expiresInput = document.getElementById('token-expires-at')?.value || '';
+  const scopes = [...document.querySelectorAll('input[name="token-scope"]:checked')].map(input => input.value);
+  const rateLimit = Number(document.getElementById('token-rate-limit')?.value || 60);
+  if (!scopes.length) return toast('Choose at least one API permission.');
   if (!await restoreOperatorSession()) {
     return toast('Protected API access is required to manage API keys');
   }
   try {
-    const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name }) });
+    const expiresAt = expiresInput ? new Date(expiresInput).toISOString() : null;
+    const res = await api('/tokens', { method: 'POST', body: JSON.stringify({ name, expires_at: expiresAt, scopes, rate_limit_per_minute: rateLimit }) });
     const box = document.getElementById('new-token-box');
     box.textContent = `Token (copy for external API use — not needed for the web GUI):\n${res.token}`;
     box.classList.remove('hidden');
@@ -7643,7 +8190,8 @@ document.getElementById('project-filter')?.addEventListener('input', (e) => {
 document.querySelectorAll('.nav-sublink[data-view]').forEach(el => {
   if (el.tagName === 'A' && !el.dataset.platformPage) return;
   el.addEventListener('click', (event) => {
-    if (el.dataset.platformPage) event.preventDefault();
+    event.preventDefault();
+    event.stopPropagation();
     if (el.dataset.platformPage) activePlatformPage = el.dataset.platformPage;
     showView(el.dataset.view);
   });
@@ -7655,9 +8203,11 @@ document.getElementById('platform-action-list')?.addEventListener('click', (even
 });
 document.getElementById('nav-group-main-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-main'));
 document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
-document.getElementById('sidebar-service-tabs')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('.nav-sublink[data-svc-tab]');
+document.getElementById('sidebar-service-tabs')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
+  event.preventDefault();
+  event.stopPropagation();
   switchSvcTab(btn.dataset.svcTab);
 });
 document.getElementById('global-ai-project')?.addEventListener('change', async (event) => {
@@ -7941,6 +8491,7 @@ document.getElementById('svc-logs-autoscroll')?.addEventListener('click', (e) =>
 });
 
 document.getElementById('svc-edit-cancel-btn')?.addEventListener('click', closeServiceEditModal);
+document.getElementById('svc-edit-close-btn')?.addEventListener('click', closeServiceEditModal);
 document.getElementById('svc-edit-backdrop')?.addEventListener('click', closeServiceEditModal);
 document.getElementById('svc-edit-save-btn')?.addEventListener('click', saveServiceEdit);
 
@@ -8618,3 +9169,153 @@ async function initializeLegacyAccountGate() {
 }
 
 document.addEventListener('DOMContentLoaded', initializeLegacyAccountGate);
+
+
+async function renderCertificateWorkspace() {
+  const target = document.getElementById('platform-dedicated-page');
+  if (!target) return;
+  target.innerHTML = '<section class="certificate-workspace-loading">Loading certificate readiness…</section>';
+  try {
+    const data = await api('/ssl');
+    sslData = data;
+    const projects = data.projects || [];
+    const projectRows = projects.length
+      ? projects.map(project => {
+        const production = project.production || {};
+        const label = production.badge_label || project.badge_label || (production.domain ? 'pending' : 'not configured');
+        return `<article class="certificate-project-state"><div><strong>${esc(project.name || project.id)}</strong><span>${esc(production.domain || 'No production domain')}</span></div><em>${esc(label)}</em></article>`;
+      }).join('')
+      : '<p class="certificate-empty">Add a project and domain to begin certificate issuance.</p>';
+    target.innerHTML = `<section class="certificate-workspace" aria-label="Certificate management">
+      <header class="certificate-workspace-header"><div><p>Certification</p><h2>Domains and automatic TLS</h2><span>Check DNS before issuing. Normal certificates require a direct record; wildcards use Cloudflare DNS-01.</span></div><div class="certificate-workspace-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare</span></div></header>
+      ${certificateIssuanceHtml(data)}
+      <section class="certificate-project-statuses" aria-label="Project certificate status"><div class="certificate-status-heading"><h3>Project certificate status</h3><button type="button" class="btn-pill btn-ghost btn-sm" data-certificate-refresh><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>${projectRows}</section>
+    </section>`;
+    wireCertificateIssuance();
+    target.querySelector('[data-certificate-refresh]')?.addEventListener('click', () => loadPlatformPage('certificates'));
+    refreshIcons();
+  } catch (error) {
+    target.innerHTML = `<section class="certificate-workspace-error">Could not load certificate readiness: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</section>`;
+  }
+}
+
+function certificateIssuanceHtml(data) {
+  const projects = data.projects || [];
+  const projectOptions = projects.map(project => `<option value="${esc(project.id)}">${esc(project.name || project.id)}</option>`).join('');
+  return `<section class="certificate-issuance" aria-label="Certificate issuance">
+    <header><div><p>Certificate issue</p><h3>Issue a domain certificate</h3><span>Use a direct DNS-only record for normal domains. Wildcards use Cloudflare DNS-01 after a Cloudflare API token is configured.</span></div><div class="certificate-provider"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"><span>Cloudflare DNS</span></div></header>
+    <form data-certificate-issue="1"><label>Project<select name="project_id" required>${projectOptions || '<option value="">No project available</option>'}</select></label><label>Domain<input name="domain" required placeholder="app.example.com" autocomplete="off"></label><label class="certificate-wildcard"><input type="checkbox" name="wildcard"><span>Issue wildcard DNS-01 certificate</span></label><button type="submit" ${projectOptions ? '' : 'disabled'}><i data-lucide="shield-check"></i><span>Request certificate</span></button></form>
+    <div class="certificate-dns-guide" data-certificate-guide="1"><p>Enter a domain to inspect DNS readiness and record guidance.</p></div>
+  </section>`;
+}
+
+function certificateRecordLine(record) {
+  if (!record) return '';
+  const text = `${record.type}  ${record.name}  ${record.value}`;
+  return `<div class="certificate-record"><div><strong>${esc(record.type)}</strong><code>${esc(record.name)}</code><span>${esc(record.value)}</span><small>${esc(record.proxy || 'DNS only')}</small></div><button type="button" data-copy-certificate-record="${esc(text)}"><i data-lucide="copy"></i><span>Copy</span></button></div>`;
+}
+
+function renderCertificateDnsGuide(target, guide) {
+  const dns = guide?.dns;
+  const cf = guide?.cloudflare || {};
+  if (!dns) { target.innerHTML = '<p>Enter a domain to inspect DNS readiness and record guidance.</p>'; return; }
+  const dnsState = !dns.resolves ? ['needs DNS', 'bad'] : dns.direct_to_sycord ? ['direct to Sycord', 'ok'] : ['DNS does not point directly to Sycord', 'bad'];
+  target.innerHTML = `<div class="certificate-guide-head"><span class="certificate-dns-state ${dnsState[1]}">${esc(dnsState[0])}</span><span class="certificate-proxy-state">Cloudflare proxy: <b>off / DNS only</b></span></div><p class="certificate-guide-note">${dns.resolves ? `Resolved IPs: ${esc((dns.ips || []).join(', ') || 'none')}.` : 'No DNS answer was found yet.'} Normal certificate validation needs the A record to resolve directly to this Sycord host; turn the Cloudflare proxy off while issuing.</p><div class="certificate-records"><div><p>Normal domain record</p>${certificateRecordLine(dns.normal_record)}</div><div><p>Wildcard DNS-01 record</p>${certificateRecordLine(dns.wildcard_record)}</div></div><div class="certificate-provider-state"><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt=""><span>Cloudflare DNS token ${cf.token_configured ? 'configured' : 'not configured'} · ${cf.caddy_plugin_installed ? 'Caddy plugin ready' : 'Caddy plugin required for wildcard issuance'}</span></div>`;
+  refreshIcons();
+}
+
+function wireCertificateIssuance() {
+  const form = document.querySelector('[data-certificate-issue]');
+  const guideTarget = document.querySelector('[data-certificate-guide]');
+  if (!form || !guideTarget) return;
+  const domainInput = form.querySelector('[name="domain"]');
+  let checkTimer = null;
+  const checkGuidance = async () => {
+    const domain = domainInput.value.trim();
+    if (!domain) { renderCertificateDnsGuide(guideTarget, null); return; }
+    guideTarget.innerHTML = '<p>Checking domain DNS…</p>';
+    try { renderCertificateDnsGuide(guideTarget, await api(`/certificates/guide?domain=${encodeURIComponent(domain)}`)); }
+    catch (error) { guideTarget.innerHTML = `<p>Could not check DNS: ${esc(normalizeFetchError(error?.message) || 'unknown error')}</p>`; }
+  };
+  domainInput.addEventListener('input', () => { clearTimeout(checkTimer); checkTimer = setTimeout(checkGuidance, 500); });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const values = new FormData(form);
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const result = await api('/certificates/issue', {method: 'POST', body: JSON.stringify({project_id: values.get('project_id'), domain: values.get('domain'), wildcard: values.get('wildcard') === 'on'})});
+      renderCertificateDnsGuide(guideTarget, result);
+      toast(result.message || 'Certificate request applied.');
+      if (typeof loadSslDashboard === 'function') void loadSslDashboard();
+    } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not request the certificate.'); }
+    finally { button.disabled = false; }
+  });
+  guideTarget.addEventListener('click', async event => {
+    const button = event.target.closest('[data-copy-certificate-record]');
+    if (!button) return;
+    try { await navigator.clipboard.writeText(button.dataset.copyCertificateRecord); toast('DNS record copied.'); }
+    catch (_) { toast('Select the record and copy it manually.'); }
+  });
+}
+
+// Share It — Syte-hosted template catalog.
+let shareItTemplates = [];
+let selectedShareTemplate = null;
+async function loadShareItTemplates() {
+  const list = document.getElementById('share-it-template-list');
+  if (!list) return;
+  list.innerHTML = '<div class="share-it-loading">Loading Syte-hosted templates…</div>';
+  try {
+    const payload = await api('/share/templates');
+    shareItTemplates = payload.templates || [];
+    renderShareItTemplates();
+  } catch (error) { list.innerHTML = `<div class="share-it-loading">${escapeHtml(normalizeFetchError(error?.message) || 'Unable to load templates.')}</div>`; }
+}
+function renderShareItTemplates() {
+  const list = document.getElementById('share-it-template-list');
+  const query = (document.getElementById('share-it-filter')?.value || '').trim().toLowerCase();
+  if (!list) return;
+  const rows = shareItTemplates.filter(t => !query || `${t.name} ${t.summary} ${t.framework}`.toLowerCase().includes(query));
+  list.innerHTML = rows.length ? rows.map(template => `<article class="share-it-template-card"><div class="share-it-template-icon"><i data-lucide="${escapeHtml(template.icon || 'layout-template')}"></i></div><div><span>${escapeHtml(template.framework)}</span><h2>${escapeHtml(template.name)}</h2><p>${escapeHtml(template.summary)}</p><small>${escapeHtml(template.runtime)} · Syte hosted source</small></div><button type="button" class="btn-pill btn-primary" data-share-template="${escapeHtml(template.id)}">Use template</button></article>`).join('') : '<div class="share-it-loading">No matching Syte-hosted templates.</div>';
+  list.querySelectorAll('[data-share-template]').forEach(button => { button.onclick = () => openShareItProvision(button.dataset.shareTemplate); });
+  refreshIcons();
+}
+function openShareItProvision(templateId) {
+  selectedShareTemplate = shareItTemplates.find(template => template.id === templateId) || null;
+  if (!selectedShareTemplate) return;
+  document.getElementById('share-it-provision-title').textContent = selectedShareTemplate.name;
+  document.getElementById('share-it-provision-copy').textContent = `${selectedShareTemplate.description} Its scoped server credential is injected only as a hosted runtime variable.`;
+  document.getElementById('share-it-instance-name').value = '';
+  document.getElementById('share-it-access-password').value = '';
+  document.getElementById('share-it-provision').classList.remove('hidden');
+  document.getElementById('share-it-instance-name').focus();
+}
+async function provisionShareItTemplate() {
+  const name = document.getElementById('share-it-instance-name')?.value.trim();
+  const accessPassword = document.getElementById('share-it-access-password')?.value || '';
+  const button = document.getElementById('share-it-provision-submit');
+  if (!selectedShareTemplate || !name) return toast('Provide a hosted project name.');
+  if (accessPassword.length < 12) return toast('Set a workspace access password of at least 12 characters.');
+  button.disabled = true;
+  try {
+    const result = await api(`/share/templates/${encodeURIComponent(selectedShareTemplate.id)}/provision`, { method: 'POST', body: JSON.stringify({name, access_password: accessPassword}) });
+    document.getElementById('share-it-access-password').value = '';
+    toast(result.message || 'Hosted template created.');
+    document.getElementById('share-it-provision').classList.add('hidden');
+    await loadProjects();
+    const project = projects.find(item => item.id === result.project?.id);
+    if (project) openService(project.id);
+  } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not create the hosted template.'); }
+  finally { button.disabled = false; }
+}
+document.getElementById('share-it-filter')?.addEventListener('input', renderShareItTemplates);
+document.getElementById('share-it-provision-cancel')?.addEventListener('click', () => document.getElementById('share-it-provision')?.classList.add('hidden'));
+document.getElementById('share-it-provision-submit')?.addEventListener('click', provisionShareItTemplate);
+
+// Escape text returned by the template catalog before it is interpolated into Share It markup.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[character]));
+}

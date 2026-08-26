@@ -30,6 +30,7 @@ async def test_fleet_snapshot_uses_persisted_node_metrics(tmp_data_dir: Path) ->
             "team_uuid": bootstrap["team"]["uuid"],
             "name": "beta-web-01",
             "ip": "192.0.2.44",
+            "country": "Germany",
             "status": "ready",
             "is_reachable": True,
             "is_usable": True,
@@ -43,15 +44,17 @@ async def test_fleet_snapshot_uses_persisted_node_metrics(tmp_data_dir: Path) ->
     )
     await store.record_server_metrics(
         node["uuid"],
-        {"cpu_percent": 31.5, "memory_percent": 67.2, "disk_percent": 44.0, "container_count": 3},
+        {"cpu_percent": 31.5, "memory_percent": 67.2, "disk_percent": 44.0, "ping_ms": 18.4, "container_count": 3},
     )
 
     snapshot = await platform_api._fleet_snapshot()
     reported = next(item for item in snapshot["nodes"] if item["uuid"] == node["uuid"])
 
     assert reported["status"] == "online"
-    assert reported["load_percent"] == 67.2
-    assert reported["availability_percent"] == 32.8
+    assert reported["load_percent"] == 49.4
+    assert reported["availability_percent"] == 50.6
+    assert reported["country"] == "Germany"
+    assert reported["metrics"]["ping_ms"] == 18.4
     assert reported["metrics"]["container_count"] == 3
     assert snapshot["load_balancer"]["enabled"] is False
     assert snapshot["summary"]["router_nodes"] >= 1
@@ -122,6 +125,7 @@ async def test_fleet_helper_script_and_heartbeat_are_node_scoped(tmp_data_dir: P
     assert server["uuid"] in helper["script"]
     assert "syte-fleet-heartbeat.timer" in helper["script"]
     assert "enrollment-token-for-the-edge-node-123456" in helper["script"]
+    assert "ping_ms" in helper["script"]
 
     response = await platform_api.fleet_heartbeat(
         server["uuid"],
@@ -130,12 +134,14 @@ async def test_fleet_helper_script_and_heartbeat_are_node_scoped(tmp_data_dir: P
             cpu_percent=17.5,
             memory_percent=41.0,
             disk_percent=29.0,
+            ping_ms=12.0,
             container_count=2,
         ),
     )
     assert response["ok"] is True
     latest = (await store.server_metrics(server["uuid"], limit=1))[-1]
     assert latest["memory_percent"] == 41.0
+    assert latest["ping_ms"] == 12.0
     refreshed = await store.get("platform_servers", server["uuid"])
     assert refreshed["is_reachable"] is True
 
@@ -144,3 +150,23 @@ async def test_fleet_helper_script_and_heartbeat_are_node_scoped(tmp_data_dir: P
             server["uuid"],
             platform_api.FleetHeartbeatRequest(token="x" * 24),
         )
+
+
+@pytest.mark.asyncio
+async def test_local_sycord_host_is_exposed_as_main_with_live_metrics(tmp_data_dir: Path) -> None:
+    from syte.platform import store
+    from syte import platform_api
+
+    store._column_cache.clear()
+    await store.init_platform_db()
+    bootstrap = await store.ensure_bootstrap()
+    local = bootstrap["server"]
+
+    assert local["name"] == "Main"
+    assert local["country"] == "Local"
+    node = await platform_api._fleet_node(local)
+    assert node["is_local"] is True
+    assert node["name"] == "Main"
+    assert node["country"] == "Local"
+    assert node["metrics"] is not None
+    assert "ping_ms" in node["metrics"]

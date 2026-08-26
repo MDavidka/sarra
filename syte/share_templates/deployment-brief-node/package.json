@@ -1,0 +1,12 @@
+{
+  "name": "syte-deployment-brief",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Syte-hosted responsive deployment briefing template",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

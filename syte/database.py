@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     prefix TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
-    last_used_at TEXT
+    last_used_at TEXT,
+    expires_at TEXT,
+    scopes TEXT NOT NULL DEFAULT '["read","write","deploy","certificates","settings"]',
+    rate_limit_per_minute INTEGER NOT NULL DEFAULT 60
 );
 
 CREATE TABLE IF NOT EXISTS operator_accounts (
@@ -113,6 +116,130 @@ CREATE TABLE IF NOT EXISTS pwa_push_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_pwa_push_subscriptions_account
     ON pwa_push_subscriptions(account_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS release_environments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT 'main',
+    domain TEXT NOT NULL DEFAULT '',
+    auto_deploy INTEGER NOT NULL DEFAULT 0,
+    require_approval INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project_id, kind),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_release_environments_project
+    ON release_environments(project_id, kind);
+
+CREATE TABLE IF NOT EXISTS release_policies (
+    project_id TEXT PRIMARY KEY,
+    deployment_strategy TEXT NOT NULL DEFAULT 'rolling',
+    canary_percent INTEGER NOT NULL DEFAULT 10,
+    preview_enabled INTEGER NOT NULL DEFAULT 1,
+    preview_retention_days INTEGER NOT NULL DEFAULT 7,
+    resource_alert_percent INTEGER NOT NULL DEFAULT 85,
+    storage_limit_mb INTEGER NOT NULL DEFAULT 0,
+    backup_enabled INTEGER NOT NULL DEFAULT 0,
+    backup_schedule TEXT NOT NULL DEFAULT 'daily',
+    backup_retention_days INTEGER NOT NULL DEFAULT 14,
+    last_restore_check_at TEXT,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS release_approvals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    approved_by TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(environment_id) REFERENCES release_environments(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_release_approvals_project_status
+    ON release_approvals(project_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_team_members (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'viewer',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project_id, email),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_team_members_project
+    ON project_team_members(project_id, role);
+
+CREATE TABLE IF NOT EXISTS release_restore_points (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'deployment',
+    status TEXT NOT NULL DEFAULT 'available',
+    artifact_path TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    verified_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS release_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    environment_id TEXT,
+    event_type TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(environment_id) REFERENCES release_environments(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_release_events_project_created
+    ON release_events(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS share_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    description TEXT NOT NULL,
+    framework TEXT NOT NULL,
+    runtime TEXT NOT NULL,
+    source_dir TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'layout-template',
+    is_syte_hosted INTEGER NOT NULL DEFAULT 1,
+    is_available INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS share_instances (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL,
+    project_id TEXT NOT NULL UNIQUE,
+    owner_account_id TEXT NOT NULL DEFAULT '',
+    instance_key_hash TEXT NOT NULL UNIQUE,
+    access_password_hash TEXT NOT NULL DEFAULT '',
+    access_configured_at TEXT,
+    status TEXT NOT NULL DEFAULT 'provisioning',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT,
+    FOREIGN KEY(template_id) REFERENCES share_templates(id) ON DELETE RESTRICT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_share_instances_owner
+    ON share_instances(owner_account_id, created_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -178,6 +305,20 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN healthcheck_interval INTEGER DEFAULT 30")
     if "auto_deploy" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN auto_deploy INTEGER DEFAULT 0")
+    async with db.execute("PRAGMA table_info(api_tokens)") as cur:
+        token_cols = {row[1] for row in await cur.fetchall()}
+    if "expires_at" not in token_cols:
+        await db.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT")
+    if "scopes" not in token_cols:
+        await db.execute("ALTER TABLE api_tokens ADD COLUMN scopes TEXT NOT NULL DEFAULT '[\"read\",\"write\",\"deploy\",\"certificates\",\"settings\"]'")
+    if "rate_limit_per_minute" not in token_cols:
+        await db.execute("ALTER TABLE api_tokens ADD COLUMN rate_limit_per_minute INTEGER NOT NULL DEFAULT 60")
+    if "github_account_id" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN github_account_id TEXT DEFAULT ''")
+    if "last_seen_git_commit" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN last_seen_git_commit TEXT DEFAULT ''")
+    if "last_deployed_commit" not in cols:
+        await db.execute("ALTER TABLE projects ADD COLUMN last_deployed_commit TEXT DEFAULT ''")
     if "resource_memory" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN resource_memory TEXT")
     if "resource_cpus" not in cols:
@@ -188,6 +329,16 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN in_app_notifications INTEGER NOT NULL DEFAULT 0")
     if "compose_file" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN compose_file TEXT")
+    async with db.execute("PRAGMA table_info(share_instances)") as cur:
+        share_instance_cols = {row[1] for row in await cur.fetchall()}
+    if share_instance_cols and "access_password_hash" not in share_instance_cols:
+        await db.execute("ALTER TABLE share_instances ADD COLUMN access_password_hash TEXT NOT NULL DEFAULT ''")
+    if share_instance_cols and "access_configured_at" not in share_instance_cols:
+        await db.execute("ALTER TABLE share_instances ADD COLUMN access_configured_at TEXT")
+    async with db.execute("PRAGMA table_info(release_restore_points)") as cur:
+        restore_cols = {row[1] for row in await cur.fetchall()}
+    if restore_cols and "artifact_path" not in restore_cols:
+        await db.execute("ALTER TABLE release_restore_points ADD COLUMN artifact_path TEXT NOT NULL DEFAULT ''")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
         await db.execute(
             "INSERT OR IGNORE INTO system_settings (key, value) "
@@ -283,6 +434,7 @@ async def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, 
         "agent_conversation_id",
         "custom_tls_domain", "custom_tls_enabled",
         "healthcheck_path", "healthcheck_interval", "auto_deploy",
+        "github_account_id", "last_seen_git_commit", "last_deployed_commit",
         "resource_memory", "resource_cpus", "docker_image", "compose_file",
         "in_app_notifications",
     }
@@ -312,19 +464,20 @@ async def delete_project(project_id: str) -> bool:
         return cursor.rowcount > 0
 
 
-async def create_deployment_run(project_id: str, trigger: str = "manual") -> dict[str, Any]:
+async def create_deployment_run(project_id: str, trigger: str = "manual", commit_sha: str = "") -> dict[str, Any]:
     import uuid
     run = {
         "id": uuid.uuid4().hex[:16],
         "project_id": project_id,
         "trigger": trigger,
         "status": "queued",
+        "commit_sha": commit_sha,
         "started_at": _now(),
     }
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
-            "INSERT INTO deployment_runs (id, project_id, trigger, status, started_at) VALUES (?, ?, ?, ?, ?)",
-            (run["id"], project_id, trigger, run["status"], run["started_at"]),
+            "INSERT INTO deployment_runs (id, project_id, trigger, status, commit_sha, started_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (run["id"], project_id, trigger, run["status"], run["commit_sha"], run["started_at"]),
         )
         await db.commit()
     return run
@@ -362,15 +515,23 @@ async def list_deployment_runs(project_id: str, limit: int = 20) -> list[dict[st
             return [dict(row) for row in await cur.fetchall()]
 
 
-async def create_api_token(name: str, prefix: str, token_hash: str) -> dict[str, Any]:
+async def create_api_token(
+    name: str,
+    prefix: str,
+    token_hash: str,
+    *,
+    expires_at: str | None = None,
+    scopes: list[str] | None = None,
+    rate_limit_per_minute: int = 60,
+) -> dict[str, Any]:
     import uuid
     token_id = uuid.uuid4().hex[:12]
     now = _now()
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute(
-            """INSERT INTO api_tokens (id, name, prefix, token_hash, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (token_id, name, prefix, token_hash, now),
+            """INSERT INTO api_tokens (id, name, prefix, token_hash, created_at, expires_at, scopes, rate_limit_per_minute)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, name, prefix, token_hash, now, expires_at, json.dumps(scopes or ["read", "write", "deploy", "certificates", "settings"]), int(rate_limit_per_minute)),
         )
         await db.commit()
     return {
@@ -378,6 +539,9 @@ async def create_api_token(name: str, prefix: str, token_hash: str) -> dict[str,
         "name": name,
         "prefix": prefix,
         "created_at": now,
+        "expires_at": expires_at,
+        "scopes": scopes or ["read", "write", "deploy", "certificates", "settings"],
+        "rate_limit_per_minute": int(rate_limit_per_minute),
     }
 
 
@@ -385,9 +549,15 @@ async def list_api_tokens() -> list[dict[str, Any]]:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, name, prefix, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
+            "SELECT id, name, prefix, created_at, last_used_at, expires_at, scopes, rate_limit_per_minute FROM api_tokens ORDER BY created_at DESC"
         ) as cur:
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+    for row in rows:
+        try:
+            row["scopes"] = json.loads(row.get("scopes") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            row["scopes"] = []
+    return rows
 
 
 async def get_api_token_by_hash(token_hash: str) -> dict[str, Any] | None:
