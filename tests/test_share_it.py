@@ -95,3 +95,29 @@ def test_template_source_does_not_merge_into_nonempty_app_directory(tmp_path: Pa
         raise AssertionError("Expected non-empty app directory to be protected")
 
     assert (destination / "existing.txt").read_text(encoding="utf-8") == "retain\n"
+
+
+def test_syte_native_template_collection_is_internal_responsive_and_scoped():
+    service = (ROOT / "syte/share_template_service.py").read_text(encoding="utf-8")
+    templates = {
+        "deployment-brief-node": "deployment-brief",
+        "project-compass-node": "project-compass",
+        "service-watch-node": "service-watch",
+    }
+
+    for source_dir, service_name in templates.items():
+        source = ROOT / "syte/share_templates" / source_dir
+        server = (source / "server.js").read_text(encoding="utf-8")
+        package = (source / "package.json").read_text(encoding="utf-8")
+
+        assert f'"id": "{source_dir}"' in service
+        assert f'"source_dir": "{source_dir}"' in service
+        assert (source / "Dockerfile").is_file()
+        assert '"start": "node server.js"' in package
+        assert "SYTE_SHARE_INSTANCE_KEY" in server
+        assert 'encodeURIComponent(instanceId)}/overview' in server
+        assert 'fetch(\'/api/overview\'' in server
+        assert 'request.url === "/api/health"' in server
+        assert service_name in server
+        assert "@media(max-width:" in server
+        assert "@clerk" not in package

@@ -38,6 +38,33 @@ _TEMPLATE_CATALOG = ({
     "runtime": "Node.js 20",
     "source_dir": "diagnostics-beacon-node",
     "icon": "activity",
+}, {
+    "id": "deployment-brief-node",
+    "name": "Deployment Brief",
+    "summary": "A light Syte-native release briefing page for the bound hosted project.",
+    "description": "A responsive, zero-dependency Node.js template that presents the bound project deployment state through a server-side scoped Syte overview.",
+    "framework": "Node.js · Syte release view",
+    "runtime": "Node.js 20",
+    "source_dir": "deployment-brief-node",
+    "icon": "rocket",
+}, {
+    "id": "project-compass-node",
+    "name": "Project Compass",
+    "summary": "A light Syte-native project orientation page with live bound-service context.",
+    "description": "A responsive, zero-dependency Node.js template that maps the bound project identity, endpoint, runtime state, and configuration count through a server-side scoped Syte overview.",
+    "framework": "Node.js · Syte project view",
+    "runtime": "Node.js 20",
+    "source_dir": "project-compass-node",
+    "icon": "compass",
+}, {
+    "id": "service-watch-node",
+    "name": "Service Watch",
+    "summary": "A light Syte-native operational pulse screen for a bound hosted service.",
+    "description": "A responsive, zero-dependency Node.js template that reports only its bound project operational signal through a server-side scoped Syte overview.",
+    "framework": "Node.js · Syte monitor",
+    "runtime": "Node.js 20",
+    "source_dir": "service-watch-node",
+    "icon": "radio",
 },)
 
 
