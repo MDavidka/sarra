@@ -2097,9 +2097,19 @@ def _enrich(project: dict) -> dict:
     return p
 
 
+def _static_asset_version() -> str:
+    """Return a deterministic cache key that changes when browser assets are updated."""
+    asset_paths = (STATIC_DIR / "index.html", STATIC_DIR / "style.css", STATIC_DIR / "app.js")
+    try:
+        latest_mtime_ns = max(path.stat().st_mtime_ns for path in asset_paths)
+    except OSError:
+        return __version__
+    return f"{__version__}-{latest_mtime_ns:x}"
+
+
 def _index_response() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text()
-    html = html.replace("__VERSION__", __version__)
+    html = html.replace("__VERSION__", _static_asset_version())
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE, "Pragma": "no-cache"})
 
 

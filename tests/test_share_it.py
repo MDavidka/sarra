@@ -171,3 +171,12 @@ def test_share_it_preview_dialog_requires_explicit_deployment_start():
     assert "share-it-provision-preview" in css
     assert "width:80%" in css
     assert "translateY(-46px) scale(1.12)" in css
+
+
+def test_index_response_fingerprints_browser_assets_for_share_it_updates():
+    main = (ROOT / "syte/main.py").read_text(encoding="utf-8")
+
+    assert "def _static_asset_version()" in main
+    assert "STATIC_DIR / \"style.css\"" in main
+    assert "STATIC_DIR / \"app.js\"" in main
+    assert 'html.replace("__VERSION__", _static_asset_version())' in main
