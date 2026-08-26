@@ -139,8 +139,12 @@ def test_share_it_tiles_use_rendered_template_preview_assets_and_legacy_project_
     assert "share-it-template-preview" in app
     assert "share-it-template-select" in app
     assert 'class="project-card project-card-reference"' in app
+    assert "project-card-reference-top" in app
     assert "project-card-site-icon" in app
     assert "projectCardFavicon" in app
+    assert "projectCardDate(p)" in app
+    assert "project-card-preview-wrap" not in app
+    assert "https://hebbkx1anhila5yf.public.blob.vercel-storage.com" not in app
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in css
     assert "bottom:-56px" in css
     assert "transform:rotate(-6deg)" in css
