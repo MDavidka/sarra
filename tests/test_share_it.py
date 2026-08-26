@@ -138,13 +138,13 @@ def test_share_it_tiles_use_rendered_template_preview_assets_and_legacy_project_
     assert "template-previews/${encodeURIComponent(template.id)}.png" in app
     assert "share-it-template-preview" in app
     assert "share-it-template-select" in app
-    assert 'class="project-card project-card-reference"' in app
-    assert "project-card-site-icon" in app
+    assert 'class="project-card project-card-share-it"' in app
+    assert "project-card-preview-wrap" in app
     assert "projectCardFavicon" in app
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in css
     assert "bottom:-56px" in css
     assert "transform:rotate(-6deg)" in css
-    assert ".project-card-reference" in css
+    assert ".project-card-share-it" in css
 
     for template_id in template_ids:
         image = preview_root / f"{template_id}.png"
@@ -180,3 +180,25 @@ def test_index_response_fingerprints_browser_assets_for_share_it_updates():
     assert "STATIC_DIR / \"style.css\"" in main
     assert "STATIC_DIR / \"app.js\"" in main
     assert 'html.replace("__VERSION__", _static_asset_version())' in main
+
+
+def test_control_plane_reference_views_keep_scoped_operations_and_mobile_first_structure():
+    template = ROOT / "syte/share_templates/control-plane-nextjs"
+    client = (template / "app/control-plane-client.tsx").read_text(encoding="utf-8")
+    css = (template / "app/globals.css").read_text(encoding="utf-8")
+    control_route = (template / "app/api/control/route.ts").read_text(encoding="utf-8")
+
+    assert 'className="reference-landing cloud-landing"' in client
+    assert 'className="cloud-landing-card"' in client
+    assert 'className="cloud-console-preview"' in client
+    assert 'className="reference-auth cloud-auth"' in client
+    assert 'className="cloud-auth-visual"' in client
+    assert 'fetch("/api/access", { method: "POST"' in client
+    assert 'fetch("/api/control"' in client
+    assert 'action: name' in client
+    assert 'view === "dashboard" && <Dashboard' in client
+    assert 'SYTE_SHARE_INSTANCE_KEY' in control_route
+    assert ".cloud-landing-card" in css
+    assert ".cloud-auth-card" in css
+    assert "@media(min-width:761px)" in css
+    assert ".cloud-console-preview" in css
