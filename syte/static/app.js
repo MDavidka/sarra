@@ -9306,3 +9306,10 @@ async function provisionShareItTemplate() {
 document.getElementById('share-it-filter')?.addEventListener('input', renderShareItTemplates);
 document.getElementById('share-it-provision-cancel')?.addEventListener('click', () => document.getElementById('share-it-provision')?.classList.add('hidden'));
 document.getElementById('share-it-provision-submit')?.addEventListener('click', provisionShareItTemplate);
+
+// Escape text returned by the template catalog before it is interpolated into Share It markup.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[character]));
+}
