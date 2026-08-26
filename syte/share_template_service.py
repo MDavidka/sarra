@@ -72,6 +72,18 @@ async def get_share_template(template_id: str) -> dict[str, Any] | None:
             return dict(row) if row else None
 
 
+def _provisioned_project_summary(project: dict[str, Any]) -> dict[str, Any]:
+    """Return only the non-secret project fields suitable for browser responses."""
+    return {
+        "id": project.get("id"),
+        "name": project.get("name"),
+        "status": project.get("status"),
+        "port": project.get("port"),
+        "domain": project.get("domain") or "",
+        "url": project.get("url") or "",
+    }
+
+
 def _platform_url() -> str:
     domain = str(getattr(settings, "gui_domain", "") or "").strip()
     if domain:
@@ -123,7 +135,10 @@ async def provision_share_template(template_id: str, name: str, owner_account_id
                 (instance_id, template_id, project["id"], owner_account_id, _hash(instance_key), now, now),
             )
             await db.commit()
-        return {"instance": {"id": instance_id, "template_id": template_id, "project_id": project["id"], "status": "ready"}, "project": updated or project}, instance_key
+        return {
+            "instance": {"id": instance_id, "template_id": template_id, "project_id": project["id"], "status": "ready"},
+            "project": _provisioned_project_summary(updated or project),
+        }, instance_key
     except Exception:
         shutil.rmtree(destination, ignore_errors=True)
         raise
