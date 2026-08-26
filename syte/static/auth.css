@@ -37,3 +37,9 @@ body.account-auth-pending .legacy-account-corner { visibility: hidden; }
 @media (max-width: 900px) { .account-auth-layout { grid-template-columns: minmax(290px, .76fr) minmax(440px, 1fr); } .account-auth-aside { padding: 34px 34px 38px; } .account-auth-main { padding-right: 48px; padding-left: 48px; } .account-auth-topbar { right: 48px; left: 48px; } }
 @media (max-width: 700px) { .account-login-screen { overflow-y: auto; } .account-auth-layout { display: block; min-height: 100svh; } .account-auth-aside { display: none; } .account-auth-main { display: block; min-height: 100svh; padding: 26px 22px 34px; } .account-auth-topbar { position: static; justify-content: space-between; gap: 14px; margin-bottom: clamp(72px, 16vh, 128px); } .account-auth-mobile-brand { display: inline-flex; font-size: 20px; flex-shrink: 0; } .account-auth-switch { font-size: 0; text-align: right; white-space: nowrap; } .account-auth-switch button { font-size: 12px; } .account-login-card { width: 100%; max-width: 430px; margin: 0 auto; } .account-login-card h1 { font-size: 31px; } .account-auth-description { margin-bottom: 25px; font-size: 14px; } .account-login-form input, .account-auth-submit { height: 50px; } .account-auth-divider { margin-top: 25px; } }
 @media (max-width: 370px) { .account-auth-main { padding-right: 16px; padding-left: 16px; } .account-auth-topbar { margin-bottom: 54px; } .account-auth-switch { max-width: 135px; } }
+
+.account-auth-brand img, .account-auth-mobile-brand img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
