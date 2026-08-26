@@ -5684,17 +5684,15 @@ function renderServices() {
     const favicon = projectCardFavicon(p);
     const source = projectCardSource(p);
     const fallback = '/static/syte-logo.png?v=0.9.2';
-    const preview = p.preview_image || 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/ebeb44b1-3705-4fab-a6be-8f82b0c68659-cadwzgxxhwt13Mm2gwI4SlMVn9grf4.jpeg';
     return `
-    <article class="project-card project-card-share-it" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')} ">
-      <div class="project-card-share-head">
-        <div class="project-card-identity"><h3>${esc(p.name)}</h3><span>by ${esc(source.split('/')[0] || 'syte')}</span></div>
+    <article class="project-card project-card-reference" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')}">
+      <div class="project-card-reference-top">
+        <img class="project-card-site-icon" src="${esc(favicon)}" alt="" onerror="this.onerror=null;this.src='${fallback}'">
+        <div class="project-card-identity"><h3>${esc(p.name)}</h3><span>${esc(domain)}</span></div>
         <span class="project-card-status ${status}" title="${esc(status)}"></span>
       </div>
-      <div class="project-card-preview-wrap">
-        <img class="project-card-preview" src="${esc(preview)}" alt="Preview of ${esc(p.name)}" onerror="this.onerror=null;this.src='${fallback}'">
-      </div>
-      <div class="project-card-share-footer"><span class="project-card-domain">${esc(domain)}</span><span class="project-card-share-arrow" aria-hidden="true">↗</span></div>
+      <div class="project-card-reference-branch"><i data-lucide="git-branch"></i><strong>${esc(p.branch || 'main')}</strong></div>
+      <div class="project-card-reference-source"><i data-lucide="github"></i><span>${esc(source)} <b>·</b> ${esc(projectCardDate(p))}</span></div>
     </article>`;
   }).join('');
   refreshIcons();
