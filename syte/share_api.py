@@ -14,6 +14,10 @@ from syte.share_template_service import (
     provision_share_template,
     run_share_instance_action,
     share_instance_overview,
+    configure_share_instance_access,
+    verify_share_instance_access,
+    share_instance_terminal,
+    rotate_share_instance_access,
 )
 
 router = APIRouter(tags=["share-it"])
@@ -23,6 +27,19 @@ class ShareProvisionRequest(BaseModel):
 
 class ShareActionRequest(BaseModel):
     action: str = Field(pattern="^(start|stop|deploy)$")
+
+
+class ShareAccessPasswordRequest(BaseModel):
+    password: str = Field(min_length=12, max_length=200)
+
+
+class ShareTerminalRequest(BaseModel):
+    command: str = Field(pattern="^(status|logs|health)$")
+
+
+class ShareAccessRotateRequest(BaseModel):
+    current_password: str = Field(min_length=12, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
 
 async def _instance(instance_id: str, x_share_instance_key: str | None = Header(default=None)) -> dict[str, Any]:
     instance = await authenticate_share_instance(instance_id, x_share_instance_key or "")
@@ -52,12 +69,43 @@ async def provision_template(template_id: str, body: ShareProvisionRequest, oper
     # It is intentionally never returned to the operator or browser.
     return {"ok": True, **result, "message": "Template source provisioned. Deploy the project when you are ready."}
 
+@router.post("/share/instances/{instance_id}/access")
+async def configure_instance_access(instance_id: str, body: ShareAccessPasswordRequest, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    try:
+        await configure_share_instance_access(instance_id, body.password)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "message": "Workspace access password configured."}
+
+
+@router.post("/share/instances/{instance_id}/access/login")
+async def verify_instance_access(instance_id: str, body: ShareAccessPasswordRequest, _instance: dict[str, Any] = Depends(_instance)):
+    if not await verify_share_instance_access(instance_id, body.password):
+        raise HTTPException(401, "Invalid workspace access password.")
+    return {"ok": True, "message": "Workspace access granted."}
+
+
+@router.post("/share/instances/{instance_id}/access/rotate")
+async def rotate_instance_access(instance_id: str, body: ShareAccessRotateRequest, _instance: dict[str, Any] = Depends(_instance)):
+    if not await rotate_share_instance_access(instance_id, body.current_password, body.new_password):
+        raise HTTPException(401, "Current workspace access password is invalid.")
+    return {"ok": True, "message": "Workspace access password changed."}
+
+
 @router.get("/share/instances/{instance_id}/overview")
 async def share_overview(instance_id: str, instance: dict[str, Any] = Depends(_instance)):
     try:
         return await share_instance_overview(instance)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+@router.post("/share/instances/{instance_id}/terminal")
+async def share_terminal(instance_id: str, body: ShareTerminalRequest, instance: dict[str, Any] = Depends(_instance)):
+    try:
+        return await share_instance_terminal(instance, body.command)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
 
 @router.post("/share/instances/{instance_id}/actions")
 async def share_action(instance_id: str, body: ShareActionRequest, instance: dict[str, Any] = Depends(_instance)):

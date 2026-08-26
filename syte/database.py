@@ -229,6 +229,8 @@ CREATE TABLE IF NOT EXISTS share_instances (
     project_id TEXT NOT NULL UNIQUE,
     owner_account_id TEXT NOT NULL DEFAULT '',
     instance_key_hash TEXT NOT NULL UNIQUE,
+    access_password_hash TEXT NOT NULL DEFAULT '',
+    access_configured_at TEXT,
     status TEXT NOT NULL DEFAULT 'provisioning',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -327,6 +329,12 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE projects ADD COLUMN in_app_notifications INTEGER NOT NULL DEFAULT 0")
     if "compose_file" not in cols:
         await db.execute("ALTER TABLE projects ADD COLUMN compose_file TEXT")
+    async with db.execute("PRAGMA table_info(share_instances)") as cur:
+        share_instance_cols = {row[1] for row in await cur.fetchall()}
+    if share_instance_cols and "access_password_hash" not in share_instance_cols:
+        await db.execute("ALTER TABLE share_instances ADD COLUMN access_password_hash TEXT NOT NULL DEFAULT ''")
+    if share_instance_cols and "access_configured_at" not in share_instance_cols:
+        await db.execute("ALTER TABLE share_instances ADD COLUMN access_configured_at TEXT")
     async with db.execute("PRAGMA table_info(release_restore_points)") as cur:
         restore_cols = {row[1] for row in await cur.fetchall()}
     if restore_cols and "artifact_path" not in restore_cols:

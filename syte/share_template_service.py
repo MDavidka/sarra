@@ -14,7 +14,9 @@ import aiosqlite
 
 from syte import deployment
 from syte.config import settings
+from syte.auth import hash_password, verify_password
 from syte.database import get_project, update_project
+from syte import process_manager
 from syte.workspace import ensure_workspace
 
 _TEMPLATE_ROOT = Path(__file__).resolve().parent / "share_templates"
@@ -156,6 +158,52 @@ async def authenticate_share_instance(instance_id: str, raw_key: str) -> dict[st
             await db.commit()
             return dict(row)
     return None
+
+
+async def configure_share_instance_access(instance_id: str, password: str) -> None:
+    """Set an owner-chosen dashboard password, never the platform credential."""
+    encoded = hash_password(password)
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "UPDATE share_instances SET access_password_hash = ?, access_configured_at = ?, updated_at = ? WHERE id = ?",
+            (encoded, now, now, instance_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Hosted template instance was not found.")
+        await db.commit()
+
+
+async def verify_share_instance_access(instance_id: str, password: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT access_password_hash FROM share_instances WHERE id = ?", (instance_id,)) as cur:
+            row = await cur.fetchone()
+    return bool(row and row["access_password_hash"] and verify_password(password, str(row["access_password_hash"])))
+
+
+async def rotate_share_instance_access(instance_id: str, current_password: str, new_password: str) -> bool:
+    if not await verify_share_instance_access(instance_id, current_password):
+        return False
+    await configure_share_instance_access(instance_id, new_password)
+    return True
+
+
+async def share_instance_terminal(instance: dict[str, Any], command: str) -> dict[str, Any]:
+    """Run a deliberately restricted, project-scoped operational terminal command."""
+    project = await get_project(str(instance["project_id"]))
+    if not project:
+        raise ValueError("The hosted project is no longer available.")
+    command = command.strip().lower()
+    if command == "status":
+        output = f"project={project['id']}\\nstatus={project.get('status') or 'stopped'}\\nport={project.get('port')}\\ndeploy_type={project.get('deploy_type') or 'shell'}"
+    elif command == "logs":
+        output = process_manager.get_logs(str(project["id"]), lines=120, deploy_type=str(project.get("deploy_type") or "shell"))
+    elif command == "health":
+        output = f"status={project.get('status') or 'stopped'}\\nhealthcheck={project.get('healthcheck_path') or '/'}\\nservice={'running' if project.get('status') == 'running' else 'not-running'}"
+    else:
+        raise ValueError("Unsupported terminal command. Use status, logs, or health.")
+    return {"command": command, "output": output[-24000:], "project_id": project["id"]}
 
 
 async def share_instance_overview(instance: dict[str, Any]) -> dict[str, Any]:
