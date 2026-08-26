@@ -12,7 +12,7 @@ function send(response, status, body, contentType = "application/json; charset=u
 
 async function scopedOverview() {
   if (!instanceId || !instanceKey || !apiBase) throw new Error("Diagnostics has not been configured by Syte.");
-  const response = await fetch(`${apiBase}/api/share/instances/${encodeURIComponent(instanceId)}`, {
+  const response = await fetch(`${apiBase}/api/share/instances/${encodeURIComponent(instanceId)}/overview`, {
     headers: { "x-share-instance-key": instanceKey, accept: "application/json" },
     signal: AbortSignal.timeout(8000),
   });

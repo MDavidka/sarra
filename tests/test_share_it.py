@@ -54,6 +54,7 @@ def test_generated_diagnostics_beacon_template_is_internal_and_scoped():
     assert (template / "Dockerfile").is_file()
     assert "SYTE_SHARE_INSTANCE_KEY" in server
     assert '"x-share-instance-key"' in server
+    assert 'encodeURIComponent(instanceId)}/overview' in server
     assert "fetch('/api/overview'" in server
     assert "server-side scoped channel" in server
     assert "@clerk" not in (template / "package.json").read_text(encoding="utf-8")
