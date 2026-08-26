@@ -121,3 +121,31 @@ def test_syte_native_template_collection_is_internal_responsive_and_scoped():
         assert service_name in server
         assert "@media(max-width:" in server
         assert "@clerk" not in package
+
+
+def test_share_it_tiles_use_rendered_template_preview_assets_and_legacy_project_cards():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+    preview_root = ROOT / "syte/static/template-previews"
+    template_ids = {
+        "control-plane-nextjs",
+        "diagnostics-beacon-node",
+        "deployment-brief-node",
+        "project-compass-node",
+        "service-watch-node",
+    }
+
+    assert "template-previews/${encodeURIComponent(template.id)}.png" in app
+    assert "share-it-template-preview" in app
+    assert "share-it-template-footer" in app
+    assert 'class="project-card project-card-reference"' not in app
+    assert 'class="project-card"' in app
+    assert "project-card-tag" in app
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in css
+    assert "aspect-ratio:1.62/1" in css
+    assert ".project-card-reference" not in css
+
+    for template_id in template_ids:
+        image = preview_root / f"{template_id}.png"
+        assert image.is_file()
+        assert image.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

@@ -5640,31 +5640,6 @@ function sslBadgeHtml(p) {
   return `<span class="badge badge-ssl badge-ssl-${badge}" title="${esc(title)}">${esc(label)}</span>`;
 }
 
-function projectCardFavicon(p) {
-  if (!p?.url) return '/static/syte-logo.png?v=0.9.2';
-  try {
-    const site = new URL(p.url);
-    return new URL('/favicon.ico', site.origin).toString();
-  } catch {
-    return '/static/syte-logo.png?v=0.9.2';
-  }
-}
-
-function projectCardSource(p) {
-  if (!p?.git_url) return 'Manual source';
-  return p.git_url
-    .replace(/^https:\/\/(?:www\.)?github\.com\//i, '')
-    .replace(/^git@github\.com:/i, '')
-    .replace(/\.git$/i, '');
-}
-
-function projectCardDate(p) {
-  const raw = p?.created_at || p?.updated_at;
-  if (!raw) return 'Recently created';
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? 'Recently created' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
@@ -5680,19 +5655,18 @@ function renderServices() {
   empty?.classList.add('hidden');
   list.innerHTML = visible.map(p => {
     const status = p.status === 'deploying' ? 'deploying' : (p.running ? 'running' : 'stopped');
-    const domain = p.domain || hostPortLabel(p) || 'Domain pending';
-    const favicon = projectCardFavicon(p);
-    const source = projectCardSource(p);
-    const fallback = '/static/syte-logo.png?v=0.9.2';
+    const deployLabel = p.deploy_type === 'docker' ? 'docker' : 'shell';
     return `
-    <article class="project-card project-card-reference" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')}">
-      <div class="project-card-reference-top">
-        <img class="project-card-site-icon" src="${esc(favicon)}" alt="" onerror="this.onerror=null;this.src='${fallback}'">
-        <div class="project-card-identity"><h3>${esc(p.name)}</h3><span>${esc(domain)}</span></div>
+    <article class="project-card" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')}">
+      <div class="project-card-head">
+        <h3>${esc(p.name)}</h3>
         <span class="project-card-status ${status}" title="${esc(status)}"></span>
       </div>
-      <div class="project-card-reference-branch"><i data-lucide="git-branch"></i><strong>${esc(p.branch || 'main')}</strong></div>
-      <div class="project-card-reference-source"><i data-lucide="github"></i><span>${esc(source)} <b>·</b> ${esc(projectCardDate(p))}</span></div>
+      <div class="project-card-meta">
+        <span class="project-card-tag">${esc(status)}</span>
+        <span class="project-card-tag">${esc(deployLabel)}</span>
+        ${p.port ? `<span class="project-card-tag">:${esc(p.port)}</span>` : ''}
+      </div>
     </article>`;
   }).join('');
   refreshIcons();
@@ -9275,7 +9249,23 @@ function renderShareItTemplates() {
   const query = (document.getElementById('share-it-filter')?.value || '').trim().toLowerCase();
   if (!list) return;
   const rows = shareItTemplates.filter(t => !query || `${t.name} ${t.summary} ${t.framework}`.toLowerCase().includes(query));
-  list.innerHTML = rows.length ? rows.map(template => `<article class="share-it-template-card"><div class="share-it-template-icon"><i data-lucide="${escapeHtml(template.icon || 'layout-template')}"></i></div><div><span>${escapeHtml(template.framework)}</span><h2>${escapeHtml(template.name)}</h2><p>${escapeHtml(template.summary)}</p><small>${escapeHtml(template.runtime)} · Syte hosted source</small></div><button type="button" class="btn-pill btn-primary" data-share-template="${escapeHtml(template.id)}">Use template</button></article>`).join('') : '<div class="share-it-loading">No matching Syte-hosted templates.</div>';
+  list.innerHTML = rows.length ? rows.map(template => {
+    const preview = `/static/template-previews/${encodeURIComponent(template.id)}.png?v=__VERSION__`;
+    const title = escapeHtml(template.name);
+    return `<article class="share-it-template-card">
+      <header class="share-it-template-head">
+        <div class="share-it-template-icon"><i data-lucide="${escapeHtml(template.icon || 'layout-template')}"></i></div>
+        <div class="share-it-template-identity"><span>${escapeHtml(template.framework)}</span><h2>${title}</h2><p>by Syte</p></div>
+      </header>
+      <div class="share-it-template-preview" aria-label="${title} webpage preview">
+        <img src="${preview}" alt="Rendered ${title} webpage preview" loading="lazy">
+      </div>
+      <footer class="share-it-template-footer">
+        <small>${escapeHtml(template.runtime)} · Syte hosted source</small>
+        <button type="button" class="btn-pill btn-primary" data-share-template="${escapeHtml(template.id)}">Use template <i data-lucide="arrow-up-right"></i></button>
+      </footer>
+    </article>`;
+  }).join('') : '<div class="share-it-loading">No matching Syte-hosted templates.</div>';
   list.querySelectorAll('[data-share-template]').forEach(button => { button.onclick = () => openShareItProvision(button.dataset.shareTemplate); });
   refreshIcons();
 }
