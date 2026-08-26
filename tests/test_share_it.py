@@ -32,6 +32,7 @@ def test_share_it_browser_and_nextjs_control_plane_template_are_shipped():
     assert "function loadShareItTemplates()" in app
     assert "function escapeHtml(value)" in app
     assert "/share/templates" in app
+    assert "path.startsWith('/share/templates/')" in app
     assert "/provision" in app
     assert ".share-it-template-card" in css
     assert (template / "package.json").is_file()
