@@ -41,3 +41,19 @@ def test_share_it_browser_and_nextjs_control_plane_template_are_shipped():
     assert "next" in (template / "package.json").read_text(encoding="utf-8")
     assert "SYTE_SHARE_INSTANCE_KEY" in (template / "app/api/control/route.ts").read_text(encoding="utf-8")
     assert "#101010" in (template / "app/globals.css").read_text(encoding="utf-8")
+
+
+def test_generated_diagnostics_beacon_template_is_internal_and_scoped():
+    service = (ROOT / "syte/share_template_service.py").read_text(encoding="utf-8")
+    template = ROOT / "syte/share_templates/diagnostics-beacon-node"
+    server = (template / "server.js").read_text(encoding="utf-8")
+
+    assert '"id": "diagnostics-beacon-node"' in service
+    assert '"source_dir": "diagnostics-beacon-node"' in service
+    assert (template / "package.json").is_file()
+    assert (template / "Dockerfile").is_file()
+    assert "SYTE_SHARE_INSTANCE_KEY" in server
+    assert '"x-share-instance-key"' in server
+    assert "fetch('/api/overview'" in server
+    assert "server-side scoped channel" in server
+    assert "@clerk" not in (template / "package.json").read_text(encoding="utf-8")

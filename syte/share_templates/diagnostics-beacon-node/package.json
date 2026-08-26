@@ -1,0 +1,12 @@
+{
+  "name": "syte-diagnostics-beacon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A zero-dependency, server-side scoped diagnostics template for Syte Share It.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

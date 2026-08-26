@@ -29,6 +29,15 @@ _TEMPLATE_CATALOG = ({
     "runtime": "Node.js 20",
     "source_dir": "control-plane-nextjs",
     "icon": "layout-dashboard",
+}, {
+    "id": "diagnostics-beacon-node",
+    "name": "Diagnostics Beacon",
+    "summary": "Minimal read-only status screen for validating a Syte-hosted template deployment.",
+    "description": "A generated zero-dependency Node.js template that displays only its bound project status through a server-side scoped Syte connection. It is designed for mobile and desktop template verification.",
+    "framework": "Node.js · responsive HTML",
+    "runtime": "Node.js 20",
+    "source_dir": "diagnostics-beacon-node",
+    "icon": "activity",
 },)
 
 
