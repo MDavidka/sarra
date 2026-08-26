@@ -13,3 +13,4 @@ build/
 # Data (local dev)
 .syte-data/
 /var/
+node_modules
