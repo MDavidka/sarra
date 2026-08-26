@@ -18,6 +18,9 @@ from syte.share_template_service import (
     verify_share_instance_access,
     share_instance_terminal,
     rotate_share_instance_access,
+    share_instance_files,
+    write_share_instance_file,
+    share_instance_startup,
 )
 
 router = APIRouter(tags=["share-it"])
@@ -41,6 +44,16 @@ class ShareTerminalRequest(BaseModel):
 class ShareAccessRotateRequest(BaseModel):
     current_password: str = Field(min_length=12, max_length=200)
     new_password: str = Field(min_length=12, max_length=200)
+
+
+class ShareFileWriteRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    content: str = Field(max_length=256_000)
+
+
+class ShareStartupRequest(BaseModel):
+    start_command: str = Field(default="", max_length=500)
+    healthcheck_path: str = Field(default="", max_length=240)
 
 async def _instance(instance_id: str, x_share_instance_key: str | None = Header(default=None)) -> dict[str, Any]:
     instance = await authenticate_share_instance(instance_id, x_share_instance_key or "")
@@ -91,6 +104,38 @@ async def rotate_instance_access(instance_id: str, body: ShareAccessRotateReques
     if not await rotate_share_instance_access(instance_id, body.current_password, body.new_password):
         raise HTTPException(401, "Current workspace access password is invalid.")
     return {"ok": True, "message": "Workspace access password changed."}
+
+
+@router.get("/share/instances/{instance_id}/files")
+async def share_files(instance_id: str, path: str = "", instance: dict[str, Any] = Depends(_instance)):
+    try:
+        return await share_instance_files(instance, path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.put("/share/instances/{instance_id}/files")
+async def share_write_file(instance_id: str, body: ShareFileWriteRequest, instance: dict[str, Any] = Depends(_instance)):
+    try:
+        return await write_share_instance_file(instance, body.path, body.content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/share/instances/{instance_id}/startup")
+async def share_startup(instance_id: str, instance: dict[str, Any] = Depends(_instance)):
+    try:
+        return await share_instance_startup(instance)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.patch("/share/instances/{instance_id}/startup")
+async def share_update_startup(instance_id: str, body: ShareStartupRequest, instance: dict[str, Any] = Depends(_instance)):
+    try:
+        return await share_instance_startup(instance, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/share/instances/{instance_id}/overview")

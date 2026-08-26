@@ -17,7 +17,7 @@ from syte.config import settings
 from syte.auth import hash_password, verify_password
 from syte.database import get_project, update_project
 from syte import process_manager
-from syte.workspace import ensure_workspace
+from syte.workspace import ensure_workspace, workspace_path
 
 _TEMPLATE_ROOT = Path(__file__).resolve().parent / "share_templates"
 _TEMPLATE_CATALOG = ({
@@ -206,6 +206,71 @@ async def share_instance_terminal(instance: dict[str, Any], command: str) -> dic
     else:
         raise ValueError("Unsupported terminal command. Use status, logs, or health.")
     return {"command": command, "output": output[-24000:], "project_id": project["id"]}
+
+
+_FILE_DENYLIST = {".env", ".git", "node_modules", ".next", "__pycache__"}
+
+
+def _project_file_path(project_id: str, relative_path: str = "") -> Path:
+    root = (workspace_path(project_id) / "app").resolve()
+    relative = Path(relative_path.strip().lstrip("/"))
+    if any(part in _FILE_DENYLIST for part in relative.parts):
+        raise ValueError("That path is not available in the project file manager.")
+    candidate = (root / relative).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError("Invalid project path.")
+    return candidate
+
+
+async def share_instance_files(instance: dict[str, Any], relative_path: str = "") -> dict[str, Any]:
+    project_id = str(instance["project_id"])
+    target = _project_file_path(project_id, relative_path)
+    if not target.exists():
+        raise ValueError("File or folder not found.")
+    if target.is_file():
+        if target.stat().st_size > 256_000:
+            raise ValueError("File is too large to open in the project file manager.")
+        return {"path": relative_path.strip("/"), "type": "file", "content": target.read_text(errors="replace")}
+    entries = []
+    for item in sorted(target.iterdir(), key=lambda path: (not path.is_dir(), path.name.lower()))[:250]:
+        if item.name in _FILE_DENYLIST:
+            continue
+        entries.append({"name": item.name, "path": str(item.relative_to(workspace_path(project_id) / "app")), "type": "folder" if item.is_dir() else "file", "size": None if item.is_dir() else item.stat().st_size})
+    return {"path": relative_path.strip("/"), "type": "folder", "entries": entries}
+
+
+async def write_share_instance_file(instance: dict[str, Any], relative_path: str, content: str) -> dict[str, Any]:
+    if len(content.encode("utf-8")) > 256_000:
+        raise ValueError("File content exceeds the 256 KB project editor limit.")
+    project_id = str(instance["project_id"])
+    target = _project_file_path(project_id, relative_path)
+    if not target.name or target.exists() and target.is_dir():
+        raise ValueError("Choose a project file path.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    return {"path": str(target.relative_to(workspace_path(project_id) / "app")), "bytes": len(content.encode("utf-8")), "message": "Project file saved. Deploy to apply runtime changes."}
+
+
+async def share_instance_startup(instance: dict[str, Any], updates: dict[str, str] | None = None) -> dict[str, Any]:
+    project_id = str(instance["project_id"])
+    project = await get_project(project_id)
+    if not project:
+        raise ValueError("The hosted project is no longer available.")
+    if updates:
+        allowed: dict[str, str] = {}
+        healthcheck = str(updates.get("healthcheck_path") or "").strip()
+        if healthcheck:
+            if not healthcheck.startswith("/") or len(healthcheck) > 240:
+                raise ValueError("Health check path must be a relative URL path.")
+            allowed["healthcheck_path"] = healthcheck
+        start_command = str(updates.get("start_command") or "").strip()
+        if start_command:
+            if len(start_command) > 500 or any(token in start_command for token in ("\n", "\r")):
+                raise ValueError("Startup command is invalid.")
+            allowed["start_command"] = start_command
+        if allowed:
+            project = await update_project(project_id, allowed) or project
+    return {"project_id": project_id, "deploy_type": project.get("deploy_type") or "shell", "start_command": project.get("start_command") or "", "healthcheck_path": project.get("healthcheck_path") or "/", "status": project.get("status") or "stopped", "port": project.get("port")}
 
 
 async def share_instance_overview(instance: dict[str, Any]) -> dict[str, Any]:
