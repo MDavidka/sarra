@@ -21,3 +21,9 @@ The generated server exposes a public `/api/health` response and a browser-safe 
 ## Validation standard
 
 Every template must pass Node syntax validation, catalogue regression coverage, and an actual Docker deployment. A representative template must also be inspected at both desktop and 390-pixel mobile widths after the real scoped overview is live.
+
+## Representative live validation
+
+Deployment Brief was provisioned through Share It and deployed as a real Docker project on the Syte VM. Its public health endpoint reported `deployment-brief`, and its browser-safe overview reported the bound project as running with a public production domain and four configured environment values. The overview response exposed no runtime key or raw environment value.
+
+At desktop width, the project renders a two-column release brief with a separate current-project rail and three summary cards. At 390 by 844 pixels, it collapses into a readable single-column sequence: release panel, project card, then operational cards. The rendered phone capture shows no horizontal clipping.
