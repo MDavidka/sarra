@@ -170,7 +170,7 @@ def test_share_it_preview_dialog_requires_explicit_deployment_start():
     assert "share-it-provision-dialog" in css
     assert "share-it-provision-preview" in css
     assert "width:80%" in css
-    assert "object-position:center 62%" in css
+    assert "translateY(-40px) scale(1.8)" in css
 
 
 def test_index_response_fingerprints_browser_assets_for_share_it_updates():
