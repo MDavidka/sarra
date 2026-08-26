@@ -95,7 +95,7 @@ def _platform_url() -> str:
     return "http://172.17.0.1:8787"
 
 
-async def provision_share_template(template_id: str, name: str, owner_account_id: str = "") -> tuple[dict[str, Any], str]:
+async def provision_share_template(template_id: str, name: str, owner_account_id: str = "", access_password: str = "") -> tuple[dict[str, Any], str]:
     template = await get_share_template(template_id)
     if not template:
         raise ValueError("That template is unavailable or is not hosted by Syte.")
@@ -137,6 +137,8 @@ async def provision_share_template(template_id: str, name: str, owner_account_id
                 (instance_id, template_id, project["id"], owner_account_id, _hash(instance_key), now, now),
             )
             await db.commit()
+        if access_password:
+            await configure_share_instance_access(instance_id, access_password)
         return {
             "instance": {"id": instance_id, "template_id": template_id, "project_id": project["id"], "status": "ready"},
             "project": _provisioned_project_summary(updated or project),

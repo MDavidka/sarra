@@ -9285,16 +9285,20 @@ function openShareItProvision(templateId) {
   document.getElementById('share-it-provision-title').textContent = selectedShareTemplate.name;
   document.getElementById('share-it-provision-copy').textContent = `${selectedShareTemplate.description} Its scoped server credential is injected only as a hosted runtime variable.`;
   document.getElementById('share-it-instance-name').value = '';
+  document.getElementById('share-it-access-password').value = '';
   document.getElementById('share-it-provision').classList.remove('hidden');
   document.getElementById('share-it-instance-name').focus();
 }
 async function provisionShareItTemplate() {
   const name = document.getElementById('share-it-instance-name')?.value.trim();
+  const accessPassword = document.getElementById('share-it-access-password')?.value || '';
   const button = document.getElementById('share-it-provision-submit');
   if (!selectedShareTemplate || !name) return toast('Provide a hosted project name.');
+  if (accessPassword.length < 12) return toast('Set a workspace access password of at least 12 characters.');
   button.disabled = true;
   try {
-    const result = await api(`/share/templates/${encodeURIComponent(selectedShareTemplate.id)}/provision`, { method: 'POST', body: JSON.stringify({name}) });
+    const result = await api(`/share/templates/${encodeURIComponent(selectedShareTemplate.id)}/provision`, { method: 'POST', body: JSON.stringify({name, access_password: accessPassword}) });
+    document.getElementById('share-it-access-password').value = '';
     toast(result.message || 'Hosted template created.');
     document.getElementById('share-it-provision').classList.add('hidden');
     await loadProjects();

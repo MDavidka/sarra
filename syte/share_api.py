@@ -24,6 +24,7 @@ router = APIRouter(tags=["share-it"])
 
 class ShareProvisionRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    access_password: str | None = Field(default=None, min_length=12, max_length=200)
 
 class ShareActionRequest(BaseModel):
     action: str = Field(pattern="^(start|stop|deploy)$")
@@ -62,7 +63,7 @@ async def share_template(template_id: str, _operator: dict[str, Any] = Depends(v
 @router.post("/share/templates/{template_id}/provision")
 async def provision_template(template_id: str, body: ShareProvisionRequest, operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     try:
-        result, _secret = await provision_share_template(template_id, body.name, str(operator.get("id") or ""))
+        result, _secret = await provision_share_template(template_id, body.name, str(operator.get("id") or ""), body.access_password or "")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     # The server-only value is placed directly into the generated project environment.
