@@ -121,3 +121,62 @@ def test_syte_native_template_collection_is_internal_responsive_and_scoped():
         assert service_name in server
         assert "@media(max-width:" in server
         assert "@clerk" not in package
+
+
+def test_share_it_tiles_use_rendered_template_preview_assets_and_legacy_project_cards():
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+    preview_root = ROOT / "syte/static/template-previews"
+    template_ids = {
+        "control-plane-nextjs",
+        "diagnostics-beacon-node",
+        "deployment-brief-node",
+        "project-compass-node",
+        "service-watch-node",
+    }
+
+    assert "template-previews/${encodeURIComponent(template.id)}.png" in app
+    assert "share-it-template-preview" in app
+    assert "share-it-template-select" in app
+    assert 'class="project-card project-card-reference"' in app
+    assert "project-card-site-icon" in app
+    assert "projectCardFavicon" in app
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in css
+    assert "bottom:-56px" in css
+    assert "transform:rotate(-6deg)" in css
+    assert ".project-card-reference" in css
+
+    for template_id in template_ids:
+        image = preview_root / f"{template_id}.png"
+        assert image.is_file()
+        assert image.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_share_it_preview_dialog_requires_explicit_deployment_start():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+
+    assert 'id="share-it-provision"' in index
+    assert 'id="share-it-preview-image"' in index
+    assert 'id="share-it-provision-form"' in index
+    assert "Start deployment" in index
+    assert "share-it-provision-backdrop" in index
+    assert 'role="dialog"' in index
+    assert "shareItPreviewUrl" in app
+    assert "Preview and deploy ${title}" in app
+    assert "tile.onkeydown" in app
+    assert 'api(`/projects/${encodeURIComponent(projectId)}/deploy`, { method: \'POST\' })' in app
+    assert "share-it-provision-dialog" in css
+    assert "share-it-provision-preview" in css
+    assert "width:80%" in css
+    assert "translateY(-40px) scale(1.8)" in css
+
+
+def test_index_response_fingerprints_browser_assets_for_share_it_updates():
+    main = (ROOT / "syte/main.py").read_text(encoding="utf-8")
+
+    assert "def _static_asset_version()" in main
+    assert "STATIC_DIR / \"style.css\"" in main
+    assert "STATIC_DIR / \"app.js\"" in main
+    assert 'html.replace("__VERSION__", _static_asset_version())' in main
