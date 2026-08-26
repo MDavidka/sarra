@@ -95,7 +95,8 @@ async def provision_share_template(template_id: str, name: str, owner_account_id
     instance_id = uuid.uuid4().hex[:16]
     instance_key = f"syte_tpl_{secrets.token_urlsafe(32)}"
     workspace = ensure_workspace(project["id"])
-    destination = workspace / "source"
+    # Syte's deployment engine builds the workspace `app` directory.
+    destination = workspace / "app"
     try:
         shutil.copytree(source, destination, dirs_exist_ok=False)
         env_vars = {

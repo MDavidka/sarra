@@ -13,6 +13,7 @@ def test_share_it_catalog_and_instance_boundary_are_syte_hosted_only():
     assert '"is_syte_hosted": 1' not in service  # catalog uses a database flag, not external URLs
     assert "_TEMPLATE_ROOT" in service
     assert "source.is_dir()" in service
+    assert 'destination = workspace / "app"' in service
     assert "SYTE_SHARE_INSTANCE_KEY" in service
     assert "instance_key_hash" in service
     assert "_secret" in api
