@@ -198,11 +198,11 @@ async def share_instance_terminal(instance: dict[str, Any], command: str) -> dic
         raise ValueError("The hosted project is no longer available.")
     command = command.strip().lower()
     if command == "status":
-        output = f"project={project['id']}\\nstatus={project.get('status') or 'stopped'}\\nport={project.get('port')}\\ndeploy_type={project.get('deploy_type') or 'shell'}"
+        output = f"project={project['id']}\nstatus={project.get('status') or 'stopped'}\nport={project.get('port')}\ndeploy_type={project.get('deploy_type') or 'shell'}"
     elif command == "logs":
         output = process_manager.get_logs(str(project["id"]), lines=120, deploy_type=str(project.get("deploy_type") or "shell"))
     elif command == "health":
-        output = f"status={project.get('status') or 'stopped'}\\nhealthcheck={project.get('healthcheck_path') or '/'}\\nservice={'running' if project.get('status') == 'running' else 'not-running'}"
+        output = f"status={project.get('status') or 'stopped'}\nhealthcheck={project.get('healthcheck_path') or '/'}\nservice={'running' if project.get('status') == 'running' else 'not-running'}"
     else:
         raise ValueError("Unsupported terminal command. Use status, logs, or health.")
     return {"command": command, "output": output[-24000:], "project_id": project["id"]}
