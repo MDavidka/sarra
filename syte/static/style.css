@@ -6328,4 +6328,4 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 @media(max-width:420px){.share-it-template-card{height:257px}.share-it-template-head{padding:23px 20px 0}.share-it-template-identity{max-width:55%}.share-it-template-select{left:20px;bottom:19px}.share-it-template-preview{right:-35px;bottom:-61px;width:82%;height:215px}.share-it-provision-preview{min-height:210px}.share-it-runtime-summary{grid-template-columns:1fr 1fr}.share-it-runtime-summary div:last-child{grid-column:1/-1}.share-it-provision-actions .btn-pill{font-size:11px}}
 
 /* Show the meaningful template interface inside the cropped catalogue tile, not browser chrome alone. */
-.share-it-template-preview img{transform:translateY(-120px) scale(1.15);transform-origin:top center}.share-it-template-card:hover .share-it-template-preview img{transform:translateY(-120px) scale(1.15)}
+.share-it-template-preview img{transform:none;object-position:center 62%}.share-it-template-card:hover .share-it-template-preview img{transform:none}
