@@ -7178,21 +7178,13 @@ let aiChatSending = false;
 async function renderAIChatWorkspace(project) {
   if (!project) return;
   const messagesList = document.getElementById('svc-ai-messages-list');
-  const statusText = document.getElementById('svc-ai-status-text');
-  const statusIndicator = document.getElementById('svc-ai-status-indicator');
   const headerModel = document.getElementById('svc-ai-header-model-name');
   const headerProvider = document.getElementById('svc-ai-header-provider-name');
-  const headerProject = document.getElementById('svc-ai-header-project-name');
   const inputModelLabel = document.getElementById('svc-ai-input-model-label');
   const form = document.getElementById('svc-ai-chat-form');
   const textarea = document.getElementById('svc-ai-input');
-  const clearBtn = document.getElementById('svc-ai-clear-btn');
-  const fullscreenBtn = document.getElementById('svc-ai-fullscreen-btn');
   const settingsBtn = document.getElementById('svc-ai-settings-btn');
   const modelSelectorBtn = document.getElementById('svc-ai-model-selector-btn');
-  const workspace = document.getElementById('svc-ai-workspace');
-
-  if (headerProject) headerProject.textContent = project.name || 'Project';
 
   // Load current AI Settings
   try {
@@ -7333,48 +7325,17 @@ async function renderAIChatWorkspace(project) {
       if (!text || aiChatSending) return;
       textarea.value = '';
       textarea.style.height = 'auto';
-      await executeAIChatTurn(project, text);
-    };
-  }
-
-  // Clear Chat Button
-  if (clearBtn && !clearBtn.dataset.bound) {
-    clearBtn.dataset.bound = 'true';
-    clearBtn.onclick = async () => {
-      if (!confirm('Clear all AI chat history for this project?')) return;
-      try {
-        await api(`/projects/${encodeURIComponent(project.id)}/ai/history`, { method: 'DELETE' });
-        toast('AI chat history cleared');
-        renderAIChatWorkspace(project);
-      } catch (_) {
-        toast('Failed to clear history');
-      }
-    };
-  }
-
-  // Fullscreen Button
-  if (fullscreenBtn && !fullscreenBtn.dataset.bound) {
-    fullscreenBtn.dataset.bound = 'true';
-    fullscreenBtn.onclick = () => {
-      if (workspace) {
-        workspace.classList.toggle('is-fullscreen');
-        const isFs = workspace.classList.contains('is-fullscreen');
-        fullscreenBtn.innerHTML = isFs
-          ? '<i data-lucide="minimize-2"></i><span>Exit</span>'
-          : '<i data-lucide="maximize-2"></i><span>Fullscreen</span>';
-        refreshIcons();
-      }
+      const targetProj = selectedAIProject || project || { id: 'global', name: 'Global Platform' };
+      await executeAIChatTurn(targetProj, text);
     };
   }
 
   // AI Settings Modal Opener
-  if (settingsBtn && !settingsBtn.dataset.bound) {
-    settingsBtn.dataset.bound = 'true';
-    settingsBtn.onclick = () => openAISettingsModal(project);
+  if (settingsBtn) {
+    settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || project || { id: 'global', name: 'Global Platform' });
   }
-  if (modelSelectorBtn && !modelSelectorBtn.dataset.bound) {
-    modelSelectorBtn.dataset.bound = 'true';
-    modelSelectorBtn.onclick = () => openAISettingsModal(project);
+  if (modelSelectorBtn) {
+    modelSelectorBtn.onclick = () => openAISettingsModal(selectedAIProject || project || { id: 'global', name: 'Global Platform' });
   }
 
   refreshIcons();
@@ -7382,8 +7343,6 @@ async function renderAIChatWorkspace(project) {
 
 async function executeAIChatTurn(project, userText) {
   const messagesList = document.getElementById('svc-ai-messages-list');
-  const statusText = document.getElementById('svc-ai-status-text');
-  const statusIndicator = document.getElementById('svc-ai-status-indicator');
   if (!messagesList) return;
 
   // Remove welcome card if present
@@ -7418,9 +7377,6 @@ async function executeAIChatTurn(project, userText) {
   const assistantBody = assistantEl.querySelector('.svc-ai-msg-body');
 
   aiChatSending = true;
-  if (statusIndicator) statusIndicator.classList.add('is-busy');
-  if (statusText) statusText.textContent = 'Thinking…';
-
   let accumulatedText = '';
 
   try {
@@ -7472,7 +7428,6 @@ async function executeAIChatTurn(project, userText) {
                 <div class="svc-ai-tool-content">${escapeHtml(JSON.stringify(data.arguments || {}, null, 2))}</div>
               `;
               assistantBody.appendChild(tcCard);
-              if (statusText) statusText.textContent = `Running ${data.tool_name}…`;
               refreshIcons();
               messagesList.scrollTop = messagesList.scrollHeight;
             } else if (eventType === 'tool_call_result') {
@@ -7491,16 +7446,12 @@ async function executeAIChatTurn(project, userText) {
                 }
               }
               refreshIcons();
-            } else if (eventType === 'status') {
-              if (statusText) statusText.textContent = data.message || 'Processing…';
             } else if (eventType === 'error') {
               if (assistantBubble && !accumulatedText) {
                 assistantBubble.innerHTML = `<span style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</span>`;
               } else {
                 toast(`AI Error: ${data.error}`);
               }
-            } else if (eventType === 'done') {
-              if (statusText) statusText.textContent = 'Ready';
             }
           } catch (_) {}
         }
@@ -7512,19 +7463,19 @@ async function executeAIChatTurn(project, userText) {
     }
   } finally {
     aiChatSending = false;
-    if (statusIndicator) statusIndicator.classList.remove('is-busy');
-    if (statusText) statusText.textContent = 'Ready';
     refreshIcons();
   }
 }
 
 async function openAISettingsModal(project) {
-  if (!project) return;
+  const targetProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
   const modal = document.getElementById('svc-ai-settings-modal');
   const closeBtn = document.getElementById('svc-ai-settings-close-btn');
   const cancelBtn = document.getElementById('svc-ai-settings-cancel-btn');
   const backdrop = document.getElementById('svc-ai-settings-backdrop');
   const form = document.getElementById('svc-ai-settings-form');
+  const alertBox = document.getElementById('svc-ai-settings-alert');
+  const alertText = document.getElementById('svc-ai-settings-alert-text');
   const providerSel = document.getElementById('svc-ai-setting-provider');
   const modelInput = document.getElementById('svc-ai-setting-model');
   const apiKeyInput = document.getElementById('svc-ai-setting-apikey');
@@ -7542,7 +7493,31 @@ async function openAISettingsModal(project) {
   if (!modal) return;
   modal.classList.remove('hidden');
 
-  const closeModal = () => modal.classList.add('hidden');
+  const showAlert = (msg) => {
+    if (alertBox && alertText) {
+      alertText.textContent = msg;
+      alertBox.classList.remove('hidden');
+      alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      alert(`AI Settings Error: ${msg}`);
+    }
+  };
+
+  const hideAlert = () => {
+    if (alertBox) alertBox.classList.add('hidden');
+    if (testStatus) {
+      testStatus.textContent = '';
+      testStatus.className = 'svc-ai-test-status';
+    }
+  };
+
+  hideAlert();
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    hideAlert();
+  };
+
   if (closeBtn) closeBtn.onclick = closeModal;
   if (cancelBtn) cancelBtn.onclick = closeModal;
   if (backdrop) backdrop.onclick = closeModal;
@@ -7567,7 +7542,7 @@ async function openAISettingsModal(project) {
 
   // Fetch current settings
   try {
-    const res = await api(`/projects/${encodeURIComponent(project.id)}/ai/settings`);
+    const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
       if (providerSel) providerSel.value = s.provider || 'openai';
@@ -7579,13 +7554,17 @@ async function openAISettingsModal(project) {
       if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
       if (promptInput) promptInput.value = s.system_prompt || '';
+    } else {
+      showAlert(`Could not load settings for project (${targetProject.name || targetProject.id}): ${res.detail || res.error || 'Server error'}`);
     }
-  } catch (_) {}
+  } catch (err) {
+    showAlert(`Could not load settings for project (${targetProject.name || targetProject.id}): ${err.message}`);
+  }
 
   // Test Connection
-  if (testBtn && !testBtn.dataset.bound) {
-    testBtn.dataset.bound = 'true';
+  if (testBtn) {
     testBtn.onclick = async () => {
+      hideAlert();
       if (testStatus) {
         testStatus.textContent = 'Testing connection…';
         testStatus.className = 'svc-ai-test-status';
@@ -7597,7 +7576,7 @@ async function openAISettingsModal(project) {
           api_key: apiKeyInput?.value || '',
           base_url: baseUrlInput?.value || '',
         };
-        const res = await api(`/projects/${encodeURIComponent(project.id)}/ai/test-connection`, {
+        const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
           body: JSON.stringify(payload),
         });
@@ -7608,25 +7587,28 @@ async function openAISettingsModal(project) {
           }
           toast('Provider connection test succeeded');
         } else {
+          const errMsg = res.error || res.detail || 'Connection test failed';
           if (testStatus) {
-            testStatus.textContent = `Error: ${res.error || 'Failed'}`;
+            testStatus.textContent = `Error: ${errMsg}`;
             testStatus.className = 'svc-ai-test-status error';
           }
+          showAlert(`Connection Test Error: ${errMsg}`);
         }
       } catch (err) {
         if (testStatus) {
           testStatus.textContent = `Error: ${err.message}`;
           testStatus.className = 'svc-ai-test-status error';
         }
+        showAlert(`Connection Test Error: ${err.message}`);
       }
     };
   }
 
   // Save Settings Form
-  if (form && !form.dataset.bound) {
-    form.dataset.bound = 'true';
+  if (form) {
     form.onsubmit = async e => {
       e.preventDefault();
+      hideAlert();
       try {
         const payload = {
           provider: providerSel?.value,
@@ -7640,15 +7622,20 @@ async function openAISettingsModal(project) {
         if (apiKeyInput?.value) {
           payload.api_key = apiKeyInput.value;
         }
-        await api(`/projects/${encodeURIComponent(project.id)}/ai/settings`, {
+        const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
+        if (!res.ok) {
+          const errDetail = res.detail || res.error || 'Failed to save settings';
+          showAlert(`Settings Save Error: ${errDetail}`);
+          return;
+        }
         toast('AI Builder settings saved');
         closeModal();
-        renderAIChatWorkspace(project);
+        renderAIChatWorkspace(targetProject);
       } catch (err) {
-        toast(`Failed to save settings: ${err.message}`);
+        showAlert(`Settings Save Error: ${err.message}`);
       }
     };
   }

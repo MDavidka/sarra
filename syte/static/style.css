@@ -8962,29 +8962,61 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
    ========================================================================== */
 #view-ai {
   width: 100%;
-  max-width: 1060px;
-  margin: 0 auto;
-  padding: 4px 10px 36px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 16px 20px;
+  box-sizing: border-box;
+  height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+#view-ai.active {
+  display: flex !important;
 }
 #view-ai .svc-ai-workspace {
-  height: calc(100vh - 132px);
-  min-height: 560px;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
   max-height: none;
+  border-radius: 16px;
 }
 
 .svc-ai-workspace {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 140px);
-  min-height: 540px;
-  max-height: 840px;
+  height: 100%;
   background: #ffffff;
   border: 1px solid #e4e4e7;
-  border-radius: 18px;
+  border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   position: relative;
   transition: all 0.2s ease;
+}
+
+.svc-ai-settings-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 14px 20px 0;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+.svc-ai-settings-alert.hidden {
+  display: none !important;
+}
+.svc-ai-settings-alert svg {
+  width: 18px;
+  height: 18px;
+  color: #dc2626;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .svc-ai-project-picker-wrap {
