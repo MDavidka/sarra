@@ -335,9 +335,9 @@
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="redirects" role="tab"><i data-lucide="shuffle"></i><span>Redirects</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="rollbacks" role="tab"><i data-lucide="history"></i><span>Rollbacks</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="cdn" role="tab"><i data-lucide="cloud"></i><span>CDN</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="preview" role="tab"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="settings" role="tab"><i data-lucide="settings-2"></i><span>Settings</span></button>
@@ -890,25 +890,51 @@
                 </div>
               </div>
 
-              <!-- 8. ROLLBACKS TAB (shadcn architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-rollbacks" data-svc-panel="rollbacks">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Instant Recovery</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Release Rollbacks</h2>
-                        <p class="shadcn-card-description">Instantly re-deploy a previously recorded Git release commit in case of production regressions.</p>
+              <!-- 6. REDIRECTS TAB -->
+              <div class="svc-tab-panel" id="svc-panel-redirects" data-svc-panel="redirects">
+                <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
+                  <div class="svc-redirects-header">
+                    <div>
+                      <h2 class="svc-redirects-title">HTTP Redirects</h2>
+                      <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
+                    </div>
+                    <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-redirect-add-open-btn">
+                      <i data-lucide="plus"></i><span>Add Redirect</span>
+                    </button>
+                  </div>
+
+                  <!-- Inline Add Redirect Card -->
+                  <div class="svc-redirect-add-card hidden" id="svc-redirect-add-card">
+                    <form id="svc-redirect-add-form" class="svc-redirect-form">
+                      <div class="svc-redirect-form-grid">
+                        <div class="shadcn-field">
+                          <label for="svc-redirect-src">Source Path</label>
+                          <input type="text" id="svc-redirect-src" class="shadcn-input" placeholder="/old-path" required>
+                        </div>
+                        <div class="shadcn-field">
+                          <label for="svc-redirect-target">Destination URL / Path</label>
+                          <input type="text" id="svc-redirect-target" class="shadcn-input" placeholder="https://example.com or /new-path" required>
+                        </div>
+                        <div class="shadcn-field">
+                          <label for="svc-redirect-status">Status Code</label>
+                          <select id="svc-redirect-status" class="shadcn-select">
+                            <option value="301">301 - Permanent Redirect</option>
+                            <option value="302">302 - Temporary Redirect</option>
+                          </select>
+                        </div>
                       </div>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
-                    </div>
+                      <div class="svc-redirect-form-actions">
+                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-add-cancel">Cancel</button>
+                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Rule</span></button>
+                      </div>
+                    </form>
                   </div>
-                  <div class="shadcn-card-content">
-                    <div class="svc-rollback-history" id="svc-rollback-history">
-                      <p class="hint">Load deployment history to choose a recorded release.</p>
-                    </div>
+
+                  <!-- Redirects List -->
+                  <div class="svc-redirects-list" id="svc-redirects-list">
+                    <p class="hint">Loading redirect rules…</p>
                   </div>
-                </div>
+                </section>
               </div>
 
               <!-- 9. SETTINGS TAB (shadcn architecture) -->

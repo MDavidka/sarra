@@ -6473,16 +6473,15 @@ function getProjectDomainsArray(project) {
     });
   };
 
-  const primary = project.domain || (project.port ? `localhost:${project.port}` : 'sycord.com');
-  const rootDomain = primary.replace(/:\d+$/, '');
-  if (!rootDomain.startsWith('localhost') && !rootDomain.startsWith('127.0.0.1')) {
-    add(`*.${rootDomain}`, false, false, 'Wildcard');
-    add(`developer.${rootDomain}`, false, false, 'Subdomain');
+  const primary = project.domain || (project.port ? `localhost:${project.port}` : '');
+  if (primary) {
+    add(primary, true, Boolean(project.running && !project.error), 'Primary Domain');
   }
-  add(primary, true, Boolean(project.running && !project.error), 'Primary Domain');
 
   if (Array.isArray(project.domains)) {
     project.domains.forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
+  } else if (typeof project.domains === 'string' && project.domains.trim()) {
+    project.domains.split(/[\s,]+/).forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
   }
   if (project.custom_tls_domain) add(project.custom_tls_domain, false, true, 'TLS Domain');
   return list;
@@ -6520,7 +6519,9 @@ function renderServiceDomainsList(project) {
             </span>
             <div class="svc-domain-info">
               <strong class="svc-domain-name">${esc(item.domain)}</strong>
-              ${item.valid ? '<span class="svc-domain-valid-subtext">Valid Configuration</span>' : '<span class="svc-domain-pending-subtext">DNS Record Pending</span>'}
+              ${item.valid
+                ? '<span class="svc-domain-valid-subtext">Valid Configuration</span>'
+                : '<span class="svc-domain-pending-subtext"><span class="svc-domain-spinner"></span> Provisioning DNS & TLS...</span>'}
             </div>
           </div>
           <div class="svc-domain-row-right">
@@ -6538,6 +6539,112 @@ function renderServiceDomainsList(project) {
   });
 
   refreshIcons();
+}
+
+async function renderRedirectsWorkspace(project) {
+  const target = document.getElementById('svc-redirects-list');
+  if (!target) return;
+  target.innerHTML = '<p class="hint">Loading redirect rules…</p>';
+
+  const openBtn = document.getElementById('svc-redirect-add-open-btn');
+  const addCard = document.getElementById('svc-redirect-add-card');
+  const cancelBtn = document.getElementById('svc-redirect-add-cancel');
+  const addForm = document.getElementById('svc-redirect-add-form');
+
+  if (openBtn && addCard) {
+    openBtn.onclick = () => addCard.classList.toggle('hidden');
+  }
+  if (cancelBtn && addCard) {
+    cancelBtn.onclick = () => addCard.classList.add('hidden');
+  }
+
+  if (addForm) {
+    addForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const srcInput = document.getElementById('svc-redirect-src');
+      const targetInput = document.getElementById('svc-redirect-target');
+      const statusInput = document.getElementById('svc-redirect-status');
+      const src = srcInput?.value.trim();
+      const dest = targetInput?.value.trim();
+      const status = Number(statusInput?.value || 301);
+
+      if (!src || !dest) return toast('Please provide both source and destination.');
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+          method: 'POST',
+          body: JSON.stringify({ source_path: src, target_url: dest, status_code: status }),
+        });
+        toast('Redirect rule added');
+        if (addCard) addCard.classList.add('hidden');
+        if (srcInput) srcInput.value = '';
+        if (targetInput) targetInput.value = '';
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to create redirect');
+      }
+    };
+  }
+
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/redirects`);
+    const redirects = payload.redirects || [];
+    if (!redirects.length) {
+      target.innerHTML = `
+        <div class="svc-domain-empty-state">
+          <i data-lucide="shuffle"></i>
+          <p>No redirect rules configured for this project yet.</p>
+        </div>
+      `;
+      refreshIcons();
+      return;
+    }
+
+    target.innerHTML = `
+      <div class="svc-domain-group-card">
+        ${redirects.map((r) => `
+          <div class="svc-domain-list-row is-valid">
+            <div class="svc-domain-row-left">
+              <span class="svc-domain-circle-check checked">
+                <i data-lucide="arrow-right-left"></i>
+              </span>
+              <div class="svc-domain-info">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <strong class="svc-domain-name">${esc(r.source_path)}</strong>
+                  <i data-lucide="arrow-right" style="width: 14px; height: 14px; color: #71717a;"></i>
+                  <span style="font-size: 13.5px; font-weight: 600; color: #09090b;">${esc(r.target_url)}</span>
+                </div>
+                <span class="svc-domain-valid-subtext">${r.status_code === 302 ? '302 Temporary Redirect' : '301 Permanent Redirect'}</span>
+              </div>
+            </div>
+            <div class="svc-domain-row-right">
+              <button type="button" class="svc-domain-row-edit-btn" data-svc-redirect-del="${esc(r.id)}" title="Delete rule" style="color: #ef4444;">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    target.querySelectorAll('[data-svc-redirect-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        const rid = btn.dataset.svcRedirectDel;
+        if (!confirm('Are you sure you want to delete this redirect?')) return;
+        try {
+          await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
+            method: 'DELETE',
+          });
+          toast('Redirect rule removed');
+          await renderRedirectsWorkspace(project);
+        } catch (err) {
+          toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
+        }
+      };
+    });
+    refreshIcons();
+  } catch (err) {
+    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to load redirects.')}</p>`;
+  }
 }
 
 function renderServiceManagementWorkspaces(project) {
@@ -6828,7 +6935,7 @@ async function renderReleaseWorkspace(project) {
 }
 
 function switchSvcTab(tab) {
-  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];
+  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
@@ -6852,9 +6959,9 @@ function switchSvcTab(tab) {
   } else if (tab === 'build' || tab === 'release') {
     const p = projects.find(x => x.id === activeServiceId);
     if (p) void renderBuildWorkspace(p);
-  } else if (tab === 'rollbacks') {
+  } else if (tab === 'redirects') {
     const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderServiceRollbackHistory(p);
+    if (p) void renderRedirectsWorkspace(p);
   } else if (prevTab === 'preview') {
     previewTabActive = false;
     stopPreviewPoll();
@@ -6923,12 +7030,12 @@ function projectEditSnapshot(project) {
 
 function openServiceEditModal(p) {
   const modal = projectEditField('svc-edit-modal');
-  const nameInput = projectEditField('svc-edit-name-input');
-  const domainInput = projectEditField('svc-edit-domain-input');
-  if (!modal || !nameInput || !domainInput) return;
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
   const setValue = (id, value) => { const input = projectEditField(id); if (input) input.value = value ?? ''; };
-  nameInput.value = p.name || '';
-  domainInput.value = p.domain || '';
+  setValue('svc-edit-name-input', p.name || '');
+  setValue('svc-edit-domain-input', p.domain || '');
   setValue('svc-edit-healthcheck-path', p.healthcheck_path || '/');
   setValue('svc-edit-git-url', p.git_url || 'No repository connected');
   setValue('svc-edit-branch', p.branch || 'main');

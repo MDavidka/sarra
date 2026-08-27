@@ -1205,6 +1205,56 @@ async def api_trigger_project_build(
     }
 
 
+class ProjectRedirectRequest(BaseModel):
+    source_path: str = Field(..., min_length=1, max_length=512)
+    target_url: str = Field(..., min_length=1, max_length=2048)
+    status_code: int = Field(default=301)
+
+
+@app.get("/api/projects/{project_id}/redirects")
+async def api_get_project_redirects(project_id: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import list_project_redirects
+    return {"project_id": project_id, "redirects": await list_project_redirects(project_id)}
+
+
+@app.post("/api/projects/{project_id}/redirects")
+async def api_create_project_redirect(
+    project_id: str,
+    body: ProjectRedirectRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import create_project_redirect
+    redirect = await create_project_redirect(
+        project_id=project_id,
+        source_path=body.source_path,
+        target_url=body.target_url,
+        status_code=body.status_code,
+    )
+    return {"ok": True, "redirect": redirect}
+
+
+@app.delete("/api/projects/{project_id}/redirects/{redirect_id}")
+async def api_delete_project_redirect(
+    project_id: str,
+    redirect_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import delete_project_redirect
+    deleted = await delete_project_redirect(project_id, redirect_id)
+    if not deleted:
+        raise HTTPException(404, "Redirect rule not found")
+    return {"ok": True, "redirect_id": redirect_id}
+
+
 @app.get("/api/projects/{project_id}/release")
 async def api_release_workspace(project_id: str, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     from syte.release_operations import workspace
