@@ -282,6 +282,35 @@ CREATE TABLE IF NOT EXISTS project_visitors (
 );
 CREATE INDEX IF NOT EXISTS idx_project_visitors_project
     ON project_visitors(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_builder_settings (
+    project_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'openai',
+    model TEXT NOT NULL DEFAULT 'gpt-4o',
+    api_key TEXT DEFAULT '',
+    base_url TEXT DEFAULT '',
+    temperature REAL NOT NULL DEFAULT 0.7,
+    max_tokens INTEGER NOT NULL DEFAULT 4096,
+    thinking_level TEXT NOT NULL DEFAULT 'medium',
+    system_prompt TEXT DEFAULT '',
+    tools_enabled TEXT NOT NULL DEFAULT 'all',
+    custom_models TEXT DEFAULT '',
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ai_chat_messages (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tool_calls TEXT DEFAULT '',
+    tool_call_id TEXT DEFAULT '',
+    name TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_project
+    ON ai_chat_messages(project_id, created_at ASC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -1079,3 +1108,187 @@ async def get_project_visitor_stats_7d(project_id: str) -> dict[str, Any]:
             "end_y": last_pt[1],
         },
     }
+
+
+async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
+    default_settings = {
+        "project_id": project_id,
+        "provider": "openai",
+        "model": "gpt-4o",
+        "api_key": "",
+        "base_url": "",
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "thinking_level": "medium",
+        "system_prompt": (
+            "You are the Syte Autonomous AI Builder — an expert full-stack engineer and site architect directly embedded in the Syte platform. "
+            "You have direct access to the Syte Framework tools: you can read, write, and edit project code files, execute shell commands, "
+            "inspect and manage deployments, view live server and app router logs, configure custom domains, check resource health, and manage environment variables. "
+            "Always inspect relevant files before modifying them, run tests or build verification when applicable, and provide clean, concise progress updates."
+        ),
+        "tools_enabled": "all",
+        "custom_models": "gpt-4o,gpt-4o-mini,o3-mini,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,gemini-1.5-pro,gemini-2.0-flash,deepseek-chat,deepseek-reasoner,qwen2.5-coder",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at "
+            "FROM ai_builder_settings WHERE project_id = ?",
+            (project_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "project_id": row[0],
+                    "provider": row[1] or "openai",
+                    "model": row[2] or "gpt-4o",
+                    "api_key": row[3] or "",
+                    "base_url": row[4] or "",
+                    "temperature": float(row[5]) if row[5] is not None else 0.7,
+                    "max_tokens": int(row[6]) if row[6] is not None else 4096,
+                    "thinking_level": row[7] or "medium",
+                    "system_prompt": row[8] or default_settings["system_prompt"],
+                    "tools_enabled": row[9] or "all",
+                    "custom_models": row[10] or default_settings["custom_models"],
+                    "updated_at": row[11],
+                }
+
+        # If project-specific is not found, fallback to global settings if querying project
+        if project_id != "global":
+            async with db.execute(
+                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at "
+                "FROM ai_builder_settings WHERE project_id = 'global'"
+            ) as cursor:
+                g_row = await cursor.fetchone()
+                if g_row:
+                    return {
+                        "project_id": project_id,
+                        "provider": g_row[1] or "openai",
+                        "model": g_row[2] or "gpt-4o",
+                        "api_key": g_row[3] or "",
+                        "base_url": g_row[4] or "",
+                        "temperature": float(g_row[5]) if g_row[5] is not None else 0.7,
+                        "max_tokens": int(g_row[6]) if g_row[6] is not None else 4096,
+                        "thinking_level": g_row[7] or "medium",
+                        "system_prompt": g_row[8] or default_settings["system_prompt"],
+                        "tools_enabled": g_row[9] or "all",
+                        "custom_models": g_row[10] or default_settings["custom_models"],
+                        "updated_at": g_row[11],
+                    }
+
+    return default_settings
+
+
+async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    provider = str(data.get("provider") or "openai").strip()
+    model = str(data.get("model") or "gpt-4o").strip()
+    api_key = str(data.get("api_key") or "").strip()
+    base_url = str(data.get("base_url") or "").strip()
+    temperature = float(data.get("temperature", 0.7))
+    max_tokens = int(data.get("max_tokens", 4096))
+    thinking_level = str(data.get("thinking_level") or "medium").strip()
+    system_prompt = str(data.get("system_prompt") or "").strip()
+    tools_enabled = str(data.get("tools_enabled") or "all").strip()
+    custom_models = str(data.get("custom_models") or "").strip()
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(project_id) DO UPDATE SET "
+            "provider = excluded.provider, "
+            "model = excluded.model, "
+            "api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE ai_builder_settings.api_key END, "
+            "base_url = excluded.base_url, "
+            "temperature = excluded.temperature, "
+            "max_tokens = excluded.max_tokens, "
+            "thinking_level = excluded.thinking_level, "
+            "system_prompt = excluded.system_prompt, "
+            "tools_enabled = excluded.tools_enabled, "
+            "custom_models = excluded.custom_models, "
+            "updated_at = excluded.updated_at",
+            (
+                project_id,
+                provider,
+                model,
+                api_key,
+                base_url,
+                temperature,
+                max_tokens,
+                thinking_level,
+                system_prompt,
+                tools_enabled,
+                custom_models,
+                now,
+            ),
+        )
+        await db.commit()
+
+    return await get_ai_builder_settings(project_id)
+
+
+async def list_ai_chat_messages(project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT id, project_id, role, content, tool_calls, tool_call_id, name, created_at "
+            "FROM ai_chat_messages WHERE project_id = ? ORDER BY created_at ASC LIMIT ?",
+            (project_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            messages = []
+            for r in rows:
+                messages.append(
+                    {
+                        "id": r[0],
+                        "project_id": r[1],
+                        "role": r[2],
+                        "content": r[3],
+                        "tool_calls": json.loads(r[4]) if r[4] and r[4].strip() else None,
+                        "tool_call_id": r[5] or None,
+                        "name": r[6] or None,
+                        "created_at": r[7],
+                    }
+                )
+            return messages
+
+
+async def save_ai_chat_message(
+    project_id: str,
+    role: str,
+    content: str,
+    tool_calls: Any = None,
+    tool_call_id: str = "",
+    name: str = "",
+) -> dict[str, Any]:
+    import uuid
+
+    msg_id = f"msg_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    tool_calls_str = json.dumps(tool_calls) if tool_calls else ""
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO ai_chat_messages (id, project_id, role, content, tool_calls, tool_call_id, name, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (msg_id, project_id, role, content, tool_calls_str, tool_call_id, name, now),
+        )
+        await db.commit()
+
+    return {
+        "id": msg_id,
+        "project_id": project_id,
+        "role": role,
+        "content": content,
+        "tool_calls": tool_calls,
+        "tool_call_id": tool_call_id or None,
+        "name": name or None,
+        "created_at": now,
+    }
+
+
+async def clear_ai_chat_history(project_id: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute("DELETE FROM ai_chat_messages WHERE project_id = ?", (project_id,))
+        await db.commit()
+    return True

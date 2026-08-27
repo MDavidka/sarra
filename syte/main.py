@@ -176,6 +176,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(api_router.router, prefix="/api")
 app.include_router(platform_api.router, prefix="/api")
 app.include_router(share_api.router, prefix="/api")
+from syte.ai.router import router as ai_router
+app.include_router(ai_router)
 
 
 class CreateTokenRequest(BaseModel):
