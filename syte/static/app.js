@@ -4337,6 +4337,7 @@ function showView(name) {
   if (name === 'logs') renderLogsList();
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
+  if (name === 'ai') void renderGlobalAIChat();
   if (name === 'sycord') refreshIcons();
   if (name === 'share-it') loadShareItTemplates();
   if (name === 'new-service') resetCreateForm();
@@ -4345,7 +4346,7 @@ function showView(name) {
     updateServiceSidebarNav(p);
     setBreadcrumb(p ? displayTitle(p) : 'Project');
   } else {
-    setBreadcrumb(BREADCRUMBS[name] || 'Syte');
+    setBreadcrumb(BREADCRUMBS[name] || (name === 'ai' ? 'AI Builder' : 'Syte'));
   }
   closeDrawer();
   refreshIcons();
@@ -7655,8 +7656,51 @@ async function openAISettingsModal(project) {
   refreshIcons();
 }
 
+let selectedAIProject = null;
+
+async function renderGlobalAIChat() {
+  if (!projects || !projects.length) {
+    try {
+      const list = await api('/projects');
+      projects = list || [];
+    } catch (_) {}
+  }
+
+  const projectSelect = document.getElementById('svc-ai-project-select');
+  if (projectSelect) {
+    let opts = '';
+    if (projects && projects.length) {
+      opts += projects.map(p => `<option value="${escapeHtml(p.id)}">Project: ${escapeHtml(p.name || p.domain || p.id)}</option>`).join('');
+    }
+    opts += `<option value="global">⚡ Global Platform</option>`;
+    projectSelect.innerHTML = opts;
+
+    if (!selectedAIProject) {
+      selectedAIProject = (activeServiceId && projects.find(p => p.id === activeServiceId)) || projects[0] || { id: 'global', name: 'Global Platform' };
+    }
+    projectSelect.value = selectedAIProject.id || 'global';
+
+    if (!projectSelect.dataset.bound) {
+      projectSelect.dataset.bound = 'true';
+      projectSelect.onchange = () => {
+        const val = projectSelect.value;
+        if (val === 'global') {
+          selectedAIProject = { id: 'global', name: 'Global Platform' };
+        } else {
+          selectedAIProject = projects.find(p => p.id === val) || { id: 'global', name: 'Global Platform' };
+        }
+        void renderAIChatWorkspace(selectedAIProject);
+      };
+    }
+  } else if (!selectedAIProject) {
+    selectedAIProject = (activeServiceId && projects.find(p => p.id === activeServiceId)) || projects[0] || { id: 'global', name: 'Global Platform' };
+  }
+
+  await renderAIChatWorkspace(selectedAIProject);
+}
+
 function switchSvcTab(tab) {
-  const allowed = ['general', 'ai', 'build', 'release', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
+  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
@@ -7677,9 +7721,6 @@ function switchSvcTab(tab) {
     previewTabActive = true;
     const p = projects.find(x => x.id === activeServiceId);
     if (p) renderPreviewSection(p);
-  } else if (tab === 'ai') {
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderAIChatWorkspace(p);
   } else if (tab === 'build' || tab === 'release') {
     const p = projects.find(x => x.id === activeServiceId);
     if (p) void renderBuildWorkspace(p);
