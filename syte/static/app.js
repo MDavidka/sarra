@@ -6688,7 +6688,6 @@ async function renderAppRouterLogs(project) {
   const liveBtn = document.getElementById('svc-logs-live-toggle');
   const refreshBtn = document.getElementById('svc-logs-refresh-btn');
   const downloadBtn = document.getElementById('svc-logs-download-btn');
-  const findBtn = document.getElementById('svc-logs-bottom-find');
   if (!listEl) return;
 
   if (timeEl) {
@@ -6729,12 +6728,6 @@ async function renderAppRouterLogs(project) {
       } catch (_) { toast('Failed to download logs'); }
     };
   }
-  if (findBtn && !findBtn.dataset.bound) {
-    findBtn.dataset.bound = 'true';
-    findBtn.onclick = () => {
-      searchInput?.focus();
-    };
-  }
 
   const query = (searchInput?.value || '').trim();
   try {
@@ -6768,6 +6761,56 @@ async function renderAppRouterLogs(project) {
     }).join('');
   } catch (err) {
     listEl.innerHTML = `<div class="svc-log-row-item" style="color: #ef4444; padding: 18px;">Could not load router logs.</div>`;
+  }
+}
+
+async function renderProjectPerformanceStats(project) {
+  const nodeLabel = document.getElementById('svc-node-name-label');
+  const perfText = document.getElementById('svc-perf-mark-text');
+  const memVal = document.getElementById('svc-perf-mem-val');
+  const memBar = document.getElementById('svc-perf-mem-bar');
+  const memCheck = document.getElementById('svc-perf-mem-check');
+  const cpuVal = document.getElementById('svc-perf-cpu-val');
+  const cpuBar = document.getElementById('svc-perf-cpu-bar');
+  const cpuCheck = document.getElementById('svc-perf-cpu-check');
+  const diskVal = document.getElementById('svc-perf-disk-val');
+  const diskBar = document.getElementById('svc-perf-disk-bar');
+  const diskCheck = document.getElementById('svc-perf-disk-check');
+
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/performance`);
+    if (nodeLabel) nodeLabel.textContent = payload.node?.name || 'Local Cluster Node';
+    if (perfText) perfText.textContent = `${payload.performance_mark || 'Optimal'} (${payload.performance_score || 98}%)`;
+
+    const mem = payload.metrics?.memory;
+    if (mem) {
+      if (memVal) memVal.textContent = `${mem.allocated_label} / ${mem.used_label}`;
+      if (memBar) memBar.style.width = `${Math.min(100, Math.max(8, mem.percent))}%`;
+      if (memCheck) {
+        memCheck.className = `svc-perf-check-dot is-${mem.status || 'healthy'}`;
+      }
+    }
+
+    const cpu = payload.metrics?.cpu;
+    if (cpu) {
+      if (cpuVal) cpuVal.textContent = `${cpu.allocated_label} / ${cpu.used_label}`;
+      if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(8, cpu.percent))}%`;
+      if (cpuCheck) {
+        cpuCheck.className = `svc-perf-check-dot is-${cpu.status || 'healthy'}`;
+      }
+    }
+
+    const disk = payload.metrics?.disk;
+    if (disk) {
+      if (diskVal) diskVal.textContent = `${disk.allocated_label} / ${disk.used_label}`;
+      if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(8, disk.percent))}%`;
+      if (diskCheck) {
+        diskCheck.className = `svc-perf-check-dot is-${disk.status || 'healthy'}`;
+      }
+    }
+    refreshIcons();
+  } catch (err) {
+    if (nodeLabel) nodeLabel.textContent = 'Local Ubuntu Node';
   }
 }
 
@@ -6882,11 +6925,12 @@ function renderServiceManagementWorkspaces(project) {
     const domain = project.domain || '';
     primaryDomain.innerHTML = `<span>Production domain</span>${domain && project.url ? `<a href="${esc(project.url)}" target="_blank" rel="noopener">${esc(domain)}<i data-lucide="arrow-up-right"></i></a>` : `<strong>${esc(domain || 'Not configured')}</strong>`}`;
   }
+
+  const customDomainForm = document.getElementById('svc-custom-tls-form');
   const customDomain = document.getElementById('svc-custom-tls-domain');
   const customEnabled = document.getElementById('svc-custom-tls-enabled');
   if (customDomain) customDomain.value = project.custom_tls_domain || '';
   if (customEnabled) customEnabled.checked = Boolean(project.custom_tls_enabled);
-  const customDomainForm = document.getElementById('svc-custom-domain-form');
   if (customDomainForm) {
     customDomainForm.onsubmit = async event => {
       event.preventDefault();
@@ -6923,56 +6967,6 @@ function renderServiceManagementWorkspaces(project) {
       else toast('Quick search ready on this tab');
     };
   }
-
-async function renderProjectPerformanceStats(project) {
-  const nodeLabel = document.getElementById('svc-node-name-label');
-  const perfText = document.getElementById('svc-perf-mark-text');
-  const memVal = document.getElementById('svc-perf-mem-val');
-  const memBar = document.getElementById('svc-perf-mem-bar');
-  const memCheck = document.getElementById('svc-perf-mem-check');
-  const cpuVal = document.getElementById('svc-perf-cpu-val');
-  const cpuBar = document.getElementById('svc-perf-cpu-bar');
-  const cpuCheck = document.getElementById('svc-perf-cpu-check');
-  const diskVal = document.getElementById('svc-perf-disk-val');
-  const diskBar = document.getElementById('svc-perf-disk-bar');
-  const diskCheck = document.getElementById('svc-perf-disk-check');
-
-  try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/performance`);
-    if (nodeLabel) nodeLabel.textContent = payload.node?.name || 'Local Cluster Node';
-    if (perfText) perfText.textContent = `${payload.performance_mark || 'Optimal'} (${payload.performance_score || 98}%)`;
-
-    const mem = payload.metrics?.memory;
-    if (mem) {
-      if (memVal) memVal.textContent = `${mem.allocated_label} / ${mem.used_label}`;
-      if (memBar) memBar.style.width = `${Math.min(100, Math.max(8, mem.percent))}%`;
-      if (memCheck) {
-        memCheck.className = `svc-perf-check-dot is-${mem.status || 'healthy'}`;
-      }
-    }
-
-    const cpu = payload.metrics?.cpu;
-    if (cpu) {
-      if (cpuVal) cpuVal.textContent = `${cpu.allocated_label} / ${cpu.used_label}`;
-      if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(8, cpu.percent))}%`;
-      if (cpuCheck) {
-        cpuCheck.className = `svc-perf-check-dot is-${cpu.status || 'healthy'}`;
-      }
-    }
-
-    const disk = payload.metrics?.disk;
-    if (disk) {
-      if (diskVal) diskVal.textContent = `${disk.allocated_label} / ${disk.used_label}`;
-      if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(8, disk.percent))}%`;
-      if (diskCheck) {
-        diskCheck.className = `svc-perf-check-dot is-${disk.status || 'healthy'}`;
-      }
-    }
-    refreshIcons();
-  } catch (err) {
-    if (nodeLabel) nodeLabel.textContent = 'Local Ubuntu Node';
-  }
-}
 
   const memory = document.getElementById('svc-resource-memory');
   const cpus = document.getElementById('svc-resource-cpus');
@@ -7032,6 +7026,24 @@ async function renderProjectPerformanceStats(project) {
         if (refreshed) renderServiceDashboard(refreshed, false);
       } catch (error) {
         toast(normalizeFetchError(error?.message) || 'Could not save deployment settings.');
+      }
+    };
+  }
+
+  const settingsDeleteBtn = document.getElementById('svc-settings-delete-project-btn');
+  if (settingsDeleteBtn) {
+    settingsDeleteBtn.onclick = async () => {
+      const confirmed = window.confirm(`Are you absolutely sure you want to permanently delete '${displayTitle(project)}' from the VM disk?\n\nThis will purge all files, remove runtime containers, and delete database records.`);
+      if (!confirmed) return;
+      settingsDeleteBtn.disabled = true;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' });
+        toast(`Project '${displayTitle(project)}' deleted from VM.`);
+        await loadProjects();
+        switchView('projects');
+      } catch (err) {
+        settingsDeleteBtn.disabled = false;
+        toast(normalizeFetchError(err?.message) || 'Failed to delete project from VM');
       }
     };
   }

@@ -8128,13 +8128,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 }
 
-/* App Router Logs Screen (Matching exact screenshot in clean white) */
+/* App Router Logs Screen (Clean White & Mobile Optimized) */
 .svc-app-logs-screen {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  position: relative;
-  padding-bottom: 60px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 .svc-logs-search-bar { width: 100%; }
 .svc-logs-search-input-wrap {
@@ -8239,29 +8241,39 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #71717a;
   font-weight: 600;
 }
+.svc-logs-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
 .svc-logs-table-head {
   display: grid;
-  grid-template-columns: 140px 90px 140px minmax(0, 1fr);
+  grid-template-columns: 140px 90px 140px minmax(180px, 1fr);
+  min-width: 580px;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 12px;
   font-weight: 650;
   color: #71717a;
   border-bottom: 1px solid #f4f4f5;
+  background: #fafafa;
 }
 .svc-logs-entries-list {
   display: flex;
   flex-direction: column;
+  min-width: 580px;
   gap: 1px;
   background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .svc-log-row-item {
   display: grid;
-  grid-template-columns: 140px 90px 140px minmax(0, 1fr);
+  grid-template-columns: 140px 90px 140px minmax(180px, 1fr);
   align-items: center;
   gap: 12px;
   padding: 11px 14px;
@@ -8281,27 +8293,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-log-status-code.status-500, .svc-log-status-code.status-525 { color: #dc2626; }
 .svc-log-row-host { color: #09090b; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .svc-log-row-path { color: #2563eb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.svc-logs-end-notice { text-align: center; padding: 36px 16px; color: #71717a; font-size: 13px; }
-.svc-logs-floating-bar {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  padding: 6px 14px;
-  gap: 10px;
+.svc-logs-end-notice { text-align: center; padding: 28px 16px; color: #71717a; font-size: 13px; }
+
+@media (max-width: 640px) {
+  .svc-logs-toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .svc-logs-toolbar-left, .svc-logs-toolbar-right {
+    justify-content: flex-start;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
 }
-.svc-floating-find-btn { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #18181b; cursor: pointer; }
-.svc-floating-find-btn svg { width: 15px; height: 15px; }
-.svc-floating-divider { width: 1px; height: 16px; background: #e4e4e7; }
-.svc-floating-menu-btn { display: grid; place-items: center; color: #18181b; cursor: pointer; }
-.svc-floating-menu-btn svg { width: 16px; height: 16px; }
 
 /* Deployment Cards matching Image 3 in Clean White */
 .svc-exact-deploy-card {
