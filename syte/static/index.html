@@ -299,6 +299,27 @@
 
         <section id="view-service" class="view">
           <div class="svc-editor">
+            <!-- Project Top Header with Back Button & Identity -->
+            <header class="svc-project-top-header" aria-label="Project Navigation">
+              <div class="svc-project-header-left">
+                <button type="button" class="svc-header-back-btn" id="svc-header-back-btn" aria-label="Back to projects" title="Back to projects">
+                  <i data-lucide="chevron-left"></i>
+                </button>
+                <div class="svc-header-identity">
+                  <span class="svc-header-icon-box" id="svc-header-icon-box">S</span>
+                  <div class="svc-header-titles">
+                    <span class="svc-header-crumb">Project</span>
+                    <strong class="svc-header-name" id="svc-header-name">service</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="svc-project-header-right">
+                <button type="button" class="svc-header-more-btn" id="svc-header-settings-btn" aria-label="Project settings" title="Project settings">
+                  <i data-lucide="ellipsis"></i>
+                </button>
+              </div>
+            </header>
+
             <!-- Horizontally scrollable pill tabs -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>

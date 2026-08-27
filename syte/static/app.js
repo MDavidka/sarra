@@ -7095,6 +7095,14 @@ function renderServiceDashboard(p, resetLogs) {
   document.getElementById('svc-title').textContent = projectTitle;
   const mobileTitle = document.getElementById('svc-mobile-title');
   if (mobileTitle) mobileTitle.textContent = projectTitle;
+  const headerName = document.getElementById('svc-header-name');
+  if (headerName) headerName.textContent = projectTitle;
+  const headerIconBox = document.getElementById('svc-header-icon-box');
+  if (headerIconBox) headerIconBox.textContent = (projectTitle.charAt(0) || 'S').toUpperCase();
+  const headerBackBtn = document.getElementById('svc-header-back-btn');
+  if (headerBackBtn) headerBackBtn.onclick = () => showView('dashboard');
+  const headerSettingsBtn = document.getElementById('svc-header-settings-btn');
+  if (headerSettingsBtn) headerSettingsBtn.onclick = () => openServiceEditModal(p);
   updateServiceSidebarNav(p);
   updateServiceStatusDot(p);
   updateServiceConnLink(p);
