@@ -6335,108 +6335,527 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-radius: 10px;
 }
 
-/* Dedicated Top Project Header with Back Button & Identity */
-.svc-project-top-header {
+/* ==========================================================================
+   Exact Mobile & Desktop Style (from reference screenshot, white theme)
+   ========================================================================== */
+.svc-exact-top-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  padding: 8px 4px 12px;
+  background: transparent;
   margin-bottom: 2px;
 }
-.svc-project-header-left {
+.svc-exact-header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
-.svc-header-back-btn {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid #e4e4e7;
-  background: #f4f4f5;
-  color: #18181b;
+.svc-exact-menu-btn {
+  background: none;
+  border: none;
+  padding: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-}
-.svc-header-back-btn:hover {
-  background: #e4e4e7;
   color: #09090b;
-}
-.svc-header-back-btn svg { width: 18px; height: 18px; }
-
-.svc-header-identity {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-.svc-header-icon-box {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: #18181b;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  transition: background 0.15s;
 }
-.svc-header-titles {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.svc-exact-menu-btn:hover {
+  background: #f4f4f5;
 }
-.svc-header-crumb {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #71717a;
-  line-height: 1.2;
+.svc-exact-menu-btn svg {
+  width: 20px;
+  height: 20px;
 }
-.svc-header-name {
-  font-size: 14px;
+.svc-exact-project-name {
+  margin: 0;
+  font-size: 17px;
   font-weight: 700;
   color: #09090b;
-  line-height: 1.25;
+  letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.svc-header-more-btn {
+.svc-exact-header-right {
+  display: flex;
+  align-items: center;
+}
+.svc-exact-purple-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #a855f7;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid #e4e4e7;
-  background: #ffffff;
-  color: #52525b;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(168, 85, 247, 0.25);
 }
-.svc-header-more-btn:hover {
+
+/* Screen Stack */
+.svc-exact-screen-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+/* 1. Large Showcase Card (20px-22px rounded) */
+.svc-exact-showcase-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 22px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 34px 20px;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.svc-exact-showcase-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.svc-exact-globe-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  background: #f4f4f5;
+  display: grid;
+  place-items: center;
+  color: #71717a;
+  margin-bottom: 12px;
+}
+.svc-exact-globe-badge svg {
+  width: 24px;
+  height: 24px;
+}
+.svc-exact-showcase-title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #09090b;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.svc-exact-showcase-sub {
+  font-size: 13px;
+  color: #71717a;
+  line-height: 1.4;
+  margin-top: 5px;
+}
+
+/* 2. Status & Visit Action Row */
+.svc-exact-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+  margin-top: 2px;
+}
+.svc-exact-status-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.svc-exact-status-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  display: grid;
+  place-items: center;
+  color: #52525b;
+  position: relative;
+  flex-shrink: 0;
+}
+.svc-exact-status-thumb svg {
+  width: 16px;
+  height: 16px;
+}
+.svc-exact-status-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #09090b;
+  letter-spacing: -0.01em;
+}
+.svc-exact-visit-wrap {
+  display: flex;
+  align-items: center;
+}
+.svc-exact-visit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.svc-exact-visit-btn:hover {
+  background: #e4e4e7;
+  color: #09090b;
+}
+.svc-exact-visit-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 3. Action Pills Row */
+.svc-exact-pills-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.svc-exact-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.svc-exact-action-pill:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+.svc-exact-action-pill svg {
+  width: 14px;
+  height: 14px;
+  color: #52525b;
+}
+
+/* 4. Visitors Metric & Sparkline Card */
+.svc-exact-visitors-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 20px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+.svc-exact-visitors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.svc-exact-visitors-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.svc-exact-eye-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f4f4f5;
+  display: grid;
+  place-items: center;
+  color: #71717a;
+  flex-shrink: 0;
+}
+.svc-exact-eye-badge svg {
+  width: 16px;
+  height: 16px;
+}
+.svc-exact-visitors-text strong {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+.svc-exact-visitors-text span {
+  font-size: 13px;
+  color: #71717a;
+  margin-left: 3px;
+}
+.svc-exact-growth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.svc-exact-growth-badge svg {
+  width: 13px;
+  height: 13px;
+}
+.svc-exact-sparkline-box {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.svc-exact-spark-svg {
+  width: 100%;
+  height: 60px;
+  overflow: visible;
+}
+.svc-exact-spark-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #a1a1aa;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* 5. Key Meta Card */
+.svc-exact-meta-card {
+  padding: 16px 20px;
+}
+
+/* ==========================================================================
+   Sidebar Drawer: Platform & Connected Tree Nav (Exact match to Image 2)
+   ========================================================================== */
+.sidebar-platform-group {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px;
+  flex: 1;
+}
+.sidebar-platform-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a1a1aa;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 10px 6px;
+  margin: 0;
+}
+.sidebar-project-selector-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 11px;
+  color: #09090b;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+.sidebar-project-selector-btn:hover {
+  background: #e4e4e7;
+}
+.sidebar-selector-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-selector-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #18181b;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.sidebar-selector-badge.light {
+  background: #e4e4e7;
+  color: #18181b;
+}
+.sidebar-selector-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+.sidebar-selector-chevron {
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+}
+
+/* Indented Tree Submenu with vertical connector line */
+.sidebar-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 10px 19px;
+  padding-left: 12px;
+  border-left: 1.5px solid #e4e4e7;
+}
+.sidebar-tree-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+.sidebar-tree-link:hover {
   background: #f4f4f5;
   color: #18181b;
 }
-.svc-header-more-btn svg { width: 16px; height: 16px; }
+.sidebar-tree-link.active {
+  background: #f4f4f5;
+  color: #09090b;
+  font-weight: 700;
+}
+.sidebar-tree-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar-utility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: #52525b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 4px;
+}
+.sidebar-utility-row:hover {
+  background: #f4f4f5;
+  color: #18181b;
+}
+.sidebar-utility-chevron {
+  width: 14px;
+  height: 14px;
+  color: #a1a1aa;
+}
+
+/* Fixed Bottom Footer in Sidebar */
+.sidebar-service-bottom-footer {
+  margin-top: auto;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid #eaeaea;
+}
+.sidebar-manage-access-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 11px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+.sidebar-manage-access-card:hover {
+  background: #e4e4e7;
+}
+.sidebar-purple-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #a855f7;
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.sidebar-user-account-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+}
+.sidebar-user-lead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.sidebar-user-avatar-sq {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #e4e4e7;
+  color: #18181b;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.sidebar-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+.sidebar-user-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+.sidebar-user-credits {
+  font-size: 11px;
+  color: #71717a;
+}
+.sidebar-user-chevron {
+  width: 14px;
+  height: 14px;
+  color: #a1a1aa;
+}
 
 /* Horizontally Scrollable Pill Tabs */
 .svc-top-nav-bar {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 4px 2px 12px;
+  padding: 4px 2px 10px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid #eaeaea;
@@ -6448,8 +6867,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
-  min-height: 36px;
+  padding: 6px 14px;
+  min-height: 34px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -6473,101 +6892,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 .svc-pill-tab svg { width: 14px; height: 14px; }
 
-/* General Tab Header & Preview */
-.svc-general-card-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.svc-general-header-left {
-  display: grid;
-  gap: 4px;
-}
-.svc-general-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.svc-live-preview-box {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-.svc-preview-browserbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: #f4f4f5;
-  border-bottom: 1px solid #e4e4e7;
-  font-size: 12px;
-}
-.svc-browser-dots {
-  display: flex;
-  gap: 5px;
-}
-.svc-browser-dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #d4d4d8;
-}
-.svc-browser-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: #71717a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-}
-.svc-browser-open-btn {
-  color: #52525b;
-  display: grid;
-  place-items: center;
-}
-.svc-browser-open-btn svg { width: 14px; height: 14px; }
-.svc-preview-viewport {
-  position: relative;
-  width: 100%;
-  height: 240px;
-  background: #ffffff;
-}
-.svc-preview-viewport iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-.svc-preview-empty-state {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  padding: 20px;
-  text-align: center;
-  color: #71717a;
-  font-size: 13px;
-  gap: 4px;
-}
-.svc-preview-empty-state svg { width: 28px; height: 28px; color: #a1a1aa; }
-
-.svc-action-buttons-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.svc-action-buttons-row .shadcn-btn { flex: 1; justify-content: center; }
-
+/* General Tab Meta Grid */
 .svc-meta-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  padding: 14px 0 0;
-  border-top: 1px solid #eaeaea;
+  padding: 4px 0 0;
 }
 .svc-meta-item {
   display: grid;

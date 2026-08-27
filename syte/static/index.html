@@ -141,47 +141,76 @@
         </div>
 
         <div id="nav-block-service" class="nav-block hidden">
-          <p class="nav-section-label">Project</p>
-          <div class="nav-group expanded" id="nav-group-service">
-            <button type="button" class="nav-group-head nav-group-head-back" id="nav-service-head" aria-expanded="true" title="Back to projects">
-              <i data-lucide="arrow-left" class="nav-group-back-icon"></i>
-              <span class="nav-group-icon" id="nav-service-icon" aria-hidden="true">S</span>
-              <span class="nav-group-title" id="nav-service-title">Service</span>
+          <div class="sidebar-platform-group">
+            <p class="sidebar-platform-label">PLATFORM</p>
+            <button type="button" class="sidebar-project-selector-btn" id="nav-service-head" title="Switch project">
+              <div class="sidebar-selector-left">
+                <span class="sidebar-selector-badge" id="nav-service-icon">M</span>
+                <strong class="sidebar-selector-name" id="nav-service-title">Main</strong>
+              </div>
+              <i data-lucide="chevron-down" class="sidebar-selector-chevron"></i>
             </button>
-            <div class="nav-group-body nav-group-body-compact" id="sidebar-service-tabs">
-              <button type="button" class="nav-sublink active" data-svc-tab="general">
+
+            <!-- Indented Tree Submenu with vertical connector -->
+            <div class="sidebar-tree-container" id="sidebar-service-tabs">
+              <button type="button" class="sidebar-tree-link active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>Overview</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="release">
-                <i data-lucide="rocket"></i><span>Deployments</span>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="domains">
+                <i data-lucide="globe"></i><span>Domain</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="domains">
-                <i data-lucide="at-sign"></i><span>Domains</span>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="env">
+                <i data-lucide="file-text"></i><span>Pages</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="env">
-                <i data-lucide="braces"></i><span>Variables</span>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="release">
+                <i data-lucide="zap"></i><span>Syra</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="firewall">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="firewall">
                 <i data-lucide="shield"></i><span>Firewall</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="cdn">
-                <i data-lucide="cloud"></i><span>CDN</span>
-              </button>
-              <button type="button" class="nav-sublink" data-svc-tab="speed">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="speed">
                 <i data-lucide="gauge"></i><span>Resources</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="logs">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="logs">
                 <i data-lucide="terminal-square"></i><span>Logs</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="rollbacks">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="rollbacks">
                 <i data-lucide="history"></i><span>Rollbacks</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="preview">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="preview">
                 <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
-              <button type="button" class="nav-sublink" data-svc-tab="settings">
+              <button type="button" class="sidebar-tree-link" data-svc-tab="settings">
                 <i data-lucide="settings-2"></i><span>Settings</span>
               </button>
+            </div>
+
+            <!-- Utility Section -->
+            <div class="sidebar-utility-row">
+              <div class="sidebar-selector-left">
+                <span class="sidebar-selector-badge light">U</span>
+                <span class="sidebar-utility-text">Utility</span>
+              </div>
+              <i data-lucide="chevron-right" class="sidebar-utility-chevron"></i>
+            </div>
+          </div>
+
+          <!-- Bottom Footer Area -->
+          <div class="sidebar-service-bottom-footer">
+            <button type="button" class="sidebar-manage-access-card" id="sidebar-manage-access-btn">
+              <span class="sidebar-purple-circle">D</span>
+              <span class="sidebar-manage-text">Manage access</span>
+            </button>
+
+            <div class="sidebar-user-account-card">
+              <div class="sidebar-user-lead">
+                <span class="sidebar-user-avatar-sq">DM</span>
+                <div class="sidebar-user-info">
+                  <strong class="sidebar-user-name">Dávid Márton</strong>
+                  <span class="sidebar-user-credits">2 credits</span>
+                </div>
+              </div>
+              <i data-lucide="chevrons-up-down" class="sidebar-user-chevron"></i>
             </div>
           </div>
         </div>
@@ -299,34 +328,26 @@
 
         <section id="view-service" class="view">
           <div class="svc-editor">
-            <!-- Project Top Header with Back Button & Identity -->
-            <header class="svc-project-top-header" aria-label="Project Navigation">
-              <div class="svc-project-header-left">
-                <button type="button" class="svc-header-back-btn" id="svc-header-back-btn" aria-label="Back to projects" title="Back to projects">
-                  <i data-lucide="chevron-left"></i>
+            <!-- Exact Mobile Header (Hamburger + Project Title + Purple Avatar D) -->
+            <header class="svc-exact-top-header" aria-label="Project Navigation">
+              <div class="svc-exact-header-left">
+                <button type="button" class="svc-exact-menu-btn" id="sidebar-toggle-service" aria-label="Toggle menu" title="Toggle menu">
+                  <i data-lucide="menu"></i>
                 </button>
-                <div class="svc-header-identity">
-                  <span class="svc-header-icon-box" id="svc-header-icon-box">S</span>
-                  <div class="svc-header-titles">
-                    <span class="svc-header-crumb">Project</span>
-                    <strong class="svc-header-name" id="svc-header-name">service</strong>
-                  </div>
-                </div>
+                <h1 class="svc-exact-project-name" id="svc-title">test010</h1>
               </div>
-              <div class="svc-project-header-right">
-                <button type="button" class="svc-header-more-btn" id="svc-header-settings-btn" aria-label="Project settings" title="Project settings">
-                  <i data-lucide="ellipsis"></i>
-                </button>
+              <div class="svc-exact-header-right">
+                <div class="svc-exact-purple-avatar" id="svc-header-user-avatar" title="Dávid Márton">D</div>
               </div>
             </header>
 
-            <!-- Horizontally scrollable pill tabs -->
+            <!-- Horizontally scrollable pill tabs (subtle rail) -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="release" role="tab"><i data-lucide="rocket"></i><span>Release</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="rollbacks" role="tab"><i data-lucide="history"></i><span>Rollbacks</span></button>
@@ -336,76 +357,116 @@
             </div>
 
             <div class="svc-tab-panels">
-              <!-- 1. GENERAL / DEPLOYMENT TAB (shadcn card architecture) -->
+              <!-- 1. GENERAL / DEPLOYMENT TAB (Exact match to screenshot in white theme) -->
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
-                <div class="shadcn-stack">
-                  <!-- Main Deployment Status Card -->
-                  <div class="shadcn-card">
-                    <div class="shadcn-card-header svc-general-card-header">
-                      <div class="svc-general-header-left">
-                        <span class="shadcn-badge shadcn-badge-outline"><span class="svc-status-dot" id="svc-status-dot"></span> Production</span>
-                        <h2 class="shadcn-card-title svc-name" id="svc-title">service</h2>
+                <div class="svc-exact-screen-stack">
+                  <!-- 1. Large Rounded Showcase Card (Globe placeholder / live preview) -->
+                  <div class="svc-exact-showcase-card" id="svc-exact-showcase-card">
+                    <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
+                    <div id="svc-deploy-preview-placeholder" class="svc-exact-showcase-placeholder">
+                      <div class="svc-exact-globe-badge">
+                        <i data-lucide="globe"></i>
                       </div>
-                      <div class="svc-general-header-actions">
-                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" id="svc-deploy-now" title="Deploy latest source" aria-label="Deploy latest source"><i data-lucide="rocket"></i></button>
-                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" data-svc-open="logs" title="Deployment history" aria-label="Deployment history"><i data-lucide="history"></i></button>
-                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" id="svc-edit-btn" title="Edit project and domain" aria-label="Edit project"><i data-lucide="ellipsis"></i></button>
+                      <strong class="svc-exact-showcase-title">No deployment yet</strong>
+                      <span class="svc-exact-showcase-sub">Deploy your site to see a live<br>preview</span>
+                    </div>
+                  </div>
+
+                  <!-- 2. Status & Visit Action Row -->
+                  <div class="svc-exact-status-row">
+                    <div class="svc-exact-status-left">
+                      <div class="svc-exact-status-thumb">
+                        <span class="svc-status-dot" id="svc-status-dot"></span>
+                        <i data-lucide="terminal"></i>
                       </div>
+                      <strong class="svc-exact-status-title" id="svc-deploy-status-summary">Not deployed</strong>
+                    </div>
+                    <div class="svc-exact-visit-wrap">
+                      <a class="svc-exact-visit-btn" id="svc-conn" href="#" target="_blank" rel="noopener">
+                        <span>visit</span>
+                        <i data-lucide="chevron-down"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <!-- 3. Action Pill Buttons Row (Changes + Settings) -->
+                  <div class="svc-exact-pills-row">
+                    <button type="button" class="svc-exact-action-pill" data-svc-open="logs" id="svc-changes-pill" title="Deployment logs and history">
+                      <i data-lucide="history"></i>
+                      <span>Changes</span>
+                    </button>
+                    <button type="button" class="svc-exact-action-pill" id="svc-edit-btn" title="Project settings">
+                      <i data-lucide="settings"></i>
+                      <span>Settings</span>
+                    </button>
+                  </div>
+
+                  <!-- 4. Visitors Metric & Sparkline Card -->
+                  <div class="svc-exact-visitors-card">
+                    <div class="svc-exact-visitors-head">
+                      <div class="svc-exact-visitors-lead">
+                        <div class="svc-exact-eye-badge">
+                          <i data-lucide="eye"></i>
+                        </div>
+                        <div class="svc-exact-visitors-text">
+                          <strong id="svc-exact-visitors-count">10 visitors</strong>
+                          <span>in 7 days</span>
+                        </div>
+                      </div>
+                      <span class="svc-exact-growth-badge">
+                        <i data-lucide="trending-up"></i>
+                        <span>+85%</span>
+                      </span>
                     </div>
 
-                    <div class="shadcn-card-content">
-                      <!-- Live Preview Frame / Placeholder -->
-                      <div class="svc-live-preview-box">
-                        <div class="svc-preview-browserbar">
-                          <div class="svc-browser-dots"><span></span><span></span><span></span></div>
-                          <span class="svc-browser-url" id="svc-preview-label">Live site preview</span>
-                          <a id="svc-preview-open" href="#" target="_blank" rel="noopener" class="svc-browser-open-btn" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a>
-                        </div>
-                        <div class="svc-preview-viewport">
-                          <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
-                          <div id="svc-deploy-preview-placeholder" class="svc-preview-empty-state">
-                            <i data-lucide="monitor-up"></i>
-                            <strong>Preparing live preview</strong>
-                            <span>Your site will appear here after the deployment is reachable.</span>
-                          </div>
+                    <!-- Sparkline Wave SVG with glowing end dot -->
+                    <div class="svc-exact-sparkline-box">
+                      <svg viewBox="0 0 340 70" class="svc-exact-spark-svg" preserveAspectRatio="none">
+                        <defs>
+                          <linearGradient id="visitorSparkGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#18181b" stop-opacity="0.10" />
+                            <stop offset="100%" stop-color="#18181b" stop-opacity="0.00" />
+                          </linearGradient>
+                        </defs>
+                        <path d="M 0,48 Q 90,44 170,52 T 330,14 L 330,70 L 0,70 Z" fill="url(#visitorSparkGradient)"></path>
+                        <path d="M 0,48 Q 90,44 170,52 T 330,14" fill="none" stroke="#18181b" stroke-width="2.2" stroke-linecap="round"></path>
+                        <circle cx="330" cy="14" r="4" fill="#ffffff" stroke="#18181b" stroke-width="2.5"></circle>
+                      </svg>
+                      <div class="svc-exact-spark-labels">
+                        <span>7d ago</span>
+                        <span>Today</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 5. Key Meta Details Card -->
+                  <div class="svc-exact-visitors-card svc-exact-meta-card">
+                    <div class="svc-meta-grid">
+                      <div class="svc-meta-item">
+                        <span class="svc-meta-label">Deployment</span>
+                        <div class="svc-meta-val-row">
+                          <strong id="svc-uuid-pill" class="svc-mono-val">—</strong>
+                          <button type="button" class="svc-meta-action-btn" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button>
                         </div>
                       </div>
-
-                      <!-- Action Buttons -->
-                      <div class="svc-action-buttons-row">
-                        <a class="shadcn-btn shadcn-btn-default svc-visit-btn" id="svc-conn" href="#" target="_blank" rel="noopener"><span>Visit</span> <i data-lucide="external-link"></i></a>
-                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-rollback-btn" disabled title="A previous image is required before rollback can be enabled"><i data-lucide="rotate-ccw"></i><span>Instant rollback</span></button>
+                      <div class="svc-meta-item">
+                        <span class="svc-meta-label">Domain</span>
+                        <div class="svc-meta-val-row">
+                          <a id="svc-deploy-domain" href="#" target="_blank" rel="noopener" class="svc-domain-link">Pending domain</a>
+                          <button type="button" class="svc-meta-action-btn" id="svc-domain-edit" title="Set domain"><i data-lucide="plus"></i></button>
+                        </div>
                       </div>
-
-                      <!-- Key Meta Details Grid -->
-                      <div class="svc-meta-grid">
-                        <div class="svc-meta-item">
-                          <span class="svc-meta-label">Deployment</span>
-                          <div class="svc-meta-val-row">
-                            <strong id="svc-uuid-pill" class="svc-mono-val">—</strong>
-                            <button type="button" class="svc-meta-action-btn" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button>
-                          </div>
+                      <div class="svc-meta-item">
+                        <span class="svc-meta-label">Source / Branch</span>
+                        <div class="svc-meta-val-row">
+                          <button type="button" class="svc-branch-pill-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button>
+                          <span id="svc-deploy-source" class="svc-source-text">Repository pending</span>
                         </div>
-                        <div class="svc-meta-item">
-                          <span class="svc-meta-label">Domain</span>
-                          <div class="svc-meta-val-row">
-                            <a id="svc-deploy-domain" href="#" target="_blank" rel="noopener" class="svc-domain-link">Pending domain</a>
-                            <button type="button" class="svc-meta-action-btn" id="svc-domain-edit" title="Set domain"><i data-lucide="plus"></i></button>
-                          </div>
-                        </div>
-                        <div class="svc-meta-item">
-                          <span class="svc-meta-label">Status</span>
-                          <div class="svc-meta-val-row">
-                            <span class="syte-state-dot" id="svc-deploy-state-dot"></span>
-                            <strong id="svc-deploy-status-summary">Preparing</strong>
-                          </div>
-                        </div>
-                        <div class="svc-meta-item">
-                          <span class="svc-meta-label">Source / Branch</span>
-                          <div class="svc-meta-val-row">
-                            <button type="button" class="svc-branch-pill-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button>
-                            <span id="svc-deploy-source" class="svc-source-text">Repository pending</span>
-                          </div>
+                      </div>
+                      <div class="svc-meta-item">
+                        <span class="svc-meta-label">Rollback</span>
+                        <div class="svc-meta-val-row">
+                          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-rollback-btn" disabled title="Rollback unavailable"><i data-lucide="rotate-ccw"></i><span>Instant rollback</span></button>
                         </div>
                       </div>
                     </div>

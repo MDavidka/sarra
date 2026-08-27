@@ -6814,7 +6814,7 @@ function switchSvcTab(tab) {
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
-  document.querySelectorAll('.nav-sublink[data-svc-tab]').forEach(btn => {
+  document.querySelectorAll('.sidebar-tree-link[data-svc-tab], .nav-sublink[data-svc-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
   });
   document.querySelectorAll('.svc-pill-tab[data-svc-tab]').forEach(btn => {
@@ -8421,12 +8421,13 @@ document.querySelectorAll('[data-svc-rail]').forEach((button) => button.addEvent
   if (button.dataset.svcRail) switchSvcTab(button.dataset.svcRail);
 }));
 document.getElementById('sidebar-service-tabs')?.addEventListener('click', (event) => {
-  const btn = event.target.closest('.nav-sublink[data-svc-tab]');
+  const btn = event.target.closest('[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
   event.preventDefault();
   event.stopPropagation();
   switchSvcTab(btn.dataset.svcTab);
 });
+document.getElementById('sidebar-toggle-service')?.addEventListener('click', openDrawer);
 document.getElementById('svc-top-nav-bar')?.addEventListener('click', (event) => {
   const btn = event.target.closest('.svc-pill-tab[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
