@@ -328,19 +328,6 @@
 
         <section id="view-service" class="view">
           <div class="svc-editor">
-            <!-- Exact Mobile Header (Hamburger + Project Title + Purple Avatar D) -->
-            <header class="svc-exact-top-header" aria-label="Project Navigation">
-              <div class="svc-exact-header-left">
-                <button type="button" class="svc-exact-menu-btn" id="sidebar-toggle-service" aria-label="Toggle menu" title="Toggle menu">
-                  <i data-lucide="menu"></i>
-                </button>
-                <h1 class="svc-exact-project-name" id="svc-title">test010</h1>
-              </div>
-              <div class="svc-exact-header-right">
-                <div class="svc-exact-purple-avatar" id="svc-header-user-avatar" title="Dávid Márton">D</div>
-              </div>
-            </header>
-
             <!-- Horizontally scrollable pill tabs (subtle rail) -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
@@ -579,21 +566,31 @@
                 </div>
               </div>
 
-              <!-- 3. DOMAINS TAB -->
+              <!-- 3. DOMAINS TAB (Exact Image 2 layout in white theme) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
                 <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header & Top Action Buttons -->
-                  <div class="svc-screen-header">
-                    <div class="svc-screen-title-wrap">
-                      <h2>Domains</h2>
-                      <p class="svc-screen-sub">Manage connected domains, routing, and TLS certificates.</p>
-                    </div>
-                    <div class="svc-split-actions-row">
-                      <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-domain-add-toggle-btn"><i data-lucide="plus"></i><span>Connect Domain</span></button>
-                    </div>
+                  <!-- Header: Back Arrow + Title + Action -->
+                  <div class="svc-domains-top-bar">
+                    <button type="button" class="svc-domains-back-link" data-svc-open="general" title="Back to overview">
+                      <i data-lucide="chevron-left"></i>
+                    </button>
+                    <h2 class="svc-domains-heading">Domains</h2>
+                    <button type="button" class="svc-domains-top-action" title="Network routing" aria-label="Network routing">
+                      <i data-lucide="network"></i>
+                    </button>
                   </div>
 
-                  <!-- Inline Add Domain Card -->
+                  <!-- Action Buttons: Add Existing | Buy -->
+                  <div class="svc-domains-action-pair">
+                    <button type="button" class="svc-domain-pair-btn dark" id="svc-domain-add-toggle-btn">
+                      <span>Add Existing</span>
+                    </button>
+                    <button type="button" class="svc-domain-pair-btn light" data-svc-open-certificates>
+                      <span>Buy</span>
+                    </button>
+                  </div>
+
+                  <!-- Inline Add Domain Card (Toggled by Add Existing) -->
                   <div class="svc-domain-add-card hidden" id="svc-domain-add-card">
                     <header class="svc-config-card-head">
                       <div>
@@ -613,14 +610,16 @@
 
                   <!-- Filter & Search Row -->
                   <div class="svc-domain-toolbar">
-                    <button type="button" class="svc-toolbar-filter-btn" title="Domain filters"><i data-lucide="sliders-horizontal"></i></button>
+                    <button type="button" class="svc-toolbar-filter-btn" title="Domain filters">
+                      <i data-lucide="menu"></i>
+                    </button>
                     <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
                       <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search connected domains..." autocomplete="off">
+                      <input id="svc-domain-search-input" type="search" placeholder="Search any domain" autocomplete="off">
                     </label>
                   </div>
 
-                  <!-- Grouped Domains Card List -->
+                  <!-- Grouped Domains Card List (Unified card matching Image 2) -->
                   <div class="svc-domains-card-list" id="svc-domains-card-list">
                     <!-- Populated dynamically by renderServiceDomainsList -->
                   </div>
@@ -1020,13 +1019,6 @@
                 </div>
               </div>
 
-            </div>
-
-            <!-- Floating Find bar at bottom of project editor -->
-            <div class="svc-floating-find-bar" id="svc-floating-find-bar">
-              <button type="button" class="find-bar-action" id="svc-find-btn"><i data-lucide="search"></i><span>Find</span></button>
-              <span class="find-bar-sep">|</span>
-              <button type="button" class="find-bar-action" id="svc-menu-find-btn" aria-label="Menu"><i data-lucide="menu"></i></button>
             </div>
           </div>
 
