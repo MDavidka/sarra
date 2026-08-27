@@ -107,6 +107,7 @@
           <div class="coolify-nav-section">
             <p class="nav-section-label">Overview</p>
             <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard"><i data-lucide="home"></i><span>Home</span></button>
+            <button type="button" class="nav-sublink" data-view="ai" id="nav-ai"><i data-lucide="bot"></i><span>AI</span></button>
             <button type="button" class="nav-sublink" data-view="share-it"><i data-lucide="share-2"></i><span>Share It</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="remote-servers"><i data-lucide="server"></i><span>Servers</span><span id="server-nav-performance" class="nav-server-performance" role="progressbar" aria-label="Server performance unavailable" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></span></button>
@@ -155,9 +156,6 @@
             <div class="sidebar-tree-container" id="sidebar-service-tabs">
               <button type="button" class="sidebar-tree-link active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>Overview</span>
-              </button>
-              <button type="button" class="sidebar-tree-link" data-svc-tab="ai">
-                <i data-lucide="bot"></i><span>AI Builder</span>
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="domains">
                 <i data-lucide="globe"></i><span>Domain</span>
@@ -259,6 +257,96 @@
           </div>
         </section>
 
+        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace) -->
+        <section id="view-ai" class="view">
+          <div class="svc-ai-workspace" id="svc-ai-workspace">
+            <!-- Top Bar -->
+            <header class="svc-ai-header">
+              <div class="svc-ai-header-lead">
+                <div class="svc-ai-bot-avatar">
+                  <i data-lucide="bot"></i>
+                </div>
+                <div class="svc-ai-header-titles">
+                  <div class="svc-ai-title-row">
+                    <h2>AI Builder</h2>
+                    <span class="svc-ai-badge-live" id="svc-ai-status-indicator">
+                      <span class="pulse-dot"></span>
+                      <span id="svc-ai-status-text">Ready</span>
+                    </span>
+                  </div>
+                  <div class="svc-ai-meta-row">
+                    <div class="svc-ai-project-picker-wrap">
+                      <i data-lucide="folder-git-2"></i>
+                      <select id="svc-ai-project-select" class="svc-ai-project-select" aria-label="Select Target Project">
+                        <!-- Populated with projects list dynamically -->
+                      </select>
+                    </div>
+                    <span class="svc-ai-model-tag" id="svc-ai-current-model-tag"><i data-lucide="cpu"></i><span id="svc-ai-header-model-name">gpt-4o</span></span>
+                    <span class="svc-ai-provider-tag" id="svc-ai-header-provider-name">OPENAI</span>
+                  </div>
+                </div>
+              </div>
+              <div class="svc-ai-header-actions">
+                <button type="button" class="svc-ai-action-btn" id="svc-ai-clear-btn" title="Clear chat history">
+                  <i data-lucide="trash-2"></i>
+                  <span>Clear</span>
+                </button>
+                <button type="button" class="svc-ai-action-btn" id="svc-ai-fullscreen-btn" title="Toggle fullscreen mode">
+                  <i data-lucide="maximize-2"></i>
+                  <span>Fullscreen</span>
+                </button>
+                <button type="button" class="svc-ai-action-btn primary" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
+                  <i data-lucide="settings-2"></i>
+                  <span>AI Settings</span>
+                </button>
+              </div>
+            </header>
+
+            <!-- Chat Messages Container -->
+            <div class="svc-ai-messages-container" id="svc-ai-messages-list">
+              <!-- Populated dynamically / Shows welcome card when empty -->
+            </div>
+
+            <!-- Bottom Input & Controls -->
+            <footer class="svc-ai-composer">
+              <!-- Quick Command Shortcuts -->
+              <div class="svc-ai-shortcuts-bar">
+                <button type="button" class="svc-ai-chip" data-ai-prompt="What is the current deployment and runtime status of this project?">
+                  <i data-lucide="activity"></i><span>Status</span>
+                </button>
+                <button type="button" class="svc-ai-chip" data-ai-prompt="Trigger a build and zero-downtime deployment for this project now.">
+                  <i data-lucide="rocket"></i><span>Deploy</span>
+                </button>
+                <button type="button" class="svc-ai-chip" data-ai-prompt="Show me the latest deployment stdout logs and internal router traffic.">
+                  <i data-lucide="terminal"></i><span>Logs</span>
+                </button>
+                <button type="button" class="svc-ai-chip" data-ai-prompt="List all project source files and describe the architecture.">
+                  <i data-lucide="folder-tree"></i><span>List Files</span>
+                </button>
+                <button type="button" class="svc-ai-chip" data-ai-prompt="Check CPU, RAM, and Disk performance telemetry for this node.">
+                  <i data-lucide="gauge"></i><span>Performance</span>
+                </button>
+              </div>
+
+              <!-- Main Input Box -->
+              <form class="svc-ai-input-form" id="svc-ai-chat-form">
+                <div class="svc-ai-textarea-wrapper">
+                  <textarea id="svc-ai-input" placeholder="Ask AI to write code, build features, run terminal commands, inspect logs, or deploy..." rows="1" autocomplete="off"></textarea>
+                  <div class="svc-ai-input-actions">
+                    <button type="button" class="svc-ai-input-btn" id="svc-ai-model-selector-btn" title="Configure model">
+                      <i data-lucide="cpu"></i>
+                      <span id="svc-ai-input-model-label">gpt-4o</span>
+                    </button>
+                    <button type="submit" class="svc-ai-send-btn" id="svc-ai-send-btn" title="Send message (Enter)">
+                      <i data-lucide="arrow-up"></i>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </footer>
+          </div>
+        </section>
+
         <section id="view-new-service" class="view">
           <div class="create-project deployment-structured-page">
             <div class="create-brand">
@@ -334,7 +422,6 @@
             <!-- Horizontally scrollable pill tabs (subtle rail) -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="ai" role="tab"><i data-lucide="bot"></i><span>AI Builder</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
@@ -545,94 +632,8 @@
                       <div class="shadcn-card-content">
                         <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
                       </div>
-                    </div>
                   </div>
 
-                </div>
-              </div>
-
-              <!-- AI BUILDER TAB (Fullscreen Autonomous Agent Workspace) -->
-              <div class="svc-tab-panel" id="svc-panel-ai" data-svc-panel="ai">
-                <div class="svc-ai-workspace" id="svc-ai-workspace">
-                  <!-- Top Bar -->
-                  <header class="svc-ai-header">
-                    <div class="svc-ai-header-lead">
-                      <div class="svc-ai-bot-avatar">
-                        <i data-lucide="bot"></i>
-                      </div>
-                      <div class="svc-ai-header-titles">
-                        <div class="svc-ai-title-row">
-                          <h2>AI Builder</h2>
-                          <span class="svc-ai-badge-live" id="svc-ai-status-indicator">
-                            <span class="pulse-dot"></span>
-                            <span id="svc-ai-status-text">Ready</span>
-                          </span>
-                        </div>
-                        <div class="svc-ai-meta-row">
-                          <span class="svc-ai-model-tag" id="svc-ai-current-model-tag"><i data-lucide="cpu"></i><span id="svc-ai-header-model-name">gpt-4o</span></span>
-                          <span class="svc-ai-provider-tag" id="svc-ai-header-provider-name">OpenAI</span>
-                          <span class="svc-ai-context-tag" id="svc-ai-header-project-name">Project</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="svc-ai-header-actions">
-                      <button type="button" class="svc-ai-action-btn" id="svc-ai-clear-btn" title="Clear chat history">
-                        <i data-lucide="trash-2"></i>
-                        <span>Clear</span>
-                      </button>
-                      <button type="button" class="svc-ai-action-btn" id="svc-ai-fullscreen-btn" title="Toggle fullscreen mode">
-                        <i data-lucide="maximize-2"></i>
-                        <span>Fullscreen</span>
-                      </button>
-                      <button type="button" class="svc-ai-action-btn primary" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
-                        <i data-lucide="settings-2"></i>
-                        <span>AI Settings</span>
-                      </button>
-                    </div>
-                  </header>
-
-                  <!-- Chat Messages Container -->
-                  <div class="svc-ai-messages-container" id="svc-ai-messages-list">
-                    <!-- Populated dynamically / Shows welcome card when empty -->
-                  </div>
-
-                  <!-- Bottom Input & Controls -->
-                  <footer class="svc-ai-composer">
-                    <!-- Quick Command Shortcuts -->
-                    <div class="svc-ai-shortcuts-bar">
-                      <button type="button" class="svc-ai-chip" data-ai-prompt="What is the current deployment and runtime status of this project?">
-                        <i data-lucide="activity"></i><span>Status</span>
-                      </button>
-                      <button type="button" class="svc-ai-chip" data-ai-prompt="Trigger a build and zero-downtime deployment for this project now.">
-                        <i data-lucide="rocket"></i><span>Deploy</span>
-                      </button>
-                      <button type="button" class="svc-ai-chip" data-ai-prompt="Show me the latest deployment stdout logs and internal router traffic.">
-                        <i data-lucide="terminal"></i><span>Logs</span>
-                      </button>
-                      <button type="button" class="svc-ai-chip" data-ai-prompt="List all project source files and describe the architecture.">
-                        <i data-lucide="folder-tree"></i><span>List Files</span>
-                      </button>
-                      <button type="button" class="svc-ai-chip" data-ai-prompt="Check CPU, RAM, and Disk performance telemetry for this node.">
-                        <i data-lucide="gauge"></i><span>Performance</span>
-                      </button>
-                    </div>
-
-                    <!-- Main Input Box -->
-                    <form class="svc-ai-input-form" id="svc-ai-chat-form">
-                      <div class="svc-ai-textarea-wrapper">
-                        <textarea id="svc-ai-input" placeholder="Ask AI to write code, build features, run terminal commands, inspect logs, or deploy..." rows="1" autocomplete="off"></textarea>
-                        <div class="svc-ai-input-actions">
-                          <button type="button" class="svc-ai-input-btn" id="svc-ai-model-selector-btn" title="Configure model">
-                            <i data-lucide="cpu"></i>
-                            <span id="svc-ai-input-model-label">gpt-4o</span>
-                          </button>
-                          <button type="submit" class="svc-ai-send-btn" id="svc-ai-send-btn" title="Send message (Enter)">
-                            <i data-lucide="arrow-up"></i>
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </footer>
                 </div>
               </div>
 

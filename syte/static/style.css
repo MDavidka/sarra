@@ -8960,10 +8960,22 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 /* ==========================================================================
    AI BUILDER & AUTONOMOUS AGENT WORKSPACE (Clean White Theme)
    ========================================================================== */
+#view-ai {
+  width: 100%;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 4px 10px 36px;
+}
+#view-ai .svc-ai-workspace {
+  height: calc(100vh - 132px);
+  min-height: 560px;
+  max-height: none;
+}
+
 .svc-ai-workspace {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 210px);
+  height: calc(100vh - 140px);
   min-height: 540px;
   max-height: 840px;
   background: #ffffff;
@@ -8973,6 +8985,32 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   position: relative;
   transition: all 0.2s ease;
+}
+
+.svc-ai-project-picker-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+}
+.svc-ai-project-picker-wrap svg {
+  width: 13px;
+  height: 13px;
+  color: #2563eb;
+}
+.svc-ai-project-select {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #18181b;
+  cursor: pointer;
+  padding: 0;
 }
 
 .svc-ai-workspace.is-fullscreen {

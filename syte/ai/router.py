@@ -54,9 +54,10 @@ class AITestConnectionRequest(BaseModel):
 @router.get("/api/projects/{project_id}/ai/settings")
 async def get_project_ai_settings(project_id: str):
     """Retrieve AI Builder configuration for a project."""
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
     settings = await get_ai_builder_settings(project_id)
     # Mask API key if present
     masked_key = ""
@@ -80,9 +81,10 @@ async def update_project_ai_settings(
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Update AI Builder configuration for a project."""
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
 
     data = body.model_dump(exclude_none=True)
     saved = await save_ai_builder_settings(project_id, data)
@@ -92,9 +94,10 @@ async def update_project_ai_settings(
 @router.get("/api/projects/{project_id}/ai/history")
 async def get_project_ai_history(project_id: str):
     """Retrieve AI chat history for a project."""
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
     messages = await list_ai_chat_messages(project_id, limit=100)
     return {"ok": True, "project_id": project_id, "messages": messages}
 
@@ -105,9 +108,10 @@ async def clear_project_ai_history(
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Reset and clear AI chat history for a project."""
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
     await clear_ai_chat_history(project_id)
     return {"ok": True, "message": "AI chat history cleared"}
 
@@ -142,9 +146,10 @@ async def project_ai_chat_stream(
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Initiate an autonomous AI agent turn with SSE streaming response."""
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
 
     engine = AIAgentEngine(project_id)
     overrides = body.model_dump(exclude_none=True)

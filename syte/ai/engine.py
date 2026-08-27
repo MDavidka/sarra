@@ -39,12 +39,34 @@ class AIAgentEngine:
         yield {"event": "user_message_received", "content": user_message}
 
         # 2. Load project context
-        project = await get_project(self.project_id)
-        if not project:
-            yield {"event": "error", "error": f"Project '{self.project_id}' not found."}
-            return
+        if self.project_id == "global":
+            from syte.database import list_projects
+            all_projects = await list_projects()
+            project = {"id": "global", "name": "Global Platform"}
+            projects_summary = "\n".join([f"  • {p.get('name')} (ID: {p.get('id')}, Domain: {p.get('domain') or 'none'}, Running: {bool(p.get('running'))})" for p in all_projects[:15]])
+            context_prompt = (
+                f"\n\n--- ACTIVE SYTE PLATFORM CONTEXT (GLOBAL) ---\n"
+                f"Active Projects on this Host:\n{projects_summary or '  • No projects registered yet.'}\n"
+                f"-----------------------------------------------\n"
+            )
+        else:
+            project = await get_project(self.project_id)
+            if not project:
+                yield {"event": "error", "error": f"Project '{self.project_id}' not found."}
+                return
 
-        ws_dir = _get_project_workspace_dir(project)
+            ws_dir = _get_project_workspace_dir(project)
+            context_prompt = (
+                f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
+                f"- Project ID: {project.get('id')}\n"
+                f"- Project Name: {project.get('name')}\n"
+                f"- Production Domain: {project.get('domain') or 'None'}\n"
+                f"- Active Branch: {project.get('branch') or 'main'}\n"
+                f"- Running Status: {'Running' if project.get('running') else 'Stopped'} (Port {project.get('port') or 'unassigned'})\n"
+                f"- Connected Git Repository: {project.get('git_url') or 'None'}\n"
+                f"- VM Workspace Directory: {str(ws_dir)}\n"
+                f"------------------------------------\n"
+            )
 
         # 3. Load AI Builder settings
         ai_settings = await get_ai_builder_settings(self.project_id)
@@ -63,17 +85,6 @@ class AIAgentEngine:
 
         # 4. Assemble system prompt with live project context
         base_prompt = ai_settings.get("system_prompt") or ""
-        context_prompt = (
-            f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
-            f"- Project ID: {project.get('id')}\n"
-            f"- Project Name: {project.get('name')}\n"
-            f"- Production Domain: {project.get('domain') or 'None'}\n"
-            f"- Active Branch: {project.get('branch') or 'main'}\n"
-            f"- Running Status: {'Running' if project.get('running') else 'Stopped'} (Port {project.get('port') or 'unassigned'})\n"
-            f"- Connected Git Repository: {project.get('git_url') or 'None'}\n"
-            f"- VM Workspace Directory: {str(ws_dir)}\n"
-            f"------------------------------------\n"
-        )
         full_system_prompt = f"{base_prompt}\n{context_prompt}"
 
         # 5. Load message history
