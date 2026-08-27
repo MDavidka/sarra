@@ -336,65 +336,83 @@
             </div>
 
             <div class="svc-tab-panels">
-              <!-- 1. GENERAL / DEPLOYMENT TAB -->
+              <!-- 1. GENERAL / DEPLOYMENT TAB (shadcn card architecture) -->
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
-                <section class="syte-deployment-shell syte-reference-deployment" aria-label="Production deployment">
-                  <header class="syte-reference-header">
-                    <div>
-                      <p>Production deployment</p>
-                      <div class="syte-reference-project-line">
-                        <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
-                        <h1 class="svc-name" id="svc-title">service</h1>
+                <div class="shadcn-stack">
+                  <!-- Main Deployment Status Card -->
+                  <div class="shadcn-card">
+                    <div class="shadcn-card-header svc-general-card-header">
+                      <div class="svc-general-header-left">
+                        <span class="shadcn-badge shadcn-badge-outline"><span class="svc-status-dot" id="svc-status-dot"></span> Production</span>
+                        <h2 class="shadcn-card-title svc-name" id="svc-title">service</h2>
+                      </div>
+                      <div class="svc-general-header-actions">
+                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" id="svc-deploy-now" title="Deploy latest source" aria-label="Deploy latest source"><i data-lucide="rocket"></i></button>
+                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" data-svc-open="logs" title="Deployment history" aria-label="Deployment history"><i data-lucide="history"></i></button>
+                        <button type="button" class="shadcn-btn shadcn-btn-secondary shadcn-btn-icon" id="svc-edit-btn" title="Edit project and domain" aria-label="Edit project"><i data-lucide="ellipsis"></i></button>
                       </div>
                     </div>
-                    <div class="syte-reference-header-actions">
-                      <button type="button" class="syte-reference-icon-button" id="svc-deploy-now" title="Deploy latest source" aria-label="Deploy latest source"><i data-lucide="rocket"></i></button>
-                      <button type="button" class="syte-reference-icon-button" data-svc-open="logs" title="Deployment history" aria-label="Deployment history"><i data-lucide="history"></i></button>
-                      <button type="button" class="syte-reference-icon-button" id="svc-edit-btn" title="Edit project and domain" aria-label="Edit project"><i data-lucide="ellipsis"></i></button>
-                    </div>
-                  </header>
 
-                  <section class="syte-live-site-preview" aria-label="Live site preview">
-                    <div class="syte-preview-browserbar">
-                      <span class="syte-preview-browser-dots"><i></i><i></i><i></i></span>
-                      <span id="svc-preview-label">Live site preview</span>
-                      <a id="svc-preview-open" href="#" target="_blank" rel="noopener" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a>
-                    </div>
-                    <div class="syte-preview-canvas">
-                      <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
-                      <div id="svc-deploy-preview-placeholder" class="syte-preview-placeholder">
-                        <i data-lucide="monitor-up"></i>
-                        <strong>Preparing live preview</strong>
-                        <span>Your site will appear here after the deployment is reachable.</span>
+                    <div class="shadcn-card-content">
+                      <!-- Live Preview Frame / Placeholder -->
+                      <div class="svc-live-preview-box">
+                        <div class="svc-preview-browserbar">
+                          <div class="svc-browser-dots"><span></span><span></span><span></span></div>
+                          <span class="svc-browser-url" id="svc-preview-label">Live site preview</span>
+                          <a id="svc-preview-open" href="#" target="_blank" rel="noopener" class="svc-browser-open-btn" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a>
+                        </div>
+                        <div class="svc-preview-viewport">
+                          <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
+                          <div id="svc-deploy-preview-placeholder" class="svc-preview-empty-state">
+                            <i data-lucide="monitor-up"></i>
+                            <strong>Preparing live preview</strong>
+                            <span>Your site will appear here after the deployment is reachable.</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Action Buttons -->
+                      <div class="svc-action-buttons-row">
+                        <a class="shadcn-btn shadcn-btn-default svc-visit-btn" id="svc-conn" href="#" target="_blank" rel="noopener"><span>Visit</span> <i data-lucide="external-link"></i></a>
+                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-rollback-btn" disabled title="A previous image is required before rollback can be enabled"><i data-lucide="rotate-ccw"></i><span>Instant rollback</span></button>
+                      </div>
+
+                      <!-- Key Meta Details Grid -->
+                      <div class="svc-meta-grid">
+                        <div class="svc-meta-item">
+                          <span class="svc-meta-label">Deployment</span>
+                          <div class="svc-meta-val-row">
+                            <strong id="svc-uuid-pill" class="svc-mono-val">—</strong>
+                            <button type="button" class="svc-meta-action-btn" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button>
+                          </div>
+                        </div>
+                        <div class="svc-meta-item">
+                          <span class="svc-meta-label">Domain</span>
+                          <div class="svc-meta-val-row">
+                            <a id="svc-deploy-domain" href="#" target="_blank" rel="noopener" class="svc-domain-link">Pending domain</a>
+                            <button type="button" class="svc-meta-action-btn" id="svc-domain-edit" title="Set domain"><i data-lucide="plus"></i></button>
+                          </div>
+                        </div>
+                        <div class="svc-meta-item">
+                          <span class="svc-meta-label">Status</span>
+                          <div class="svc-meta-val-row">
+                            <span class="syte-state-dot" id="svc-deploy-state-dot"></span>
+                            <strong id="svc-deploy-status-summary">Preparing</strong>
+                          </div>
+                        </div>
+                        <div class="svc-meta-item">
+                          <span class="svc-meta-label">Source / Branch</span>
+                          <div class="svc-meta-val-row">
+                            <button type="button" class="svc-branch-pill-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button>
+                            <span id="svc-deploy-source" class="svc-source-text">Repository pending</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </section>
-
-                  <div class="syte-reference-actions" aria-label="Deployment actions">
-                    <button type="button" class="syte-rollback-button" id="svc-rollback-btn" disabled title="A previous image is required before rollback can be enabled"><i data-lucide="rotate-ccw"></i><span>Instant rollback</span></button>
-                    <a class="syte-visit-split-button" id="svc-conn" href="#" target="_blank" rel="noopener"><span>Visit</span><i data-lucide="chevron-down"></i></a>
                   </div>
 
-                  <section class="syte-reference-details" aria-label="Deployment details">
-                    <div class="syte-detail-line">
-                      <span>Deployment</span>
-                      <strong id="svc-uuid-pill">—</strong>
-                      <button type="button" class="syte-detail-pulse" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button>
-                    </div>
-                    <div class="syte-domain-line">
-                      <span>Domain</span>
-                      <button type="button" class="syte-domain-add" id="svc-domain-edit" title="Set domain" aria-label="Set domain"><i data-lucide="plus"></i></button>
-                      <a id="svc-deploy-domain" href="#" target="_blank" rel="noopener">Pending domain</a>
-                    </div>
-                    <dl class="syte-compact-meta">
-                      <div><dt>Status</dt><dd><span class="syte-state-dot" id="svc-deploy-state-dot"></span><strong id="svc-deploy-status-summary">Preparing</strong></dd></div>
-                      <div><dt>Source</dt><dd id="svc-deploy-source">Repository pending</dd></div>
-                      <div><dt>Branch</dt><dd><button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button></dd></div>
-                    </dl>
-                  </section>
-
-                  <!-- Build Logs Preview & Accordion on Deployment Tab -->
-                  <section class="svc-deploy-logs-card" aria-label="Build & Runtime Logs">
+                  <!-- Build Logs Card -->
+                  <div class="shadcn-card svc-deploy-logs-card">
                     <div class="svc-logs-stats-bar">
                       <div class="svc-logs-stat-left">
                         <span class="svc-logs-stat-item"><i data-lucide="file-text"></i> <span id="svc-gen-log-lines">167 lines</span></span>
@@ -402,7 +420,7 @@
                         <span class="svc-redacted-badge"><i data-lucide="lock"></i> Sensitive Environment Variable Redacted</span>
                       </div>
                       <div class="svc-logs-stat-right">
-                        <button type="button" class="svc-mini-icon-btn" data-svc-open="logs" title="Open full logs"><i data-lucide="maximize-2"></i></button>
+                        <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-icon-sm" data-svc-open="logs" title="Open full logs"><i data-lucide="maximize-2"></i></button>
                       </div>
                     </div>
 
@@ -446,28 +464,59 @@
                         </div>
                       </details>
                     </div>
-                  </section>
+                  </div>
 
-                  <div class="svc-management-grid syte-deployment-insights">
-                    <div class="svc-management-card">
-                      <div class="svc-management-head"><span><i data-lucide="heart-pulse"></i> Health</span><button type="button" class="logs-tool-btn" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button></div>
-                      <div class="svc-health-state" id="svc-health-state">Not checked</div>
-                      <div class="svc-health-detail" id="svc-health-detail">Run a live probe to check the production release.</div>
+                  <!-- Insights & Health Dual Card -->
+                  <div class="shadcn-grid-2">
+                    <div class="shadcn-card">
+                      <div class="shadcn-card-header">
+                        <div class="svc-card-header-flex">
+                          <h3 class="shadcn-card-title"><i data-lucide="heart-pulse"></i> Health Check</h3>
+                          <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-icon-sm" id="svc-health-refresh" title="Check health"><i data-lucide="refresh-cw"></i></button>
+                        </div>
+                        <p class="shadcn-card-description">Live HTTP probe against deployment health endpoint</p>
+                      </div>
+                      <div class="shadcn-card-content">
+                        <div class="svc-health-state" id="svc-health-state">Not checked</div>
+                        <div class="svc-health-detail" id="svc-health-detail">Run a live probe to check the production release.</div>
+                      </div>
                     </div>
-                    <div class="svc-management-card">
-                      <div class="svc-management-head"><span><i data-lucide="history"></i> Deployment history</span><button type="button" class="logs-tool-btn" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button></div>
-                      <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
+
+                    <div class="shadcn-card">
+                      <div class="shadcn-card-header">
+                        <div class="svc-card-header-flex">
+                          <h3 class="shadcn-card-title"><i data-lucide="history"></i> Deployment History</h3>
+                          <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-icon-sm" id="svc-deployments-refresh" title="Refresh history"><i data-lucide="refresh-cw"></i></button>
+                        </div>
+                        <p class="shadcn-card-description">Recent builds and promotion records</p>
+                      </div>
+                      <div class="shadcn-card-content">
+                        <div class="svc-deployments-list" id="svc-deployments-list"><span class="hint">No deployment history loaded.</span></div>
+                      </div>
                     </div>
                   </div>
-                </section>
+
+                </div>
               </div>
 
-              <!-- 2. RELEASE TAB -->
+              <!-- 2. RELEASE TAB (shadcn card architecture) -->
               <div class="svc-tab-panel" id="svc-panel-release" data-svc-panel="release">
-                <section class="release-workspace" aria-label="Release workspace">
-                  <header class="release-workspace-header"><div><p>Operational release control</p><h2>Deployments</h2><span>Review environments, promote a protected release, verify recovery readiness, and track release activity in one place.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
-                  <div id="release-workspace-content" class="release-workspace-content"><p class="hint">Open this workspace to load release controls.</p></div>
-                </section>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <div class="svc-card-header-flex">
+                      <div>
+                        <span class="shadcn-badge shadcn-badge-secondary">Release Governance</span>
+                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Deployments & Releases</h2>
+                        <p class="shadcn-card-description">Review environments, promote releases, verify recovery readiness, and track release activity.</p>
+                      </div>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
+                    </div>
+                  </div>
+                  <div class="shadcn-card-content" id="release-workspace-content">
+                    <p class="hint">Open this workspace to load release controls.</p>
+                  </div>
+                </div>
+              </div>
               </div>
 
               <!-- 3. DOMAINS TAB -->
@@ -705,112 +754,211 @@
                 </section>
               </div>
 
-              <!-- 6. CDN TAB -->
+              <!-- 6. CDN TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
-                <section class="svc-cdn-workspace" aria-label="Content delivery guidance">
-                  <header><div><p>Delivery path</p><h2>CDN and Cloudflare</h2><span>CDN proxying is configured at your DNS provider, not silently enabled by Sycord. Keep Cloudflare proxying off while validating or issuing a certificate.</span></div><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"></header>
-                  <div class="svc-cdn-flow"><span>Browser</span><i data-lucide="arrow-right"></i><span>Cloudflare DNS/CDN</span><i data-lucide="arrow-right"></i><span>Sycord Caddy</span></div>
-                  <button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review certificate DNS status</span></button>
-                </section>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <div class="svc-card-header-flex">
+                      <div>
+                        <span class="shadcn-badge shadcn-badge-secondary">Edge Routing</span>
+                        <h2 class="shadcn-card-title" style="margin-top: 4px;">CDN & Cloudflare Delivery</h2>
+                        <p class="shadcn-card-description">Configure edge proxying and DNS routing for high-speed global delivery.</p>
+                      </div>
+                      <img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare" style="width: 32px; height: 32px; object-fit: contain;">
+                    </div>
+                  </div>
+                  <div class="shadcn-card-content">
+                    <div class="svc-cdn-flow">
+                      <span>Browser</span><i data-lucide="arrow-right"></i>
+                      <span>Cloudflare DNS / CDN</span><i data-lucide="arrow-right"></i>
+                      <span>Sycord Caddy</span>
+                    </div>
+                    <p class="svc-card-subtext" style="margin: 10px 0 14px; font-size: 12px; color: #71717a; line-height: 1.45;">Keep Cloudflare proxying (orange cloud) paused while validating or issuing initial Let's Encrypt certificates.</p>
+                    <div>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review Certificate DNS Status</span></button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <!-- 7. SPEED & RESOURCES TAB -->
+              <!-- 7. SPEED & RESOURCES TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
-                <section class="svc-speed-workspace" aria-label="Project runtime resources">
-                  <header class="svc-workspace-heading"><div><p>Runtime allocation</p><h2>Speed and resource limits</h2><span>Docker deployments apply these limits at the next deployment. Shell projects retain their host process limits.</span></div></header>
-                  <form class="svc-speed-form" id="svc-speed-form">
-                    <label>Memory limit<select id="svc-resource-memory"><option value="">Server default</option><option value="256m">256 MB</option><option value="512m">512 MB</option><option value="1g">1 GB</option><option value="2g">2 GB</option></select></label>
-                    <label>CPU limit<select id="svc-resource-cpus"><option value="">Server default</option><option value="0.5">0.5 CPU</option><option value="1.0">1 CPU</option><option value="2.0">2 CPU</option></select></label>
-                    <button type="submit" class="btn-pill btn-primary"><i data-lucide="gauge"></i><span>Save deployment limits</span></button>
-                  </form>
-                  <p class="svc-speed-status" id="svc-speed-status">Current runtime status is shown on the General tab.</p>
-                </section>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <span class="shadcn-badge shadcn-badge-secondary">Container Limits</span>
+                    <h2 class="shadcn-card-title" style="margin-top: 4px;">Speed & Resource Allocation</h2>
+                    <p class="shadcn-card-description">Set container CPU and RAM memory limits applied on next deployment restart.</p>
+                  </div>
+                  <div class="shadcn-card-content">
+                    <form class="svc-speed-form" id="svc-speed-form">
+                      <div class="shadcn-grid-2">
+                        <div class="shadcn-form-item">
+                          <label class="shadcn-label" for="svc-resource-memory">Memory Limit</label>
+                          <div class="svc-pill-select-wrap" style="width: 100%;">
+                            <select id="svc-resource-memory" class="shadcn-select">
+                              <option value="">Server default (Unlimited)</option>
+                              <option value="256m">256 MB</option>
+                              <option value="512m">512 MB</option>
+                              <option value="1g">1 GB</option>
+                              <option value="2g">2 GB</option>
+                              <option value="4g">4 GB</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="shadcn-form-item">
+                          <label class="shadcn-label" for="svc-resource-cpus">CPU Core Limit</label>
+                          <div class="svc-pill-select-wrap" style="width: 100%;">
+                            <select id="svc-resource-cpus" class="shadcn-select">
+                              <option value="">Server default (All cores)</option>
+                              <option value="0.5">0.5 CPU Core</option>
+                              <option value="1.0">1.0 CPU Core</option>
+                              <option value="2.0">2.0 CPU Cores</option>
+                              <option value="4.0">4.0 CPU Cores</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="gauge"></i><span>Save Resource Limits</span></button>
+                        <p class="svc-speed-status" id="svc-speed-status" style="margin: 0; font-size: 12px; color: #71717a;">Current runtime status is shown on the General tab.</p>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </div>
 
-              <!-- 8. ROLLBACKS TAB -->
+              <!-- 8. ROLLBACKS TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-rollbacks" data-svc-panel="rollbacks">
-                <section class="svc-rollback-workspace" aria-label="Deployment rollback history">
-                  <header class="svc-workspace-heading"><div><p>Release recovery</p><h2>Rollbacks</h2><span>Re-deploy a successful recorded Git commit. Runs without a recorded commit cannot be safely rolled back.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
-                  <div class="svc-rollback-history" id="svc-rollback-history"><p class="hint">Load deployment history to choose a recorded release.</p></div>
-                </section>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <div class="svc-card-header-flex">
+                      <div>
+                        <span class="shadcn-badge shadcn-badge-secondary">Instant Recovery</span>
+                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Release Rollbacks</h2>
+                        <p class="shadcn-card-description">Instantly re-deploy a previously recorded Git release commit in case of production regressions.</p>
+                      </div>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
+                    </div>
+                  </div>
+                  <div class="shadcn-card-content">
+                    <div class="svc-rollback-history" id="svc-rollback-history">
+                      <p class="hint">Load deployment history to choose a recorded release.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <!-- 9. SETTINGS TAB -->
+              <!-- 9. SETTINGS TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
-                <section class="svc-project-settings-workspace" aria-label="Project deployment settings">
-                  <header class="svc-workspace-heading"><div><p>Deployment policy</p><h2>Project settings</h2><span>Configure source and automatic branch deployment for this application.</span></div></header>
-                  <form id="svc-deployment-settings-form" class="svc-deployment-settings-form">
-                    <label>Branch<input id="svc-settings-branch" placeholder="main" autocomplete="off"></label>
-                    <label>Start command<input id="svc-settings-start-command" placeholder="npm start" autocomplete="off"></label>
-                    <label class="svc-auto-deploy-toggle"><input type="checkbox" id="svc-settings-auto-deploy"><span><strong>Automatically redeploy new branch commits</strong><small>Checks the configured GitHub branch every 5 minutes. First enable queues the current branch head once.</small></span></label>
-                    <p class="svc-auto-deploy-state" id="svc-auto-deploy-state">Connect GitHub and select a repository before enabling.</p>
-                    <button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save deployment settings</span></button>
-                  </form>
-                </section>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <span class="shadcn-badge shadcn-badge-secondary">Build & Branch</span>
+                    <h2 class="shadcn-card-title" style="margin-top: 4px;">Project Settings</h2>
+                    <p class="shadcn-card-description">Configure default git tracking branch, start commands, and automated CI/CD deployment rules.</p>
+                  </div>
+                  <div class="shadcn-card-content">
+                    <form id="svc-deployment-settings-form" class="svc-deployment-settings-form">
+                      <div class="shadcn-grid-2">
+                        <div class="shadcn-form-item">
+                          <label class="shadcn-label" for="svc-settings-branch">Production Branch</label>
+                          <input id="svc-settings-branch" class="shadcn-input" placeholder="main" autocomplete="off">
+                        </div>
+                        <div class="shadcn-form-item">
+                          <label class="shadcn-label" for="svc-settings-start-command">Start Command</label>
+                          <input id="svc-settings-start-command" class="shadcn-input" placeholder="npm start" autocomplete="off">
+                        </div>
+                      </div>
+
+                      <div class="shadcn-switch-card" style="margin-top: 14px;">
+                        <label class="svc-auto-deploy-toggle" style="cursor: pointer; display: flex; align-items: flex-start; gap: 12px; padding: 0;">
+                          <input type="checkbox" id="svc-settings-auto-deploy" style="margin-top: 3px; accent-color: #18181b; width: 18px; height: 18px;">
+                          <div style="display: grid; gap: 2px;">
+                            <strong style="color: #09090b; font-size: 13px;">Automatically redeploy new branch commits</strong>
+                            <small style="color: #71717a; font-size: 12px; line-height: 1.4;">Periodically polls the configured repository branch and triggers automatic build & zero-downtime deployment.</small>
+                          </div>
+                        </label>
+                      </div>
+
+                      <p class="svc-auto-deploy-state" id="svc-auto-deploy-state" style="margin: 12px 0 0; font-size: 12px; color: #71717a;">Connect GitHub and select a repository before enabling.</p>
+
+                      <div style="margin-top: 16px;">
+                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Project Settings</span></button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </div>
 
-              <!-- 10. LOGS TAB -->
+              <!-- 10. LOGS TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
-                <div class="svc-panel-intro svc-panel-intro-compact">
-                  <div class="svc-panel-intro-icon"><i data-lucide="terminal-square"></i></div>
-                  <div>
-                    <h2>Deployment logs</h2>
-                    <p>Follow the latest build and runtime output in real time.</p>
-                  </div>
-                </div>
-                <div class="logs-panel">
-                  <div class="logs-toolbar">
-                    <div class="logs-toolbar-left">
-                      <span class="logs-live-dot" id="svc-logs-live" title="Stream status"></span>
-                      <span class="logs-toolbar-label" id="svc-log-hint">Deployment log</span>
-                    </div>
-                    <div class="logs-toolbar-right">
-                      <button type="button" class="logs-tool-btn" id="svc-logs-refresh" title="Refresh logs">
-                        <i data-lucide="refresh-cw"></i>
-                      </button>
-                      <button type="button" class="logs-tool-btn active" id="svc-logs-autoscroll" title="Auto-scroll">
-                        <i data-lucide="arrow-down-to-line"></i>
-                      </button>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <div class="svc-card-header-flex">
+                      <div>
+                        <span class="shadcn-badge shadcn-badge-secondary">Real-Time Output</span>
+                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Deployment & Server Logs</h2>
+                        <p class="shadcn-card-description">Live stdout/stderr stream from build operations and application container.</p>
+                      </div>
+                      <div class="svc-logs-actions">
+                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-logs-refresh" title="Refresh logs"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
+                        <button type="button" class="shadcn-btn shadcn-btn-secondary active" id="svc-logs-autoscroll" title="Auto-scroll"><i data-lucide="arrow-down-to-line"></i><span>Auto-scroll</span></button>
+                      </div>
                     </div>
                   </div>
-                  <div class="logs-terminal logs-terminal-dark" id="svc-live-logs"></div>
+                  <div class="shadcn-card-content" style="padding: 0;">
+                    <div class="svc-logs-stats-bar">
+                      <div class="svc-logs-stat-left">
+                        <span class="logs-live-dot" id="svc-logs-live" title="Stream status"></span>
+                        <span class="logs-toolbar-label" id="svc-log-hint" style="font-weight: 600; font-size: 12px; color: #52525b;">Live stream active</span>
+                      </div>
+                    </div>
+                    <div class="logs-terminal logs-terminal-dark svc-full-terminal" id="svc-live-logs"></div>
+                  </div>
                 </div>
               </div>
 
-              <!-- 11. PREVIEW TAB -->
+              <!-- 11. PREVIEW TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <div class="svc-panel-intro">
-                  <div class="svc-panel-intro-icon"><i data-lucide="monitor-smartphone"></i></div>
-                  <div>
-                    <h2>Live preview</h2>
-                    <p>Open a temporary dev server to check your website before sharing it.</p>
-                  </div>
-                </div>
-                <div class="svc-preview-domain-row" id="svc-preview-domain-row">
-                  <span class="hint">Preview domain</span>
-                  <code id="svc-preview-domain">—</code>
-                </div>
-                <p class="hint" id="svc-preview-hint">Fast dev server with hot reload — auto-stops after 5 min or when you leave this tab</p>
-                <div class="svc-actions" id="svc-preview-actions"></div>
-                <div class="svc-preview-card" id="svc-preview-card">
-                  <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                  <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                    <i data-lucide="layout-template"></i>
-                    <span>Start preview to see your site here</span>
-                  </div>
-                  <div class="svc-stack-badge" id="svc-stack-badge">
-                    <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                    <span id="svc-stack-label">next.js</span>
-                  </div>
-                </div>
-                <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap">
-                  <div class="logs-toolbar logs-toolbar-compact">
-                    <div class="logs-toolbar-left">
-                      <span class="logs-live-dot" id="svc-preview-logs-live"></span>
-                      <span class="logs-toolbar-label">Preview server log</span>
+                <div class="shadcn-card">
+                  <div class="shadcn-card-header">
+                    <div class="svc-card-header-flex">
+                      <div>
+                        <span class="shadcn-badge shadcn-badge-secondary">Sandbox Server</span>
+                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Live Preview</h2>
+                        <p class="shadcn-card-description">Run a temporary development server with hot module replacement before deployment.</p>
+                      </div>
+                      <div class="svc-stack-badge" id="svc-stack-badge">
+                        <span class="svc-stack-icon" id="svc-stack-icon">N</span>
+                        <span id="svc-stack-label">next.js</span>
+                      </div>
                     </div>
                   </div>
-                  <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                  <div class="shadcn-card-content">
+                    <div class="svc-preview-domain-row" id="svc-preview-domain-row" style="margin-bottom: 8px;">
+                      <span class="hint" style="font-size: 12px; color: #71717a; font-weight: 600;">Preview URL:</span>
+                      <code id="svc-preview-domain" style="font-family: monospace; font-size: 12px; background: #f4f4f5; padding: 3px 8px; border-radius: 6px; color: #09090b;">—</code>
+                    </div>
+                    <p class="hint" id="svc-preview-hint" style="margin: 4px 0 14px; font-size: 12px; color: #71717a;">Fast dev server with hot reload — automatically stops after 5 minutes of inactivity or when you leave this tab.</p>
+                    <div class="svc-actions" id="svc-preview-actions" style="margin-bottom: 14px;"></div>
+
+                    <div class="svc-live-preview-box" id="svc-preview-card">
+                      <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                      <div class="svc-preview-placeholder" id="svc-preview-placeholder">
+                        <i data-lucide="layout-template"></i>
+                        <span>Start preview to see your site rendered in real time</span>
+                      </div>
+                    </div>
+
+                    <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap" style="margin-top: 16px;">
+                      <div class="logs-toolbar logs-toolbar-compact">
+                        <div class="logs-toolbar-left">
+                          <span class="logs-live-dot" id="svc-preview-logs-live"></span>
+                          <span class="logs-toolbar-label">Preview server log</span>
+                        </div>
+                      </div>
+                      <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

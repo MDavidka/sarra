@@ -6332,7 +6332,7 @@ async function renderServiceRollbackHistory(project) {
       const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
       const canRollback = run.status === 'succeeded' && Boolean(run.commit_sha);
       const detail = run.error || (run.commit_sha ? `Commit ${String(run.commit_sha).slice(0, 12)}` : 'No recorded Git commit');
-      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="btn-pill btn-ghost btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
+      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
     }).join('');
     target.querySelectorAll('[data-svc-rollback-run]').forEach(button => {
       button.onclick = async () => {
