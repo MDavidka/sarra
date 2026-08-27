@@ -5715,8 +5715,7 @@ function formatEnv(env) {
 }
 
 function detectStack(p) {
-  const env = p.env_vars || {};
-  if (env.SYTE_STACK) return env.SYTE_STACK;
+  if (p.stack) return p.stack;
   if (p.deploy_type === 'docker') return 'nextjs';
   return 'shell';
 }
@@ -6281,9 +6280,9 @@ function connLabel(p) {
 }
 
 function serviceEnvironmentEntries(project) {
-  const values = project?.env_vars;
-  if (!values || typeof values !== 'object' || Array.isArray(values)) return [];
-  return Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
+  const keys = project?.environment_keys;
+  if (!Array.isArray(keys)) return [];
+  return [...keys].sort((left, right) => left.localeCompare(right)).map((key) => [key, 'Stored server-side']);
 }
 
 function closeServiceEnvironmentModal() {
@@ -6297,19 +6296,19 @@ function openServiceEnvironmentModal(project, key = '') {
   const original = document.getElementById('svc-env-original-key');
   const title = document.getElementById('svc-env-modal-title');
   if (!modal || !keyInput || !valueInput || !original || !title) return;
-  const values = Object.fromEntries(serviceEnvironmentEntries(project));
   original.value = key;
   keyInput.value = key;
-  valueInput.value = key ? String(values[key] ?? '') : '';
-  title.textContent = key ? 'Edit variable' : 'Add variable';
+  valueInput.value = '';
+  valueInput.placeholder = key ? 'Enter a replacement value' : 'Enter a value';
+  title.textContent = key ? 'Replace variable value' : 'Add variable';
   modal.classList.remove('hidden');
   keyInput.focus();
 }
 
-async function persistServiceEnvironment(project, env_vars) {
-  const result = await api(`/projects/${encodeURIComponent(project.id)}`, {
+async function persistServiceEnvironment(project, key, value, originalKey = '') {
+  const result = await api(`/projects/${encodeURIComponent(project.id)}/environment`, {
     method: 'PUT',
-    body: JSON.stringify({env_vars}),
+    body: JSON.stringify({key, value, original_key: originalKey}),
   });
   toast(result.message || 'Environment saved');
   await loadProjects();
@@ -6371,10 +6370,13 @@ function renderServiceManagementWorkspaces(project) {
       button.onclick = async () => {
         const key = button.dataset.svcEnvDelete || '';
         if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
-        const next = Object.fromEntries(serviceEnvironmentEntries(project));
-        delete next[key];
-        try { await persistServiceEnvironment(project, next); }
-        catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
+        try {
+          await api(`/projects/${encodeURIComponent(project.id)}/environment/${encodeURIComponent(key)}`, {method: 'DELETE'});
+          toast('Environment variable removed');
+          await loadProjects();
+          const refreshed = projects.find(item => item.id === project.id);
+          if (refreshed) renderServiceDashboard(refreshed, false);
+        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
       };
     });
   }
@@ -6390,11 +6392,9 @@ function renderServiceManagementWorkspaces(project) {
       const key = document.getElementById('svc-env-key')?.value.trim() || '';
       const value = document.getElementById('svc-env-value')?.value || '';
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return toast('Use a valid environment variable key.');
-      const next = Object.fromEntries(serviceEnvironmentEntries(project));
-      if (original && original !== key) delete next[original];
-      next[key] = value;
+      if (!value) return toast('Enter a value. Existing values are never shown in the browser.');
       try {
-        await persistServiceEnvironment(project, next);
+        await persistServiceEnvironment(project, key, value, original);
         closeServiceEnvironmentModal();
       } catch (error) {
         toast(normalizeFetchError(error?.message) || 'Could not save variable.');
@@ -6731,7 +6731,7 @@ function openServiceEditModal(p) {
   const meta = projectEditField('svc-edit-project-meta');
   if (meta) meta.textContent = `${p.running ? 'Production running' : 'Project stopped'} · ${p.branch || 'main'} · ${p.status || 'ready'}`;
   const environmentCount = projectEditField('svc-edit-env-count');
-  if (environmentCount) environmentCount.textContent = String(Object.keys(p.env_vars || {}).length);
+  if (environmentCount) environmentCount.textContent = String(p.environment_count || 0);
   const releaseSummary = projectEditField('svc-edit-release-summary');
   if (releaseSummary) releaseSummary.textContent = p.git_url ? 'Protection and recovery ready' : 'Connect Git to govern releases';
   const liveLink = projectEditField('svc-edit-open-live');

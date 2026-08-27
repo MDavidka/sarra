@@ -57,7 +57,7 @@ from syte.platform.store import ensure_bootstrap, init_platform_db
 from syte.log_stream import stream_preview_logs, stream_project_logs
 from syte.rate_limit import RateLimitMiddleware
 import logging
-
+import re
 from syte import supervisor
 
 logger = logging.getLogger("syte")
@@ -367,6 +367,12 @@ class UpdateProjectRequest(BaseModel):
     start_command: str | None = None
     env_vars: dict[str, str] | None = None
     domain: str | None = None
+
+
+class EnvironmentVariableRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=255, pattern=r"[A-Za-z_][A-Za-z0-9_]*")
+    value: str = Field(min_length=1, max_length=32_768)
+    original_key: str = Field(default="", max_length=255)
 
 
 @app.get("/api/health")
@@ -1757,10 +1763,69 @@ async def api_update_project(project_id: str, body: UpdateProjectRequest):
         payload={"changed_fields": sorted(updates)},
     )
     ok, msg = await apply_proxy_config()
-    project = dict(project)
-    project["running"] = _running(project)
-    project["url"] = _project_url(project)
-    return {"project": project, "message": msg}
+    if "env_vars" in updates:
+        from syte.workspace import write_env_file
+        write_env_file(project_id, _parse_env(project.get("env_vars")))
+    return {"project": _enrich(project), "message": msg}
+
+
+@app.put("/api/projects/{project_id}/environment")
+async def api_upsert_project_environment(
+    project_id: str,
+    body: EnvironmentVariableRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Write one environment value without ever returning stored values to the browser."""
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    original_key = body.original_key.strip()
+    if original_key and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", original_key):
+        raise HTTPException(422, "Use a valid environment variable key")
+    values = _parse_env(project.get("env_vars"))
+    if original_key and original_key != body.key:
+        values.pop(original_key, None)
+    values[body.key] = body.value
+    updated = await update_project(project_id, {"env_vars": values})
+    from syte.workspace import write_env_file
+    write_env_file(project_id, values)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.environment_updated",
+        project_id=project_id,
+        message=f"Environment variable {body.key} was saved for {project.get('name', project_id)}.",
+        payload={"key": body.key, "renamed_from": original_key or None},
+    )
+    return {"ok": True, "environment_keys": _environment_keys(updated or project)}
+
+
+@app.delete("/api/projects/{project_id}/environment/{key}")
+async def api_delete_project_environment(
+    project_id: str,
+    key: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Delete one stored environment key without disclosing other runtime values."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+        raise HTTPException(422, "Use a valid environment variable key")
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    values = _parse_env(project.get("env_vars"))
+    if key not in values:
+        raise HTTPException(404, "Environment variable not found")
+    del values[key]
+    updated = await update_project(project_id, {"env_vars": values})
+    from syte.workspace import write_env_file
+    write_env_file(project_id, values)
+    from syte.notifications import publish_project_event
+    await publish_project_event(
+        "project.environment_deleted",
+        project_id=project_id,
+        message=f"Environment variable {key} was removed from {project.get('name', project_id)}.",
+        payload={"key": key},
+    )
+    return {"ok": True, "environment_keys": _environment_keys(updated or project)}
 
 
 @app.post("/api/projects/{project_id}/start")
@@ -2077,24 +2142,34 @@ def _running(project: dict) -> bool:
     return is_running(str(project.get("id") or ""), str(project.get("deploy_type") or "shell"))
 
 
-def _enrich(project: dict) -> dict:
+def _environment_keys(project: dict) -> list[str]:
+    """Return safe environment key metadata without disclosing runtime values."""
+    values = _parse_env(project.get("env_vars"))
+    return sorted(str(key) for key in values if isinstance(key, str) and key)
 
+
+def _enrich(project: dict) -> dict:
     from syte.preview_manager import preview_meta
     from syte.project_enrich import enrich_ssl
-    from syte.workspace import ensure_workspace, workspace_path
+    from syte.workspace import ensure_workspace
 
     p = dict(project)
+    raw_environment = _parse_env(p.get("env_vars"))
+    p["environment_keys"] = sorted(str(key) for key in raw_environment if isinstance(key, str) and key)
+    p["environment_count"] = len(p["environment_keys"])
+    p["stack"] = str(raw_environment.get("SYTE_STACK") or p.get("stack") or "")
+    # Project responses are browser-visible. Runtime values and server paths stay server-only.
+    p.pop("env_vars", None)
+    p.pop("workspace_path", None)
+    p.pop("app_path", None)
+    p.pop("data_path", None)
     p["running"] = _running(p)
     p["url"] = _project_url(p)
-    p["env_vars"] = _parse_env(p.get("env_vars"))
     ensure_workspace(p["id"])
-    ws = workspace_path(p["id"])
-    p["workspace_path"] = str(ws)
-    p["app_path"] = str(ws / "app")
-    p["data_path"] = str(ws / "data")
     p.update(preview_meta(p))
     p["ssl"] = enrich_ssl(p)
     return p
+
 
 
 def _static_asset_version() -> str:
