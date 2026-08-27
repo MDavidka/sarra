@@ -6793,6 +6793,56 @@ function renderServiceManagementWorkspaces(project) {
     };
   }
 
+async function renderProjectPerformanceStats(project) {
+  const nodeLabel = document.getElementById('svc-node-name-label');
+  const perfText = document.getElementById('svc-perf-mark-text');
+  const memVal = document.getElementById('svc-perf-mem-val');
+  const memBar = document.getElementById('svc-perf-mem-bar');
+  const memCheck = document.getElementById('svc-perf-mem-check');
+  const cpuVal = document.getElementById('svc-perf-cpu-val');
+  const cpuBar = document.getElementById('svc-perf-cpu-bar');
+  const cpuCheck = document.getElementById('svc-perf-cpu-check');
+  const diskVal = document.getElementById('svc-perf-disk-val');
+  const diskBar = document.getElementById('svc-perf-disk-bar');
+  const diskCheck = document.getElementById('svc-perf-disk-check');
+
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/performance`);
+    if (nodeLabel) nodeLabel.textContent = payload.node?.name || 'Local Cluster Node';
+    if (perfText) perfText.textContent = `${payload.performance_mark || 'Optimal'} (${payload.performance_score || 98}%)`;
+
+    const mem = payload.metrics?.memory;
+    if (mem) {
+      if (memVal) memVal.textContent = `${mem.allocated_label} / ${mem.used_label}`;
+      if (memBar) memBar.style.width = `${Math.min(100, Math.max(8, mem.percent))}%`;
+      if (memCheck) {
+        memCheck.className = `svc-perf-check-dot is-${mem.status || 'healthy'}`;
+      }
+    }
+
+    const cpu = payload.metrics?.cpu;
+    if (cpu) {
+      if (cpuVal) cpuVal.textContent = `${cpu.allocated_label} / ${cpu.used_label}`;
+      if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(8, cpu.percent))}%`;
+      if (cpuCheck) {
+        cpuCheck.className = `svc-perf-check-dot is-${cpu.status || 'healthy'}`;
+      }
+    }
+
+    const disk = payload.metrics?.disk;
+    if (disk) {
+      if (diskVal) diskVal.textContent = `${disk.allocated_label} / ${disk.used_label}`;
+      if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(8, disk.percent))}%`;
+      if (diskCheck) {
+        diskCheck.className = `svc-perf-check-dot is-${disk.status || 'healthy'}`;
+      }
+    }
+    refreshIcons();
+  } catch (err) {
+    if (nodeLabel) nodeLabel.textContent = 'Local Ubuntu Node';
+  }
+}
+
   const memory = document.getElementById('svc-resource-memory');
   const cpus = document.getElementById('svc-resource-cpus');
   if (memory) memory.value = project.resource_memory || '';
@@ -6810,9 +6860,13 @@ function renderServiceManagementWorkspaces(project) {
         if (status) status.textContent = 'Deployment limits saved. Redeploy to apply them.';
         toast(result.message || 'Deployment limits saved');
         await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) void renderProjectPerformanceStats(refreshed);
       } catch (error) { if (status) status.textContent = normalizeFetchError(error?.message) || 'Could not save deployment limits.'; }
     };
   }
+
+  void renderProjectPerformanceStats(project);
 
   const branch = document.getElementById('svc-settings-branch');
   const startCommand = document.getElementById('svc-settings-start-command');
@@ -6962,6 +7016,9 @@ function switchSvcTab(tab) {
   } else if (tab === 'redirects') {
     const p = projects.find(x => x.id === activeServiceId);
     if (p) void renderRedirectsWorkspace(p);
+  } else if (tab === 'speed') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) void renderProjectPerformanceStats(p);
   } else if (prevTab === 'preview') {
     previewTabActive = false;
     stopPreviewPoll();

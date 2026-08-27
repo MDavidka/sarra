@@ -844,18 +844,79 @@
                 </div>
               </div>
 
-              <!-- 7. SPEED & RESOURCES TAB (shadcn architecture) -->
+              <!-- 7. SPEED & RESOURCES TAB (Exact match to screenshot in white theme) -->
               <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <span class="shadcn-badge shadcn-badge-secondary">Container Limits</span>
-                    <h2 class="shadcn-card-title" style="margin-top: 4px;">Speed & Resource Allocation</h2>
-                    <p class="shadcn-card-description">Set container CPU and RAM memory limits applied on next deployment restart.</p>
+                <section class="svc-resources-screen" aria-label="Project performance and resource allocation">
+                  <!-- 1. Node Selector Bar -->
+                  <div class="svc-resources-node-bar">
+                    <div class="svc-node-select-pill" id="svc-node-select-pill">
+                      <span class="svc-node-ubuntu-badge">
+                        <i data-lucide="server"></i>
+                      </span>
+                      <span id="svc-node-name-label">No node selected</span>
+                      <i data-lucide="chevron-down" class="svc-node-chevron"></i>
+                    </div>
+                    <div class="svc-perf-grade-pill" id="svc-perf-grade-pill">
+                      <span class="svc-perf-dot"></span>
+                      <span id="svc-perf-mark-text">Optimal (98%)</span>
+                    </div>
                   </div>
-                  <div class="shadcn-card-content">
-                    <form class="svc-speed-form" id="svc-speed-form">
-                      <div class="shadcn-grid-2">
-                        <div class="shadcn-form-item">
+
+                  <!-- 2. Performance Stats Cards Row (RAM / CPU / Storage) -->
+                  <div class="svc-perf-cards-row" id="svc-perf-cards-row">
+                    <!-- Card 1: RAM / Memory -->
+                    <div class="svc-perf-stat-card">
+                      <div class="svc-perf-card-head">
+                        <span class="svc-perf-chip-icon"><i data-lucide="cpu"></i></span>
+                      </div>
+                      <div class="svc-perf-card-body">
+                        <strong class="svc-perf-stat-val" id="svc-perf-mem-val">2GB / 142MB</strong>
+                        <span class="svc-perf-check-dot is-healthy" id="svc-perf-mem-check"><i data-lucide="check"></i></span>
+                      </div>
+                      <div class="svc-perf-mini-bar-wrap">
+                        <div class="svc-perf-mini-bar" id="svc-perf-mem-bar" style="width: 15%;"></div>
+                      </div>
+                    </div>
+
+                    <!-- Card 2: CPU Cores & Usage -->
+                    <div class="svc-perf-stat-card">
+                      <div class="svc-perf-card-head">
+                        <span class="svc-perf-chip-icon"><i data-lucide="gauge"></i></span>
+                      </div>
+                      <div class="svc-perf-card-body">
+                        <strong class="svc-perf-stat-val" id="svc-perf-cpu-val">4 Cores / 12%</strong>
+                        <span class="svc-perf-check-dot is-healthy" id="svc-perf-cpu-check"><i data-lucide="check"></i></span>
+                      </div>
+                      <div class="svc-perf-mini-bar-wrap">
+                        <div class="svc-perf-mini-bar" id="svc-perf-cpu-bar" style="width: 12%;"></div>
+                      </div>
+                    </div>
+
+                    <!-- Card 3: Storage & Disk -->
+                    <div class="svc-perf-stat-card">
+                      <div class="svc-perf-card-head">
+                        <span class="svc-perf-chip-icon"><i data-lucide="hard-drive"></i></span>
+                      </div>
+                      <div class="svc-perf-card-body">
+                        <strong class="svc-perf-stat-val" id="svc-perf-disk-val">20GB / 4.2GB</strong>
+                        <span class="svc-perf-check-dot is-healthy" id="svc-perf-disk-check"><i data-lucide="check"></i></span>
+                      </div>
+                      <div class="svc-perf-mini-bar-wrap">
+                        <div class="svc-perf-mini-bar" id="svc-perf-disk-bar" style="width: 21%;"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 3. Container Limits Card -->
+                  <div class="shadcn-card svc-resources-limit-card">
+                    <div class="shadcn-card-header">
+                      <span class="shadcn-badge shadcn-badge-secondary">Container Limits</span>
+                      <h2 class="shadcn-card-title" style="margin-top: 4px;">Speed & Resource Allocation</h2>
+                      <p class="shadcn-card-description">Set container CPU and RAM memory limits applied on next deployment restart.</p>
+                    </div>
+                    <div class="shadcn-card-content">
+                      <form class="svc-speed-form" id="svc-speed-form">
+                        <div class="shadcn-form-item" style="margin-bottom: 14px;">
                           <label class="shadcn-label" for="svc-resource-memory">Memory Limit</label>
                           <div class="svc-pill-select-wrap" style="width: 100%;">
                             <select id="svc-resource-memory" class="shadcn-select">
@@ -868,7 +929,7 @@
                             </select>
                           </div>
                         </div>
-                        <div class="shadcn-form-item">
+                        <div class="shadcn-form-item" style="margin-bottom: 18px;">
                           <label class="shadcn-label" for="svc-resource-cpus">CPU Core Limit</label>
                           <div class="svc-pill-select-wrap" style="width: 100%;">
                             <select id="svc-resource-cpus" class="shadcn-select">
@@ -880,14 +941,12 @@
                             </select>
                           </div>
                         </div>
-                      </div>
-                      <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                         <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="gauge"></i><span>Save Resource Limits</span></button>
-                        <p class="svc-speed-status" id="svc-speed-status" style="margin: 0; font-size: 12px; color: #71717a;">Current runtime status is shown on the General tab.</p>
-                      </div>
-                    </form>
+                        <p class="svc-speed-status" id="svc-speed-status" style="margin: 12px 0 0; font-size: 12px; color: #71717a;">Current runtime status is shown on the General tab.</p>
+                      </form>
+                    </div>
                   </div>
-                </div>
+                </section>
               </div>
 
               <!-- 6. REDIRECTS TAB -->
