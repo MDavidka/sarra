@@ -8006,6 +8006,7 @@ function setProjectEditTab(tab) {
     panel.classList.toggle('active', panel.dataset.projectSettingsPanel === tab);
   });
   document.querySelector('.project-settings-panels')?.scrollTo({top: 0, behavior: 'auto'});
+  refreshIcons();
 }
 
 async function copyProjectEditText(value, successMessage) {
@@ -8092,6 +8093,49 @@ function openServiceEditModal(p) {
       toast(text);
     } finally { runHealth.disabled = false; }
   };
+  const diagState = projectEditField('svc-edit-diag-state');
+  if (diagState) diagState.textContent = p.running ? 'Runtime Running' : 'Runtime Stopped';
+  const diagSummary = projectEditField('svc-edit-diag-summary');
+  if (diagSummary) diagSummary.textContent = p.running ? `Active on Port ${p.port || 'Auto'}` : 'Service Standby';
+  const diagPath = projectEditField('svc-edit-diag-path');
+  if (diagPath) diagPath.textContent = `/var/lib/syte/workspaces/${p.id} · Branch: ${p.branch || 'main'}`;
+
+  const openAiBtn = projectEditField('svc-edit-open-ai-builder-btn');
+  if (openAiBtn) {
+    openAiBtn.onclick = () => {
+      closeServiceEditModal();
+      selectedAIProject = p;
+      switchView('ai');
+      void renderAIChatWorkspace(p);
+    };
+  }
+  const triggerDeployBtn = projectEditField('svc-edit-trigger-deploy-btn');
+  if (triggerDeployBtn) {
+    triggerDeployBtn.onclick = async () => {
+      triggerDeployBtn.disabled = true;
+      const result = projectEditField('svc-edit-utility-result');
+      if (result) result.textContent = 'Triggering deployment…';
+      try {
+        await serviceDeploy(p.id);
+        if (result) result.textContent = 'Deployment triggered successfully.';
+        toast('Deployment triggered successfully.');
+      } catch (err) {
+        const text = normalizeFetchError(err?.message) || 'Deployment trigger failed.';
+        if (result) result.textContent = text;
+        toast(text);
+      } finally {
+        triggerDeployBtn.disabled = false;
+      }
+    };
+  }
+  const viewLogsBtn = projectEditField('svc-edit-view-logs-btn');
+  if (viewLogsBtn) {
+    viewLogsBtn.onclick = () => {
+      closeServiceEditModal();
+      switchSvcTab('logs');
+    };
+  }
+
   const deleteProjectBtn = projectEditField('svc-edit-delete-project-btn');
   if (deleteProjectBtn) {
     deleteProjectBtn.onclick = async () => {

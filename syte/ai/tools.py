@@ -21,6 +21,7 @@ from syte.system_stats import get_system_stats
 def get_ai_tools_schema() -> List[Dict[str, Any]]:
     """Return JSON schemas for all Syte tools formatted for OpenAI / OpenCode tool calling."""
     return [
+        # 1. Deployments & Observability
         {
             "type": "function",
             "function": {
@@ -81,6 +82,7 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        # 2. Workspace File System Operations (Read, Write, Edit, Move, Delete, List, Search, Terminal)
         {
             "type": "function",
             "function": {
@@ -147,8 +149,46 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "syte_move_file",
+                "description": "Move or rename a file or directory inside the project workspace directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source_path": {
+                            "type": "string",
+                            "description": "Relative source path of file or directory to move.",
+                        },
+                        "destination_path": {
+                            "type": "string",
+                            "description": "Relative destination path to move to.",
+                        },
+                    },
+                    "required": ["source_path", "destination_path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_delete_file",
+                "description": "Delete a file or directory inside the project workspace directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Relative path to the file or directory to delete.",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "syte_list_files",
-                "description": "List files and subdirectories in the project workspace.",
+                "description": "List files and subdirectories in the project workspace (see directory tree).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -167,20 +207,146 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "syte_search_files",
+                "description": "Search text patterns or code occurrences across all files in the project workspace (grep).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search keyword or pattern.",
+                        },
+                        "file_pattern": {
+                            "type": "string",
+                            "description": "Optional glob filter (e.g. '*.ts', '*.js', '*.py'). Default '*'.",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "syte_run_command",
-                "description": "Execute a shell command inside the project workspace directory on the host VM.",
+                "description": "Execute a shell / terminal command inside the project workspace directory on the host VM.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "Bash command to execute (e.g. 'npm test', 'git status', 'ls -la').",
+                            "description": "Bash command to execute (e.g. 'npm install', 'npm test', 'git status', 'ls -la').",
                         }
                     },
                     "required": ["command"],
                 },
             },
         },
+        # 3. Logged-in Git Account & Repository Operations
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_github_account_info",
+                "description": "Get details about the currently connected / logged-in GitHub account (username, permissions, and connection status).",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_github_list_repos",
+                "description": "List repositories accessible by the logged-in GitHub account.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Filter repositories by name or keyword.",
+                        }
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_status",
+                "description": "Get repository git status, active branch, uncommitted diffs, and recent commits in workspace.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_commit",
+                "description": "Stage files and create a git commit in the project workspace repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Git commit message describing changes.",
+                        },
+                        "files": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of relative file paths to stage (omit or pass ['*'] to stage all).",
+                        },
+                    },
+                    "required": ["message"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_push",
+                "description": "Push local commits to the remote Git repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "branch": {
+                            "type": "string",
+                            "description": "Remote branch name to push (defaults to project's active branch).",
+                        }
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_pull",
+                "description": "Pull latest updates from the remote Git repository into the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "branch": {
+                            "type": "string",
+                            "description": "Branch to pull (defaults to project's active branch).",
+                        }
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_create_branch",
+                "description": "Create and switch to a new git branch in the project repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "branch_name": {
+                            "type": "string",
+                            "description": "Name of the new branch to create and checkout.",
+                        }
+                    },
+                    "required": ["branch_name"],
+                },
+            },
+        },
+        # 4. Performance, Environment & Domains
         {
             "type": "function",
             "function": {
@@ -327,6 +493,32 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             file_path.write_text(updated, encoding="utf-8")
             return {"ok": True, "path": rel_path, "message": f"Updated '{rel_path}' successfully."}
 
+        elif tool_name == "syte_move_file":
+            src = arguments.get("source_path", "").lstrip("/\\")
+            dest = arguments.get("destination_path", "").lstrip("/\\")
+            src_path = ws_dir / src
+            dest_path = ws_dir / dest
+            if not src_path.resolve().is_relative_to(ws_dir.resolve()) or not dest_path.resolve().is_relative_to(ws_dir.resolve()):
+                return {"ok": False, "error": "Access denied: Path escapes project workspace."}
+            if not src_path.exists():
+                return {"ok": False, "error": f"Source path '{src}' does not exist."}
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src_path), str(dest_path))
+            return {"ok": True, "source": src, "destination": dest, "message": f"Moved '{src}' to '{dest}' successfully."}
+
+        elif tool_name == "syte_delete_file":
+            rel_path = arguments.get("path", "").lstrip("/\\")
+            target = ws_dir / rel_path
+            if not target.resolve().is_relative_to(ws_dir.resolve()) or target.resolve() == ws_dir.resolve():
+                return {"ok": False, "error": "Access denied: Cannot delete root workspace."}
+            if not target.exists():
+                return {"ok": False, "error": f"Path '{rel_path}' does not exist."}
+            if target.is_dir():
+                shutil.rmtree(str(target))
+            else:
+                target.unlink()
+            return {"ok": True, "path": rel_path, "message": f"Deleted '{rel_path}' successfully."}
+
         elif tool_name == "syte_list_files":
             directory = arguments.get("directory", "").lstrip("/\\")
             target_dir = (ws_dir / directory).resolve()
@@ -338,7 +530,6 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             max_depth = int(arguments.get("max_depth") or 3)
             files = []
             for root, dirs, filenames in os.walk(target_dir):
-                # Skip .git, node_modules, __pycache__, .venv
                 dirs[:] = [d for d in dirs if d not in {".git", "node_modules", "__pycache__", ".venv", ".next", "dist"}]
                 rel_root = Path(root).relative_to(ws_dir)
                 depth = len(rel_root.parts)
@@ -348,7 +539,39 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                     rel_f = str(rel_root / f) if str(rel_root) != "." else f
                     files.append(rel_f)
 
-            return {"ok": True, "directory": directory or ".", "files": sorted(files[:200])}
+            return {"ok": True, "directory": directory or ".", "count": len(files), "files": sorted(files[:300])}
+
+        elif tool_name == "syte_search_files":
+            query = str(arguments.get("query") or "").strip()
+            pattern = str(arguments.get("file_pattern") or "*").strip()
+            if not query:
+                return {"ok": False, "error": "Search query cannot be empty."}
+            matches = []
+            for root, dirs, filenames in os.walk(ws_dir):
+                dirs[:] = [d for d in dirs if d not in {".git", "node_modules", "__pycache__", ".venv", ".next", "dist"}]
+                for f in filenames:
+                    if pattern != "*" and not Path(f).match(pattern):
+                        continue
+                    full_p = Path(root) / f
+                    try:
+                        text = full_p.read_text(encoding="utf-8", errors="ignore")
+                        for line_no, line in enumerate(text.splitlines(), 1):
+                            if query.lower() in line.lower():
+                                rel_file = str(full_p.relative_to(ws_dir))
+                                matches.append({
+                                    "file": rel_file,
+                                    "line": line_no,
+                                    "content": line.strip()[:180],
+                                })
+                                if len(matches) >= 50:
+                                    break
+                    except Exception:
+                        continue
+                    if len(matches) >= 50:
+                        break
+                if len(matches) >= 50:
+                    break
+            return {"ok": True, "query": query, "matches_count": len(matches), "matches": matches}
 
         elif tool_name == "syte_run_command":
             cmd = arguments.get("command", "").strip()
@@ -374,6 +597,139 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             except asyncio.TimeoutError:
                 proc.kill()
                 return {"ok": False, "error": "Command timed out after 30 seconds."}
+
+        elif tool_name == "syte_github_account_info":
+            from syte.database import list_operator_accounts
+            from syte.github_oauth import connection_summary
+            accounts = await list_operator_accounts()
+            for acc in accounts:
+                summ = await connection_summary(acc["id"])
+                if summ.get("connected"):
+                    return {"ok": True, "connected": True, "account": summ}
+            return {"ok": True, "connected": False, "message": "No GitHub account currently connected in Syte."}
+
+        elif tool_name == "syte_github_list_repos":
+            from syte.database import list_operator_accounts
+            from syte.github_oauth import list_repositories
+            query = str(arguments.get("query") or "")
+            accounts = await list_operator_accounts()
+            for acc in accounts:
+                try:
+                    repos = await list_repositories(acc["id"], query=query)
+                    return {"ok": True, "connected": True, "count": len(repos), "repositories": repos[:40]}
+                except Exception:
+                    continue
+            return {"ok": False, "error": "No connected GitHub account with repository access."}
+
+        elif tool_name == "syte_git_status":
+            proc = await asyncio.create_subprocess_exec(
+                "git", "status", "--short", "--branch",
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            status_out = stdout.decode("utf-8", errors="replace")
+
+            proc_log = await asyncio.create_subprocess_exec(
+                "git", "log", "-n", "5", "--oneline",
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            log_out, _ = await proc_log.communicate()
+
+            return {
+                "ok": proc.returncode == 0,
+                "status": status_out.strip() or "Clean working tree",
+                "recent_commits": log_out.decode("utf-8", errors="replace").strip().splitlines(),
+                "branch": project.get("branch") or "main",
+                "git_url": project.get("git_url") or "None",
+            }
+
+        elif tool_name == "syte_git_commit":
+            msg = str(arguments.get("message") or "").strip()
+            if not msg:
+                return {"ok": False, "error": "Commit message is required."}
+            files = arguments.get("files") or []
+            if isinstance(files, str):
+                files = [files]
+
+            add_args = ["git", "add"]
+            if files and files != ["*"]:
+                add_args.extend(files)
+            else:
+                add_args.append("-A")
+
+            p_add = await asyncio.create_subprocess_exec(
+                *add_args,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await p_add.communicate()
+
+            p_commit = await asyncio.create_subprocess_exec(
+                "git", "commit", "-m", msg,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await p_commit.communicate()
+            return {
+                "ok": p_commit.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace").strip(),
+                "stderr": stderr.decode("utf-8", errors="replace").strip(),
+                "message": f"Committed with message: '{msg}'",
+            }
+
+        elif tool_name == "syte_git_push":
+            branch = str(arguments.get("branch") or project.get("branch") or "main").strip()
+            p_push = await asyncio.create_subprocess_exec(
+                "git", "push", "origin", branch,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await p_push.communicate()
+            return {
+                "ok": p_push.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace").strip(),
+                "stderr": stderr.decode("utf-8", errors="replace").strip(),
+            }
+
+        elif tool_name == "syte_git_pull":
+            branch = str(arguments.get("branch") or project.get("branch") or "main").strip()
+            p_pull = await asyncio.create_subprocess_exec(
+                "git", "pull", "origin", branch,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await p_pull.communicate()
+            return {
+                "ok": p_pull.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace").strip(),
+                "stderr": stderr.decode("utf-8", errors="replace").strip(),
+            }
+
+        elif tool_name == "syte_git_create_branch":
+            bname = str(arguments.get("branch_name") or "").strip()
+            if not bname:
+                return {"ok": False, "error": "Branch name is required."}
+            p_b = await asyncio.create_subprocess_exec(
+                "git", "checkout", "-b", bname,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await p_b.communicate()
+            return {
+                "ok": p_b.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace").strip(),
+                "stderr": stderr.decode("utf-8", errors="replace").strip(),
+                "branch": bname,
+            }
 
         elif tool_name == "syte_get_performance":
             stats = get_system_stats(sample_cpu=False)

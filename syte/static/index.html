@@ -1313,8 +1313,20 @@
                     <div class="project-settings-stat"><div><span>Release workspace</span><strong id="svc-edit-release-summary">Production protection available</strong></div><p>Production approvals, preview lifecycle, recovery points, activity, and team roles are managed in the dedicated Release workspace.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-release"><i data-lucide="rocket"></i><span>Open Release</span></button></div>
                   </section>
                   <section class="project-settings-panel" data-project-settings-panel="utilities">
-                    <header><div><p>Operator tools</p><h4>Utilities</h4><span>Quick actions that make project review and handoff faster without changing a deployment.</span></div></header>
-                    <div class="project-utilities-grid"><button type="button" class="project-utility-card" id="svc-edit-copy-id"><i data-lucide="fingerprint"></i><span>Copy project ID</span><small>Stable identifier for API and support workflows.</small></button><button type="button" class="project-utility-card" id="svc-edit-copy-config"><i data-lucide="file-json-2"></i><span>Copy configuration</span><small>Create a safe, secret-free settings snapshot.</small></button><button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe the current production endpoint now.</small></button><a class="project-utility-card" id="svc-edit-open-live" href="#" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open live project</span><small>Open the current production URL in a new tab.</small></a></div>
+                    <header><div><p>Operator tools &amp; Diagnostics</p><h4>Utilities</h4><span>Quick diagnostics, workspace access, AI builder launch, and health verification.</span></div></header>
+                    <div class="project-settings-stat" style="margin-bottom: 14px;">
+                      <div><span id="svc-edit-diag-state">Workspace Status</span><strong id="svc-edit-diag-summary">Ready</strong></div>
+                      <p id="svc-edit-diag-path" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; word-break: break-all;">Workspace loading…</p>
+                      <button type="button" class="btn-pill btn-primary" id="svc-edit-open-ai-builder-btn"><i data-lucide="bot"></i><span>Launch AI Builder</span></button>
+                    </div>
+                    <div class="project-utilities-grid">
+                      <button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe live HTTP response &amp; status.</small></button>
+                      <button type="button" class="project-utility-card" id="svc-edit-trigger-deploy-btn"><i data-lucide="rocket"></i><span>Trigger Deployment</span><small>Initiate zero-downtime server build.</small></button>
+                      <button type="button" class="project-utility-card" id="svc-edit-view-logs-btn"><i data-lucide="terminal-square"></i><span>View Router Logs</span><small>Inspect HTTP traffic and error logs.</small></button>
+                      <button type="button" class="project-utility-card" id="svc-edit-copy-id"><i data-lucide="fingerprint"></i><span>Copy project ID</span><small>Stable identifier for API workflows.</small></button>
+                      <button type="button" class="project-utility-card" id="svc-edit-copy-config"><i data-lucide="file-json-2"></i><span>Copy configuration</span><small>Create a safe settings JSON snapshot.</small></button>
+                      <a class="project-utility-card" id="svc-edit-open-live" href="#" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open live project</span><small>Open current production URL in new tab.</small></a>
+                    </div>
                     <p class="project-utility-result" id="svc-edit-utility-result" aria-live="polite"></p>
                   </section>
                   <section class="project-settings-panel" data-project-settings-panel="danger">

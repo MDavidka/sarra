@@ -56,6 +56,19 @@ class AIAgentEngine:
                 return
 
             ws_dir = _get_project_workspace_dir(project)
+            github_info = "Not connected"
+            try:
+                from syte.database import list_operator_accounts
+                from syte.github_oauth import connection_summary
+                accounts = await list_operator_accounts()
+                for acc in accounts:
+                    summ = await connection_summary(acc["id"])
+                    if summ.get("connected"):
+                        github_info = f"@{summ.get('login')} (Scopes: {summ.get('scopes')})"
+                        break
+            except Exception:
+                pass
+
             context_prompt = (
                 f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
                 f"- Project ID: {project.get('id')}\n"
@@ -64,7 +77,9 @@ class AIAgentEngine:
                 f"- Active Branch: {project.get('branch') or 'main'}\n"
                 f"- Running Status: {'Running' if project.get('running') else 'Stopped'} (Port {project.get('port') or 'unassigned'})\n"
                 f"- Connected Git Repository: {project.get('git_url') or 'None'}\n"
+                f"- Logged-in Git / GitHub Account: {github_info}\n"
                 f"- VM Workspace Directory: {str(ws_dir)}\n"
+                f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, and trigger zero-downtime deployments.\n"
                 f"------------------------------------\n"
             )
 
