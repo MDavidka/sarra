@@ -4730,11 +4730,14 @@ async function api(path, opts = {}) {
   const headers = { ...(isMultipart ? {} : { 'Content-Type': 'application/json' }), ...(opts.headers || {}) };
   if (shouldAttachApiKey(path)) headers['X-API-Key'] = getApiKey();
   const method = (opts.method || 'GET').toUpperCase();
-  const isOperatorAction = (
-    (path.startsWith('/settings/syra') || path.startsWith('/settings/router') || path.startsWith('/settings/github') || path.startsWith('/github') || path.startsWith('/tokens') || path.startsWith('/ssl') || path.startsWith('/platform/operator/profile') || path.startsWith('/auth/profile') || path.startsWith('/projects/git/github') || path === '/projects/import/github' || path.startsWith('/share/templates/') || (path === '/operator/session' && method === 'DELETE') || (path === '/auth/session' && method === 'DELETE'))
-    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
-  );
-  if (isOperatorAction && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
+  const isMutating = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+
+  if (isMutating) {
+    if (!syraCsrfToken && path !== '/operator/session' && path !== '/auth/session' && path !== '/auth/login' && path !== '/api/auth/login' && path !== '/api/operator/session') {
+      try { await restoreOperatorSession(); } catch (_) {}
+    }
+    if (syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
+  }
   let res;
   try {
     res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
@@ -4743,6 +4746,19 @@ async function api(path, opts = {}) {
       const retryHeaders = { ...headers };
       delete retryHeaders['X-API-Key'];
       res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+    }
+    if (res.status === 403 && isMutating && !opts._retriedCsrf) {
+      const cloned = res.clone();
+      const errJson = await cloned.json().catch(() => ({}));
+      const errVal = errJson?.error || errJson?.detail?.error || (typeof errJson?.detail === 'string' ? errJson.detail : '');
+      if (errVal === 'invalid_csrf_token' || String(errVal).includes('csrf')) {
+        syraCsrfToken = '';
+        try { await restoreOperatorSession(); } catch (_) {}
+        if (syraCsrfToken) {
+          const retryHeaders = { ...headers, 'X-Syte-CSRF': syraCsrfToken };
+          res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+        }
+      }
     }
   } catch (err) {
     highLoadNetworkErrorCount++;
@@ -7380,15 +7396,30 @@ async function executeAIChatTurn(project, userText) {
   let accumulatedText = '';
 
   try {
+    if (!syraCsrfToken) {
+      try { await restoreOperatorSession(); } catch (_) {}
+    }
+    const chatHeaders = { 'Content-Type': 'application/json' };
+    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
+    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
+
     const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: chatHeaders,
       body: JSON.stringify({ message: userText }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      if (assistantBubble) assistantBubble.innerHTML = `<span style="color:#ef4444;">Error: ${escapeHtml(errText || 'Failed to start AI turn')}</span>`;
+      let errMsg = 'Failed to start AI turn';
+      try {
+        const parsed = JSON.parse(errText);
+        errMsg = parsed.message || parsed.detail?.message || parsed.error || errText;
+      } catch (_) {
+        errMsg = errText || errMsg;
+      }
+      if (assistantBubble) assistantBubble.innerHTML = `<span style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</span>`;
       return;
     }
 
