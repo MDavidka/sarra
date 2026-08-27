@@ -1138,7 +1138,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
         ) as cursor:
             row = await cursor.fetchone()
             if row:
-                return {
+                res = {
                     "project_id": row[0],
                     "provider": row[1] or "openai",
                     "model": row[2] or "gpt-4o",
@@ -1152,6 +1152,12 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                     "custom_models": row[10] or default_settings["custom_models"],
                     "updated_at": row[11],
                 }
+                if not res["api_key"] and project_id != "global":
+                    async with db.execute("SELECT api_key FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
+                        g_data = await g_cur.fetchone()
+                        if g_data and g_data[0]:
+                            res["api_key"] = g_data[0]
+                return res
 
         # If project-specific is not found, fallback to global settings if querying project
         if project_id != "global":

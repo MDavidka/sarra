@@ -122,12 +122,11 @@ async def test_ai_provider_connection(
     body: AITestConnectionRequest,
 ):
     """Test connectivity to an LLM provider and model."""
-    api_key = body.api_key or ""
+    api_key = (body.api_key or "").strip()
     if not api_key:
         # Load saved key if not supplied in test payload
         current = await get_ai_builder_settings(project_id)
-        if current.get("provider") == body.provider:
-            api_key = current.get("api_key") or ""
+        api_key = current.get("api_key") or ""
 
     client = UnifiedAIClient(
         provider=body.provider,

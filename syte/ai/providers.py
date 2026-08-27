@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 import urllib.request
 import urllib.error
@@ -22,6 +23,27 @@ DEFAULT_BASE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://localhost:11434/v1",
 }
+
+ENV_KEY_MAP = {
+    "openrouter": ["OPENROUTER_API_KEY", "OPENROUTER_KEY", "OPEN_ROUTER_API_KEY"],
+    "openai": ["OPENAI_API_KEY"],
+    "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "deepseek": ["DEEPSEEK_API_KEY"],
+}
+
+
+def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
+    k = (explicit_key or "").strip()
+    if k:
+        return k
+    p = (provider or "openai").lower().strip()
+    env_vars = ENV_KEY_MAP.get(p, [])
+    for var in env_vars:
+        val = os.environ.get(var, "").strip()
+        if val:
+            return val
+    return ""
 
 
 class UnifiedAIClient:
@@ -38,8 +60,8 @@ class UnifiedAIClient:
         thinking_level: str = "medium",
     ):
         self.provider = (provider or "openai").lower().strip()
-        self.model = model or "gpt-4o"
-        self.api_key = api_key.strip()
+        self.model = (model or "gpt-4o").strip()
+        self.api_key = _resolve_api_key(self.provider, api_key)
         self.base_url = (base_url.strip() if base_url else DEFAULT_BASE_URLS.get(self.provider, "https://api.openai.com/v1")).rstrip("/")
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -47,6 +69,14 @@ class UnifiedAIClient:
 
     async def test_connection(self) -> dict[str, Any]:
         """Test API connectivity and model availability."""
+        if not self.api_key and self.provider not in ("ollama", "custom"):
+            return {
+                "ok": False,
+                "error": f"Missing API key for {self.provider.upper()}. Please enter your API key in AI Settings.",
+                "model": self.model,
+                "provider": self.provider,
+            }
+
         test_messages = [{"role": "user", "content": "Respond with 'OK' and nothing else."}]
         try:
             full_reply = ""
@@ -80,10 +110,20 @@ class UnifiedAIClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        if not self.api_key and self.provider not in ("ollama", "custom"):
+            yield {
+                "type": "error",
+                "content": f"Missing API key for {self.provider.upper()}. Please configure your API key in AI Settings.",
+            }
+            return
+
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
+            "HTTP-Referer": "https://syte.internal",
+            "X-Title": "Syte AI Builder",
+            "User-Agent": "Syte-Autonomous-Agent/1.0",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -211,9 +251,17 @@ class UnifiedAIClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        if not self.api_key:
+            yield {
+                "type": "error",
+                "content": "Missing API key for ANTHROPIC. Please configure your API key in AI Settings.",
+            }
+            return
+
         url = f"{self.base_url}/messages"
         headers = {
             "Content-Type": "application/json",
+            "Accept": "text/event-stream",
             "anthropic-version": "2023-06-01",
             "x-api-key": self.api_key,
         }
