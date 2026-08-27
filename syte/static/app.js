@@ -7598,16 +7598,24 @@ async function openAISettingsModal(project) {
   if (testBtn) {
     testBtn.onclick = async () => {
       hideAlert();
+      const selectedProvider = providerSel?.value || 'openai';
+      const enteredKey = apiKeyInput?.value?.trim() || '';
+      const hasExistingKey = apiKeyInput?.placeholder && apiKeyInput.placeholder !== 'sk-...' && !apiKeyInput.placeholder.startsWith('sk-...');
+      if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
+        showAlert(`Please enter your ${selectedProvider.toUpperCase()} API Key before testing the connection.`);
+        apiKeyInput?.focus();
+        return;
+      }
       if (testStatus) {
         testStatus.textContent = 'Testing connection…';
         testStatus.className = 'svc-ai-test-status';
       }
       try {
         const payload = {
-          provider: providerSel?.value || 'openai',
-          model: modelInput?.value || 'gpt-4o',
-          api_key: apiKeyInput?.value || '',
-          base_url: baseUrlInput?.value || '',
+          provider: selectedProvider,
+          model: modelInput?.value?.trim() || 'gpt-4o',
+          api_key: enteredKey,
+          base_url: baseUrlInput?.value?.trim() || '',
         };
         const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
