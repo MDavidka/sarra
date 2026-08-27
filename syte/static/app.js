@@ -7955,23 +7955,35 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')));
   });
-  if (tab === 'preview') {
-    previewTabActive = true;
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) renderPreviewSection(p);
-  } else if (tab === 'build' || tab === 'release') {
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderBuildWorkspace(p);
-  } else if (tab === 'redirects') {
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderRedirectsWorkspace(p);
-  } else if (tab === 'speed') {
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderProjectPerformanceStats(p);
-  } else if (tab === 'logs') {
-    const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderAppRouterLogs(p);
-  } else if (prevTab === 'preview') {
+  const p = projects.find(x => x.id === activeServiceId);
+  if (p) {
+    if (tab === 'general') {
+      renderServiceDashboard(p, false);
+    } else if (tab === 'build' || tab === 'release') {
+      void renderBuildWorkspace(p);
+    } else if (tab === 'domains') {
+      renderServiceDomainsList(p);
+    } else if (tab === 'env') {
+      renderServiceEnvCardsList(p);
+    } else if (tab === 'redirects') {
+      void renderRedirectsWorkspace(p);
+    } else if (tab === 'speed') {
+      void renderProjectPerformanceStats(p);
+    } else if (tab === 'logs') {
+      void renderAppRouterLogs(p);
+    } else if (tab === 'preview') {
+      previewTabActive = true;
+      renderPreviewSection(p);
+    } else if (tab === 'settings') {
+      const branchInput = document.getElementById('svc-settings-branch');
+      const startCmdInput = document.getElementById('svc-settings-start-command');
+      const autoDeployCheck = document.getElementById('svc-settings-auto-deploy');
+      if (branchInput) branchInput.value = p.branch || 'main';
+      if (startCmdInput) startCmdInput.value = p.start_command || '';
+      if (autoDeployCheck) autoDeployCheck.checked = Boolean(p.auto_deploy);
+    }
+  }
+  if (prevTab === 'preview' && tab !== 'preview') {
     previewTabActive = false;
     stopPreviewPoll();
     stopPreviewStream();
