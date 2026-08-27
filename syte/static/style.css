@@ -8961,14 +8961,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
    AI BUILDER & AUTONOMOUS AGENT WORKSPACE (Clean White Theme)
    ========================================================================== */
 #view-ai {
+  display: none;
   width: 100%;
   max-width: 100%;
   margin: 0;
   padding: 0 16px 20px;
   box-sizing: border-box;
   height: calc(100vh - 64px);
-  display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 #view-ai.active {
   display: flex !important;
@@ -8979,12 +8980,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   min-height: 0;
   max-height: none;
   border-radius: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .svc-ai-workspace {
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: #ffffff;
   border: 1px solid #e4e4e7;
   border-radius: 16px;
@@ -9007,6 +9012,10 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-size: 13px;
   line-height: 1.45;
   font-weight: 500;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-settings-alert.hidden {
   display: none !important;
@@ -9027,11 +9036,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-radius: 6px;
   background: #ffffff;
   border: 1px solid #d4d4d8;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-project-picker-wrap svg {
   width: 13px;
   height: 13px;
   color: #2563eb;
+  flex-shrink: 0;
 }
 .svc-ai-project-select {
   border: none;
@@ -9043,6 +9055,10 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #18181b;
   cursor: pointer;
   padding: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .svc-ai-workspace.is-fullscreen {
@@ -9065,11 +9081,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   background: #fafafa;
   gap: 12px;
   flex-wrap: wrap;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-header-lead {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1;
 }
 .svc-ai-bot-avatar {
   display: grid;
@@ -9089,6 +9109,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 .svc-ai-title-row {
   display: flex;
@@ -9135,6 +9156,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 6px;
   font-size: 11.5px;
   color: #71717a;
+  flex-wrap: wrap;
 }
 .svc-ai-model-tag, .svc-ai-provider-tag, .svc-ai-context-tag {
   display: inline-flex;
@@ -9146,15 +9168,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border: 1px solid #e4e4e7;
   font-weight: 600;
   color: #3f3f46;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .svc-ai-model-tag svg {
   width: 12px;
   height: 12px;
+  flex-shrink: 0;
 }
 .svc-ai-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 .svc-ai-action-btn {
   display: inline-flex;
@@ -9170,6 +9198,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 .svc-ai-action-btn:hover {
   background: #f4f4f5;
@@ -9192,42 +9221,48 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 /* Chat Messages Container */
 .svc-ai-messages-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  scroll-behavior: smooth;
+  background: #ffffff;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Welcome Card */
 .svc-ai-welcome-card {
   margin: auto;
-  max-width: 580px;
-  padding: 32px 24px;
+  max-width: 600px;
+  width: 100%;
+  padding: 32px 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  box-sizing: border-box;
 }
 .svc-ai-welcome-icon {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   background: #f4f4f5;
   border: 1px solid #e4e4e7;
   color: #18181b;
 }
 .svc-ai-welcome-icon svg {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 .svc-ai-welcome-card h3 {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 750;
   color: #09090b;
   letter-spacing: -0.02em;
@@ -9237,36 +9272,36 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-size: 13.5px;
   color: #71717a;
   line-height: 1.5;
-  max-width: 440px;
+  max-width: 460px;
 }
 .svc-ai-welcome-prompts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   width: 100%;
   margin-top: 14px;
 }
 .svc-ai-welcome-prompt-btn {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   text-align: left;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid #e4e4e7;
   background: #ffffff;
-  color: #27272a;
+  color: #3f3f46;
   font-size: 12.5px;
   font-weight: 550;
   line-height: 1.4;
   cursor: pointer;
   transition: all 0.15s;
+  box-sizing: border-box;
 }
 .svc-ai-welcome-prompt-btn:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #09090b;
-  transform: translateY(-1px);
 }
 .svc-ai-welcome-prompt-btn svg {
   width: 16px;
@@ -9281,6 +9316,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   gap: 12px;
   max-width: 92%;
+  box-sizing: border-box;
   animation: svc-fade-in 0.18s ease-out;
 }
 .svc-ai-message.user {
@@ -9311,6 +9347,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  flex: 1;
+  max-width: 100%;
 }
 .svc-ai-msg-bubble {
   padding: 12px 16px;
@@ -9318,6 +9356,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-size: 13.5px;
   line-height: 1.55;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-message.user .svc-ai-msg-bubble {
   background: #18181b;
@@ -9339,7 +9380,11 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   overflow-x: auto;
   font-family: monospace;
   font-size: 12.5px;
-  position: relative;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .svc-ai-msg-bubble code {
   font-family: monospace;
@@ -9347,6 +9392,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   padding: 2px 4px;
   border-radius: 4px;
   font-size: 12.5px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .svc-ai-message.user .svc-ai-msg-bubble code {
   background: rgba(255, 255, 255, 0.2);
@@ -9362,6 +9409,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   overflow: hidden;
   font-size: 12px;
   margin: 4px 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-tool-header {
   display: flex;
@@ -9372,16 +9421,22 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-bottom: 1px solid #e4e4e7;
   font-weight: 600;
   color: #3f3f46;
+  gap: 8px;
 }
 .svc-ai-tool-name {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .svc-ai-tool-name svg {
   width: 14px;
   height: 14px;
   color: #2563eb;
+  flex-shrink: 0;
 }
 .svc-ai-tool-content {
   padding: 8px 12px;
@@ -9391,7 +9446,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #52525b;
   max-height: 160px;
   overflow-y: auto;
+  overflow-x: auto;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Bottom Composer */
@@ -9402,6 +9462,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-shortcuts-bar {
   display: flex;
@@ -9410,6 +9472,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-shortcuts-bar::-webkit-scrollbar {
   display: none;
@@ -9428,6 +9492,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s;
 }
 .svc-ai-chip:hover {
@@ -9438,6 +9503,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-chip svg {
   width: 12px;
   height: 12px;
+  flex-shrink: 0;
 }
 .svc-ai-textarea-wrapper {
   display: flex;
@@ -9447,6 +9513,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border: 1px solid #d4d4d8;
   border-radius: 14px;
   background: #ffffff;
+  max-width: 100%;
+  box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .svc-ai-textarea-wrapper:focus-within {
@@ -9461,10 +9529,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   resize: none;
   font-family: inherit;
   font-size: 13.5px;
-  line-height: 1.45;
   color: #09090b;
+  line-height: 1.45;
+  min-height: 22px;
   max-height: 140px;
-  padding: 4px 0;
+  padding: 2px 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .svc-ai-input-actions {
   display: flex;
@@ -9476,15 +9549,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
+  height: 30px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 7px;
   border: 1px solid #e4e4e7;
   background: #f4f4f5;
-  color: #52525b;
+  color: #3f3f46;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .svc-ai-input-btn:hover {
   background: #e4e4e7;
@@ -9505,6 +9579,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #ffffff;
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 .svc-ai-send-btn:hover {
   background: #27272a;
@@ -9524,6 +9599,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: center;
   justify-content: center;
   padding: 16px;
+  box-sizing: border-box;
 }
 .svc-ai-settings-modal.hidden {
   display: none !important;
@@ -9547,6 +9623,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-sizing: border-box;
 }
 .svc-ai-settings-header {
   display: flex;
@@ -9554,11 +9631,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   justify-content: space-between;
   padding: 20px 24px 16px;
   border-bottom: 1px solid #f4f4f5;
+  box-sizing: border-box;
 }
 .svc-ai-settings-title-group {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1;
 }
 .svc-ai-settings-icon {
   display: grid;
@@ -9568,6 +9648,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-radius: 12px;
   background: #18181b;
   color: #ffffff;
+  flex-shrink: 0;
 }
 .svc-ai-settings-icon svg {
   width: 20px;
@@ -9579,11 +9660,13 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 750;
   color: #09090b;
   letter-spacing: -0.02em;
+  word-break: break-word;
 }
 .svc-ai-settings-title-group p {
   margin: 3px 0 0;
   font-size: 12.5px;
   color: #71717a;
+  word-break: break-word;
 }
 .svc-ai-settings-close {
   display: grid;
@@ -9595,6 +9678,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   background: #ffffff;
   color: #71717a;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .svc-ai-settings-close:hover {
   background: #f4f4f5;
@@ -9603,9 +9687,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-settings-scroll {
   padding: 20px 24px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-form-section {
   border: 1px solid #e4e4e7;
@@ -9616,6 +9703,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex-direction: column;
   gap: 14px;
   background: #fafafa;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-form-section legend {
   display: flex;
@@ -9635,11 +9724,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-form-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 .svc-ai-form-field label {
   font-size: 12px;
@@ -9650,6 +9744,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-form-field select,
 .svc-ai-form-field textarea {
   width: 100%;
+  max-width: 100%;
   padding: 9px 12px;
   border-radius: 8px;
   border: 1px solid #d4d4d8;
@@ -9659,6 +9754,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
+  word-break: break-word;
 }
 .svc-ai-form-field input:focus,
 .svc-ai-form-field select:focus,
@@ -9670,9 +9766,13 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-apikey-input-wrap input {
   padding-right: 38px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-toggle-key-btn {
   position: absolute;
@@ -9693,10 +9793,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: center;
   gap: 12px;
   margin-top: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-test-status {
   font-size: 12px;
   font-weight: 600;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .svc-ai-test-status.success {
   color: #16a34a;
@@ -9708,6 +9813,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .svc-ai-tool-item {
   display: flex;
@@ -9718,17 +9825,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   background: #ffffff;
   border: 1px solid #e4e4e7;
   cursor: pointer;
+  box-sizing: border-box;
+  width: 100%;
 }
 .svc-ai-tool-item input {
   margin-top: 3px;
   accent-color: #18181b;
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
 }
 .svc-ai-tool-item strong {
   display: block;
   font-size: 12.5px;
   color: #09090b;
+  word-break: break-word;
 }
 .svc-ai-tool-item small {
   display: block;
@@ -9736,6 +9847,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #71717a;
   line-height: 1.4;
   margin-top: 2px;
+  word-break: break-word;
 }
 .svc-ai-settings-footer {
   display: flex;
@@ -9745,15 +9857,36 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   padding: 16px 24px;
   border-top: 1px solid #f4f4f5;
   background: #fafafa;
+  box-sizing: border-box;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  #view-ai {
+    padding: 0 8px 12px;
+    height: calc(100vh - 56px);
+  }
   .svc-ai-workspace {
-    height: calc(100vh - 160px);
-    border-radius: 14px;
+    border-radius: 12px;
   }
   .svc-ai-header {
-    padding: 12px 14px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .svc-ai-messages-container {
+    padding: 12px 10px;
+    gap: 12px;
+  }
+  .svc-ai-message {
+    max-width: 100%;
+    gap: 8px;
+  }
+  .svc-ai-msg-bubble {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .svc-ai-composer {
+    padding: 8px 10px 10px;
   }
   .svc-ai-welcome-prompts {
     grid-template-columns: 1fr;
@@ -9761,12 +9894,29 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   .svc-ai-form-grid {
     grid-template-columns: 1fr;
   }
-  .svc-ai-settings-dialog {
-    border-radius: 20px 20px 0 0 !important;
-    max-height: 90vh !important;
-  }
   .svc-ai-settings-modal {
     align-items: flex-end !important;
     padding: 0 !important;
+  }
+  .svc-ai-settings-dialog {
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 92vh !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+  .svc-ai-settings-header {
+    padding: 14px 16px 12px;
+  }
+  .svc-ai-settings-scroll {
+    padding: 14px 16px;
+    gap: 14px;
+  }
+  .svc-ai-settings-alert {
+    margin: 10px 16px 0;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .svc-ai-settings-footer {
+    padding: 12px 16px;
   }
 }

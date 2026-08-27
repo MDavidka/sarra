@@ -33,14 +33,21 @@ ENV_KEY_MAP = {
 }
 
 
+def _clean_api_key(key: str) -> str:
+    k = (key or "").strip().strip('"').strip("'").strip()
+    if k.lower().startswith("bearer "):
+        k = k[7:].strip()
+    return k
+
+
 def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
-    k = (explicit_key or "").strip()
+    k = _clean_api_key(explicit_key)
     if k:
         return k
     p = (provider or "openai").lower().strip()
     env_vars = ENV_KEY_MAP.get(p, [])
     for var in env_vars:
-        val = os.environ.get(var, "").strip()
+        val = _clean_api_key(os.environ.get(var, ""))
         if val:
             return val
     return ""
@@ -165,7 +172,19 @@ class UnifiedAIClient:
             response = await asyncio.to_thread(_blocking_post)
         except urllib.error.HTTPError as err:
             err_body = err.read().decode("utf-8", errors="replace")
-            yield {"type": "error", "content": f"HTTP {err.code}: {err_body or err.reason}"}
+            err_msg = f"HTTP {err.code}: {err.reason}"
+            if err_body:
+                try:
+                    parsed = json.loads(err_body)
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        err_val = parsed["error"]
+                        if isinstance(err_val, dict) and "message" in err_val:
+                            err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
+                        elif isinstance(err_val, str):
+                            err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
+                except Exception:
+                    err_msg = f"HTTP {err.code}: {err_body}"
+            yield {"type": "error", "content": err_msg}
             return
         except Exception as exc:
             yield {"type": "error", "content": f"Connection failed: {str(exc)}"}
@@ -294,7 +313,19 @@ class UnifiedAIClient:
             response = await asyncio.to_thread(_blocking_post)
         except urllib.error.HTTPError as err:
             err_body = err.read().decode("utf-8", errors="replace")
-            yield {"type": "error", "content": f"Anthropic HTTP {err.code}: {err_body or err.reason}"}
+            err_msg = f"Anthropic HTTP {err.code}: {err.reason}"
+            if err_body:
+                try:
+                    parsed = json.loads(err_body)
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        err_val = parsed["error"]
+                        if isinstance(err_val, dict) and "message" in err_val:
+                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val['message']}"
+                        elif isinstance(err_val, str):
+                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val}"
+                except Exception:
+                    err_msg = f"Anthropic HTTP {err.code}: {err_body}"
+            yield {"type": "error", "content": err_msg}
             return
         except Exception as exc:
             yield {"type": "error", "content": f"Anthropic connection failed: {str(exc)}"}
