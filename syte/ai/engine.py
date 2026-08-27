@@ -100,10 +100,19 @@ class AIAgentEngine:
 
         # 4. Assemble system prompt with live project context
         base_prompt = ai_settings.get("system_prompt") or ""
-        full_system_prompt = f"{base_prompt}\n{context_prompt}"
+        autonomous_instructions = (
+            "\n\n--- AUTONOMOUS EXECUTION GUIDELINES ---\n"
+            "1. Plan and execute multi-step tasks continuously without halting prematurely.\n"
+            "2. At each step, explicitly state your immediate reasoning and next goal (e.g. 'Now I have to inspect the configuration...', 'Now I have to edit package.json...').\n"
+            "3. Use `syte_run_command` for terminal actions on the VM inside this workspace (e.g. `npm install`, `npm test`, build checks).\n"
+            "4. Use `syte_start_preview` to launch live hot-reloading development preview servers and retrieve the live URL for UI verification.\n"
+            "5. After editing files or making changes, always verify correctness.\n"
+            "--------------------------------------------\n"
+        )
+        full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
 
         # 5. Load message history
-        history = await list_ai_chat_messages(self.project_id, limit=30)
+        history = await list_ai_chat_messages(self.project_id, limit=50)
         formatted_messages: List[Dict[str, Any]] = []
         for msg in history:
             m = {"role": msg["role"], "content": msg.get("content") or ""}
@@ -117,17 +126,20 @@ class AIAgentEngine:
 
         tools_schema = get_ai_tools_schema() if ai_settings.get("tools_enabled") != "none" else None
 
-        # 6. Autonomous execution loop (up to 8 tool turns)
-        max_turns = 8
+        # 6. Autonomous execution loop (up to 50 tool turns for longer runs)
+        max_turns = 50
         current_turn = 0
         final_response_text = ""
 
         while current_turn < max_turns:
             current_turn += 1
             turn_tokens = ""
+            turn_thoughts = ""
             turn_tool_calls: List[Dict[str, Any]] = []
+            from datetime import datetime, timezone
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-            yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn}
+            yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "timestamp": now_iso}
 
             async for chunk in client.stream_chat(
                 formatted_messages,
@@ -135,10 +147,14 @@ class AIAgentEngine:
                 system_prompt=full_system_prompt,
             ):
                 chunk_type = chunk.get("type")
-                if chunk_type == "token":
+                if chunk_type == "thought":
+                    content = chunk.get("content", "")
+                    turn_thoughts += content
+                    yield {"event": "thought_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
+                elif chunk_type == "token":
                     content = chunk.get("content", "")
                     turn_tokens += content
-                    yield {"event": "token_delta", "delta": content}
+                    yield {"event": "token_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
                 elif chunk_type == "tool_call":
                     turn_tool_calls.append(chunk)
                 elif chunk_type == "error":
@@ -150,7 +166,7 @@ class AIAgentEngine:
             # If no tool calls were requested, the model provided its complete response
             if not turn_tool_calls:
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                yield {"event": "done", "reply": turn_tokens}
+                yield {"event": "done", "reply": turn_tokens, "timestamp": datetime.now(timezone.utc).isoformat()}
                 break
 
             # Save the assistant message with tool calls
@@ -192,11 +208,18 @@ class AIAgentEngine:
                 except json.JSONDecodeError:
                     args = {}
 
+                now_stamp = datetime.now(timezone.utc).isoformat()
+                file_target = args.get("path") or args.get("source_path") or ""
+                cmd_target = args.get("command") or ""
+
                 yield {
                     "event": "tool_call_start",
                     "tool_call_id": call_id,
                     "tool_name": tool_name,
                     "arguments": args,
+                    "file_path": file_target,
+                    "command": cmd_target,
+                    "timestamp": now_stamp,
                 }
 
                 # Execute tool
@@ -208,6 +231,9 @@ class AIAgentEngine:
                     "tool_call_id": call_id,
                     "tool_name": tool_name,
                     "result": tool_result,
+                    "file_path": file_target,
+                    "command": cmd_target,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
 
                 # Save tool result in DB & conversation messages

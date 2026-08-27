@@ -1199,36 +1199,37 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     custom_models = str(data.get("custom_models") or "").strip()
 
     async with aiosqlite.connect(settings.resolved_db_path) as db:
-        await db.execute(
-            "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(project_id) DO UPDATE SET "
-            "provider = excluded.provider, "
-            "model = excluded.model, "
-            "api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE ai_builder_settings.api_key END, "
-            "base_url = excluded.base_url, "
-            "temperature = excluded.temperature, "
-            "max_tokens = excluded.max_tokens, "
-            "thinking_level = excluded.thinking_level, "
-            "system_prompt = excluded.system_prompt, "
-            "tools_enabled = excluded.tools_enabled, "
-            "custom_models = excluded.custom_models, "
-            "updated_at = excluded.updated_at",
-            (
-                project_id,
-                provider,
-                model,
-                api_key,
-                base_url,
-                temperature,
-                max_tokens,
-                thinking_level,
-                system_prompt,
-                tools_enabled,
-                custom_models,
-                now,
-            ),
-        )
+        for pid in set([project_id, "global"]):
+            await db.execute(
+                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(project_id) DO UPDATE SET "
+                "provider = excluded.provider, "
+                "model = excluded.model, "
+                "api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE ai_builder_settings.api_key END, "
+                "base_url = excluded.base_url, "
+                "temperature = excluded.temperature, "
+                "max_tokens = excluded.max_tokens, "
+                "thinking_level = excluded.thinking_level, "
+                "system_prompt = excluded.system_prompt, "
+                "tools_enabled = excluded.tools_enabled, "
+                "custom_models = excluded.custom_models, "
+                "updated_at = excluded.updated_at",
+                (
+                    pid,
+                    provider,
+                    model,
+                    api_key,
+                    base_url,
+                    temperature,
+                    max_tokens,
+                    thinking_level,
+                    system_prompt,
+                    tools_enabled,
+                    custom_models,
+                    now,
+                ),
+            )
         await db.commit()
 
     return await get_ai_builder_settings(project_id)

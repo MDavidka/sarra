@@ -7194,138 +7194,206 @@ function formatAIMarkdown(text) {
 
 let aiChatSending = false;
 
+function getFileBadgeHtml(filePath) {
+  if (!filePath) return '';
+  const clean = filePath.replace(/^\/+/, '');
+  const parts = clean.split('/');
+  const fileName = parts[parts.length - 1] || clean;
+  let extBadge = '<span class="svc-ai-file-tag-ext ext-default"><i data-lucide="file-text"></i></span>';
+  if (fileName.endsWith('.js') || fileName.endsWith('.mjs') || fileName.endsWith('.cjs') || fileName.endsWith('.jsx')) {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-js">JS</span>';
+  } else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-ts">TS</span>';
+  } else if (fileName.endsWith('.css') || fileName.endsWith('.scss') || fileName.endsWith('.sass')) {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-css">CSS</span>';
+  } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-html">HTML</span>';
+  } else if (fileName.endsWith('.json')) {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-json">JSON</span>';
+  } else if (fileName.startsWith('.git') || fileName === '.gitignore') {
+    extBadge = '<span class="svc-ai-file-tag-ext ext-default"><i data-lucide="file-code"></i></span>';
+  }
+  return `<span class="svc-ai-file-badge" title="${escapeHtml(clean)}">${extBadge}<span>${escapeHtml(fileName)}</span></span>`;
+}
+
 async function renderAIChatWorkspace(project) {
-  if (!project) return;
+  const currentProject = selectedAIProject || project || (projects && projects[0]) || { id: 'global', name: 'sarra' };
   const messagesList = document.getElementById('svc-ai-messages-list');
-  const headerModel = document.getElementById('svc-ai-header-model-name');
-  const headerProvider = document.getElementById('svc-ai-header-provider-name');
+  const headerRepoName = document.getElementById('svc-ai-header-repo-name');
+  const projectSelect = document.getElementById('svc-ai-project-select');
   const inputModelLabel = document.getElementById('svc-ai-input-model-label');
   const form = document.getElementById('svc-ai-chat-form');
   const textarea = document.getElementById('svc-ai-input');
   const settingsBtn = document.getElementById('svc-ai-settings-btn');
+  const clearBtn = document.getElementById('svc-ai-clear-btn');
   const modelSelectorBtn = document.getElementById('svc-ai-model-selector-btn');
+  const micBtn = document.getElementById('svc-ai-mic-btn');
+  const attachBtn = document.getElementById('svc-ai-attach-btn');
 
-  // Load current AI Settings
+  if (headerRepoName) {
+    headerRepoName.textContent = currentProject.name || currentProject.id || 'sarra';
+  }
+
+  // Populate Project Repository Switcher
+  if (projectSelect) {
+    const projList = Array.isArray(projects) ? projects : [];
+    projectSelect.innerHTML = `
+      <option value="global" ${currentProject.id === 'global' ? 'selected' : ''}>Global Platform (All Projects)</option>
+      ${projList.map(p => `<option value="${escapeHtml(p.id)}" ${p.id === currentProject.id ? 'selected' : ''}>${escapeHtml(p.name || p.id)}</option>`).join('')}
+    `;
+    projectSelect.onchange = async () => {
+      const chosenId = projectSelect.value;
+      if (chosenId === 'global') {
+        selectedAIProject = { id: 'global', name: 'Global Platform' };
+      } else {
+        selectedAIProject = projList.find(p => p.id === chosenId) || { id: chosenId, name: chosenId };
+      }
+      await renderAIChatWorkspace(selectedAIProject);
+    };
+  }
+
+  // Load Shared Global AI Settings
   try {
-    const res = await api(`/projects/${encodeURIComponent(project.id)}/ai/settings`);
+    const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
-      if (headerModel) headerModel.textContent = s.model || 'gpt-4o';
       if (inputModelLabel) inputModelLabel.textContent = s.model || 'gpt-4o';
-      if (headerProvider) headerProvider.textContent = (s.provider || 'openai').toUpperCase();
     }
   } catch (_) {}
 
   // Load Messages History
   if (messagesList) {
     try {
-      const hRes = await api(`/projects/${encodeURIComponent(project.id)}/ai/history`);
+      const hRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`);
       const msgs = hRes.messages || [];
       if (!msgs.length) {
         messagesList.innerHTML = `
-          <div class="svc-ai-welcome-card">
-            <div class="svc-ai-welcome-icon"><i data-lucide="bot"></i></div>
-            <h3>Syte AI Builder</h3>
-            <p>Autonomous full-stack engineering engine connected to this project's code, terminal, deployment pipeline, and server infrastructure.</p>
-            <div class="svc-ai-welcome-prompts">
-              <button type="button" class="svc-ai-welcome-prompt-btn" data-ai-prompt="What is the current deployment and runtime status of this project?">
-                <i data-lucide="activity"></i>
-                <span>Check status & resource usage</span>
-              </button>
-              <button type="button" class="svc-ai-welcome-prompt-btn" data-ai-prompt="Show me the latest deployment stdout logs and internal router traffic.">
-                <i data-lucide="terminal"></i>
-                <span>Inspect build & router logs</span>
-              </button>
-              <button type="button" class="svc-ai-welcome-prompt-btn" data-ai-prompt="List all project source files and describe the architecture.">
-                <i data-lucide="folder-tree"></i>
-                <span>Explore repository files</span>
-              </button>
-              <button type="button" class="svc-ai-welcome-prompt-btn" data-ai-prompt="Trigger a build and zero-downtime deployment for this project now.">
-                <i data-lucide="rocket"></i>
-                <span>Trigger new deployment</span>
-              </button>
-            </div>
+          <div class="svc-ai-welcome-card" style="color:#a1a1aa; text-align:center; padding:40px 20px;">
+            <div style="font-size:24px; margin-bottom:8px;"><i data-lucide="sparkles" style="color:#38bdf8;"></i></div>
+            <h3 style="color:#f4f4f5; font-size:18px; margin:0 0 6px;">OpenCode Autonomous AI Workspace</h3>
+            <p style="font-size:13.5px; max-width:440px; margin:0 auto; line-height:1.5;">Direct terminal access, filesystem editing, hot preview servers, and zero-downtime deployments for <strong>${escapeHtml(currentProject.name || currentProject.id)}</strong>.</p>
           </div>
         `;
       } else {
-        messagesList.innerHTML = msgs
-          .map(m => {
-            if (m.role === 'user') {
-              return `
-                <div class="svc-ai-message user">
-                  <div class="svc-ai-msg-avatar"><i data-lucide="user"></i></div>
-                  <div class="svc-ai-msg-body">
-                    <div class="svc-ai-msg-bubble">${formatAIMarkdown(m.content)}</div>
-                  </div>
+        let feedHtml = '';
+        let pendingFiles = [];
+
+        for (const m of msgs) {
+          if (m.role === 'user') {
+            if (pendingFiles.length) {
+              feedHtml += `
+                <div class="svc-ai-files-edited-row">
+                  <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+                  ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
                 </div>
               `;
-            } else if (m.role === 'assistant') {
-              let toolCallsHtml = '';
-              if (m.tool_calls && Array.isArray(m.tool_calls)) {
-                toolCallsHtml = m.tool_calls
-                  .map(tc => {
-                    const fn = tc.function || {};
-                    return `
-                      <div class="svc-ai-tool-card">
-                        <div class="svc-ai-tool-header">
-                          <span class="svc-ai-tool-name"><i data-lucide="wrench"></i> Tool Call: <strong>${escapeHtml(fn.name)}</strong></span>
-                          <span class="badge">completed</span>
-                        </div>
-                        <div class="svc-ai-tool-content">${escapeHtml(fn.arguments || '')}</div>
+              pendingFiles = [];
+            }
+            feedHtml += `
+              <div class="svc-ai-message">
+                <div class="svc-ai-user-bubble">${formatAIMarkdown(m.content)}</div>
+              </div>
+            `;
+          } else if (m.role === 'assistant') {
+            if (m.tool_calls && Array.isArray(m.tool_calls)) {
+              for (const tc of m.tool_calls) {
+                const fn = tc.function || {};
+                let args = {};
+                try { args = JSON.parse(fn.arguments || '{}'); } catch (_) {}
+                const fnName = fn.name || '';
+                if (fnName.includes('file') && (args.path || args.source_path)) {
+                  pendingFiles.push(args.path || args.source_path);
+                } else if (fnName === 'syte_run_command') {
+                  if (pendingFiles.length) {
+                    feedHtml += `
+                      <div class="svc-ai-files-edited-row">
+                        <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+                        ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
                       </div>
                     `;
-                  })
-                  .join('');
-              }
-              return `
-                <div class="svc-ai-message assistant">
-                  <div class="svc-ai-msg-avatar"><i data-lucide="bot"></i></div>
-                  <div class="svc-ai-msg-body">
-                    ${m.content ? `<div class="svc-ai-msg-bubble">${formatAIMarkdown(m.content)}</div>` : ''}
-                    ${toolCallsHtml}
-                  </div>
-                </div>
-              `;
-            } else if (m.role === 'tool') {
-              return `
-                <div class="svc-ai-message assistant">
-                  <div class="svc-ai-msg-avatar"><i data-lucide="cpu"></i></div>
-                  <div class="svc-ai-msg-body">
-                    <div class="svc-ai-tool-card">
-                      <div class="svc-ai-tool-header">
-                        <span class="svc-ai-tool-name"><i data-lucide="check-circle-2"></i> Result: <strong>${escapeHtml(m.name || 'tool')}</strong></span>
-                      </div>
-                      <div class="svc-ai-tool-content">${escapeHtml(m.content || '')}</div>
+                    pendingFiles = [];
+                  }
+                  feedHtml += `
+                    <div class="svc-ai-activity-row">
+                      <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
+                      <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
                     </div>
+                  `;
+                } else if (fnName === 'syte_start_preview') {
+                  feedHtml += `
+                    <div class="svc-ai-activity-row">
+                      <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
+                      <span>starting preview server…</span>
+                    </div>
+                  `;
+                } else {
+                  feedHtml += `
+                    <div class="svc-ai-activity-row">
+                      <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
+                      <span>progress update</span>
+                    </div>
+                  `;
+                }
+              }
+            }
+
+            if (m.content) {
+              if (pendingFiles.length) {
+                feedHtml += `
+                  <div class="svc-ai-files-edited-row">
+                    <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+                    ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
                   </div>
+                `;
+                pendingFiles = [];
+              }
+              feedHtml += `
+                <div class="svc-ai-message">
+                  <div class="svc-ai-assistant-bubble">${formatAIMarkdown(m.content)}</div>
                 </div>
               `;
             }
-            return '';
-          })
-          .join('');
+          } else if (m.role === 'tool') {
+            let res = {};
+            try { res = JSON.parse(m.content || '{}'); } catch (_) {}
+            if (res.preview_url) {
+              feedHtml += `
+                <div class="svc-ai-preview-banner">
+                  <div class="svc-ai-preview-lead">
+                    <i data-lucide="zap" style="color:#f59e0b;"></i>
+                    <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
+                  </div>
+                  <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
+                    <span>Open Preview</span>
+                    <i data-lucide="external-link"></i>
+                  </a>
+                </div>
+              `;
+            }
+          }
+        }
+
+        if (pendingFiles.length) {
+          feedHtml += `
+            <div class="svc-ai-files-edited-row">
+              <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+              ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
+            </div>
+          `;
+        }
+
+        messagesList.innerHTML = feedHtml;
         messagesList.scrollTop = messagesList.scrollHeight;
       }
     } catch (_) {}
   }
-
-  // Quick Prompt Chips & Welcome Buttons
-  document.querySelectorAll('[data-ai-prompt]').forEach(btn => {
-    btn.onclick = () => {
-      const prompt = btn.getAttribute('data-ai-prompt');
-      if (prompt && textarea) {
-        textarea.value = prompt;
-        if (form) form.dispatchEvent(new Event('submit'));
-      }
-    };
-  });
 
   // Auto-resize textarea
   if (textarea && !textarea.dataset.bound) {
     textarea.dataset.bound = 'true';
     textarea.addEventListener('input', () => {
       textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(140, textarea.scrollHeight)}px`;
+      textarea.style.height = `${Math.min(160, textarea.scrollHeight)}px`;
     });
     textarea.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -7333,6 +7401,49 @@ async function renderAIChatWorkspace(project) {
         if (form) form.dispatchEvent(new Event('submit'));
       }
     });
+  }
+
+  // Clear Chat History
+  if (clearBtn) {
+    clearBtn.onclick = async () => {
+      if (confirm('Clear AI session history for this project?')) {
+        await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`, { method: 'DELETE' });
+        await renderAIChatWorkspace(currentProject);
+        toast('AI session history cleared');
+      }
+    };
+  }
+
+  // Voice Input via Speech Recognition
+  if (micBtn && !micBtn.dataset.bound) {
+    micBtn.dataset.bound = 'true';
+    micBtn.onclick = () => {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        toast('Speech recognition not supported on this browser.');
+        return;
+      }
+      try {
+        const rec = new SpeechRec();
+        rec.lang = 'en-US';
+        rec.continuous = false;
+        rec.interimResults = false;
+        micBtn.style.color = '#ef4444';
+        toast('Listening...');
+        rec.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          if (textarea) {
+            textarea.value = (textarea.value ? textarea.value + ' ' : '') + transcript;
+            textarea.dispatchEvent(new Event('input'));
+          }
+        };
+        rec.onend = () => { micBtn.style.color = ''; };
+        rec.onerror = () => { micBtn.style.color = ''; };
+        rec.start();
+      } catch (e) {
+        toast('Microphone error: ' + e.message);
+      }
+    };
   }
 
   // Form Submit (Agent Chat Turn)
@@ -7344,17 +7455,17 @@ async function renderAIChatWorkspace(project) {
       if (!text || aiChatSending) return;
       textarea.value = '';
       textarea.style.height = 'auto';
-      const targetProj = selectedAIProject || project || { id: 'global', name: 'Global Platform' };
+      const targetProj = selectedAIProject || currentProject || { id: 'global', name: 'sarra' };
       await executeAIChatTurn(targetProj, text);
     };
   }
 
-  // AI Settings Modal Opener
+  // Settings & Model Selector Modal
   if (settingsBtn) {
-    settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || project || { id: 'global', name: 'Global Platform' });
+    settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject);
   }
   if (modelSelectorBtn) {
-    modelSelectorBtn.onclick = () => openAISettingsModal(selectedAIProject || project || { id: 'global', name: 'Global Platform' });
+    modelSelectorBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject);
   }
 
   refreshIcons();
@@ -7370,33 +7481,21 @@ async function executeAIChatTurn(project, userText) {
 
   // Append user bubble
   const userEl = document.createElement('div');
-  userEl.className = 'svc-ai-message user';
-  userEl.innerHTML = `
-    <div class="svc-ai-msg-avatar"><i data-lucide="user"></i></div>
-    <div class="svc-ai-msg-body">
-      <div class="svc-ai-msg-bubble">${formatAIMarkdown(userText)}</div>
-    </div>
-  `;
+  userEl.className = 'svc-ai-message';
+  userEl.innerHTML = `<div class="svc-ai-user-bubble">${formatAIMarkdown(userText)}</div>`;
   messagesList.appendChild(userEl);
 
-  // Append assistant container
-  const assistantEl = document.createElement('div');
-  assistantEl.className = 'svc-ai-message assistant';
-  assistantEl.innerHTML = `
-    <div class="svc-ai-msg-avatar"><i data-lucide="bot"></i></div>
-    <div class="svc-ai-msg-body">
-      <div class="svc-ai-msg-bubble"><span class="typing-dots">Thinking…</span></div>
-    </div>
-  `;
-  messagesList.appendChild(assistantEl);
+  // Append live stream container
+  const streamContainer = document.createElement('div');
+  streamContainer.className = 'svc-ai-message';
+  messagesList.appendChild(streamContainer);
   messagesList.scrollTop = messagesList.scrollHeight;
   refreshIcons();
 
-  const assistantBubble = assistantEl.querySelector('.svc-ai-msg-bubble');
-  const assistantBody = assistantEl.querySelector('.svc-ai-msg-body');
-
   aiChatSending = true;
   let accumulatedText = '';
+  let pendingFileBadges = [];
+  let fileBadgesRowEl = null;
 
   try {
     if (!syraCsrfToken) {
@@ -7422,13 +7521,15 @@ async function executeAIChatTurn(project, userText) {
       } catch (_) {
         errMsg = errText || errMsg;
       }
-      if (assistantBubble) assistantBubble.innerHTML = `<span style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</span>`;
+      streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</div>`;
       return;
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let assistantBubbleEl = null;
+    let liveThinkingMarkerEl = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -7444,47 +7545,132 @@ async function executeAIChatTurn(project, userText) {
             const data = JSON.parse(trimmed.substring(6));
             const eventType = data.event;
 
-            if (eventType === 'token_delta') {
-              accumulatedText += data.delta || '';
-              if (assistantBubble) {
-                assistantBubble.innerHTML = formatAIMarkdown(accumulatedText);
+            if (eventType === 'thought_delta') {
+              if (!liveThinkingMarkerEl) {
+                liveThinkingMarkerEl = document.createElement('div');
+                liveThinkingMarkerEl.className = 'svc-ai-activity-row';
+                liveThinkingMarkerEl.innerHTML = `
+                  <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
+                  <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
+                `;
+                streamContainer.appendChild(liveThinkingMarkerEl);
+                refreshIcons();
               }
+              const thoughtSpan = liveThinkingMarkerEl.querySelector('.live-thought-text');
+              if (thoughtSpan) {
+                const thoughtAcc = (thoughtSpan.dataset.text || '') + data.delta;
+                thoughtSpan.dataset.text = thoughtAcc;
+                const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
+                thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
+              }
+              messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'token_delta') {
+              if (liveThinkingMarkerEl) {
+                liveThinkingMarkerEl.remove();
+                liveThinkingMarkerEl = null;
+              }
+              accumulatedText += data.delta || '';
+              if (!assistantBubbleEl) {
+                assistantBubbleEl = document.createElement('div');
+                assistantBubbleEl.className = 'svc-ai-assistant-bubble';
+                streamContainer.appendChild(assistantBubbleEl);
+              }
+              assistantBubbleEl.innerHTML = formatAIMarkdown(accumulatedText);
               messagesList.scrollTop = messagesList.scrollHeight;
             } else if (eventType === 'tool_call_start') {
-              const tcCard = document.createElement('div');
-              tcCard.className = 'svc-ai-tool-card';
-              tcCard.id = `tool-call-${data.tool_call_id}`;
-              tcCard.innerHTML = `
-                <div class="svc-ai-tool-header">
-                  <span class="svc-ai-tool-name"><i data-lucide="wrench"></i> Running: <strong>${escapeHtml(data.tool_name)}</strong></span>
-                  <span class="badge" style="background:#fef3c7; color:#b45309;">executing…</span>
-                </div>
-                <div class="svc-ai-tool-content">${escapeHtml(JSON.stringify(data.arguments || {}, null, 2))}</div>
-              `;
-              assistantBody.appendChild(tcCard);
-              refreshIcons();
+              if (liveThinkingMarkerEl) {
+                liveThinkingMarkerEl.remove();
+                liveThinkingMarkerEl = null;
+              }
+              const toolName = data.tool_name || '';
+              const filePath = data.file_path || (data.arguments && (data.arguments.path || data.arguments.source_path));
+              const command = data.command || (data.arguments && data.arguments.command);
+
+              if (filePath) {
+                if (!fileBadgesRowEl) {
+                  fileBadgesRowEl = document.createElement('div');
+                  fileBadgesRowEl.className = 'svc-ai-files-edited-row';
+                  fileBadgesRowEl.innerHTML = `<span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>`;
+                  streamContainer.appendChild(fileBadgesRowEl);
+                  refreshIcons();
+                }
+                const badgeHtml = getFileBadgeHtml(filePath);
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = badgeHtml;
+                if (tempDiv.firstElementChild) {
+                  fileBadgesRowEl.appendChild(tempDiv.firstElementChild);
+                  refreshIcons();
+                }
+              } else if (command) {
+                fileBadgesRowEl = null;
+                const cmdEl = document.createElement('div');
+                cmdEl.className = 'svc-ai-activity-row';
+                cmdEl.id = `cmd-${data.tool_call_id}`;
+                cmdEl.innerHTML = `
+                  <span class="svc-ai-activity-icon spinning"><i data-lucide="terminal"></i></span>
+                  <span>bash: <strong>${escapeHtml(command)}</strong></span>
+                `;
+                streamContainer.appendChild(cmdEl);
+                refreshIcons();
+              } else if (toolName === 'syte_start_preview') {
+                fileBadgesRowEl = null;
+                const prevEl = document.createElement('div');
+                prevEl.className = 'svc-ai-activity-row';
+                prevEl.id = `prev-${data.tool_call_id}`;
+                prevEl.innerHTML = `
+                  <span class="svc-ai-activity-icon spinning"><i data-lucide="zap"></i></span>
+                  <span>starting live preview server…</span>
+                `;
+                streamContainer.appendChild(prevEl);
+                refreshIcons();
+              } else {
+                fileBadgesRowEl = null;
+                const actEl = document.createElement('div');
+                actEl.className = 'svc-ai-activity-row';
+                actEl.innerHTML = `
+                  <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
+                  <span>progress update</span>
+                `;
+                streamContainer.appendChild(actEl);
+                refreshIcons();
+              }
               messagesList.scrollTop = messagesList.scrollHeight;
             } else if (eventType === 'tool_call_result') {
-              const tcCard = document.getElementById(`tool-call-${data.tool_call_id}`);
-              if (tcCard) {
-                const header = tcCard.querySelector('.svc-ai-tool-header');
-                if (header) {
-                  header.innerHTML = `
-                    <span class="svc-ai-tool-name"><i data-lucide="check-circle-2" style="color:#16a34a;"></i> Completed: <strong>${escapeHtml(data.tool_name)}</strong></span>
-                    <span class="badge" style="background:#ecfdf5; color:#15803d;">success</span>
-                  `;
-                }
-                const content = tcCard.querySelector('.svc-ai-tool-content');
-                if (content) {
-                  content.textContent = JSON.stringify(data.result || {}, null, 2);
-                }
+              const res = data.result || {};
+              const cmdEl = document.getElementById(`cmd-${data.tool_call_id}`);
+              if (cmdEl) {
+                cmdEl.className = 'svc-ai-terminal-card';
+                cmdEl.innerHTML = `
+                  <div class="svc-ai-terminal-header">
+                    <span><i data-lucide="terminal"></i> bash: <strong>${escapeHtml(res.command || data.command || '')}</strong></span>
+                    <span class="svc-ai-terminal-status-badge ${res.ok ? 'ok' : 'fail'}">${res.ok ? 'exit 0' : `exit ${res.exit_code || 1}`}</span>
+                  </div>
+                  <div class="svc-ai-terminal-body">${escapeHtml(res.stdout || res.stderr || 'Command completed.')}</div>
+                `;
+                refreshIcons();
               }
-              refreshIcons();
+              if (res.preview_url) {
+                const prevBanner = document.createElement('div');
+                prevBanner.className = 'svc-ai-preview-banner';
+                prevBanner.innerHTML = `
+                  <div class="svc-ai-preview-lead">
+                    <i data-lucide="zap" style="color:#f59e0b;"></i>
+                    <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
+                  </div>
+                  <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
+                    <span>Open Preview</span>
+                    <i data-lucide="external-link"></i>
+                  </a>
+                `;
+                streamContainer.appendChild(prevBanner);
+                refreshIcons();
+              }
+              messagesList.scrollTop = messagesList.scrollHeight;
             } else if (eventType === 'error') {
-              if (assistantBubble && !accumulatedText) {
-                assistantBubble.innerHTML = `<span style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</span>`;
+              if (assistantBubbleEl) {
+                assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
               } else {
-                toast(`AI Error: ${data.error}`);
+                streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
               }
             }
           } catch (_) {}
@@ -7492,9 +7678,7 @@ async function executeAIChatTurn(project, userText) {
       }
     }
   } catch (err) {
-    if (assistantBubble && !accumulatedText) {
-      assistantBubble.innerHTML = `<span style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</span>`;
-    }
+    streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
   } finally {
     aiChatSending = false;
     refreshIcons();

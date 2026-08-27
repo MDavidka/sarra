@@ -260,69 +260,68 @@
         <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace) -->
         <section id="view-ai" class="view">
           <div class="svc-ai-workspace" id="svc-ai-workspace">
-            <!-- Top Bar -->
+            <!-- OpenCode Styled Dark Header -->
             <header class="svc-ai-header">
-              <div class="svc-ai-header-lead">
-                <div class="svc-ai-header-titles">
-                  <div class="svc-ai-title-row">
-                    <h2>AI Builder</h2>
-                  </div>
-                  <div class="svc-ai-meta-row">
-                    <div class="svc-ai-project-picker-wrap">
-                      <i data-lucide="folder-git-2"></i>
-                      <select id="svc-ai-project-select" class="svc-ai-project-select" aria-label="Select Target Project">
-                        <!-- Populated with projects list dynamically -->
-                      </select>
-                    </div>
-                    <span class="svc-ai-model-tag" id="svc-ai-current-model-tag"><i data-lucide="cpu"></i><span id="svc-ai-header-model-name">gpt-4o</span></span>
-                    <span class="svc-ai-provider-tag" id="svc-ai-header-provider-name">OPENAI</span>
-                  </div>
-                </div>
+              <div class="svc-ai-header-left">
+                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu">
+                  <i data-lucide="menu"></i>
+                </button>
+                <div class="svc-ai-session-title" id="svc-ai-session-title">Session</div>
               </div>
-              <div class="svc-ai-header-actions">
-                <button type="button" class="svc-ai-action-btn primary" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
+              <div class="svc-ai-header-right">
+                <!-- Repository Pill Selector -->
+                <div class="svc-ai-repo-pill" id="svc-ai-repo-pill-btn" title="Switch project repository">
+                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">sarra</span>
+                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
+                  <i data-lucide="github" class="svc-ai-github-icon"></i>
+                  <select id="svc-ai-project-select" class="svc-ai-hidden-select" aria-label="Select Target Project">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <!-- Action buttons -->
+                <button type="button" class="svc-ai-icon-btn" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
                   <i data-lucide="settings-2"></i>
-                  <span>AI Settings</span>
+                </button>
+                <button type="button" class="svc-ai-icon-btn" id="svc-ai-clear-btn" title="Clear chat history">
+                  <i data-lucide="trash-2"></i>
                 </button>
               </div>
             </header>
 
-            <!-- Chat Messages Container -->
+            <!-- Chat Messages Container / OpenCode Activity Stream -->
             <div class="svc-ai-messages-container" id="svc-ai-messages-list">
-              <!-- Populated dynamically / Shows welcome card when empty -->
+              <!-- Populated dynamically -->
             </div>
 
-            <!-- Bottom Input & Controls -->
-            <footer class="svc-ai-composer">
-              <!-- Quick Command Shortcuts -->
-              <div class="svc-ai-shortcuts-bar">
-                <button type="button" class="svc-ai-chip" data-ai-prompt="What is the current deployment and runtime status of this project?">
-                  <i data-lucide="activity"></i><span>Status</span>
-                </button>
-                <button type="button" class="svc-ai-chip" data-ai-prompt="Trigger a build and zero-downtime deployment for this project now.">
-                  <i data-lucide="rocket"></i><span>Deploy</span>
-                </button>
-                <button type="button" class="svc-ai-chip" data-ai-prompt="Show me the latest deployment stdout logs and internal router traffic.">
-                  <i data-lucide="terminal"></i><span>Logs</span>
-                </button>
-                <button type="button" class="svc-ai-chip" data-ai-prompt="List all project source files and describe the architecture.">
-                  <i data-lucide="folder-tree"></i><span>List Files</span>
-                </button>
-                <button type="button" class="svc-ai-chip" data-ai-prompt="Check CPU, RAM, and Disk performance telemetry for this node.">
-                  <i data-lucide="gauge"></i><span>Performance</span>
-                </button>
-              </div>
+            <!-- Bottom Input Composer Card -->
+            <footer class="svc-ai-composer-wrapper">
+              <form class="svc-ai-composer-card" id="svc-ai-chat-form">
+                <textarea
+                  id="svc-ai-input"
+                  class="svc-ai-composer-textarea"
+                  placeholder="Describe what you want to build, debug, or understand."
+                  rows="2"
+                  autocomplete="off"
+                ></textarea>
 
-              <!-- Main Input Box -->
-              <form class="svc-ai-input-form" id="svc-ai-chat-form">
-                <div class="svc-ai-textarea-wrapper">
-                  <textarea id="svc-ai-input" placeholder="Ask AI to write code, build features, run terminal commands, inspect logs, or deploy..." rows="1" autocomplete="off"></textarea>
-                  <div class="svc-ai-input-actions">
-                    <button type="button" class="svc-ai-input-btn" id="svc-ai-model-selector-btn" title="Configure model">
-                      <i data-lucide="cpu"></i>
-                      <span id="svc-ai-input-model-label">gpt-4o</span>
+                <div class="svc-ai-composer-bottom-bar">
+                  <div class="svc-ai-composer-actions-left">
+                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach file or context">
+                      <i data-lucide="paperclip"></i>
                     </button>
-                    <button type="submit" class="svc-ai-send-btn" id="svc-ai-send-btn" title="Send message (Enter)">
+                    <button type="button" class="svc-ai-model-pill" id="svc-ai-model-selector-btn" title="Switch AI model">
+                      <span class="svc-ai-model-provider-icon"><i data-lucide="cpu"></i></span>
+                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">gpt-4o</span>
+                      <i data-lucide="chevron-down" class="svc-ai-chevron-small"></i>
+                    </button>
+                  </div>
+
+                  <div class="svc-ai-composer-actions-right">
+                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-mic-btn" title="Voice Input">
+                      <i data-lucide="mic"></i>
+                    </button>
+                    <button type="submit" class="svc-ai-send-round-btn" id="svc-ai-send-btn" title="Send message (Enter)">
                       <i data-lucide="arrow-up"></i>
                     </button>
                   </div>
