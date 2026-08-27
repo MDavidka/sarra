@@ -246,3 +246,25 @@ def test_project_editor_is_a_scoped_operational_settings_workspace():
     assert ".project-settings-dialog" in css
     assert ".project-settings-nav" in css
     assert ".project-utilities-grid" in css
+
+
+def test_project_edit_uses_white_mobile_header_and_real_section_rail():
+    index = (ROOT / "syte/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "syte/static/app.js").read_text(encoding="utf-8")
+    css = (ROOT / "syte/static/style.css").read_text(encoding="utf-8")
+    mapping = (ROOT / "docs/project_edit_reference_mapping.md").read_text(encoding="utf-8")
+
+    assert 'class="project-edit-mobile-header"' in index
+    assert 'id="svc-mobile-title"' in index
+    assert 'class="project-edit-mobile-rail"' in index
+    for tab in ("general", "release", "domains", "env", "firewall", "cdn", "speed", "logs", "rollbacks", "preview", "settings"):
+        assert f'data-svc-rail="{tab}"' in index
+    assert "document.body.classList.toggle('project-edit-view', name === 'service');" in app
+    assert "project-edit-mobile-rail [data-svc-rail]" in app
+    assert "[data-svc-back]" in app
+    assert "body.project-edit-mode" not in app
+    assert "body.project-edit-mode" not in css
+    assert "Project Edit: white mobile-first operational layout" in css
+    assert "@media(max-width:768px){body.project-edit-view .main-topbar{display:none}" in css
+    assert "Analytics counters, chart, and page breakdown" in mapping
+    assert "Omit rather than invent analytics." in mapping
