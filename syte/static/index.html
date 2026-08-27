@@ -156,6 +156,9 @@
               <button type="button" class="sidebar-tree-link active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>Overview</span>
               </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="ai">
+                <i data-lucide="bot"></i><span>AI Builder</span>
+              </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="domains">
                 <i data-lucide="globe"></i><span>Domain</span>
               </button>
@@ -331,6 +334,7 @@
             <!-- Horizontally scrollable pill tabs (subtle rail) -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="ai" role="tab"><i data-lucide="bot"></i><span>AI Builder</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
@@ -544,6 +548,91 @@
                     </div>
                   </div>
 
+                </div>
+              </div>
+
+              <!-- AI BUILDER TAB (Fullscreen Autonomous Agent Workspace) -->
+              <div class="svc-tab-panel" id="svc-panel-ai" data-svc-panel="ai">
+                <div class="svc-ai-workspace" id="svc-ai-workspace">
+                  <!-- Top Bar -->
+                  <header class="svc-ai-header">
+                    <div class="svc-ai-header-lead">
+                      <div class="svc-ai-bot-avatar">
+                        <i data-lucide="bot"></i>
+                      </div>
+                      <div class="svc-ai-header-titles">
+                        <div class="svc-ai-title-row">
+                          <h2>AI Builder</h2>
+                          <span class="svc-ai-badge-live" id="svc-ai-status-indicator">
+                            <span class="pulse-dot"></span>
+                            <span id="svc-ai-status-text">Ready</span>
+                          </span>
+                        </div>
+                        <div class="svc-ai-meta-row">
+                          <span class="svc-ai-model-tag" id="svc-ai-current-model-tag"><i data-lucide="cpu"></i><span id="svc-ai-header-model-name">gpt-4o</span></span>
+                          <span class="svc-ai-provider-tag" id="svc-ai-header-provider-name">OpenAI</span>
+                          <span class="svc-ai-context-tag" id="svc-ai-header-project-name">Project</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="svc-ai-header-actions">
+                      <button type="button" class="svc-ai-action-btn" id="svc-ai-clear-btn" title="Clear chat history">
+                        <i data-lucide="trash-2"></i>
+                        <span>Clear</span>
+                      </button>
+                      <button type="button" class="svc-ai-action-btn" id="svc-ai-fullscreen-btn" title="Toggle fullscreen mode">
+                        <i data-lucide="maximize-2"></i>
+                        <span>Fullscreen</span>
+                      </button>
+                      <button type="button" class="svc-ai-action-btn primary" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
+                        <i data-lucide="settings-2"></i>
+                        <span>AI Settings</span>
+                      </button>
+                    </div>
+                  </header>
+
+                  <!-- Chat Messages Container -->
+                  <div class="svc-ai-messages-container" id="svc-ai-messages-list">
+                    <!-- Populated dynamically / Shows welcome card when empty -->
+                  </div>
+
+                  <!-- Bottom Input & Controls -->
+                  <footer class="svc-ai-composer">
+                    <!-- Quick Command Shortcuts -->
+                    <div class="svc-ai-shortcuts-bar">
+                      <button type="button" class="svc-ai-chip" data-ai-prompt="What is the current deployment and runtime status of this project?">
+                        <i data-lucide="activity"></i><span>Status</span>
+                      </button>
+                      <button type="button" class="svc-ai-chip" data-ai-prompt="Trigger a build and zero-downtime deployment for this project now.">
+                        <i data-lucide="rocket"></i><span>Deploy</span>
+                      </button>
+                      <button type="button" class="svc-ai-chip" data-ai-prompt="Show me the latest deployment stdout logs and internal router traffic.">
+                        <i data-lucide="terminal"></i><span>Logs</span>
+                      </button>
+                      <button type="button" class="svc-ai-chip" data-ai-prompt="List all project source files and describe the architecture.">
+                        <i data-lucide="folder-tree"></i><span>List Files</span>
+                      </button>
+                      <button type="button" class="svc-ai-chip" data-ai-prompt="Check CPU, RAM, and Disk performance telemetry for this node.">
+                        <i data-lucide="gauge"></i><span>Performance</span>
+                      </button>
+                    </div>
+
+                    <!-- Main Input Box -->
+                    <form class="svc-ai-input-form" id="svc-ai-chat-form">
+                      <div class="svc-ai-textarea-wrapper">
+                        <textarea id="svc-ai-input" placeholder="Ask AI to write code, build features, run terminal commands, inspect logs, or deploy..." rows="1" autocomplete="off"></textarea>
+                        <div class="svc-ai-input-actions">
+                          <button type="button" class="svc-ai-input-btn" id="svc-ai-model-selector-btn" title="Configure model">
+                            <i data-lucide="cpu"></i>
+                            <span id="svc-ai-input-model-label">gpt-4o</span>
+                          </button>
+                          <button type="submit" class="svc-ai-send-btn" id="svc-ai-send-btn" title="Send message (Enter)">
+                            <i data-lucide="arrow-up"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </footer>
                 </div>
               </div>
 
@@ -1253,6 +1342,170 @@
                 </div>
               </div>
               <footer class="project-settings-footer"><span id="svc-edit-save-state">Changes are saved together.</span><div><button type="button" class="btn-pill btn-ghost" id="svc-edit-cancel-btn">Cancel</button><button type="button" class="btn-pill btn-primary" id="svc-edit-save-btn"><i data-lucide="save"></i><span>Save changes</span></button></div></footer>
+            </div>
+          </div>
+
+          <!-- AI BUILDER SETTINGS MODAL / DRAWER -->
+          <div class="svc-ai-settings-modal hidden" id="svc-ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="svc-ai-settings-title">
+            <div class="svc-ai-settings-backdrop" id="svc-ai-settings-backdrop"></div>
+            <div class="svc-ai-settings-dialog">
+              <header class="svc-ai-settings-header">
+                <div class="svc-ai-settings-title-group">
+                  <span class="svc-ai-settings-icon"><i data-lucide="bot"></i></span>
+                  <div>
+                    <h3 id="svc-ai-settings-title">AI Builder Configuration</h3>
+                    <p>Configure model providers, API keys, custom endpoints, system prompt, and framework tools.</p>
+                  </div>
+                </div>
+                <button type="button" class="svc-ai-settings-close" id="svc-ai-settings-close-btn" aria-label="Close settings">
+                  <i data-lucide="x"></i>
+                </button>
+              </header>
+
+              <form class="svc-ai-settings-form" id="svc-ai-settings-form">
+                <div class="svc-ai-settings-scroll">
+                  <!-- Section 1: LLM Provider & Credentials -->
+                  <fieldset class="svc-ai-form-section">
+                    <legend><i data-lucide="key-round"></i><span>Provider & Credentials</span></legend>
+                    <div class="svc-ai-form-grid">
+                      <div class="svc-ai-form-field">
+                        <label for="svc-ai-setting-provider">Provider</label>
+                        <select id="svc-ai-setting-provider">
+                          <option value="openai">OpenAI</option>
+                          <option value="anthropic">Anthropic (Claude)</option>
+                          <option value="gemini">Google Gemini</option>
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="ollama">Local Ollama</option>
+                          <option value="custom">Custom (OpenAI-Compatible)</option>
+                        </select>
+                      </div>
+                      <div class="svc-ai-form-field">
+                        <label for="svc-ai-setting-model">Model</label>
+                        <input id="svc-ai-setting-model" placeholder="gpt-4o or claude-3-5-sonnet-20241022" list="svc-ai-preset-models" autocomplete="off" required>
+                        <datalist id="svc-ai-preset-models">
+                          <option value="gpt-4o">
+                          <option value="gpt-4o-mini">
+                          <option value="o3-mini">
+                          <option value="claude-3-5-sonnet-20241022">
+                          <option value="claude-3-5-haiku-20241022">
+                          <option value="gemini-1.5-pro">
+                          <option value="gemini-2.0-flash">
+                          <option value="deepseek-chat">
+                          <option value="deepseek-reasoner">
+                          <option value="qwen2.5-coder:32b">
+                        </datalist>
+                      </div>
+                    </div>
+
+                    <div class="svc-ai-form-field">
+                      <label for="svc-ai-setting-apikey">API Key / Token</label>
+                      <div class="svc-ai-apikey-input-wrap">
+                        <input id="svc-ai-setting-apikey" type="password" placeholder="sk-..." autocomplete="new-password">
+                        <button type="button" class="svc-ai-toggle-key-btn" id="svc-ai-toggle-key-visibility" title="Show/Hide API Key">
+                          <i data-lucide="eye"></i>
+                        </button>
+                      </div>
+                      <small class="hint">Keys are encrypted and stored safely on the host server.</small>
+                    </div>
+
+                    <div class="svc-ai-form-field">
+                      <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
+                      <input id="svc-ai-setting-baseurl" placeholder="https://api.openai.com/v1 or http://localhost:11434/v1" autocomplete="off">
+                      <small class="hint">Leave empty to use the provider's official default endpoint.</small>
+                    </div>
+
+                    <div class="svc-ai-test-row">
+                      <button type="button" class="btn-pill btn-secondary" id="svc-ai-test-connection-btn">
+                        <i data-lucide="zap"></i><span>Test Connection</span>
+                      </button>
+                      <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
+                    </div>
+                  </fieldset>
+
+                  <!-- Section 2: Generation Parameters -->
+                  <fieldset class="svc-ai-form-section">
+                    <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
+                    <div class="svc-ai-form-grid">
+                      <div class="svc-ai-form-field">
+                        <label for="svc-ai-setting-temp">Temperature (<span id="svc-ai-temp-val">0.7</span>)</label>
+                        <input id="svc-ai-setting-temp" type="range" min="0" max="1.5" step="0.05" value="0.7">
+                      </div>
+                      <div class="svc-ai-form-field">
+                        <label for="svc-ai-setting-maxtokens">Max Output Tokens (<span id="svc-ai-maxtokens-val">4096</span>)</label>
+                        <input id="svc-ai-setting-maxtokens" type="range" min="512" max="16384" step="512" value="4096">
+                      </div>
+                    </div>
+                    <div class="svc-ai-form-field">
+                      <label for="svc-ai-setting-thinking">Thinking / Reasoning Level</label>
+                      <select id="svc-ai-setting-thinking">
+                        <option value="none">None (Fast responses)</option>
+                        <option value="low">Low reasoning budget</option>
+                        <option value="medium" selected>Medium (Balanced autonomous execution)</option>
+                        <option value="high">High (Deep reasoning / Complex architecture)</option>
+                      </select>
+                    </div>
+                  </fieldset>
+
+                  <!-- Section 3: Autonomous System Prompt -->
+                  <fieldset class="svc-ai-form-section">
+                    <legend><i data-lucide="sparkles"></i><span>System Instructions & Persona</span></legend>
+                    <div class="svc-ai-form-field">
+                      <label for="svc-ai-setting-prompt">System Prompt</label>
+                      <textarea id="svc-ai-setting-prompt" rows="4" placeholder="Enter system instructions for the AI Builder..."></textarea>
+                    </div>
+                  </fieldset>
+
+                  <!-- Section 4: Syte Framework Tool Permissions -->
+                  <fieldset class="svc-ai-form-section">
+                    <legend><i data-lucide="shield-check"></i><span>Syte Framework Tools & Access</span></legend>
+                    <div class="svc-ai-tools-list">
+                      <label class="svc-ai-tool-item">
+                        <input type="checkbox" checked disabled>
+                        <div>
+                          <strong>Workspace File System (Read, Write, Edit, Search)</strong>
+                          <small>Allows the AI to inspect and modify project source code in the VM workspace.</small>
+                        </div>
+                      </label>
+                      <label class="svc-ai-tool-item">
+                        <input type="checkbox" checked disabled>
+                        <div>
+                          <strong>Terminal Shell Execution (Bash)</strong>
+                          <small>Allows the AI to run build commands, tests, package installs, and git operations.</small>
+                        </div>
+                      </label>
+                      <label class="svc-ai-tool-item">
+                        <input type="checkbox" checked disabled>
+                        <div>
+                          <strong>Syte Deployment Pipeline</strong>
+                          <small>Allows the AI to trigger zero-downtime builds, restart services, and check status.</small>
+                        </div>
+                      </label>
+                      <label class="svc-ai-tool-item">
+                        <input type="checkbox" checked disabled>
+                        <div>
+                          <strong>Diagnostics, Deployment Logs & Router Logs</strong>
+                          <small>Allows the AI to read stdout/stderr logs and diagnose runtime HTTP traffic errors.</small>
+                        </div>
+                      </label>
+                      <label class="svc-ai-tool-item">
+                        <input type="checkbox" checked disabled>
+                        <div>
+                          <strong>Infrastructure, Domains & Environment Variables</strong>
+                          <small>Allows the AI to configure custom hostnames, TLS certificates, and secrets.</small>
+                        </div>
+                      </label>
+                    </div>
+                  </fieldset>
+                </div>
+
+                <footer class="svc-ai-settings-footer">
+                  <button type="button" class="btn-pill btn-ghost" id="svc-ai-settings-cancel-btn">Cancel</button>
+                  <button type="submit" class="btn-pill btn-primary" id="svc-ai-settings-save-btn">
+                    <i data-lucide="save"></i><span>Save AI Settings</span>
+                  </button>
+                </footer>
+              </form>
             </div>
           </div>
         </section>
