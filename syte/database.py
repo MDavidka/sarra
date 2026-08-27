@@ -240,6 +240,20 @@ CREATE TABLE IF NOT EXISTS share_instances (
 );
 CREATE INDEX IF NOT EXISTS idx_share_instances_owner
     ON share_instances(owner_account_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_redirects (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    target_url TEXT NOT NULL,
+    status_code INTEGER NOT NULL DEFAULT 301,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_redirects_project
+    ON project_redirects(project_id, created_at DESC);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -806,5 +820,56 @@ async def list_pwa_push_subscriptions() -> list[dict[str, Any]]:
 async def delete_pwa_push_subscription(endpoint: str) -> bool:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         cursor = await db.execute("DELETE FROM pwa_push_subscriptions WHERE endpoint = ?", (endpoint,))
+        await db.commit()
+        return bool(cursor.rowcount)
+
+
+async def list_project_redirects(project_id: str) -> list[dict[str, Any]]:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM project_redirects WHERE project_id = ? ORDER BY created_at DESC", (project_id,)
+        ) as cur:
+            rows = [dict(row) for row in await cur.fetchall()]
+    for r in rows:
+        r["is_active"] = bool(r.get("is_active"))
+    return rows
+
+
+async def create_project_redirect(
+    project_id: str,
+    source_path: str,
+    target_url: str,
+    status_code: int = 301,
+) -> dict[str, Any]:
+    redirect_id = str(uuid.uuid4())
+    now = _now()
+    clean_src = "/" + source_path.strip().lstrip("/")
+    clean_target = target_url.strip()
+    code = 302 if int(status_code) == 302 else 301
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """INSERT INTO project_redirects (id, project_id, source_path, target_url, status_code, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+            (redirect_id, project_id, clean_src, clean_target, code, now, now),
+        )
+        await db.commit()
+    return {
+        "id": redirect_id,
+        "project_id": project_id,
+        "source_path": clean_src,
+        "target_url": clean_target,
+        "status_code": code,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def delete_project_redirect(project_id: str, redirect_id: str) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM project_redirects WHERE id = ? AND project_id = ?", (redirect_id, project_id)
+        )
         await db.commit()
         return bool(cursor.rowcount)
