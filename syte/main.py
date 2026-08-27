@@ -1175,6 +1175,36 @@ async def _require_release_approver(project_id: str, operator: dict[str, Any]) -
         raise HTTPException(403, "Only a project owner or admin can approve a protected release.")
 
 
+@app.get("/api/projects/{project_id}/builds")
+@app.get("/api/projects/{project_id}/builds/track")
+async def api_track_project_builds(project_id: str, limit: int = 20):
+    from syte.build_tracker import track_project_builds
+
+    try:
+        return await track_project_builds(project_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/projects/{project_id}/builds/trigger")
+async def api_trigger_project_build(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    queued, message = await deployment.issue_deploy(project_id, trigger="manual_build")
+    if not queued:
+        raise HTTPException(409, message)
+    from syte.build_tracker import track_project_builds
+    return {
+        "ok": True,
+        "message": f"Build queued successfully: {message}",
+        "track": await track_project_builds(project_id, limit=5),
+    }
+
+
 @app.get("/api/projects/{project_id}/release")
 async def api_release_workspace(project_id: str, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     from syte.release_operations import workspace

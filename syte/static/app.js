@@ -6747,8 +6747,76 @@ function renderServiceManagementWorkspaces(project) {
   const refreshRollbackHistory = document.getElementById('svc-rollback-refresh');
   if (refreshRollbackHistory) refreshRollbackHistory.onclick = () => renderServiceRollbackHistory(project);
   if (activeSvcTab === 'rollbacks') void renderServiceRollbackHistory(project);
-  if (activeSvcTab === 'release') void renderReleaseWorkspace(project);
+  if (activeSvcTab === 'build' || activeSvcTab === 'release') void renderBuildWorkspace(project);
   refreshIcons();
+}
+
+async function renderBuildWorkspace(project) {
+  const target = document.getElementById('svc-build-cards-list');
+  if (!target) return;
+  target.innerHTML = '<p class="hint">Loading build track status…</p>';
+
+  const triggerBtn = document.getElementById('svc-build-trigger-btn');
+  if (triggerBtn) {
+    triggerBtn.onclick = async () => {
+      triggerBtn.disabled = true;
+      try {
+        const res = await api(`/projects/${encodeURIComponent(project.id)}/builds/trigger`, { method: 'POST' });
+        toast(res.message || 'Build queued successfully');
+        await renderBuildWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to trigger build');
+      } finally {
+        triggerBtn.disabled = false;
+      }
+    };
+  }
+  const refreshBtn = document.getElementById('svc-build-refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.onclick = () => renderBuildWorkspace(project);
+  }
+
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/builds/track`);
+    const builds = payload.builds || [];
+    if (!builds.length) {
+      target.innerHTML = '<p class="hint">No builds recorded yet. Click "Trigger Build" to start a build.</p>';
+      return;
+    }
+
+    target.innerHTML = builds.map((b) => {
+      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
+      const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
+      const statusLabel = isSuccess ? 'succesfull' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
+      const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'Mdavidka/syra');
+      const titleText = b.commit_title || 'fix(security):resolve conflicts';
+
+      return `
+        <article class="svc-build-track-card">
+          <div class="svc-build-card-top">
+            <strong class="svc-build-commit-title">${esc(titleText)}</strong>
+            <div class="svc-build-status-pill ${statusClass}">
+              <span class="svc-build-status-dot"></span>
+              <span class="svc-build-status-text">${esc(statusLabel)}</span>
+            </div>
+          </div>
+          <div class="svc-build-card-bottom">
+            <button type="button" class="svc-fast-preview-pill" onclick="servicePreviewStart('${project.id}')" title="Fast preview">
+              <i data-lucide="zap"></i>
+              <span>fast preview</span>
+            </button>
+            <a href="${esc(project.git_url || `https://github.com/${repoText}`)}" target="_blank" rel="noopener" class="svc-repo-pill" title="Repository">
+              <i data-lucide="github"></i>
+              <span>${esc(repoText)}</span>
+            </a>
+          </div>
+        </article>
+      `;
+    }).join('');
+    refreshIcons();
+  } catch (err) {
+    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to track builds.')}</p>`;
+  }
 }
 
 function releaseEventTime(value) {
@@ -6756,137 +6824,34 @@ function releaseEventTime(value) {
 }
 
 async function renderReleaseWorkspace(project) {
-  const target = document.getElementById('release-workspace-content');
-  if (!target) return;
-  target.innerHTML = '<p class="hint">Loading release controls…</p>';
-  try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/release`);
-    const workspace = payload.workspace || {};
-    const policy = workspace.policy || {};
-    const environments = workspace.environments || [];
-    const approvals = workspace.approvals || [];
-    const team = workspace.team || [];
-    const restorePoints = workspace.restore_points || [];
-    const events = workspace.events || [];
-    const hostMetrics = workspace.host_metrics || {};
-    const hostPressure = Math.max(Number(hostMetrics.cpu_percent || 0), Number(hostMetrics.ram_percent || 0), Number(hostMetrics.disk_percent || 0));
-    const hostPressureState = hostPressure >= Number(policy.resource_alert_percent || 85) ? 'Attention' : 'Within policy';
-    const canManage = Boolean(payload.can_manage);
-    const disabled = canManage ? '' : ' disabled';
-    const envRows = environments.map((environment) => {
-      const isPreview = environment.kind === 'preview';
-      const action = isPreview
-        ? `<div class="release-row-actions"><button type="button" class="btn-pill btn-ghost btn-sm" data-release-preview="start"${disabled}><i data-lucide="monitor-up"></i><span>Start</span></button><button type="button" class="btn-pill btn-ghost btn-sm" data-release-preview="stop"${disabled}><i data-lucide="square"></i><span>Stop</span></button></div>`
-        : `<button type="button" class="btn-pill btn-primary btn-sm" data-release-deploy="${esc(environment.id)}"${disabled}><i data-lucide="rocket"></i><span>${environment.require_approval ? 'Request release' : 'Release'}</span></button>`;
-      return `<article class="release-environment-card release-${esc(environment.kind)}">
-        <header><div><span class="release-environment-kind">${esc(environment.kind)}</span><h3>${esc(environment.name)}</h3></div>${action}</header>
-        <form class="release-environment-form" data-release-environment="${esc(environment.id)}">
-          <label>Branch<input name="branch" value="${esc(environment.branch || 'main')}"${disabled}></label>
-          <label>Domain<input name="domain" value="${esc(environment.domain || '')}" placeholder="Optional domain"${disabled}></label>
-          <label class="release-switch"><input type="checkbox" name="auto_deploy"${environment.auto_deploy ? ' checked' : ''}${disabled}><span>Automatic deploy</span></label>
-          <label class="release-switch"><input type="checkbox" name="require_approval"${environment.require_approval ? ' checked' : ''}${disabled}><span>Require approval</span></label>
-          ${canManage ? '<button type="submit" class="release-inline-save">Save</button>' : ''}
-        </form>
-      </article>`;
-    }).join('');
-    const approvalRows = approvals.length
-      ? approvals.map((approval) => `<article class="release-list-row"><div><strong>${esc(approval.environment_name || 'Release')} · ${esc(approval.status)}</strong><span>${esc(approval.requested_by || 'operator')} · ${esc(releaseEventTime(approval.created_at))}${approval.note ? ` · ${esc(approval.note)}` : ''}</span></div>${approval.status === 'pending' && canManage ? `<div class="release-row-actions"><button type="button" data-release-approval="approve:${esc(approval.id)}">Approve</button><button type="button" data-release-approval="reject:${esc(approval.id)}">Reject</button></div>` : ''}</article>`).join('')
-      : '<p class="release-empty">No approval requests. Protected environments create one before they queue a release.</p>';
-    const restoreRows = restorePoints.length
-      ? restorePoints.map((point) => `<article class="release-list-row"><div><strong>${esc(point.label)}</strong><span>${esc(point.status)} · ${esc(releaseEventTime(point.created_at))}</span></div>${canManage && point.status !== 'verified' ? `<button type="button" data-release-verify="${esc(point.id)}">Verify</button>` : ''}</article>`).join('')
-      : '<p class="release-empty">No recovery points recorded yet.</p>';
-    const teamRows = team.length
-      ? team.map((member) => `<article class="release-list-row"><div><strong>${esc(member.display_name || member.email)}</strong><span>${esc(member.email)} · ${esc(member.role)}</span></div>${canManage ? `<button type="button" data-release-member-delete="${esc(member.id)}" aria-label="Remove ${esc(member.email)}"><i data-lucide="x"></i></button>` : ''}</article>`).join('')
-      : '<p class="release-empty">Only the current operator can manage this project until a project role is added.</p>';
-    const eventRows = events.length
-      ? events.slice(0, 12).map((event) => `<article class="release-timeline-row ${cssClassSafe(event.severity || 'info')}"><span></span><div><strong>${esc(event.title)}</strong><small>${esc(event.detail || event.event_type || '')} · ${esc(releaseEventTime(event.created_at))}</small></div></article>`).join('')
-      : '<p class="release-empty">Release, preview, recovery, and policy activity will appear here.</p>';
-    target.innerHTML = `
-      <div class="release-overview-strip">
-        <div><span>Strategy</span><strong>${esc(String(policy.deployment_strategy || 'rolling').replace('_', ' '))}</strong></div>
-        <div><span>Preview retention</span><strong>${esc(String(policy.preview_retention_days || 7))} days</strong></div>
-        <div><span>Host pressure</span><strong>${esc(String(Math.round(hostPressure)))}% · ${esc(hostPressureState)}</strong></div>
-        <div><span>Resource alert</span><strong>${esc(String(policy.resource_alert_percent || 85))}%</strong></div>
-        <div><span>Backup policy</span><strong>${policy.backup_enabled ? esc(policy.backup_schedule || 'daily') : 'Off'}</strong></div>
-      </div>
-      ${!canManage ? '<p class="release-readonly"><i data-lucide="lock"></i>You have view-only project access. Ask an owner, admin, or deployer to change release controls.</p>' : ''}
-      <section class="release-section"><header><div><p>Release path</p><h3>Environments</h3></div><span>Each environment keeps its own branch, domain, automation, and protection policy.</span></header><div class="release-environments-grid">${envRows}</div></section>
-      <section class="release-section release-protection-grid"><div><header><div><p>Production control</p><h3>Approvals</h3></div></header><div class="release-list">${approvalRows}</div></div><div><header><div><p>Release policy</p><h3>Strategy and guardrails</h3></div></header><form id="release-policy-form" class="release-policy-form"><label>Strategy<select name="deployment_strategy"${disabled}><option value="rolling"${policy.deployment_strategy === 'rolling' ? ' selected' : ''}>Rolling</option><option value="blue_green"${policy.deployment_strategy === 'blue_green' ? ' selected' : ''}>Blue-green</option><option value="canary"${policy.deployment_strategy === 'canary' ? ' selected' : ''}>Canary</option></select></label><label>Canary traffic<input name="canary_percent" type="number" min="1" max="100" value="${esc(String(policy.canary_percent || 10))}"${disabled}></label><label>Alert threshold<input name="resource_alert_percent" type="number" min="50" max="100" value="${esc(String(policy.resource_alert_percent || 85))}"${disabled}></label><label>Storage budget (MB)<input name="storage_limit_mb" type="number" min="0" value="${esc(String(policy.storage_limit_mb || 0))}"${disabled}></label><label class="release-switch"><input name="preview_enabled" type="checkbox"${policy.preview_enabled ? ' checked' : ''}${disabled}><span>Allow preview deployments</span></label><label class="release-switch"><input name="backup_enabled" type="checkbox"${policy.backup_enabled ? ' checked' : ''}${disabled}><span>Track backup policy</span></label><label>Backup cadence<select name="backup_schedule"${disabled}><option value="daily"${policy.backup_schedule === 'daily' ? ' selected' : ''}>Daily</option><option value="weekly"${policy.backup_schedule === 'weekly' ? ' selected' : ''}>Weekly</option></select></label><label>Keep backups<input name="backup_retention_days" type="number" min="1" max="3650" value="${esc(String(policy.backup_retention_days || 14))}"${disabled}></label>${canManage ? '<button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save policy</span></button>' : ''}</form></div></section>
-      <section class="release-section release-recovery-grid"><div><header><div><p>Recovery readiness</p><h3>Restore points</h3></div>${canManage ? '<button type="button" class="btn-pill btn-ghost btn-sm" id="release-create-restore"><i data-lucide="archive-restore"></i><span>Record point</span></button>' : ''}</header><div class="release-list">${restoreRows}</div></div><div><header><div><p>Project access</p><h3>Team roles</h3></div></header><div class="release-list">${teamRows}</div>${canManage ? '<form id="release-team-form" class="release-team-form"><input name="email" type="email" placeholder="teammate@example.com" required><input name="display_name" placeholder="Name"><select name="role"><option value="viewer">Viewer</option><option value="deployer">Deployer</option><option value="admin">Admin</option><option value="owner">Owner</option></select><button type="submit">Add role</button></form>' : ''}</div></section>
-      <section class="release-section"><header><div><p>Operational timeline</p><h3>Release activity</h3></div><span>Deploy queue, preview, policy, recovery, and access events.</span></header><div class="release-timeline">${eventRows}</div></section>`;
-
-    const refresh = document.getElementById('release-refresh');
-    if (refresh) refresh.onclick = () => renderReleaseWorkspace(project);
-    target.querySelectorAll('[data-release-environment]').forEach((form) => {
-      form.onsubmit = async (event) => {
-        event.preventDefault();
-        const data = new FormData(form);
-        try {
-          await api(`/projects/${encodeURIComponent(project.id)}/release/environments/${encodeURIComponent(form.dataset.releaseEnvironment)}`, {method: 'PUT', body: JSON.stringify({branch: data.get('branch'), domain: data.get('domain'), auto_deploy: data.get('auto_deploy') === 'on', require_approval: data.get('require_approval') === 'on'})});
-          toast('Environment saved');
-          await renderReleaseWorkspace(project);
-        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save environment.'); }
-      };
-    });
-    target.querySelectorAll('[data-release-deploy]').forEach((button) => {
-      button.onclick = async () => {
-        button.disabled = true;
-        try {
-          const result = await api(`/projects/${encodeURIComponent(project.id)}/release/deploy`, {method: 'POST', body: JSON.stringify({environment_id: button.dataset.releaseDeploy})});
-          toast(result.message || (result.approval_required ? 'Approval requested' : 'Release queued'));
-          await renderReleaseWorkspace(project);
-          if (result.project) { await loadProjects(); }
-        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not queue release.'); } finally { button.disabled = false; }
-      };
-    });
-    target.querySelectorAll('[data-release-preview]').forEach((button) => {
-      button.onclick = async () => { try { const result = await api(`/projects/${encodeURIComponent(project.id)}/release/preview/${button.dataset.releasePreview}`, {method: 'POST'}); toast(result.message || 'Preview action complete'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Preview action failed.'); } };
-    });
-    const policyForm = document.getElementById('release-policy-form');
-    if (policyForm) policyForm.onsubmit = async (event) => {
-      event.preventDefault(); const data = new FormData(policyForm);
-      try { await api(`/projects/${encodeURIComponent(project.id)}/release/policy`, {method: 'PUT', body: JSON.stringify({deployment_strategy: data.get('deployment_strategy'), canary_percent: Number(data.get('canary_percent')), preview_enabled: data.get('preview_enabled') === 'on', resource_alert_percent: Number(data.get('resource_alert_percent')), storage_limit_mb: Number(data.get('storage_limit_mb')), backup_enabled: data.get('backup_enabled') === 'on', backup_schedule: data.get('backup_schedule'), backup_retention_days: Number(data.get('backup_retention_days'))})}); toast('Release policy saved'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save policy.'); }
-    };
-    target.querySelectorAll('[data-release-approval]').forEach((button) => {
-      button.onclick = async () => { const [decision, approvalId] = (button.dataset.releaseApproval || '').split(':'); try { await api(`/projects/${encodeURIComponent(project.id)}/release/approvals/${encodeURIComponent(approvalId)}/decision`, {method: 'POST', body: JSON.stringify({approved: decision === 'approve', note: ''})}); toast(`Release ${decision}d`); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not decide approval.'); } };
-    });
-    const restoreButton = document.getElementById('release-create-restore');
-    if (restoreButton) restoreButton.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/restore-points`, {method: 'POST', body: JSON.stringify({label: `Manual point · ${new Date().toLocaleString()}`})}); toast('Recovery point recorded'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not create recovery point.'); } };
-    target.querySelectorAll('[data-release-verify]').forEach((button) => { button.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/restore-points/${encodeURIComponent(button.dataset.releaseVerify)}/verify`, {method: 'POST'}); toast('Recovery point verified'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not verify recovery point.'); } }; });
-    const teamForm = document.getElementById('release-team-form');
-    if (teamForm) teamForm.onsubmit = async (event) => { event.preventDefault(); const data = new FormData(teamForm); try { await api(`/projects/${encodeURIComponent(project.id)}/release/team`, {method: 'POST', body: JSON.stringify({email: data.get('email'), display_name: data.get('display_name'), role: data.get('role')})}); toast('Project role saved'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not save project role.'); } };
-    target.querySelectorAll('[data-release-member-delete]').forEach((button) => { button.onclick = async () => { try { await api(`/projects/${encodeURIComponent(project.id)}/release/team/${encodeURIComponent(button.dataset.releaseMemberDelete)}`, {method: 'DELETE'}); toast('Project role removed'); await renderReleaseWorkspace(project); } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove project role.'); } }; });
-    refreshIcons();
-  } catch (error) {
-    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load release controls.')}</p>`;
-  }
+  return renderBuildWorkspace(project);
 }
 
 function switchSvcTab(tab) {
-  const allowed = ['general', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];
+  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'cdn', 'speed', 'logs', 'rollbacks', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
   document.querySelectorAll('.sidebar-tree-link[data-svc-tab], .nav-sublink[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab);
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
   });
   document.querySelectorAll('.svc-pill-tab[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab);
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
   });
   const activePill = document.querySelector(`.svc-pill-tab[data-svc-tab="${tab}"]`);
   if (activePill) {
     activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.dataset.svcPanel === tab);
+    panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')));
   });
   if (tab === 'preview') {
     previewTabActive = true;
     const p = projects.find(x => x.id === activeServiceId);
     if (p) renderPreviewSection(p);
-  } else if (tab === 'release') {
+  } else if (tab === 'build' || tab === 'release') {
     const p = projects.find(x => x.id === activeServiceId);
-    if (p) void renderReleaseWorkspace(p);
+    if (p) void renderBuildWorkspace(p);
   } else if (tab === 'rollbacks') {
     const p = projects.find(x => x.id === activeServiceId);
     if (p) void renderServiceRollbackHistory(p);
