@@ -7780,6 +7780,169 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 10px;
 }
 
+/* Resources & Performance Stats Screen (Matching screenshot in clean white) */
+.svc-resources-screen {
+  display: grid;
+  gap: 14px;
+}
+.svc-resources-node-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+}
+.svc-node-select-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+}
+.svc-node-select-pill:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+.svc-node-ubuntu-badge {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e05d44;
+  color: #ffffff;
+  font-size: 11px;
+}
+.svc-node-ubuntu-badge svg {
+  width: 12px;
+  height: 12px;
+}
+.svc-node-chevron {
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+}
+.svc-perf-grade-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+}
+.svc-perf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+}
+.svc-perf-cards-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .svc-perf-cards-row {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+.svc-perf-stat-card {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.svc-perf-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.svc-perf-chip-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+}
+.svc-perf-chip-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.svc-perf-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.svc-perf-stat-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.svc-perf-check-dot {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.svc-perf-check-dot.is-warning {
+  background: #f59e0b;
+}
+.svc-perf-check-dot svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3px;
+}
+.svc-perf-mini-bar-wrap {
+  width: 100%;
+  height: 5px;
+  background: #e4e4e7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.svc-perf-mini-bar {
+  height: 100%;
+  background: #e05d44;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.svc-resources-limit-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
 /* Deployment Cards matching Image 3 in Clean White */
 .svc-exact-deploy-card {
   background: #ffffff;
