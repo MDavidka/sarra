@@ -7347,6 +7347,134 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 700;
 }
 
+/* Build Screen (Exact match to screenshot in white theme) */
+.svc-build-track-screen { display: grid; gap: 14px; }
+.svc-build-track-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.svc-build-track-title-wrap h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #09090b;
+  letter-spacing: -0.02em;
+}
+.svc-build-track-sub {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: #71717a;
+}
+.svc-build-track-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.svc-build-cards-list {
+  display: grid;
+  gap: 12px;
+}
+.svc-build-track-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+}
+.svc-build-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  background: #ffffff;
+}
+.svc-build-commit-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #09090b;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.svc-build-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.svc-build-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+.svc-build-status-pill.is-success .svc-build-status-dot { background: #2563eb; }
+.svc-build-status-pill.is-building .svc-build-status-dot { background: #f59e0b; }
+.svc-build-status-pill.is-failed .svc-build-status-dot { background: #ef4444; }
+.svc-build-status-text {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+.svc-build-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: #f4f4f5;
+  border-top: 1px solid #e4e4e7;
+}
+.svc-fast-preview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.svc-fast-preview-pill:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+.svc-fast-preview-pill svg {
+  width: 13px;
+  height: 13px;
+  color: #18181b;
+}
+.svc-repo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.svc-repo-pill:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+.svc-repo-pill svg {
+  width: 15px;
+  height: 15px;
+  color: #18181b;
+}
+
 /* Domains Screen (Exact Image 2 layout in white theme) */
 .svc-domains-screen { display: grid; gap: 14px; }
 .svc-domains-top-bar {

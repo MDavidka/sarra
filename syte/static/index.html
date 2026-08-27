@@ -331,12 +331,12 @@
             <!-- Horizontally scrollable pill tabs (subtle rail) -->
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="release" role="tab"><i data-lucide="rocket"></i><span>Release</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="rollbacks" role="tab"><i data-lucide="history"></i><span>Rollbacks</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="cdn" role="tab"><i data-lucide="cloud"></i><span>CDN</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="preview" role="tab"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
@@ -547,23 +547,29 @@
                 </div>
               </div>
 
-              <!-- 2. RELEASE TAB (shadcn card architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-release" data-svc-panel="release">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Release Governance</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Deployments & Releases</h2>
-                        <p class="shadcn-card-description">Review environments, promote releases, verify recovery readiness, and track release activity.</p>
-                      </div>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
+              <!-- 2. BUILD TAB (Exact match to screenshot in white theme) -->
+              <div class="svc-tab-panel" id="svc-panel-build" data-svc-panel="build" data-svc-panel-alias="release">
+                <section class="svc-build-track-screen" aria-label="Project build tracking">
+                  <div class="svc-build-track-header">
+                    <div class="svc-build-track-title-wrap">
+                      <h2>Builds</h2>
+                      <p class="svc-build-track-sub">Track active compilation, git commits, build stages, and deploy history.</p>
+                    </div>
+                    <div class="svc-build-track-actions">
+                      <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-build-trigger-btn">
+                        <i data-lucide="play"></i><span>Trigger Build</span>
+                      </button>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-icon-sm" id="svc-build-refresh-btn" title="Refresh builds">
+                        <i data-lucide="refresh-cw"></i>
+                      </button>
                     </div>
                   </div>
-                  <div class="shadcn-card-content" id="release-workspace-content">
-                    <p class="hint">Open this workspace to load release controls.</p>
+
+                  <!-- Build Cards List -->
+                  <div class="svc-build-cards-list" id="svc-build-cards-list">
+                    <p class="hint">Loading build track status…</p>
                   </div>
-                </div>
+                </section>
               </div>
 
               <!-- 3. DOMAINS TAB (Exact Image 2 layout in white theme) -->
