@@ -1053,6 +1053,21 @@
                     </form>
                   </div>
                 </div>
+
+                <!-- Danger Zone in Settings Tab -->
+                <div class="shadcn-card" style="margin-top: 16px; border-color: #fecaca; background: #fffbfb;">
+                  <div class="shadcn-card-header">
+                    <span class="shadcn-badge" style="background: #fee2e2; color: #dc2626; border-color: #fca5a5;">Danger Zone</span>
+                    <h2 class="shadcn-card-title" style="margin-top: 4px; color: #991b1b;">Delete Project from VM</h2>
+                    <p class="shadcn-card-description" style="color: #7f1d1d;">Permanently stop and delete this project, workspace directory from the host VM disk, and all associated database records.</p>
+                  </div>
+                  <div class="shadcn-card-content">
+                    <p style="font-size: 13px; color: #7f1d1d; margin: 0 0 14px; line-height: 1.45;">This action cannot be undone. All repository source code on disk, running containers, domain routing, and logs will be permanently erased.</p>
+                    <button type="button" class="btn-pill btn-danger" id="svc-settings-delete-project-btn">
+                      <i data-lucide="trash-2"></i><span>Delete project from VM</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <!-- 10. APP ROUTER LOGS TAB (Exact match to image in clean white) -->
@@ -1109,34 +1124,24 @@
                     <span class="svc-timeline-timestamp" id="svc-logs-timeline-time">16:37:00</span>
                   </div>
 
-                  <!-- 4. Table Header -->
-                  <div class="svc-logs-table-head">
-                    <span class="col-time">Time</span>
-                    <span class="col-status">Status</span>
-                    <span class="col-host">Host</span>
-                    <span class="col-request">Request / Path</span>
-                  </div>
+                  <!-- 4. Table Wrapper (Responsive for PC & Mobile) -->
+                  <div class="svc-logs-table-wrap">
+                    <div class="svc-logs-table-head">
+                      <span class="col-time">Time</span>
+                      <span class="col-status">Status</span>
+                      <span class="col-host">Host</span>
+                      <span class="col-request">Request / Path</span>
+                    </div>
 
-                  <!-- 5. Log Rows Container -->
-                  <div class="svc-logs-entries-list" id="svc-app-logs-list">
-                    <!-- Populated dynamically by renderAppRouterLogs -->
+                    <!-- 5. Log Rows Container -->
+                    <div class="svc-logs-entries-list" id="svc-app-logs-list">
+                      <!-- Populated dynamically by renderAppRouterLogs -->
+                    </div>
                   </div>
 
                   <!-- 6. Timeline End Notice -->
                   <div class="svc-logs-end-notice" id="svc-logs-end-notice">
                     <span>No more logs to show within selected timeline</span>
-                  </div>
-
-                  <!-- 7. Floating Bottom Bar (Find | Options) -->
-                  <div class="svc-logs-floating-bar">
-                    <div class="svc-floating-find-btn" id="svc-logs-bottom-find">
-                      <i data-lucide="search"></i>
-                      <span>Find</span>
-                    </div>
-                    <div class="svc-floating-divider"></div>
-                    <div class="svc-floating-menu-btn" id="svc-logs-bottom-menu">
-                      <i data-lucide="menu"></i>
-                    </div>
                   </div>
                 </section>
               </div>
