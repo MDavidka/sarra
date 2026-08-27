@@ -7540,6 +7540,150 @@ async function openAISettingsModal(project) {
     };
   }
 
+  const presetChipsContainer = document.getElementById('svc-ai-preset-chips-list');
+  const customModelsContainer = document.getElementById('svc-ai-custom-models-list');
+  const newCustomModelInput = document.getElementById('svc-ai-new-custom-model');
+  const addCustomModelBtn = document.getElementById('svc-ai-add-custom-model-btn');
+  const quickSaveBtn = document.getElementById('svc-ai-quick-save-btn');
+  let savedCustomModels = ['z-ai/glm-5.2:free', 'deepseek/deepseek-r1'];
+
+  const PRESET_MODELS = {
+    openrouter: [
+      'z-ai/glm-5.2:free',
+      'openai/gpt-4o',
+      'anthropic/claude-3.5-sonnet',
+      'deepseek/deepseek-chat',
+      'deepseek/deepseek-r1',
+      'meta-llama/llama-3.3-70b-instruct',
+      'qwen/qwen-2.5-coder-32b-instruct',
+      'google/gemini-2.0-flash-001',
+    ],
+    openai: [
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3-mini',
+      'o1',
+    ],
+    anthropic: [
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022',
+      'claude-3-opus-20240229',
+    ],
+    gemini: [
+      'gemini-2.0-flash',
+      'gemini-1.5-pro',
+      'gemini-2.0-flash-thinking-exp',
+    ],
+    deepseek: [
+      'deepseek-chat',
+      'deepseek-reasoner',
+    ],
+    ollama: [
+      'qwen2.5-coder:32b',
+      'llama3.3:70b',
+      'deepseek-r1:14b',
+    ],
+    custom: [
+      'gpt-4o',
+      'claude-3-5-sonnet-20241022',
+      'deepseek-chat',
+    ],
+  };
+
+  const renderPresetChips = () => {
+    if (!presetChipsContainer) return;
+    const provider = providerSel?.value || 'openai';
+    const models = PRESET_MODELS[provider] || PRESET_MODELS.openai;
+    const currentModel = modelInput?.value?.trim();
+    presetChipsContainer.innerHTML = models.map(m => {
+      const isActive = currentModel === m;
+      return `<button type="button" class="svc-ai-preset-chip ${isActive ? 'active' : ''}" data-model="${escapeHtml(m)}">${escapeHtml(m)}</button>`;
+    }).join('');
+
+    presetChipsContainer.querySelectorAll('.svc-ai-preset-chip').forEach(chip => {
+      chip.onclick = () => {
+        const m = chip.dataset.model;
+        if (modelInput) {
+          modelInput.value = m;
+          renderPresetChips();
+          renderCustomModels();
+        }
+      };
+    });
+  };
+
+  const renderCustomModels = () => {
+    if (!customModelsContainer) return;
+    if (!savedCustomModels || !savedCustomModels.length) {
+      customModelsContainer.innerHTML = `<span style="font-size:12px; color:#a1a1aa;">No custom models added yet.</span>`;
+      return;
+    }
+    const currentModel = modelInput?.value?.trim();
+    customModelsContainer.innerHTML = savedCustomModels.map((m, idx) => {
+      const isSelected = currentModel === m;
+      return `<span class="svc-ai-custom-model-chip ${isSelected ? 'active' : ''}">
+        <span class="model-name" data-model="${escapeHtml(m)}">${escapeHtml(m)}</span>
+        <button type="button" class="remove-btn" data-remove="${idx}" title="Remove model">×</button>
+      </span>`;
+    }).join('');
+
+    customModelsContainer.querySelectorAll('.model-name').forEach(span => {
+      span.onclick = () => {
+        if (modelInput) {
+          modelInput.value = span.dataset.model;
+          renderPresetChips();
+          renderCustomModels();
+        }
+      };
+    });
+
+    customModelsContainer.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.remove, 10);
+        if (!isNaN(idx)) {
+          savedCustomModels.splice(idx, 1);
+          renderCustomModels();
+        }
+      };
+    });
+  };
+
+  if (addCustomModelBtn && newCustomModelInput) {
+    addCustomModelBtn.onclick = () => {
+      const val = newCustomModelInput.value.trim();
+      if (!val) return;
+      if (!savedCustomModels.includes(val)) {
+        savedCustomModels.push(val);
+      }
+      if (modelInput) {
+        modelInput.value = val;
+      }
+      newCustomModelInput.value = '';
+      renderCustomModels();
+      renderPresetChips();
+      toast(`Added model: ${val}`);
+    };
+    newCustomModelInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addCustomModelBtn.click();
+      }
+    };
+  }
+
+  if (quickSaveBtn) {
+    quickSaveBtn.onclick = () => {
+      if (form) {
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit();
+        } else {
+          form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
+      }
+    };
+  }
+
   // Provider change listener
   if (providerSel && !providerSel.dataset.bound) {
     providerSel.dataset.bound = 'true';
@@ -7570,6 +7714,14 @@ async function openAISettingsModal(project) {
         if (baseUrlInput) baseUrlInput.placeholder = 'https://api.openai.com/v1';
         if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-...';
       }
+      renderPresetChips();
+    });
+  }
+
+  if (modelInput) {
+    modelInput.addEventListener('input', () => {
+      renderPresetChips();
+      renderCustomModels();
     });
   }
 
@@ -7587,6 +7739,16 @@ async function openAISettingsModal(project) {
       if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
       if (promptInput) promptInput.value = s.system_prompt || '';
+
+      if (s.custom_models) {
+        try {
+          savedCustomModels = typeof s.custom_models === 'string' ? JSON.parse(s.custom_models) : s.custom_models;
+        } catch (_) {
+          savedCustomModels = s.custom_models.split(',').map(x => x.trim()).filter(Boolean);
+        }
+      }
+      renderPresetChips();
+      renderCustomModels();
     } else {
       showAlert(`Could not load settings for project (${targetProject.name || targetProject.id}): ${res.detail || res.error || 'Server error'}`);
     }
@@ -7611,11 +7773,19 @@ async function openAISettingsModal(project) {
         testStatus.className = 'svc-ai-test-status';
       }
       try {
+        const cleanBaseUrl = (u) => {
+          if (!u) return '';
+          let cleaned = u.trim().replace(/\/+$/, '');
+          if (cleaned.endsWith('/chat/completions')) {
+            cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
+          }
+          return cleaned;
+        };
         const payload = {
           provider: selectedProvider,
           model: modelInput?.value?.trim() || 'gpt-4o',
           api_key: enteredKey,
-          base_url: baseUrlInput?.value?.trim() || '',
+          base_url: cleanBaseUrl(baseUrlInput?.value || ''),
         };
         const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
@@ -7651,14 +7821,23 @@ async function openAISettingsModal(project) {
       e.preventDefault();
       hideAlert();
       try {
+        const cleanBaseUrl = (u) => {
+          if (!u) return '';
+          let cleaned = u.trim().replace(/\/+$/, '');
+          if (cleaned.endsWith('/chat/completions')) {
+            cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
+          }
+          return cleaned;
+        };
         const payload = {
           provider: providerSel?.value,
           model: modelInput?.value,
-          base_url: baseUrlInput?.value,
+          base_url: cleanBaseUrl(baseUrlInput?.value || ''),
           temperature: parseFloat(tempInput?.value || 0.7),
           max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
           thinking_level: thinkingSel?.value,
           system_prompt: promptInput?.value,
+          custom_models: JSON.stringify(savedCustomModels),
         };
         if (apiKeyInput?.value) {
           payload.api_key = apiKeyInput.value;

@@ -9600,38 +9600,49 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   justify-content: center;
   padding: 16px;
   box-sizing: border-box;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .svc-ai-settings-modal.hidden {
   display: none !important;
 }
 .svc-ai-settings-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: rgba(9, 9, 11, 0.45);
+  background: rgba(9, 9, 11, 0.5);
   backdrop-filter: blur(4px);
 }
 .svc-ai-settings-dialog {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 640px;
-  max-height: calc(100vh - 48px);
+  max-width: 680px;
+  max-height: min(90vh, 840px);
   background: #ffffff;
   border: 1px solid #e4e4e7;
   border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
 }
+.svc-ai-settings-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .svc-ai-settings-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 24px 16px;
+  padding: 18px 24px 14px;
   border-bottom: 1px solid #f4f4f5;
   box-sizing: border-box;
+  background: #ffffff;
+  flex-shrink: 0;
 }
 .svc-ai-settings-title-group {
   display: flex;
@@ -9664,7 +9675,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 .svc-ai-settings-title-group p {
   margin: 3px 0 0;
-  font-size: 12.5px;
+  font-size: 12px;
   color: #71717a;
   word-break: break-word;
 }
@@ -9688,10 +9699,13 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   padding: 20px 24px;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: 20px;
   max-width: 100%;
+  flex: 1;
+  min-height: 0;
   box-sizing: border-box;
 }
 .svc-ai-form-section {
@@ -9762,6 +9776,115 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-color: #18181b;
   box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.08);
 }
+.svc-ai-preset-chips-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.svc-ai-preset-chips-wrap label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #71717a;
+}
+.svc-ai-preset-chips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.svc-ai-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  color: #3f3f46;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.svc-ai-preset-chip:hover {
+  background: #18181b;
+  color: #ffffff;
+  border-color: #18181b;
+}
+.svc-ai-preset-chip.active {
+  background: #18181b;
+  color: #ffffff;
+  border-color: #18181b;
+}
+.svc-ai-custom-models-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+}
+.svc-ai-custom-models-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #52525b;
+}
+.svc-ai-custom-models-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+}
+.svc-ai-custom-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  border-radius: 16px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid #d4d4d8;
+  background: #f4f4f5;
+  color: #18181b;
+  cursor: pointer;
+}
+.svc-ai-custom-model-chip:hover {
+  border-color: #18181b;
+}
+.svc-ai-custom-model-chip .remove-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e4e4e7;
+  color: #71717a;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.svc-ai-custom-model-chip .remove-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+.svc-ai-add-custom-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.svc-ai-add-custom-model-row input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+}
 .svc-ai-apikey-input-wrap {
   position: relative;
   display: flex;
@@ -9791,7 +9914,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-test-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-top: 4px;
   flex-wrap: wrap;
   width: 100%;
@@ -9802,6 +9925,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 600;
   word-break: break-word;
   overflow-wrap: anywhere;
+  flex: 1 1 100%;
 }
 .svc-ai-test-status.success {
   color: #16a34a;
@@ -9852,13 +9976,18 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-settings-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 16px 24px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 24px;
   border-top: 1px solid #f4f4f5;
   background: #fafafa;
   box-sizing: border-box;
-  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.svc-ai-settings-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 768px) {
@@ -9900,14 +10029,28 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
   .svc-ai-settings-dialog {
     border-radius: 20px 20px 0 0 !important;
-    max-height: 92vh !important;
+    max-height: 90vh !important;
+    height: 90vh !important;
     max-width: 100vw !important;
     width: 100% !important;
   }
+  .svc-ai-settings-form {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
   .svc-ai-settings-header {
     padding: 14px 16px 12px;
+    flex-shrink: 0 !important;
   }
   .svc-ai-settings-scroll {
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
     padding: 14px 16px;
     gap: 14px;
   }
@@ -9915,8 +10058,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
     margin: 10px 16px 0;
     padding: 10px 12px;
     font-size: 12px;
+    flex-shrink: 0 !important;
   }
   .svc-ai-settings-footer {
     padding: 12px 16px;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 10 !important;
+    background: #fafafa !important;
   }
 }

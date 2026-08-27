@@ -53,6 +53,20 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
     return ""
 
 
+def _normalize_base_url(provider: str, base_url: str) -> str:
+    p = (provider or "openai").lower().strip()
+    url = (base_url or "").strip()
+    if not url:
+        return DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1").rstrip("/")
+    url = url.rstrip("/")
+    # Automatically strip redundant endpoint suffixes if entered/pasted by the user
+    if url.endswith("/chat/completions"):
+        url = url[:-len("/chat/completions")].rstrip("/")
+    elif url.endswith("/messages") and p == "anthropic":
+        url = url[:-len("/messages")].rstrip("/")
+    return url
+
+
 class UnifiedAIClient:
     """Dispatches completions and tool calls to any supported LLM provider."""
 
@@ -69,7 +83,7 @@ class UnifiedAIClient:
         self.provider = (provider or "openai").lower().strip()
         self.model = (model or "gpt-4o").strip()
         self.api_key = _resolve_api_key(self.provider, api_key)
-        self.base_url = (base_url.strip() if base_url else DEFAULT_BASE_URLS.get(self.provider, "https://api.openai.com/v1")).rstrip("/")
+        self.base_url = _normalize_base_url(self.provider, base_url)
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_level = thinking_level
