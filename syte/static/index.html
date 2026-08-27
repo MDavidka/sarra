@@ -1647,8 +1647,8 @@
                 </select>
               </div>
               <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-model">Model</label>
-                <input id="svc-ai-setting-model" placeholder="gpt-4o, openai/gpt-4o, or claude-3-5-sonnet-20241022" list="svc-ai-preset-models" autocomplete="off" required>
+                <label for="svc-ai-setting-model">Active Model</label>
+                <input id="svc-ai-setting-model" placeholder="Enter or select model (e.g. z-ai/glm-5.2:free)" list="svc-ai-preset-models" autocomplete="off" required>
                 <datalist id="svc-ai-preset-models">
                   <!-- OpenAI -->
                   <option value="gpt-4o">
@@ -1656,6 +1656,7 @@
                   <option value="o3-mini">
                   <option value="o1">
                   <!-- OpenRouter Models -->
+                  <option value="z-ai/glm-5.2:free">
                   <option value="openai/gpt-4o">
                   <option value="openai/gpt-4o-mini">
                   <option value="anthropic/claude-3.5-sonnet">
@@ -1680,6 +1681,27 @@
               </div>
             </div>
 
+            <!-- Quick Preset Model Chips -->
+            <div class="svc-ai-preset-chips-wrap" id="svc-ai-preset-chips-wrap">
+              <label>Popular Models for Selected Provider (1-Click Select):</label>
+              <div class="svc-ai-preset-chips-list" id="svc-ai-preset-chips-list"></div>
+            </div>
+
+            <!-- Custom Models Library / Quick Add -->
+            <div class="svc-ai-custom-models-wrap" id="svc-ai-custom-models-wrap">
+              <div class="svc-ai-custom-models-header">
+                <span>Custom Saved Models</span>
+                <span style="font-weight:400; color:#71717a;">Click a model to activate</span>
+              </div>
+              <div class="svc-ai-custom-models-list" id="svc-ai-custom-models-list"></div>
+              <div class="svc-ai-add-custom-model-row">
+                <input id="svc-ai-new-custom-model" placeholder="Add custom model ID (e.g. z-ai/glm-5.2:free, deepseek/deepseek-r1)" autocomplete="off">
+                <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-add-custom-model-btn">
+                  <i data-lucide="plus"></i><span>Add Model</span>
+                </button>
+              </div>
+            </div>
+
             <div class="svc-ai-form-field">
               <label for="svc-ai-setting-apikey">API Key / Token</label>
               <div class="svc-ai-apikey-input-wrap">
@@ -1693,13 +1715,16 @@
 
             <div class="svc-ai-form-field">
               <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
-              <input id="svc-ai-setting-baseurl" placeholder="https://api.openai.com/v1 or http://localhost:11434/v1" autocomplete="off">
-              <small class="hint">Leave empty to use the provider's official default endpoint.</small>
+              <input id="svc-ai-setting-baseurl" placeholder="https://api.openai.com/v1 or leave empty for default" autocomplete="off">
+              <small class="hint">Leave empty to use official endpoint (e.g. https://openrouter.ai/api/v1). Do not include /chat/completions.</small>
             </div>
 
             <div class="svc-ai-test-row">
               <button type="button" class="btn-pill btn-secondary" id="svc-ai-test-connection-btn">
                 <i data-lucide="zap"></i><span>Test Connection</span>
+              </button>
+              <button type="button" class="btn-pill btn-primary" id="svc-ai-quick-save-btn">
+                <i data-lucide="check"></i><span>Save &amp; Activate Model</span>
               </button>
               <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
             </div>
