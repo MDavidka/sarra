@@ -1354,6 +1354,75 @@ async def api_project_performance_stats(project_id: str):
     }
 
 
+@app.get("/api/projects/{project_id}/app-logs")
+@app.get("/api/projects/{project_id}/router-logs")
+async def api_project_router_logs(
+    project_id: str,
+    search: str = "",
+    status_code: str = "",
+    limit: int = 60,
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import list_project_router_logs
+
+    logs = await list_project_router_logs(project_id, search=search, status_code=status_code, limit=limit)
+    return {"ok": True, "project_id": project_id, "logs": logs}
+
+
+@app.get("/api/projects/{project_id}/visitors")
+@app.get("/api/projects/{project_id}/analytics")
+async def api_project_visitor_telemetry(project_id: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import get_project_visitor_stats_7d
+
+    stats = await get_project_visitor_stats_7d(project_id)
+    return {"ok": True, "project_id": project_id, "stats": stats}
+
+
+@app.delete("/api/projects/{project_id}")
+async def api_delete_project_from_vm(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    import shutil
+    from syte.database import delete_project
+    from syte.process_manager import stop_process
+
+    try:
+        await stop_process(project_id)
+    except Exception:
+        pass
+
+    workspace_paths = [
+        settings.resolved_workspaces_dir / project_id,
+        settings.resolved_workspaces_dir / project.get("name", ""),
+    ]
+    for wp in workspace_paths:
+        if wp.exists() and wp.is_dir():
+            try:
+                shutil.rmtree(wp, ignore_errors=True)
+            except Exception:
+                pass
+
+    deleted = await delete_project(project_id)
+    if not deleted:
+        raise HTTPException(500, "Could not delete project from database")
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "message": f"Project '{project.get('name', project_id)}' completely deleted from VM and database.",
+    }
+
+
 @app.get("/api/projects/{project_id}/release")
 async def api_release_workspace(project_id: str, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
     from syte.release_operations import workspace
