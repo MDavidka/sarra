@@ -7195,7 +7195,8 @@ function openService(id) {
 
 function renderServiceDashboard(p, resetLogs) {
   const projectTitle = displayTitle(p);
-  document.getElementById('svc-title').textContent = projectTitle;
+  const svcTitle = document.getElementById('svc-title');
+  if (svcTitle) svcTitle.textContent = projectTitle;
   const mobileTitle = document.getElementById('svc-mobile-title');
   if (mobileTitle) mobileTitle.textContent = projectTitle;
   const headerName = document.getElementById('svc-header-name');
@@ -7285,7 +7286,8 @@ function renderServiceDashboard(p, resetLogs) {
     renderQuickActions(p);
   }
 
-  document.getElementById('svc-edit-btn').onclick = () => openServiceEditModal(p);
+  const editBtn = document.getElementById('svc-edit-btn');
+  if (editBtn) editBtn.onclick = () => openServiceEditModal(p);
   refreshIcons();
 }
 
