@@ -4314,6 +4314,7 @@ function clearGlobalAiProject() {
 }
 
 function showView(name) {
+  document.body.classList.toggle('project-edit-view', name === 'service');
   if (name !== 'new-service' && name !== 'service') {
     stopLogStream();
     stopPreviewStream();
@@ -6620,6 +6621,9 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.nav-sublink[data-svc-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
   });
+  document.querySelectorAll('.project-edit-mobile-rail [data-svc-rail]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.svcRail === tab);
+  });
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
@@ -6887,7 +6891,10 @@ function openService(id) {
 }
 
 function renderServiceDashboard(p, resetLogs) {
-  document.getElementById('svc-title').textContent = displayTitle(p);
+  const projectTitle = displayTitle(p);
+  document.getElementById('svc-title').textContent = projectTitle;
+  const mobileTitle = document.getElementById('svc-mobile-title');
+  if (mobileTitle) mobileTitle.textContent = projectTitle;
   updateServiceSidebarNav(p);
   updateServiceStatusDot(p);
   updateServiceConnLink(p);
@@ -8201,6 +8208,10 @@ document.getElementById('platform-action-list')?.addEventListener('click', (even
 });
 document.getElementById('nav-group-main-toggle')?.addEventListener('click', () => toggleNavGroup('nav-group-main'));
 document.getElementById('nav-service-head')?.addEventListener('click', () => showView('dashboard'));
+document.querySelectorAll('[data-svc-back]').forEach((button) => button.addEventListener('click', () => showView('dashboard')));
+document.querySelectorAll('[data-svc-rail]').forEach((button) => button.addEventListener('click', () => {
+  if (button.dataset.svcRail) switchSvcTab(button.dataset.svcRail);
+}));
 document.getElementById('sidebar-service-tabs')?.addEventListener('click', (event) => {
   const btn = event.target.closest('.nav-sublink[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
