@@ -1648,18 +1648,34 @@
               </div>
               <div class="svc-ai-form-field">
                 <label for="svc-ai-setting-model">Model</label>
-                <input id="svc-ai-setting-model" placeholder="gpt-4o or claude-3-5-sonnet-20241022" list="svc-ai-preset-models" autocomplete="off" required>
+                <input id="svc-ai-setting-model" placeholder="gpt-4o, openai/gpt-4o, or claude-3-5-sonnet-20241022" list="svc-ai-preset-models" autocomplete="off" required>
                 <datalist id="svc-ai-preset-models">
+                  <!-- OpenAI -->
                   <option value="gpt-4o">
                   <option value="gpt-4o-mini">
                   <option value="o3-mini">
+                  <option value="o1">
+                  <!-- OpenRouter Models -->
+                  <option value="openai/gpt-4o">
+                  <option value="openai/gpt-4o-mini">
+                  <option value="anthropic/claude-3.5-sonnet">
+                  <option value="deepseek/deepseek-chat">
+                  <option value="deepseek/deepseek-r1">
+                  <option value="google/gemini-2.0-flash-001">
+                  <option value="meta-llama/llama-3.3-70b-instruct">
+                  <option value="qwen/qwen-2.5-coder-32b-instruct">
+                  <!-- Anthropic -->
                   <option value="claude-3-5-sonnet-20241022">
                   <option value="claude-3-5-haiku-20241022">
+                  <!-- Gemini -->
                   <option value="gemini-1.5-pro">
                   <option value="gemini-2.0-flash">
+                  <!-- DeepSeek -->
                   <option value="deepseek-chat">
                   <option value="deepseek-reasoner">
+                  <!-- Ollama -->
                   <option value="qwen2.5-coder:32b">
+                  <option value="llama3.3:70b">
                 </datalist>
               </div>
             </div>

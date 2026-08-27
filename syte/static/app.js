@@ -7540,6 +7540,39 @@ async function openAISettingsModal(project) {
     };
   }
 
+  // Provider change listener
+  if (providerSel && !providerSel.dataset.bound) {
+    providerSel.dataset.bound = 'true';
+    providerSel.addEventListener('change', () => {
+      const p = providerSel.value;
+      if (p === 'openrouter') {
+        if (modelInput && !modelInput.value) modelInput.value = 'openai/gpt-4o';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://openrouter.ai/api/v1';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-or-v1-...';
+      } else if (p === 'anthropic') {
+        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'claude-3-5-sonnet-20241022';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.anthropic.com/v1';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-ant-...';
+      } else if (p === 'gemini') {
+        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy...';
+      } else if (p === 'deepseek') {
+        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'deepseek-chat';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.deepseek.com/v1';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-...';
+      } else if (p === 'ollama') {
+        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'qwen2.5-coder:32b';
+        if (baseUrlInput) baseUrlInput.placeholder = 'http://localhost:11434/v1';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'Not required for local Ollama';
+      } else if (p === 'openai') {
+        if (modelInput && !modelInput.value) modelInput.value = 'gpt-4o';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.openai.com/v1';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-...';
+      }
+    });
+  }
+
   // Fetch current settings
   try {
     const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
