@@ -4315,22 +4315,47 @@ code {
   .app-main {
     margin-left: 0;
     width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
 
   .main-topbar {
     padding: 0.65rem 1rem;
     padding-top: calc(0.65rem + env(safe-area-inset-top, 0));
+    box-sizing: border-box;
+    width: 100%;
   }
 
   .content {
     padding: 1rem;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
-  .projects-hero-card { padding: 1rem; }
+  .projects-page {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .projects-hero-card {
+    padding: 1rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 
   .projects-grid,
-  .services-grid { grid-template-columns: 1fr; }
+  .services-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 
   .swarm-grid { grid-template-columns: 1fr; }
 
@@ -7176,6 +7201,19 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-blue-link svg { width: 12px; height: 12px; }
 .svc-dot-sep { color: #a1a1aa; }
 .svc-env-actions-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+#svc-env-link-shared-btn {
+  background: #18181b !important;
+  color: #ffffff !important;
+  border: 1px solid #18181b !important;
+}
+#svc-env-link-shared-btn:hover {
+  background: #27272a !important;
+  color: #ffffff !important;
+}
+#svc-env-link-shared-btn i,
+#svc-env-link-shared-btn svg {
+  color: #ffffff !important;
+}
 
 .svc-env-segmented-bar { display: flex; gap: 24px; border-bottom: 1px solid #eaeaea; margin-top: 4px; }
 .svc-env-subtab {
