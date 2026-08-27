@@ -6413,7 +6413,7 @@ function renderServiceEnvCardsList(project) {
         </div>
         <div class="svc-env-card-footer">
           <span class="svc-env-card-updated">Updated ${esc(updatedDate)}</span>
-          <span class="svc-env-card-avatar" title="Configured by Operator">M</span>
+          <span class="svc-env-card-avatar" title="Configured by ${esc(getUserProfileAvatar())}">${esc(getUserProfileAvatar())}</span>
         </div>
       </article>
     `;
@@ -6440,47 +6440,50 @@ function renderServiceEnvCardsList(project) {
   refreshIcons();
 }
 
+function getUserProfileAvatar() {
+  const avatarEl = document.getElementById('svc-header-user-avatar');
+  if (avatarEl && avatarEl.textContent.trim()) {
+    return avatarEl.textContent.trim().slice(0, 2).toUpperCase();
+  }
+  return 'DM';
+}
+
+function getProjectDomainsArray(project) {
+  const list = [];
+  const seen = new Set();
+  const add = (dom, isPrimary = false, label = 'Custom Domain') => {
+    if (!dom) return;
+    const clean = String(dom).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (!clean || seen.has(clean)) return;
+    seen.add(clean);
+    list.push({
+      domain: clean,
+      valid: Boolean(project.running && !project.error),
+      type: label,
+      isPrimary,
+    });
+  };
+
+  if (project.domain) add(project.domain, true, 'Primary Domain');
+  if (Array.isArray(project.domains)) {
+    project.domains.forEach(d => add(d, false, 'Connected Domain'));
+  } else if (typeof project.domains === 'string' && project.domains.trim()) {
+    project.domains.split(/[\s,]+/).forEach(d => add(d, false, 'Connected Domain'));
+  }
+  if (project.custom_tls_domain) add(project.custom_tls_domain, false, 'TLS Domain');
+  if (list.length === 0 && project.port) {
+    add(`localhost:${project.port}`, true, 'Local Port');
+  }
+  return list;
+}
+
 function renderServiceDomainsList(project) {
   const container = document.getElementById('svc-domains-card-list');
   if (!container) return;
   const searchInput = document.getElementById('svc-domain-search-input');
   const query = (searchInput?.value || '').toLowerCase().trim();
 
-  const domainRows = [];
-  const primary = project.domain || (project.port ? `localhost:${project.port}` : '');
-  if (primary) {
-    domainRows.push({
-      domain: primary,
-      valid: Boolean(project.url && !project.error),
-      type: 'Production',
-      isPrimary: true,
-    });
-    // Add wildcard and developer subdomains for demonstration matching reference
-    const rootDomain = primary.replace(/:\d+$/, '');
-    if (!rootDomain.startsWith('localhost') && !rootDomain.startsWith('127.0.0.1')) {
-      domainRows.push({
-        domain: `*.${rootDomain}`,
-        valid: false,
-        type: 'Wildcard',
-        isPrimary: false,
-      });
-      domainRows.push({
-        domain: `developer.${rootDomain}`,
-        valid: false,
-        type: 'Subdomain',
-        isPrimary: false,
-      });
-    }
-  }
-  if (project.custom_tls_domain && project.custom_tls_domain !== primary) {
-    domainRows.push({
-      domain: project.custom_tls_domain,
-      valid: Boolean(project.custom_tls_enabled),
-      type: 'Custom TLS',
-      isPrimary: false,
-    });
-  }
-
+  const domainRows = getProjectDomainsArray(project);
   const filtered = query
     ? domainRows.filter(d => d.domain.toLowerCase().includes(query))
     : domainRows;
@@ -6489,11 +6492,18 @@ function renderServiceDomainsList(project) {
     container.innerHTML = `
       <div class="svc-domain-empty-state">
         <i data-lucide="globe"></i>
-        <p>${query ? `No domains match “${esc(query)}”` : 'No domains configured for this project.'}</p>
-        <button type="button" class="btn-pill btn-primary btn-sm" data-svc-edit-project><i data-lucide="plus"></i><span>Add Domain</span></button>
+        <p>${query ? `No domains match “${esc(query)}”` : 'No domains connected yet. Connect your first custom domain below.'}</p>
+        <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" id="svc-domain-empty-add-btn"><i data-lucide="plus"></i><span>Connect Domain</span></button>
       </div>
     `;
-    container.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+    const emptyAddBtn = container.querySelector('#svc-domain-empty-add-btn');
+    if (emptyAddBtn) {
+      emptyAddBtn.onclick = () => {
+        const addCard = document.getElementById('svc-domain-add-card');
+        addCard?.classList.remove('hidden');
+        document.getElementById('svc-new-domain-input')?.focus();
+      };
+    }
     refreshIcons();
     return;
   }
@@ -6507,17 +6517,20 @@ function renderServiceDomainsList(project) {
               <i data-lucide="${item.valid ? 'check-circle-2' : 'alert-triangle'}"></i>
             </span>
             <div class="svc-domain-info">
-              <strong class="svc-domain-name">${esc(item.domain)}</strong>
+              <div class="svc-domain-name-wrap">
+                <strong class="svc-domain-name">${esc(item.domain)}</strong>
+                ${item.isPrimary ? '<span class="shadcn-badge shadcn-badge-default" style="font-size:10.5px;padding:2px 7px;">Primary</span>' : ''}
+              </div>
               <div class="svc-domain-state-row">
                 <span class="svc-domain-state-pill ${item.valid ? 'valid' : 'invalid'}">
-                  ${item.valid ? 'Valid Configuration' : 'Invalid Configuration'}
+                  ${item.valid ? 'Valid Configuration' : 'DNS Record Pending'}
                 </span>
                 ${!item.valid ? `
                   <details class="svc-dns-config-details">
-                    <summary class="svc-dns-toggle-link">View DNS configuration <i data-lucide="chevron-down"></i></summary>
+                    <summary class="svc-dns-toggle-link">View DNS record <i data-lucide="chevron-down"></i></summary>
                     <div class="svc-dns-dropdown-card">
                       <div class="svc-dns-row"><span>Type</span><code>A</code></div>
-                      <div class="svc-dns-row"><span>Name</span><code>@ / *</code></div>
+                      <div class="svc-dns-row"><span>Host</span><code>@ / *</code></div>
                       <div class="svc-dns-row"><span>Value</span><code>${esc(window.location.hostname || 'YOUR_SERVER_IP')}</code></div>
                     </div>
                   </details>
@@ -6526,14 +6539,62 @@ function renderServiceDomainsList(project) {
             </div>
           </div>
           <div class="svc-domain-row-right">
-            <button type="button" class="btn-pill btn-ghost btn-sm svc-domain-edit-btn" data-svc-edit-project><i data-lucide="pencil"></i><span>Edit</span></button>
+            ${!item.isPrimary ? `
+              <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-sm" data-svc-set-primary-domain="${esc(item.domain)}" title="Set as primary domain">
+                <span>Set Primary</span>
+              </button>
+            ` : ''}
+            <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-sm" data-svc-remove-domain="${esc(item.domain)}" title="Remove domain" style="color:#dc2626;">
+              <i data-lucide="trash-2"></i>
+            </button>
           </div>
         </div>
       `).join('')}
     </div>
   `;
 
-  container.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+  container.querySelectorAll('[data-svc-set-primary-domain]').forEach(btn => {
+    btn.onclick = async () => {
+      const newPrimary = btn.dataset.svcSetPrimaryDomain;
+      if (!newPrimary) return;
+      const currentList = getProjectDomainsArray(project).map(d => d.domain).filter(d => d !== newPrimary);
+      try {
+        await persistServiceEdit(project, { domain: newPrimary, domains: currentList });
+        project.domain = newPrimary;
+        project.domains = currentList;
+        renderServiceDomainsList(project);
+        renderServiceDashboard(project);
+        toast(`Set ${newPrimary} as primary domain`);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to set primary domain');
+      }
+    };
+  });
+
+  container.querySelectorAll('[data-svc-remove-domain]').forEach(btn => {
+    btn.onclick = async () => {
+      const targetDomain = btn.dataset.svcRemoveDomain;
+      if (!targetDomain || !window.confirm(`Disconnect ${targetDomain} from this project?`)) return;
+      let newPrimary = project.domain;
+      let newExtra = Array.isArray(project.domains) ? [...project.domains] : [];
+      if (newPrimary === targetDomain) {
+        newPrimary = newExtra.shift() || '';
+      } else {
+        newExtra = newExtra.filter(d => d !== targetDomain);
+      }
+      try {
+        await persistServiceEdit(project, { domain: newPrimary, domains: newExtra });
+        project.domain = newPrimary;
+        project.domains = newExtra;
+        renderServiceDomainsList(project);
+        renderServiceDashboard(project);
+        toast(`Disconnected ${targetDomain}`);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
+      }
+    };
+  });
+
   refreshIcons();
 }
 
@@ -6548,6 +6609,56 @@ function renderServiceManagementWorkspaces(project) {
 
   const domainSearch = document.getElementById('svc-domain-search-input');
   if (domainSearch) domainSearch.oninput = () => renderServiceDomainsList(project);
+
+  const domainAddToggle = document.getElementById('svc-domain-add-toggle-btn');
+  const domainAddCard = document.getElementById('svc-domain-add-card');
+  const domainAddClose = document.getElementById('svc-domain-add-close');
+  const addDomainForm = document.getElementById('svc-add-domain-form');
+  const newDomainInput = document.getElementById('svc-new-domain-input');
+
+  if (domainAddToggle && domainAddCard) {
+    domainAddToggle.onclick = () => {
+      domainAddCard.classList.toggle('hidden');
+      if (!domainAddCard.classList.contains('hidden')) {
+        newDomainInput?.focus();
+      }
+    };
+  }
+  if (domainAddClose && domainAddCard) {
+    domainAddClose.onclick = () => domainAddCard.classList.add('hidden');
+  }
+
+  if (addDomainForm) {
+    addDomainForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const val = (newDomainInput?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (!val) return;
+      const current = getProjectDomainsArray(project).map(d => d.domain);
+      if (current.includes(val)) {
+        toast('This domain is already connected.');
+        return;
+      }
+      let newPrimary = project.domain;
+      let newExtra = Array.isArray(project.domains) ? [...project.domains] : [];
+      if (!newPrimary) {
+        newPrimary = val;
+      } else {
+        newExtra.push(val);
+      }
+      try {
+        await persistServiceEdit(project, { domain: newPrimary, domains: newExtra });
+        project.domain = newPrimary;
+        project.domains = newExtra;
+        if (newDomainInput) newDomainInput.value = '';
+        domainAddCard?.classList.add('hidden');
+        renderServiceDomainsList(project);
+        renderServiceDashboard(project);
+        toast(`Connected domain ${val}`);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
+      }
+    };
+  }
 
   document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
     tabBtn.onclick = () => {
@@ -7114,7 +7225,9 @@ function renderServiceDashboard(p, resetLogs) {
   if (uuidPill) uuidPill.textContent = `${p.name || 'deployment'} · ${String(p.id || '').slice(0, 8)}`;
   const deployName = document.getElementById('svc-deploy-name');
   if (deployName) deployName.textContent = displayTitle(p);
-  const deploymentStatus = statusLabel(p);
+  const deploymentStatus = p.running
+    ? (p.domain ? p.domain : (p.port ? `localhost:${p.port}` : 'Ready'))
+    : (p.status === 'deploying' ? 'Deploying…' : 'Not deployed');
   ['svc-deploy-status', 'svc-deploy-status-summary'].forEach((id) => {
     const target = document.getElementById(id);
     if (target) target.textContent = deploymentStatus;
@@ -7139,6 +7252,15 @@ function renderServiceDashboard(p, resetLogs) {
   if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
   renderDeploymentSitePreview(p);
   renderServiceManagementWorkspaces(p);
+
+  const liveLogsEl = document.getElementById('svc-gen-live-logs');
+  if (liveLogsEl) {
+    if (p.running || p.status === 'succeeded') {
+      liveLogsEl.classList.add('is-compact-done');
+    } else {
+      liveLogsEl.classList.remove('is-compact-done');
+    }
+  }
 
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
@@ -7196,29 +7318,27 @@ function renderPreviewSection(p) {
   if (!actions) return;
 
   if (domainEl) {
-    domainEl.textContent = p.preview_domain || 'Assigning…';
+    domainEl.textContent = p.preview_domain || p.domain || (p.port ? `localhost:${p.port}` : 'Assigning…');
   }
 
   const live = p.preview_running && p.preview_ready;
-  const showFrame = p.preview_running && p.preview_url;
+  const showFrame = (p.preview_running && p.preview_url) || (p.running && p.url);
   actions.innerHTML = `
-    <button class="btn-pill btn-primary" onclick="servicePreviewStart('${p.id}')">
+    <button type="button" class="shadcn-btn shadcn-btn-default" onclick="servicePreviewStart('${p.id}')">
       <i data-lucide="play"></i><span>Start preview</span>
     </button>
-    <button class="btn-pill btn-ghost" onclick="servicePreviewStop('${p.id}')">
+    <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="servicePreviewStop('${p.id}')">
       <i data-lucide="square"></i><span>Stop</span>
     </button>
-    ${p.preview_url ? `<a class="btn-pill btn-ghost" href="${esc(p.preview_url)}" target="_blank"><i data-lucide="external-link"></i><span>Open</span></a>` : ''}
-    ${live ? '<span class="badge-live">live</span>' : ''}
+    ${(p.preview_url || p.url) ? `<a class="shadcn-btn shadcn-btn-secondary" href="${esc(p.preview_url || p.url)}" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open</span></a>` : ''}
+    ${live ? '<span class="shadcn-badge shadcn-badge-outline" style="color:#16a34a;border-color:#bbf7d0;background:#ecfdf5;"><i data-lucide="check-circle-2" style="width:12px;height:12px;margin-right:4px;"></i> Live</span>' : ''}
   `;
 
   if (showFrame) {
     if (frame && placeholder) {
-      const frameSrc = live
-        ? ((p.preview_tls_ok !== false && p.preview_domain_url)
-          ? p.preview_domain_url
-          : (p.preview_fetch_url || p.preview_url))
-        : (p.preview_fetch_url || p.preview_url);
+      const frameSrc = p.preview_running
+        ? (live ? ((p.preview_tls_ok !== false && p.preview_domain_url) ? p.preview_domain_url : (p.preview_fetch_url || p.preview_url)) : (p.preview_fetch_url || p.preview_url))
+        : (p.url || '');
       setPreviewFrameSrc(frame, frameSrc);
       frame.classList.remove('hidden');
       placeholder.classList.add('hidden');

@@ -578,7 +578,6 @@
                   </div>
                 </div>
               </div>
-              </div>
 
               <!-- 3. DOMAINS TAB -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
@@ -587,12 +586,29 @@
                   <div class="svc-screen-header">
                     <div class="svc-screen-title-wrap">
                       <h2>Domains</h2>
-                      <p class="svc-screen-sub">Manage domains, subdomains, and TLS certificate routing.</p>
+                      <p class="svc-screen-sub">Manage connected domains, routing, and TLS certificates.</p>
                     </div>
                     <div class="svc-split-actions-row">
-                      <button type="button" class="btn-pill btn-secondary" data-svc-edit-project><i data-lucide="plus"></i><span>Add Existing</span></button>
-                      <button type="button" class="btn-pill btn-primary" data-svc-open-certificates><i data-lucide="shopping-bag"></i><span>Buy</span></button>
+                      <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-domain-add-toggle-btn"><i data-lucide="plus"></i><span>Connect Domain</span></button>
                     </div>
+                  </div>
+
+                  <!-- Inline Add Domain Card -->
+                  <div class="svc-domain-add-card hidden" id="svc-domain-add-card">
+                    <header class="svc-config-card-head">
+                      <div>
+                        <h3>Connect Domain</h3>
+                        <p>Route traffic directly to this project by adding a domain or subdomain.</p>
+                      </div>
+                      <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-icon-sm" id="svc-domain-add-close" aria-label="Close form"><i data-lucide="x"></i></button>
+                    </header>
+                    <form class="svc-add-domain-form" id="svc-add-domain-form">
+                      <div class="svc-domain-input-group">
+                        <input id="svc-new-domain-input" placeholder="example.com or app.example.com" autocomplete="off" required>
+                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="plus"></i><span>Add</span></button>
+                      </div>
+                      <p class="svc-domain-result">Point your domain's DNS A/CNAME record to this server for automated HTTPS routing.</p>
+                    </form>
                   </div>
 
                   <!-- Filter & Search Row -->
@@ -600,32 +616,13 @@
                     <button type="button" class="svc-toolbar-filter-btn" title="Domain filters"><i data-lucide="sliders-horizontal"></i></button>
                     <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
                       <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search any domain" autocomplete="off">
+                      <input id="svc-domain-search-input" type="search" placeholder="Search connected domains..." autocomplete="off">
                     </label>
                   </div>
 
                   <!-- Grouped Domains Card List -->
                   <div class="svc-domains-card-list" id="svc-domains-card-list">
                     <!-- Populated dynamically by renderServiceDomainsList -->
-                  </div>
-
-                  <!-- Custom Domain & TLS Settings Box -->
-                  <div class="svc-domain-config-card">
-                    <header class="svc-config-card-head">
-                      <div>
-                        <h3>Custom TLS Domain</h3>
-                        <p>Route traffic directly and request automatic Let's Encrypt certificates via Caddy.</p>
-                      </div>
-                    </header>
-                    <form class="svc-custom-domain-form" id="svc-custom-domain-form">
-                      <label>Custom domain<input id="svc-custom-tls-domain" placeholder="app.example.com" autocomplete="off"></label>
-                      <label class="svc-switch-field"><input type="checkbox" id="svc-custom-tls-enabled"><span>Enable Caddy TLS for this domain</span></label>
-                      <div class="svc-inline-actions">
-                        <button type="submit" class="btn-pill btn-primary"><i data-lucide="shield-check"></i><span>Save custom domain</span></button>
-                        <button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="badge-check"></i><span>Certificate readiness</span></button>
-                      </div>
-                      <p class="svc-domain-result" id="svc-custom-tls-result">DNS must point to this server before a trusted certificate can be issued.</p>
-                    </form>
                   </div>
                 </section>
               </div>
