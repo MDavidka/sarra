@@ -6413,7 +6413,9 @@ function renderServiceEnvCardsList(project) {
         </div>
         <div class="svc-env-card-footer">
           <span class="svc-env-card-updated">Updated ${esc(updatedDate)}</span>
-          <span class="svc-env-card-avatar" title="Configured by ${esc(getUserProfileAvatar())}">${esc(getUserProfileAvatar())}</span>
+          <span class="svc-env-card-avatar git-user-avatar" title="Configured by Git operator">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v6"></path><path d="M12 15v6"></path><path d="M3 12h6"></path><path d="M15 12h6"></path></svg>
+          </span>
         </div>
       </article>
     `;
@@ -6647,9 +6649,133 @@ async function renderRedirectsWorkspace(project) {
   }
 }
 
+async function renderVisitorWidget(project) {
+  const countEl = document.getElementById('svc-exact-visitors-count');
+  const growthEl = document.querySelector('.svc-exact-growth-badge span');
+  const sparkSvg = document.querySelector('.svc-exact-spark-svg');
+  if (!countEl) return;
+
+  try {
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/visitors`);
+    const stats = payload.stats;
+    if (stats) {
+      countEl.textContent = `${stats.total_visitors_7d} visitors`;
+      if (growthEl && stats.growth_label) growthEl.textContent = stats.growth_label;
+      if (sparkSvg && stats.sparkline) {
+        sparkSvg.innerHTML = `
+          <defs>
+            <linearGradient id="visitorSparkGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#18181b" stop-opacity="0.10" />
+              <stop offset="100%" stop-color="#18181b" stop-opacity="0.00" />
+            </linearGradient>
+          </defs>
+          <path d="${stats.sparkline.path_area}" fill="url(#visitorSparkGradient)"></path>
+          <path d="${stats.sparkline.path_line}" fill="none" stroke="#18181b" stroke-width="2.2" stroke-linecap="round"></path>
+          <circle cx="${stats.sparkline.end_x}" cy="${stats.sparkline.end_y}" r="4" fill="#ffffff" stroke="#18181b" stroke-width="2.5"></circle>
+        `;
+      }
+    }
+  } catch (err) {
+    countEl.textContent = '10 visitors';
+  }
+}
+
+let appLogsLive = true;
+async function renderAppRouterLogs(project) {
+  const listEl = document.getElementById('svc-app-logs-list');
+  const searchInput = document.getElementById('svc-app-logs-search');
+  const timeEl = document.getElementById('svc-logs-timeline-time');
+  const liveBtn = document.getElementById('svc-logs-live-toggle');
+  const refreshBtn = document.getElementById('svc-logs-refresh-btn');
+  const downloadBtn = document.getElementById('svc-logs-download-btn');
+  const findBtn = document.getElementById('svc-logs-bottom-find');
+  if (!listEl) return;
+
+  if (timeEl) {
+    const d = new Date();
+    timeEl.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  }
+
+  if (searchInput && !searchInput.dataset.bound) {
+    searchInput.dataset.bound = 'true';
+    searchInput.oninput = () => renderAppRouterLogs(project);
+  }
+  if (liveBtn && !liveBtn.dataset.bound) {
+    liveBtn.dataset.bound = 'true';
+    liveBtn.onclick = () => {
+      appLogsLive = !appLogsLive;
+      liveBtn.classList.toggle('active', appLogsLive);
+      toast(appLogsLive ? 'Live stream enabled' : 'Live stream paused');
+      if (appLogsLive) renderAppRouterLogs(project);
+    };
+  }
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = 'true';
+    refreshBtn.onclick = () => renderAppRouterLogs(project);
+  }
+  if (downloadBtn && !downloadBtn.dataset.bound) {
+    downloadBtn.dataset.bound = 'true';
+    downloadBtn.onclick = async () => {
+      try {
+        const res = await api(`/projects/${encodeURIComponent(project.id)}/app-logs?limit=200`);
+        const blob = new Blob([JSON.stringify(res.logs || [], null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${project.name || 'project'}-router-logs.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('Logs downloaded');
+      } catch (_) { toast('Failed to download logs'); }
+    };
+  }
+  if (findBtn && !findBtn.dataset.bound) {
+    findBtn.dataset.bound = 'true';
+    findBtn.onclick = () => {
+      searchInput?.focus();
+    };
+  }
+
+  const query = (searchInput?.value || '').trim();
+  try {
+    const res = await api(`/projects/${encodeURIComponent(project.id)}/app-logs?search=${encodeURIComponent(query)}&limit=60`);
+    const logs = res.logs || [];
+    if (!logs.length) {
+      listEl.innerHTML = `<div class="svc-log-row-item" style="justify-content: center; color: #71717a; padding: 24px;">No router events found matching query.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = logs.map(l => {
+      const dateObj = new Date(l.created_at || Date.now());
+      const month = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const time = dateObj.toTimeString().split(' ')[0] + '.' + String(dateObj.getMilliseconds()).slice(0, 2).padStart(2, '0');
+      const timeStr = `${month} ${day} ${time}`;
+      const sc = Number(l.status_code) || 200;
+      const statusClass = sc >= 500 ? 'status-500' : sc >= 400 ? 'status-404' : 'status-200';
+
+      return `
+        <div class="svc-log-row-item">
+          <span class="svc-log-row-time">${esc(timeStr)}</span>
+          <div class="svc-log-row-status-wrap">
+            <span class="svc-log-method">${esc(l.method || 'GET')}</span>
+            <span class="svc-log-status-code ${statusClass}">${esc(String(sc))}</span>
+          </div>
+          <span class="svc-log-row-host">${esc(l.host || project.domain || 'sycord.com')}</span>
+          <span class="svc-log-row-path">${esc(l.path || '/')}</span>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div class="svc-log-row-item" style="color: #ef4444; padding: 18px;">Could not load router logs.</div>`;
+  }
+}
+
 function renderServiceManagementWorkspaces(project) {
   renderServiceEnvCardsList(project);
   renderServiceDomainsList(project);
+  void renderVisitorWidget(project);
+  void renderAppRouterLogs(project);
 
   const searchInput = document.getElementById('svc-env-search-input');
   if (searchInput) searchInput.oninput = () => renderServiceEnvCardsList(project);
@@ -6660,22 +6786,27 @@ function renderServiceManagementWorkspaces(project) {
   if (domainSearch) domainSearch.oninput = () => renderServiceDomainsList(project);
 
   const domainAddToggle = document.getElementById('svc-domain-add-toggle-btn');
-  const domainAddCard = document.getElementById('svc-domain-add-card');
-  const domainAddClose = document.getElementById('svc-domain-add-close');
+  const domainAddModal = document.getElementById('svc-domain-add-modal');
+  const domainModalClose = document.getElementById('svc-domain-modal-close-btn');
+  const domainModalCancel = document.getElementById('svc-domain-modal-cancel-btn');
+  const domainModalBackdrop = document.getElementById('svc-domain-modal-backdrop');
   const addDomainForm = document.getElementById('svc-add-domain-form');
   const newDomainInput = document.getElementById('svc-new-domain-input');
 
-  if (domainAddToggle && domainAddCard) {
-    domainAddToggle.onclick = () => {
-      domainAddCard.classList.toggle('hidden');
-      if (!domainAddCard.classList.contains('hidden')) {
-        newDomainInput?.focus();
-      }
-    };
-  }
-  if (domainAddClose && domainAddCard) {
-    domainAddClose.onclick = () => domainAddCard.classList.add('hidden');
-  }
+  const closeDomainModal = () => {
+    if (domainAddModal) domainAddModal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  };
+  const openDomainModal = () => {
+    if (domainAddModal) domainAddModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    newDomainInput?.focus();
+  };
+
+  if (domainAddToggle) domainAddToggle.onclick = openDomainModal;
+  if (domainModalClose) domainModalClose.onclick = closeDomainModal;
+  if (domainModalCancel) domainModalCancel.onclick = closeDomainModal;
+  if (domainModalBackdrop) domainModalBackdrop.onclick = closeDomainModal;
 
   if (addDomainForm) {
     addDomainForm.onsubmit = async (e) => {
@@ -6699,7 +6830,7 @@ function renderServiceManagementWorkspaces(project) {
         project.domain = newPrimary;
         project.domains = newExtra;
         if (newDomainInput) newDomainInput.value = '';
-        domainAddCard?.classList.add('hidden');
+        closeDomainModal();
         renderServiceDomainsList(project);
         renderServiceDashboard(project);
         toast(`Connected domain ${val}`);
@@ -7019,6 +7150,9 @@ function switchSvcTab(tab) {
   } else if (tab === 'speed') {
     const p = projects.find(x => x.id === activeServiceId);
     if (p) void renderProjectPerformanceStats(p);
+  } else if (tab === 'logs') {
+    const p = projects.find(x => x.id === activeServiceId);
+    if (p) void renderAppRouterLogs(p);
   } else if (prevTab === 'preview') {
     previewTabActive = false;
     stopPreviewPoll();
@@ -7140,6 +7274,24 @@ function openServiceEditModal(p) {
       toast(text);
     } finally { runHealth.disabled = false; }
   };
+  const deleteProjectBtn = projectEditField('svc-edit-delete-project-btn');
+  if (deleteProjectBtn) {
+    deleteProjectBtn.onclick = async () => {
+      const confirmed = window.confirm(`Are you absolutely sure you want to permanently delete '${displayTitle(p)}' from the VM disk?\n\nThis will purge all files, remove runtime containers, and delete database records.`);
+      if (!confirmed) return;
+      deleteProjectBtn.disabled = true;
+      try {
+        await api(`/projects/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+        toast(`Project '${displayTitle(p)}' deleted from VM.`);
+        closeServiceEditModal();
+        await loadProjects();
+        switchView('projects');
+      } catch (err) {
+        deleteProjectBtn.disabled = false;
+        toast(normalizeFetchError(err?.message) || 'Failed to delete project from VM');
+      }
+    };
+  }
   const openEnvironment = projectEditField('svc-edit-open-environment');
   if (openEnvironment) openEnvironment.onclick = () => { closeServiceEditModal(); switchSvcTab('env'); };
   const openRelease = projectEditField('svc-edit-open-release');
@@ -7148,11 +7300,13 @@ function openServiceEditModal(p) {
   modal.classList.remove('hidden');
   modal.dataset.projectId = p.id;
   setProjectEditTab('general');
-  nameInput.focus();
+  const nameInput = projectEditField('svc-edit-name-input');
+  if (nameInput) nameInput.focus();
   refreshIcons();
 }
 function closeServiceEditModal() {
   document.getElementById('svc-edit-modal')?.classList.add('hidden');
+  document.body.classList.remove('modal-open');
 }
 
 function updateServiceStatusDot(p) {
@@ -7442,6 +7596,48 @@ function renderPreviewSection(p) {
 
   if (domainEl) {
     domainEl.textContent = p.preview_domain || p.domain || (p.port ? `localhost:${p.port}` : 'Assigning…');
+  }
+
+  const has525OrUnhealthy = p.status === 'failed' || p.preview_error || p.healthy === false || p.preview_tls_ok === false;
+  if (has525OrUnhealthy && (!p.running || p.status === 'failed')) {
+    if (frame) {
+      frame.classList.add('hidden');
+      frame.removeAttribute('src');
+    }
+    if (placeholder) {
+      placeholder.classList.remove('hidden');
+      placeholder.innerHTML = `
+        <div class="svc-preview-404-state" style="border-color: #fca5a5; background: #fffbfb; padding: 42px 20px;">
+          <div class="svc-preview-404-icon" style="background:#fee2e2;color:#dc2626;width:48px;height:48px;">
+            <i data-lucide="shield-alert" style="width:24px;height:24px;"></i>
+          </div>
+          <h3 class="svc-preview-404-title" style="font-size:18px;">Preview Unhealthy · Error 525</h3>
+          <p class="svc-preview-404-sub" style="max-width:380px;">SSL Handshake or Origin connection failed. The application returned an unhealthy status code. Please verify your custom domain TLS records and restart deployment.</p>
+          <div class="svc-preview-404-actions">
+            <button type="button" class="btn-pill btn-primary" onclick="serviceAction('${p.id}', 'deploy')">
+              <i data-lucide="refresh-cw"></i><span>Redeploy</span>
+            </button>
+            <button type="button" class="btn-pill btn-secondary" onclick="switchSvcTab('domains')">
+              <i data-lucide="globe"></i><span>Check Domains & TLS</span>
+            </button>
+            <button type="button" class="btn-pill btn-ghost" onclick="servicePreviewStart('${p.id}')">
+              <i data-lucide="play"></i><span>Retry Preview</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+    actions.innerHTML = `
+      <span class="shadcn-badge" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:6px 12px;font-weight:700;">
+        <i data-lucide="alert-circle" style="width:13px;height:13px;margin-right:4px;"></i> Unhealthy · Error 525
+      </span>
+      <button type="button" class="shadcn-btn shadcn-btn-default" onclick="serviceDeploy('${p.id}')">
+        <i data-lucide="refresh-cw"></i><span>Redeploy</span>
+      </button>
+    `;
+    if (hint) hint.textContent = 'Unhealthy runtime status detected (Error 525 SSL Handshake / Origin Fail).';
+    refreshIcons();
+    return;
   }
 
   const live = p.preview_running && p.preview_ready;

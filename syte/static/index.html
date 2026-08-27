@@ -589,39 +589,57 @@
                   <!-- Action Buttons: Add Existing | Buy -->
                   <div class="svc-domains-action-pair">
                     <button type="button" class="svc-domain-pair-btn dark" id="svc-domain-add-toggle-btn">
-                      <span>Add Existing</span>
+                      <i data-lucide="plus"></i>
+                      <span>Add Domain</span>
                     </button>
                     <button type="button" class="svc-domain-pair-btn light" data-svc-open-certificates>
-                      <span>Buy</span>
+                      <i data-lucide="shield-check"></i>
+                      <span>Certificates</span>
                     </button>
                   </div>
 
-                  <!-- Inline Add Domain Card (Toggled by Add Existing) -->
-                  <div class="svc-domain-add-card hidden" id="svc-domain-add-card">
-                    <header class="svc-config-card-head">
-                      <div>
-                        <h3>Connect Domain</h3>
-                        <p>Route traffic directly to this project by adding a domain or subdomain.</p>
-                      </div>
-                      <button type="button" class="shadcn-btn shadcn-btn-ghost shadcn-btn-icon-sm" id="svc-domain-add-close" aria-label="Close form"><i data-lucide="x"></i></button>
-                    </header>
-                    <form class="svc-add-domain-form" id="svc-add-domain-form">
-                      <div class="svc-domain-input-group">
-                        <input id="svc-new-domain-input" placeholder="example.com or app.example.com" autocomplete="off" required>
-                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="plus"></i><span>Add</span></button>
-                      </div>
-                      <p class="svc-domain-result">Point your domain's DNS A/CNAME record to this server for automated HTTPS routing.</p>
-                    </form>
+                  <!-- Add Domain Pop-up Modal (Clean Shadcn Redesign) -->
+                  <div class="svc-domain-modal hidden" id="svc-domain-add-modal" role="dialog" aria-modal="true" aria-labelledby="svc-domain-modal-title">
+                    <div class="svc-domain-modal-backdrop" id="svc-domain-modal-backdrop"></div>
+                    <div class="svc-domain-modal-dialog">
+                      <header class="svc-domain-modal-header">
+                        <div class="svc-domain-modal-identity">
+                          <span class="svc-domain-modal-icon"><i data-lucide="globe"></i></span>
+                          <div>
+                            <h3 id="svc-domain-modal-title">Connect Custom Domain</h3>
+                            <p>Attach a custom domain or subdomain to route traffic to this project.</p>
+                          </div>
+                        </div>
+                        <button type="button" class="svc-domain-modal-close" id="svc-domain-modal-close-btn" aria-label="Close dialog"><i data-lucide="x"></i></button>
+                      </header>
+                      <form class="svc-domain-modal-form" id="svc-add-domain-form">
+                        <div class="svc-domain-form-field">
+                          <label for="svc-new-domain-input">Domain or Subdomain</label>
+                          <div class="svc-domain-input-wrap">
+                            <i data-lucide="link-2"></i>
+                            <input id="svc-new-domain-input" placeholder="e.g. app.mydomain.com or mydomain.com" autocomplete="off" required>
+                          </div>
+                        </div>
+                        <div class="svc-domain-dns-hint">
+                          <i data-lucide="info"></i>
+                          <span>Ensure your DNS <code>CNAME</code> or <code>A</code> record points to this server's public IP. Automated TLS will be issued immediately.</span>
+                        </div>
+                        <div class="svc-domain-modal-footer">
+                          <button type="button" class="btn-pill btn-ghost" id="svc-domain-modal-cancel-btn">Cancel</button>
+                          <button type="submit" class="btn-pill btn-primary"><i data-lucide="plus"></i><span>Connect Domain</span></button>
+                        </div>
+                      </form>
+                    </div>
                   </div>
 
                   <!-- Filter & Search Row -->
                   <div class="svc-domain-toolbar">
-                    <button type="button" class="svc-toolbar-filter-btn" title="Domain filters">
-                      <i data-lucide="menu"></i>
-                    </button>
+                    <div class="svc-toolbar-filter-btn" title="Domain filters">
+                      <i data-lucide="sliders-horizontal"></i>
+                    </div>
                     <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
                       <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search any domain" autocomplete="off">
+                      <input id="svc-domain-search-input" type="search" placeholder="Search connected domains..." autocomplete="off">
                     </label>
                   </div>
 
@@ -1037,32 +1055,90 @@
                 </div>
               </div>
 
-              <!-- 10. LOGS TAB (shadcn architecture) -->
+              <!-- 10. APP ROUTER LOGS TAB (Exact match to image in clean white) -->
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Real-Time Output</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Deployment & Server Logs</h2>
-                        <p class="shadcn-card-description">Live stdout/stderr stream from build operations and application container.</p>
-                      </div>
-                      <div class="svc-logs-actions">
-                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-logs-refresh" title="Refresh logs"><i data-lucide="refresh-cw"></i><span>Refresh</span></button>
-                        <button type="button" class="shadcn-btn shadcn-btn-secondary active" id="svc-logs-autoscroll" title="Auto-scroll"><i data-lucide="arrow-down-to-line"></i><span>Auto-scroll</span></button>
-                      </div>
+                <section class="svc-app-logs-screen" aria-label="Internal Application and Router Logs">
+                  <!-- 1. Search Bar -->
+                  <div class="svc-logs-search-bar">
+                    <label class="svc-logs-search-input-wrap" for="svc-app-logs-search">
+                      <i data-lucide="search"></i>
+                      <input type="search" id="svc-app-logs-search" placeholder="Search logs" autocomplete="off">
+                    </label>
+                  </div>
+
+                  <!-- 2. Action Toolbar (Buttons matching screenshot) -->
+                  <div class="svc-logs-toolbar-row">
+                    <div class="svc-logs-toolbar-left">
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-filter-toggle" title="Filter rules">
+                        <i data-lucide="sliders-horizontal"></i>
+                      </button>
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-user-filter" title="User scope">
+                        <i data-lucide="user"></i>
+                      </button>
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-scope-btn" title="View scope">
+                        <i data-lucide="scan"></i>
+                      </button>
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-settings-btn" title="Log settings">
+                        <i data-lucide="settings"></i>
+                      </button>
+                    </div>
+                    <div class="svc-logs-toolbar-right">
+                      <button type="button" class="svc-log-tool-btn active" id="svc-logs-live-toggle" title="Live stream">
+                        <i data-lucide="play"></i>
+                        <span>Live</span>
+                      </button>
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-refresh-btn" title="Refresh logs">
+                        <i data-lucide="refresh-cw"></i>
+                      </button>
+                      <button type="button" class="svc-log-tool-btn" id="svc-logs-download-btn" title="Download logs">
+                        <i data-lucide="download"></i>
+                      </button>
                     </div>
                   </div>
-                  <div class="shadcn-card-content" style="padding: 0;">
-                    <div class="svc-logs-stats-bar">
-                      <div class="svc-logs-stat-left">
-                        <span class="logs-live-dot" id="svc-logs-live" title="Stream status"></span>
-                        <span class="logs-toolbar-label" id="svc-log-hint" style="font-weight: 600; font-size: 12px; color: #52525b;">Live stream active</span>
-                      </div>
+
+                  <!-- 3. Timeline Scrubber Bar -->
+                  <div class="svc-logs-timeline-bar">
+                    <div class="svc-timeline-ticks">
+                      <span class="tick"></span>
+                      <span class="tick"></span>
+                      <span class="tick double"></span>
+                      <span class="tick"></span>
+                      <span class="tick"></span>
+                      <span class="tick"></span>
                     </div>
-                    <div class="logs-terminal logs-terminal-dark svc-full-terminal" id="svc-live-logs"></div>
+                    <span class="svc-timeline-timestamp" id="svc-logs-timeline-time">16:37:00</span>
                   </div>
-                </div>
+
+                  <!-- 4. Table Header -->
+                  <div class="svc-logs-table-head">
+                    <span class="col-time">Time</span>
+                    <span class="col-status">Status</span>
+                    <span class="col-host">Host</span>
+                    <span class="col-request">Request / Path</span>
+                  </div>
+
+                  <!-- 5. Log Rows Container -->
+                  <div class="svc-logs-entries-list" id="svc-app-logs-list">
+                    <!-- Populated dynamically by renderAppRouterLogs -->
+                  </div>
+
+                  <!-- 6. Timeline End Notice -->
+                  <div class="svc-logs-end-notice" id="svc-logs-end-notice">
+                    <span>No more logs to show within selected timeline</span>
+                  </div>
+
+                  <!-- 7. Floating Bottom Bar (Find | Options) -->
+                  <div class="svc-logs-floating-bar">
+                    <div class="svc-floating-find-btn" id="svc-logs-bottom-find">
+                      <i data-lucide="search"></i>
+                      <span>Find</span>
+                    </div>
+                    <div class="svc-floating-divider"></div>
+                    <div class="svc-floating-menu-btn" id="svc-logs-bottom-menu">
+                      <i data-lucide="menu"></i>
+                    </div>
+                  </div>
+                </section>
               </div>
 
               <!-- 11. PREVIEW TAB (shadcn architecture) -->
@@ -1128,6 +1204,7 @@
                   <button type="button" data-project-settings-tab="environment"><i data-lucide="braces"></i><span>Environment</span></button>
                   <button type="button" data-project-settings-tab="release"><i data-lucide="shield-check"></i><span>Release & access</span></button>
                   <button type="button" data-project-settings-tab="utilities"><i data-lucide="wand-sparkles"></i><span>Utilities</span></button>
+                  <button type="button" data-project-settings-tab="danger" style="color: #ef4444;"><i data-lucide="trash-2"></i><span>Danger Zone</span></button>
                 </nav>
                 <div class="project-settings-panels">
                   <section class="project-settings-panel active" data-project-settings-panel="general">
@@ -1159,6 +1236,14 @@
                     <header><div><p>Operator tools</p><h4>Utilities</h4><span>Quick actions that make project review and handoff faster without changing a deployment.</span></div></header>
                     <div class="project-utilities-grid"><button type="button" class="project-utility-card" id="svc-edit-copy-id"><i data-lucide="fingerprint"></i><span>Copy project ID</span><small>Stable identifier for API and support workflows.</small></button><button type="button" class="project-utility-card" id="svc-edit-copy-config"><i data-lucide="file-json-2"></i><span>Copy configuration</span><small>Create a safe, secret-free settings snapshot.</small></button><button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe the current production endpoint now.</small></button><a class="project-utility-card" id="svc-edit-open-live" href="#" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open live project</span><small>Open the current production URL in a new tab.</small></a></div>
                     <p class="project-utility-result" id="svc-edit-utility-result" aria-live="polite"></p>
+                  </section>
+                  <section class="project-settings-panel" data-project-settings-panel="danger">
+                    <header><div><p style="color: #ef4444;">Destructive actions</p><h4>Danger Zone</h4><span>Permanently delete this project and purge all files from the VM disk.</span></div></header>
+                    <div class="project-settings-stat" style="border-color: #fecaca; background: #fff5f5;">
+                      <div><span style="color: #b91c1c;">Delete project from VM</span><strong style="color: #991b1b;">Permanently purge files and database records</strong></div>
+                      <p style="color: #7f1d1d;">This will stop the runtime process, delete the project workspace directory from the VM disk, and remove all database records. This action is irreversible.</p>
+                      <button type="button" class="btn-pill btn-danger" id="svc-edit-delete-project-btn"><i data-lucide="trash-2"></i><span>Delete project from VM</span></button>
+                    </div>
                   </section>
                 </div>
               </div>
