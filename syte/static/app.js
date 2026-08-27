@@ -6878,21 +6878,24 @@ function renderServiceManagementWorkspaces(project) {
         toast('This domain is already connected.');
         return;
       }
-      let newPrimary = project.domain;
-      let newExtra = Array.isArray(project.domains) ? [...project.domains] : [];
-      if (!newPrimary) {
-        newPrimary = val;
-      } else {
-        newExtra.push(val);
-      }
       try {
-        await persistServiceEdit(project, { domain: newPrimary, domains: newExtra });
-        project.domain = newPrimary;
-        project.domains = newExtra;
+        const settingsRes = await api('/settings').catch(() => ({}));
+        const email = settingsRes?.admin_email || 'admin@localhost';
+        const res = await api(`/projects/${encodeURIComponent(project.id)}/domain`, {
+          method: 'POST',
+          body: JSON.stringify({ domain: val, email }),
+        });
+        if (res?.project) {
+          Object.assign(project, res.project);
+        } else {
+          project.domain = val;
+        }
         if (newDomainInput) newDomainInput.value = '';
         closeDomainModal();
-        renderServiceDomainsList(project);
-        renderServiceDashboard(project);
+        await loadProjects();
+        const refreshed = projects.find(p => p.id === project.id) || project;
+        renderServiceDomainsList(refreshed);
+        renderServiceDashboard(refreshed, false);
         toast(`Connected domain ${val}`);
       } catch (err) {
         toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
