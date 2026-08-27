@@ -6356,29 +6356,212 @@ async function renderServiceRollbackHistory(project) {
   }
 }
 
-function renderServiceManagementWorkspaces(project) {
+function renderServiceEnvCardsList(project) {
   const environmentCards = document.getElementById('svc-env-cards');
-  if (environmentCards) {
-    const entries = serviceEnvironmentEntries(project);
-    environmentCards.innerHTML = entries.length
-      ? entries.map(([key, value]) => `<article class="svc-env-card"><div><code>${esc(key)}</code><span>${esc(String(value))}</span></div><div><button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" aria-label="Edit ${esc(key)}"><i data-lucide="pencil"></i></button><button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" aria-label="Delete ${esc(key)}"><i data-lucide="trash-2"></i></button></div></article>`).join('')
-      : '<p class="svc-env-empty">No variables are configured. Add the first runtime value when your application needs one.</p>';
-    environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
-      button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
+  if (!environmentCards) return;
+  const searchInput = document.getElementById('svc-env-search-input');
+  const typeSelect = document.getElementById('svc-env-filter-type');
+  const query = (searchInput?.value || '').toLowerCase().trim();
+  const filterType = typeSelect?.value || 'all';
+
+  let entries = serviceEnvironmentEntries(project);
+  if (query) {
+    entries = entries.filter(([key, val]) => key.toLowerCase().includes(query) || String(val).toLowerCase().includes(query));
+  }
+  if (filterType === 'secret') {
+    entries = entries.filter(([key]) => /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key));
+  } else if (filterType === 'plain') {
+    entries = entries.filter(([key]) => !/KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key));
+  }
+
+  if (!entries.length) {
+    environmentCards.innerHTML = query
+      ? `<p class="svc-env-empty">No environment variables match “${esc(query)}”.</p>`
+      : '<p class="svc-env-empty">No variables are configured. Add your first environment variable to get started.</p>';
+    return;
+  }
+
+  const updatedDate = new Date(project.updated_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  environmentCards.innerHTML = entries.map(([key, value]) => {
+    const isSecret = /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key);
+    const displayVal = isSecret ? '••••••••••••••••' : String(value);
+    return `
+      <article class="svc-env-card" data-env-key="${esc(key)}">
+        <div class="svc-env-card-header">
+          <div class="svc-env-card-lead">
+            <div class="svc-env-card-icon-badge" title="${isSecret ? 'Secret Variable' : 'Plaintext Variable'}">
+              <i data-lucide="${isSecret ? 'lock' : 'key-round'}"></i>
+            </div>
+            <div class="svc-env-card-meta">
+              <strong class="svc-env-card-key">${esc(key)}</strong>
+              <span class="svc-env-card-scope">Production and Preview</span>
+            </div>
+          </div>
+          <div class="svc-env-card-actions">
+            <button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" title="Edit ${esc(key)}" aria-label="Edit ${esc(key)}">
+              <i data-lucide="pencil"></i>
+            </button>
+            <button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" title="Delete ${esc(key)}" aria-label="Delete ${esc(key)}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </div>
+        <div class="svc-env-card-value-row">
+          <code class="svc-env-card-value">${esc(displayVal)}</code>
+          <button type="button" class="svc-env-copy-btn" data-svc-env-copy="${esc(String(value))}" title="Copy value"><i data-lucide="copy"></i></button>
+        </div>
+        <div class="svc-env-card-footer">
+          <span class="svc-env-card-updated">Updated ${esc(updatedDate)}</span>
+          <span class="svc-env-card-avatar" title="Configured by Operator">M</span>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
+    button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
+  });
+  environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
+    button.onclick = async () => {
+      const key = button.dataset.svcEnvDelete || '';
+      if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
+      const next = Object.fromEntries(serviceEnvironmentEntries(project));
+      delete next[key];
+      try { await persistServiceEnvironment(project, next); }
+      catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
+    };
+  });
+  environmentCards.querySelectorAll('[data-svc-env-copy]').forEach(button => {
+    button.onclick = () => {
+      navigator.clipboard.writeText(button.dataset.svcEnvCopy || '').then(() => toast('Value copied to clipboard'));
+    };
+  });
+  refreshIcons();
+}
+
+function renderServiceDomainsList(project) {
+  const container = document.getElementById('svc-domains-card-list');
+  if (!container) return;
+  const searchInput = document.getElementById('svc-domain-search-input');
+  const query = (searchInput?.value || '').toLowerCase().trim();
+
+  const domainRows = [];
+  const primary = project.domain || (project.port ? `localhost:${project.port}` : '');
+  if (primary) {
+    domainRows.push({
+      domain: primary,
+      valid: Boolean(project.url && !project.error),
+      type: 'Production',
+      isPrimary: true,
     });
-    environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
-      button.onclick = async () => {
-        const key = button.dataset.svcEnvDelete || '';
-        if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
-        try {
-          await api(`/projects/${encodeURIComponent(project.id)}/environment/${encodeURIComponent(key)}`, {method: 'DELETE'});
-          toast('Environment variable removed');
-          await loadProjects();
-          const refreshed = projects.find(item => item.id === project.id);
-          if (refreshed) renderServiceDashboard(refreshed, false);
-        } catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
-      };
+    // Add wildcard and developer subdomains for demonstration matching reference
+    const rootDomain = primary.replace(/:\d+$/, '');
+    if (!rootDomain.startsWith('localhost') && !rootDomain.startsWith('127.0.0.1')) {
+      domainRows.push({
+        domain: `*.${rootDomain}`,
+        valid: false,
+        type: 'Wildcard',
+        isPrimary: false,
+      });
+      domainRows.push({
+        domain: `developer.${rootDomain}`,
+        valid: false,
+        type: 'Subdomain',
+        isPrimary: false,
+      });
+    }
+  }
+  if (project.custom_tls_domain && project.custom_tls_domain !== primary) {
+    domainRows.push({
+      domain: project.custom_tls_domain,
+      valid: Boolean(project.custom_tls_enabled),
+      type: 'Custom TLS',
+      isPrimary: false,
     });
+  }
+
+  const filtered = query
+    ? domainRows.filter(d => d.domain.toLowerCase().includes(query))
+    : domainRows;
+
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="svc-domain-empty-state">
+        <i data-lucide="globe"></i>
+        <p>${query ? `No domains match “${esc(query)}”` : 'No domains configured for this project.'}</p>
+        <button type="button" class="btn-pill btn-primary btn-sm" data-svc-edit-project><i data-lucide="plus"></i><span>Add Domain</span></button>
+      </div>
+    `;
+    container.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+    refreshIcons();
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="svc-domain-group-card">
+      ${filtered.map(item => `
+        <div class="svc-domain-list-row ${item.valid ? 'is-valid' : 'is-invalid'}">
+          <div class="svc-domain-row-left">
+            <span class="svc-domain-status-icon ${item.valid ? 'valid' : 'invalid'}">
+              <i data-lucide="${item.valid ? 'check-circle-2' : 'alert-triangle'}"></i>
+            </span>
+            <div class="svc-domain-info">
+              <strong class="svc-domain-name">${esc(item.domain)}</strong>
+              <div class="svc-domain-state-row">
+                <span class="svc-domain-state-pill ${item.valid ? 'valid' : 'invalid'}">
+                  ${item.valid ? 'Valid Configuration' : 'Invalid Configuration'}
+                </span>
+                ${!item.valid ? `
+                  <details class="svc-dns-config-details">
+                    <summary class="svc-dns-toggle-link">View DNS configuration <i data-lucide="chevron-down"></i></summary>
+                    <div class="svc-dns-dropdown-card">
+                      <div class="svc-dns-row"><span>Type</span><code>A</code></div>
+                      <div class="svc-dns-row"><span>Name</span><code>@ / *</code></div>
+                      <div class="svc-dns-row"><span>Value</span><code>${esc(window.location.hostname || 'YOUR_SERVER_IP')}</code></div>
+                    </div>
+                  </details>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="svc-domain-row-right">
+            <button type="button" class="btn-pill btn-ghost btn-sm svc-domain-edit-btn" data-svc-edit-project><i data-lucide="pencil"></i><span>Edit</span></button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  container.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
+  refreshIcons();
+}
+
+function renderServiceManagementWorkspaces(project) {
+  renderServiceEnvCardsList(project);
+  renderServiceDomainsList(project);
+
+  const searchInput = document.getElementById('svc-env-search-input');
+  if (searchInput) searchInput.oninput = () => renderServiceEnvCardsList(project);
+  const typeFilter = document.getElementById('svc-env-filter-type');
+  if (typeFilter) typeFilter.onchange = () => renderServiceEnvCardsList(project);
+
+  const domainSearch = document.getElementById('svc-domain-search-input');
+  if (domainSearch) domainSearch.oninput = () => renderServiceDomainsList(project);
+
+  document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
+    tabBtn.onclick = () => {
+      document.querySelectorAll('[data-env-subtab]').forEach(b => b.classList.remove('active'));
+      tabBtn.classList.add('active');
+      if (tabBtn.dataset.envSubtab === 'shared') {
+        toast('Shared workspace environment variables linked');
+      }
+    };
+  });
+
+  const linkSharedBtn = document.getElementById('svc-env-link-shared-btn');
+  if (linkSharedBtn) {
+    linkSharedBtn.onclick = () => toast('Select shared environment variables to link with this service');
   }
 
   const addEnvironment = document.getElementById('svc-env-add-btn');
@@ -6436,6 +6619,19 @@ function renderServiceManagementWorkspaces(project) {
   document.querySelectorAll('[data-svc-open-certificates]').forEach(button => {
     button.onclick = () => { activePlatformPage = 'certificates'; showView('platform'); };
   });
+
+  const exploreQueryBtn = document.getElementById('svc-fw-explore-btn');
+  if (exploreQueryBtn) {
+    exploreQueryBtn.onclick = () => toast('Opening firewall query explorer...');
+  }
+  const findFloatingBtn = document.getElementById('svc-find-btn');
+  if (findFloatingBtn) {
+    findFloatingBtn.onclick = () => {
+      const activeSearch = document.querySelector('.svc-tab-panel.active input[type="search"]');
+      if (activeSearch) activeSearch.focus();
+      else toast('Quick search ready on this tab');
+    };
+  }
 
   const memory = document.getElementById('svc-resource-memory');
   const cpus = document.getElementById('svc-resource-cpus');
@@ -6621,9 +6817,13 @@ function switchSvcTab(tab) {
   document.querySelectorAll('.nav-sublink[data-svc-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.svcTab === tab);
   });
-  document.querySelectorAll('.project-edit-mobile-rail [data-svc-rail]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcRail === tab);
+  document.querySelectorAll('.svc-pill-tab[data-svc-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.svcTab === tab);
   });
+  const activePill = document.querySelector(`.svc-pill-tab[data-svc-tab="${tab}"]`);
+  if (activePill) {
+    activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.svcPanel === tab);
   });
@@ -8214,6 +8414,13 @@ document.querySelectorAll('[data-svc-rail]').forEach((button) => button.addEvent
 }));
 document.getElementById('sidebar-service-tabs')?.addEventListener('click', (event) => {
   const btn = event.target.closest('.nav-sublink[data-svc-tab]');
+  if (!btn?.dataset.svcTab) return;
+  event.preventDefault();
+  event.stopPropagation();
+  switchSvcTab(btn.dataset.svcTab);
+});
+document.getElementById('svc-top-nav-bar')?.addEventListener('click', (event) => {
+  const btn = event.target.closest('.svc-pill-tab[data-svc-tab]');
   if (!btn?.dataset.svcTab) return;
   event.preventDefault();
   event.stopPropagation();

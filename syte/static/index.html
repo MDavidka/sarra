@@ -299,31 +299,32 @@
 
         <section id="view-service" class="view">
           <div class="svc-editor">
-            <header class="project-edit-mobile-header" aria-label="Project controls">
-              <button type="button" class="project-edit-mobile-icon" data-svc-back aria-label="Back to Projects" title="Back to Projects"><i data-lucide="chevron-left"></i></button>
-              <div class="project-edit-mobile-title"><span>Project</span><strong id="svc-mobile-title">Project</strong></div>
-              <button type="button" class="project-edit-mobile-icon" data-svc-rail="settings" aria-label="Open Project Settings" title="Project Settings"><i data-lucide="ellipsis"></i></button>
-            </header>
-            <nav class="project-edit-mobile-rail" aria-label="Project sections">
-              <button type="button" class="active" data-svc-rail="general">Overview</button>
-              <button type="button" data-svc-rail="release">Deployments</button>
-              <button type="button" data-svc-rail="domains">Domains</button>
-              <button type="button" data-svc-rail="env">Variables</button>
-              <button type="button" data-svc-rail="firewall">Firewall</button>
-              <button type="button" data-svc-rail="cdn">CDN</button>
-              <button type="button" data-svc-rail="speed">Resources</button>
-              <button type="button" data-svc-rail="logs">Logs</button>
-              <button type="button" data-svc-rail="rollbacks">Rollbacks</button>
-              <button type="button" data-svc-rail="preview">Preview</button>
-              <button type="button" data-svc-rail="settings">Settings</button>
-            </nav>
+            <!-- Horizontally scrollable pill tabs -->
+            <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
+              <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="release" role="tab"><i data-lucide="rocket"></i><span>Release</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="rollbacks" role="tab"><i data-lucide="history"></i><span>Rollbacks</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="cdn" role="tab"><i data-lucide="cloud"></i><span>CDN</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="preview" role="tab"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="settings" role="tab"><i data-lucide="settings-2"></i><span>Settings</span></button>
+            </div>
+
             <div class="svc-tab-panels">
+              <!-- 1. GENERAL / DEPLOYMENT TAB -->
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
                 <section class="syte-deployment-shell syte-reference-deployment" aria-label="Production deployment">
                   <header class="syte-reference-header">
                     <div>
                       <p>Production deployment</p>
-                      <div class="syte-reference-project-line"><span class="svc-status-dot" id="svc-status-dot" title="Status"></span><h1 class="svc-name" id="svc-title">service</h1></div>
+                      <div class="syte-reference-project-line">
+                        <span class="svc-status-dot" id="svc-status-dot" title="Status"></span>
+                        <h1 class="svc-name" id="svc-title">service</h1>
+                      </div>
                     </div>
                     <div class="syte-reference-header-actions">
                       <button type="button" class="syte-reference-icon-button" id="svc-deploy-now" title="Deploy latest source" aria-label="Deploy latest source"><i data-lucide="rocket"></i></button>
@@ -333,10 +334,18 @@
                   </header>
 
                   <section class="syte-live-site-preview" aria-label="Live site preview">
-                    <div class="syte-preview-browserbar"><span class="syte-preview-browser-dots"><i></i><i></i><i></i></span><span id="svc-preview-label">Live site preview</span><a id="svc-preview-open" href="#" target="_blank" rel="noopener" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a></div>
+                    <div class="syte-preview-browserbar">
+                      <span class="syte-preview-browser-dots"><i></i><i></i><i></i></span>
+                      <span id="svc-preview-label">Live site preview</span>
+                      <a id="svc-preview-open" href="#" target="_blank" rel="noopener" aria-label="Open live site"><i data-lucide="arrow-up-right"></i></a>
+                    </div>
                     <div class="syte-preview-canvas">
                       <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
-                      <div id="svc-deploy-preview-placeholder" class="syte-preview-placeholder"><i data-lucide="monitor-up"></i><strong>Preparing live preview</strong><span>Your site will appear here after the deployment is reachable.</span></div>
+                      <div id="svc-deploy-preview-placeholder" class="syte-preview-placeholder">
+                        <i data-lucide="monitor-up"></i>
+                        <strong>Preparing live preview</strong>
+                        <span>Your site will appear here after the deployment is reachable.</span>
+                      </div>
                     </div>
                   </section>
 
@@ -346,9 +355,76 @@
                   </div>
 
                   <section class="syte-reference-details" aria-label="Deployment details">
-                    <div class="syte-detail-line"><span>Deployment</span><strong id="svc-uuid-pill">—</strong><button type="button" class="syte-detail-pulse" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button></div>
-                    <div class="syte-domain-line"><span>Domain</span><button type="button" class="syte-domain-add" id="svc-domain-edit" title="Set domain" aria-label="Set domain"><i data-lucide="plus"></i></button><a id="svc-deploy-domain" href="#" target="_blank" rel="noopener">Pending domain</a></div>
-                    <dl class="syte-compact-meta"><div><dt>Status</dt><dd><span class="syte-state-dot" id="svc-deploy-state-dot"></span><strong id="svc-deploy-status-summary">Preparing</strong></dd></div><div><dt>Source</dt><dd id="svc-deploy-source">Repository pending</dd></div><div><dt>Branch</dt><dd><button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button></dd></div></dl>
+                    <div class="syte-detail-line">
+                      <span>Deployment</span>
+                      <strong id="svc-uuid-pill">—</strong>
+                      <button type="button" class="syte-detail-pulse" data-svc-open="logs" title="View deployment history"><i data-lucide="activity"></i></button>
+                    </div>
+                    <div class="syte-domain-line">
+                      <span>Domain</span>
+                      <button type="button" class="syte-domain-add" id="svc-domain-edit" title="Set domain" aria-label="Set domain"><i data-lucide="plus"></i></button>
+                      <a id="svc-deploy-domain" href="#" target="_blank" rel="noopener">Pending domain</a>
+                    </div>
+                    <dl class="syte-compact-meta">
+                      <div><dt>Status</dt><dd><span class="syte-state-dot" id="svc-deploy-state-dot"></span><strong id="svc-deploy-status-summary">Preparing</strong></dd></div>
+                      <div><dt>Source</dt><dd id="svc-deploy-source">Repository pending</dd></div>
+                      <div><dt>Branch</dt><dd><button type="button" class="svc-branch-btn" id="svc-branch-btn" title="Git branch"><i data-lucide="git-branch"></i><span id="svc-branch-label">main</span></button></dd></div>
+                    </dl>
+                  </section>
+
+                  <!-- Build Logs Preview & Accordion on Deployment Tab -->
+                  <section class="svc-deploy-logs-card" aria-label="Build & Runtime Logs">
+                    <div class="svc-logs-stats-bar">
+                      <div class="svc-logs-stat-left">
+                        <span class="svc-logs-stat-item"><i data-lucide="file-text"></i> <span id="svc-gen-log-lines">167 lines</span></span>
+                        <span class="svc-logs-stat-item warn"><i data-lucide="alert-triangle"></i> <span id="svc-gen-log-warns">1</span></span>
+                        <span class="svc-redacted-badge"><i data-lucide="lock"></i> Sensitive Environment Variable Redacted</span>
+                      </div>
+                      <div class="svc-logs-stat-right">
+                        <button type="button" class="svc-mini-icon-btn" data-svc-open="logs" title="Open full logs"><i data-lucide="maximize-2"></i></button>
+                      </div>
+                    </div>
+
+                    <div class="logs-terminal logs-terminal-dark svc-compact-terminal" id="svc-gen-live-logs">
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-fn">f</span> <span class="log-text">/servers/compact</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-static">o</span> <span class="log-text">/setup</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-fn">f</span> <span class="log-text">/sites/[subdomain]</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-fn">f</span> <span class="log-text">/sites/[subdomain]/content/[...path]</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-static">o</span> <span class="log-text">/subscriptions</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-static">o</span> <span class="log-text">/tos</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-fn">f</span> <span class="log-text">/uptime</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:31</span> <span class="log-badge-fn">f</span> <span class="log-text">Proxy (Middleware)</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:32</span> <span class="log-text">Traced Next.js server files</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:32</span> <span class="log-text">Created all serverless functions</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:33</span> <span class="log-text">Build Completed in /output [60s]</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:33</span> <span class="log-text">Deploying outputs...</span></div>
+                      <div class="log-line"><span class="log-ts">00:45:48</span> <span class="log-text highlight">Deployment completed</span></div>
+                    </div>
+
+                    <!-- Collapsible Summary & Checks Drawers -->
+                    <div class="svc-logs-drawers">
+                      <details class="svc-log-drawer" open>
+                        <summary>
+                          <span class="drawer-title"><i data-lucide="chevron-right" class="drawer-chevron"></i> <span>Summary</span></span>
+                          <span class="drawer-status-icon success"><i data-lucide="check-circle-2"></i></span>
+                        </summary>
+                        <div class="drawer-body" id="svc-summary-drawer-body">
+                          <div class="drawer-row"><span>Deployment Status</span><strong class="text-status-active">Ready</strong></div>
+                          <div class="drawer-row"><span>Trigger</span><span>Manual Deployment</span></div>
+                          <div class="drawer-row"><span>Total Duration</span><span>47s</span></div>
+                        </div>
+                      </details>
+                      <details class="svc-log-drawer">
+                        <summary>
+                          <span class="drawer-title"><i data-lucide="chevron-right" class="drawer-chevron"></i> <span>Checks</span></span>
+                          <span class="drawer-status-icon pending"><i data-lucide="clock"></i></span>
+                        </summary>
+                        <div class="drawer-body" id="svc-checks-drawer-body">
+                          <div class="drawer-row"><span>HTTP 200 Probe</span><strong class="text-status-active">Passed</strong></div>
+                          <div class="drawer-row"><span>TLS Verification</span><strong class="text-status-active">Passed</strong></div>
+                        </div>
+                      </details>
+                    </div>
                   </section>
 
                   <div class="svc-management-grid syte-deployment-insights">
@@ -365,6 +441,7 @@
                 </section>
               </div>
 
+              <!-- 2. RELEASE TAB -->
               <div class="svc-tab-panel" id="svc-panel-release" data-svc-panel="release">
                 <section class="release-workspace" aria-label="Release workspace">
                   <header class="release-workspace-header"><div><p>Operational release control</p><h2>Deployments</h2><span>Review environments, promote a protected release, verify recovery readiness, and track release activity in one place.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="release-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
@@ -372,43 +449,286 @@
                 </section>
               </div>
 
+              <!-- 3. DOMAINS TAB -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
-                <section class="svc-domain-workspace" aria-label="Project domains">
-                  <header class="svc-workspace-heading"><div><p>Traffic entry</p><h2>Domains and custom TLS</h2><span>Route this application through its production address and request Caddy-managed TLS.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" data-svc-edit-project><i data-lucide="pencil"></i><span>Edit primary domain</span></button></header>
-                  <div class="svc-primary-domain" id="svc-primary-domain"><span>Production domain</span><strong>Not configured</strong></div>
-                  <form class="svc-custom-domain-form" id="svc-custom-domain-form"><label>Custom domain<input id="svc-custom-tls-domain" placeholder="app.example.com" autocomplete="off"></label><label class="svc-switch-field"><input type="checkbox" id="svc-custom-tls-enabled"><span>Enable Caddy TLS for this domain</span></label><div class="svc-inline-actions"><button type="submit" class="btn-pill btn-primary"><i data-lucide="shield-check"></i><span>Save custom domain</span></button><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="badge-check"></i><span>Certificate readiness</span></button></div><p class="svc-domain-result" id="svc-custom-tls-result">DNS must point to this server before a trusted certificate can be issued.</p></form>
+                <section class="svc-domains-screen" aria-label="Project domains">
+                  <!-- Header & Top Action Buttons -->
+                  <div class="svc-screen-header">
+                    <div class="svc-screen-title-wrap">
+                      <h2>Domains</h2>
+                      <p class="svc-screen-sub">Manage domains, subdomains, and TLS certificate routing.</p>
+                    </div>
+                    <div class="svc-split-actions-row">
+                      <button type="button" class="btn-pill btn-secondary" data-svc-edit-project><i data-lucide="plus"></i><span>Add Existing</span></button>
+                      <button type="button" class="btn-pill btn-primary" data-svc-open-certificates><i data-lucide="shopping-bag"></i><span>Buy</span></button>
+                    </div>
+                  </div>
+
+                  <!-- Filter & Search Row -->
+                  <div class="svc-domain-toolbar">
+                    <button type="button" class="svc-toolbar-filter-btn" title="Domain filters"><i data-lucide="sliders-horizontal"></i></button>
+                    <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
+                      <i data-lucide="search"></i>
+                      <input id="svc-domain-search-input" type="search" placeholder="Search any domain" autocomplete="off">
+                    </label>
+                  </div>
+
+                  <!-- Grouped Domains Card List -->
+                  <div class="svc-domains-card-list" id="svc-domains-card-list">
+                    <!-- Populated dynamically by renderServiceDomainsList -->
+                  </div>
+
+                  <!-- Custom Domain & TLS Settings Box -->
+                  <div class="svc-domain-config-card">
+                    <header class="svc-config-card-head">
+                      <div>
+                        <h3>Custom TLS Domain</h3>
+                        <p>Route traffic directly and request automatic Let's Encrypt certificates via Caddy.</p>
+                      </div>
+                    </header>
+                    <form class="svc-custom-domain-form" id="svc-custom-domain-form">
+                      <label>Custom domain<input id="svc-custom-tls-domain" placeholder="app.example.com" autocomplete="off"></label>
+                      <label class="svc-switch-field"><input type="checkbox" id="svc-custom-tls-enabled"><span>Enable Caddy TLS for this domain</span></label>
+                      <div class="svc-inline-actions">
+                        <button type="submit" class="btn-pill btn-primary"><i data-lucide="shield-check"></i><span>Save custom domain</span></button>
+                        <button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="badge-check"></i><span>Certificate readiness</span></button>
+                      </div>
+                      <p class="svc-domain-result" id="svc-custom-tls-result">DNS must point to this server before a trusted certificate can be issued.</p>
+                    </form>
+                  </div>
                 </section>
               </div>
 
+              <!-- 4. ENVIRONMENT VARIABLES TAB -->
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <section class="svc-env-workspace" aria-label="Environment variables">
-                  <header class="svc-workspace-heading"><div><p>Runtime configuration</p><h2>Environment variables</h2><span>Keys and values are stored for this project and applied when you deploy or restart.</span></div><button type="button" class="btn-pill btn-primary btn-sm" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add variable</span></button></header>
-                  <div class="svc-env-cards" id="svc-env-cards"></div>
+                <section class="svc-env-screen" aria-label="Environment variables">
+                  <!-- Header & Descriptions -->
+                  <div class="svc-env-screen-header">
+                    <div class="svc-env-heading-group">
+                      <h2>Environment Variables</h2>
+                      <p class="svc-env-description">Store API keys, tokens, and config securely.</p>
+                      <p class="svc-env-links">
+                        <a href="https://docs.sycord.com/environment-variables" target="_blank" rel="noopener" class="svc-blue-link">Learn more about environment variables <i data-lucide="external-link"></i></a>
+                        <span class="svc-dot-sep">·</span>
+                        <a href="#" class="svc-blue-link" id="svc-env-secret-values-link">Separate Production Secret Values</a>
+                      </p>
+                    </div>
+                    <!-- Action Buttons -->
+                    <div class="svc-env-actions-stack">
+                      <button type="button" class="btn-pill btn-primary btn-full" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add Environment Variable</span></button>
+                      <button type="button" class="btn-pill btn-secondary btn-full" id="svc-env-link-shared-btn"><i data-lucide="link"></i><span>Link Shared Variable</span></button>
+                    </div>
+                  </div>
+
+                  <!-- Segmented Sub-Tabs (Project | Shared) -->
+                  <div class="svc-env-segmented-bar" role="tablist">
+                    <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
+                    <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
+                  </div>
+
+                  <!-- Search & Filter Controls -->
+                  <div class="svc-env-controls-row">
+                    <label class="svc-env-search-wrap" for="svc-env-search-input">
+                      <i data-lucide="search"></i>
+                      <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
+                    </label>
+                    <div class="svc-env-filter-pills">
+                      <div class="svc-pill-select-wrap">
+                        <select id="svc-env-filter-type">
+                          <option value="all">All Types</option>
+                          <option value="plain">Plaintext</option>
+                          <option value="secret">Secret</option>
+                        </select>
+                      </div>
+                      <div class="svc-pill-select-wrap">
+                        <select id="svc-env-filter-env">
+                          <option value="all">All Environments</option>
+                          <option value="production">Production</option>
+                          <option value="preview">Preview</option>
+                          <option value="development">Development</option>
+                        </select>
+                      </div>
+                      <div class="svc-pill-select-wrap">
+                        <i data-lucide="search" class="select-leading-icon"></i>
+                        <select id="svc-env-filter-editor">
+                          <option value="all">All Editors</option>
+                        </select>
+                      </div>
+                      <div class="svc-pill-select-wrap">
+                        <select id="svc-env-filter-sort">
+                          <option value="all">All Variables</option>
+                          <option value="name">Alphabetical</option>
+                        </select>
+                      </div>
+                      <div class="svc-pill-select-wrap">
+                        <i data-lucide="arrow-down-up" class="select-leading-icon"></i>
+                        <select id="svc-env-filter-order">
+                          <option value="updated">Last Updated</option>
+                          <option value="created">Created</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Variable Cards Container -->
+                  <div class="svc-env-cards-stack" id="svc-env-cards"></div>
+
                   <p class="svc-field-help"><i data-lucide="info"></i> Save changes, then deploy or restart to apply the updated environment.</p>
                 </section>
-                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title"><div class="svc-env-modal-backdrop" data-svc-env-close></div><form class="svc-env-dialog" id="svc-env-form"><button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button><p>Environment variable</p><h3 id="svc-env-modal-title">Add variable</h3><input type="hidden" id="svc-env-original-key"><label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DATABASE_URL" autocomplete="off"></label><label>Value<input id="svc-env-value" required placeholder="Value" autocomplete="off"></label><div><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save variable</span></button></div></form></div>
+
+                <!-- Environment Variable Modal Dialog -->
+                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title">
+                  <div class="svc-env-modal-backdrop" data-svc-env-close></div>
+                  <form class="svc-env-dialog" id="svc-env-form">
+                    <button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button>
+                    <p>Environment variable</p>
+                    <h3 id="svc-env-modal-title">Add Environment Variable</h3>
+                    <input type="hidden" id="svc-env-original-key">
+                    <label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DEPLOYER_API_KEY" autocomplete="off"></label>
+                    <label>Value<input id="svc-env-value" required placeholder="Enter value or token" autocomplete="off"></label>
+                    <label>Environments
+                      <select id="svc-env-scope-select">
+                        <option value="Production and Preview">Production and Preview</option>
+                        <option value="Production">Production only</option>
+                        <option value="Preview">Preview only</option>
+                        <option value="All">All Environments</option>
+                      </select>
+                    </label>
+                    <div><button type="submit" class="btn-pill btn-primary btn-full"><i data-lucide="save"></i><span>Save Variable</span></button></div>
+                  </form>
+                </div>
               </div>
 
+              <!-- 5. FIREWALL TAB -->
               <div class="svc-tab-panel" id="svc-panel-firewall" data-svc-panel="firewall">
-                <section class="svc-firewall-workspace" aria-label="Application firewall boundary"><header><i data-lucide="shield-check"></i><div><p>Network boundary</p><h2>Firewall</h2><span>Project-level public-port rules are not managed here. Sycord routes public HTTP(S) through Caddy; host firewall policy stays server-level to avoid exposing an application port by accident.</span></div></header><div class="svc-firewall-lines"><div><strong>Public entry</strong><span>HTTPS via configured Caddy domain</span></div><div><strong>Direct application port</strong><span>Do not publish unless a server administrator explicitly configures it</span></div><div><strong>Change control</strong><span>Use the server workspace for host firewall changes</span></div></div></section>
+                <section class="svc-firewall-screen" aria-label="Application firewall boundary">
+                  <!-- Header & Filter Row -->
+                  <div class="svc-firewall-header-group">
+                    <div class="svc-screen-header">
+                      <div class="svc-screen-title-wrap">
+                        <h2>Firewall</h2>
+                        <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
+                      </div>
+                      <button type="button" class="svc-icon-btn-border" id="svc-firewall-options-btn" aria-label="Firewall settings"><i data-lucide="more-horizontal"></i></button>
+                    </div>
+                    <div class="svc-firewall-filter-bar">
+                      <div class="svc-pill-select-wrap">
+                        <i data-lucide="calendar" class="select-leading-icon"></i>
+                        <select id="svc-fw-timeframe">
+                          <option value="day">Past Day</option>
+                          <option value="week">Past Week</option>
+                          <option value="month">Past Month</option>
+                        </select>
+                      </div>
+                      <div class="svc-pill-select-wrap">
+                        <i data-lucide="search" class="select-leading-icon"></i>
+                        <select id="svc-fw-view">
+                          <option value="overview">Overview</option>
+                          <option value="rules">Rules</option>
+                          <option value="mitigations">Mitigations</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Hero Status Card with Shield -->
+                  <div class="svc-firewall-hero-card">
+                    <div class="svc-firewall-shield-badge">
+                      <i data-lucide="shield-check"></i>
+                    </div>
+                    <h3 class="svc-firewall-hero-title">Firewall is active</h3>
+                    <p class="svc-firewall-hero-subtitle">All systems normal</p>
+                    <div class="svc-firewall-metrics-list">
+                      <div class="svc-fw-stat-row">
+                        <span>System Mitigations</span>
+                        <strong class="text-status-active">Active</strong>
+                      </div>
+                      <div class="svc-fw-stat-row">
+                        <span>Custom Rules</span>
+                        <strong>2 active</strong>
+                      </div>
+                      <div class="svc-fw-stat-row">
+                        <span>Bot Protection</span>
+                        <span class="text-status-muted">Inactive</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Analytics Metrics Card -->
+                  <div class="svc-firewall-analytics-card">
+                    <div class="svc-fw-metrics-pills">
+                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-blue"></i> Allowed <strong id="fw-metric-allowed">189</strong></span>
+                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-red"></i> Denied <strong id="fw-metric-denied">404</strong></span>
+                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
+                    </div>
+                    <div class="svc-fw-query-action">
+                      <button type="button" class="btn-pill btn-secondary btn-sm" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
+                    </div>
+                  </div>
+
+                  <!-- Firewall Rules & Boundaries -->
+                  <div class="svc-firewall-lines-card">
+                    <div class="svc-firewall-line-item">
+                      <strong>Public entry</strong>
+                      <span>HTTPS via configured Caddy domain with automated TLS handshake and header filtering</span>
+                    </div>
+                    <div class="svc-firewall-line-item">
+                      <strong>Direct application port</strong>
+                      <span>Direct TCP traffic is isolated on internal bridge; do not publish unless configured</span>
+                    </div>
+                    <div class="svc-firewall-line-item">
+                      <strong>Change control</strong>
+                      <span>Use server-level workspace for host firewall (UFW/iptables) adjustments</span>
+                    </div>
+                  </div>
+                </section>
               </div>
 
+              <!-- 6. CDN TAB -->
               <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
-                <section class="svc-cdn-workspace" aria-label="Content delivery guidance"><header><div><p>Delivery path</p><h2>CDN and Cloudflare</h2><span>CDN proxying is configured at your DNS provider, not silently enabled by Sycord. Keep Cloudflare proxying off while validating or issuing a certificate.</span></div><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"></header><div class="svc-cdn-flow"><span>Browser</span><i data-lucide="arrow-right"></i><span>Cloudflare DNS/CDN</span><i data-lucide="arrow-right"></i><span>Sycord Caddy</span></div><button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review certificate DNS status</span></button></section>
+                <section class="svc-cdn-workspace" aria-label="Content delivery guidance">
+                  <header><div><p>Delivery path</p><h2>CDN and Cloudflare</h2><span>CDN proxying is configured at your DNS provider, not silently enabled by Sycord. Keep Cloudflare proxying off while validating or issuing a certificate.</span></div><img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare"></header>
+                  <div class="svc-cdn-flow"><span>Browser</span><i data-lucide="arrow-right"></i><span>Cloudflare DNS/CDN</span><i data-lucide="arrow-right"></i><span>Sycord Caddy</span></div>
+                  <button type="button" class="btn-pill btn-ghost" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review certificate DNS status</span></button>
+                </section>
               </div>
 
+              <!-- 7. SPEED & RESOURCES TAB -->
               <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
-                <section class="svc-speed-workspace" aria-label="Project runtime resources"><header class="svc-workspace-heading"><div><p>Runtime allocation</p><h2>Speed and resource limits</h2><span>Docker deployments apply these limits at the next deployment. Shell projects retain their host process limits.</span></div></header><form class="svc-speed-form" id="svc-speed-form"><label>Memory limit<select id="svc-resource-memory"><option value="">Server default</option><option value="256m">256 MB</option><option value="512m">512 MB</option><option value="1g">1 GB</option><option value="2g">2 GB</option></select></label><label>CPU limit<select id="svc-resource-cpus"><option value="">Server default</option><option value="0.5">0.5 CPU</option><option value="1.0">1 CPU</option><option value="2.0">2 CPU</option></select></label><button type="submit" class="btn-pill btn-primary"><i data-lucide="gauge"></i><span>Save deployment limits</span></button></form><p class="svc-speed-status" id="svc-speed-status">Current runtime status is shown on the General tab.</p></section>
+                <section class="svc-speed-workspace" aria-label="Project runtime resources">
+                  <header class="svc-workspace-heading"><div><p>Runtime allocation</p><h2>Speed and resource limits</h2><span>Docker deployments apply these limits at the next deployment. Shell projects retain their host process limits.</span></div></header>
+                  <form class="svc-speed-form" id="svc-speed-form">
+                    <label>Memory limit<select id="svc-resource-memory"><option value="">Server default</option><option value="256m">256 MB</option><option value="512m">512 MB</option><option value="1g">1 GB</option><option value="2g">2 GB</option></select></label>
+                    <label>CPU limit<select id="svc-resource-cpus"><option value="">Server default</option><option value="0.5">0.5 CPU</option><option value="1.0">1 CPU</option><option value="2.0">2 CPU</option></select></label>
+                    <button type="submit" class="btn-pill btn-primary"><i data-lucide="gauge"></i><span>Save deployment limits</span></button>
+                  </form>
+                  <p class="svc-speed-status" id="svc-speed-status">Current runtime status is shown on the General tab.</p>
+                </section>
               </div>
 
+              <!-- 8. ROLLBACKS TAB -->
               <div class="svc-tab-panel" id="svc-panel-rollbacks" data-svc-panel="rollbacks">
-                <section class="svc-rollback-workspace" aria-label="Deployment rollback history"><header class="svc-workspace-heading"><div><p>Release recovery</p><h2>Rollbacks</h2><span>Re-deploy a successful recorded Git commit. Runs without a recorded commit cannot be safely rolled back.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header><div class="svc-rollback-history" id="svc-rollback-history"><p class="hint">Load deployment history to choose a recorded release.</p></div></section>
+                <section class="svc-rollback-workspace" aria-label="Deployment rollback history">
+                  <header class="svc-workspace-heading"><div><p>Release recovery</p><h2>Rollbacks</h2><span>Re-deploy a successful recorded Git commit. Runs without a recorded commit cannot be safely rolled back.</span></div><button type="button" class="btn-pill btn-ghost btn-sm" id="svc-rollback-refresh"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></header>
+                  <div class="svc-rollback-history" id="svc-rollback-history"><p class="hint">Load deployment history to choose a recorded release.</p></div>
+                </section>
               </div>
 
+              <!-- 9. SETTINGS TAB -->
               <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
-                <section class="svc-project-settings-workspace" aria-label="Project deployment settings"><header class="svc-workspace-heading"><div><p>Deployment policy</p><h2>Project settings</h2><span>Configure source and automatic branch deployment for this application.</span></div></header><form id="svc-deployment-settings-form" class="svc-deployment-settings-form"><label>Branch<input id="svc-settings-branch" placeholder="main" autocomplete="off"></label><label>Start command<input id="svc-settings-start-command" placeholder="npm start" autocomplete="off"></label><label class="svc-auto-deploy-toggle"><input type="checkbox" id="svc-settings-auto-deploy"><span><strong>Automatically redeploy new branch commits</strong><small>Checks the configured GitHub branch every 5 minutes. First enable queues the current branch head once.</small></span></label><p class="svc-auto-deploy-state" id="svc-auto-deploy-state">Connect GitHub and select a repository before enabling.</p><button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save deployment settings</span></button></form></section>
+                <section class="svc-project-settings-workspace" aria-label="Project deployment settings">
+                  <header class="svc-workspace-heading"><div><p>Deployment policy</p><h2>Project settings</h2><span>Configure source and automatic branch deployment for this application.</span></div></header>
+                  <form id="svc-deployment-settings-form" class="svc-deployment-settings-form">
+                    <label>Branch<input id="svc-settings-branch" placeholder="main" autocomplete="off"></label>
+                    <label>Start command<input id="svc-settings-start-command" placeholder="npm start" autocomplete="off"></label>
+                    <label class="svc-auto-deploy-toggle"><input type="checkbox" id="svc-settings-auto-deploy"><span><strong>Automatically redeploy new branch commits</strong><small>Checks the configured GitHub branch every 5 minutes. First enable queues the current branch head once.</small></span></label>
+                    <p class="svc-auto-deploy-state" id="svc-auto-deploy-state">Connect GitHub and select a repository before enabling.</p>
+                    <button type="submit" class="btn-pill btn-primary"><i data-lucide="save"></i><span>Save deployment settings</span></button>
+                  </form>
+                </section>
               </div>
 
+              <!-- 10. LOGS TAB -->
               <div class="svc-tab-panel" id="svc-panel-logs" data-svc-panel="logs">
                 <div class="svc-panel-intro svc-panel-intro-compact">
                   <div class="svc-panel-intro-icon"><i data-lucide="terminal-square"></i></div>
@@ -436,6 +756,7 @@
                 </div>
               </div>
 
+              <!-- 11. PREVIEW TAB -->
               <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
                 <div class="svc-panel-intro">
                   <div class="svc-panel-intro-icon"><i data-lucide="monitor-smartphone"></i></div>
@@ -472,6 +793,13 @@
                 </div>
               </div>
 
+            </div>
+
+            <!-- Floating Find bar at bottom of project editor -->
+            <div class="svc-floating-find-bar" id="svc-floating-find-bar">
+              <button type="button" class="find-bar-action" id="svc-find-btn"><i data-lucide="search"></i><span>Find</span></button>
+              <span class="find-bar-sep">|</span>
+              <button type="button" class="find-bar-action" id="svc-menu-find-btn" aria-label="Menu"><i data-lucide="menu"></i></button>
             </div>
           </div>
 
