@@ -3,14 +3,16 @@
 Gives the LLM complete autonomous access to the Syte platform, filesystem, terminal, deployments, logs, and infrastructure.
 """
 
-from __future__ import annotations
-
+import ast
 import asyncio
+import json
 import os
 from pathlib import Path
+import re
 import shutil
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from syte.ai.skills import get_skill_content, list_available_skills
 from syte.config import settings
 from syte.database import get_project, list_project_router_logs
 from syte.deployment import issue_deploy, start_service, stop_service
@@ -46,14 +48,27 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "syte_get_deployment_logs",
-                "description": "Retrieve stdout/stderr logs from the current or latest deployment process.",
+                "description": "Retrieve and diagnose stdout/stderr logs from the current or latest deployment process.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "limit": {
                             "type": "integer",
                             "description": "Number of recent log lines to retrieve (default 60).",
-                        }
+                        },
+                        "filter_keyword": {
+                            "type": "string",
+                            "description": "Optional keyword or regex to filter log lines (e.g. 'error', 'failed', 'warn').",
+                        },
+                        "log_level": {
+                            "type": "string",
+                            "enum": ["all", "errors", "warnings"],
+                            "description": "Filter severity level (default 'all').",
+                        },
+                        "diagnose": {
+                            "type": "boolean",
+                            "description": "Whether to run automatic error root cause diagnosis and fix suggestions (default true).",
+                        },
                     },
                 },
             },
@@ -431,6 +446,206 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 "parameters": {"type": "object", "properties": {}},
             },
         },
+        # 6. Planning & Task Orchestration
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_create_plan",
+                "description": "Create an implementation plan before executing code modifications. Outlines steps, architecture, and validation checks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Short title of the plan (e.g. 'Build Landing Page with shadcn & Inter').",
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "title": {"type": "string"},
+                                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "failed"]},
+                                    "description": {"type": "string"},
+                                },
+                                "required": ["id", "title"],
+                            },
+                            "description": "Ordered list of planning steps.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "Brief architectural explanation and approach rationale.",
+                        },
+                    },
+                    "required": ["title", "steps"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_update_plan_step",
+                "description": "Update the execution status of a specific step in the current implementation plan.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "step_id": {
+                            "type": "string",
+                            "description": "The ID of the step to update.",
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed", "failed"],
+                            "description": "New status for the step.",
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Optional notes or outcome summary for this step.",
+                        },
+                    },
+                    "required": ["step_id", "status"],
+                },
+            },
+        },
+        # 7. Modular Skills
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_list_skills",
+                "description": "List all available design systems, architecture guides, and domain skills in the library.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_load_skill",
+                "description": "Load comprehensive instructions, best practices, and blueprints for a specific skill (e.g. 'website-create', 'shadcn-ui', 'integration', 'providers', 'cloud-code').",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Name or alias of the skill to load.",
+                        }
+                    },
+                    "required": ["skill_name"],
+                },
+            },
+        },
+        # 8. Interactive User Clarifications & Secure Environment Vault
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_ask_question",
+                "description": "Ask the user a clarifying design or requirement question with multiple choice options and custom write-in.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "The question to ask the user (e.g. 'What color scheme do you prefer?').",
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Suggested choices for the user (e.g. ['Clean Light Theme (Inter)', 'Modern Dark (Zinc)', 'Emerald Minimal']).",
+                        },
+                        "allow_custom": {
+                            "type": "boolean",
+                            "description": "Whether the user can write in a custom answer (default true).",
+                        },
+                    },
+                    "required": ["question"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_ask_env_var",
+                "description": "Request a secret or API key from the user. Securely saves the key directly to server .env without exposing the raw secret to LLM context.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "Environment variable key name (e.g. 'STRIPE_SECRET_KEY', 'DATABASE_URL', 'RESEND_API_KEY').",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Explanation of what this key is needed for.",
+                        },
+                        "hint": {
+                            "type": "string",
+                            "description": "Format hint (e.g. 'Starts with sk_test_... or sk_live_...').",
+                        },
+                    },
+                    "required": ["key"],
+                },
+            },
+        },
+        # 9. Internal Security & Code Linting Scanner
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_security_lint_scan",
+                "description": "Run internal static analysis, syntax verification (Python/JS/JSON), and security vulnerability scanning on the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of relative file paths to scan. If omitted, scans all modified or critical files in workspace.",
+                        }
+                    },
+                },
+            },
+        },
+        # 10. Workspace Structure & Line Reading
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_read_file_lines",
+                "description": "Read a specific line range from a file with line numbers (efficient for large source files).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Relative file path.",
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "Starting line number (1-indexed).",
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "Ending line number (inclusive).",
+                        },
+                    },
+                    "required": ["path", "start_line", "end_line"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_get_workspace_tree",
+                "description": "Get hierarchical directory structure of the workspace with file types and sizes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "max_depth": {
+                            "type": "integer",
+                            "description": "Max directory depth (default 3).",
+                        }
+                    },
+                },
+            },
+        },
     ]
 
 
@@ -450,6 +665,207 @@ def _get_project_workspace_dir(project: dict[str, Any]) -> Path:
     p = settings.resolved_workspaces_dir / pid / "app"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def _diagnose_deployment_errors(logs: List[str]) -> Dict[str, Any]:
+    """Diagnose build or deployment failures from log lines and suggest actionable fixes."""
+    full_text = "\n".join(logs)
+    diagnoses: List[Dict[str, str]] = []
+
+    # 1. Missing Node.js / npm package
+    missing_npm = re.findall(r"(?:Cannot find module|Module not found: Can't resolve)\s+['\"]([^'\"]+)['\"]", full_text, re.IGNORECASE)
+    if missing_npm:
+        pkg = missing_npm[0]
+        diagnoses.append({
+            "category": "Missing Dependency",
+            "issue": f"Module '{pkg}' is imported but not installed in package.json or node_modules.",
+            "suggestion": f"Run `syte_run_command` with `npm install {pkg}` or `pnpm add {pkg}`.",
+        })
+
+    # 2. TypeScript compilation failure
+    ts_errors = re.findall(r"error TS\d+:\s*(.+)", full_text)
+    if ts_errors:
+        diagnoses.append({
+            "category": "TypeScript Compilation Error",
+            "issue": ts_errors[0],
+            "suggestion": "Inspect the referenced file with `syte_read_file` and fix the type definition or missing export.",
+        })
+
+    # 3. Port conflict / EADDRINUSE
+    if "EADDRINUSE" in full_text or "Address already in use" in full_text:
+        diagnoses.append({
+            "category": "Port Conflict",
+            "issue": "The target TCP port is already in use by another process.",
+            "suggestion": "Ensure the app binds dynamically to `process.env.PORT` or `os.environ.get('PORT')` provided by Syte.",
+        })
+
+    # 4. Python missing package
+    missing_py = re.findall(r"ModuleNotFoundError:\s+No module named\s+['\"]([^'\"]+)['\"]", full_text)
+    if missing_py:
+        mod = missing_py[0]
+        diagnoses.append({
+            "category": "Python Dependency Missing",
+            "issue": f"Python module '{mod}' is not installed.",
+            "suggestion": f"Add '{mod}' to requirements.txt and run `syte_run_command` with `pip install {mod}`.",
+        })
+
+    # 5. Syntax Error
+    syntax_err = re.findall(r"SyntaxError:\s*(.+)", full_text)
+    if syntax_err:
+        diagnoses.append({
+            "category": "Syntax Error",
+            "issue": syntax_err[0],
+            "suggestion": "Run `syte_security_lint_scan` to pinpoint the invalid syntax and apply corrections.",
+        })
+
+    has_error = bool(diagnoses) or any(k in full_text.lower() for k in ["error:", "failed", "fatal:", "exception"])
+    return {
+        "has_error": has_error,
+        "diagnoses": diagnoses,
+        "summary": diagnoses[0]["issue"] if diagnoses else ("No critical errors detected in recent logs." if not has_error else "Deployment encountered errors. Inspect recent log output for details."),
+    }
+
+
+def _perform_security_lint_scan(ws_dir: Path, target_paths: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Run AST syntax verification and static security scanning on workspace files."""
+    syntax_errors: List[Dict[str, Any]] = []
+    security_warnings: List[Dict[str, Any]] = []
+    scanned_count = 0
+
+    SECRET_PATTERNS = [
+        (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PRIVATE )?KEY-----"), "Hardcoded Private Key"),
+        (re.compile(r"\b(?:sk_live_[0-9a-zA-Z]{24,}|ghp_[0-9a-zA-Z]{36}|AIzaSy[0-9a-zA-Z_-]{33})\b"), "Hardcoded Live API Secret Key"),
+        (re.compile(r"(?:password|secret|api_key|token)\s*=\s*['\"][0-9a-zA-Z_\-!@#$%^&*]{16,}['\"]", re.IGNORECASE), "Plaintext Secret Literal"),
+    ]
+
+    DANGEROUS_PATTERNS = [
+        (re.compile(r"\brm\s+-rf\s+(?:/|~|\$HOME|\.\./\.\.)"), "Destructive Shell Command"),
+        (re.compile(r"\bchild_process\.exec\s*\(\s*`[^`]*\$\{"), "Possible Command Injection via Unsanitized Template Literal"),
+    ]
+
+    files_to_scan: List[Path] = []
+    if target_paths:
+        for tp in target_paths:
+            fp = ws_dir / tp.lstrip("/\\")
+            if fp.exists() and fp.is_file():
+                files_to_scan.append(fp)
+    else:
+        ignored_dirs = {".git", "node_modules", ".venv", "__pycache__", ".next", "dist", "build"}
+        for root, dirs, files in os.walk(ws_dir):
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            for f in files:
+                if f.endswith((".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".html", ".env", ".yaml", ".yml")):
+                    files_to_scan.append(Path(root) / f)
+                    if len(files_to_scan) >= 150:
+                        break
+            if len(files_to_scan) >= 150:
+                break
+
+    for file_path in files_to_scan:
+        rel_str = str(file_path.relative_to(ws_dir))
+        scanned_count += 1
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        # 1. Python AST Syntax Check
+        if file_path.suffix == ".py":
+            try:
+                ast.parse(content, filename=rel_str)
+            except SyntaxError as syn_err:
+                syntax_errors.append({
+                    "file": rel_str,
+                    "line": syn_err.lineno,
+                    "offset": syn_err.offset,
+                    "error": str(syn_err.msg),
+                    "type": "Python SyntaxError",
+                })
+
+        # 2. JSON Validation
+        elif file_path.suffix == ".json":
+            try:
+                json.loads(content)
+            except json.JSONDecodeError as json_err:
+                syntax_errors.append({
+                    "file": rel_str,
+                    "line": json_err.lineno,
+                    "col": json_err.colno,
+                    "error": json_err.msg,
+                    "type": "JSON Decode Error",
+                })
+
+        # 3. Security Checks (unless file is a mock/sample .env.example)
+        if not rel_str.endswith((".example", ".sample")):
+            for pattern, label in SECRET_PATTERNS:
+                matches = pattern.finditer(content)
+                for m in matches:
+                    line_num = content[:m.start()].count("\n") + 1
+                    security_warnings.append({
+                        "file": rel_str,
+                        "line": line_num,
+                        "severity": "high",
+                        "issue": label,
+                        "recommendation": "Move secrets to server environment variables (.env) and access via process.env or os.environ.",
+                    })
+
+        for pattern, label in DANGEROUS_PATTERNS:
+            matches = pattern.finditer(content)
+            for m in matches:
+                line_num = content[:m.start()].count("\n") + 1
+                security_warnings.append({
+                    "file": rel_str,
+                    "line": line_num,
+                    "severity": "critical",
+                    "issue": label,
+                    "recommendation": "Avoid unbounded destructive shell operations or unsanitized command interpolations.",
+                })
+
+    is_clean = len(syntax_errors) == 0 and len(security_warnings) == 0
+    return {
+        "ok": True,
+        "clean": is_clean,
+        "scanned_files_count": scanned_count,
+        "syntax_errors_count": len(syntax_errors),
+        "security_warnings_count": len(security_warnings),
+        "syntax_errors": syntax_errors,
+        "security_warnings": security_warnings,
+        "summary": "Passed all syntax and security checks cleanly." if is_clean else f"Found {len(syntax_errors)} syntax error(s) and {len(security_warnings)} security warning(s).",
+    }
+
+
+def _build_workspace_tree(ws_dir: Path, max_depth: int = 3) -> Dict[str, Any]:
+    """Generate structured directory tree representation."""
+    ignored = {".git", "node_modules", ".venv", "__pycache__", ".next", "dist", "build"}
+
+    def _walk(current: Path, depth: int) -> List[Dict[str, Any]]:
+        if depth > max_depth or not current.exists():
+            return []
+        items = []
+        try:
+            for entry in sorted(current.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                if entry.name in ignored:
+                    continue
+                rel = str(entry.relative_to(ws_dir))
+                if entry.is_dir():
+                    items.append({
+                        "name": entry.name,
+                        "path": rel,
+                        "type": "directory",
+                        "children": _walk(entry, depth + 1) if depth < max_depth else [],
+                    })
+                else:
+                    items.append({
+                        "name": entry.name,
+                        "path": rel,
+                        "type": "file",
+                        "size_bytes": entry.stat().st_size if entry.exists() else 0,
+                    })
+        except Exception:
+            pass
+        return items
+
+    return {"root": str(ws_dir.name), "tree": _walk(ws_dir, 1)}
 
 
 async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -473,8 +889,31 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
 
         elif tool_name == "syte_get_deployment_logs":
             limit = int(arguments.get("limit") or 60)
-            logs = await get_logs(project_id, limit=limit)
-            return {"ok": True, "logs": logs, "lines_count": len(logs)}
+            keyword = str(arguments.get("filter_keyword") or "").strip().lower()
+            level = str(arguments.get("log_level") or "all").lower()
+            should_diagnose = bool(arguments.get("diagnose", True))
+
+            raw_logs = await get_logs(project_id, limit=limit * 2 if (keyword or level != "all") else limit)
+            filtered = []
+            for line in raw_logs:
+                lower_line = line.lower()
+                if keyword and keyword not in lower_line:
+                    continue
+                if level == "errors" and not any(e in lower_line for e in ["error", "fail", "fatal", "exception", "ts2"]):
+                    continue
+                if level == "warnings" and not any(w in lower_line for w in ["warn", "warning", "deprecat"]):
+                    continue
+                filtered.append(line)
+
+            logs = filtered[-limit:] if filtered else raw_logs[-limit:]
+            diagnosis = _diagnose_deployment_errors(logs) if should_diagnose else {}
+            return {
+                "ok": True,
+                "logs": logs,
+                "lines_count": len(logs),
+                "has_errors": diagnosis.get("has_error", False),
+                "diagnosis": diagnosis,
+            }
 
         elif tool_name == "syte_get_router_logs":
             search = str(arguments.get("search") or "")
@@ -774,7 +1213,7 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             return {"ok": True, "environment_variables": env_vars}
 
         elif tool_name == "syte_set_environment":
-            from syte.database import update_project_env
+            from syte.database import update_project
 
             key = str(arguments.get("key") or "").strip()
             value = str(arguments.get("value") or "").strip()
@@ -782,7 +1221,7 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                 return {"ok": False, "error": "Key is required."}
             env_vars = dict(project.get("env_vars") or {})
             env_vars[key] = value
-            await update_project_env(project_id, env_vars)
+            await update_project(project_id, {"env_vars": env_vars})
             return {"ok": True, "key": key, "message": f"Environment variable '{key}' saved."}
 
         elif tool_name == "syte_manage_domains":
@@ -832,6 +1271,126 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                 "status": "running" if running else "stopped",
                 "meta": meta,
             }
+
+        elif tool_name == "syte_create_plan":
+            title = str(arguments.get("title") or "Implementation Plan").strip()
+            raw_steps = arguments.get("steps") or []
+            rationale = str(arguments.get("rationale") or "").strip()
+            steps = []
+            for idx, s in enumerate(raw_steps, 1):
+                if isinstance(s, dict):
+                    steps.append({
+                        "id": str(s.get("id") or str(idx)),
+                        "title": str(s.get("title") or f"Step {idx}"),
+                        "status": str(s.get("status") or ("in_progress" if idx == 1 else "pending")),
+                        "description": str(s.get("description") or ""),
+                    })
+                elif isinstance(s, str):
+                    steps.append({
+                        "id": str(idx),
+                        "title": s,
+                        "status": "in_progress" if idx == 1 else "pending",
+                        "description": "",
+                    })
+            plan_data = {"title": title, "steps": steps, "rationale": rationale}
+            return {
+                "ok": True,
+                "plan": plan_data,
+                "steps_count": len(steps),
+                "message": f"Created implementation plan with {len(steps)} steps: '{title}'.",
+            }
+
+        elif tool_name == "syte_update_plan_step":
+            step_id = str(arguments.get("step_id") or "").strip()
+            status = str(arguments.get("status") or "completed").strip()
+            notes = str(arguments.get("notes") or "").strip()
+            return {
+                "ok": True,
+                "step_id": step_id,
+                "status": status,
+                "notes": notes,
+                "message": f"Plan step '{step_id}' marked as '{status}'.",
+            }
+
+        elif tool_name == "syte_list_skills":
+            skills = list_available_skills()
+            return {"ok": True, "skills": skills, "count": len(skills)}
+
+        elif tool_name == "syte_load_skill":
+            sname = str(arguments.get("skill_name") or "").strip()
+            content = get_skill_content(sname)
+            if not content:
+                return {
+                    "ok": False,
+                    "error": f"Skill '{sname}' not found. Use `syte_list_skills` to view available skills.",
+                }
+            return {
+                "ok": True,
+                "skill_name": sname,
+                "content": content,
+                "message": f"Successfully loaded skill blueprint for '{sname}'.",
+            }
+
+        elif tool_name == "syte_ask_question":
+            question = str(arguments.get("question") or "").strip()
+            options = arguments.get("options") or []
+            allow_custom = bool(arguments.get("allow_custom", True))
+            return {
+                "ok": True,
+                "question": question,
+                "options": options,
+                "allow_custom": allow_custom,
+                "requires_user_input": True,
+                "message": f"Awaiting user clarification: '{question}'",
+            }
+
+        elif tool_name == "syte_ask_env_var":
+            key = str(arguments.get("key") or "").strip()
+            description = str(arguments.get("description") or "").strip()
+            hint = str(arguments.get("hint") or "").strip()
+            if not key:
+                return {"ok": False, "error": "Environment variable key name is required."}
+            return {
+                "ok": True,
+                "key": key,
+                "description": description,
+                "hint": hint,
+                "is_secret_request": True,
+                "requires_user_input": True,
+                "message": f"Prompting user securely on the server for '{key}'. Secret value will be stored in server .env and masked from model context.",
+            }
+
+        elif tool_name == "syte_security_lint_scan":
+            paths = arguments.get("paths")
+            result = _perform_security_lint_scan(ws_dir, target_paths=paths)
+            return result
+
+        elif tool_name == "syte_read_file_lines":
+            rel_path = arguments.get("path", "").lstrip("/\\")
+            start_line = max(1, int(arguments.get("start_line") or 1))
+            end_line = int(arguments.get("end_line") or (start_line + 50))
+            file_path = ws_dir / rel_path
+            if not file_path.resolve().is_relative_to(ws_dir.resolve()):
+                return {"ok": False, "error": "Access denied: Path escapes project workspace."}
+            if not file_path.exists():
+                return {"ok": False, "error": f"File '{rel_path}' does not exist."}
+            lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            total_lines = len(lines)
+            selected_lines = lines[start_line - 1 : end_line]
+            numbered = [f"{start_line + i}: {line}" for i, line in enumerate(selected_lines)]
+            return {
+                "ok": True,
+                "path": rel_path,
+                "start_line": start_line,
+                "end_line": min(end_line, total_lines),
+                "total_lines": total_lines,
+                "content": "\n".join(numbered),
+            }
+
+        elif tool_name == "syte_get_workspace_tree":
+            depth = int(arguments.get("max_depth") or 3)
+            tree = _build_workspace_tree(ws_dir, max_depth=depth)
+            return {"ok": True, "workspace_tree": tree}
 
         return {"ok": False, "error": f"Unknown tool: '{tool_name}'"}
 
