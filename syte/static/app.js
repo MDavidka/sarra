@@ -7202,6 +7202,8 @@ function formatAIMarkdown(text) {
   return parts.join('');
 }
 
+var aiChatSending = false;
+
 function getPlanCardHtml(plan) {
   if (!plan || !plan.steps || !plan.steps.length) return '';
   const total = plan.steps.length;

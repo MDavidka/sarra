@@ -1213,7 +1213,7 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             return {"ok": True, "environment_variables": env_vars}
 
         elif tool_name == "syte_set_environment":
-            from syte.database import update_project_env
+            from syte.database import update_project
 
             key = str(arguments.get("key") or "").strip()
             value = str(arguments.get("value") or "").strip()
@@ -1221,7 +1221,7 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                 return {"ok": False, "error": "Key is required."}
             env_vars = dict(project.get("env_vars") or {})
             env_vars[key] = value
-            await update_project_env(project_id, env_vars)
+            await update_project(project_id, {"env_vars": env_vars})
             return {"ok": True, "key": key, "message": f"Environment variable '{key}' saved."}
 
         elif tool_name == "syte_manage_domains":

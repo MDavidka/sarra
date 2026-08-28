@@ -14,7 +14,7 @@ import logging
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from syte.database import get_project, update_project_env
+from syte.database import get_project, update_project
 
 logger = logging.getLogger("syte.ai.session_manager")
 
@@ -210,7 +210,7 @@ class AIAgentSessionManager:
                 if project:
                     current_env = dict(project.get("env_vars") or {})
                     current_env[key] = secret_value
-                    await update_project_env(project_id, current_env)
+                    await update_project(project_id, {"env_vars": current_env})
 
             # 2. Pass zero-knowledge masked token back to the AI loop
             masked_token = {
