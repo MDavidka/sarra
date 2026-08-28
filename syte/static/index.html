@@ -164,7 +164,7 @@
                 <i data-lucide="file-text"></i><span>Pages</span>
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="release">
-                <i data-lucide="zap"></i><span>Syra</span>
+                <i data-lucide="zap"></i><span>Release</span>
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="firewall">
                 <i data-lucide="shield"></i><span>Firewall</span>
@@ -1313,11 +1313,10 @@
                     <div class="project-settings-stat"><div><span>Release workspace</span><strong id="svc-edit-release-summary">Production protection available</strong></div><p>Production approvals, preview lifecycle, recovery points, activity, and team roles are managed in the dedicated Release workspace.</p><button type="button" class="btn-pill btn-primary" id="svc-edit-open-release"><i data-lucide="rocket"></i><span>Open Release</span></button></div>
                   </section>
                   <section class="project-settings-panel" data-project-settings-panel="utilities">
-                    <header><div><p>Operator tools &amp; Diagnostics</p><h4>Utilities</h4><span>Quick diagnostics, workspace access, AI builder launch, and health verification.</span></div></header>
+                    <header><div><p>Operator tools &amp; Diagnostics</p><h4>Utilities</h4><span>Quick diagnostics, workspace access, and health verification.</span></div></header>
                     <div class="project-settings-stat" style="margin-bottom: 14px;">
                       <div><span id="svc-edit-diag-state">Workspace Status</span><strong id="svc-edit-diag-summary">Ready</strong></div>
                       <p id="svc-edit-diag-path" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; word-break: break-all;">Workspace loading…</p>
-                      <button type="button" class="btn-pill btn-primary" id="svc-edit-open-ai-builder-btn"><i data-lucide="bot"></i><span>Launch AI Builder</span></button>
                     </div>
                     <div class="project-utilities-grid">
                       <button type="button" class="project-utility-card" id="svc-edit-run-health"><i data-lucide="activity"></i><span>Run health check</span><small>Probe live HTTP response &amp; status.</small></button>
@@ -1652,6 +1651,7 @@
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic (Claude)</option>
                   <option value="gemini">Google Gemini</option>
+                  <option value="vertex">Google Cloud Vertex AI</option>
                   <option value="deepseek">DeepSeek</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="ollama">Local Ollama</option>
@@ -1667,6 +1667,13 @@
                   <option value="gpt-4o-mini">
                   <option value="o3-mini">
                   <option value="o1">
+                  <!-- Vertex AI -->
+                  <option value="gemini-2.0-flash-001">
+                  <option value="gemini-1.5-pro-002">
+                  <option value="gemini-1.5-flash-002">
+                  <option value="claude-3-5-sonnet@20241022">
+                  <option value="claude-3-5-haiku@20241022">
+                  <option value="meta/llama-3.3-70b-instruct-maas">
                   <!-- OpenRouter Models -->
                   <option value="z-ai/glm-5.2:free">
                   <option value="openai/gpt-4o">

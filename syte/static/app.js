@@ -7792,6 +7792,14 @@ async function openAISettingsModal(project) {
       'gemini-1.5-pro',
       'gemini-2.0-flash-thinking-exp',
     ],
+    vertex: [
+      'gemini-2.0-flash-001',
+      'gemini-1.5-pro-002',
+      'gemini-1.5-flash-002',
+      'claude-3-5-sonnet@20241022',
+      'claude-3-5-haiku@20241022',
+      'meta/llama-3.3-70b-instruct-maas',
+    ],
     deepseek: [
       'deepseek-chat',
       'deepseek-reasoner',
@@ -7919,6 +7927,10 @@ async function openAISettingsModal(project) {
         if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash';
         if (baseUrlInput) baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai';
         if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy...';
+      } else if (p === 'vertex') {
+        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash-001';
+        if (baseUrlInput) baseUrlInput.placeholder = 'https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/us-central1/endpoints/openapi';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'Google Cloud Bearer token or API key';
       } else if (p === 'deepseek') {
         if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'deepseek-chat';
         if (baseUrlInput) baseUrlInput.placeholder = 'https://api.deepseek.com/v1';
