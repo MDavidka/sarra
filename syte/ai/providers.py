@@ -239,6 +239,8 @@ class UnifiedAIClient:
                     choices = chunk_data.get("choices") or []
                     if not choices:
                         continue
+                    delta = choices[0].get("delta") or {}
+
                     # Thought / Reasoning delta
                     thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
                     if thought:
