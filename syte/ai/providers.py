@@ -55,6 +55,20 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
     return ""
 
 
+def _normalize_google_model(model: str) -> str:
+    m = (model or "").strip()
+    # Map common aliases or version typos for Google Gemini endpoints
+    model_map = {
+        "gemini-2.5-flash-lite": "gemini-2.0-flash-lite",
+        "gemini-2.5-flash": "gemini-2.0-flash",
+        "gemini-2.5-pro": "gemini-1.5-pro",
+        "gemini-2.0-flash-001": "gemini-2.0-flash",
+        "gemini-1.5-pro-002": "gemini-1.5-pro",
+        "gemini-1.5-flash-002": "gemini-1.5-flash",
+    }
+    return model_map.get(m, m)
+
+
 def _normalize_base_url(provider: str, base_url: str) -> str:
     p = (provider or "openai").lower().strip()
     url = (base_url or "").strip()
@@ -66,17 +80,37 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
             return "https://generativelanguage.googleapis.com/v1beta/openai"
         return DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1").rstrip("/")
     url = url.rstrip("/")
-    if "{PROJECT}" in url or "{project}" in url:
-        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
-        if project:
-            url = url.replace("{PROJECT}", project).replace("{project}", project)
-        else:
-            return "https://generativelanguage.googleapis.com/v1beta/openai"
     # Automatically strip redundant endpoint suffixes if entered/pasted by the user
     if url.endswith("/chat/completions"):
         url = url[:-len("/chat/completions")].rstrip("/")
     elif url.endswith("/messages") and p == "anthropic":
         url = url[:-len("/messages")].rstrip("/")
+
+    if p in ("vertex", "gemini") or "aiplatform.googleapis.com" in url or "generativelanguage.googleapis.com" in url:
+        if "{PROJECT}" in url or "{project}" in url:
+            project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
+            if project:
+                url = url.replace("{PROJECT}", project).replace("{project}", project)
+            else:
+                return "https://generativelanguage.googleapis.com/v1beta/openai"
+
+        # If user entered an AI Studio project (gen-lang-client-...) or locations/global, route to generativelanguage
+        if "gen-lang-client-" in url or "locations/global" in url:
+            return "https://generativelanguage.googleapis.com/v1beta/openai"
+
+        # If user entered an aiplatform URL without /endpoints/openapi, format it properly
+        if "aiplatform.googleapis.com" in url and not url.endswith("/endpoints/openapi"):
+            if "/v1/" in url:
+                url = url.replace("/v1/", "/v1beta1/")
+            if not url.endswith("/endpoints/openapi"):
+                url = f"{url}/endpoints/openapi"
+
+        if "generativelanguage.googleapis.com" in url and not url.endswith("/openai"):
+            if not url.endswith("/v1beta"):
+                url = f"{url}/v1beta/openai"
+            else:
+                url = f"{url}/openai"
+
     return url
 
 
@@ -151,6 +185,10 @@ class UnifiedAIClient:
             }
             return
 
+        effective_model = self.model
+        if self.provider in ("vertex", "gemini") or "generativelanguage.googleapis.com" in self.base_url:
+            effective_model = _normalize_google_model(self.model)
+
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -161,7 +199,7 @@ class UnifiedAIClient:
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-            if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza"):
+            if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
                 headers["x-goog-api-key"] = self.api_key
 
         formatted_messages = []
@@ -178,7 +216,7 @@ class UnifiedAIClient:
             formatted_messages.append(m)
 
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": effective_model,
             "messages": formatted_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
@@ -188,33 +226,46 @@ class UnifiedAIClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        def _blocking_post():
+        def _blocking_post(post_url: str, post_payload: dict, post_headers: dict):
             req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
+                post_url,
+                data=json.dumps(post_payload).encode("utf-8"),
+                headers=post_headers,
                 method="POST",
             )
             return urllib.request.urlopen(req, timeout=45)
 
+        response = None
         try:
-            response = await asyncio.to_thread(_blocking_post)
+            response = await asyncio.to_thread(_blocking_post, url, payload, headers)
         except urllib.error.HTTPError as err:
-            err_body = err.read().decode("utf-8", errors="replace")
-            err_msg = f"HTTP {err.code}: {err.reason}"
-            if err_body:
-                try:
-                    parsed = json.loads(err_body)
-                    if isinstance(parsed, dict) and "error" in parsed:
-                        err_val = parsed["error"]
-                        if isinstance(err_val, dict) and "message" in err_val:
-                            err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
-                        elif isinstance(err_val, str):
-                            err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
-                except Exception:
-                    err_msg = f"HTTP {err.code}: {err_body}"
-            yield {"type": "error", "content": err_msg}
-            return
+            # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
+            if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in url):
+                fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                if fallback_url != url:
+                    fallback_payload = dict(payload)
+                    fallback_payload["model"] = _normalize_google_model(self.model)
+                    try:
+                        response = await asyncio.to_thread(_blocking_post, fallback_url, fallback_payload, headers)
+                    except Exception:
+                        response = None
+
+            if response is None:
+                err_body = err.read().decode("utf-8", errors="replace")
+                err_msg = f"HTTP {err.code}: {err.reason}"
+                if err_body:
+                    try:
+                        parsed = json.loads(err_body)
+                        if isinstance(parsed, dict) and "error" in parsed:
+                            err_val = parsed["error"]
+                            if isinstance(err_val, dict) and "message" in err_val:
+                                err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
+                            elif isinstance(err_val, str):
+                                err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
+                    except Exception:
+                        err_msg = f"HTTP {err.code}: {err_body}"
+                yield {"type": "error", "content": err_msg}
+                return
         except Exception as exc:
             yield {"type": "error", "content": f"Connection failed: {str(exc)}"}
             return
