@@ -406,6 +406,31 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        # 5. Live Preview Server Operations
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_start_preview",
+                "description": "Start a live hot-reloading development preview server on the VM for this workspace and return the live URL.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_stop_preview",
+                "description": "Stop the running development preview server for this project.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_get_preview_status",
+                "description": "Check if the live preview development server is running and get its active URL.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
     ]
 
 
@@ -414,14 +439,15 @@ def _get_project_workspace_dir(project: dict[str, Any]) -> Path:
     pid = project["id"]
     p_name = project.get("name") or ""
     candidates = [
+        settings.resolved_workspaces_dir / pid / "app",
         settings.resolved_workspaces_dir / pid,
+        settings.resolved_workspaces_dir / p_name / "app",
         settings.resolved_workspaces_dir / p_name,
     ]
     for c in candidates:
         if c.exists() and c.is_dir():
             return c
-    # Default to pid
-    p = settings.resolved_workspaces_dir / pid
+    p = settings.resolved_workspaces_dir / pid / "app"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -585,18 +611,19 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
                 out_str = stdout.decode("utf-8", errors="replace")
                 err_str = stderr.decode("utf-8", errors="replace")
                 return {
                     "ok": proc.returncode == 0,
+                    "command": cmd,
                     "exit_code": proc.returncode,
                     "stdout": out_str,
                     "stderr": err_str,
                 }
             except asyncio.TimeoutError:
                 proc.kill()
-                return {"ok": False, "error": "Command timed out after 30 seconds."}
+                return {"ok": False, "command": cmd, "error": "Command timed out after 120 seconds."}
 
         elif tool_name == "syte_github_account_info":
             from syte.database import list_operator_accounts
@@ -776,6 +803,35 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                     current_extra.append(dom)
                     await update_project(project_id, {"domains": current_extra})
                 return {"ok": True, "domain": dom, "message": f"Domain '{dom}' attached to project."}
+
+        elif tool_name == "syte_start_preview":
+            from syte.preview_manager import start_preview
+            ok, msg, meta = await start_preview(project_id)
+            return {
+                "ok": ok,
+                "message": msg,
+                "preview_url": meta.get("preview_url") or "",
+                "preview_domain": meta.get("preview_domain") or "",
+                "preview_port": meta.get("preview_port"),
+                "status": "running" if ok else "failed",
+                "stack": meta.get("stack") or "",
+            }
+
+        elif tool_name == "syte_stop_preview":
+            from syte.preview_manager import stop_preview_async
+            await stop_preview_async(project_id)
+            return {"ok": True, "message": "Preview server stopped."}
+
+        elif tool_name == "syte_get_preview_status":
+            from syte.preview_manager import get_preview_status
+            meta, running = await get_preview_status(project_id)
+            return {
+                "ok": True,
+                "running": running,
+                "preview_url": meta.get("preview_url") or "",
+                "status": "running" if running else "stopped",
+                "meta": meta,
+            }
 
         return {"ok": False, "error": f"Unknown tool: '{tool_name}'"}
 
