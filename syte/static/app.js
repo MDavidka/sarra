@@ -7202,7 +7202,163 @@ function formatAIMarkdown(text) {
   return parts.join('');
 }
 
-let aiChatSending = false;
+function getPlanCardHtml(plan) {
+  if (!plan || !plan.steps || !plan.steps.length) return '';
+  const total = plan.steps.length;
+  const completed = plan.steps.filter(s => s.status === 'completed').length;
+  const progressPct = Math.round((completed / total) * 100);
+
+  return `
+    <div class="svc-ai-plan-card" id="active-plan-card">
+      <div class="svc-ai-plan-header">
+        <div class="svc-ai-plan-title-box">
+          <i data-lucide="list-checks" class="svc-ai-plan-icon"></i>
+          <div>
+            <strong>${escapeHtml(plan.title || 'Implementation Plan')}</strong>
+            <div class="svc-ai-plan-progress-text">${completed} of ${total} steps completed (${progressPct}%)</div>
+          </div>
+        </div>
+        <div class="svc-ai-plan-badge ${completed === total ? 'completed' : 'active'}">
+          ${completed === total ? '<i data-lucide="check-check"></i> Done' : '<i data-lucide="refresh-cw" class="spinning"></i> In Progress'}
+        </div>
+      </div>
+      <div class="svc-ai-plan-steps-list">
+        ${plan.steps.map(s => {
+          let icon = '<i data-lucide="circle" class="step-pending"></i>';
+          let cls = 'step-pending';
+          if (s.status === 'completed') {
+            icon = '<i data-lucide="check-circle-2" class="step-completed"></i>';
+            cls = 'step-completed';
+          } else if (s.status === 'in_progress') {
+            icon = '<i data-lucide="refresh-cw" class="step-in-progress spinning"></i>';
+            cls = 'step-in-progress';
+          } else if (s.status === 'failed') {
+            icon = '<i data-lucide="alert-circle" class="step-failed"></i>';
+            cls = 'step-failed';
+          }
+          return `
+            <div class="svc-ai-plan-step ${cls}">
+              <span class="svc-ai-step-indicator">${icon}</span>
+              <div class="svc-ai-step-content">
+                <div class="svc-ai-step-title">${escapeHtml(s.title || '')}</div>
+                ${s.notes ? `<div class="svc-ai-step-notes">${escapeHtml(s.notes)}</div>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function getQuestionCardHtml(qData, projectId, toolCallId) {
+  const options = Array.isArray(qData.options) ? qData.options : [];
+  const qId = `q-${toolCallId || Math.random().toString(36).slice(2, 8)}`;
+  return `
+    <div class="svc-ai-question-card" id="${qId}">
+      <div class="svc-ai-question-head">
+        <i data-lucide="help-circle" class="svc-ai-q-icon"></i>
+        <span>AI Clarification Needed</span>
+      </div>
+      <div class="svc-ai-question-text">${escapeHtml(qData.question || '')}</div>
+      ${options.length ? `
+        <div class="svc-ai-options-grid">
+          ${options.map(opt => `
+            <button type="button" class="svc-ai-option-pill" onclick="submitAIUserAnswer('${escapeHtml(projectId)}', { answer: '${escapeHtml(opt)}' }, '${qId}')">
+              <span>${escapeHtml(opt)}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${qData.allow_custom !== false ? `
+        <form class="svc-ai-custom-answer-row" onsubmit="event.preventDefault(); const val = this.querySelector('input').value.trim(); if(val) submitAIUserAnswer('${escapeHtml(projectId)}', { answer: val }, '${qId}');">
+          <input type="text" class="svc-ai-custom-answer-input" placeholder="Type custom answer or response…" autocomplete="off">
+          <button type="submit" class="svc-ai-custom-answer-btn"><i data-lucide="send"></i> Submit</button>
+        </form>
+      ` : ''}
+    </div>
+  `;
+}
+
+function getSecureEnvCardHtml(secretData, projectId, toolCallId) {
+  const sId = `secret-${toolCallId || Math.random().toString(36).slice(2, 8)}`;
+  const keyName = secretData.key || 'SECRET_KEY';
+  return `
+    <div class="svc-ai-secret-card" id="${sId}">
+      <div class="svc-ai-secret-head">
+        <i data-lucide="shield-check" class="svc-ai-shield-icon"></i>
+        <div>
+          <strong>Secure Environment Variable Request</strong>
+          <p class="hint" style="margin:2px 0 0;">Value is securely stored in server .env and masked from the AI model context.</p>
+        </div>
+      </div>
+      <div class="svc-ai-secret-body">
+        <div class="svc-ai-secret-key-label">Key: <code>${escapeHtml(keyName)}</code></div>
+        ${secretData.description ? `<p class="svc-ai-secret-desc">${escapeHtml(secretData.description)}</p>` : ''}
+        <form class="svc-ai-secret-input-form" onsubmit="event.preventDefault(); const val = this.querySelector('input').value.trim(); if(val) submitAIUserAnswer('${escapeHtml(projectId)}', { key: '${escapeHtml(keyName)}', value: val, is_secret: true }, '${sId}');">
+          <div class="svc-ai-secret-field-wrap">
+            <input type="password" class="svc-ai-secret-input" placeholder="${escapeHtml(secretData.hint || 'Paste secret value here…')}" autocomplete="off" required>
+            <button type="button" class="svc-ai-toggle-eye" onclick="const inp=this.previousElementSibling; inp.type = inp.type==='password'?'text':'password';"><i data-lucide="eye"></i></button>
+          </div>
+          <button type="submit" class="svc-ai-save-secret-btn"><i data-lucide="lock"></i> Save to Server .env</button>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function getSecurityScanHtml(scan) {
+  if (!scan) return '';
+  const isClean = scan.clean !== false;
+  return `
+    <div class="svc-ai-security-card ${isClean ? 'clean' : 'warning'}">
+      <div class="svc-ai-sec-head">
+        <i data-lucide="${isClean ? 'shield-check' : 'shield-alert'}" class="svc-ai-sec-icon"></i>
+        <strong>${isClean ? 'Security & Syntax Scan: Passed Cleanly' : 'Security Scan: Issues Found'}</strong>
+        <span class="svc-ai-sec-badge">${scan.scanned_files_count || 0} files scanned</span>
+      </div>
+      <p class="svc-ai-sec-summary">${escapeHtml(scan.summary || '')}</p>
+      ${scan.syntax_errors && scan.syntax_errors.length ? `
+        <div class="svc-ai-sec-list">
+          ${scan.syntax_errors.map(e => `<div><i data-lucide="x-circle"></i> <code>${escapeHtml(e.file)}:${e.line}</code> — ${escapeHtml(e.error)}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function getSkillBadgeHtml(skillName) {
+  return `
+    <div class="svc-ai-skill-loaded-card">
+      <i data-lucide="book-open" class="svc-ai-skill-icon"></i>
+      <span>Loaded Blueprint: <strong>${escapeHtml(skillName)}</strong></span>
+    </div>
+  `;
+}
+
+async function submitAIUserAnswer(projectId, payload, containerId) {
+  const container = document.getElementById(containerId);
+  if (container) {
+    container.innerHTML = `
+      <div class="svc-ai-answer-submitted">
+        <i data-lucide="check" style="color:#10b981;"></i>
+        <span>${payload.is_secret ? `Secret for <strong>${escapeHtml(payload.key)}</strong> stored safely in server .env.` : `Answer submitted: <strong>${escapeHtml(payload.answer || '')}</strong>`}</span>
+      </div>
+    `;
+    refreshIcons();
+  }
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/ai/answer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      toast(payload.is_secret ? 'Secret stored in project environment' : 'Response submitted to AI');
+    }
+  } catch (err) {
+    toast(`Error submitting answer: ${err.message}`);
+  }
+}
 
 function getFileBadgeHtml(filePath) {
   if (!filePath) return '';
@@ -7366,7 +7522,19 @@ async function renderAIChatWorkspace(project) {
           } else if (m.role === 'tool') {
             let res = {};
             try { res = JSON.parse(m.content || '{}'); } catch (_) {}
-            if (res.preview_url) {
+            if (res.plan) {
+              feedHtml += getPlanCardHtml(res.plan);
+            } else if (res.skill_name) {
+              feedHtml += getSkillBadgeHtml(res.skill_name);
+            } else if (res.scanned_files_count !== undefined) {
+              feedHtml += getSecurityScanHtml(res);
+            } else if (res.requires_user_input) {
+              if (res.is_secret_request) {
+                feedHtml += getSecureEnvCardHtml(res, currentProject.id, m.tool_call_id);
+              } else {
+                feedHtml += getQuestionCardHtml(res, currentProject.id, m.tool_call_id);
+              }
+            } else if (res.preview_url) {
               feedHtml += `
                 <div class="svc-ai-preview-banner">
                   <div class="svc-ai-preview-lead">
@@ -7394,6 +7562,27 @@ async function renderAIChatWorkspace(project) {
 
         messagesList.innerHTML = feedHtml;
         messagesList.scrollTop = messagesList.scrollHeight;
+      }
+    } catch (_) {}
+
+    // Check for active background session on server
+    try {
+      const sRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/session`);
+      if (sRes && sRes.ok && sRes.session) {
+        const sess = sRes.session;
+        if (sess.is_running && !aiChatSending) {
+          void reconnectAIChatSession(currentProject);
+        } else if (sess.pending_question) {
+          const qData = sess.pending_question;
+          const qEl = document.createElement('div');
+          if (qData.is_secret_request) {
+            qEl.innerHTML = getSecureEnvCardHtml(qData, currentProject.id);
+          } else {
+            qEl.innerHTML = getQuestionCardHtml(qData, currentProject.id);
+          }
+          if (qEl.firstElementChild) messagesList.appendChild(qEl.firstElementChild);
+          refreshIcons();
+        }
       }
     } catch (_) {}
   }
@@ -7659,6 +7848,42 @@ async function executeAIChatTurn(project, userText) {
                 `;
                 refreshIcons();
               }
+              if (res.plan) {
+                const planCardEl = document.getElementById('active-plan-card');
+                if (planCardEl) {
+                  planCardEl.outerHTML = getPlanCardHtml(res.plan);
+                } else {
+                  const planDiv = document.createElement('div');
+                  planDiv.innerHTML = getPlanCardHtml(res.plan);
+                  if (planDiv.firstElementChild) streamContainer.appendChild(planDiv.firstElementChild);
+                }
+                refreshIcons();
+              } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
+                const planCardEl = document.getElementById('active-plan-card');
+                if (planCardEl) {
+                  const stepEls = planCardEl.querySelectorAll('.svc-ai-plan-step');
+                  // Trigger status update
+                }
+              } else if (res.skill_name) {
+                const skillDiv = document.createElement('div');
+                skillDiv.innerHTML = getSkillBadgeHtml(res.skill_name);
+                if (skillDiv.firstElementChild) streamContainer.appendChild(skillDiv.firstElementChild);
+                refreshIcons();
+              } else if (res.scanned_files_count !== undefined) {
+                const secDiv = document.createElement('div');
+                secDiv.innerHTML = getSecurityScanHtml(res);
+                if (secDiv.firstElementChild) streamContainer.appendChild(secDiv.firstElementChild);
+                refreshIcons();
+              } else if (res.requires_user_input) {
+                const qDiv = document.createElement('div');
+                if (res.is_secret_request) {
+                  qDiv.innerHTML = getSecureEnvCardHtml(res, project.id, data.tool_call_id);
+                } else {
+                  qDiv.innerHTML = getQuestionCardHtml(res, project.id, data.tool_call_id);
+                }
+                if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
+                refreshIcons();
+              }
               if (res.preview_url) {
                 const prevBanner = document.createElement('div');
                 prevBanner.className = 'svc-ai-preview-banner';
@@ -7676,6 +7901,20 @@ async function executeAIChatTurn(project, userText) {
                 refreshIcons();
               }
               messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'user_input_required') {
+              const qData = data.question_data || {};
+              const qDiv = document.createElement('div');
+              if (qData.is_secret_request) {
+                qDiv.innerHTML = getSecureEnvCardHtml(qData, project.id);
+              } else {
+                qDiv.innerHTML = getQuestionCardHtml(qData, project.id);
+              }
+              if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
+              refreshIcons();
+              messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'user_input_received') {
+              // Input confirmed
+              messagesList.scrollTop = messagesList.scrollHeight;
             } else if (eventType === 'error') {
               if (assistantBubbleEl) {
                 assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
@@ -7689,6 +7928,118 @@ async function executeAIChatTurn(project, userText) {
     }
   } catch (err) {
     streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    aiChatSending = false;
+    refreshIcons();
+  }
+}
+
+async function reconnectAIChatSession(project) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList || aiChatSending) return;
+
+  const streamContainer = document.createElement('div');
+  streamContainer.className = 'svc-ai-message';
+  messagesList.appendChild(streamContainer);
+
+  aiChatSending = true;
+  let accumulatedText = '';
+  let assistantBubbleEl = null;
+  let liveThinkingMarkerEl = null;
+
+  try {
+    const chatHeaders = { 'Content-Type': 'application/json' };
+    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
+    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: chatHeaders,
+    });
+
+    if (!response.ok) return;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.substring(6));
+            const eventType = data.event;
+
+            if (eventType === 'thought_delta') {
+              if (!liveThinkingMarkerEl) {
+                liveThinkingMarkerEl = document.createElement('div');
+                liveThinkingMarkerEl.className = 'svc-ai-activity-row';
+                liveThinkingMarkerEl.innerHTML = `
+                  <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
+                  <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
+                `;
+                streamContainer.appendChild(liveThinkingMarkerEl);
+                refreshIcons();
+              }
+              const thoughtSpan = liveThinkingMarkerEl.querySelector('.live-thought-text');
+              if (thoughtSpan) {
+                const thoughtAcc = (thoughtSpan.dataset.text || '') + data.delta;
+                thoughtSpan.dataset.text = thoughtAcc;
+                const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
+                thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
+              }
+              messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'token_delta') {
+              if (liveThinkingMarkerEl) {
+                liveThinkingMarkerEl.remove();
+                liveThinkingMarkerEl = null;
+              }
+              accumulatedText += data.delta || '';
+              if (!assistantBubbleEl) {
+                assistantBubbleEl = document.createElement('div');
+                assistantBubbleEl.className = 'svc-ai-assistant-bubble';
+                streamContainer.appendChild(assistantBubbleEl);
+              }
+              assistantBubbleEl.innerHTML = formatAIMarkdown(accumulatedText);
+              messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'tool_call_result') {
+              const res = data.result || {};
+              if (res.plan) {
+                const planCardEl = document.getElementById('active-plan-card');
+                if (planCardEl) planCardEl.outerHTML = getPlanCardHtml(res.plan);
+                else {
+                  const planDiv = document.createElement('div');
+                  planDiv.innerHTML = getPlanCardHtml(res.plan);
+                  if (planDiv.firstElementChild) streamContainer.appendChild(planDiv.firstElementChild);
+                }
+                refreshIcons();
+              } else if (res.requires_user_input) {
+                const qDiv = document.createElement('div');
+                if (res.is_secret_request) {
+                  qDiv.innerHTML = getSecureEnvCardHtml(res, project.id, data.tool_call_id);
+                } else {
+                  qDiv.innerHTML = getQuestionCardHtml(res, project.id, data.tool_call_id);
+                }
+                if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
+                refreshIcons();
+              }
+              messagesList.scrollTop = messagesList.scrollHeight;
+            } else if (eventType === 'session_idle' || eventType === 'done') {
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {
   } finally {
     aiChatSending = false;
     refreshIcons();

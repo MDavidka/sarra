@@ -25,8 +25,9 @@ logger = logging.getLogger("syte.ai.engine")
 class AIAgentEngine:
     """Executes multi-step agent reasoning and tool calling loops."""
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, session: Optional[Any] = None):
         self.project_id = project_id
+        self.session = session
 
     async def run_agent_turn(
         self,
@@ -98,16 +99,18 @@ class AIAgentEngine:
             thinking_level=ai_settings.get("thinking_level", "medium"),
         )
 
-        # 4. Assemble system prompt with live project context
+        # 4. Assemble system prompt with live project context & workflow rules
         base_prompt = ai_settings.get("system_prompt") or ""
         autonomous_instructions = (
-            "\n\n--- AUTONOMOUS EXECUTION GUIDELINES ---\n"
-            "1. Plan and execute multi-step tasks continuously without halting prematurely.\n"
-            "2. At each step, explicitly state your immediate reasoning and next goal (e.g. 'Now I have to inspect the configuration...', 'Now I have to edit package.json...').\n"
-            "3. Use `syte_run_command` for terminal actions on the VM inside this workspace (e.g. `npm install`, `npm test`, build checks).\n"
-            "4. Use `syte_start_preview` to launch live hot-reloading development preview servers and retrieve the live URL for UI verification.\n"
-            "5. After editing files or making changes, always verify correctness.\n"
-            "--------------------------------------------\n"
+            "\n\n--- AUTONOMOUS EXECUTION & QUALITY STANDARDS ---\n"
+            "1. MANDATORY PLANNING: Before modifying or creating code files, ALWAYS create an implementation plan using `syte_create_plan` detailing your planned steps. Update step statuses using `syte_update_plan_step` as you make progress.\n"
+            "2. MODULAR SKILLS: Use `syte_list_skills` and `syte_load_skill` to load rich design systems ('website-create' for shadcn/ui + Inter font + harmonious color palettes + responsive sizing), backend patterns ('integration'), LLM setups ('providers'), and DevOps ('cloud-code').\n"
+            "3. CLARIFYING QUESTIONS: If requirements are ambiguous (e.g. style preferences, page count), ask the user using `syte_ask_question` with interactive choices.\n"
+            "4. SECURE SECRETS: Never ask users to paste raw API keys in chat text. Use `syte_ask_env_var` to prompt for secrets, which will be safely saved to the project .env on the server.\n"
+            "5. PRE-EXECUTION LINT & SECURITY: Run `syte_security_lint_scan` to verify syntax and ensure no vulnerabilities or hardcoded secrets exist before finishing.\n"
+            "6. CONTINUOUS THOUGHT LOGGING: At each step, explicitly state your immediate reasoning and next goal (e.g. 'Now I have to inspect the configuration...', 'Now I have to edit App.tsx...').\n"
+            "7. TERMINAL & PREVIEW: Use `syte_run_command` for terminal builds/tests and `syte_start_preview` to launch live development servers.\n"
+            "---------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
 
@@ -224,17 +227,40 @@ class AIAgentEngine:
 
                 # Execute tool
                 tool_result = await execute_syte_tool(self.project_id, tool_name, args)
+
+                # Check if tool requires interactive user response (questions / env secrets)
+                if tool_result.get("requires_user_input") and self.session:
+                    yield {
+                        "event": "tool_call_result",
+                        "tool_call_id": call_id,
+                        "tool_name": tool_name,
+                        "result": tool_result,
+                        "file_path": file_target,
+                        "command": cmd_target,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    user_resp = await self.session.wait_for_user_answer(tool_result)
+                    tool_result = {**tool_result, "user_response": user_resp}
+                    yield {
+                        "event": "user_input_received",
+                        "tool_call_id": call_id,
+                        "tool_name": tool_name,
+                        "user_response": user_resp,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
                 result_str = json.dumps(tool_result)
 
-                yield {
-                    "event": "tool_call_result",
-                    "tool_call_id": call_id,
-                    "tool_name": tool_name,
-                    "result": tool_result,
-                    "file_path": file_target,
-                    "command": cmd_target,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
+                if not tool_result.get("requires_user_input") or not self.session:
+                    yield {
+                        "event": "tool_call_result",
+                        "tool_call_id": call_id,
+                        "tool_name": tool_name,
+                        "result": tool_result,
+                        "file_path": file_target,
+                        "command": cmd_target,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
 
                 # Save tool result in DB & conversation messages
                 await save_ai_chat_message(

@@ -138,27 +138,96 @@ async def test_ai_provider_connection(
     return result
 
 
+from syte.ai.session_manager import session_manager
+from syte.ai.skills import list_available_skills
+
+
+@router.get("/api/projects/{project_id}/ai/session")
+async def get_project_ai_session(project_id: str):
+    """Get active background agent session state, current plan, and pending questions."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+    session = session_manager.get_or_create_session(project_id)
+    return {"ok": True, "session": session.get_status_summary()}
+
+
+@router.get("/api/projects/{project_id}/ai/events")
+async def stream_project_ai_events(project_id: str):
+    """Reconnect or subscribe to live AI agent SSE event stream."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+
+    async def sse_event_broadcaster():
+        try:
+            async for event_payload in session_manager.subscribe(project_id):
+                event_name = event_payload.get("event", "message")
+                data_str = json.dumps(event_payload)
+                yield f"event: {event_name}\ndata: {data_str}\n\n"
+        except Exception as exc:
+            err_data = json.dumps({"event": "error", "error": str(exc)})
+            yield f"event: error\ndata: {err_data}\n\n"
+
+    return StreamingResponse(
+        sse_event_broadcaster(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/api/projects/{project_id}/ai/answer")
+async def submit_project_ai_answer(
+    project_id: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Submit user clarification answer or securely store an environment secret in project .env."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+
+    res = await session_manager.handle_user_answer(project_id, body)
+    return res
+
+
+@router.get("/api/projects/{project_id}/ai/skills")
+async def get_project_ai_skills(project_id: str):
+    """List available domain skills and blueprints."""
+    return {"ok": True, "skills": list_available_skills()}
+
+
 @router.post("/api/projects/{project_id}/ai/chat")
 async def project_ai_chat_stream(
     project_id: str,
     body: AIChatRequest,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Initiate an autonomous AI agent turn with SSE streaming response."""
+    """Initiate an autonomous AI agent turn with persistent background VM execution and SSE stream."""
     if project_id != "global":
         project = await get_project(project_id)
         if not project:
             raise HTTPException(404, "Project not found")
 
-    engine = AIAgentEngine(project_id)
     overrides = body.model_dump(exclude_none=True)
+
+    # Start or attach background task
+    await session_manager.start_turn(
+        project_id=project_id,
+        user_message=body.message,
+        settings_override=overrides,
+    )
 
     async def sse_generator():
         try:
-            async for event_payload in engine.run_agent_turn(
-                user_message=body.message,
-                settings_override=overrides,
-            ):
+            async for event_payload in session_manager.subscribe(project_id):
                 event_name = event_payload.get("event", "message")
                 data_str = json.dumps(event_payload)
                 yield f"event: {event_name}\ndata: {data_str}\n\n"
