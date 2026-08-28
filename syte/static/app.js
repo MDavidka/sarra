@@ -7939,8 +7939,8 @@ async function openAISettingsModal(project) {
         if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy...';
       } else if (p === 'vertex') {
         if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash-001';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/us-central1/endpoints/openapi';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'Google Cloud Bearer token or API key';
+        if (baseUrlInput) baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL';
+        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy... or Google Cloud Bearer token';
       } else if (p === 'deepseek') {
         if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'deepseek-chat';
         if (baseUrlInput) baseUrlInput.placeholder = 'https://api.deepseek.com/v1';
