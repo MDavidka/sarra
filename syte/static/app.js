@@ -4348,6 +4348,10 @@ function showView(name) {
   } else {
     setBreadcrumb(BREADCRUMBS[name] || (name === 'ai' ? 'AI Builder' : 'Syte'));
   }
+  const mainTopbar = document.querySelector('.main-topbar');
+  if (mainTopbar) {
+    mainTopbar.style.display = name === 'ai' ? 'none' : 'flex';
+  }
   closeDrawer();
   refreshIcons();
 }
@@ -5683,6 +5687,12 @@ function projectCardDate(p) {
   return Number.isNaN(date.getTime()) ? 'Recently created' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function truncateCardText(text, maxChars = 26) {
+  if (!text) return '';
+  const s = String(text).trim();
+  return s.length > maxChars ? `${s.slice(0, maxChars - 1)}…` : s;
+}
+
 function renderServices() {
   const list = document.getElementById('services-list');
   const empty = document.getElementById('empty-state');
@@ -5706,11 +5716,11 @@ function renderServices() {
     <article class="project-card project-card-reference" tabindex="0" role="button" aria-label="Open ${esc(p.name)}" onclick="openService('${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openService('${p.id}')}">
       <div class="project-card-reference-top">
         <img class="project-card-site-icon" src="${esc(favicon)}" alt="" onerror="this.onerror=null;this.src='${fallback}'">
-        <div class="project-card-identity"><h3>${esc(p.name)}</h3><span>${esc(domain)}</span></div>
+        <div class="project-card-identity"><h3 title="${esc(p.name)}">${esc(truncateCardText(p.name, 24))}</h3><span title="${esc(domain)}">${esc(truncateCardText(domain, 30))}</span></div>
         <span class="project-card-status ${status}" title="${esc(status)}"></span>
       </div>
-      <div class="project-card-reference-branch"><i data-lucide="git-branch"></i><strong>${esc(p.branch || 'main')}</strong></div>
-      <div class="project-card-reference-source"><i data-lucide="github"></i><span>${esc(source)} <b>·</b> ${esc(projectCardDate(p))}</span></div>
+      <div class="project-card-reference-branch"><i data-lucide="git-branch"></i><strong title="${esc(p.branch || 'main')}">${esc(truncateCardText(p.branch || 'main', 18))}</strong></div>
+      <div class="project-card-reference-source"><i data-lucide="github"></i><span><b title="${esc(source)}">${esc(truncateCardText(source, 22))}</b> <b>·</b> ${esc(projectCardDate(p))}</span></div>
     </article>`;
   }).join('');
   refreshIcons();
