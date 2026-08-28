@@ -19,6 +19,7 @@ DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "vertex": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/us-central1/endpoints/openapi",
     "deepseek": "https://api.deepseek.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://localhost:11434/v1",
@@ -29,6 +30,7 @@ ENV_KEY_MAP = {
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "vertex": ["VERTEX_API_KEY", "VERTEXAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GCP_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
 }
 
