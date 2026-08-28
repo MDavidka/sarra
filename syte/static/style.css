@@ -9013,10 +9013,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex !important;
 }
 /* ==========================================================================
-   AI Builder / OpenCode Workspace — Sleek Mobile-First Dark Theme
+   AI Builder / OpenCode Workspace — Clean White Theme
    ========================================================================== */
+.app-main:has(#view-ai.active) .main-topbar {
+  display: none !important;
+}
+
 #view-ai {
-  height: calc(100vh - 60px);
+  height: 100vh;
   padding: 0;
   margin: 0;
   display: flex;
@@ -9028,7 +9032,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex: 1;
   min-height: 0;
   max-height: none;
-  border-radius: 16px;
+  border-radius: 12px;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -9039,13 +9043,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   height: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  background: #111113;
-  color: #f4f4f5;
-  border: 1px solid #232328;
-  border-radius: 16px;
+  background: #ffffff;
+  color: #09090b;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
   overflow: hidden;
   position: relative;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .svc-ai-workspace.is-fullscreen {
@@ -9064,8 +9069,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border-bottom: 1px solid #202025;
-  background: #111113;
+  border-bottom: 1px solid #e4e4e7;
+  background: #ffffff;
   gap: 12px;
   flex-wrap: nowrap;
   max-width: 100%;
@@ -9083,7 +9088,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-session-title {
   font-size: 15px;
   font-weight: 700;
-  color: #f4f4f5;
+  color: #09090b;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
@@ -9103,14 +9108,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-radius: 8px;
   background: transparent;
   border: none;
-  color: #a1a1aa;
+  color: #71717a;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .svc-ai-icon-btn:hover {
-  background: #232328;
-  color: #ffffff;
+  background: #f4f4f5;
+  color: #09090b;
 }
 
 .svc-ai-icon-btn svg {
@@ -9125,9 +9130,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #202025;
-  border: 1px solid #2d2d35;
-  color: #f4f4f5;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #09090b;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -9135,8 +9140,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-repo-pill:hover {
-  background: #2a2a32;
-  border-color: #3f3f4a;
+  background: #e4e4e7;
+  border-color: #d4d4d8;
 }
 
 .svc-ai-repo-name {
@@ -9149,13 +9154,13 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-chevron {
   width: 12px;
   height: 12px;
-  color: #8e8e99;
+  color: #71717a;
 }
 
 .svc-ai-github-icon {
   width: 15px;
   height: 15px;
-  color: #ffffff;
+  color: #18181b;
 }
 
 .svc-ai-hidden-select {
@@ -9177,7 +9182,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: #111113;
+  background: #fafafa;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -9187,7 +9192,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #e4e4e7;
+  color: #3f3f46;
   font-size: 13.5px;
   font-weight: 550;
   margin: 2px 0;
@@ -9197,7 +9202,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #a1a1aa;
+  color: #71717a;
   width: 18px;
   height: 18px;
   flex-shrink: 0;
@@ -9210,7 +9215,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 .svc-ai-activity-icon.spinning svg {
   animation: spin 1s linear infinite;
-  color: #38bdf8;
+  color: #0284c7;
 }
 
 /* Edited File Badges Stack */
@@ -9229,7 +9234,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 5px;
   font-size: 13px;
   font-weight: 600;
-  color: #a1a1aa;
+  color: #71717a;
   margin-right: 4px;
 }
 
@@ -9244,9 +9249,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 5px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #1a1a20;
-  border: 1px solid #282832;
-  color: #e4e4e7;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   font-weight: 500;
@@ -9257,12 +9262,13 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .svc-ai-file-badge:hover {
-  background: #25252e;
-  border-color: #3f3f4f;
-  color: #ffffff;
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+  color: #000000;
 }
 
 .svc-ai-file-tag-ext {
@@ -9278,37 +9284,37 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-file-tag-ext.ext-js {
-  background: #facc15;
-  color: #000000;
+  background: #fef08a;
+  color: #854d0e;
 }
 
 .svc-ai-file-tag-ext.ext-ts {
-  background: #3b82f6;
-  color: #ffffff;
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 .svc-ai-file-tag-ext.ext-css {
-  background: #a855f7;
-  color: #ffffff;
+  background: #f3e8ff;
+  color: #6b21a8;
 }
 
 .svc-ai-file-tag-ext.ext-html {
-  background: #f97316;
-  color: #ffffff;
+  background: #ffedd5;
+  color: #9a3412;
 }
 
 .svc-ai-file-tag-ext.ext-json {
-  background: #10b981;
-  color: #000000;
+  background: #d1fae5;
+  color: #065f46;
 }
 
 .svc-ai-file-tag-ext.ext-default {
-  background: #52525b;
-  color: #ffffff;
+  background: #f4f4f5;
+  color: #52525b;
 }
 
 .svc-ai-show-more-link {
-  color: #38bdf8;
+  color: #0284c7;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -9332,7 +9338,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #e4e4e7;
+  color: #18181b;
   font-weight: 550;
   cursor: pointer;
   user-select: none;
@@ -9341,7 +9347,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-accordion-header .chevron {
   width: 14px;
   height: 14px;
-  color: #8e8e99;
+  color: #71717a;
   transition: transform 0.15s ease;
 }
 
@@ -9350,7 +9356,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-accordion-subtitle {
-  color: #8e8e99;
+  color: #71717a;
   font-weight: 400;
   margin-left: 4px;
   overflow: hidden;
@@ -9361,20 +9367,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-accordion-body {
   margin-top: 6px;
   padding: 10px 14px;
-  background: #18181d;
-  border: 1px solid #272730;
-  border-radius: 12px;
-  color: #d4d4d8;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  color: #27272a;
   font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 /* Terminal Execution Card */
 .svc-ai-terminal-card {
   margin: 6px 0;
-  background: #09090b;
+  background: #18181b;
   border: 1px solid #27272a;
   border-radius: 10px;
   overflow: hidden;
@@ -9386,10 +9393,10 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: #18181b;
-  border-bottom: 1px solid #27272a;
+  background: #27272a;
+  border-bottom: 1px solid #3f3f46;
   font-size: 12px;
-  color: #e4e4e7;
+  color: #f4f4f5;
 }
 
 .svc-ai-terminal-header strong {
@@ -9417,7 +9424,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-terminal-body {
   padding: 10px 12px;
   font-size: 11.5px;
-  color: #a1a1aa;
+  color: #e4e4e7;
   max-height: 180px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -9429,10 +9436,10 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: linear-gradient(135deg, rgba(37,99,235,0.15), rgba(16,185,129,0.15));
-  border: 1px solid rgba(59,130,246,0.3);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
   border-radius: 12px;
-  color: #f4f4f5;
+  color: #166534;
   margin: 6px 0;
   gap: 10px;
 }
@@ -9443,6 +9450,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
+  color: #15803d;
 }
 
 .svc-ai-preview-link-btn {
@@ -9451,15 +9459,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 4px;
   padding: 4px 10px;
   border-radius: 6px;
-  background: #2563eb;
+  background: #16a34a;
   color: #ffffff;
   font-size: 11.5px;
   font-weight: 600;
   text-decoration: none;
+  transition: background 0.15s;
 }
 
 .svc-ai-preview-link-btn:hover {
-  background: #1d4ed8;
+  background: #15803d;
 }
 
 /* User & Assistant Bubble Overrides */
@@ -9472,7 +9481,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 .svc-ai-user-bubble {
   align-self: flex-end;
-  background: #23232a;
+  background: #18181b;
   color: #ffffff;
   border-radius: 18px 18px 4px 18px;
   padding: 10px 16px;
@@ -9483,7 +9492,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-assistant-bubble {
-  color: #e4e4e7;
+  color: #09090b;
   font-size: 14px;
   line-height: 1.6;
   word-break: break-word;
@@ -9492,8 +9501,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 /* Bottom Composer Card */
 .svc-ai-composer-wrapper {
   padding: 10px 16px 14px;
-  background: #111113;
-  border-top: 1px solid #1c1c21;
+  background: #ffffff;
+  border-top: 1px solid #e4e4e7;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -9501,16 +9510,18 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-composer-card {
   display: flex;
   flex-direction: column;
-  background: #1b1b20;
-  border: 1px solid #2a2a33;
-  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 20px;
   padding: 12px 14px 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
 }
 
 .svc-ai-composer-card:focus-within {
-  border-color: #52525b;
+  border-color: #a1a1aa;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 
 .svc-ai-composer-textarea {
@@ -9521,7 +9532,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   resize: none;
   font-family: inherit;
   font-size: 14px;
-  color: #f4f4f5;
+  color: #09090b;
   line-height: 1.45;
   min-height: 48px;
   max-height: 160px;
@@ -9530,7 +9541,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-composer-textarea::placeholder {
-  color: #71717a;
+  color: #a1a1aa;
   font-size: 14px;
 }
 
@@ -9562,14 +9573,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   border-radius: 8px;
   background: transparent;
   border: none;
-  color: #858591;
+  color: #71717a;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .svc-ai-composer-btn:hover {
-  background: #27272e;
-  color: #f4f4f5;
+  background: #f4f4f5;
+  color: #09090b;
 }
 
 .svc-ai-composer-btn svg {
@@ -9583,9 +9594,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 6px;
   padding: 5px 12px;
   border-radius: 999px;
-  background: #26262d;
-  border: 1px solid #33333d;
-  color: #e4e4e7;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -9594,15 +9605,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-model-pill:hover {
-  background: #32323b;
-  border-color: #4a4a56;
-  color: #ffffff;
+  background: #e4e4e7;
+  border-color: #d4d4d8;
+  color: #000000;
 }
 
 .svc-ai-model-provider-icon {
   display: grid;
   place-items: center;
-  color: #10b981;
+  color: #059669;
 }
 
 .svc-ai-model-provider-icon svg {
@@ -9629,7 +9640,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: #2b2b33;
+  background: #18181b;
   border: none;
   color: #ffffff;
   cursor: pointer;
@@ -9638,7 +9649,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-send-round-btn:hover {
-  background: #3f3f4a;
+  background: #27272a;
   transform: translateY(-1px);
 }
 

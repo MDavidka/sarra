@@ -1399,7 +1399,7 @@ async def api_delete_project_from_vm(
     from syte.process_manager import stop_process
 
     try:
-        await stop_process(project_id)
+        stop_process(project_id, project.get("deploy_type", "shell"))
     except Exception:
         pass
 

@@ -79,6 +79,9 @@ def stop_project(project_id: str, deploy_type: str = "shell") -> tuple[bool, str
         return True, f"Process not running ({e})."
 
 
+stop_process = stop_project
+
+
 def start_project(
     project_id: str,
     port: int,
