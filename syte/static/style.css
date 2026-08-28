@@ -4503,7 +4503,29 @@ body.ai-settings-open { overflow: hidden; }
 @media (max-width: 768px) {
   #view-ai.active ~ .content,
   #view-ai.active { }
-  .content:has(#view-ai.active) { padding-bottom: 0.5rem; }
+  .content:has(#view-ai.active) { padding: 0; padding-bottom: 0; }
+  #view-ai.active {
+    height: 100dvh;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    border-radius: 0;
+  }
+  #view-ai .svc-ai-workspace {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+  #view-ai .svc-ai-header {
+    padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top, 8px));
+  }
+  #view-ai .svc-ai-messages-container {
+    padding: 12px 12px;
+  }
+  #view-ai .svc-ai-composer-wrapper {
+    padding: 8px 10px max(10px, env(safe-area-inset-bottom, 10px));
+  }
   .ai-channel { min-height: calc(100dvh - 56px - env(safe-area-inset-top, 0)); gap: 0.5rem; max-width: none; }
   .ai-dash-title { font-size: 1.2rem; }
   .ai-dash-sub { display: none; }
@@ -8996,23 +9018,6 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 /* ==========================================================================
-   AI BUILDER & AUTONOMOUS AGENT WORKSPACE (Clean White Theme)
-   ========================================================================== */
-#view-ai {
-  display: none;
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 0 16px 20px;
-  box-sizing: border-box;
-  height: calc(100vh - 64px);
-  flex-direction: column;
-  overflow: hidden;
-}
-#view-ai.active {
-  display: flex !important;
-}
-/* ==========================================================================
    AI Builder / OpenCode Workspace — Clean White Theme
    ========================================================================== */
 .app-main:has(#view-ai.active) .main-topbar {
@@ -9020,11 +9025,19 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 #view-ai {
-  height: 100vh;
-  padding: 0;
+  display: none;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
-  display: flex;
+  padding: 0;
+  box-sizing: border-box;
   flex-direction: column;
+  overflow: hidden;
+}
+
+#view-ai.active {
+  display: flex !important;
+  height: calc(100vh - 60px);
 }
 
 #view-ai .svc-ai-workspace {
@@ -9032,9 +9045,11 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex: 1;
   min-height: 0;
   max-height: none;
-  border-radius: 12px;
+  border-radius: 0;
   max-width: 100%;
   box-sizing: border-box;
+  border: none;
+  box-shadow: none;
 }
 
 .svc-ai-workspace {
@@ -9121,6 +9136,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-icon-btn svg {
   width: 18px;
   height: 18px;
+}
+
+#svc-ai-mobile-menu-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  #svc-ai-mobile-menu-btn {
+    display: grid;
+  }
 }
 
 .svc-ai-repo-pill {

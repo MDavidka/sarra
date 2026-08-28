@@ -7070,7 +7070,7 @@ function renderServiceManagementWorkspaces(project) {
         await api(`/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' });
         toast(`Project '${displayTitle(project)}' deleted from VM.`);
         await loadProjects();
-        switchView('projects');
+        switchView('dashboard');
       } catch (err) {
         settingsDeleteBtn.disabled = false;
         toast(normalizeFetchError(err?.message) || 'Failed to delete project from VM');
@@ -8368,7 +8368,7 @@ function openServiceEditModal(p) {
         toast(`Project '${displayTitle(p)}' deleted from VM.`);
         closeServiceEditModal();
         await loadProjects();
-        switchView('projects');
+        switchView('dashboard');
       } catch (err) {
         deleteProjectBtn.disabled = false;
         toast(normalizeFetchError(err?.message) || 'Failed to delete project from VM');
@@ -10074,6 +10074,7 @@ function bindDebugChatComposer() {
 bindDebugChatComposer();
 
 document.getElementById('sidebar-toggle')?.addEventListener('click', openDrawer);
+document.getElementById('svc-ai-mobile-menu-btn')?.addEventListener('click', openDrawer);
 document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
 
 document.addEventListener('click', async (event) => {
