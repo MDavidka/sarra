@@ -59,8 +59,19 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
     p = (provider or "openai").lower().strip()
     url = (base_url or "").strip()
     if not url:
+        if p == "vertex":
+            project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
+            if project:
+                return f"https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/us-central1/endpoints/openapi"
+            return "https://generativelanguage.googleapis.com/v1beta/openai"
         return DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1").rstrip("/")
     url = url.rstrip("/")
+    if "{PROJECT}" in url or "{project}" in url:
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
+        if project:
+            url = url.replace("{PROJECT}", project).replace("{project}", project)
+        else:
+            return "https://generativelanguage.googleapis.com/v1beta/openai"
     # Automatically strip redundant endpoint suffixes if entered/pasted by the user
     if url.endswith("/chat/completions"):
         url = url[:-len("/chat/completions")].rstrip("/")
@@ -150,6 +161,8 @@ class UnifiedAIClient:
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza"):
+                headers["x-goog-api-key"] = self.api_key
 
         formatted_messages = []
         if system_prompt:
