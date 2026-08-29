@@ -7439,10 +7439,39 @@ function createLiveAssistantMessageCard(messagesList) {
 function processAIServerEvent(data, project, messagesList, state) {
   const eventType = data.event;
 
-  if (eventType === 'thought_delta') {
-    if (!state.liveThinkingMarkerEl) {
+  function clearLiveMarkers() {
+    if (state.liveThinkingMarkerEl) {
+      state.liveThinkingMarkerEl.remove();
+      state.liveThinkingMarkerEl = null;
+    }
+    const staleMarkers = messagesList.querySelectorAll('.svc-ai-live-status-marker');
+    staleMarkers.forEach(el => el.remove());
+  }
+
+  if (eventType === 'status') {
+    // Single consolidated status / thinking indicator
+    if (state.liveThinkingMarkerEl && messagesList.contains(state.liveThinkingMarkerEl)) {
+      const thoughtSpan = state.liveThinkingMarkerEl.querySelector('.live-thought-text');
+      if (thoughtSpan) {
+        thoughtSpan.textContent = data.message || 'processing…';
+      }
+    } else {
+      clearLiveMarkers();
       state.liveThinkingMarkerEl = document.createElement('div');
-      state.liveThinkingMarkerEl.className = 'svc-ai-activity-row';
+      state.liveThinkingMarkerEl.className = 'svc-ai-activity-row svc-ai-live-status-marker';
+      state.liveThinkingMarkerEl.innerHTML = `
+        <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
+        <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">${escapeHtml(data.message || 'processing…')}</span>
+      `;
+      messagesList.appendChild(state.liveThinkingMarkerEl);
+      refreshIcons();
+    }
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'thought_delta') {
+    if (!state.liveThinkingMarkerEl || !messagesList.contains(state.liveThinkingMarkerEl)) {
+      clearLiveMarkers();
+      state.liveThinkingMarkerEl = document.createElement('div');
+      state.liveThinkingMarkerEl.className = 'svc-ai-activity-row svc-ai-live-status-marker';
       state.liveThinkingMarkerEl.innerHTML = `
         <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
         <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
@@ -7459,10 +7488,7 @@ function processAIServerEvent(data, project, messagesList, state) {
     }
     smartScrollToBottom(messagesList);
   } else if (eventType === 'token_delta') {
-    if (state.liveThinkingMarkerEl) {
-      state.liveThinkingMarkerEl.remove();
-      state.liveThinkingMarkerEl = null;
-    }
+    clearLiveMarkers();
     state.accumulatedText += data.delta || '';
     if (!state.currentAssistantCard) {
       state.currentAssistantCard = createLiveAssistantMessageCard(messagesList);
@@ -7477,10 +7503,7 @@ function processAIServerEvent(data, project, messagesList, state) {
     state.assistantBubbleEl.innerHTML = formatAIMarkdown(state.accumulatedText);
     smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_start') {
-    if (state.liveThinkingMarkerEl) {
-      state.liveThinkingMarkerEl.remove();
-      state.liveThinkingMarkerEl = null;
-    }
+    clearLiveMarkers();
     // Finalize any open text card so tool elements render cleanly below it
     state.currentAssistantCard = null;
     state.assistantBubbleEl = null;
@@ -7540,6 +7563,7 @@ function processAIServerEvent(data, project, messagesList, state) {
     }
     smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_result') {
+    clearLiveMarkers();
     const res = data.result || {};
     const cmdEl = document.getElementById(`cmd-${data.tool_call_id}`);
     if (cmdEl) {
@@ -7616,6 +7640,7 @@ function processAIServerEvent(data, project, messagesList, state) {
     state.accumulatedText = '';
     smartScrollToBottom(messagesList);
   } else if (eventType === 'user_input_required') {
+    clearLiveMarkers();
     const qData = data.question_data || {};
     const qDiv = document.createElement('div');
     if (qData.is_secret_request) {
@@ -7627,15 +7652,14 @@ function processAIServerEvent(data, project, messagesList, state) {
     refreshIcons();
     smartScrollToBottom(messagesList);
   } else if (eventType === 'user_input_received') {
+    clearLiveMarkers();
     state.currentAssistantCard = null;
     state.assistantBubbleEl = null;
     state.accumulatedText = '';
     smartScrollToBottom(messagesList);
   } else if (eventType === 'stopped') {
-    if (state.liveThinkingMarkerEl) {
-      state.liveThinkingMarkerEl.remove();
-      state.liveThinkingMarkerEl = null;
-    }
+    clearLiveMarkers();
+    setAIChatSendingState(false, project);
     const stopEl = document.createElement('div');
     stopEl.className = 'svc-ai-activity-row';
     stopEl.innerHTML = `
@@ -7645,7 +7669,13 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(stopEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'done' || eventType === 'session_idle') {
+    clearLiveMarkers();
+    setAIChatSendingState(false, project);
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'error') {
+    clearLiveMarkers();
+    setAIChatSendingState(false, project);
     if (state.assistantBubbleEl) {
       state.assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
     } else {
@@ -7772,7 +7802,7 @@ async function reconnectAIChatSession(project) {
     if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
     if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events`, {
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events?replay=0`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: chatHeaders,
