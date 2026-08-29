@@ -291,8 +291,8 @@ class AIAgentEngine:
                 active_plan = getattr(self.session, "active_plan", None) if self.session else None
 
                 # If no active plan exists yet, attempt to parse markdown step headings from turn_tokens
-                if not active_plan:
-                    parsed_plan = extract_plan_from_markdown_text(user_message[:60], turn_tokens)
+                if not active_plan and turn_tokens:
+                    parsed_plan = extract_plan_from_markdown_text(str(user_message or "")[:60], turn_tokens)
                     if parsed_plan and self.session:
                         self.session.active_plan = parsed_plan
                         active_plan = parsed_plan
@@ -300,18 +300,18 @@ class AIAgentEngine:
                             "event": "tool_call_result",
                             "tool_call_id": "auto_plan_1",
                             "tool_name": "syte_create_plan",
-                            "result": {"ok": True, "plan": parsed_plan, "message": f"Created implementation plan with {len(parsed_plan.get('steps', []))} steps."},
+                            "result": {"ok": True, "plan": parsed_plan, "message": f"Created implementation plan with {len(parsed_plan.get('steps') or [])} steps."},
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
 
                 pending_steps = []
                 if active_plan and isinstance(active_plan.get("steps"), list):
-                    pending_steps = [s for s in active_plan["steps"] if s.get("status") != "completed"]
+                    pending_steps = [s for s in (active_plan.get("steps") or []) if isinstance(s, dict) and s.get("status") != "completed"]
 
                 # If there are unfinished plan steps, automatically drive the next step without stopping
                 if pending_steps and current_turn < max_turns:
                     next_step = pending_steps[0]
-                    step_title = next_step.get("title", f"Step {next_step.get('id')}")
+                    step_title = next_step.get("title") or f"Step {next_step.get('id') or '1'}"
                     continuation_prompt = (
                         f"Autonomous Execution Directive: Plan step '{step_title}' is currently pending. "
                         "Do not stop, do not ask for user confirmation, and do not wait. Immediately call the necessary tools "
@@ -330,8 +330,8 @@ class AIAgentEngine:
                     continue
 
                 action_intent_phrases = ["let me", "i will", "i'll create", "i'll build", "step 1", "first,", "to start,", "i need to", "let's start", "let's build", "let's create", "let me examine", "let me inspect"]
-                has_action_intent = any(phrase in turn_tokens.lower() for phrase in action_intent_phrases)
-                is_complex_request = any(kw in user_message.lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup", "style"])
+                has_action_intent = any(phrase in str(turn_tokens or "").lower() for phrase in action_intent_phrases)
+                is_complex_request = any(kw in str(user_message or "").lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup", "style"])
 
                 if (has_action_intent or is_complex_request) and current_turn < 4:
                     auto_start_prompt = (
@@ -451,8 +451,9 @@ class AIAgentEngine:
                     step_id = str(args.get("step_id") or "")
                     new_status = str(args.get("status") or "completed")
                     notes = str(args.get("notes") or "")
-                    for stp in self.session.active_plan.get("steps", []):
-                        if str(stp.get("id")) == step_id:
+                    plan_steps = self.session.active_plan.get("steps") if isinstance(self.session.active_plan, dict) else None
+                    for stp in (plan_steps or []):
+                        if isinstance(stp, dict) and str(stp.get("id")) == step_id:
                             stp["status"] = new_status
                             if notes:
                                 stp["notes"] = notes

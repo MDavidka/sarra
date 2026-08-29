@@ -168,9 +168,11 @@ def get_skill_content(skill_name: str) -> Optional[str]:
 
     # Alias / substring match
     for key, skill in SKILLS_REGISTRY.items():
-        if query == key or query in skill.get("aliases", []):
-            return skill["content"]
-        if any(query in alias for alias in skill.get("aliases", [])):
-            return skill["content"]
+        aliases = skill.get("aliases") or []
+        if query == key or (isinstance(aliases, list) and query in aliases):
+            return skill.get("content")
+        if isinstance(aliases, list) and any(query in alias for alias in aliases if isinstance(alias, str)):
+            return skill.get("content")
 
     return None
+

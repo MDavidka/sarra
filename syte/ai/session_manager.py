@@ -49,11 +49,12 @@ class ProjectAISession:
             if tool_name == "syte_create_plan" and result.get("plan"):
                 self.active_plan = result["plan"]
             elif tool_name == "syte_update_plan_step" and self.active_plan:
-                step_id = str(result.get("step_id"))
-                status = result.get("status")
+                step_id = str(result.get("step_id") or "")
+                status = str(result.get("status") or "")
                 notes = result.get("notes")
-                for s in self.active_plan.get("steps", []):
-                    if str(s.get("id")) == step_id:
+                plan_steps = self.active_plan.get("steps") if isinstance(self.active_plan, dict) else None
+                for s in (plan_steps or []):
+                    if isinstance(s, dict) and str(s.get("id")) == step_id:
                         s["status"] = status
                         if notes:
                             s["notes"] = notes
