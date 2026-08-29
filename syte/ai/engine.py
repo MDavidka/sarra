@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from syte.ai.providers import UnifiedAIClient
@@ -20,6 +21,74 @@ from syte.database import (
 )
 
 logger = logging.getLogger("syte.ai.engine")
+
+
+def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
+    """Extract tool calls from model text output when native function calling chunk is omitted."""
+    tool_calls = []
+
+    # 1. Look for <tool_call> or <function_call> XML tags
+    xml_matches = re.finditer(r'<(?:tool_call|function_call)>\s*(\{.*?\})\s*</(?:tool_call|function_call)>', text, re.DOTALL)
+    for i, m in enumerate(xml_matches, start=1):
+        try:
+            data = json.loads(m.group(1))
+            name = data.get("name") or data.get("tool") or data.get("function")
+            args = data.get("arguments") or data.get("parameters") or {}
+            if name and isinstance(name, str) and name.startswith("syte_"):
+                tool_calls.append({
+                    "type": "tool_call",
+                    "id": f"call_xml_{i}",
+                    "name": name,
+                    "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
+                })
+        except Exception:
+            pass
+
+    if tool_calls:
+        return tool_calls
+
+    # 2. Look for ```json ``` blocks with {"name": "syte_...", "arguments": ...} or {"tool": "syte_..."}
+    json_blocks = re.finditer(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', text)
+    for i, m in enumerate(json_blocks, start=1):
+        try:
+            data = json.loads(m.group(1))
+            name = data.get("name") or data.get("tool") or data.get("action")
+            args = data.get("arguments") or data.get("parameters") or data.get("action_input") or {}
+            if name and isinstance(name, str) and name.startswith("syte_"):
+                tool_calls.append({
+                    "type": "tool_call",
+                    "id": f"call_block_{i}",
+                    "name": name,
+                    "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
+                })
+        except Exception:
+            pass
+
+    return tool_calls
+
+
+def extract_plan_from_markdown_text(title_fallback: str, text: str) -> Optional[Dict[str, Any]]:
+    """Parse a multi-step plan from markdown text headings when syte_create_plan tool was not invoked."""
+    step_pattern = re.compile(r'(?:^|\n)(?:#{1,4}\s*)?(?:Step\s*(\d+)[:.]\s*|(\d+)\.\s+)(.+)', re.IGNORECASE)
+    matches = step_pattern.findall(text)
+    if len(matches) >= 2:
+        steps = []
+        for idx, m in enumerate(matches, start=1):
+            step_title = m[2].strip().replace('**', '').replace('__', '')
+            step_title = step_title.split('\n')[0].strip()
+            if len(step_title) > 80:
+                step_title = step_title[:77] + '...'
+            steps.append({
+                "id": str(idx),
+                "title": step_title,
+                "status": "pending",
+                "notes": "",
+            })
+        return {
+            "title": title_fallback or "Project Implementation Plan",
+            "steps": steps,
+        }
+    return None
 
 
 class AIAgentEngine:
@@ -70,6 +139,17 @@ class AIAgentEngine:
             except Exception:
                 pass
 
+            # Gather existing workspace file tree
+            ws_files_list = []
+            if ws_dir.exists():
+                for p in sorted(ws_dir.rglob("*")):
+                    if any(ign in p.parts for ign in [".git", "node_modules", ".venv", "__pycache__", "dist", "build"]):
+                        continue
+                    if len(ws_files_list) < 40:
+                        rel = p.relative_to(ws_dir)
+                        ws_files_list.append(str(rel) + ("/" if p.is_dir() else ""))
+            ws_files_summary = "\n".join(f"  - {f}" for f in ws_files_list) if ws_files_list else "  (Workspace directory is currently empty)"
+
             context_prompt = (
                 f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
                 f"- Project ID: {project.get('id')}\n"
@@ -80,6 +160,7 @@ class AIAgentEngine:
                 f"- Connected Git Repository: {project.get('git_url') or 'None'}\n"
                 f"- Logged-in Git / GitHub Account: {github_info}\n"
                 f"- VM Workspace Directory: {str(ws_dir)}\n"
+                f"Existing Workspace Files:\n{ws_files_summary}\n"
                 f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, and trigger zero-downtime deployments.\n"
                 f"------------------------------------\n"
             )
@@ -178,10 +259,30 @@ class AIAgentEngine:
 
             final_response_text += turn_tokens
 
+            # Extract tool calls from text if native function calling chunks were empty
+            if not turn_tool_calls:
+                parsed_calls = extract_text_tool_calls(turn_tokens)
+                if parsed_calls:
+                    turn_tool_calls = parsed_calls
+
             # If no tool calls were requested in this turn
             if not turn_tool_calls:
-                # Check if there is an active plan with unfinished steps
                 active_plan = getattr(self.session, "active_plan", None) if self.session else None
+
+                # If no active plan exists yet, attempt to parse markdown step headings from turn_tokens
+                if not active_plan:
+                    parsed_plan = extract_plan_from_markdown_text(user_message[:60], turn_tokens)
+                    if parsed_plan and self.session:
+                        self.session.active_plan = parsed_plan
+                        active_plan = parsed_plan
+                        yield {
+                            "event": "tool_call_result",
+                            "tool_call_id": "auto_plan_1",
+                            "tool_name": "syte_create_plan",
+                            "result": {"ok": True, "plan": parsed_plan, "message": f"Created implementation plan with {len(parsed_plan.get('steps', []))} steps."},
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+
                 pending_steps = []
                 if active_plan and isinstance(active_plan.get("steps"), list):
                     pending_steps = [s for s in active_plan["steps"] if s.get("status") != "completed"]
@@ -207,11 +308,14 @@ class AIAgentEngine:
                     }
                     continue
 
-                # If on turn 1 a complex build request produced only planning text without tool calls, prompt auto-start
-                if current_turn == 1 and any(kw in user_message.lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup"]):
+                action_intent_phrases = ["let me", "i will", "i'll create", "i'll build", "step 1", "first,", "to start,", "i need to", "let's start", "let's build", "let's create", "let me examine", "let me inspect"]
+                has_action_intent = any(phrase in turn_tokens.lower() for phrase in action_intent_phrases)
+                is_complex_request = any(kw in user_message.lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup", "style"])
+
+                if (has_action_intent or is_complex_request) and current_turn < 4:
                     auto_start_prompt = (
-                        "Autonomous Directive: Please invoke `syte_create_plan` and immediately start executing the file operations "
-                        "and commands to build and verify this task end-to-end. Do not wait for confirmation."
+                        "Autonomous Directive: Please invoke `syte_create_plan` or execute file/command tools directly now. "
+                        "Do not stop or output prose descriptions without calling tools."
                     )
                     await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
                     formatted_messages.append({"role": "assistant", "content": turn_tokens})
@@ -318,6 +422,19 @@ class AIAgentEngine:
                         "command": cmd_target,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+
+                # Sync active plan in session
+                if tool_name == "syte_create_plan" and tool_result.get("plan") and self.session:
+                    self.session.active_plan = tool_result.get("plan")
+                elif tool_name == "syte_update_plan_step" and self.session and getattr(self.session, "active_plan", None):
+                    step_id = str(args.get("step_id") or "")
+                    new_status = str(args.get("status") or "completed")
+                    notes = str(args.get("notes") or "")
+                    for stp in self.session.active_plan.get("steps", []):
+                        if str(stp.get("id")) == step_id:
+                            stp["status"] = new_status
+                            if notes:
+                                stp["notes"] = notes
 
                 # Save tool result in DB & conversation messages
                 await save_ai_chat_message(
