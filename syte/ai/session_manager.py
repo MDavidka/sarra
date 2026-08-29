@@ -31,7 +31,7 @@ class ProjectAISession:
         self.subscribers: List[asyncio.Queue] = []
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
-        self.question_future: Optional[asyncio.Future] = None
+        self.answer_queue: asyncio.Queue = asyncio.Queue()
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
@@ -76,9 +76,14 @@ class ProjectAISession:
 
     async def wait_for_user_answer(self, question_data: Dict[str, Any], timeout: float = 300.0) -> Dict[str, Any]:
         """Pause agent turn until the user provides an answer or secret from the UI."""
-        loop = asyncio.get_running_loop()
         self.pending_question = question_data
-        self.question_future = loop.create_future()
+
+        # Clear any stale answers
+        while not self.answer_queue.empty():
+            try:
+                self.answer_queue.get_nowait()
+            except Exception:
+                break
 
         self.add_event({
             "event": "user_input_required",
@@ -87,30 +92,32 @@ class ProjectAISession:
         })
 
         try:
-            answer = await asyncio.wait_for(self.question_future, timeout=timeout)
+            answer = await asyncio.wait_for(self.answer_queue.get(), timeout=timeout)
             return answer
         except asyncio.TimeoutError:
             return {"timeout": True, "answer": "No response received within timeout. Proceeding with best defaults."}
         finally:
             self.pending_question = None
-            self.question_future = None
 
     def resolve_user_answer(self, answer_payload: Dict[str, Any]) -> bool:
-        """Resolve a pending question future with the user's answer."""
-        if self.question_future and not self.question_future.done():
-            self.question_future.set_result(answer_payload)
-            self.pending_question = None
+        """Resolve a pending question with the user's answer."""
+        self.pending_question = None
+        try:
+            self.answer_queue.put_nowait(answer_payload)
             return True
-        return False
+        except Exception:
+            return False
 
     def clear(self) -> None:
         """Reset the session buffers, plan, and pending questions."""
         self.event_buffer.clear()
         self.active_plan = None
         self.pending_question = None
-        if self.question_future and not self.question_future.done():
-            self.question_future.cancel()
-        self.question_future = None
+        while not self.answer_queue.empty():
+            try:
+                self.answer_queue.get_nowait()
+            except Exception:
+                break
 
     def get_status_summary(self) -> Dict[str, Any]:
         """Return high-level summary of active session."""
