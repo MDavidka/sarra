@@ -7224,6 +7224,9 @@ function getPlanCardHtml(plan) {
           ${completed === total ? '<i data-lucide="check-check"></i> Done' : '<i data-lucide="refresh-cw" class="spinning"></i> In Progress'}
         </div>
       </div>
+      <div class="svc-ai-plan-progress-track">
+        <div class="svc-ai-plan-progress-fill" style="width: ${progressPct}%;"></div>
+      </div>
       <div class="svc-ai-plan-steps-list">
         ${plan.steps.map(s => {
           let icon = '<i data-lucide="circle" class="step-pending"></i>';
@@ -7360,38 +7363,389 @@ async function submitAIUserAnswer(projectId, payload, containerId) {
   } catch (err) {
     toast(`Error submitting answer: ${err.message}`);
   }
-}
 
-function getFileBadgeHtml(filePath) {
-  if (!filePath) return '';
-  const clean = filePath.replace(/^\/+/, '');
-  const parts = clean.split('/');
-  const fileName = parts[parts.length - 1] || clean;
-  let extBadge = '<span class="svc-ai-file-tag-ext ext-default"><i data-lucide="file-text"></i></span>';
-  if (fileName.endsWith('.js') || fileName.endsWith('.mjs') || fileName.endsWith('.cjs') || fileName.endsWith('.jsx')) {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-js">JS</span>';
-  } else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-ts">TS</span>';
-  } else if (fileName.endsWith('.css') || fileName.endsWith('.scss') || fileName.endsWith('.sass')) {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-css">CSS</span>';
-  } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-html">HTML</span>';
-  } else if (fileName.endsWith('.json')) {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-json">JSON</span>';
-  } else if (fileName.startsWith('.git') || fileName === '.gitignore') {
-    extBadge = '<span class="svc-ai-file-tag-ext ext-default"><i data-lucide="file-code"></i></span>';
+  // If not currently streaming in this tab, immediately connect to event stream so user sees live continuation!
+  if (!aiChatSending) {
+    const targetProj = (projects && projects.find(p => p.id === projectId)) || { id: projectId };
+    void reconnectAIChatSession(targetProj);
   }
-  return `<span class="svc-ai-file-badge" title="${escapeHtml(clean)}">${extBadge}<span>${escapeHtml(fileName)}</span></span>`;
 }
 
-function formatMessageTime(isoString) {
-  if (!isoString) return '';
+function createLiveAssistantMessageCard(messagesList) {
+  const card = document.createElement('div');
+  card.className = 'svc-ai-message assistant';
+  card.innerHTML = `
+    <div class="svc-ai-message-top">
+      <div class="svc-ai-msg-sender">
+        <span class="svc-ai-sender-avatar ai"><i data-lucide="bot"></i></span>
+        <span>Syte AI Agent</span>
+        <span class="svc-ai-msg-time">Just now</span>
+      </div>
+    </div>
+  `;
+  messagesList.appendChild(card);
+  refreshIcons();
+  return card;
+}
+
+function processAIServerEvent(data, project, messagesList, state) {
+  const eventType = data.event;
+
+  if (eventType === 'thought_delta') {
+    if (!state.liveThinkingMarkerEl) {
+      state.liveThinkingMarkerEl = document.createElement('div');
+      state.liveThinkingMarkerEl.className = 'svc-ai-activity-row';
+      state.liveThinkingMarkerEl.innerHTML = `
+        <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
+        <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
+      `;
+      messagesList.appendChild(state.liveThinkingMarkerEl);
+      refreshIcons();
+    }
+    const thoughtSpan = state.liveThinkingMarkerEl.querySelector('.live-thought-text');
+    if (thoughtSpan) {
+      const thoughtAcc = (thoughtSpan.dataset.text || '') + (data.delta || '');
+      thoughtSpan.dataset.text = thoughtAcc;
+      const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
+      thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
+    }
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'token_delta') {
+    if (state.liveThinkingMarkerEl) {
+      state.liveThinkingMarkerEl.remove();
+      state.liveThinkingMarkerEl = null;
+    }
+    state.accumulatedText += data.delta || '';
+    if (!state.currentAssistantCard) {
+      state.currentAssistantCard = createLiveAssistantMessageCard(messagesList);
+      state.assistantBubbleEl = document.createElement('div');
+      state.assistantBubbleEl.className = 'svc-ai-assistant-bubble';
+      state.currentAssistantCard.appendChild(state.assistantBubbleEl);
+    } else if (!state.assistantBubbleEl) {
+      state.assistantBubbleEl = document.createElement('div');
+      state.assistantBubbleEl.className = 'svc-ai-assistant-bubble';
+      state.currentAssistantCard.appendChild(state.assistantBubbleEl);
+    }
+    state.assistantBubbleEl.innerHTML = formatAIMarkdown(state.accumulatedText);
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'tool_call_start') {
+    if (state.liveThinkingMarkerEl) {
+      state.liveThinkingMarkerEl.remove();
+      state.liveThinkingMarkerEl = null;
+    }
+    // Finalize any open text card so tool elements render cleanly below it
+    state.currentAssistantCard = null;
+    state.assistantBubbleEl = null;
+    state.accumulatedText = '';
+
+    const toolName = data.tool_name || '';
+    const filePath = data.file_path || (data.arguments && (data.arguments.path || data.arguments.source_path));
+    const command = data.command || (data.arguments && data.arguments.command);
+
+    if (filePath) {
+      if (!state.fileBadgesRowEl || !messagesList.contains(state.fileBadgesRowEl)) {
+        state.fileBadgesRowEl = document.createElement('div');
+        state.fileBadgesRowEl.className = 'svc-ai-files-edited-row';
+        state.fileBadgesRowEl.innerHTML = `<span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>`;
+        messagesList.appendChild(state.fileBadgesRowEl);
+        refreshIcons();
+      }
+      const badgeHtml = getFileBadgeHtml(filePath);
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = badgeHtml;
+      if (tempDiv.firstElementChild) {
+        state.fileBadgesRowEl.appendChild(tempDiv.firstElementChild);
+        refreshIcons();
+      }
+    } else if (command) {
+      state.fileBadgesRowEl = null;
+      const cmdEl = document.createElement('div');
+      cmdEl.className = 'svc-ai-activity-row';
+      cmdEl.id = `cmd-${data.tool_call_id}`;
+      cmdEl.innerHTML = `
+        <span class="svc-ai-activity-icon spinning"><i data-lucide="terminal"></i></span>
+        <span>bash: <strong>${escapeHtml(command)}</strong></span>
+      `;
+      messagesList.appendChild(cmdEl);
+      refreshIcons();
+    } else if (toolName === 'syte_start_preview') {
+      state.fileBadgesRowEl = null;
+      const prevEl = document.createElement('div');
+      prevEl.className = 'svc-ai-activity-row';
+      prevEl.id = `prev-${data.tool_call_id}`;
+      prevEl.innerHTML = `
+        <span class="svc-ai-activity-icon spinning"><i data-lucide="zap"></i></span>
+        <span>starting live preview server…</span>
+      `;
+      messagesList.appendChild(prevEl);
+      refreshIcons();
+    } else {
+      state.fileBadgesRowEl = null;
+      const actEl = document.createElement('div');
+      actEl.className = 'svc-ai-activity-row';
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
+        <span>${escapeHtml(data.message || 'progress update')}</span>
+      `;
+      messagesList.appendChild(actEl);
+      refreshIcons();
+    }
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'tool_call_result') {
+    const res = data.result || {};
+    const cmdEl = document.getElementById(`cmd-${data.tool_call_id}`);
+    if (cmdEl) {
+      cmdEl.className = 'svc-ai-terminal-card';
+      cmdEl.innerHTML = `
+        <div class="svc-ai-terminal-header">
+          <span><i data-lucide="terminal"></i> bash: <strong>${escapeHtml(res.command || data.command || '')}</strong></span>
+          <span class="svc-ai-terminal-status-badge ${res.ok ? 'ok' : 'fail'}">${res.ok ? 'exit 0' : `exit ${res.exit_code || 1}`}</span>
+        </div>
+        <div class="svc-ai-terminal-body">${escapeHtml(res.stdout || res.stderr || 'Command completed.')}</div>
+      `;
+      refreshIcons();
+    }
+    if (res.plan) {
+      const planCardEl = document.getElementById('active-plan-card');
+      if (planCardEl) {
+        planCardEl.outerHTML = getPlanCardHtml(res.plan);
+      } else {
+        const planDiv = document.createElement('div');
+        planDiv.innerHTML = getPlanCardHtml(res.plan);
+        if (planDiv.firstElementChild) messagesList.appendChild(planDiv.firstElementChild);
+      }
+      refreshIcons();
+    } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
+      // Re-fetch project session to update plan progress bar
+      api(`/projects/${encodeURIComponent(project.id)}/ai/session`).then(sRes => {
+        if (sRes && sRes.session && sRes.session.active_plan) {
+          const planCardEl = document.getElementById('active-plan-card');
+          if (planCardEl) {
+            planCardEl.outerHTML = getPlanCardHtml(sRes.session.active_plan);
+            refreshIcons();
+          }
+        }
+      }).catch(() => {});
+    } else if (res.skill_name) {
+      const skillDiv = document.createElement('div');
+      skillDiv.innerHTML = getSkillBadgeHtml(res.skill_name);
+      if (skillDiv.firstElementChild) messagesList.appendChild(skillDiv.firstElementChild);
+      refreshIcons();
+    } else if (res.scanned_files_count !== undefined) {
+      const secDiv = document.createElement('div');
+      secDiv.innerHTML = getSecurityScanHtml(res);
+      if (secDiv.firstElementChild) messagesList.appendChild(secDiv.firstElementChild);
+      refreshIcons();
+    } else if (res.requires_user_input) {
+      const qDiv = document.createElement('div');
+      if (res.is_secret_request) {
+        qDiv.innerHTML = getSecureEnvCardHtml(res, project.id, data.tool_call_id);
+      } else {
+        qDiv.innerHTML = getQuestionCardHtml(res, project.id, data.tool_call_id);
+      }
+      if (qDiv.firstElementChild) messagesList.appendChild(qDiv.firstElementChild);
+      refreshIcons();
+    }
+    if (res.preview_url) {
+      const prevBanner = document.createElement('div');
+      prevBanner.className = 'svc-ai-preview-banner';
+      prevBanner.innerHTML = `
+        <div class="svc-ai-preview-lead">
+          <i data-lucide="zap" style="color:#f59e0b;"></i>
+          <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
+        </div>
+        <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
+          <span>Open Preview</span>
+          <i data-lucide="external-link"></i>
+        </a>
+      `;
+      messagesList.appendChild(prevBanner);
+      refreshIcons();
+    }
+
+    // Reset current text bubble so the next turn starts in a fresh message card
+    state.currentAssistantCard = null;
+    state.assistantBubbleEl = null;
+    state.accumulatedText = '';
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'user_input_required') {
+    const qData = data.question_data || {};
+    const qDiv = document.createElement('div');
+    if (qData.is_secret_request) {
+      qDiv.innerHTML = getSecureEnvCardHtml(qData, project.id);
+    } else {
+      qDiv.innerHTML = getQuestionCardHtml(qData, project.id);
+    }
+    if (qDiv.firstElementChild) messagesList.appendChild(qDiv.firstElementChild);
+    refreshIcons();
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'user_input_received') {
+    state.currentAssistantCard = null;
+    state.assistantBubbleEl = null;
+    state.accumulatedText = '';
+    messagesList.scrollTop = messagesList.scrollHeight;
+  } else if (eventType === 'error') {
+    if (state.assistantBubbleEl) {
+      state.assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
+    } else {
+      const errCard = createLiveAssistantMessageCard(messagesList);
+      errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
+    }
+    refreshIcons();
+  }
+}
+
+async function executeAIChatTurn(project, userText) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList) return;
+
+  // Remove welcome card if present
+  const welcomeCard = messagesList.querySelector('.svc-ai-welcome-card');
+  if (welcomeCard) welcomeCard.remove();
+
+  // Append user bubble with standard card header
+  const userEl = document.createElement('div');
+  userEl.className = 'svc-ai-message user';
+  userEl.innerHTML = `
+    <div class="svc-ai-message-top">
+      <div class="svc-ai-msg-sender">
+        <span class="svc-ai-sender-avatar user"><i data-lucide="user"></i></span>
+        <span>You</span>
+        <span class="svc-ai-msg-time">Just now</span>
+      </div>
+    </div>
+    <div class="svc-ai-user-bubble">${formatAIMarkdown(userText)}</div>
+  `;
+  messagesList.appendChild(userEl);
+  messagesList.scrollTop = messagesList.scrollHeight;
+  refreshIcons();
+
+  aiChatSending = true;
+  const streamState = {
+    currentAssistantCard: null,
+    assistantBubbleEl: null,
+    accumulatedText: '',
+    liveThinkingMarkerEl: null,
+    fileBadgesRowEl: null,
+  };
+
   try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!syraCsrfToken) {
+      try { await restoreOperatorSession(); } catch (_) {}
+    }
+    const chatHeaders = { 'Content-Type': 'application/json' };
+    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
+    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/chat`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: chatHeaders,
+      body: JSON.stringify({ message: userText }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = 'Failed to start AI turn';
+      try {
+        const parsed = JSON.parse(errText);
+        errMsg = parsed.message || parsed.detail?.message || parsed.error || errText;
+      } catch (_) {
+        errMsg = errText || errMsg;
+      }
+      const errCard = createLiveAssistantMessageCard(messagesList);
+      errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</div>`;
+      refreshIcons();
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.substring(6));
+            processAIServerEvent(data, project, messagesList, streamState);
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    const errCard = createLiveAssistantMessageCard(messagesList);
+    errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    aiChatSending = false;
+    if (streamState.liveThinkingMarkerEl) {
+      streamState.liveThinkingMarkerEl.remove();
+    }
+    refreshIcons();
+  }
+}
+
+async function reconnectAIChatSession(project) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList || aiChatSending) return;
+
+  aiChatSending = true;
+  const streamState = {
+    currentAssistantCard: null,
+    assistantBubbleEl: null,
+    accumulatedText: '',
+    liveThinkingMarkerEl: null,
+    fileBadgesRowEl: null,
+  };
+
+  try {
+    const chatHeaders = { 'Content-Type': 'application/json' };
+    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
+    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: chatHeaders,
+    });
+
+    if (!response.ok) return;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.substring(6));
+            processAIServerEvent(data, project, messagesList, streamState);
+          } catch (_) {}
+        }
+      }
+    }
   } catch (_) {
-    return '';
+  } finally {
+    aiChatSending = false;
+    if (streamState.liveThinkingMarkerEl) {
+      streamState.liveThinkingMarkerEl.remove();
+    }
+    refreshIcons();
   }
 }
 
@@ -7735,382 +8089,6 @@ async function renderAIChatWorkspace(project) {
   }
 
   refreshIcons();
-}
-
-async function executeAIChatTurn(project, userText) {
-  const messagesList = document.getElementById('svc-ai-messages-list');
-  if (!messagesList) return;
-
-  // Remove welcome card if present
-  const welcomeCard = messagesList.querySelector('.svc-ai-welcome-card');
-  if (welcomeCard) welcomeCard.remove();
-
-  // Append user bubble
-  const userEl = document.createElement('div');
-  userEl.className = 'svc-ai-message';
-  userEl.innerHTML = `<div class="svc-ai-user-bubble">${formatAIMarkdown(userText)}</div>`;
-  messagesList.appendChild(userEl);
-
-  // Append live stream container
-  const streamContainer = document.createElement('div');
-  streamContainer.className = 'svc-ai-message';
-  messagesList.appendChild(streamContainer);
-  messagesList.scrollTop = messagesList.scrollHeight;
-  refreshIcons();
-
-  aiChatSending = true;
-  let accumulatedText = '';
-  let pendingFileBadges = [];
-  let fileBadgesRowEl = null;
-
-  try {
-    if (!syraCsrfToken) {
-      try { await restoreOperatorSession(); } catch (_) {}
-    }
-    const chatHeaders = { 'Content-Type': 'application/json' };
-    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
-    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
-
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/chat`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: chatHeaders,
-      body: JSON.stringify({ message: userText }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let errMsg = 'Failed to start AI turn';
-      try {
-        const parsed = JSON.parse(errText);
-        errMsg = parsed.message || parsed.detail?.message || parsed.error || errText;
-      } catch (_) {
-        errMsg = errText || errMsg;
-      }
-      streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</div>`;
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let assistantBubbleEl = null;
-    let liveThinkingMarkerEl = null;
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(trimmed.substring(6));
-            const eventType = data.event;
-
-            if (eventType === 'thought_delta') {
-              if (!liveThinkingMarkerEl) {
-                liveThinkingMarkerEl = document.createElement('div');
-                liveThinkingMarkerEl.className = 'svc-ai-activity-row';
-                liveThinkingMarkerEl.innerHTML = `
-                  <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
-                  <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
-                `;
-                streamContainer.appendChild(liveThinkingMarkerEl);
-                refreshIcons();
-              }
-              const thoughtSpan = liveThinkingMarkerEl.querySelector('.live-thought-text');
-              if (thoughtSpan) {
-                const thoughtAcc = (thoughtSpan.dataset.text || '') + data.delta;
-                thoughtSpan.dataset.text = thoughtAcc;
-                const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
-                thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
-              }
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'token_delta') {
-              if (liveThinkingMarkerEl) {
-                liveThinkingMarkerEl.remove();
-                liveThinkingMarkerEl = null;
-              }
-              accumulatedText += data.delta || '';
-              if (!assistantBubbleEl) {
-                assistantBubbleEl = document.createElement('div');
-                assistantBubbleEl.className = 'svc-ai-assistant-bubble';
-                streamContainer.appendChild(assistantBubbleEl);
-              }
-              assistantBubbleEl.innerHTML = formatAIMarkdown(accumulatedText);
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'tool_call_start') {
-              if (liveThinkingMarkerEl) {
-                liveThinkingMarkerEl.remove();
-                liveThinkingMarkerEl = null;
-              }
-              const toolName = data.tool_name || '';
-              const filePath = data.file_path || (data.arguments && (data.arguments.path || data.arguments.source_path));
-              const command = data.command || (data.arguments && data.arguments.command);
-
-              if (filePath) {
-                if (!fileBadgesRowEl) {
-                  fileBadgesRowEl = document.createElement('div');
-                  fileBadgesRowEl.className = 'svc-ai-files-edited-row';
-                  fileBadgesRowEl.innerHTML = `<span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>`;
-                  streamContainer.appendChild(fileBadgesRowEl);
-                  refreshIcons();
-                }
-                const badgeHtml = getFileBadgeHtml(filePath);
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = badgeHtml;
-                if (tempDiv.firstElementChild) {
-                  fileBadgesRowEl.appendChild(tempDiv.firstElementChild);
-                  refreshIcons();
-                }
-              } else if (command) {
-                fileBadgesRowEl = null;
-                const cmdEl = document.createElement('div');
-                cmdEl.className = 'svc-ai-activity-row';
-                cmdEl.id = `cmd-${data.tool_call_id}`;
-                cmdEl.innerHTML = `
-                  <span class="svc-ai-activity-icon spinning"><i data-lucide="terminal"></i></span>
-                  <span>bash: <strong>${escapeHtml(command)}</strong></span>
-                `;
-                streamContainer.appendChild(cmdEl);
-                refreshIcons();
-              } else if (toolName === 'syte_start_preview') {
-                fileBadgesRowEl = null;
-                const prevEl = document.createElement('div');
-                prevEl.className = 'svc-ai-activity-row';
-                prevEl.id = `prev-${data.tool_call_id}`;
-                prevEl.innerHTML = `
-                  <span class="svc-ai-activity-icon spinning"><i data-lucide="zap"></i></span>
-                  <span>starting live preview server…</span>
-                `;
-                streamContainer.appendChild(prevEl);
-                refreshIcons();
-              } else {
-                fileBadgesRowEl = null;
-                const actEl = document.createElement('div');
-                actEl.className = 'svc-ai-activity-row';
-                actEl.innerHTML = `
-                  <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
-                  <span>progress update</span>
-                `;
-                streamContainer.appendChild(actEl);
-                refreshIcons();
-              }
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'tool_call_result') {
-              const res = data.result || {};
-              const cmdEl = document.getElementById(`cmd-${data.tool_call_id}`);
-              if (cmdEl) {
-                cmdEl.className = 'svc-ai-terminal-card';
-                cmdEl.innerHTML = `
-                  <div class="svc-ai-terminal-header">
-                    <span><i data-lucide="terminal"></i> bash: <strong>${escapeHtml(res.command || data.command || '')}</strong></span>
-                    <span class="svc-ai-terminal-status-badge ${res.ok ? 'ok' : 'fail'}">${res.ok ? 'exit 0' : `exit ${res.exit_code || 1}`}</span>
-                  </div>
-                  <div class="svc-ai-terminal-body">${escapeHtml(res.stdout || res.stderr || 'Command completed.')}</div>
-                `;
-                refreshIcons();
-              }
-              if (res.plan) {
-                const planCardEl = document.getElementById('active-plan-card');
-                if (planCardEl) {
-                  planCardEl.outerHTML = getPlanCardHtml(res.plan);
-                } else {
-                  const planDiv = document.createElement('div');
-                  planDiv.innerHTML = getPlanCardHtml(res.plan);
-                  if (planDiv.firstElementChild) streamContainer.appendChild(planDiv.firstElementChild);
-                }
-                refreshIcons();
-              } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
-                const planCardEl = document.getElementById('active-plan-card');
-                if (planCardEl) {
-                  const stepEls = planCardEl.querySelectorAll('.svc-ai-plan-step');
-                  // Trigger status update
-                }
-              } else if (res.skill_name) {
-                const skillDiv = document.createElement('div');
-                skillDiv.innerHTML = getSkillBadgeHtml(res.skill_name);
-                if (skillDiv.firstElementChild) streamContainer.appendChild(skillDiv.firstElementChild);
-                refreshIcons();
-              } else if (res.scanned_files_count !== undefined) {
-                const secDiv = document.createElement('div');
-                secDiv.innerHTML = getSecurityScanHtml(res);
-                if (secDiv.firstElementChild) streamContainer.appendChild(secDiv.firstElementChild);
-                refreshIcons();
-              } else if (res.requires_user_input) {
-                const qDiv = document.createElement('div');
-                if (res.is_secret_request) {
-                  qDiv.innerHTML = getSecureEnvCardHtml(res, project.id, data.tool_call_id);
-                } else {
-                  qDiv.innerHTML = getQuestionCardHtml(res, project.id, data.tool_call_id);
-                }
-                if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
-                refreshIcons();
-              }
-              if (res.preview_url) {
-                const prevBanner = document.createElement('div');
-                prevBanner.className = 'svc-ai-preview-banner';
-                prevBanner.innerHTML = `
-                  <div class="svc-ai-preview-lead">
-                    <i data-lucide="zap" style="color:#f59e0b;"></i>
-                    <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
-                  </div>
-                  <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
-                    <span>Open Preview</span>
-                    <i data-lucide="external-link"></i>
-                  </a>
-                `;
-                streamContainer.appendChild(prevBanner);
-                refreshIcons();
-              }
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'user_input_required') {
-              const qData = data.question_data || {};
-              const qDiv = document.createElement('div');
-              if (qData.is_secret_request) {
-                qDiv.innerHTML = getSecureEnvCardHtml(qData, project.id);
-              } else {
-                qDiv.innerHTML = getQuestionCardHtml(qData, project.id);
-              }
-              if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
-              refreshIcons();
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'user_input_received') {
-              // Input confirmed
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'error') {
-              if (assistantBubbleEl) {
-                assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
-              } else {
-                streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
-              }
-            }
-          } catch (_) {}
-        }
-      }
-    }
-  } catch (err) {
-    streamContainer.innerHTML = `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
-  } finally {
-    aiChatSending = false;
-    refreshIcons();
-  }
-}
-
-async function reconnectAIChatSession(project) {
-  const messagesList = document.getElementById('svc-ai-messages-list');
-  if (!messagesList || aiChatSending) return;
-
-  const streamContainer = document.createElement('div');
-  streamContainer.className = 'svc-ai-message';
-  messagesList.appendChild(streamContainer);
-
-  aiChatSending = true;
-  let accumulatedText = '';
-  let assistantBubbleEl = null;
-  let liveThinkingMarkerEl = null;
-
-  try {
-    const chatHeaders = { 'Content-Type': 'application/json' };
-    if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
-    if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
-
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events`, {
-      method: 'GET',
-      credentials: 'same-origin',
-      headers: chatHeaders,
-    });
-
-    if (!response.ok) return;
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(trimmed.substring(6));
-            const eventType = data.event;
-
-            if (eventType === 'thought_delta') {
-              if (!liveThinkingMarkerEl) {
-                liveThinkingMarkerEl = document.createElement('div');
-                liveThinkingMarkerEl.className = 'svc-ai-activity-row';
-                liveThinkingMarkerEl.innerHTML = `
-                  <span class="svc-ai-activity-icon spinning"><i data-lucide="refresh-cw"></i></span>
-                  <span class="live-thought-text" style="color:#a1a1aa; font-style:italic;">thinking…</span>
-                `;
-                streamContainer.appendChild(liveThinkingMarkerEl);
-                refreshIcons();
-              }
-              const thoughtSpan = liveThinkingMarkerEl.querySelector('.live-thought-text');
-              if (thoughtSpan) {
-                const thoughtAcc = (thoughtSpan.dataset.text || '') + data.delta;
-                thoughtSpan.dataset.text = thoughtAcc;
-                const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
-                thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
-              }
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'token_delta') {
-              if (liveThinkingMarkerEl) {
-                liveThinkingMarkerEl.remove();
-                liveThinkingMarkerEl = null;
-              }
-              accumulatedText += data.delta || '';
-              if (!assistantBubbleEl) {
-                assistantBubbleEl = document.createElement('div');
-                assistantBubbleEl.className = 'svc-ai-assistant-bubble';
-                streamContainer.appendChild(assistantBubbleEl);
-              }
-              assistantBubbleEl.innerHTML = formatAIMarkdown(accumulatedText);
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'tool_call_result') {
-              const res = data.result || {};
-              if (res.plan) {
-                const planCardEl = document.getElementById('active-plan-card');
-                if (planCardEl) planCardEl.outerHTML = getPlanCardHtml(res.plan);
-                else {
-                  const planDiv = document.createElement('div');
-                  planDiv.innerHTML = getPlanCardHtml(res.plan);
-                  if (planDiv.firstElementChild) streamContainer.appendChild(planDiv.firstElementChild);
-                }
-                refreshIcons();
-              } else if (res.requires_user_input) {
-                const qDiv = document.createElement('div');
-                if (res.is_secret_request) {
-                  qDiv.innerHTML = getSecureEnvCardHtml(res, project.id, data.tool_call_id);
-                } else {
-                  qDiv.innerHTML = getQuestionCardHtml(res, project.id, data.tool_call_id);
-                }
-                if (qDiv.firstElementChild) streamContainer.appendChild(qDiv.firstElementChild);
-                refreshIcons();
-              }
-              messagesList.scrollTop = messagesList.scrollHeight;
-            } else if (eventType === 'session_idle' || eventType === 'done') {
-              break;
-            }
-          } catch (_) {}
-        }
-      }
-    }
-  } catch (_) {
-  } finally {
-    aiChatSending = false;
-    refreshIcons();
-  }
 }
 
 async function openModelSelectorDropdown(project, triggerBtn) {

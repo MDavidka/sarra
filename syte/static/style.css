@@ -10231,10 +10231,26 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #059669;
 }
 
+.svc-ai-plan-progress-track {
+  width: 100%;
+  height: 6px;
+  background: #e4e4e7;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin: 8px 0 12px;
+}
+
+.svc-ai-plan-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7 0%, #10b981 100%);
+  border-radius: 9999px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .svc-ai-plan-steps-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .svc-ai-plan-step {
@@ -10242,7 +10258,18 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   align-items: flex-start;
   gap: 10px;
   font-size: 13px;
-  padding: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.svc-ai-plan-step.step-in-progress {
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 3px solid #3b82f6;
+}
+
+.svc-ai-plan-step.step-completed {
+  opacity: 0.85;
 }
 
 .svc-ai-step-indicator {
