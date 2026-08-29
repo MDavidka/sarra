@@ -306,6 +306,16 @@ async def project_ai_chat_stream(
     )
 
 
+@router.post("/api/projects/{project_id}/ai/stop")
+async def stop_project_ai_agent(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Stop/cancel active autonomous agent execution for a project."""
+    res = await session_manager.stop_session(project_id)
+    return res
+
+
 @router.get("/api/projects/{project_id}/ai/diagnostics")
 async def export_project_ai_diagnostics(
     project_id: str,

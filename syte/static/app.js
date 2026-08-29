@@ -7371,6 +7371,54 @@ async function submitAIUserAnswer(projectId, payload, containerId) {
   }
 }
 
+function smartScrollToBottom(element) {
+  if (!element) return;
+  const isNearBottom = (element.scrollHeight - element.scrollTop - element.clientHeight) < 160;
+  if (isNearBottom) {
+    element.scrollTop = element.scrollHeight;
+  }
+}
+
+function setAIChatSendingState(isSending, project) {
+  aiChatSending = isSending;
+  const sendBtn = document.getElementById('svc-ai-send-btn');
+  if (!sendBtn) return;
+
+  if (isSending) {
+    sendBtn.classList.add('stop-state');
+    sendBtn.title = 'Stop Generation';
+    sendBtn.innerHTML = '<i data-lucide="square"></i>';
+    sendBtn.type = 'button';
+    sendBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void stopAIChatSession(project);
+    };
+  } else {
+    sendBtn.classList.remove('stop-state');
+    sendBtn.title = 'Send message (Enter)';
+    sendBtn.innerHTML = '<i data-lucide="arrow-up"></i>';
+    sendBtn.type = 'submit';
+    sendBtn.onclick = null;
+  }
+  refreshIcons();
+}
+
+async function stopAIChatSession(project) {
+  const targetProject = project || selectedAIProject || (projects && projects[0]) || { id: 'global' };
+  const projId = targetProject.id || 'global';
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projId)}/ai/stop`, { method: 'POST' });
+    if (res && res.ok) {
+      toast('Agent generation stopped');
+    }
+  } catch (err) {
+    toast(`Error stopping agent: ${err.message}`);
+  } finally {
+    setAIChatSendingState(false, targetProject);
+  }
+}
+
 function createLiveAssistantMessageCard(messagesList) {
   const card = document.createElement('div');
   card.className = 'svc-ai-message assistant';
@@ -7409,7 +7457,7 @@ function processAIServerEvent(data, project, messagesList, state) {
       const cleanThought = thoughtAcc.trim().replace(/^thought:\s*/i, '').slice(-90);
       thoughtSpan.textContent = cleanThought ? `now i have to: ${cleanThought}` : 'thinking…';
     }
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'token_delta') {
     if (state.liveThinkingMarkerEl) {
       state.liveThinkingMarkerEl.remove();
@@ -7427,7 +7475,7 @@ function processAIServerEvent(data, project, messagesList, state) {
       state.currentAssistantCard.appendChild(state.assistantBubbleEl);
     }
     state.assistantBubbleEl.innerHTML = formatAIMarkdown(state.accumulatedText);
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_start') {
     if (state.liveThinkingMarkerEl) {
       state.liveThinkingMarkerEl.remove();
@@ -7490,7 +7538,7 @@ function processAIServerEvent(data, project, messagesList, state) {
       messagesList.appendChild(actEl);
       refreshIcons();
     }
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_result') {
     const res = data.result || {};
     const cmdEl = document.getElementById(`cmd-${data.tool_call_id}`);
@@ -7516,7 +7564,6 @@ function processAIServerEvent(data, project, messagesList, state) {
       }
       refreshIcons();
     } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
-      // Re-fetch project session to update plan progress bar
       api(`/projects/${encodeURIComponent(project.id)}/ai/session`).then(sRes => {
         if (sRes && sRes.session && sRes.session.active_plan) {
           const planCardEl = document.getElementById('active-plan-card');
@@ -7567,7 +7614,7 @@ function processAIServerEvent(data, project, messagesList, state) {
     state.currentAssistantCard = null;
     state.assistantBubbleEl = null;
     state.accumulatedText = '';
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'user_input_required') {
     const qData = data.question_data || {};
     const qDiv = document.createElement('div');
@@ -7578,12 +7625,26 @@ function processAIServerEvent(data, project, messagesList, state) {
     }
     if (qDiv.firstElementChild) messagesList.appendChild(qDiv.firstElementChild);
     refreshIcons();
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'user_input_received') {
     state.currentAssistantCard = null;
     state.assistantBubbleEl = null;
     state.accumulatedText = '';
-    messagesList.scrollTop = messagesList.scrollHeight;
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'stopped') {
+    if (state.liveThinkingMarkerEl) {
+      state.liveThinkingMarkerEl.remove();
+      state.liveThinkingMarkerEl = null;
+    }
+    const stopEl = document.createElement('div');
+    stopEl.className = 'svc-ai-activity-row';
+    stopEl.innerHTML = `
+      <span class="svc-ai-activity-icon" style="color:#ef4444;"><i data-lucide="square"></i></span>
+      <span style="color:#ef4444;">AI generation stopped by user.</span>
+    `;
+    messagesList.appendChild(stopEl);
+    refreshIcons();
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'error') {
     if (state.assistantBubbleEl) {
       state.assistantBubbleEl.innerHTML += `<div style="color:#ef4444; margin-top:8px;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
@@ -7592,6 +7653,7 @@ function processAIServerEvent(data, project, messagesList, state) {
       errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">AI Error: ${escapeHtml(data.error || 'Unknown error')}</div>`;
     }
     refreshIcons();
+    smartScrollToBottom(messagesList);
   }
 }
 
@@ -7617,10 +7679,10 @@ async function executeAIChatTurn(project, userText) {
     <div class="svc-ai-user-bubble">${formatAIMarkdown(userText)}</div>
   `;
   messagesList.appendChild(userEl);
-  messagesList.scrollTop = messagesList.scrollHeight;
+  smartScrollToBottom(messagesList);
   refreshIcons();
 
-  aiChatSending = true;
+  setAIChatSendingState(true, project);
   const streamState = {
     currentAssistantCard: null,
     assistantBubbleEl: null,
@@ -7684,7 +7746,7 @@ async function executeAIChatTurn(project, userText) {
     const errCard = createLiveAssistantMessageCard(messagesList);
     errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
   } finally {
-    aiChatSending = false;
+    setAIChatSendingState(false, project);
     if (streamState.liveThinkingMarkerEl) {
       streamState.liveThinkingMarkerEl.remove();
     }
@@ -7696,7 +7758,7 @@ async function reconnectAIChatSession(project) {
   const messagesList = document.getElementById('svc-ai-messages-list');
   if (!messagesList || aiChatSending) return;
 
-  aiChatSending = true;
+  setAIChatSendingState(true, project);
   const streamState = {
     currentAssistantCard: null,
     assistantBubbleEl: null,
@@ -7741,7 +7803,7 @@ async function reconnectAIChatSession(project) {
     }
   } catch (_) {
   } finally {
-    aiChatSending = false;
+    setAIChatSendingState(false, project);
     if (streamState.liveThinkingMarkerEl) {
       streamState.liveThinkingMarkerEl.remove();
     }

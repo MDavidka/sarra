@@ -158,6 +158,20 @@ class AIAgentSessionManager:
             sess = self.sessions[project_id]
             sess.clear()
 
+    async def stop_session(self, project_id: str) -> Dict[str, Any]:
+        """Cancel active background agent task and mark session stopped."""
+        session = self.get_or_create_session(project_id)
+        if session.active_task and not session.active_task.done():
+            session.active_task.cancel()
+            session.is_running = False
+            session.add_event({
+                "event": "stopped",
+                "message": "AI execution stopped by user.",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            return {"ok": True, "stopped": True, "message": "Agent execution stopped."}
+        return {"ok": True, "stopped": False, "message": "No active agent task running."}
+
     async def start_turn(
         self,
         project_id: str,
