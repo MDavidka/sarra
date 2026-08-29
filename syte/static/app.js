@@ -7777,6 +7777,41 @@ async function deleteAIChatMessage(projectId, messageId, btn) {
   }
 }
 
+async function downloadAIDiagnostics(project) {
+  const targetProject = project || selectedAIProject || (projects && projects[0]) || { id: 'global', name: 'sarra' };
+  const projId = targetProject.id || 'global';
+  toast('Gathering complete AI diagnostic bundle…');
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/ai/diagnostics`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json',
+        ...(syraCsrfToken ? { 'X-Syte-CSRF': syraCsrfToken } : {}),
+        ...(getApiKey() ? { 'X-API-Key': getApiKey() } : {}),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      toast(`Failed to export diagnostics: ${err}`);
+      return;
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `syte-ai-diagnostics-${projId}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+    toast('Diagnostic JSON downloaded successfully!');
+  } catch (err) {
+    toast(`Error downloading diagnostics: ${err.message}`);
+  }
+}
+
 async function renderAIChatWorkspace(project) {
   const currentProject = selectedAIProject || project || (projects && projects[0]) || { id: 'global', name: 'sarra' };
   const messagesList = document.getElementById('svc-ai-messages-list');
@@ -7785,11 +7820,16 @@ async function renderAIChatWorkspace(project) {
   const inputModelLabel = document.getElementById('svc-ai-input-model-label');
   const form = document.getElementById('svc-ai-chat-form');
   const textarea = document.getElementById('svc-ai-input');
+  const debugBtn = document.getElementById('svc-ai-debug-btn');
   const settingsBtn = document.getElementById('svc-ai-settings-btn');
   const clearBtn = document.getElementById('svc-ai-clear-btn');
   const modelSelectorBtn = document.getElementById('svc-ai-model-selector-btn');
   const micBtn = document.getElementById('svc-ai-mic-btn');
   const attachBtn = document.getElementById('svc-ai-attach-btn');
+
+  if (debugBtn) {
+    debugBtn.onclick = () => downloadAIDiagnostics(selectedAIProject || currentProject);
+  }
 
   if (headerRepoName) {
     headerRepoName.textContent = currentProject.name || currentProject.id || 'sarra';
@@ -8692,6 +8732,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       showAlert(`Settings Save Error: ${err.message}`);
     }
   };
+
+  const modalDebugBtn = document.getElementById('svc-ai-modal-debug-btn');
+  if (modalDebugBtn) {
+    modalDebugBtn.onclick = () => downloadAIDiagnostics(targetProject);
+  }
 
   if (quickSaveBtn) quickSaveBtn.onclick = handleSave;
   if (form) {
