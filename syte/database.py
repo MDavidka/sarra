@@ -295,6 +295,7 @@ CREATE TABLE IF NOT EXISTS ai_builder_settings (
     system_prompt TEXT DEFAULT '',
     tools_enabled TEXT NOT NULL DEFAULT 'all',
     custom_models TEXT DEFAULT '',
+    saved_providers TEXT DEFAULT '[]',
     updated_at TEXT NOT NULL
 );
 
@@ -410,6 +411,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         restore_cols = {row[1] for row in await cur.fetchall()}
     if restore_cols and "artifact_path" not in restore_cols:
         await db.execute("ALTER TABLE release_restore_points ADD COLUMN artifact_path TEXT NOT NULL DEFAULT ''")
+    async with db.execute("PRAGMA table_info(ai_builder_settings)") as cur:
+        ai_builder_cols = {row[1] for row in await cur.fetchall()}
+    if ai_builder_cols and "saved_providers" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN saved_providers TEXT DEFAULT '[]'")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
         await db.execute(
             "INSERT OR IGNORE INTO system_settings (key, value) "
@@ -1128,16 +1133,24 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
         ),
         "tools_enabled": "all",
         "custom_models": "gpt-4o,gpt-4o-mini,o3-mini,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,gemini-1.5-pro,gemini-2.0-flash,deepseek-chat,deepseek-reasoner,qwen2.5-coder",
+        "saved_providers": [],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at "
+            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
             "FROM ai_builder_settings WHERE project_id = ?",
             (project_id,),
         ) as cursor:
             row = await cursor.fetchone()
             if row:
+                saved_p = []
+                try:
+                    if row[11] and str(row[11]).strip():
+                        saved_p = json.loads(row[11])
+                except Exception:
+                    saved_p = []
+
                 res = {
                     "project_id": row[0],
                     "provider": row[1] or "openai",
@@ -1150,23 +1163,36 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                     "system_prompt": row[8] or default_settings["system_prompt"],
                     "tools_enabled": row[9] or "all",
                     "custom_models": row[10] or default_settings["custom_models"],
-                    "updated_at": row[11],
+                    "saved_providers": saved_p if isinstance(saved_p, list) else [],
+                    "updated_at": row[12] if len(row) > 12 else "",
                 }
                 if not res["api_key"] and project_id != "global":
-                    async with db.execute("SELECT api_key FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
+                    async with db.execute("SELECT api_key, saved_providers FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
                         g_data = await g_cur.fetchone()
                         if g_data and g_data[0]:
                             res["api_key"] = g_data[0]
+                        if not res["saved_providers"] and g_data and g_data[1]:
+                            try:
+                                res["saved_providers"] = json.loads(g_data[1])
+                            except Exception:
+                                pass
                 return res
 
         # If project-specific is not found, fallback to global settings if querying project
         if project_id != "global":
             async with db.execute(
-                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at "
+                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
                 "FROM ai_builder_settings WHERE project_id = 'global'"
             ) as cursor:
                 g_row = await cursor.fetchone()
                 if g_row:
+                    saved_p = []
+                    try:
+                        if g_row[11] and str(g_row[11]).strip():
+                            saved_p = json.loads(g_row[11])
+                    except Exception:
+                        saved_p = []
+
                     return {
                         "project_id": project_id,
                         "provider": g_row[1] or "openai",
@@ -1179,7 +1205,8 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                         "system_prompt": g_row[8] or default_settings["system_prompt"],
                         "tools_enabled": g_row[9] or "all",
                         "custom_models": g_row[10] or default_settings["custom_models"],
-                        "updated_at": g_row[11],
+                        "saved_providers": saved_p if isinstance(saved_p, list) else [],
+                        "updated_at": g_row[12] if len(g_row) > 12 else "",
                     }
 
     return default_settings
@@ -1198,11 +1225,25 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     tools_enabled = str(data.get("tools_enabled") or "all").strip()
     custom_models = str(data.get("custom_models") or "").strip()
 
+    # Handle saved_providers list
+    raw_saved = data.get("saved_providers")
+    saved_providers_str = "[]"
+    if isinstance(raw_saved, list):
+        saved_providers_str = json.dumps(raw_saved)
+    elif isinstance(raw_saved, str) and raw_saved.strip():
+        saved_providers_str = raw_saved.strip()
+    else:
+        # Load existing saved_providers if available
+        curr = await get_ai_builder_settings(project_id)
+        existing_list = curr.get("saved_providers") or []
+        if isinstance(existing_list, list):
+            saved_providers_str = json.dumps(existing_list)
+
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         for pid in set([project_id, "global"]):
             await db.execute(
-                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id) DO UPDATE SET "
                 "provider = excluded.provider, "
                 "model = excluded.model, "
@@ -1214,6 +1255,7 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
                 "system_prompt = excluded.system_prompt, "
                 "tools_enabled = excluded.tools_enabled, "
                 "custom_models = excluded.custom_models, "
+                "saved_providers = CASE WHEN excluded.saved_providers != '[]' THEN excluded.saved_providers ELSE ai_builder_settings.saved_providers END, "
                 "updated_at = excluded.updated_at",
                 (
                     pid,
@@ -1227,6 +1269,7 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
                     system_prompt,
                     tools_enabled,
                     custom_models,
+                    saved_providers_str,
                     now,
                 ),
             )
@@ -1236,10 +1279,13 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
 
 
 async def list_ai_chat_messages(project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Retrieve the latest messages in strict ascending chronological order."""
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT id, project_id, role, content, tool_calls, tool_call_id, name, created_at "
-            "FROM ai_chat_messages WHERE project_id = ? ORDER BY created_at ASC LIMIT ?",
+            "SELECT id, project_id, role, content, tool_calls, tool_call_id, name, created_at FROM ("
+            "SELECT id, project_id, role, content, tool_calls, tool_call_id, name, created_at, rowid "
+            "FROM ai_chat_messages WHERE project_id = ? ORDER BY rowid DESC LIMIT ?"
+            ") ORDER BY rowid ASC",
             (project_id, limit),
         ) as cursor:
             rows = await cursor.fetchall()
@@ -1294,7 +1340,19 @@ async def save_ai_chat_message(
     }
 
 
+async def delete_ai_chat_message(project_id: str, message_id: str) -> bool:
+    """Delete a single AI message from history."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "DELETE FROM ai_chat_messages WHERE id = ? AND (project_id = ? OR project_id = 'global')",
+            (message_id, project_id),
+        )
+        await db.commit()
+    return True
+
+
 async def clear_ai_chat_history(project_id: str) -> bool:
+    """Clear all chat messages for a project."""
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         await db.execute("DELETE FROM ai_chat_messages WHERE project_id = ?", (project_id,))
         await db.commit()
