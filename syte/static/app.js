@@ -7384,6 +7384,45 @@ function getFileBadgeHtml(filePath) {
   return `<span class="svc-ai-file-badge" title="${escapeHtml(clean)}">${extBadge}<span>${escapeHtml(fileName)}</span></span>`;
 }
 
+function formatMessageTime(isoString) {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (_) {
+    return '';
+  }
+}
+
+async function deleteAIChatMessage(projectId, messageId, btn) {
+  if (!confirm('Delete this message from history?')) return;
+  const msgEl = btn ? btn.closest('.svc-ai-message') : document.querySelector(`[data-msg-id="${messageId}"]`);
+  if (msgEl) {
+    msgEl.style.opacity = '0.3';
+    msgEl.style.pointerEvents = 'none';
+  }
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/ai/history/${encodeURIComponent(messageId)}`, {
+      method: 'DELETE',
+    });
+    if (res && res.ok) {
+      if (msgEl) msgEl.remove();
+      const messagesList = document.getElementById('svc-ai-messages-list');
+      if (messagesList && !messagesList.querySelector('.svc-ai-message')) {
+        await renderAIChatWorkspace(selectedAIProject || { id: projectId });
+      }
+      toast('Message deleted');
+    }
+  } catch (err) {
+    if (msgEl) {
+      msgEl.style.opacity = '1';
+      msgEl.style.pointerEvents = '';
+    }
+    toast(`Failed to delete message: ${err.message}`);
+  }
+}
+
 async function renderAIChatWorkspace(project) {
   const currentProject = selectedAIProject || project || (projects && projects[0]) || { id: 'global', name: 'sarra' };
   const messagesList = document.getElementById('svc-ai-messages-list');
@@ -7429,7 +7468,7 @@ async function renderAIChatWorkspace(project) {
     }
   } catch (_) {}
 
-  // Load Messages History
+  // Load Messages History in Strict Ascending Order
   if (messagesList) {
     try {
       const hRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`);
@@ -7447,6 +7486,8 @@ async function renderAIChatWorkspace(project) {
         let pendingFiles = [];
 
         for (const m of msgs) {
+          const timeStr = formatMessageTime(m.created_at);
+
           if (m.role === 'user') {
             if (pendingFiles.length) {
               feedHtml += `
@@ -7458,11 +7499,22 @@ async function renderAIChatWorkspace(project) {
               pendingFiles = [];
             }
             feedHtml += `
-              <div class="svc-ai-message">
+              <div class="svc-ai-message user" data-msg-id="${escapeHtml(m.id || '')}">
+                <div class="svc-ai-message-top">
+                  <div class="svc-ai-msg-sender">
+                    <div class="svc-ai-sender-avatar user"><i data-lucide="user"></i></div>
+                    <span class="svc-ai-sender-name">You</span>
+                    ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
+                  </div>
+                  <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                </div>
                 <div class="svc-ai-user-bubble">${formatAIMarkdown(m.content)}</div>
               </div>
             `;
           } else if (m.role === 'assistant') {
+            let toolsHtml = '';
             if (m.tool_calls && Array.isArray(m.tool_calls)) {
               for (const tc of m.tool_calls) {
                 const fn = tc.function || {};
@@ -7473,7 +7525,7 @@ async function renderAIChatWorkspace(project) {
                   pendingFiles.push(args.path || args.source_path);
                 } else if (fnName === 'syte_run_command') {
                   if (pendingFiles.length) {
-                    feedHtml += `
+                    toolsHtml += `
                       <div class="svc-ai-files-edited-row">
                         <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
                         ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
@@ -7481,63 +7533,67 @@ async function renderAIChatWorkspace(project) {
                     `;
                     pendingFiles = [];
                   }
-                  feedHtml += `
+                  toolsHtml += `
                     <div class="svc-ai-activity-row">
                       <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
                       <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
                     </div>
                   `;
                 } else if (fnName === 'syte_start_preview') {
-                  feedHtml += `
+                  toolsHtml += `
                     <div class="svc-ai-activity-row">
                       <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
                       <span>starting preview server…</span>
-                    </div>
-                  `;
-                } else {
-                  feedHtml += `
-                    <div class="svc-ai-activity-row">
-                      <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
-                      <span>progress update</span>
                     </div>
                   `;
                 }
               }
             }
 
-            if (m.content) {
-              if (pendingFiles.length) {
-                feedHtml += `
-                  <div class="svc-ai-files-edited-row">
-                    <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
-                    ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
-                  </div>
-                `;
-                pendingFiles = [];
-              }
-              feedHtml += `
-                <div class="svc-ai-message">
-                  <div class="svc-ai-assistant-bubble">${formatAIMarkdown(m.content)}</div>
+            if (pendingFiles.length) {
+              toolsHtml += `
+                <div class="svc-ai-files-edited-row">
+                  <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+                  ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
                 </div>
               `;
+              pendingFiles = [];
             }
+
+            feedHtml += `
+              <div class="svc-ai-message assistant" data-msg-id="${escapeHtml(m.id || '')}">
+                <div class="svc-ai-message-top">
+                  <div class="svc-ai-msg-sender">
+                    <div class="svc-ai-sender-avatar ai"><i data-lucide="sparkles"></i></div>
+                    <span class="svc-ai-sender-name">AI Builder</span>
+                    ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
+                  </div>
+                  <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                </div>
+                ${toolsHtml}
+                ${m.content ? `<div class="svc-ai-assistant-bubble">${formatAIMarkdown(m.content)}</div>` : ''}
+              </div>
+            `;
           } else if (m.role === 'tool') {
             let res = {};
             try { res = JSON.parse(m.content || '{}'); } catch (_) {}
+            let toolCardHtml = '';
             if (res.plan) {
-              feedHtml += getPlanCardHtml(res.plan);
+              toolCardHtml = getPlanCardHtml(res.plan);
             } else if (res.skill_name) {
-              feedHtml += getSkillBadgeHtml(res.skill_name);
+              toolCardHtml = getSkillBadgeHtml(res.skill_name);
             } else if (res.scanned_files_count !== undefined) {
-              feedHtml += getSecurityScanHtml(res);
+              toolCardHtml = getSecurityScanHtml(res);
             } else if (res.requires_user_input) {
               if (res.is_secret_request) {
-                feedHtml += getSecureEnvCardHtml(res, currentProject.id, m.tool_call_id);
+                toolCardHtml = getSecureEnvCardHtml(res, currentProject.id, m.tool_call_id);
               } else {
-                feedHtml += getQuestionCardHtml(res, currentProject.id, m.tool_call_id);
+                toolCardHtml = getQuestionCardHtml(res, currentProject.id, m.tool_call_id);
               }
             } else if (res.preview_url) {
-              feedHtml += `
+              toolCardHtml = `
                 <div class="svc-ai-preview-banner">
                   <div class="svc-ai-preview-lead">
                     <i data-lucide="zap" style="color:#f59e0b;"></i>
@@ -7547,6 +7603,14 @@ async function renderAIChatWorkspace(project) {
                     <span>Open Preview</span>
                     <i data-lucide="external-link"></i>
                   </a>
+                </div>
+              `;
+            }
+
+            if (toolCardHtml) {
+              feedHtml += `
+                <div class="svc-ai-message tool" data-msg-id="${escapeHtml(m.id || '')}">
+                  ${toolCardHtml}
                 </div>
               `;
             }
@@ -7564,6 +7628,7 @@ async function renderAIChatWorkspace(project) {
 
         messagesList.innerHTML = feedHtml;
         messagesList.scrollTop = messagesList.scrollHeight;
+        refreshIcons();
       }
     } catch (_) {}
 
@@ -7663,10 +7728,10 @@ async function renderAIChatWorkspace(project) {
 
   // Settings & Model Selector Modal
   if (settingsBtn) {
-    settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject);
+    settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject, 'saved');
   }
   if (modelSelectorBtn) {
-    modelSelectorBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject);
+    modelSelectorBtn.onclick = () => openModelSelectorDropdown(selectedAIProject || currentProject, modelSelectorBtn);
   }
 
   refreshIcons();
@@ -8048,7 +8113,141 @@ async function reconnectAIChatSession(project) {
   }
 }
 
-async function openAISettingsModal(project) {
+async function openModelSelectorDropdown(project, triggerBtn) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  
+  // Remove any existing dropdown
+  const oldMenu = document.getElementById('svc-ai-model-quick-dropdown');
+  if (oldMenu) {
+    oldMenu.remove();
+    return;
+  }
+
+  // Fetch settings to get saved_providers and active model
+  let savedProviders = [];
+  let currentModel = 'gpt-4o';
+  let currentProvider = 'openai';
+  try {
+    const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
+    if (res.ok && res.settings) {
+      savedProviders = res.settings.saved_providers || [];
+      currentModel = res.settings.model || 'gpt-4o';
+      currentProvider = res.settings.provider || 'openai';
+    }
+  } catch (_) {}
+
+  const dropdown = document.createElement('div');
+  dropdown.id = 'svc-ai-model-quick-dropdown';
+  dropdown.className = 'svc-ai-model-quick-dropdown';
+
+  let itemsHtml = '';
+  if (!savedProviders.length) {
+    itemsHtml = `
+      <div class="svc-ai-dropdown-item active" data-provider="${escapeHtml(currentProvider)}" data-model="${escapeHtml(currentModel)}">
+        <div class="svc-ai-dropdown-item-left">
+          <div class="svc-ai-dropdown-prov-badge ${escapeHtml(currentProvider)}">${escapeHtml(currentProvider)}</div>
+          <div class="svc-ai-dropdown-model-name">${escapeHtml(currentModel)}</div>
+        </div>
+        <i data-lucide="check" class="svc-ai-dropdown-check"></i>
+      </div>
+    `;
+  } else {
+    itemsHtml = savedProviders.map(p => {
+      const isActive = (p.model === currentModel && (p.provider === currentProvider || !p.provider));
+      const prov = p.provider || 'openai';
+      return `
+        <div class="svc-ai-dropdown-item ${isActive ? 'active' : ''}" data-id="${escapeHtml(p.id || '')}" data-provider="${escapeHtml(prov)}" data-model="${escapeHtml(p.model)}">
+          <div class="svc-ai-dropdown-item-left">
+            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
+            <div>
+              <div class="svc-ai-dropdown-model-name">${escapeHtml(p.model)}</div>
+              ${p.name && p.name !== p.model ? `<small class="svc-ai-dropdown-sub">${escapeHtml(p.name)}</small>` : ''}
+            </div>
+          </div>
+          ${isActive ? '<i data-lucide="check" class="svc-ai-dropdown-check"></i>' : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  dropdown.innerHTML = `
+    <div class="svc-ai-dropdown-header">
+      <span>Switch Model / Provider</span>
+      <button type="button" class="svc-ai-dropdown-close" id="svc-ai-dropdown-close-btn">&times;</button>
+    </div>
+    <div class="svc-ai-dropdown-list">
+      ${itemsHtml}
+    </div>
+    <div class="svc-ai-dropdown-footer">
+      <button type="button" class="svc-ai-dropdown-add-btn" id="svc-ai-dropdown-add-btn">
+        <i data-lucide="plus"></i><span>Add / Configure Provider</span>
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(dropdown);
+  refreshIcons();
+
+  // Position near triggerBtn
+  if (triggerBtn) {
+    const rect = triggerBtn.getBoundingClientRect();
+    const dropdownHeight = dropdown.offsetHeight || 220;
+    const top = rect.top - dropdownHeight - 8 > 10 ? rect.top - dropdownHeight - 8 : rect.bottom + 8;
+    dropdown.style.position = 'fixed';
+    dropdown.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, rect.left))}px`;
+    dropdown.style.top = `${Math.max(10, top)}px`;
+    dropdown.style.zIndex = '9999';
+  }
+
+  const closeDropdown = () => {
+    dropdown.remove();
+    document.removeEventListener('click', handleOutsideClick);
+  };
+
+  const handleOutsideClick = (e) => {
+    if (!dropdown.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
+      closeDropdown();
+    }
+  };
+  setTimeout(() => document.addEventListener('click', handleOutsideClick), 10);
+
+  const closeBtn = dropdown.querySelector('#svc-ai-dropdown-close-btn');
+  if (closeBtn) closeBtn.onclick = closeDropdown;
+
+  const addBtn = dropdown.querySelector('#svc-ai-dropdown-add-btn');
+  if (addBtn) {
+    addBtn.onclick = () => {
+      closeDropdown();
+      openAISettingsModal(currentProject, 'onboard');
+    };
+  }
+
+  dropdown.querySelectorAll('.svc-ai-dropdown-item').forEach(item => {
+    item.onclick = async () => {
+      const provId = item.dataset.id;
+      const model = item.dataset.model;
+      const provider = item.dataset.provider;
+      closeDropdown();
+      try {
+        const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/providers/activate`, {
+          method: 'POST',
+          body: JSON.stringify({ provider_id: provId, model: model, provider: provider }),
+        });
+        if (res.ok) {
+          const inputModelLabel = document.getElementById('svc-ai-input-model-label');
+          if (inputModelLabel) inputModelLabel.textContent = model;
+          toast(`Active model switched to: ${model}`);
+        } else {
+          toast(`Failed to switch model: ${res.error || 'Server error'}`);
+        }
+      } catch (err) {
+        toast(`Error switching model: ${err.message}`);
+      }
+    };
+  });
+}
+
+async function openAISettingsModal(project, initialTab = 'onboard') {
   const targetProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
   const modal = document.getElementById('svc-ai-settings-modal');
   const closeBtn = document.getElementById('svc-ai-settings-close-btn');
@@ -8061,6 +8260,7 @@ async function openAISettingsModal(project) {
   const modelInput = document.getElementById('svc-ai-setting-model');
   const apiKeyInput = document.getElementById('svc-ai-setting-apikey');
   const baseUrlInput = document.getElementById('svc-ai-setting-baseurl');
+  const baseUrlHint = document.getElementById('svc-ai-baseurl-hint');
   const tempInput = document.getElementById('svc-ai-setting-temp');
   const tempVal = document.getElementById('svc-ai-temp-val');
   const maxTokensInput = document.getElementById('svc-ai-setting-maxtokens');
@@ -8068,11 +8268,43 @@ async function openAISettingsModal(project) {
   const thinkingSel = document.getElementById('svc-ai-setting-thinking');
   const promptInput = document.getElementById('svc-ai-setting-prompt');
   const testBtn = document.getElementById('svc-ai-test-connection-btn');
+  const quickSaveBtn = document.getElementById('svc-ai-quick-save-btn');
   const testStatus = document.getElementById('svc-ai-test-status');
   const toggleKeyBtn = document.getElementById('svc-ai-toggle-key-visibility');
 
+  // Tab Elements
+  const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
+  const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
+  const panelOnboard = document.getElementById('svc-ai-panel-onboard');
+  const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
+  const savedCountBadge = document.getElementById('svc-ai-saved-count');
+  const savedProvidersList = document.getElementById('svc-ai-saved-providers-list');
+  const addNewProviderBtn = document.getElementById('svc-ai-add-new-provider-btn');
+
   if (!modal) return;
   modal.classList.remove('hidden');
+
+  let savedProvidersListState = [];
+
+  const switchTab = (tab) => {
+    if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
+    if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
+    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
+
+    if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
+    if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
+    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+    refreshIcons();
+  };
+
+  if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
+  if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
+  if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
+
+  switchTab(initialTab || 'onboard');
 
   const showAlert = (msg) => {
     if (alertBox && alertText) {
@@ -8122,22 +8354,14 @@ async function openAISettingsModal(project) {
   }
 
   const presetChipsContainer = document.getElementById('svc-ai-preset-chips-list');
-  const customModelsContainer = document.getElementById('svc-ai-custom-models-list');
-  const newCustomModelInput = document.getElementById('svc-ai-new-custom-model');
-  const addCustomModelBtn = document.getElementById('svc-ai-add-custom-model-btn');
-  const quickSaveBtn = document.getElementById('svc-ai-quick-save-btn');
-  let savedCustomModels = ['z-ai/glm-5.2:free', 'deepseek/deepseek-r1'];
 
   const PRESET_MODELS = {
-    openrouter: [
-      'z-ai/glm-5.2:free',
-      'openai/gpt-4o',
-      'anthropic/claude-3.5-sonnet',
-      'deepseek/deepseek-chat',
-      'deepseek/deepseek-r1',
-      'meta-llama/llama-3.3-70b-instruct',
-      'qwen/qwen-2.5-coder-32b-instruct',
-      'google/gemini-2.0-flash-001',
+    vertex: [
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-pro-002',
+      'claude-3-5-sonnet@20241022',
+      'meta/llama-3.3-70b-instruct-maas',
     ],
     openai: [
       'gpt-4o',
@@ -8146,28 +8370,21 @@ async function openAISettingsModal(project) {
       'o1',
     ],
     anthropic: [
+      'claude-3-7-sonnet',
       'claude-3-5-sonnet-20241022',
       'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229',
-    ],
-    gemini: [
-      'gemini-2.0-flash',
-      'gemini-1.5-pro',
-      'gemini-2.0-flash-thinking-exp',
-    ],
-    vertex: [
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-2.0-flash-001',
-      'gemini-1.5-pro-002',
-      'gemini-1.5-flash-002',
-      'claude-3-5-sonnet@20241022',
-      'claude-3-5-haiku@20241022',
-      'meta/llama-3.3-70b-instruct-maas',
     ],
     deepseek: [
       'deepseek-chat',
       'deepseek-reasoner',
+    ],
+    openrouter: [
+      'z-ai/glm-5.2:free',
+      'openai/gpt-4o',
+      'deepseek/deepseek-r1',
+      'anthropic/claude-3.5-sonnet',
+      'meta-llama/llama-3.3-70b-instruct',
+      'qwen/qwen-2.5-coder-32b-instruct',
     ],
     ollama: [
       'qwen2.5-coder:32b',
@@ -8183,8 +8400,8 @@ async function openAISettingsModal(project) {
 
   const renderPresetChips = () => {
     if (!presetChipsContainer) return;
-    const provider = providerSel?.value || 'openai';
-    const models = PRESET_MODELS[provider] || PRESET_MODELS.openai;
+    const provider = providerSel?.value || 'vertex';
+    const models = PRESET_MODELS[provider] || PRESET_MODELS.vertex;
     const currentModel = modelInput?.value?.trim();
     presetChipsContainer.innerHTML = models.map(m => {
       const isActive = currentModel === m;
@@ -8197,137 +8414,165 @@ async function openAISettingsModal(project) {
         if (modelInput) {
           modelInput.value = m;
           renderPresetChips();
-          renderCustomModels();
         }
       };
     });
   };
 
-  const renderCustomModels = () => {
-    if (!customModelsContainer) return;
-    if (!savedCustomModels || !savedCustomModels.length) {
-      customModelsContainer.innerHTML = `<span style="font-size:12px; color:#a1a1aa;">No custom models added yet.</span>`;
+  // Provider Selection Tiles
+  const providerTiles = document.querySelectorAll('.svc-ai-provider-tile');
+  providerTiles.forEach(tile => {
+    tile.onclick = () => {
+      providerTiles.forEach(t => t.classList.remove('active'));
+      tile.classList.add('active');
+      const prov = tile.dataset.provider || 'vertex';
+      if (providerSel) providerSel.value = prov;
+
+      // Update placeholders and hints
+      if (prov === 'vertex') {
+        if (modelInput) modelInput.value = 'gemini-2.0-flash';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Leave blank for official Google Vertex / AI Studio API.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... or Google Cloud Bearer token'; }
+      } else if (prov === 'openai') {
+        if (modelInput) modelInput.value = 'gpt-4o';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.openai.com/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official OpenAI endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
+      } else if (prov === 'anthropic') {
+        if (modelInput) modelInput.value = 'claude-3-7-sonnet';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.anthropic.com/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official Anthropic endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-ant-...'; }
+      } else if (prov === 'deepseek') {
+        if (modelInput) modelInput.value = 'deepseek-chat';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.deepseek.com/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official DeepSeek endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
+      } else if (prov === 'openrouter') {
+        if (modelInput) modelInput.value = 'z-ai/glm-5.2:free';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://openrouter.ai/api/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard OpenRouter API endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-or-v1-...'; }
+      } else if (prov === 'ollama') {
+        if (modelInput) modelInput.value = 'qwen2.5-coder:32b';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'http://localhost:11434/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Local Ollama endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'Not required for local Ollama'; }
+      } else if (prov === 'custom') {
+        if (modelInput) modelInput.value = 'gpt-4o';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://your-custom-llm.com/v1'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Any OpenAI-compatible completions API endpoint.'; }
+      }
+      renderPresetChips();
+    };
+  });
+
+  const renderSavedProviders = (activeProvider, activeModel) => {
+    if (!savedProvidersList) return;
+    if (savedCountBadge) savedCountBadge.textContent = savedProvidersListState.length;
+
+    if (!savedProvidersListState.length) {
+      savedProvidersList.innerHTML = `
+        <div class="svc-ai-no-saved-providers">
+          <i data-lucide="layers" style="color:#71717a; width:32px; height:32px; margin-bottom:8px;"></i>
+          <p>No saved providers yet.</p>
+          <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-empty-add-btn">
+            <i data-lucide="plus"></i><span>Add Your First Provider</span>
+          </button>
+        </div>
+      `;
+      const emptyAdd = savedProvidersList.querySelector('#svc-ai-empty-add-btn');
+      if (emptyAdd) emptyAdd.onclick = () => switchTab('onboard');
+      refreshIcons();
       return;
     }
-    const currentModel = modelInput?.value?.trim();
-    customModelsContainer.innerHTML = savedCustomModels.map((m, idx) => {
-      const isSelected = currentModel === m;
-      return `<span class="svc-ai-custom-model-chip ${isSelected ? 'active' : ''}">
-        <span class="model-name" data-model="${escapeHtml(m)}">${escapeHtml(m)}</span>
-        <button type="button" class="remove-btn" data-remove="${idx}" title="Remove model">×</button>
-      </span>`;
+
+    savedProvidersList.innerHTML = savedProvidersListState.map((p, idx) => {
+      const isActive = (p.model === activeModel && (p.provider === activeProvider || !p.provider));
+      const prov = p.provider || 'openai';
+      return `
+        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}">
+          <div class="svc-ai-saved-prov-left">
+            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
+            <div class="svc-ai-saved-prov-text">
+              <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
+              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key configured' : 'No key'}</small>
+            </div>
+          </div>
+          <div class="svc-ai-saved-prov-actions">
+            ${isActive
+              ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
+              : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
+            }
+            <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </div>
+      `;
     }).join('');
 
-    customModelsContainer.querySelectorAll('.model-name').forEach(span => {
-      span.onclick = () => {
-        if (modelInput) {
-          modelInput.value = span.dataset.model;
-          renderPresetChips();
-          renderCustomModels();
+    // Activate buttons
+    savedProvidersList.querySelectorAll('.svc-ai-activate-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        const targetP = savedProvidersListState[idx];
+        if (!targetP) return;
+        try {
+          const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/providers/activate`, {
+            method: 'POST',
+            body: JSON.stringify({ provider_id: targetP.id, model: targetP.model, provider: targetP.provider }),
+          });
+          if (res.ok) {
+            toast(`Switched active provider to ${targetP.model}`);
+            closeModal();
+            renderAIChatWorkspace(targetProject);
+          }
+        } catch (err) {
+          toast(`Failed to activate: ${err.message}`);
         }
       };
     });
 
-    customModelsContainer.querySelectorAll('.remove-btn').forEach(btn => {
-      btn.onclick = (e) => {
+    // Delete buttons
+    savedProvidersList.querySelectorAll('.svc-ai-del-prov-btn').forEach(btn => {
+      btn.onclick = async (e) => {
         e.stopPropagation();
-        const idx = parseInt(btn.dataset.remove, 10);
-        if (!isNaN(idx)) {
-          savedCustomModels.splice(idx, 1);
-          renderCustomModels();
+        if (!confirm('Remove this saved provider?')) return;
+        const idx = parseInt(btn.dataset.idx, 10);
+        savedProvidersListState.splice(idx, 1);
+        try {
+          await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
+            method: 'PUT',
+            body: JSON.stringify({ saved_providers: savedProvidersListState }),
+          });
+          renderSavedProviders(activeProvider, activeModel);
+          toast('Provider removed');
+        } catch (err) {
+          toast(`Error removing: ${err.message}`);
         }
       };
     });
+
+    refreshIcons();
   };
-
-  if (addCustomModelBtn && newCustomModelInput) {
-    addCustomModelBtn.onclick = () => {
-      const val = newCustomModelInput.value.trim();
-      if (!val) return;
-      if (!savedCustomModels.includes(val)) {
-        savedCustomModels.push(val);
-      }
-      if (modelInput) {
-        modelInput.value = val;
-      }
-      newCustomModelInput.value = '';
-      renderCustomModels();
-      renderPresetChips();
-      toast(`Added model: ${val}`);
-    };
-    newCustomModelInput.onkeydown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        addCustomModelBtn.click();
-      }
-    };
-  }
-
-  if (quickSaveBtn) {
-    quickSaveBtn.onclick = () => {
-      if (form) {
-        if (typeof form.requestSubmit === 'function') {
-          form.requestSubmit();
-        } else {
-          form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-        }
-      }
-    };
-  }
-
-  // Provider change listener
-  if (providerSel && !providerSel.dataset.bound) {
-    providerSel.dataset.bound = 'true';
-    providerSel.addEventListener('change', () => {
-      const p = providerSel.value;
-      if (p === 'openrouter') {
-        if (modelInput && !modelInput.value) modelInput.value = 'openai/gpt-4o';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://openrouter.ai/api/v1';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-or-v1-...';
-      } else if (p === 'anthropic') {
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'claude-3-5-sonnet-20241022';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.anthropic.com/v1';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-ant-...';
-      } else if (p === 'gemini') {
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy...';
-      } else if (p === 'vertex') {
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'gemini-2.0-flash-001';
-        if (baseUrlInput) baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'AIzaSy... or Google Cloud Bearer token';
-      } else if (p === 'deepseek') {
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'deepseek-chat';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.deepseek.com/v1';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-...';
-      } else if (p === 'ollama') {
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) modelInput.value = 'qwen2.5-coder:32b';
-        if (baseUrlInput) baseUrlInput.placeholder = 'http://localhost:11434/v1';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'Not required for local Ollama';
-      } else if (p === 'openai') {
-        if (modelInput && !modelInput.value) modelInput.value = 'gpt-4o';
-        if (baseUrlInput) baseUrlInput.placeholder = 'https://api.openai.com/v1';
-        if (apiKeyInput && !apiKeyInput.value) apiKeyInput.placeholder = 'sk-...';
-      }
-      renderPresetChips();
-    });
-  }
-
-  if (modelInput) {
-    modelInput.addEventListener('input', () => {
-      renderPresetChips();
-      renderCustomModels();
-    });
-  }
 
   // Fetch current settings
   try {
     const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
-      if (providerSel) providerSel.value = s.provider || 'openai';
-      if (modelInput) modelInput.value = s.model || 'gpt-4o';
-      if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'sk-...';
+      const currentProv = s.provider || 'vertex';
+      if (providerSel) providerSel.value = currentProv;
+
+      // Select tile
+      providerTiles.forEach(t => {
+        t.classList.toggle('active', t.dataset.provider === currentProv);
+      });
+
+      if (modelInput) modelInput.value = s.model || 'gemini-2.0-flash';
+      if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'AIzaSy... / sk-...';
       if (apiKeyInput) apiKeyInput.value = '';
       if (baseUrlInput) baseUrlInput.value = s.base_url || '';
       if (tempInput) { tempInput.value = s.temperature || 0.7; if (tempVal) tempVal.textContent = s.temperature || 0.7; }
@@ -8335,29 +8580,21 @@ async function openAISettingsModal(project) {
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
       if (promptInput) promptInput.value = s.system_prompt || '';
 
-      if (s.custom_models) {
-        try {
-          savedCustomModels = typeof s.custom_models === 'string' ? JSON.parse(s.custom_models) : s.custom_models;
-        } catch (_) {
-          savedCustomModels = s.custom_models.split(',').map(x => x.trim()).filter(Boolean);
-        }
-      }
+      savedProvidersListState = s.saved_providers || [];
       renderPresetChips();
-      renderCustomModels();
-    } else {
-      showAlert(`Could not load settings for project (${targetProject.name || targetProject.id}): ${res.detail || res.error || 'Server error'}`);
+      renderSavedProviders(s.provider, s.model);
     }
   } catch (err) {
-    showAlert(`Could not load settings for project (${targetProject.name || targetProject.id}): ${err.message}`);
+    showAlert(`Could not load settings for project: ${err.message}`);
   }
 
   // Test Connection
   if (testBtn) {
     testBtn.onclick = async () => {
       hideAlert();
-      const selectedProvider = providerSel?.value || 'openai';
+      const selectedProvider = providerSel?.value || 'vertex';
       const enteredKey = apiKeyInput?.value?.trim() || '';
-      const hasExistingKey = apiKeyInput?.placeholder && apiKeyInput.placeholder !== 'sk-...' && !apiKeyInput.placeholder.startsWith('sk-...');
+      const hasExistingKey = apiKeyInput?.placeholder && apiKeyInput.placeholder !== 'AIzaSy... / sk-...' && !apiKeyInput.placeholder.startsWith('AIzaSy...');
       if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
         showAlert(`Please enter your ${selectedProvider.toUpperCase()} API Key before testing the connection.`);
         apiKeyInput?.focus();
@@ -8378,7 +8615,7 @@ async function openAISettingsModal(project) {
         };
         const payload = {
           provider: selectedProvider,
-          model: modelInput?.value?.trim() || 'gpt-4o',
+          model: modelInput?.value?.trim() || 'gemini-2.0-flash',
           api_key: enteredKey,
           base_url: cleanBaseUrl(baseUrlInput?.value || ''),
         };
@@ -8410,52 +8647,81 @@ async function openAISettingsModal(project) {
     };
   }
 
-  // Save Settings Form
+  // Save Settings / Add Provider
+  const handleSave = async () => {
+    hideAlert();
+    try {
+      const cleanBaseUrl = (u) => {
+        if (!u) return '';
+        let cleaned = u.trim().replace(/\/+$/, '');
+        if (cleaned.endsWith('/chat/completions')) {
+          cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
+        }
+        return cleaned;
+      };
+
+      const selectedProvider = providerSel?.value || 'vertex';
+      const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
+      const enteredKey = apiKeyInput?.value?.trim() || '';
+      const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+
+      // Create/update entry in savedProvidersListState
+      const newProvEntry = {
+        id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        name: `${selectedProvider.toUpperCase()} (${selectedModel})`,
+        provider: selectedProvider,
+        model: selectedModel,
+        api_key: enteredKey,
+        base_url: enteredBaseUrl,
+      };
+
+      // Add to saved list if not duplicate
+      const existingIdx = savedProvidersListState.findIndex(p => p.provider === selectedProvider && p.model === selectedModel);
+      if (existingIdx >= 0) {
+        if (enteredKey) savedProvidersListState[existingIdx].api_key = enteredKey;
+        if (enteredBaseUrl !== undefined) savedProvidersListState[existingIdx].base_url = enteredBaseUrl;
+      } else {
+        savedProvidersListState.unshift(newProvEntry);
+      }
+
+      const payload = {
+        provider: selectedProvider,
+        model: selectedModel,
+        base_url: enteredBaseUrl,
+        temperature: parseFloat(tempInput?.value || 0.7),
+        max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
+        thinking_level: thinkingSel?.value || 'medium',
+        system_prompt: promptInput?.value || '',
+        saved_providers: savedProvidersListState,
+      };
+      if (enteredKey) {
+        payload.api_key = enteredKey;
+      }
+
+      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errDetail = res.detail || res.error || 'Failed to save settings';
+        showAlert(`Settings Save Error: ${errDetail}`);
+        return;
+      }
+      toast(`AI Provider (${selectedModel}) saved and activated!`);
+      closeModal();
+      renderAIChatWorkspace(targetProject);
+    } catch (err) {
+      showAlert(`Settings Save Error: ${err.message}`);
+    }
+  };
+
+  if (quickSaveBtn) quickSaveBtn.onclick = handleSave;
   if (form) {
     form.onsubmit = async e => {
       e.preventDefault();
-      hideAlert();
-      try {
-        const cleanBaseUrl = (u) => {
-          if (!u) return '';
-          let cleaned = u.trim().replace(/\/+$/, '');
-          if (cleaned.endsWith('/chat/completions')) {
-            cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
-          }
-          return cleaned;
-        };
-        const payload = {
-          provider: providerSel?.value,
-          model: modelInput?.value,
-          base_url: cleanBaseUrl(baseUrlInput?.value || ''),
-          temperature: parseFloat(tempInput?.value || 0.7),
-          max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
-          thinking_level: thinkingSel?.value,
-          system_prompt: promptInput?.value,
-          custom_models: JSON.stringify(savedCustomModels),
-        };
-        if (apiKeyInput?.value) {
-          payload.api_key = apiKeyInput.value;
-        }
-        const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const errDetail = res.detail || res.error || 'Failed to save settings';
-          showAlert(`Settings Save Error: ${errDetail}`);
-          return;
-        }
-        toast('AI Builder settings saved');
-        closeModal();
-        renderAIChatWorkspace(targetProject);
-      } catch (err) {
-        showAlert(`Settings Save Error: ${err.message}`);
-      }
+      await handleSave();
     };
   }
-
-  refreshIcons();
 }
 
 let selectedAIProject = null;

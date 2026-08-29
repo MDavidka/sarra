@@ -1633,6 +1633,19 @@
         </button>
       </header>
 
+      <div class="svc-ai-modal-tabs">
+        <button type="button" class="svc-ai-modal-tab-btn active" id="svc-ai-tab-btn-onboard" data-tab="onboard">
+          <i data-lucide="sparkles"></i><span>Add Provider</span>
+        </button>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-saved" data-tab="saved">
+          <i data-lucide="layers"></i><span>Saved Providers</span>
+          <span class="svc-ai-tab-badge" id="svc-ai-saved-count">0</span>
+        </button>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-advanced" data-tab="advanced">
+          <i data-lucide="sliders"></i><span>Prompt &amp; Params</span>
+        </button>
+      </div>
+
       <form class="svc-ai-settings-form" id="svc-ai-settings-form">
         <!-- Error Alert Banner -->
         <div class="svc-ai-settings-alert hidden" id="svc-ai-settings-alert" role="alert">
@@ -1641,117 +1654,153 @@
         </div>
 
         <div class="svc-ai-settings-scroll">
-          <!-- Section 1: LLM Provider & Credentials -->
-          <fieldset class="svc-ai-form-section">
-            <legend><i data-lucide="key-round"></i><span>Provider & Credentials</span></legend>
-            <div class="svc-ai-form-grid">
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-provider">Provider</label>
-                <select id="svc-ai-setting-provider">
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="vertex">Google Cloud Vertex AI</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="ollama">Local Ollama</option>
-                  <option value="custom">Custom (OpenAI-Compatible)</option>
-                </select>
+          <!-- TAB 1: ADD PROVIDER ONBOARDING WIZARD -->
+          <div class="svc-ai-tab-panel" id="svc-ai-panel-onboard">
+            <!-- Step 1: Provider Selection Grid -->
+            <fieldset class="svc-ai-form-section">
+              <legend><i data-lucide="cpu"></i><span>Step 1: Choose Provider Type</span></legend>
+              <div class="svc-ai-provider-tiles-grid" id="svc-ai-provider-tiles">
+                <div class="svc-ai-provider-tile active" data-provider="vertex">
+                  <div class="svc-ai-tile-icon-wrap google"><i data-lucide="sparkles"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>Google Vertex AI / Gemini</strong>
+                    <small>Gemini 2.0 Flash, Flash-Lite, Pro</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="openai">
+                  <div class="svc-ai-tile-icon-wrap openai"><i data-lucide="bot"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>OpenAI</strong>
+                    <small>GPT-4o, GPT-4o-mini, o3-mini</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="anthropic">
+                  <div class="svc-ai-tile-icon-wrap anthropic"><i data-lucide="message-square"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>Anthropic Claude</strong>
+                    <small>Claude 3.7 Sonnet, 3.5 Haiku</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="deepseek">
+                  <div class="svc-ai-tile-icon-wrap deepseek"><i data-lucide="zap"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>DeepSeek</strong>
+                    <small>DeepSeek-R1, DeepSeek-V3</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="openrouter">
+                  <div class="svc-ai-tile-icon-wrap openrouter"><i data-lucide="globe"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>OpenRouter / Groq</strong>
+                    <small>Llama 3.3, Qwen 2.5, GLM-5.2</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="ollama">
+                  <div class="svc-ai-tile-icon-wrap ollama"><i data-lucide="terminal"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>Local Ollama</strong>
+                    <small>Local models on localhost:11434</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="custom">
+                  <div class="svc-ai-tile-icon-wrap custom"><i data-lucide="settings"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>Custom Endpoint</strong>
+                    <small>OpenAI-Compatible self-hosted API</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
               </div>
+              <input type="hidden" id="svc-ai-setting-provider" value="vertex">
+            </fieldset>
+
+            <!-- Step 2: Model Selection -->
+            <fieldset class="svc-ai-form-section">
+              <legend><i data-lucide="box"></i><span>Step 2: Model Selection</span></legend>
               <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-model">Active Model</label>
-                <input id="svc-ai-setting-model" placeholder="Enter or select model (e.g. z-ai/glm-5.2:free)" list="svc-ai-preset-models" autocomplete="off" required>
+                <label for="svc-ai-setting-model">Selected Model ID</label>
+                <input id="svc-ai-setting-model" placeholder="Enter or select model" list="svc-ai-preset-models" autocomplete="off" required value="gemini-2.0-flash">
                 <datalist id="svc-ai-preset-models">
-                  <!-- OpenAI -->
+                  <option value="gemini-2.0-flash">
+                  <option value="gemini-2.0-flash-lite">
+                  <option value="gemini-1.5-pro">
                   <option value="gpt-4o">
                   <option value="gpt-4o-mini">
                   <option value="o3-mini">
-                  <option value="o1">
-                  <!-- Vertex AI -->
-                  <option value="gemini-2.0-flash">
-                  <option value="gemini-2.0-flash-lite">
-                  <option value="gemini-2.0-flash-001">
-                  <option value="gemini-1.5-pro-002">
-                  <option value="gemini-1.5-flash-002">
-                  <option value="claude-3-5-sonnet@20241022">
-                  <option value="claude-3-5-haiku@20241022">
-                  <option value="meta/llama-3.3-70b-instruct-maas">
-                  <!-- OpenRouter Models -->
-                  <option value="z-ai/glm-5.2:free">
-                  <option value="openai/gpt-4o">
-                  <option value="openai/gpt-4o-mini">
-                  <option value="anthropic/claude-3.5-sonnet">
-                  <option value="deepseek/deepseek-chat">
-                  <option value="deepseek/deepseek-r1">
-                  <option value="google/gemini-2.0-flash-001">
-                  <option value="meta-llama/llama-3.3-70b-instruct">
-                  <option value="qwen/qwen-2.5-coder-32b-instruct">
-                  <!-- Anthropic -->
+                  <option value="claude-3-7-sonnet">
                   <option value="claude-3-5-sonnet-20241022">
-                  <option value="claude-3-5-haiku-20241022">
-                  <!-- Gemini -->
-                  <option value="gemini-1.5-pro">
-                  <option value="gemini-2.0-flash">
-                  <!-- DeepSeek -->
                   <option value="deepseek-chat">
                   <option value="deepseek-reasoner">
-                  <!-- Ollama -->
-                  <option value="qwen2.5-coder:32b">
-                  <option value="llama3.3:70b">
+                  <option value="z-ai/glm-5.2:free">
+                  <option value="meta-llama/llama-3.3-70b-instruct">
+                  <option value="qwen/qwen-2.5-coder-32b-instruct">
                 </datalist>
               </div>
-            </div>
 
-            <!-- Quick Preset Model Chips -->
-            <div class="svc-ai-preset-chips-wrap" id="svc-ai-preset-chips-wrap">
-              <label>Popular Models for Selected Provider (1-Click Select):</label>
-              <div class="svc-ai-preset-chips-list" id="svc-ai-preset-chips-list"></div>
-            </div>
-
-            <!-- Custom Models Library / Quick Add -->
-            <div class="svc-ai-custom-models-wrap" id="svc-ai-custom-models-wrap">
-              <div class="svc-ai-custom-models-header">
-                <span>Custom Saved Models</span>
-                <span style="font-weight:400; color:#71717a;">Click a model to activate</span>
+              <!-- 1-Click Preset Model Chips -->
+              <div class="svc-ai-preset-chips-wrap">
+                <label>Popular Presets for Selected Provider:</label>
+                <div class="svc-ai-preset-chips-list" id="svc-ai-preset-chips-list"></div>
               </div>
-              <div class="svc-ai-custom-models-list" id="svc-ai-custom-models-list"></div>
-              <div class="svc-ai-add-custom-model-row">
-                <input id="svc-ai-new-custom-model" placeholder="Add custom model ID (e.g. z-ai/glm-5.2:free, deepseek/deepseek-r1)" autocomplete="off">
-                <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-add-custom-model-btn">
-                  <i data-lucide="plus"></i><span>Add Model</span>
+            </fieldset>
+
+            <!-- Step 3: Credentials & Base URL -->
+            <fieldset class="svc-ai-form-section">
+              <legend><i data-lucide="key-round"></i><span>Step 3: API Key &amp; Endpoint</span></legend>
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-setting-apikey">API Key / Token</label>
+                <div class="svc-ai-apikey-input-wrap">
+                  <input id="svc-ai-setting-apikey" type="password" placeholder="AIzaSy... / sk-..." autocomplete="new-password">
+                  <button type="button" class="svc-ai-toggle-key-btn" id="svc-ai-toggle-key-visibility" title="Show/Hide API Key">
+                    <i data-lucide="eye"></i>
+                  </button>
+                </div>
+                <small class="hint">API keys are encrypted and stored safely on the host server.</small>
+              </div>
+
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
+                <input id="svc-ai-setting-baseurl" placeholder="Leave empty for default provider endpoint" autocomplete="off">
+                <small class="hint" id="svc-ai-baseurl-hint">Leave blank for official Google Vertex / AI Studio API.</small>
+              </div>
+
+              <div class="svc-ai-test-row">
+                <button type="button" class="btn-pill btn-secondary" id="svc-ai-test-connection-btn">
+                  <i data-lucide="zap"></i><span>Test Connection</span>
                 </button>
-              </div>
-            </div>
-
-            <div class="svc-ai-form-field">
-              <label for="svc-ai-setting-apikey">API Key / Token</label>
-              <div class="svc-ai-apikey-input-wrap">
-                <input id="svc-ai-setting-apikey" type="password" placeholder="sk-..." autocomplete="new-password">
-                <button type="button" class="svc-ai-toggle-key-btn" id="svc-ai-toggle-key-visibility" title="Show/Hide API Key">
-                  <i data-lucide="eye"></i>
+                <button type="button" class="btn-pill btn-primary" id="svc-ai-quick-save-btn">
+                  <i data-lucide="check"></i><span>Save &amp; Activate Provider</span>
                 </button>
+                <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
               </div>
-              <small class="hint">Keys are encrypted and stored safely on the host server.</small>
-            </div>
+            </fieldset>
+          </div>
 
-            <div class="svc-ai-form-field">
-              <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
-              <input id="svc-ai-setting-baseurl" placeholder="https://api.openai.com/v1 or leave empty for default" autocomplete="off">
-              <small class="hint">Leave empty to use official endpoint (e.g. https://openrouter.ai/api/v1). Do not include /chat/completions.</small>
-            </div>
-
-            <div class="svc-ai-test-row">
-              <button type="button" class="btn-pill btn-secondary" id="svc-ai-test-connection-btn">
-                <i data-lucide="zap"></i><span>Test Connection</span>
+          <!-- TAB 2: SAVED PROVIDERS & MODELS LIST -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-saved">
+            <div class="svc-ai-saved-providers-header">
+              <div>
+                <strong>Saved Model Providers</strong>
+                <p class="hint" style="margin:2px 0 0;">Switch between saved providers and models with 1 click.</p>
+              </div>
+              <button type="button" class="btn-pill btn-secondary btn-sm" id="svc-ai-add-new-provider-btn">
+                <i data-lucide="plus"></i><span>Add New Provider</span>
               </button>
-              <button type="button" class="btn-pill btn-primary" id="svc-ai-quick-save-btn">
-                <i data-lucide="check"></i><span>Save &amp; Activate Model</span>
-              </button>
-              <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
             </div>
-          </fieldset>
 
-          <!-- Section 2: Generation Parameters -->
+            <div class="svc-ai-saved-providers-list" id="svc-ai-saved-providers-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- TAB 3: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-advanced">
           <fieldset class="svc-ai-form-section">
             <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
             <div class="svc-ai-form-grid">
@@ -1825,6 +1874,7 @@
               </label>
             </div>
           </fieldset>
+          </div>
         </div>
 
         <footer class="svc-ai-settings-footer">

@@ -103,6 +103,15 @@ class ProjectAISession:
             return True
         return False
 
+    def clear(self) -> None:
+        """Reset the session buffers, plan, and pending questions."""
+        self.event_buffer.clear()
+        self.active_plan = None
+        self.pending_question = None
+        if self.question_future and not self.question_future.done():
+            self.question_future.cancel()
+        self.question_future = None
+
     def get_status_summary(self) -> Dict[str, Any]:
         """Return high-level summary of active session."""
         return {
@@ -135,6 +144,12 @@ class AIAgentSessionManager:
         if project_id not in self.sessions:
             self.sessions[project_id] = ProjectAISession(project_id)
         return self.sessions[project_id]
+
+    def clear_session(self, project_id: str) -> None:
+        """Reset active session state and event buffer for project."""
+        if project_id in self.sessions:
+            sess = self.sessions[project_id]
+            sess.clear()
 
     async def start_turn(
         self,

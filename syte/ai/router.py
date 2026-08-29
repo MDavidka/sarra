@@ -107,13 +107,71 @@ async def clear_project_ai_history(
     project_id: str,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Reset and clear AI chat history for a project."""
+    """Reset and clear AI chat history and in-memory session for a project."""
     if project_id != "global":
         project = await get_project(project_id)
         if not project:
             raise HTTPException(404, "Project not found")
     await clear_ai_chat_history(project_id)
+    session_manager.clear_session(project_id)
     return {"ok": True, "message": "AI chat history cleared"}
+
+
+@router.delete("/api/projects/{project_id}/ai/history/{message_id}")
+async def delete_single_ai_message(
+    project_id: str,
+    message_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Delete an individual AI chat message from history."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+    from syte.database import delete_ai_chat_message
+    await delete_ai_chat_message(project_id, message_id)
+    return {"ok": True, "message_id": message_id, "message": "Message deleted"}
+
+
+@router.post("/api/projects/{project_id}/ai/providers/activate")
+async def activate_saved_provider(
+    project_id: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Switch active model or saved provider configuration."""
+    current = await get_ai_builder_settings(project_id)
+    provider_id = body.get("provider_id")
+    model = body.get("model")
+    saved_list = current.get("saved_providers") or []
+
+    target = None
+    if provider_id:
+        for p in saved_list:
+            if p.get("id") == provider_id or p.get("name") == provider_id:
+                target = p
+                break
+    elif model:
+        for p in saved_list:
+            if p.get("model") == model:
+                target = p
+                break
+
+    if target:
+        updates = {
+            "provider": target.get("provider") or current.get("provider"),
+            "model": target.get("model") or model or current.get("model"),
+            "api_key": target.get("api_key") or current.get("api_key"),
+            "base_url": target.get("base_url") if target.get("base_url") is not None else current.get("base_url"),
+        }
+        saved = await save_ai_builder_settings(project_id, updates)
+        return {"ok": True, "settings": saved}
+    elif model:
+        updates = {"model": model}
+        saved = await save_ai_builder_settings(project_id, updates)
+        return {"ok": True, "settings": saved}
+
+    return {"ok": False, "error": "Saved provider not found"}
 
 
 @router.post("/api/projects/{project_id}/ai/test-connection")
