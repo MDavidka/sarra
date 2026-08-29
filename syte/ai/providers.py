@@ -226,58 +226,76 @@ class UnifiedAIClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        def _blocking_post(post_url: str, post_payload: dict, post_headers: dict):
+        def _blocking_post(post_url: str, post_payload: dict, post_headers: dict, post_timeout: int = 180):
             req = urllib.request.Request(
                 post_url,
                 data=json.dumps(post_payload).encode("utf-8"),
                 headers=post_headers,
                 method="POST",
             )
-            return urllib.request.urlopen(req, timeout=45)
+            return urllib.request.urlopen(req, timeout=post_timeout)
 
         response = None
-        try:
-            response = await asyncio.to_thread(_blocking_post, url, payload, headers)
-        except urllib.error.HTTPError as err:
-            # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
-            if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in url):
-                fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                if fallback_url != url:
-                    fallback_payload = dict(payload)
-                    fallback_payload["model"] = _normalize_google_model(self.model)
-                    try:
-                        response = await asyncio.to_thread(_blocking_post, fallback_url, fallback_payload, headers)
-                    except Exception:
-                        response = None
+        last_err_msg = "Unknown error"
+        for attempt in range(3):
+            try:
+                response = await asyncio.to_thread(_blocking_post, url, payload, headers, 180)
+                break
+            except urllib.error.HTTPError as err:
+                # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
+                if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in url):
+                    fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                    if fallback_url != url:
+                        fallback_payload = dict(payload)
+                        fallback_payload["model"] = _normalize_google_model(self.model)
+                        try:
+                            response = await asyncio.to_thread(_blocking_post, fallback_url, fallback_payload, headers, 180)
+                            break
+                        except Exception:
+                            response = None
 
-            if response is None:
-                err_body = err.read().decode("utf-8", errors="replace")
-                err_msg = f"HTTP {err.code}: {err.reason}"
-                if err_body:
-                    try:
-                        parsed = json.loads(err_body)
-                        if isinstance(parsed, dict) and "error" in parsed:
-                            err_val = parsed["error"]
-                            if isinstance(err_val, dict) and "message" in err_val:
-                                err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
-                            elif isinstance(err_val, str):
-                                err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
-                    except Exception:
-                        err_msg = f"HTTP {err.code}: {err_body}"
-                yield {"type": "error", "content": err_msg}
-                return
-        except Exception as exc:
-            yield {"type": "error", "content": f"Connection failed: {str(exc)}"}
+                if err.code in (429, 502, 503, 504) and attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+
+                if response is None:
+                    err_body = err.read().decode("utf-8", errors="replace")
+                    err_msg = f"HTTP {err.code}: {err.reason}"
+                    if err_body:
+                        try:
+                            parsed = json.loads(err_body)
+                            if isinstance(parsed, dict) and "error" in parsed:
+                                err_val = parsed["error"]
+                                if isinstance(err_val, dict) and "message" in err_val:
+                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
+                                elif isinstance(err_val, str):
+                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
+                        except Exception:
+                            err_msg = f"HTTP {err.code}: {err_body}"
+                    last_err_msg = err_msg
+                    break
+            except Exception as exc:
+                last_err_msg = f"Connection failed: {str(exc)}"
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                break
+
+        if response is None:
+            yield {"type": "error", "content": last_err_msg}
             return
 
         # Read SSE Stream in real time line by line
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
         def _read_single_line():
-            line_bytes = response.readline()
-            if not line_bytes:
+            try:
+                line_bytes = response.readline()
+                if not line_bytes:
+                    return None
+                return line_bytes.decode("utf-8", errors="replace")
+            except Exception:
                 return None
-            return line_bytes.decode("utf-8", errors="replace")
 
         while True:
             line = await asyncio.to_thread(_read_single_line)
@@ -386,7 +404,7 @@ class UnifiedAIClient:
                 headers=headers,
                 method="POST",
             )
-            return urllib.request.urlopen(req, timeout=45)
+            return urllib.request.urlopen(req, timeout=180)
 
         try:
             response = await asyncio.to_thread(_blocking_post)

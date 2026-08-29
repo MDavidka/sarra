@@ -207,11 +207,16 @@ class AIAgentEngine:
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
 
-        # 5. Load message history
-        history = await list_ai_chat_messages(self.project_id, limit=50)
+        # 5. Load message history with context compaction for older oversized tool responses
+        history = await list_ai_chat_messages(self.project_id, limit=40)
         formatted_messages: List[Dict[str, Any]] = []
-        for msg in history:
-            m = {"role": msg["role"], "content": msg.get("content") or ""}
+        total_history = len(history)
+        for idx, msg in enumerate(history):
+            content = msg.get("content") or ""
+            # If older tool output (> 6 messages ago) is huge (> 2500 chars), compact it to save gateway latency
+            if msg.get("role") == "tool" and idx < total_history - 6 and len(content) > 2500:
+                content = content[:1200] + "\n...[truncated for context efficiency]...\n" + content[-600:]
+            m = {"role": msg["role"], "content": content}
             if msg.get("tool_calls"):
                 m["tool_calls"] = msg["tool_calls"]
             if msg.get("tool_call_id"):
@@ -237,6 +242,7 @@ class AIAgentEngine:
 
             yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "timestamp": now_iso}
 
+            stream_error = None
             async for chunk in client.stream_chat(
                 formatted_messages,
                 tools=tools_schema,
@@ -254,8 +260,23 @@ class AIAgentEngine:
                 elif chunk_type == "tool_call":
                     turn_tool_calls.append(chunk)
                 elif chunk_type == "error":
-                    yield {"event": "error", "error": chunk.get("content", "LLM communication error")}
+                    err_msg = chunk.get("content", "LLM communication error")
+                    if any(t in err_msg.lower() for t in ["timed out", "timeout", "504", "502", "503", "connection reset"]) and current_turn < max_turns:
+                        stream_error = err_msg
+                        break
+                    yield {"event": "error", "error": err_msg}
                     return
+
+            if stream_error:
+                yield {
+                    "event": "status",
+                    "message": f"Gateway timeout, retrying turn {current_turn}…",
+                    "turn": current_turn,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await asyncio.sleep(2)
+                current_turn -= 1  # retry turn
+                continue
 
             final_response_text += turn_tokens
 
