@@ -362,7 +362,7 @@ async def export_project_ai_diagnostics(
     sys_stats = {}
     try:
         from syte.system_stats import get_system_stats
-        sys_stats = await get_system_stats()
+        sys_stats = get_system_stats()
     except Exception as e:
         sys_stats = {"error": str(e)}
 
@@ -371,7 +371,8 @@ async def export_project_ai_diagnostics(
     if project_id != "global":
         try:
             from syte.process_manager import get_logs
-            recent_logs = await get_logs(project_id, lines=80)
+            raw_logs = get_logs(project_id, lines=80)
+            recent_logs = [line for line in raw_logs.splitlines() if line.strip()]
         except Exception as e:
             recent_logs = [f"Log retrieval error: {e}"]
 
