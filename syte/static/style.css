@@ -11052,3 +11052,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   height: 14px;
 }
 
+/* Stop generation button state */
+.svc-ai-send-round-btn.stop-state {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.45);
+}
+
+.svc-ai-send-round-btn.stop-state:hover {
+  background: #dc2626 !important;
+  transform: scale(1.05);
+}
+
+.svc-ai-send-round-btn.stop-state svg {
+  fill: currentColor;
+  width: 14px;
+  height: 14px;
+}
+
