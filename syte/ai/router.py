@@ -214,7 +214,7 @@ async def get_project_ai_session(project_id: str):
 
 
 @router.get("/api/projects/{project_id}/ai/events")
-async def stream_project_ai_events(project_id: str):
+async def stream_project_ai_events(project_id: str, replay: bool = False):
     """Reconnect or subscribe to live AI agent SSE event stream."""
     if project_id != "global":
         project = await get_project(project_id)
@@ -223,7 +223,7 @@ async def stream_project_ai_events(project_id: str):
 
     async def sse_event_broadcaster():
         try:
-            async for event_payload in session_manager.subscribe(project_id):
+            async for event_payload in session_manager.subscribe(project_id, replay=replay):
                 event_name = event_payload.get("event", "message")
                 data_str = json.dumps(event_payload)
                 yield f"event: {event_name}\ndata: {data_str}\n\n"
@@ -287,7 +287,7 @@ async def project_ai_chat_stream(
 
     async def sse_generator():
         try:
-            async for event_payload in session_manager.subscribe(project_id):
+            async for event_payload in session_manager.subscribe(project_id, replay=True):
                 event_name = event_payload.get("event", "message")
                 data_str = json.dumps(event_payload)
                 yield f"event: {event_name}\ndata: {data_str}\n\n"

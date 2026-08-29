@@ -209,15 +209,16 @@ class AIAgentSessionManager:
 
             session.active_task = asyncio.create_task(_run_background_loop())
 
-    async def subscribe(self, project_id: str) -> AsyncGenerator[Dict[str, Any], None]:
-        """Subscribe to recent event buffer + live streaming events."""
+    async def subscribe(self, project_id: str, replay: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+        """Subscribe to live streaming events, optionally replaying recent buffer."""
         session = self.get_or_create_session(project_id)
         q: asyncio.Queue = asyncio.Queue()
         session.subscribers.append(q)
 
-        # 1. First replay existing buffered events for seamless reconnection
-        for past_event in list(session.event_buffer):
-            yield past_event
+        # 1. Optionally replay existing buffered events
+        if replay:
+            for past_event in list(session.event_buffer):
+                yield past_event
 
         # 2. Stream live events as they occur
         try:

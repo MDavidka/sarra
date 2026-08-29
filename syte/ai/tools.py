@@ -923,34 +923,44 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             return {"ok": True, "router_logs": logs, "count": len(logs)}
 
         elif tool_name == "syte_read_file":
-            rel_path = arguments.get("path", "").lstrip("/\\")
+            rel_path = str(arguments.get("path") or "").lstrip("/\\").strip()
+            if not rel_path or rel_path in (".", "/"):
+                return {"ok": False, "error": "Missing 'path' parameter. Please specify the relative file path to read."}
             file_path = ws_dir / rel_path
             if not file_path.resolve().is_relative_to(ws_dir.resolve()):
                 return {"ok": False, "error": "Access denied: Path escapes project workspace."}
+            if file_path.is_dir():
+                return {"ok": False, "error": f"'{rel_path}' is a directory, not a file. Use syte_get_workspace_tree or syte_search_workspace."}
             if not file_path.exists():
                 return {"ok": False, "error": f"File '{rel_path}' does not exist."}
             content = file_path.read_text(encoding="utf-8", errors="replace")
             return {"ok": True, "path": rel_path, "size_bytes": len(content), "content": content}
 
         elif tool_name == "syte_write_file":
-            rel_path = arguments.get("path", "").lstrip("/\\")
+            rel_path = str(arguments.get("path") or "").lstrip("/\\").strip()
             content = arguments.get("content", "")
+            if not rel_path or rel_path in (".", "/"):
+                return {"ok": False, "error": "Missing or invalid 'path' parameter for file write. Please specify a file path like 'lib/catalog.ts'."}
             file_path = ws_dir / rel_path
             if not file_path.resolve().is_relative_to(ws_dir.resolve()):
                 return {"ok": False, "error": "Access denied: Path escapes project workspace."}
+            if file_path.is_dir():
+                return {"ok": False, "error": f"Cannot write to '{rel_path}' because it is a directory."}
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
             return {"ok": True, "path": rel_path, "written_bytes": len(content), "message": f"File '{rel_path}' written successfully."}
 
         elif tool_name == "syte_edit_file":
-            rel_path = arguments.get("path", "").lstrip("/\\")
+            rel_path = str(arguments.get("path") or "").lstrip("/\\").strip()
             old_text = arguments.get("old_text", "")
             new_text = arguments.get("new_text", "")
+            if not rel_path or rel_path in (".", "/"):
+                return {"ok": False, "error": "Missing or invalid 'path' parameter for file edit."}
             file_path = ws_dir / rel_path
             if not file_path.resolve().is_relative_to(ws_dir.resolve()):
                 return {"ok": False, "error": "Access denied: Path escapes project workspace."}
-            if not file_path.exists():
-                return {"ok": False, "error": f"File '{rel_path}' does not exist."}
+            if not file_path.exists() or file_path.is_dir():
+                return {"ok": False, "error": f"File '{rel_path}' does not exist or is a directory."}
             existing = file_path.read_text(encoding="utf-8", errors="replace")
             if old_text not in existing:
                 return {"ok": False, "error": "Target substring 'old_text' was not found in file."}

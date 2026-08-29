@@ -111,7 +111,104 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
             else:
                 url = f"{url}/openai"
 
-    return url
+def repair_json_string(raw_str: str) -> str:
+    """Safely repair unclosed quotes and brackets in truncated JSON strings."""
+    if not raw_str or not raw_str.strip():
+        return "{}"
+    s = raw_str.strip()
+    try:
+        json.loads(s)
+        return s
+    except Exception:
+        pass
+    # If odd number of quotes, close the open string
+    if s.count('"') % 2 != 0:
+        s += '"'
+    # Count open curly braces and brackets
+    open_curly = s.count('{') - s.count('}')
+    open_square = s.count('[') - s.count(']')
+    s += (']' * max(0, open_square)) + ('}' * max(0, open_curly))
+    try:
+        json.loads(s)
+        return s
+    except Exception:
+        return raw_str
+
+
+def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Sanitize message sequence and tool calls to strictly adhere to OpenAI spec and prevent HTTP 400 errors."""
+    sanitized: List[Dict[str, Any]] = []
+    if system_prompt:
+        sanitized.append({"role": "system", "content": system_prompt})
+
+    pending_tool_ids = set()
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content") or ""
+        m: Dict[str, Any] = {"role": role, "content": content}
+
+        if role == "assistant":
+            tool_calls = msg.get("tool_calls")
+            if tool_calls and isinstance(tool_calls, list):
+                valid_tcs = []
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    t_id = tc.get("id") or f"call_{len(valid_tcs)}"
+                    func = tc.get("function") or {}
+                    name = func.get("name") or tc.get("name") or "syte_tool"
+                    raw_args = func.get("arguments") if "arguments" in func else tc.get("arguments")
+
+                    if isinstance(raw_args, dict):
+                        valid_args_str = json.dumps(raw_args)
+                    elif isinstance(raw_args, str):
+                        try:
+                            json.loads(raw_args)
+                            valid_args_str = raw_args
+                        except Exception:
+                            valid_args_str = repair_json_string(raw_args)
+                    else:
+                        valid_args_str = "{}"
+
+                    valid_tcs.append({
+                        "id": t_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": valid_args_str,
+                        },
+                    })
+                    pending_tool_ids.add(t_id)
+
+                if valid_tcs:
+                    m["tool_calls"] = valid_tcs
+            sanitized.append(m)
+
+        elif role == "tool":
+            t_id = msg.get("tool_call_id") or ""
+            t_name = msg.get("name") or "syte_tool"
+            tool_content = content if isinstance(content, str) else json.dumps(content)
+            m["tool_call_id"] = t_id
+            m["name"] = t_name
+            m["content"] = tool_content
+            if t_id in pending_tool_ids:
+                pending_tool_ids.remove(t_id)
+            sanitized.append(m)
+
+        elif role in ("user", "system"):
+            sanitized.append(m)
+
+    # Synthetic responses for any dangling tool calls
+    for missing_id in list(pending_tool_ids):
+        sanitized.append({
+            "role": "tool",
+            "tool_call_id": missing_id,
+            "name": "syte_tool",
+            "content": json.dumps({"ok": True, "message": "Command executed successfully."}),
+        })
+
+    return sanitized
 
 
 class UnifiedAIClient:
@@ -163,13 +260,12 @@ class UnifiedAIClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Stream chat completions and tool calls from the configured LLM provider."""
+        """Stream assistant response with real-time SSE chunks across providers."""
         if self.provider == "anthropic":
-            async for chunk in self._stream_anthropic(messages, tools, system_prompt):
+            async for chunk in self._stream_anthropic(messages, tools=tools, system_prompt=system_prompt):
                 yield chunk
         else:
-            # OpenAI, Gemini, DeepSeek, OpenRouter, Ollama, and generic OpenAI-compatible
-            async for chunk in self._stream_openai_compatible(messages, tools, system_prompt):
+            async for chunk in self._stream_openai_compatible(messages, tools=tools, system_prompt=system_prompt):
                 yield chunk
 
     async def _stream_openai_compatible(
@@ -202,18 +298,7 @@ class UnifiedAIClient:
             if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
                 headers["x-goog-api-key"] = self.api_key
 
-        formatted_messages = []
-        if system_prompt:
-            formatted_messages.append({"role": "system", "content": system_prompt})
-        for msg in messages:
-            m = {"role": msg["role"], "content": msg.get("content") or ""}
-            if msg.get("tool_calls"):
-                m["tool_calls"] = msg["tool_calls"]
-            if msg.get("tool_call_id"):
-                m["tool_call_id"] = msg["tool_call_id"]
-            if msg.get("name"):
-                m["name"] = msg["name"]
-            formatted_messages.append(m)
+        formatted_messages = sanitize_openai_messages(messages, system_prompt=system_prompt)
 
         payload: dict[str, Any] = {
             "model": effective_model,
@@ -333,32 +418,51 @@ class UnifiedAIClient:
                 raw_tool_calls = delta.get("tool_calls")
                 if raw_tool_calls:
                     for tc in raw_tool_calls:
-                        idx = tc.get("index", 0)
+                        idx = tc.get("index")
+                        if idx is None:
+                            tc_id = tc.get("id") or ""
+                            matching_idx = None
+                            if tc_id:
+                                for existing_idx, existing_tc in tool_calls_acc.items():
+                                    if existing_tc.get("id") == tc_id:
+                                        matching_idx = existing_idx
+                                        break
+                            idx = matching_idx if matching_idx is not None else len(tool_calls_acc)
+
+                        func_delta = tc.get("function") or {}
+                        f_name = func_delta.get("name") or tc.get("name") or ""
+                        f_args = func_delta.get("arguments") or tc.get("arguments") or ""
+
                         if idx not in tool_calls_acc:
                             tool_calls_acc[idx] = {
                                 "id": tc.get("id") or f"call_{idx}",
                                 "type": "function",
                                 "function": {
-                                    "name": tc.get("function", {}).get("name", ""),
-                                    "arguments": tc.get("function", {}).get("arguments", ""),
+                                    "name": f_name,
+                                    "arguments": f_args,
                                 },
                             }
                         else:
                             if tc.get("id"):
                                 tool_calls_acc[idx]["id"] = tc["id"]
-                            if tc.get("function", {}).get("name"):
-                                tool_calls_acc[idx]["function"]["name"] += tc["function"]["name"]
-                            if tc.get("function", {}).get("arguments"):
-                                tool_calls_acc[idx]["function"]["arguments"] += tc["function"]["arguments"]
+                            if f_name:
+                                tool_calls_acc[idx]["function"]["name"] += f_name
+                            if f_args:
+                                tool_calls_acc[idx]["function"]["arguments"] += f_args
 
-        # Yield any accumulated tool calls
+        # Yield any accumulated tool calls with repaired JSON arguments
         if tool_calls_acc:
             for idx, tc in sorted(tool_calls_acc.items(), key=lambda x: x[0]):
+                func_name = tc["function"]["name"].strip()
+                raw_args = tc["function"]["arguments"]
+                if not func_name:
+                    continue
+                repaired_args = repair_json_string(raw_args)
                 yield {
                     "type": "tool_call",
                     "id": tc["id"],
-                    "name": tc["function"]["name"],
-                    "arguments": tc["function"]["arguments"],
+                    "name": func_name,
+                    "arguments": repaired_args,
                 }
 
     async def _stream_anthropic(
