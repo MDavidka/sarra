@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
+import time
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from syte.ai.engine import AIAgentEngine
@@ -302,3 +304,123 @@ async def project_ai_chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/api/projects/{project_id}/ai/diagnostics")
+async def export_project_ai_diagnostics(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Export a comprehensive diagnostic bundle JSON including VM response, session events, DB history, errors, and system stats."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    project_meta = {}
+    ws_dir = ""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = str(_get_project_workspace_dir(project))
+        project_meta = {
+            "id": project.get("id"),
+            "name": project.get("name"),
+            "domain": project.get("domain"),
+            "branch": project.get("branch"),
+            "running": bool(project.get("running")),
+            "port": project.get("port"),
+            "git_url": project.get("git_url"),
+            "workspace_dir": ws_dir,
+        }
+    else:
+        project_meta = {"id": "global", "name": "Global Platform"}
+
+    # 1. AI Settings
+    ai_settings = await get_ai_builder_settings(project_id)
+    sanitized_settings = dict(ai_settings)
+    if sanitized_settings.get("api_key"):
+        raw_k = str(sanitized_settings["api_key"])
+        sanitized_settings["api_key"] = raw_k[:6] + "..." + raw_k[-4:] if len(raw_k) > 10 else "***"
+    if isinstance(sanitized_settings.get("saved_providers"), list):
+        san_provs = []
+        for p in sanitized_settings["saved_providers"]:
+            sp = dict(p)
+            if sp.get("api_key"):
+                rk = str(sp["api_key"])
+                sp["api_key"] = rk[:6] + "..." + rk[-4:] if len(rk) > 10 else "***"
+            san_provs.append(sp)
+        sanitized_settings["saved_providers"] = san_provs
+
+    # 2. Session state & in-memory event buffer
+    session = session_manager.get_or_create_session(project_id)
+    session_summary = session.get_status_summary()
+    session_events = list(session.event_buffer)
+
+    # 3. Database chat history
+    db_messages = await list_ai_chat_messages(project_id, limit=200)
+
+    # 4. System & VM Diagnostics
+    sys_stats = {}
+    try:
+        from syte.system_stats import get_system_stats
+        sys_stats = await get_system_stats()
+    except Exception as e:
+        sys_stats = {"error": str(e)}
+
+    # 5. Process / deployment logs
+    recent_logs = []
+    if project_id != "global":
+        try:
+            from syte.process_manager import get_logs
+            recent_logs = await get_logs(project_id, lines=80)
+        except Exception as e:
+            recent_logs = [f"Log retrieval error: {e}"]
+
+    # 6. Extract all errors encountered
+    errors_detected = []
+    for evt in session_events:
+        if evt.get("event") == "error" or "error" in evt:
+            errors_detected.append({"source": "session_event", "event": evt})
+        elif evt.get("event") == "tool_call_result":
+            res = evt.get("result") or {}
+            if res.get("ok") is False or "error" in res or res.get("syntax_errors"):
+                errors_detected.append({"source": "tool_failure", "tool_name": evt.get("tool_name"), "result": res})
+
+    for msg in db_messages:
+        if msg.get("role") == "tool":
+            try:
+                parsed_c = json.loads(msg.get("content") or "{}")
+                if parsed_c.get("ok") is False or "error" in parsed_c or parsed_c.get("syntax_errors"):
+                    errors_detected.append({"source": "database_tool_message", "tool": msg.get("name"), "content": parsed_c})
+            except Exception:
+                pass
+
+    diagnostic_bundle = {
+        "export_timestamp": now_iso,
+        "syte_version": "2.0.0",
+        "project": project_meta,
+        "ai_settings": sanitized_settings,
+        "session": {
+            "summary": session_summary,
+            "event_buffer_count": len(session_events),
+            "event_buffer": session_events,
+        },
+        "chat_history": {
+            "message_count": len(db_messages),
+            "messages": db_messages,
+        },
+        "errors_and_failures": {
+            "error_count": len(errors_detected),
+            "errors": errors_detected,
+        },
+        "vm_diagnostics": {
+            "system_stats": sys_stats,
+            "recent_process_logs": recent_logs,
+        },
+    }
+
+    filename = f"syte-ai-diagnostics-{project_id}-{int(time.time())}.json"
+    return JSONResponse(
+        content=diagnostic_bundle,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
