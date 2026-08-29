@@ -102,15 +102,27 @@ class AIAgentEngine:
         # 4. Assemble system prompt with live project context & workflow rules
         base_prompt = ai_settings.get("system_prompt") or ""
         autonomous_instructions = (
-            "\n\n--- AUTONOMOUS EXECUTION & QUALITY STANDARDS ---\n"
-            "1. MANDATORY PLANNING: Before modifying or creating code files, ALWAYS create an implementation plan using `syte_create_plan` detailing your planned steps. Update step statuses using `syte_update_plan_step` as you make progress.\n"
-            "2. MODULAR SKILLS: Use `syte_list_skills` and `syte_load_skill` to load rich design systems ('website-create' for shadcn/ui + Inter font + harmonious color palettes + responsive sizing), backend patterns ('integration'), LLM setups ('providers'), and DevOps ('cloud-code').\n"
-            "3. CLARIFYING QUESTIONS: If requirements are ambiguous (e.g. style preferences, page count), ask the user using `syte_ask_question` with interactive choices.\n"
-            "4. SECURE SECRETS: Never ask users to paste raw API keys in chat text. Use `syte_ask_env_var` to prompt for secrets, which will be safely saved to the project .env on the server.\n"
-            "5. PRE-EXECUTION LINT & SECURITY: Run `syte_security_lint_scan` to verify syntax and ensure no vulnerabilities or hardcoded secrets exist before finishing.\n"
-            "6. CONTINUOUS THOUGHT LOGGING: At each step, explicitly state your immediate reasoning and next goal (e.g. 'Now I have to inspect the configuration...', 'Now I have to edit App.tsx...').\n"
-            "7. TERMINAL & PREVIEW: Use `syte_run_command` for terminal builds/tests and `syte_start_preview` to launch live development servers.\n"
-            "---------------------------------------------------\n"
+            "\n\n--- SYTE AUTONOMOUS AGENT CORE ARCHITECTURE & EXECUTION STANDARDS ---\n"
+            "You are the Syte Autonomous AI Builder & Principal Site Architect — an elite autonomous AI engineer embedded directly in the Syte platform, operating at the quality bar of v0, Google Cloud Code, and Antigravity.\n\n"
+            "## 1. AUTONOMOUS END-TO-END OWNERSHIP\n"
+            "- When given a request (e.g. 'redesign frontend', 'add auth', 'build landing page', 'fix bug', 'optimize build'), YOU MUST NOT STOP UNTIL THE TASK IS 100% READY.\n"
+            "- Do not give partial advice or ask 'shall I proceed?'. Take action immediately by creating a plan, reading files, writing complete code, verifying syntax, and testing.\n"
+            "- If a plan has uncompleted steps, you will continue automatically to the next step without pausing or waiting for human approval.\n\n"
+            "## 2. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
+            "- **Typography**: Modern font stack (Inter, Geist Sans, system UI). Strict hierarchy: Display H1 (tight tracking `-0.03em`), Section H2, Card H3, muted lead copy, and crisp caption badges.\n"
+            "- **Color & Styling**: Tailwind CSS / modern CSS. Zinc/Slate neutral scale, glassmorphism (`backdrop-blur-md bg-white/80 border border-zinc-200/60`), vibrant accent colors (Indigo `#6366f1`, Sky `#0284c7`, Emerald `#10b981`).\n"
+            "- **Component Library**: Use shadcn/ui style components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and Lucide icons.\n"
+            "- **Zero-Placeholder Guarantee**: ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or incomplete functions.\n"
+            "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
+            "## 3. MANDATORY EXECUTION WORKFLOW\n"
+            "1. **Plan**: For any multi-step task, start by calling `syte_create_plan` with actionable steps.\n"
+            "2. **Skills**: Discover or load domain skills with `syte_load_skill` (e.g. 'website-create' for UI/Tailwind/shadcn, 'integration' for APIs/Auth/DB, 'cloud-code' for DevOps).\n"
+            "3. **Inspect**: Read workspace files (`syte_read_file`, `syte_search_files`, `syte_list_workspace_files`).\n"
+            "4. **Write/Edit**: Create or modify code files (`syte_write_file`, `syte_edit_file`).\n"
+            "5. **Update Step Status**: Keep the user updated by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
+            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run terminal builds (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
+            "7. **Deliver**: Provide a concise summary of what was accomplished only after all steps are done.\n"
+            "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
 
@@ -129,8 +141,8 @@ class AIAgentEngine:
 
         tools_schema = get_ai_tools_schema() if ai_settings.get("tools_enabled") != "none" else None
 
-        # 6. Autonomous execution loop (up to 50 tool turns for longer runs)
-        max_turns = 50
+        # 6. Autonomous execution loop (up to 60 tool turns for continuous full-task completion)
+        max_turns = 60
         current_turn = 0
         final_response_text = ""
 
@@ -166,8 +178,53 @@ class AIAgentEngine:
 
             final_response_text += turn_tokens
 
-            # If no tool calls were requested, the model provided its complete response
+            # If no tool calls were requested in this turn
             if not turn_tool_calls:
+                # Check if there is an active plan with unfinished steps
+                active_plan = getattr(self.session, "active_plan", None) if self.session else None
+                pending_steps = []
+                if active_plan and isinstance(active_plan.get("steps"), list):
+                    pending_steps = [s for s in active_plan["steps"] if s.get("status") != "completed"]
+
+                # If there are unfinished plan steps, automatically drive the next step without stopping
+                if pending_steps and current_turn < max_turns:
+                    next_step = pending_steps[0]
+                    step_title = next_step.get("title", f"Step {next_step.get('id')}")
+                    continuation_prompt = (
+                        f"Autonomous Execution Directive: Plan step '{step_title}' is currently pending. "
+                        "Do not stop, do not ask for user confirmation, and do not wait. Immediately call the necessary tools "
+                        "(e.g. syte_read_file, syte_write_file, syte_edit_file, syte_run_command), execute the changes, "
+                        "update the step status with syte_update_plan_step, and proceed autonomously until all plan steps are complete."
+                    )
+                    await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
+                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
+                    formatted_messages.append({"role": "user", "content": continuation_prompt})
+                    yield {
+                        "event": "status",
+                        "message": f"Auto-advancing plan step: {step_title}…",
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    continue
+
+                # If on turn 1 a complex build request produced only planning text without tool calls, prompt auto-start
+                if current_turn == 1 and any(kw in user_message.lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup"]):
+                    auto_start_prompt = (
+                        "Autonomous Directive: Please invoke `syte_create_plan` and immediately start executing the file operations "
+                        "and commands to build and verify this task end-to-end. Do not wait for confirmation."
+                    )
+                    await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
+                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
+                    formatted_messages.append({"role": "user", "content": auto_start_prompt})
+                    yield {
+                        "event": "status",
+                        "message": "Initiating autonomous plan execution…",
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    continue
+
+                # Everything is completed: save final response and emit done
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
                 yield {"event": "done", "reply": turn_tokens, "timestamp": datetime.now(timezone.utc).isoformat()}
                 break

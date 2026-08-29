@@ -270,74 +270,68 @@ class UnifiedAIClient:
             yield {"type": "error", "content": f"Connection failed: {str(exc)}"}
             return
 
-        # Read SSE Stream
+        # Read SSE Stream in real time line by line
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-        def _read_lines():
-            lines = []
-            while True:
-                line = response.readline()
-                if not line:
-                    break
-                lines.append(line.decode("utf-8", errors="replace"))
-                if len(lines) >= 8:
-                    break
-            return lines
+        def _read_single_line():
+            line_bytes = response.readline()
+            if not line_bytes:
+                return None
+            return line_bytes.decode("utf-8", errors="replace")
 
         while True:
-            lines = await asyncio.to_thread(_read_lines)
-            if not lines:
+            line = await asyncio.to_thread(_read_single_line)
+            if line is None:
                 break
 
-            for line in lines:
-                line_str = line.strip()
-                if not line_str or line_str.startswith(":"):
+            line_str = line.strip()
+            if not line_str or line_str.startswith(":"):
+                continue
+            if line_str == "data: [DONE]":
+                break
+            if line_str.startswith("data: "):
+                raw_json = line_str[6:]
+                try:
+                    chunk_data = json.loads(raw_json)
+                except json.JSONDecodeError:
                     continue
-                if line_str == "data: [DONE]":
-                    break
-                if line_str.startswith("data: "):
-                    raw_json = line_str[6:]
-                    try:
-                        chunk_data = json.loads(raw_json)
-                    except json.JSONDecodeError:
-                        continue
 
-                    choices = chunk_data.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
+                choices = chunk_data.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
 
-                    # Thought / Reasoning delta
-                    thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
-                    if thought:
-                        yield {"type": "thought", "content": thought}
+                # Thought / Reasoning delta
+                thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
+                if thought:
+                    yield {"type": "thought", "content": thought}
 
-                    # Text token delta
-                    content = delta.get("content")
-                    if content:
-                        yield {"type": "token", "content": content}
+                # Text token delta
+                content = delta.get("content")
+                if content:
+                    yield {"type": "token", "content": content}
 
-                    # Tool call deltas
-                    raw_tool_calls = delta.get("tool_calls")
-                    if raw_tool_calls:
-                        for tc in raw_tool_calls:
-                            idx = tc.get("index", 0)
-                            if idx not in tool_calls_acc:
-                                tool_calls_acc[idx] = {
-                                    "id": tc.get("id") or f"call_{idx}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.get("function", {}).get("name", ""),
-                                        "arguments": tc.get("function", {}).get("arguments", ""),
-                                    },
-                                }
-                            else:
-                                if tc.get("id"):
-                                    tool_calls_acc[idx]["id"] = tc["id"]
-                                if tc.get("function", {}).get("name"):
-                                    tool_calls_acc[idx]["function"]["name"] += tc["function"]["name"]
-                                if tc.get("function", {}).get("arguments"):
-                                    tool_calls_acc[idx]["function"]["arguments"] += tc["function"]["arguments"]
+                # Tool call deltas
+                raw_tool_calls = delta.get("tool_calls")
+                if raw_tool_calls:
+                    for tc in raw_tool_calls:
+                        idx = tc.get("index", 0)
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {
+                                "id": tc.get("id") or f"call_{idx}",
+                                "type": "function",
+                                "function": {
+                                    "name": tc.get("function", {}).get("name", ""),
+                                    "arguments": tc.get("function", {}).get("arguments", ""),
+                                },
+                            }
+                        else:
+                            if tc.get("id"):
+                                tool_calls_acc[idx]["id"] = tc["id"]
+                            if tc.get("function", {}).get("name"):
+                                tool_calls_acc[idx]["function"]["name"] += tc["function"]["name"]
+                            if tc.get("function", {}).get("arguments"):
+                                tool_calls_acc[idx]["function"]["arguments"] += tc["function"]["arguments"]
 
         # Yield any accumulated tool calls
         if tool_calls_acc:

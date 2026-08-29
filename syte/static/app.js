@@ -7224,6 +7224,9 @@ function getPlanCardHtml(plan) {
           ${completed === total ? '<i data-lucide="check-check"></i> Done' : '<i data-lucide="refresh-cw" class="spinning"></i> In Progress'}
         </div>
       </div>
+      <div class="svc-ai-plan-progress-track">
+        <div class="svc-ai-plan-progress-fill" style="width: ${progressPct}%;"></div>
+      </div>
       <div class="svc-ai-plan-steps-list">
         ${plan.steps.map(s => {
           let icon = '<i data-lucide="circle" class="step-pending"></i>';
