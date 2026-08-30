@@ -1188,6 +1188,55 @@ async def api_track_project_builds(project_id: str, limit: int = 20):
         raise HTTPException(404, str(exc)) from exc
 
 
+@app.get("/api/projects/{project_id}/builds/{build_id}/logs")
+@app.get("/api/projects/{project_id}/deployments/{build_id}/logs")
+async def api_get_deployment_run_logs(project_id: str, build_id: str):
+    """Retrieve exact stdout/stderr logs and failure diagnostics for a specific deployment or build run."""
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    from pathlib import Path
+    from syte.database import get_deployment_run
+    from syte.workspace import deploy_log_path
+    from syte.docker_deploy import _build_log_path
+
+    run = await get_deployment_run(build_id)
+    log_text = ""
+    error_text = ""
+
+    if run:
+        error_text = run.get("error") or ""
+        log_p = run.get("log_path")
+        if log_p and Path(log_p).exists():
+            log_text = Path(log_p).read_text(errors="replace")
+
+    if not log_text:
+        d_log = deploy_log_path(project_id)
+        if d_log.exists():
+            log_text = d_log.read_text(errors="replace")
+        else:
+            b_log = _build_log_path(project_id)
+            if b_log.exists():
+                log_text = b_log.read_text(errors="replace")
+
+    return {
+        "ok": True,
+        "id": build_id,
+        "project_id": project_id,
+        "status": run.get("status") if run else (project.get("status") or "ready"),
+        "trigger": run.get("trigger") if run else "manual",
+        "commit_sha": run.get("commit_sha") if run else None,
+        "commit_message": run.get("commit_message") if run else (project.get("commit_message") or "Latest build"),
+        "started_at": run.get("started_at") if run else None,
+        "finished_at": run.get("finished_at") if run else None,
+        "duration_ms": run.get("duration_ms") if run else None,
+        "error": error_text,
+        "log": log_text or "No detailed build logs recorded for this deployment run.",
+    }
+
+
+
 @app.post("/api/projects/{project_id}/builds/trigger")
 async def api_trigger_project_build(
     project_id: str,

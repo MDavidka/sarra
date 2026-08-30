@@ -1236,45 +1236,99 @@
 
               <!-- 11. PREVIEW TAB (shadcn architecture) -->
               <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Sandbox Server</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">Live Preview</h2>
-                        <p class="shadcn-card-description">Run a temporary development server with hot module replacement before deployment.</p>
+                <div class="svc-preview-workspace-card">
+                  <!-- Top Controls Bar -->
+                  <div class="svc-preview-workspace-header">
+                    <div class="svc-preview-header-left">
+                      <div class="svc-preview-title-box">
+                        <span class="svc-preview-status-pill-badge" id="svc-preview-status-pill">
+                          <span class="svc-preview-status-dot"></span>
+                          <span id="svc-preview-status-text">Dev Server Ready</span>
+                        </span>
+                        <div class="svc-stack-badge" id="svc-stack-badge">
+                          <span class="svc-stack-icon" id="svc-stack-icon">N</span>
+                          <span id="svc-stack-label">next.js</span>
+                        </div>
                       </div>
-                      <div class="svc-stack-badge" id="svc-stack-badge">
-                        <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                        <span id="svc-stack-label">next.js</span>
+                      <p class="svc-preview-subtitle">Hot-reloading isolated sandbox development server.</p>
+                    </div>
+
+                    <!-- Viewport switcher: Desktop / Tablet / Mobile -->
+                    <div class="svc-preview-viewport-controls">
+                      <button type="button" class="svc-viewport-btn active" data-viewport="desktop" title="Desktop view (100%)">
+                        <i data-lucide="monitor"></i><span>Desktop</span>
+                      </button>
+                      <button type="button" class="svc-viewport-btn" data-viewport="tablet" title="Tablet view (768px)">
+                        <i data-lucide="tablet"></i><span>Tablet</span>
+                      </button>
+                      <button type="button" class="svc-viewport-btn" data-viewport="mobile" title="Mobile view (375px)">
+                        <i data-lucide="smartphone"></i><span>Mobile</span>
+                      </button>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="svc-preview-actions-bar" id="svc-preview-actions">
+                      <!-- Rendered dynamically by renderPreviewSection -->
+                    </div>
+                  </div>
+
+                  <!-- URL and Address Bar -->
+                  <div class="svc-preview-browser-bar">
+                    <div class="svc-preview-browser-nav">
+                      <button type="button" class="svc-preview-nav-btn" id="svc-preview-reload-btn" title="Reload preview frame">
+                        <i data-lucide="rotate-cw"></i>
+                      </button>
+                    </div>
+                    <div class="svc-preview-address-box">
+                      <i data-lucide="lock" class="svc-preview-lock-icon"></i>
+                      <span class="svc-preview-url-text" id="svc-preview-domain">—</span>
+                      <button type="button" class="svc-preview-copy-url-btn" id="svc-preview-copy-btn" title="Copy preview URL">
+                        <i data-lucide="copy"></i>
+                      </button>
+                      <a id="svc-preview-external-link" href="#" target="_blank" rel="noopener noreferrer" class="svc-preview-ext-btn" title="Open in new window">
+                        <i data-lucide="external-link"></i>
+                      </a>
+                    </div>
+                    <div class="svc-preview-hint-pill" id="svc-preview-hint">
+                      Fast dev server with hot reload
+                    </div>
+                  </div>
+
+                  <!-- Device Container Frame -->
+                  <div class="svc-preview-viewport-stage">
+                    <div class="svc-preview-device-frame" id="svc-preview-frame-container" data-current-viewport="desktop">
+                      <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                      
+                      <!-- Informative stopped state / placeholder -->
+                      <div class="svc-preview-placeholder" id="svc-preview-placeholder">
+                        <div class="svc-preview-placeholder-art">
+                          <i data-lucide="layout-template"></i>
+                        </div>
+                        <h3>Interactive Live Preview</h3>
+                        <p>Launch an isolated, lightning-fast development server with hot module replacement directly on the host VM.</p>
+                        <div class="svc-preview-placeholder-actions">
+                          <button type="button" class="shadcn-btn shadcn-btn-default" onclick="if(activeServiceId) servicePreviewStart(activeServiceId)">
+                            <i data-lucide="play"></i><span>Start Development Server</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div class="shadcn-card-content">
-                    <div class="svc-preview-domain-row" id="svc-preview-domain-row" style="margin-bottom: 8px;">
-                      <span class="hint" style="font-size: 12px; color: #71717a; font-weight: 600;">Preview URL:</span>
-                      <code id="svc-preview-domain" style="font-family: monospace; font-size: 12px; background: #f4f4f5; padding: 3px 8px; border-radius: 6px; color: #09090b;">—</code>
-                    </div>
-                    <p class="hint" id="svc-preview-hint" style="margin: 4px 0 14px; font-size: 12px; color: #71717a;">Fast dev server with hot reload — automatically stops after 5 minutes of inactivity or when you leave this tab.</p>
-                    <div class="svc-actions" id="svc-preview-actions" style="margin-bottom: 14px;"></div>
 
-                    <div class="svc-live-preview-box" id="svc-preview-card">
-                      <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                      <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                        <i data-lucide="layout-template"></i>
-                        <span>Start preview to see your site rendered in real time</span>
+                  <!-- Collapsible Dev Server Logs -->
+                  <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap" style="margin-top: 16px;">
+                    <div class="logs-toolbar logs-toolbar-compact">
+                      <div class="logs-toolbar-left">
+                        <span class="logs-live-dot" id="svc-preview-logs-live"></span>
+                        <span class="logs-toolbar-label">Dev Server Process Stream</span>
+                      </div>
+                      <div class="logs-toolbar-right">
+                        <button type="button" class="svc-log-tool-btn" onclick="clearLogPanel(document.getElementById('svc-preview-logs'))" title="Clear logs">
+                          <i data-lucide="trash-2"></i><span>Clear</span>
+                        </button>
                       </div>
                     </div>
-
-                    <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap" style="margin-top: 16px;">
-                      <div class="logs-toolbar logs-toolbar-compact">
-                        <div class="logs-toolbar-left">
-                          <span class="logs-live-dot" id="svc-preview-logs-live"></span>
-                          <span class="logs-toolbar-label">Preview server log</span>
-                        </div>
-                      </div>
-                      <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
-                    </div>
+                    <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
                   </div>
                 </div>
               </div>
@@ -1940,6 +1994,53 @@
       </div>
       <div class="svc-ai-file-modal-body">
         <pre><code id="svc-ai-file-modal-code"></code></pre>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Deployment & Build Log Inspector Modal -->
+  <dialog id="svc-build-log-modal" class="svc-build-log-modal">
+    <div class="svc-build-log-modal-card">
+      <div class="svc-build-log-modal-header">
+        <div class="svc-build-log-modal-identity">
+          <span class="svc-build-log-badge" id="svc-build-log-status-badge">
+            <span class="svc-build-status-dot"></span>
+            <span id="svc-build-log-status-text">Build Details</span>
+          </span>
+          <div class="svc-build-log-meta-group">
+            <h3 id="svc-build-log-commit-title">Commit title</h3>
+            <div class="svc-build-log-meta-row">
+              <span id="svc-build-log-sha" class="svc-build-log-sha font-mono">—</span>
+              <span id="svc-build-log-time" class="svc-build-log-time">—</span>
+              <span id="svc-build-log-duration" class="svc-build-log-duration">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="svc-build-log-modal-actions">
+          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-copy-btn" title="Copy build logs">
+            <i data-lucide="copy"></i><span>Copy Logs</span>
+          </button>
+          <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm hidden" id="svc-build-log-ai-fix-btn" title="Ask AI to fix error">
+            <i data-lucide="sparkles"></i><span>Ask AI to Fix</span>
+          </button>
+          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="svc-build-log-error-banner hidden" id="svc-build-log-error-banner">
+        <i data-lucide="alert-triangle"></i>
+        <div class="svc-build-error-text">
+          <strong>Build / Deployment Failed:</strong>
+          <span id="svc-build-log-error-text"></span>
+        </div>
+      </div>
+
+      <div class="svc-build-log-modal-body">
+        <div class="svc-build-log-terminal" id="svc-build-log-terminal">
+          <pre><code id="svc-build-log-code">Loading deployment build logs…</code></pre>
+        </div>
       </div>
     </div>
   </dialog>
