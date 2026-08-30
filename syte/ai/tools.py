@@ -12,7 +12,7 @@ import re
 import shutil
 from typing import Any, Dict, List, Optional
 
-from syte.ai.skills import get_skill_content, list_available_skills
+from syte.ai.skills import discover_skills_catalog, get_skill_content, list_available_skills
 from syte.config import settings
 from syte.database import get_project, list_project_router_logs
 from syte.deployment import issue_deploy, start_service, stop_service
@@ -521,16 +521,40 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "syte_load_skill",
-                "description": "Load comprehensive instructions, best practices, and blueprints for a specific skill (e.g. 'website-create', 'shadcn-ui', 'integration', 'providers', 'cloud-code').",
+                "description": "Load comprehensive instructions, best practices, and blueprints for a specific skill (e.g. 'website-create', 'shadcn-ui', 'integration', 'providers', 'cloud-code') or capability.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "skill_name": {
                             "type": "string",
-                            "description": "Name or alias of the skill to load.",
+                            "description": "Name or alias of the skill or capability to load (e.g. 'website-create', 'Design & Colors', 'get_color_palette', 'generate_auth_middleware').",
                         }
                     },
                     "required": ["skill_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_discover_skills",
+                "description": "Search, browse, and discover modular skill capabilities across categories: 'Design & Colors', 'Components & UI', 'App & Routing', 'Login & Auth', 'Server & Backend', 'Integrations & Database', 'Optimization & Build'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "Optional category filter (e.g. 'Design & Colors', 'Components & UI', 'Login & Auth', 'Server & Backend', 'Integrations & Database', 'Optimization & Build').",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Optional keyword search for capability names or functionality.",
+                        },
+                        "detailed": {
+                            "type": "boolean",
+                            "description": "Whether to return full detailed tokens and specs for matched capabilities.",
+                        },
+                    },
                 },
             },
         },
@@ -1326,13 +1350,19 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             skills = list_available_skills()
             return {"ok": True, "skills": skills, "count": len(skills)}
 
+        elif tool_name == "syte_discover_skills":
+            category = arguments.get("category")
+            query = arguments.get("query")
+            detailed = bool(arguments.get("detailed", False))
+            return discover_skills_catalog(category=category, query=query, detailed=detailed)
+
         elif tool_name == "syte_load_skill":
             sname = str(arguments.get("skill_name") or "").strip()
             content = get_skill_content(sname)
             if not content:
                 return {
                     "ok": False,
-                    "error": f"Skill '{sname}' not found. Use `syte_list_skills` to view available skills.",
+                    "error": f"Skill '{sname}' not found. Use `syte_discover_skills` or `syte_list_skills` to view available skills.",
                 }
             return {
                 "ok": True,

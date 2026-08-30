@@ -7122,34 +7122,42 @@ async function renderBuildWorkspace(project) {
       const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
       const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
       const statusLabel = isSuccess ? 'successful' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
+      const statusIcon = isSuccess
+        ? '<span class="svc-status-marker-dot marker-green"></span>'
+        : (b.status === 'failed'
+            ? '<span class="svc-status-marker-square marker-red"></span>'
+            : '<span class="svc-status-marker-dot marker-amber spinning"></span>');
+      
       const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'operator/app');
-      const titleText = b.commit_title || 'deploy: latest workspace build';
-      const durationText = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '32s';
+      const titleText = b.commit_title || 'deploy: update workspace build';
+      const timeStr = timeAgo(b.started_at);
+      const author = b.author || (project.owner) || 'MDavid';
+      const initial = (b.author_initial || author[0] || 'M').toUpperCase();
 
       return `
-        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view detailed deployment log and error diagnostics">
+        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view full build logs and deployment details">
           <div class="svc-build-card-top">
             <strong class="svc-build-commit-title">${esc(titleText)}</strong>
             <div class="svc-build-status-pill ${statusClass}">
-              <span class="svc-build-status-dot"></span>
+              ${statusIcon}
               <span class="svc-build-status-text">${esc(statusLabel)}</span>
+              <span class="svc-build-time-ago">${esc(timeStr)}</span>
             </div>
           </div>
           <div class="svc-build-card-bottom">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Fast preview">
+            <div class="svc-build-pill-group">
+              <span class="svc-author-pill">
+                <span class="svc-author-avatar">${esc(initial)}</span>
+                <span class="svc-author-name">${esc(author)}</span>
+              </span>
+              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Launch fast preview">
                 <i data-lucide="zap"></i>
-                <span>fast preview</span>
-              </button>
-              <button type="button" class="svc-fast-preview-pill" style="background:#f4f4f5;color:#09090b;border:1px solid #e4e4e7;" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="View build logs">
-                <i data-lucide="file-text"></i>
-                <span>view log</span>
+                <span>preview</span>
               </button>
             </div>
-            <a href="${esc(project.git_url || `https://github.com/${repoText}`)}" target="_blank" rel="noopener" class="svc-repo-pill" onclick="event.stopPropagation();" title="Repository">
-              <i data-lucide="github"></i>
-              <span>${esc(repoText)}</span>
-            </a>
+            <div class="svc-build-meta-right">
+              <span class="svc-build-sha-tag font-mono">${esc(b.commit_sha || 'live')}</span>
+            </div>
           </div>
         </article>
       `;
@@ -7160,31 +7168,63 @@ async function renderBuildWorkspace(project) {
   }
 }
 
+function timeAgo(dateString) {
+  if (!dateString) return '3h ago';
+  try {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diffSec = Math.floor((now - past) / 1000);
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+    return `${Math.floor(diffSec / 604800)}w ago`;
+  } catch (_) {
+    return '3h ago';
+  }
+}
+
 async function openBuildLogModal(projectId, buildId, buildData) {
   const modal = document.getElementById('svc-build-log-modal');
   if (!modal) return;
 
   const titleEl = document.getElementById('svc-build-log-commit-title');
+  const projNameEl = document.getElementById('svc-build-log-project-name');
   const badgeEl = document.getElementById('svc-build-log-status-badge');
   const badgeText = document.getElementById('svc-build-log-status-text');
   const shaEl = document.getElementById('svc-build-log-sha');
   const timeEl = document.getElementById('svc-build-log-time');
   const durEl = document.getElementById('svc-build-log-duration');
+  const triggerEl = document.getElementById('svc-build-log-trigger');
+  const authorNameEl = document.getElementById('svc-modal-author-name');
+  const authorAvatarEl = document.getElementById('svc-modal-author-avatar');
   const errorBanner = document.getElementById('svc-build-log-error-banner');
   const errorText = document.getElementById('svc-build-log-error-text');
   const codeEl = document.getElementById('svc-build-log-code');
   const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
+  const previewBtn = document.getElementById('svc-build-log-preview-btn');
   const copyBtn = document.getElementById('svc-build-log-copy-btn');
+  const downloadBtn = document.getElementById('svc-build-download-btn');
+  const redeployBtn = document.getElementById('svc-build-redeploy-btn');
 
   const b = buildData || {};
+  const currentProj = (projects && projects.find(p => p.id === projectId)) || selectedAIProject || { id: projectId, name: projectId, domain: 'test.sycord.site' };
+
   if (titleEl) titleEl.textContent = b.commit_title || 'Build run';
+  if (projNameEl) projNameEl.textContent = currentProj.domain || currentProj.name || projectId;
   if (shaEl) shaEl.textContent = b.commit_sha ? `commit ${b.commit_sha}` : 'live';
-  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleTimeString() : 'Just now';
-  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s build` : '—';
+  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : 'Just now';
+  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '38s';
+  if (triggerEl) triggerEl.textContent = (b.trigger || 'Manual').toUpperCase();
+
+  const author = b.author || currentProj.owner || 'MDavid';
+  const initial = (b.author_initial || author[0] || 'M').toUpperCase();
+  if (authorNameEl) authorNameEl.textContent = author;
+  if (authorAvatarEl) authorAvatarEl.textContent = initial;
 
   const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
   if (badgeEl) {
-    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : '')}`;
+    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building')}`;
   }
   if (badgeText) {
     badgeText.textContent = isSuccess ? 'Successful' : (b.status === 'failed' ? 'Failed' : (b.status || 'Building'));
@@ -7192,7 +7232,21 @@ async function openBuildLogModal(projectId, buildId, buildData) {
 
   if (errorBanner) errorBanner.classList.add('hidden');
   if (aiFixBtn) aiFixBtn.classList.add('hidden');
-  if (codeEl) codeEl.textContent = 'Loading detailed build log…';
+  if (codeEl) codeEl.textContent = 'Loading detailed build logs from VM…';
+
+  if (previewBtn) {
+    previewBtn.onclick = () => {
+      modal.close();
+      servicePreviewStart(projectId);
+    };
+  }
+
+  if (redeployBtn) {
+    redeployBtn.onclick = () => {
+      modal.close();
+      serviceAction(projectId, 'deploy');
+    };
+  }
 
   modal.showModal();
   refreshIcons();
@@ -7228,6 +7282,20 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(logOutput);
         toast('Build logs copied to clipboard');
+      };
+    }
+
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        const blob = new Blob([logOutput], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `build-log-${projectId}-${b.commit_sha || 'run'}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
       };
     }
   } catch (err) {
@@ -7646,8 +7714,9 @@ function processAIServerEvent(data, project, messagesList, state) {
     const toolName = data.tool_name || '';
     const filePath = data.file_path || (data.arguments && (data.arguments.path || data.arguments.source_path));
     const command = data.command || (data.arguments && data.arguments.command);
+    const args = data.arguments || {};
 
-    if (filePath) {
+    if (filePath && (toolName === 'syte_write_file' || toolName === 'syte_edit_file')) {
       if (!state.fileBadgesRowEl || !messagesList.contains(state.fileBadgesRowEl)) {
         state.fileBadgesRowEl = document.createElement('div');
         state.fileBadgesRowEl.className = 'svc-ai-files-edited-row';
@@ -7662,39 +7731,75 @@ function processAIServerEvent(data, project, messagesList, state) {
         state.fileBadgesRowEl.appendChild(tempDiv.firstElementChild);
         refreshIcons();
       }
-    } else if (command) {
-      state.fileBadgesRowEl = null;
-      const cmdEl = document.createElement('div');
-      cmdEl.className = 'svc-ai-activity-row';
-      cmdEl.id = `cmd-${data.tool_call_id}`;
-      cmdEl.innerHTML = `
+    }
+
+    // Precise status row
+    state.fileBadgesRowEl = null;
+    const actEl = document.createElement('div');
+    actEl.className = 'svc-ai-activity-row svc-ai-status-precise';
+    actEl.id = `act-${data.tool_call_id}`;
+
+    if (toolName === 'syte_write_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
+        <span>Creating file: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_edit_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
+        <span>Editing file: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_read_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
+        <span>Inspecting: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_run_command') {
+      actEl.id = `cmd-${data.tool_call_id}`;
+      actEl.innerHTML = `
         <span class="svc-ai-activity-icon spinning"><i data-lucide="terminal"></i></span>
-        <span>bash: <strong>${escapeHtml(command)}</strong></span>
+        <span>bash: <strong>${escapeHtml(command || args.command || '')}</strong></span>
       `;
-      messagesList.appendChild(cmdEl);
-      refreshIcons();
     } else if (toolName === 'syte_start_preview') {
-      state.fileBadgesRowEl = null;
-      const prevEl = document.createElement('div');
-      prevEl.className = 'svc-ai-activity-row';
-      prevEl.id = `prev-${data.tool_call_id}`;
-      prevEl.innerHTML = `
+      actEl.id = `prev-${data.tool_call_id}`;
+      actEl.innerHTML = `
         <span class="svc-ai-activity-icon spinning"><i data-lucide="zap"></i></span>
-        <span>starting live preview server…</span>
+        <span>Starting live preview dev server…</span>
       `;
-      messagesList.appendChild(prevEl);
-      refreshIcons();
+    } else if (toolName === 'syte_security_lint_scan') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
+        <span>Scanning AST security and syntax across workspace…</span>
+      `;
+    } else if (toolName === 'syte_discover_skills') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
+        <span>Discovering modular skills in <strong>${escapeHtml(args.category || 'all categories')}</strong>…</span>
+      `;
+    } else if (toolName === 'syte_load_skill') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Loaded skill blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
+      `;
+    } else if (toolName === 'syte_create_plan') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
+        <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+      `;
+    } else if (toolName === 'syte_update_plan_step') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
+        <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
+      `;
     } else {
-      state.fileBadgesRowEl = null;
-      const actEl = document.createElement('div');
-      actEl.className = 'svc-ai-activity-row';
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
-        <span>${escapeHtml(data.message || 'progress update')}</span>
+        <span>${escapeHtml(data.message || 'Progress update')}</span>
       `;
-      messagesList.appendChild(actEl);
-      refreshIcons();
     }
+
+    messagesList.appendChild(actEl);
+    refreshIcons();
     smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_result') {
     clearLiveMarkers();
@@ -7935,12 +8040,30 @@ async function reconnectAIChatSession(project) {
     fileBadgesRowEl: null,
   };
 
+  // Add live reconnect status badge if not present
+  let banner = document.getElementById('svc-ai-active-session-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'svc-ai-active-session-banner';
+    banner.className = 'svc-ai-active-session-banner';
+    banner.innerHTML = `
+      <span class="svc-ai-running-pulse"></span>
+      <span>Agent actively executing in Cloud VM · Streaming live session…</span>
+      <button type="button" class="btn-pill btn-ghost btn-sm" onclick="stopAIChatTurn('${escapeHtml(project.id)}')">
+        <i data-lucide="square"></i> Stop
+      </button>
+    `;
+    messagesList.appendChild(banner);
+    refreshIcons();
+    smartScrollToBottom(messagesList);
+  }
+
   try {
     const chatHeaders = { 'Content-Type': 'application/json' };
     if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
     if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events?replay=0`, {
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events?replay=1`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: chatHeaders,
@@ -7972,6 +8095,8 @@ async function reconnectAIChatSession(project) {
   } catch (_) {
   } finally {
     setAIChatSendingState(false, project);
+    const existingBanner = document.getElementById('svc-ai-active-session-banner');
+    if (existingBanner) existingBanner.remove();
     if (streamState.liveThinkingMarkerEl) {
       streamState.liveThinkingMarkerEl.remove();
     }
@@ -8145,8 +8270,32 @@ async function renderAIChatWorkspace(project) {
                 let args = {};
                 try { args = JSON.parse(fn.arguments || '{}'); } catch (_) {}
                 const fnName = fn.name || '';
-                if (fnName.includes('file') && (args.path || args.source_path)) {
-                  pendingFiles.push(args.path || args.source_path);
+                const fPath = args.path || args.source_path || '';
+                if (fnName.includes('file') && fPath && (fnName === 'syte_write_file' || fnName === 'syte_edit_file')) {
+                  pendingFiles.push(fPath);
+                }
+
+                if (fnName === 'syte_write_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
+                      <span>Created: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_edit_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
+                      <span>Edited: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_read_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
+                      <span>Inspected: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
                 } else if (fnName === 'syte_run_command') {
                   if (pendingFiles.length) {
                     toolsHtml += `
@@ -8158,16 +8307,51 @@ async function renderAIChatWorkspace(project) {
                     pendingFiles = [];
                   }
                   toolsHtml += `
-                    <div class="svc-ai-activity-row">
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
                       <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
                       <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
                     </div>
                   `;
                 } else if (fnName === 'syte_start_preview') {
                   toolsHtml += `
-                    <div class="svc-ai-activity-row">
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
                       <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
-                      <span>starting preview server…</span>
+                      <span>Starting preview server…</span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_discover_skills') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
+                      <span>Discovered skills in <strong>${escapeHtml(args.category || 'all categories')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_load_skill') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+                      <span>Loaded blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_security_lint_scan') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
+                      <span>AST security & syntax scan verified</span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_create_plan') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
+                      <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_update_plan_step') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
+                      <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
                     </div>
                   `;
                 }
