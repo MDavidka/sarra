@@ -115,7 +115,7 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
 
 
 def repair_json_string(raw_str: str) -> str:
-    """Safely repair unclosed quotes and brackets in truncated JSON strings."""
+    """Safely repair unclosed quotes, trailing backslashes, and unclosed braces in truncated JSON strings."""
     if not raw_str or not raw_str.strip():
         return "{}"
     s = raw_str.strip()
@@ -124,18 +124,32 @@ def repair_json_string(raw_str: str) -> str:
         return s
     except Exception:
         pass
-    # If odd number of quotes, close the open string
-    if s.count('"') % 2 != 0:
-        s += '"'
-    # Count open curly braces and brackets
-    open_curly = s.count('{') - s.count('}')
-    open_square = s.count('[') - s.count(']')
-    s += (']' * max(0, open_square)) + ('}' * max(0, open_curly))
-    try:
-        json.loads(s)
-        return s
-    except Exception:
-        return raw_str
+
+    # Strip trailing backslash
+    if s.endswith("\\"):
+        s = s[:-1]
+
+    # Iteratively attempt closing open string literals and brackets
+    for suffix in ["\"}", "\"}]}", "\"}]", "}", "}]", "\"}]}}", "\"}}}"]:
+        candidate = s + suffix
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            pass
+
+    # If simple suffix fails, trim trailing characters back to the last valid token
+    for cut in range(1, min(len(s), 300)):
+        sub = s[:-cut].rstrip().rstrip("\\")
+        for suffix in ["\"}", "}", "\"]}", "\"]"]:
+            candidate = sub + suffix
+            try:
+                json.loads(candidate)
+                return candidate
+            except Exception:
+                pass
+
+    return json.dumps({"raw_content": raw_str[:200]})
 
 
 def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -166,12 +180,13 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
                     if isinstance(raw_args, dict):
                         valid_args_str = json.dumps(raw_args)
                     elif isinstance(raw_args, str):
-                        try:
-                            json.loads(raw_args)
-                            valid_args_str = raw_args
-                        except Exception:
-                            valid_args_str = repair_json_string(raw_args)
+                        valid_args_str = repair_json_string(raw_args)
                     else:
+                        valid_args_str = "{}"
+
+                    try:
+                        json.loads(valid_args_str)
+                    except Exception:
                         valid_args_str = "{}"
 
                     valid_tcs.append({
@@ -211,7 +226,15 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
             "content": json.dumps({"ok": True, "message": "Command executed successfully."}),
         })
 
+    # Ensure the conversation does not begin with an orphan tool message
+    start_idx = 0
+    if sanitized and sanitized[0]["role"] == "system":
+        start_idx = 1
+    while start_idx < len(sanitized) and sanitized[start_idx]["role"] == "tool":
+        sanitized.pop(start_idx)
+
     return sanitized
+
 
 
 class UnifiedAIClient:
