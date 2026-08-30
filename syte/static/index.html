@@ -1646,12 +1646,98 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form" data-settings-panel="github" id="github-tracking-card">
+            <div class="projects-card panel-form" data-settings-panel="github" id="github-oauth-card">
               <div class="projects-title-block mb">
                 <i data-lucide="github" class="projects-icon"></i>
                 <div>
-                  <h1>GitHub Credentials &amp; Git Connection</h1>
-                  <p class="settings-card-subtitle">Connect credentials to clone repositories, track pull requests, and deploy updates.</p>
+                  <h1>GitHub App &amp; 1-Click Connect</h1>
+                  <p class="settings-card-subtitle">Connect your GitHub App credentials to display your user avatar and deploy repositories in one click.</p>
+                </div>
+              </div>
+              <div class="form-inner">
+                <!-- Connected User Profile / 1-Click Status -->
+                <div id="settings-github-account-banner" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 16px;">
+                  <div id="settings-github-not-connected" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div>
+                      <strong style="font-size: 0.9rem;">No GitHub Account Connected</strong>
+                      <p class="hint" style="margin: 3px 0 0;">Save your GitHub App credentials below and click Connect to authorize repository access.</p>
+                    </div>
+                    <button type="button" class="btn-pill btn-primary btn-sm" id="settings-github-connect-btn">
+                      <i data-lucide="github"></i><span>Connect GitHub</span>
+                    </button>
+                  </div>
+                  <div id="settings-github-connected" class="hidden" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <img id="settings-github-avatar" src="/static/syte-logo.png" alt="User Avatar" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--border); object-fit: cover;">
+                      <div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                          <strong id="settings-github-login" style="font-size: 0.95rem;">@user</strong>
+                          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e;"></span>
+                          <span style="font-size: 0.75rem; color: #16a34a; font-weight: 600;">Connected</span>
+                        </div>
+                        <p class="hint" id="settings-github-scopes-hint" style="margin: 2px 0 0;">1-Click deployment active</p>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="settings-github-refresh-repos-btn" title="Refresh repositories">
+                        <i data-lucide="refresh-cw"></i><span>Refresh Repos</span>
+                      </button>
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="settings-github-disconnect-btn">
+                        <i data-lucide="unlink"></i><span>Disconnect</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 1-Click Repositories List (When Connected) -->
+                <div id="settings-github-repos-container" class="hidden" style="margin-bottom: 20px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <label style="font-weight: 600; font-size: 0.85rem;">Your Repositories (1-Click Deploy)</label>
+                    <input type="text" id="settings-github-repo-filter" placeholder="Filter repositories…" style="max-width: 220px; font-size: 0.78rem; padding: 4px 8px;">
+                  </div>
+                  <div id="settings-github-repos-list" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+                    <p class="hint">Loading repositories…</p>
+                  </div>
+                </div>
+
+                <!-- GitHub App Credentials Form -->
+                <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+                  <h3 style="font-size: 0.88rem; margin-bottom: 10px; color: var(--text);">GitHub OAuth / App Credentials</h3>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="settings-github-client-id">Client ID (Public)</label>
+                      <input type="text" id="settings-github-client-id" placeholder="e.g. Iv1.1234567890abcdef" autocomplete="off">
+                      <span class="hint">Public client identifier from your GitHub OAuth/App.</span>
+                    </div>
+                    <div class="form-group">
+                      <label for="settings-github-client-secret">Client Secret (Secret Token)</label>
+                      <input type="password" id="settings-github-client-secret" placeholder="Enter secret token to configure" autocomplete="off">
+                      <span class="hint" id="settings-github-secret-status">Secret is not configured.</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-github-callback-url">Authorization Callback URL (Redirect URI)</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="text" id="settings-github-callback-url" readonly style="font-family: monospace; font-size: 0.78rem; background: var(--bg-input);" value="Loading…">
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="copy-github-callback-btn">
+                        <i data-lucide="copy"></i><span>Copy</span>
+                      </button>
+                    </div>
+                    <span class="hint">Add this exact URL into your GitHub App or OAuth App settings.</span>
+                  </div>
+                  <div class="form-actions">
+                    <button type="button" class="btn-pill btn-primary" id="save-github-app-btn">Save App Credentials</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form" data-settings-panel="github" id="github-tracking-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="git-pull-request" class="projects-icon"></i>
+                <div>
+                  <h1>Personal Access Token &amp; Tracking</h1>
+                  <p class="settings-card-subtitle">Optional Personal Access Token (PAT) for direct CI checks, PR tracking, and private updates.</p>
                 </div>
               </div>
               <div class="form-inner">
@@ -1668,9 +1754,9 @@
                   </div>
                 </div>
                 <div class="form-actions settings-git-actions">
-                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Credentials</button>
+                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save PAT &amp; Repo</button>
                   <button type="button" class="btn-pill btn-ghost" id="test-github-conn-btn">
-                    <i data-lucide="shield-check"></i><span>Test Connection</span>
+                    <i data-lucide="shield-check"></i><span>Test Token</span>
                   </button>
                   <button type="button" class="btn-pill btn-ghost" id="refresh-github-tracking-btn">
                     <i data-lucide="refresh-cw"></i><span>Refresh Tracking</span>

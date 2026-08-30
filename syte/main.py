@@ -355,6 +355,9 @@ class SettingsRequest(BaseModel):
 class GitHubSettingsRequest(BaseModel):
     repo: str | None = None
     token: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    encryption_key: str | None = None
 
 
 class GitHubTestRequest(BaseModel):
@@ -854,17 +857,29 @@ async def save_settings(body: SettingsRequest):
 
 @app.get("/api/settings/github")
 async def api_github_settings(
+    request: Request,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Return GitHub tracking configuration without exposing the token."""
+    """Return GitHub tracking and OAuth App configuration."""
     from syte.github_prs import resolve_token
+    from syte.github_oauth import github_oauth_configured, connection_summary
 
     token, source = await resolve_token()
+    oauth_client_id = (await get_setting("github_oauth_client_id", "")).strip() or settings.github_oauth_client_id
+    oauth_has_secret = bool((await get_setting("github_oauth_client_secret", "")).strip() or settings.github_oauth_client_secret)
+    callback_url = await _github_callback_url(request)
+    account_summary = await connection_summary(str(_operator["id"]))
+
     return {
         "ok": True,
         "repo": (await get_setting("github_repo", "")).strip(),
         "token_configured": bool(token),
         "token_source": source,
+        "oauth_client_id": oauth_client_id,
+        "oauth_configured": await github_oauth_configured(),
+        "oauth_has_secret": oauth_has_secret,
+        "callback_url": callback_url,
+        "connection": account_summary,
     }
 
 
@@ -873,25 +888,60 @@ async def api_save_github_settings(
     body: GitHubSettingsRequest,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Save the repository/token used by the web Git and PR tracker."""
+    """Save the repository, token, or GitHub App OAuth credentials."""
+    from cryptography.fernet import Fernet
     from syte.update_source import parse_github_repo
 
-    if body.repo is None and body.token is None:
-        raise HTTPException(400, "Provide a repository or token to update.")
-
     messages: list[str] = []
+
+    # OAuth App credentials
+    if body.client_id is not None or body.client_secret is not None or body.encryption_key is not None:
+        if body.client_id is not None:
+            client_id = body.client_id.strip()
+            await set_setting("github_oauth_client_id", client_id)
+            messages.append(f"GitHub App Client ID {'set' if client_id else 'cleared'}.")
+        if body.client_secret is not None:
+            client_secret = body.client_secret.strip()
+            if client_secret:
+                await set_setting("github_oauth_client_secret", client_secret)
+                messages.append("GitHub App Client Secret saved.")
+            else:
+                await set_setting("github_oauth_client_secret", "")
+                messages.append("GitHub App Client Secret cleared.")
+        if body.encryption_key is not None and body.encryption_key.strip():
+            try:
+                Fernet(body.encryption_key.strip().encode("utf-8"))
+                await set_setting("oauth_encryption_key", body.encryption_key.strip())
+                messages.append("OAuth encryption key updated.")
+            except Exception as exc:
+                raise HTTPException(422, "Use a valid Fernet encryption key.") from exc
+        else:
+            existing_key = (await get_setting("oauth_encryption_key", "")).strip() or settings.oauth_encryption_key
+            if not existing_key and (body.client_id or body.client_secret):
+                new_key = Fernet.generate_key().decode("utf-8")
+                await set_setting("oauth_encryption_key", new_key)
+
+    # Personal Access Token & Repo Tracking
     if body.repo is not None:
         raw_repo = body.repo.strip()
-        repo = parse_github_repo(raw_repo) or raw_repo.strip("/")
-        parts = repo.split("/") if repo else []
-        if len(parts) != 2 or any(not part or any(char.isspace() for char in part) for part in parts):
-            raise HTTPException(400, "GitHub repository must be owner/repo or a GitHub URL.")
-        await set_setting("github_repo", repo)
-        messages.append(f"GitHub repository set to {repo}.")
+        if raw_repo:
+            repo = parse_github_repo(raw_repo) or raw_repo.strip("/")
+            parts = repo.split("/") if repo else []
+            if len(parts) != 2 or any(not part or any(char.isspace() for char in part) for part in parts):
+                raise HTTPException(400, "GitHub repository must be owner/repo or a GitHub URL.")
+            await set_setting("github_repo", repo)
+            messages.append(f"Tracked GitHub repository set to {repo}.")
+        else:
+            await set_setting("github_repo", "")
+            messages.append("Tracked GitHub repository cleared.")
     if body.token is not None:
         token = body.token.strip()
         await set_setting("github_token", token)
         messages.append("GitHub token saved." if token else "GitHub token cleared.")
+
+    if not messages:
+        raise HTTPException(400, "Provide credentials or repository settings to update.")
+
     return {"ok": True, "messages": messages}
 
 

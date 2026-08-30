@@ -3302,7 +3302,7 @@ function setSettingsMiniTab(tab = 'general') {
   const descriptions = {
     general: 'Server, domains, and preview access',
     git: 'System updates, installed version, and release channels',
-    github: 'Configure GitHub personal access tokens and Git connection credentials',
+    github: 'Configure GitHub App credentials, 1-click connect, and Git tokens',
     advanced: 'AI and feature controls',
   };
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
@@ -3316,7 +3316,99 @@ function setSettingsMiniTab(tab = 'general') {
   const hint = document.getElementById('settings-tab-hint');
   if (hint) hint.textContent = descriptions[next];
   try { localStorage.setItem('syte_settings_tab', next); } catch { /* private browsing */ }
-  if (next === 'git' || next === 'github') void loadGitTracking();
+  if (next === 'git' || next === 'github') {
+    void loadGitTracking();
+    if (next === 'github') void loadGithubSettingsTab();
+  }
+  refreshIcons();
+}
+
+let settingsGithubRepos = [];
+
+async function loadGithubSettingsTab() {
+  if (!await operatorAuthenticated()) return;
+  try {
+    const data = await api('/settings/github');
+    const clientIdInput = document.getElementById('settings-github-client-id');
+    const secretInput = document.getElementById('settings-github-client-secret');
+    const secretStatus = document.getElementById('settings-github-secret-status');
+    const callbackInput = document.getElementById('settings-github-callback-url');
+    const connectBtn = document.getElementById('settings-github-connect-btn');
+    const notConnectedBox = document.getElementById('settings-github-not-connected');
+    const connectedBox = document.getElementById('settings-github-connected');
+    const avatar = document.getElementById('settings-github-avatar');
+    const login = document.getElementById('settings-github-login');
+    const scopesHint = document.getElementById('settings-github-scopes-hint');
+    const reposContainer = document.getElementById('settings-github-repos-container');
+
+    if (clientIdInput) clientIdInput.value = data.oauth_client_id || '';
+    if (secretInput) secretInput.placeholder = data.oauth_has_secret ? 'secret configured — enter new value to replace' : 'Enter secret token to configure';
+    if (secretStatus) secretStatus.textContent = data.oauth_has_secret ? 'Secret token is configured and encrypted.' : 'Secret token is not configured.';
+    if (callbackInput && data.callback_url) callbackInput.value = data.callback_url;
+    if (connectBtn) connectBtn.disabled = !data.oauth_configured;
+
+    const conn = data.connection || {};
+    if (conn.connected) {
+      if (notConnectedBox) notConnectedBox.classList.add('hidden');
+      if (connectedBox) connectedBox.classList.remove('hidden');
+      if (avatar) avatar.src = conn.avatar_url || '/static/syte-logo.png';
+      if (login) login.textContent = conn.login ? `@${conn.login}` : '@user';
+      if (scopesHint) scopesHint.textContent = conn.scopes ? `Scopes: ${conn.scopes} · 1-Click deploy active` : '1-Click deploy active';
+      if (reposContainer) reposContainer.classList.remove('hidden');
+      await loadSettingsGithubRepositories();
+    } else {
+      if (notConnectedBox) notConnectedBox.classList.remove('hidden');
+      if (connectedBox) connectedBox.classList.add('hidden');
+      if (reposContainer) reposContainer.classList.add('hidden');
+    }
+  } catch (err) {
+    console.error('Failed to load GitHub settings tab:', err);
+  }
+}
+
+async function loadSettingsGithubRepositories() {
+  const list = document.getElementById('settings-github-repos-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading repositories from GitHub…</p>';
+  try {
+    const res = await api('/projects/git/github/repositories');
+    settingsGithubRepos = res.repositories || [];
+    renderSettingsGithubRepositories();
+  } catch (err) {
+    list.innerHTML = `<p class="hint" style="color:#ef4444;">Could not load repositories: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderSettingsGithubRepositories() {
+  const list = document.getElementById('settings-github-repos-list');
+  if (!list) return;
+  const filter = (document.getElementById('settings-github-repo-filter')?.value || '').toLowerCase().trim();
+  const filtered = settingsGithubRepos.filter(r => (r.full_name || '').toLowerCase().includes(filter) || (r.description || '').toLowerCase().includes(filter));
+  if (!filtered.length) {
+    list.innerHTML = '<p class="hint">No matching repositories found.</p>';
+    return;
+  }
+  list.innerHTML = filtered.map(r => `
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); gap: 10px;">
+      <div style="min-width: 0; flex: 1;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <strong style="font-size: 0.85rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.full_name)}</strong>
+          ${r.private ? '<span style="font-size: 0.68rem; padding: 1px 5px; border-radius: 3px; background: rgba(239,68,68,0.1); color: #dc2626; font-weight: 500;">Private</span>' : '<span style="font-size: 0.68rem; padding: 1px 5px; border-radius: 3px; background: rgba(34,197,94,0.1); color: #16a34a; font-weight: 500;">Public</span>'}
+        </div>
+        ${r.description ? `<p style="margin: 2px 0 0; font-size: 0.73rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.description)}</p>` : ''}
+      </div>
+      <button type="button" class="btn-pill btn-primary btn-sm settings-fast-deploy" data-deploy-repo="${esc(r.full_name)}" style="font-size: 0.74rem; padding: 4px 10px;">
+        <i data-lucide="rocket"></i><span>1-Click Deploy</span>
+      </button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.settings-fast-deploy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const repo = btn.dataset.deployRepo;
+      if (repo) fastAddGithubRepository(repo);
+    });
+  });
   refreshIcons();
 }
 
@@ -10311,6 +10403,7 @@ window.addEventListener('message', (event) => {
   if (event.data.ok) {
     toast(`GitHub connected${event.data.login ? ` as ${event.data.login}` : ''}`);
     void loadGithubSourceStatus();
+    void loadGithubSettingsTab();
   } else if (event.data.message) {
     toast(event.data.message);
   }
@@ -11187,6 +11280,51 @@ document.getElementById('test-github-conn-btn')?.addEventListener('click', async
     }
   }
 });
+document.getElementById('save-github-app-btn')?.addEventListener('click', async () => {
+  const clientId = document.getElementById('settings-github-client-id')?.value.trim() || '';
+  const clientSecret = document.getElementById('settings-github-client-secret')?.value.trim() || '';
+  if (!await operatorAuthenticated()) {
+    showLoginScreen('settings');
+    return;
+  }
+  const button = document.getElementById('save-github-app-btn');
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+  try {
+    const body = { client_id: clientId };
+    if (clientSecret) body.client_secret = clientSecret;
+    const result = await api('/settings/github', { method: 'PUT', body: JSON.stringify(body) });
+    toast((result.messages || []).join(' ') || 'GitHub App credentials saved');
+    if (clientSecret) document.getElementById('settings-github-client-secret').value = '';
+    await loadGithubSettingsTab();
+    await loadGithubSourceStatus();
+  } catch (error) {
+    toast(`Saving App credentials failed: ${error.message}`);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Save App Credentials'; }
+  }
+});
+document.getElementById('copy-github-callback-btn')?.addEventListener('click', () => {
+  const url = document.getElementById('settings-github-callback-url')?.value;
+  if (url) {
+    navigator.clipboard?.writeText(url).then(() => toast('Callback URL copied to clipboard'));
+  }
+});
+document.getElementById('settings-github-connect-btn')?.addEventListener('click', () => {
+  const popup = window.open('about:blank', 'syte_github_oauth', 'width=620,height=720,menubar=no,toolbar=no,location=no');
+  connectGithubSource(popup);
+});
+document.getElementById('settings-github-disconnect-btn')?.addEventListener('click', async () => {
+  if (!confirm('Disconnect GitHub account?')) return;
+  await disconnectGithubSource();
+  await loadGithubSettingsTab();
+});
+document.getElementById('settings-github-refresh-repos-btn')?.addEventListener('click', () => {
+  void loadSettingsGithubRepositories();
+});
+document.getElementById('settings-github-repo-filter')?.addEventListener('input', () => {
+  renderSettingsGithubRepositories();
+});
+
 document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());
 restoreSettingsMiniTab();
 
