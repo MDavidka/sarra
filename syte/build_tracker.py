@@ -85,10 +85,11 @@ async def track_project_builds(project_id: str, limit: int = 20) -> dict[str, An
     )
 
     build_items = []
+    author_name = git_info.get("author") or project.get("owner") or "MDavid"
     if runs:
         for idx, run in enumerate(runs):
             r_status = run.get("status") or "succeeded"
-            r_label = "succesfull" if r_status in {"succeeded", "ready"} else r_status
+            r_label = "successful" if r_status in {"succeeded", "ready"} else r_status
             r_sha = str(run.get("commit_sha") or current_commit_sha)[:7]
             r_title = run.get("commit_message") or (current_commit_title if idx == 0 else f"build: update dependencies and deploy #{idx + 1}")
             build_items.append({
@@ -99,21 +100,31 @@ async def track_project_builds(project_id: str, limit: int = 20) -> dict[str, An
                 "commit_sha": r_sha,
                 "branch": project.get("branch") or git_info.get("branch") or "main",
                 "repo": repo_slug,
+                "author": author_name,
+                "author_initial": (author_name[:1] or "M").upper(),
+                "trigger": run.get("trigger") or "manual",
                 "started_at": run.get("started_at"),
+                "finished_at": run.get("finished_at"),
                 "duration_ms": run.get("duration_ms") or 77000,
+                "error": run.get("error"),
                 "preview_url": project.get("preview_url") or project.get("url") or "#",
             })
     else:
         build_items.append({
             "id": "build-live",
             "status": "succeeded",
-            "status_label": "succesfull",
+            "status_label": "successful",
             "commit_title": current_commit_title,
             "commit_sha": str(current_commit_sha)[:7],
             "branch": project.get("branch") or git_info.get("branch") or "main",
             "repo": repo_slug,
+            "author": author_name,
+            "author_initial": (author_name[:1] or "M").upper(),
+            "trigger": "manual",
             "started_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": None,
             "duration_ms": 77000,
+            "error": None,
             "preview_url": project.get("preview_url") or project.get("url") or "#",
         })
 

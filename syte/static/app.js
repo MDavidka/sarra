@@ -7122,34 +7122,42 @@ async function renderBuildWorkspace(project) {
       const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
       const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
       const statusLabel = isSuccess ? 'successful' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
+      const statusIcon = isSuccess
+        ? '<span class="svc-status-marker-dot marker-green"></span>'
+        : (b.status === 'failed'
+            ? '<span class="svc-status-marker-square marker-red"></span>'
+            : '<span class="svc-status-marker-dot marker-amber spinning"></span>');
+      
       const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'operator/app');
-      const titleText = b.commit_title || 'deploy: latest workspace build';
-      const durationText = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '32s';
+      const titleText = b.commit_title || 'deploy: update workspace build';
+      const timeStr = timeAgo(b.started_at);
+      const author = b.author || (project.owner) || 'MDavid';
+      const initial = (b.author_initial || author[0] || 'M').toUpperCase();
 
       return `
-        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view detailed deployment log and error diagnostics">
+        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view full build logs and deployment details">
           <div class="svc-build-card-top">
             <strong class="svc-build-commit-title">${esc(titleText)}</strong>
             <div class="svc-build-status-pill ${statusClass}">
-              <span class="svc-build-status-dot"></span>
+              ${statusIcon}
               <span class="svc-build-status-text">${esc(statusLabel)}</span>
+              <span class="svc-build-time-ago">${esc(timeStr)}</span>
             </div>
           </div>
           <div class="svc-build-card-bottom">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Fast preview">
+            <div class="svc-build-pill-group">
+              <span class="svc-author-pill">
+                <span class="svc-author-avatar">${esc(initial)}</span>
+                <span class="svc-author-name">${esc(author)}</span>
+              </span>
+              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Launch fast preview">
                 <i data-lucide="zap"></i>
-                <span>fast preview</span>
-              </button>
-              <button type="button" class="svc-fast-preview-pill" style="background:#f4f4f5;color:#09090b;border:1px solid #e4e4e7;" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="View build logs">
-                <i data-lucide="file-text"></i>
-                <span>view log</span>
+                <span>preview</span>
               </button>
             </div>
-            <a href="${esc(project.git_url || `https://github.com/${repoText}`)}" target="_blank" rel="noopener" class="svc-repo-pill" onclick="event.stopPropagation();" title="Repository">
-              <i data-lucide="github"></i>
-              <span>${esc(repoText)}</span>
-            </a>
+            <div class="svc-build-meta-right">
+              <span class="svc-build-sha-tag font-mono">${esc(b.commit_sha || 'live')}</span>
+            </div>
           </div>
         </article>
       `;
@@ -7160,31 +7168,63 @@ async function renderBuildWorkspace(project) {
   }
 }
 
+function timeAgo(dateString) {
+  if (!dateString) return '3h ago';
+  try {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diffSec = Math.floor((now - past) / 1000);
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+    return `${Math.floor(diffSec / 604800)}w ago`;
+  } catch (_) {
+    return '3h ago';
+  }
+}
+
 async function openBuildLogModal(projectId, buildId, buildData) {
   const modal = document.getElementById('svc-build-log-modal');
   if (!modal) return;
 
   const titleEl = document.getElementById('svc-build-log-commit-title');
+  const projNameEl = document.getElementById('svc-build-log-project-name');
   const badgeEl = document.getElementById('svc-build-log-status-badge');
   const badgeText = document.getElementById('svc-build-log-status-text');
   const shaEl = document.getElementById('svc-build-log-sha');
   const timeEl = document.getElementById('svc-build-log-time');
   const durEl = document.getElementById('svc-build-log-duration');
+  const triggerEl = document.getElementById('svc-build-log-trigger');
+  const authorNameEl = document.getElementById('svc-modal-author-name');
+  const authorAvatarEl = document.getElementById('svc-modal-author-avatar');
   const errorBanner = document.getElementById('svc-build-log-error-banner');
   const errorText = document.getElementById('svc-build-log-error-text');
   const codeEl = document.getElementById('svc-build-log-code');
   const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
+  const previewBtn = document.getElementById('svc-build-log-preview-btn');
   const copyBtn = document.getElementById('svc-build-log-copy-btn');
+  const downloadBtn = document.getElementById('svc-build-download-btn');
+  const redeployBtn = document.getElementById('svc-build-redeploy-btn');
 
   const b = buildData || {};
+  const currentProj = (projects && projects.find(p => p.id === projectId)) || selectedAIProject || { id: projectId, name: projectId, domain: 'test.sycord.site' };
+
   if (titleEl) titleEl.textContent = b.commit_title || 'Build run';
+  if (projNameEl) projNameEl.textContent = currentProj.domain || currentProj.name || projectId;
   if (shaEl) shaEl.textContent = b.commit_sha ? `commit ${b.commit_sha}` : 'live';
-  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleTimeString() : 'Just now';
-  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s build` : '—';
+  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : 'Just now';
+  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '38s';
+  if (triggerEl) triggerEl.textContent = (b.trigger || 'Manual').toUpperCase();
+
+  const author = b.author || currentProj.owner || 'MDavid';
+  const initial = (b.author_initial || author[0] || 'M').toUpperCase();
+  if (authorNameEl) authorNameEl.textContent = author;
+  if (authorAvatarEl) authorAvatarEl.textContent = initial;
 
   const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
   if (badgeEl) {
-    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : '')}`;
+    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building')}`;
   }
   if (badgeText) {
     badgeText.textContent = isSuccess ? 'Successful' : (b.status === 'failed' ? 'Failed' : (b.status || 'Building'));
@@ -7192,7 +7232,21 @@ async function openBuildLogModal(projectId, buildId, buildData) {
 
   if (errorBanner) errorBanner.classList.add('hidden');
   if (aiFixBtn) aiFixBtn.classList.add('hidden');
-  if (codeEl) codeEl.textContent = 'Loading detailed build log…';
+  if (codeEl) codeEl.textContent = 'Loading detailed build logs from VM…';
+
+  if (previewBtn) {
+    previewBtn.onclick = () => {
+      modal.close();
+      servicePreviewStart(projectId);
+    };
+  }
+
+  if (redeployBtn) {
+    redeployBtn.onclick = () => {
+      modal.close();
+      serviceAction(projectId, 'deploy');
+    };
+  }
 
   modal.showModal();
   refreshIcons();
@@ -7228,6 +7282,20 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(logOutput);
         toast('Build logs copied to clipboard');
+      };
+    }
+
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        const blob = new Blob([logOutput], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `build-log-${projectId}-${b.commit_sha || 'run'}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
       };
     }
   } catch (err) {

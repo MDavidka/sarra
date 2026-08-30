@@ -1998,9 +1998,10 @@
     </div>
   </dialog>
 
-  <!-- Deployment & Build Log Inspector Modal -->
+  <!-- Deployment & Build Log Inspector Modal (Optimized for Phone and PC) -->
   <dialog id="svc-build-log-modal" class="svc-build-log-modal">
     <div class="svc-build-log-modal-card">
+      <div class="svc-modal-mobile-handle"></div>
       <div class="svc-build-log-modal-header">
         <div class="svc-build-log-modal-identity">
           <span class="svc-build-log-badge" id="svc-build-log-status-badge">
@@ -2009,14 +2010,13 @@
           </span>
           <div class="svc-build-log-meta-group">
             <h3 id="svc-build-log-commit-title">Commit title</h3>
-            <div class="svc-build-log-meta-row">
-              <span id="svc-build-log-sha" class="svc-build-log-sha font-mono">—</span>
-              <span id="svc-build-log-time" class="svc-build-log-time">—</span>
-              <span id="svc-build-log-duration" class="svc-build-log-duration">—</span>
-            </div>
+            <span class="svc-build-project-sub" id="svc-build-log-project-name">test.sycord.site</span>
           </div>
         </div>
         <div class="svc-build-log-modal-actions">
+          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-preview-btn" title="Open fast preview">
+            <i data-lucide="zap"></i><span>Preview</span>
+          </button>
           <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-copy-btn" title="Copy build logs">
             <i data-lucide="copy"></i><span>Copy Logs</span>
           </button>
@@ -2029,18 +2029,57 @@
         </div>
       </div>
 
+      <!-- Error Diagnostics Callout Banner -->
       <div class="svc-build-log-error-banner hidden" id="svc-build-log-error-banner">
         <i data-lucide="alert-triangle"></i>
         <div class="svc-build-error-text">
-          <strong>Build / Deployment Failed:</strong>
+          <strong>Deployment Error:</strong>
           <span id="svc-build-log-error-text"></span>
         </div>
       </div>
 
+      <!-- Detail Info Bar (PC 4-col, Phone 2-col) -->
+      <div class="svc-build-meta-grid">
+        <div class="svc-meta-item">
+          <span class="svc-meta-label">Author</span>
+          <div class="svc-meta-value">
+            <span class="svc-author-avatar-sm" id="svc-modal-author-avatar">M</span>
+            <span id="svc-modal-author-name">MDavid</span>
+          </div>
+        </div>
+        <div class="svc-meta-item">
+          <span class="svc-meta-label">Commit SHA</span>
+          <span class="svc-meta-value font-mono" id="svc-build-log-sha">—</span>
+        </div>
+        <div class="svc-meta-item">
+          <span class="svc-meta-label">Duration</span>
+          <span class="svc-meta-value" id="svc-build-log-duration">—</span>
+        </div>
+        <div class="svc-meta-item">
+          <span class="svc-meta-label">Trigger</span>
+          <span class="svc-meta-value" id="svc-build-log-trigger">Manual</span>
+        </div>
+      </div>
+
+      <!-- Log Terminal Body -->
       <div class="svc-build-log-modal-body">
+        <div class="svc-build-terminal-head">
+          <span class="svc-terminal-title"><i data-lucide="terminal"></i> Build stdout & stderr</span>
+          <span class="svc-terminal-time" id="svc-build-log-time">—</span>
+        </div>
         <div class="svc-build-log-terminal" id="svc-build-log-terminal">
           <pre><code id="svc-build-log-code">Loading deployment build logs…</code></pre>
         </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="svc-build-modal-footer">
+        <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-download-btn">
+          <i data-lucide="download"></i><span>Download Log</span>
+        </button>
+        <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" id="svc-build-redeploy-btn">
+          <i data-lucide="refresh-cw"></i><span>Re-trigger Build</span>
+        </button>
       </div>
     </div>
   </dialog>
