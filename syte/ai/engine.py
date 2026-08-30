@@ -202,6 +202,7 @@ class AIAgentEngine:
             "4. **Write/Edit**: Create or modify code files (`syte_write_file`, `syte_edit_file`).\n"
             "5. **Update Step Status**: Keep the user updated by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
             "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run terminal builds (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
+            "   - **PREVIEW TESTING DIRECTIVE**: ALWAYS use `syte_start_preview` to test your changes against the live preview server during development. DO NOT trigger real production deployments (`syte_create_deployment`) for testing. Production deployments are reserved only for when explicitly requested by the user.\n"
             "7. **Deliver**: Provide a concise summary of what was accomplished only after all steps are done.\n"
             "------------------------------------------------------------------------\n"
         )
@@ -227,8 +228,8 @@ class AIAgentEngine:
 
         tools_schema = get_ai_tools_schema() if ai_settings.get("tools_enabled") != "none" else None
 
-        # 6. Autonomous execution loop (up to 60 tool turns for continuous full-task completion)
-        max_turns = 60
+        # 6. Autonomous execution loop (up to 120 tool turns for continuous full-task completion)
+        max_turns = 120
         current_turn = 0
         final_response_text = ""
 

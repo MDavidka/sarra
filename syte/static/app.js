@@ -7121,12 +7121,13 @@ async function renderBuildWorkspace(project) {
     target.innerHTML = builds.map((b) => {
       const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
       const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
-      const statusLabel = isSuccess ? 'succesfull' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
-      const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'Mdavidka/syra');
-      const titleText = b.commit_title || 'fix(security):resolve conflicts';
+      const statusLabel = isSuccess ? 'successful' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
+      const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'operator/app');
+      const titleText = b.commit_title || 'deploy: latest workspace build';
+      const durationText = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '32s';
 
       return `
-        <article class="svc-build-track-card">
+        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view detailed deployment log and error diagnostics">
           <div class="svc-build-card-top">
             <strong class="svc-build-commit-title">${esc(titleText)}</strong>
             <div class="svc-build-status-pill ${statusClass}">
@@ -7135,11 +7136,17 @@ async function renderBuildWorkspace(project) {
             </div>
           </div>
           <div class="svc-build-card-bottom">
-            <button type="button" class="svc-fast-preview-pill" onclick="servicePreviewStart('${project.id}')" title="Fast preview">
-              <i data-lucide="zap"></i>
-              <span>fast preview</span>
-            </button>
-            <a href="${esc(project.git_url || `https://github.com/${repoText}`)}" target="_blank" rel="noopener" class="svc-repo-pill" title="Repository">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Fast preview">
+                <i data-lucide="zap"></i>
+                <span>fast preview</span>
+              </button>
+              <button type="button" class="svc-fast-preview-pill" style="background:#f4f4f5;color:#09090b;border:1px solid #e4e4e7;" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="View build logs">
+                <i data-lucide="file-text"></i>
+                <span>view log</span>
+              </button>
+            </div>
+            <a href="${esc(project.git_url || `https://github.com/${repoText}`)}" target="_blank" rel="noopener" class="svc-repo-pill" onclick="event.stopPropagation();" title="Repository">
               <i data-lucide="github"></i>
               <span>${esc(repoText)}</span>
             </a>
@@ -7150,6 +7157,81 @@ async function renderBuildWorkspace(project) {
     refreshIcons();
   } catch (err) {
     target.innerHTML = `<p class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to track builds.')}</p>`;
+  }
+}
+
+async function openBuildLogModal(projectId, buildId, buildData) {
+  const modal = document.getElementById('svc-build-log-modal');
+  if (!modal) return;
+
+  const titleEl = document.getElementById('svc-build-log-commit-title');
+  const badgeEl = document.getElementById('svc-build-log-status-badge');
+  const badgeText = document.getElementById('svc-build-log-status-text');
+  const shaEl = document.getElementById('svc-build-log-sha');
+  const timeEl = document.getElementById('svc-build-log-time');
+  const durEl = document.getElementById('svc-build-log-duration');
+  const errorBanner = document.getElementById('svc-build-log-error-banner');
+  const errorText = document.getElementById('svc-build-log-error-text');
+  const codeEl = document.getElementById('svc-build-log-code');
+  const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
+  const copyBtn = document.getElementById('svc-build-log-copy-btn');
+
+  const b = buildData || {};
+  if (titleEl) titleEl.textContent = b.commit_title || 'Build run';
+  if (shaEl) shaEl.textContent = b.commit_sha ? `commit ${b.commit_sha}` : 'live';
+  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleTimeString() : 'Just now';
+  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s build` : '—';
+
+  const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
+  if (badgeEl) {
+    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : '')}`;
+  }
+  if (badgeText) {
+    badgeText.textContent = isSuccess ? 'Successful' : (b.status === 'failed' ? 'Failed' : (b.status || 'Building'));
+  }
+
+  if (errorBanner) errorBanner.classList.add('hidden');
+  if (aiFixBtn) aiFixBtn.classList.add('hidden');
+  if (codeEl) codeEl.textContent = 'Loading detailed build log…';
+
+  modal.showModal();
+  refreshIcons();
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/logs`);
+    const logOutput = res.log || 'No log output recorded.';
+    if (codeEl) codeEl.textContent = logOutput;
+
+    if (res.error || b.status === 'failed' || res.status === 'failed') {
+      const errMsg = res.error || 'Deployment container or build command exited with failure.';
+      if (errorBanner) {
+        errorBanner.classList.remove('hidden');
+        if (errorText) errorText.textContent = errMsg;
+      }
+      if (aiFixBtn) {
+        aiFixBtn.classList.remove('hidden');
+        aiFixBtn.onclick = () => {
+          modal.close();
+          switchSvcTab('ai-builder');
+          const input = document.getElementById('svc-ai-input');
+          if (input) {
+            input.value = `/build The latest deployment failed with error: "${errMsg}". Please inspect the workspace, analyze the error line numbers, fix the issue, and verify.`;
+            input.focus();
+            const form = document.getElementById('svc-ai-form');
+            if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+          }
+        };
+      }
+    }
+
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(logOutput);
+        toast('Build logs copied to clipboard');
+      };
+    }
+  } catch (err) {
+    if (codeEl) codeEl.textContent = `Unable to fetch build log: ${err.message}`;
   }
 }
 
@@ -7486,6 +7568,11 @@ function createLiveAssistantMessageCard(messagesList) {
 function processAIServerEvent(data, project, messagesList, state) {
   const eventType = data.event;
 
+  if (eventType === 'ping') {
+    // Keepalive heartbeat from background agent task
+    return;
+  }
+
   function clearLiveMarkers() {
     if (state.liveThinkingMarkerEl) {
       state.liveThinkingMarkerEl.remove();
@@ -7820,6 +7907,10 @@ async function executeAIChatTurn(project, userText) {
       }
     }
   } catch (err) {
+    if (err && (err.name === 'AbortError' || err.message?.includes('aborted') || document.visibilityState === 'hidden')) {
+      // User refreshed or navigated away — background agent continues autonomously on the cloud VM
+      return;
+    }
     const errCard = createLiveAssistantMessageCard(messagesList);
     errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Connection error: ${escapeHtml(err.message)}</div>`;
   } finally {
@@ -9548,15 +9639,71 @@ function renderPreviewSection(p) {
 
   const actions = document.getElementById('svc-preview-actions');
   const frame = document.getElementById('svc-preview-frame');
+  const container = document.getElementById('svc-preview-frame-container');
   const placeholder = document.getElementById('svc-preview-placeholder');
   const hint = document.getElementById('svc-preview-hint');
   const domainEl = document.getElementById('svc-preview-domain');
+  const extLink = document.getElementById('svc-preview-external-link');
+  const copyBtn = document.getElementById('svc-preview-copy-btn');
+  const reloadBtn = document.getElementById('svc-preview-reload-btn');
+  const statusPill = document.getElementById('svc-preview-status-pill');
+  const statusText = document.getElementById('svc-preview-status-text');
   const logsEl = document.getElementById('svc-preview-logs');
   const logsWrap = document.getElementById('svc-preview-logs-wrap');
   if (!actions) return;
 
+  // Viewport Switcher Controls (Desktop / Tablet / Mobile)
+  const viewportBtns = document.querySelectorAll('.svc-viewport-btn');
+  viewportBtns.forEach(btn => {
+    btn.onclick = () => {
+      viewportBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const vp = btn.getAttribute('data-viewport') || 'desktop';
+      if (container) container.setAttribute('data-current-viewport', vp);
+    };
+  });
+
+  const effectiveUrl = (p.preview_running && (p.preview_domain_url || p.preview_fetch_url || p.preview_url)) || p.url || '';
   if (domainEl) {
-    domainEl.textContent = p.preview_domain || p.domain || (p.port ? `localhost:${p.port}` : 'Assigning…');
+    domainEl.textContent = effectiveUrl || p.preview_domain || p.domain || (p.port ? `localhost:${p.port}` : 'Dev server stopped');
+  }
+  if (extLink) {
+    if (effectiveUrl) {
+      extLink.href = effectiveUrl;
+      extLink.classList.remove('hidden');
+    } else {
+      extLink.classList.add('hidden');
+    }
+  }
+  if (copyBtn && effectiveUrl) {
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(effectiveUrl);
+      toast('Preview URL copied to clipboard');
+    };
+  }
+  if (reloadBtn && frame) {
+    reloadBtn.onclick = () => {
+      const currentSrc = frame.src;
+      if (currentSrc) {
+        frame.src = '';
+        setTimeout(() => { frame.src = currentSrc; }, 50);
+        toast('Preview reloaded');
+      }
+    };
+  }
+
+  const live = p.preview_running && p.preview_ready;
+  if (statusPill && statusText) {
+    if (live) {
+      statusPill.className = 'svc-preview-status-pill-badge';
+      statusText.textContent = `Dev Server Ready (Port ${p.preview_port || 4010})`;
+    } else if (p.preview_running) {
+      statusPill.className = 'svc-preview-status-pill-badge';
+      statusText.textContent = 'Starting Dev Server…';
+    } else {
+      statusPill.className = 'svc-preview-status-pill-badge is-stopped';
+      statusText.textContent = 'Dev Server Stopped';
+    }
   }
 
   const has525OrUnhealthy = p.status === 'failed' || p.preview_error || p.healthy === false || p.preview_tls_ok === false;
@@ -9568,32 +9715,26 @@ function renderPreviewSection(p) {
     if (placeholder) {
       placeholder.classList.remove('hidden');
       placeholder.innerHTML = `
-        <div class="svc-preview-404-state" style="border-color: #fca5a5; background: #fffbfb; padding: 42px 20px;">
-          <div class="svc-preview-404-icon" style="background:#fee2e2;color:#dc2626;width:48px;height:48px;">
+        <div class="svc-preview-404-state" style="border-color: #fca5a5; background: #fffbfb; padding: 36px 20px; border-radius: 12px; text-align: center;">
+          <div class="svc-preview-404-icon" style="background:#fee2e2;color:#dc2626;width:48px;height:48px;border-radius:12px;display:grid;place-items:center;margin:0 auto 12px;">
             <i data-lucide="shield-alert" style="width:24px;height:24px;"></i>
           </div>
-          <h3 class="svc-preview-404-title" style="font-size:18px;">Preview Unhealthy · Error 525</h3>
-          <p class="svc-preview-404-sub" style="max-width:380px;">SSL Handshake or Origin connection failed. The application returned an unhealthy status code. Please verify your custom domain TLS records and restart deployment.</p>
-          <div class="svc-preview-404-actions">
-            <button type="button" class="btn-pill btn-primary" onclick="serviceAction('${p.id}', 'deploy')">
-              <i data-lucide="refresh-cw"></i><span>Redeploy</span>
+          <h3 class="svc-preview-404-title" style="font-size:17px;font-weight:700;margin:0 0 6px;">Preview Unhealthy · Error 525</h3>
+          <p class="svc-preview-404-sub" style="max-width:380px;margin:0 auto 16px;font-size:12.5px;color:#71717a;">SSL Handshake or Origin connection failed. Please verify your custom domain TLS records and restart preview.</p>
+          <div class="svc-preview-404-actions" style="display:flex;justify-content:center;gap:8px;">
+            <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" onclick="servicePreviewStart('${p.id}')">
+              <i data-lucide="play"></i><span>Restart Preview</span>
             </button>
-            <button type="button" class="btn-pill btn-secondary" onclick="switchSvcTab('domains')">
+            <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" onclick="switchSvcTab('domains')">
               <i data-lucide="globe"></i><span>Check Domains & TLS</span>
-            </button>
-            <button type="button" class="btn-pill btn-ghost" onclick="servicePreviewStart('${p.id}')">
-              <i data-lucide="play"></i><span>Retry Preview</span>
             </button>
           </div>
         </div>
       `;
     }
     actions.innerHTML = `
-      <span class="shadcn-badge" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:6px 12px;font-weight:700;">
-        <i data-lucide="alert-circle" style="width:13px;height:13px;margin-right:4px;"></i> Unhealthy · Error 525
-      </span>
-      <button type="button" class="shadcn-btn shadcn-btn-default" onclick="serviceDeploy('${p.id}')">
-        <i data-lucide="refresh-cw"></i><span>Redeploy</span>
+      <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" onclick="servicePreviewStart('${p.id}')">
+        <i data-lucide="play"></i><span>Restart Preview</span>
       </button>
     `;
     if (hint) hint.textContent = 'Unhealthy runtime status detected (Error 525 SSL Handshake / Origin Fail).';
@@ -9601,17 +9742,25 @@ function renderPreviewSection(p) {
     return;
   }
 
-  const live = p.preview_running && p.preview_ready;
   const showFrame = (p.preview_running && p.preview_url) || (p.running && p.url);
   actions.innerHTML = `
-    <button type="button" class="shadcn-btn shadcn-btn-default" onclick="servicePreviewStart('${p.id}')">
-      <i data-lucide="play"></i><span>Start preview</span>
-    </button>
-    <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="servicePreviewStop('${p.id}')">
-      <i data-lucide="square"></i><span>Stop</span>
-    </button>
-    ${(p.preview_url || p.url) ? `<a class="shadcn-btn shadcn-btn-secondary" href="${esc(p.preview_url || p.url)}" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>Open</span></a>` : ''}
-    ${live ? '<span class="shadcn-badge shadcn-badge-outline" style="color:#16a34a;border-color:#bbf7d0;background:#ecfdf5;"><i data-lucide="check-circle-2" style="width:12px;height:12px;margin-right:4px;"></i> Live</span>' : ''}
+    ${p.preview_running ? `
+      <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" onclick="servicePreviewStart('${p.id}')" title="Restart dev server">
+        <i data-lucide="refresh-cw"></i><span>Restart</span>
+      </button>
+      <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" onclick="servicePreviewStop('${p.id}')" title="Stop dev server">
+        <i data-lucide="square"></i><span>Stop</span>
+      </button>
+    ` : `
+      <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" onclick="servicePreviewStart('${p.id}')">
+        <i data-lucide="play"></i><span>Start Preview</span>
+      </button>
+    `}
+    ${effectiveUrl ? `
+      <a class="shadcn-btn shadcn-btn-secondary shadcn-btn-sm" href="${esc(effectiveUrl)}" target="_blank" rel="noopener">
+        <i data-lucide="external-link"></i><span>Open Tab</span>
+      </a>
+    ` : ''}
   `;
 
   if (showFrame) {
@@ -9626,11 +9775,10 @@ function renderPreviewSection(p) {
     const urlLabel = p.preview_domain
       ? `${p.preview_domain_url || p.preview_url}`
       : p.preview_url;
-    hint.textContent = live
-      ? `Live — ${urlLabel}${p.preview_domain && p.preview_tls_ok !== false ? ' (HTTPS)' : ''}${iframeHintLine(p.iframe)}`
-      : `Connecting — ${urlLabel || `port ${p.preview_port || '…'}`}${iframeHintLine(p.iframe)}`;
-    if (p.preview_tls_hint) {
-      hint.textContent += ` — ${p.preview_tls_hint}`;
+    if (hint) {
+      hint.textContent = live
+        ? `Live — ${urlLabel}${p.preview_domain && p.preview_tls_ok !== false ? ' (HTTPS)' : ''}`
+        : `Connecting to dev server — port ${p.preview_port || 4010}…`;
     }
     logsWrap?.classList.remove('hidden');
     if (p.preview_running && !previewStream) startPreviewLogStream(p.id, logsEl);
@@ -9641,8 +9789,22 @@ function renderPreviewSection(p) {
       frame.classList.add('hidden');
       frame.removeAttribute('src');
     }
-    placeholder?.classList.remove('hidden');
-    hint.textContent = 'Fast dev server with hot reload — stays running while you use Debug Chat (auto-stops after 1 hour idle)';
+    if (placeholder) {
+      placeholder.classList.remove('hidden');
+      placeholder.innerHTML = `
+        <div class="svc-preview-placeholder-art">
+          <i data-lucide="layout-template"></i>
+        </div>
+        <h3 style="font-size:16px;font-weight:700;margin:0 0 6px;color:#09090b;">Interactive Live Preview</h3>
+        <p style="font-size:13px;color:#71717a;max-width:420px;margin:0 auto 16px;line-height:1.5;">Launch an isolated, lightning-fast development server with hot module replacement directly on the host VM.</p>
+        <div class="svc-preview-placeholder-actions">
+          <button type="button" class="shadcn-btn shadcn-btn-default" onclick="servicePreviewStart('${p.id}')">
+            <i data-lucide="play"></i><span>Start Development Server</span>
+          </button>
+        </div>
+      `;
+    }
+    if (hint) hint.textContent = 'Isolated dev server with HMR — stays running in the background';
     logsWrap?.classList.add('hidden');
     stopPreviewStream();
     stopPreviewPoll();

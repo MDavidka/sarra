@@ -11301,3 +11301,422 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #f4f4f5;
 }
 
+/* ========================================================
+   Redesigned Preview Workspace & Device Frame
+   ======================================================== */
+.svc-preview-workspace-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-preview-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e4e7;
+  background: #fafafa;
+  flex-wrap: wrap;
+}
+
+.svc-preview-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-preview-title-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-preview-status-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.svc-preview-status-pill-badge.is-stopped {
+  background: #f4f4f5;
+  color: #71717a;
+  border-color: #e4e4e7;
+}
+
+.svc-preview-status-pill-badge.is-stopped .svc-preview-status-dot {
+  background: #a1a1aa;
+}
+
+.svc-preview-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.svc-preview-subtitle {
+  margin: 0;
+  font-size: 12.5px;
+  color: #71717a;
+}
+
+.svc-preview-viewport-controls {
+  display: inline-flex;
+  align-items: center;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.svc-viewport-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.svc-viewport-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.svc-viewport-btn:hover {
+  color: #09090b;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.svc-viewport-btn.active {
+  background: #ffffff;
+  color: #09090b;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.svc-preview-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svc-preview-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e4e4e7;
+  flex-wrap: wrap;
+}
+
+.svc-preview-browser-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.svc-preview-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid #e4e4e7;
+  color: #71717a;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s;
+}
+
+.svc-preview-nav-btn:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.svc-preview-nav-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.svc-preview-address-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  padding: 4px 10px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.svc-preview-lock-icon {
+  width: 13px;
+  height: 13px;
+  color: #10b981;
+  flex-shrink: 0;
+}
+
+.svc-preview-url-text {
+  font-family: monospace;
+  font-size: 12px;
+  color: #09090b;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svc-preview-copy-url-btn,
+.svc-preview-ext-btn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.svc-preview-copy-url-btn:hover,
+.svc-preview-ext-btn:hover {
+  color: #09090b;
+}
+
+.svc-preview-copy-url-btn svg,
+.svc-preview-ext-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.svc-preview-hint-pill {
+  font-size: 11.5px;
+  color: #71717a;
+}
+
+.svc-preview-viewport-stage {
+  padding: 20px;
+  background: #f8fafc;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 540px;
+  overflow-x: auto;
+}
+
+.svc-preview-device-frame {
+  width: 100%;
+  height: 580px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-preview-device-frame[data-current-viewport="desktop"] {
+  max-width: 100%;
+}
+
+.svc-preview-device-frame[data-current-viewport="tablet"] {
+  max-width: 768px;
+}
+
+.svc-preview-device-frame[data-current-viewport="mobile"] {
+  max-width: 375px;
+}
+
+.svc-preview-device-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  flex: 1;
+}
+
+.svc-preview-placeholder-art {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: #f1f5f9;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+}
+
+.svc-preview-placeholder-art svg {
+  width: 32px;
+  height: 32px;
+  color: #64748b;
+}
+
+/* ========================================================
+   Deployment & Build Log Modal
+   ======================================================== */
+.svc-build-track-card {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.svc-build-track-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.svc-build-log-modal {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: 900px;
+  width: calc(100% - 32px);
+}
+
+.svc-build-log-modal::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.svc-build-log-modal-card {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+
+.svc-build-log-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: #27272a;
+  border-bottom: 1px solid #3f3f46;
+  flex-wrap: wrap;
+}
+
+.svc-build-log-modal-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.svc-build-log-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #18181b;
+  color: #38bdf8;
+  border: 1px solid #3f3f46;
+}
+
+.svc-build-log-badge.is-success {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.svc-build-log-badge.is-failed {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.svc-build-log-meta-group h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f4f4f5;
+  letter-spacing: -0.01em;
+}
+
+.svc-build-log-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #a1a1aa;
+}
+
+.svc-build-log-sha {
+  background: #18181b;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #38bdf8;
+}
+
+.svc-build-log-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #450a0a;
+  border-bottom: 1px solid #7f1d1d;
+  padding: 12px 20px;
+  color: #fca5a5;
+  font-size: 12.5px;
+}
+
+.svc-build-log-error-banner svg {
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.svc-build-log-modal-body {
+  padding: 0;
+  overflow: auto;
+  background: #09090b;
+  flex: 1;
+}
+
+.svc-build-log-terminal {
+  padding: 16px 20px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e4e4e7;
+}
+
+.svc-build-log-terminal pre {
+  margin: 0;
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+

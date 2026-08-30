@@ -59,14 +59,14 @@ class ProjectAISession:
                         if notes:
                             s["notes"] = notes
 
-        # Keep last 150 events in memory ring buffer
+        # Keep last 300 events in memory ring buffer
         self.event_buffer.append(event)
-        if len(self.event_buffer) > 150:
+        if len(self.event_buffer) > 300:
             self.event_buffer.pop(0)
 
         # Broadcast to active subscriber queues
         dead_subs = []
-        for q in self.subscribers:
+        for q in list(self.subscribers):
             try:
                 q.put_nowait(event)
             except Exception:
@@ -211,7 +211,7 @@ class AIAgentSessionManager:
             session.active_task = asyncio.create_task(_run_background_loop())
 
     async def subscribe(self, project_id: str, replay: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
-        """Subscribe to live streaming events, optionally replaying recent buffer."""
+        """Subscribe to live streaming events with keepalive heartbeat, optionally replaying recent buffer."""
         session = self.get_or_create_session(project_id)
         q: asyncio.Queue = asyncio.Queue()
         session.subscribers.append(q)
@@ -221,14 +221,22 @@ class AIAgentSessionManager:
             for past_event in list(session.event_buffer):
                 yield past_event
 
-        # 2. Stream live events as they occur
+        # 2. Stream live events as they occur with 10s keepalive heartbeats
         try:
             while True:
-                event = await q.get()
-                yield event
-                if event.get("event") == "done" and not session.is_running:
-                    # Give short pause to flush and finish
-                    await asyncio.sleep(0.05)
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=10.0)
+                    yield event
+                    if event.get("event") == "done" and not session.is_running:
+                        await asyncio.sleep(0.05)
+                        break
+                except asyncio.TimeoutError:
+                    # Emit periodic keepalive event so reverse proxies/browsers never timeout
+                    yield {
+                        "event": "ping",
+                        "is_running": session.is_running,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
         finally:
             if q in session.subscribers:
                 session.subscribers.remove(q)
