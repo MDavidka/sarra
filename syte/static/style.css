@@ -11070,3 +11070,234 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   height: 14px;
 }
 
+/* File badge styles */
+.svc-ai-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  color: #e4e4e7;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.svc-ai-file-badge:hover {
+  background: #27272a;
+  border-color: #38bdf8;
+  color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.svc-ai-file-ext {
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  background: #27272a;
+  color: #a1a1aa;
+}
+
+.svc-ai-file-ext.ts, .svc-ai-file-ext.tsx {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+.svc-ai-file-ext.js, .svc-ai-file-ext.jsx {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+}
+
+.svc-ai-file-ext.css {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.svc-ai-file-ext.json {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+/* Slash Command Menu */
+.svc-ai-slash-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 8px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  overflow: hidden;
+  animation: svc-fade-in 0.15s ease-out;
+}
+
+.svc-ai-slash-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #121214;
+  border-bottom: 1px solid #27272a;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.svc-ai-slash-header svg {
+  width: 13px;
+  height: 13px;
+  color: #38bdf8;
+}
+
+.svc-ai-slash-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.svc-ai-slash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.svc-ai-slash-item:hover, .svc-ai-slash-item.active {
+  background: #27272a;
+}
+
+.svc-ai-slash-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svc-ai-slash-item-left svg {
+  width: 14px;
+  height: 14px;
+  color: #38bdf8;
+}
+
+.svc-ai-slash-cmd {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f4f4f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.svc-ai-slash-desc {
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+/* AI File Inspector Modal */
+.svc-ai-file-modal {
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: 90vw;
+  max-width: 840px;
+}
+
+.svc-ai-file-modal::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.svc-ai-file-modal-card {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-col;
+  max-height: 85vh;
+  overflow: hidden;
+}
+
+.svc-ai-file-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #27272a;
+  background: #121214;
+}
+
+.svc-ai-file-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f4f4f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.svc-ai-file-modal-title svg {
+  width: 16px;
+  height: 16px;
+  color: #38bdf8;
+}
+
+.svc-ai-file-modal-meta {
+  font-size: 11px;
+  color: #71717a;
+  font-weight: normal;
+  margin-left: 6px;
+}
+
+.svc-ai-file-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svc-ai-file-modal-close {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.svc-ai-file-modal-close:hover {
+  background: #27272a;
+  color: #f4f4f5;
+}
+
+.svc-ai-file-modal-body {
+  padding: 0;
+  overflow: auto;
+  background: #09090b;
+}
+
+.svc-ai-file-modal-body pre {
+  margin: 0;
+  padding: 16px;
+  background: transparent;
+  border: none;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #f4f4f5;
+}
+
