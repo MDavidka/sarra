@@ -855,6 +855,145 @@ async def save_settings(body: SettingsRequest):
         ok = True
     return {"ok": ok, "messages": messages, "cloudflare_tls": await cloudflare_tls_status()}
 
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    try:
+        if path.is_file():
+            return path.stat().st_size
+        for p in path.rglob("*"):
+            if p.is_file() and not p.is_symlink():
+                try:
+                    total += p.stat().st_size
+                except (OSError, FileNotFoundError):
+                    pass
+    except Exception:
+        pass
+    return total
+
+
+@app.get("/api/settings/cache")
+async def api_cache_info(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Return disk space usage of system caches and temporary files."""
+    categories = []
+    total_bytes = 0
+
+    # 1. Pip Cache
+    pip_cache = Path.home() / ".cache" / "pip"
+    pip_size = _dir_size(pip_cache) if pip_cache.exists() else 0
+    categories.append({
+        "id": "pip",
+        "name": "Python Pip Wheel & Package Cache",
+        "path": str(pip_cache),
+        "size_bytes": pip_size,
+        "size_mb": round(pip_size / (1024 * 1024), 2),
+    })
+    total_bytes += pip_size
+
+    # 2. Python bytecode __pycache__
+    pycache_size = 0
+    pycache_count = 0
+    install_dir = Path(__file__).resolve().parent.parent
+    for pyc_dir in install_dir.rglob("__pycache__"):
+        if pyc_dir.is_dir() and ".venv" not in str(pyc_dir):
+            pycache_size += _dir_size(pyc_dir)
+            pycache_count += 1
+    categories.append({
+        "id": "pycache",
+        "name": f"Python Bytecode Caches ({pycache_count} directories)",
+        "path": f"{install_dir}/**/__pycache__",
+        "size_bytes": pycache_size,
+        "size_mb": round(pycache_size / (1024 * 1024), 2),
+    })
+    total_bytes += pycache_size
+
+    # 3. Temp files & uploads
+    tmp_size = 0
+    tmp_count = 0
+    for p in Path("/tmp").glob("syte*"):
+        tmp_size += _dir_size(p)
+        tmp_count += 1
+    categories.append({
+        "id": "temp",
+        "name": f"Temporary Build & Upload Files ({tmp_count} items)",
+        "path": "/tmp/syte*",
+        "size_bytes": tmp_size,
+        "size_mb": round(tmp_size / (1024 * 1024), 2),
+    })
+    total_bytes += tmp_size
+
+    return {
+        "ok": True,
+        "total_size_bytes": total_bytes,
+        "total_size_mb": round(total_bytes / (1024 * 1024), 2),
+        "categories": categories,
+    }
+
+
+@app.post("/api/settings/cache/clear")
+async def api_clear_cache(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Delete unnecessary caches, bytecode, and junk temporary files."""
+    import shutil
+
+    freed_bytes = 0
+    cleaned_items = []
+    install_dir = Path(__file__).resolve().parent.parent
+
+    # 1. Pip Cache
+    pip_cache = Path.home() / ".cache" / "pip"
+    if pip_cache.exists():
+        size = _dir_size(pip_cache)
+        try:
+            shutil.rmtree(pip_cache, ignore_errors=True)
+            freed_bytes += size
+            cleaned_items.append("Cleared Python pip wheel cache")
+        except Exception:
+            pass
+
+    # 2. Python bytecode __pycache__
+    pycache_count = 0
+    for pyc_dir in list(install_dir.rglob("__pycache__")):
+        if pyc_dir.is_dir() and ".venv" not in str(pyc_dir):
+            size = _dir_size(pyc_dir)
+            try:
+                shutil.rmtree(pyc_dir, ignore_errors=True)
+                freed_bytes += size
+                pycache_count += 1
+            except Exception:
+                pass
+    if pycache_count:
+        cleaned_items.append(f"Removed {pycache_count} Python __pycache__ directories")
+
+    # 3. Temp files
+    tmp_count = 0
+    for p in Path("/tmp").glob("syte*"):
+        size = _dir_size(p)
+        try:
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                p.unlink(missing_ok=True)
+            freed_bytes += size
+            tmp_count += 1
+        except Exception:
+            pass
+    if tmp_count:
+        cleaned_items.append(f"Deleted {tmp_count} temporary build and upload files")
+
+    freed_mb = round(freed_bytes / (1024 * 1024), 2)
+    return {
+        "ok": True,
+        "freed_bytes": freed_bytes,
+        "freed_mb": freed_mb,
+        "cleaned_items": cleaned_items,
+        "message": f"Successfully cleared {freed_mb} MB of cache and junk files.",
+    }
+
+
 @app.get("/api/settings/github")
 async def api_github_settings(
     request: Request,

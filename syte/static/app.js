@@ -1676,7 +1676,9 @@ function appendDebugChatBubble(event) {
     const last = assistants[assistants.length - 1];
     const bodyEl = last?.querySelector('.debug-chat-bubble-body');
     const prev = bodyEl?.textContent || '';
-    if (last && bodyEl && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
+    const isSameEvent = event.id != null && last?.dataset?.eventId === String(event.id);
+    const wasStreaming = last?.classList.contains('debug-chat-streaming');
+    if (last && bodyEl && (isSameEvent || wasStreaming) && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
       bodyEl.textContent = detail.length >= prev.length ? detail : prev;
       if (event.id != null) last.dataset.eventId = String(event.id);
       scrollDebugChatToBottom();
@@ -3320,7 +3322,43 @@ function setSettingsMiniTab(tab = 'general') {
     void loadGitTracking();
     if (next === 'github') void loadGithubSettingsTab();
   }
+  if (next === 'advanced') {
+    void loadCacheSettings();
+  }
   refreshIcons();
+}
+
+async function loadCacheSettings() {
+  const totalEl = document.getElementById('settings-cache-total-size');
+  const breakdownEl = document.getElementById('settings-cache-breakdown');
+  if (!totalEl) return;
+  totalEl.textContent = 'Scanning…';
+  try {
+    const res = await api('/settings/cache');
+    if (res && res.ok) {
+      totalEl.textContent = `${res.total_size_mb} MB`;
+      if (breakdownEl && res.categories) {
+        const itemsHtml = res.categories.map(c => `
+          <div class="git-state-item" style="padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="font-size: 0.82rem; color: var(--text);">${esc(c.name)}</strong>
+              <p style="margin: 2px 0 0; font-size: 0.72rem; color: var(--text-dim); font-family: monospace;">${esc(c.path)}</p>
+            </div>
+            <span style="font-size: 0.82rem; font-weight: 600; color: var(--text);">${c.size_mb} MB</span>
+          </div>
+        `).join('');
+        breakdownEl.innerHTML = `
+          <div class="git-state-item" style="padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span class="git-state-label" style="font-weight: 500;">Estimated Cache &amp; Junk Size</span>
+            <span class="git-state-value" id="settings-cache-total-size" style="font-weight: 600; color: var(--accent);">${res.total_size_mb} MB</span>
+          </div>
+          ${itemsHtml}
+        `;
+      }
+    }
+  } catch (err) {
+    totalEl.textContent = 'Scan error';
+  }
 }
 
 let settingsGithubRepos = [];
@@ -8895,34 +8933,101 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   // Tab Elements
   const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
   const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnSkills = document.getElementById('svc-ai-tab-btn-skills');
   const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
   const panelOnboard = document.getElementById('svc-ai-panel-onboard');
   const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelSkills = document.getElementById('svc-ai-panel-skills');
   const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
   const savedCountBadge = document.getElementById('svc-ai-saved-count');
   const savedProvidersList = document.getElementById('svc-ai-saved-providers-list');
   const addNewProviderBtn = document.getElementById('svc-ai-add-new-provider-btn');
+  const skillsCatalogEl = document.getElementById('svc-ai-skills-catalog');
+  const customSkillsInput = document.getElementById('svc-ai-custom-skills-input');
+  const refreshSkillsBtn = document.getElementById('svc-ai-refresh-skills-btn');
 
   if (!modal) return;
   modal.classList.remove('hidden');
 
   let savedProvidersListState = [];
+  let enabledSkillsSet = new Set();
+  let currentLoadedSettings = null;
+
+  const renderSkillsCatalog = async () => {
+    if (!skillsCatalogEl) return;
+    skillsCatalogEl.innerHTML = '<p class="hint">Loading available modular skills…</p>';
+    try {
+      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills`);
+      const skills = res.skills || [];
+      if (!skills.length) {
+        skillsCatalogEl.innerHTML = '<p class="hint">No modular skills discovered.</p>';
+        return;
+      }
+      skillsCatalogEl.innerHTML = skills.map(sk => {
+        const isEnabled = enabledSkillsSet.has(sk.id) || enabledSkillsSet.has(sk.name) || sk.enabled_by_default;
+        return `
+          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+                <strong style="font-size: 0.85rem; color: var(--text);">${escapeHtml(sk.name || sk.id)}</strong>
+                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #3b82f6; font-weight: 500;">${escapeHtml(sk.category || 'Skill')}</span>
+              </div>
+              <p style="font-size: 0.76rem; color: var(--text-dim); margin: 0; line-height: 1.3;">${escapeHtml(sk.description || '')}</p>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">${sk.tools_count ? `${sk.tools_count} tools` : 'Blueprint'}</span>
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 500;">
+                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''}>
+                <span>${isEnabled ? 'Active' : 'Enable'}</span>
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      skillsCatalogEl.querySelectorAll('.svc-ai-skill-toggle').forEach(t => {
+        t.onchange = () => {
+          const sid = t.dataset.skillId;
+          if (t.checked) {
+            enabledSkillsSet.add(sid);
+            t.parentElement.parentElement.parentElement.classList.add('enabled');
+            t.nextElementSibling.textContent = 'Active';
+          } else {
+            enabledSkillsSet.delete(sid);
+            t.parentElement.parentElement.parentElement.classList.remove('enabled');
+            t.nextElementSibling.textContent = 'Enable';
+          }
+        };
+      });
+      refreshIcons();
+    } catch (err) {
+      skillsCatalogEl.innerHTML = `<p class="hint" style="color:#ef4444;">Error loading skills: ${escapeHtml(err.message)}</p>`;
+    }
+  };
 
   const switchTab = (tab) => {
     if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
     if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
+    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', tab === 'skills');
     if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
 
     if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
     if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
+    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
     if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+
+    if (tab === 'skills') {
+      void renderSkillsCatalog();
+    }
     refreshIcons();
   };
 
   if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
   if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
   if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
   if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
+  if (refreshSkillsBtn) refreshSkillsBtn.onclick = () => renderSkillsCatalog();
 
   switchTab(initialTab || 'onboard');
 
@@ -9051,23 +9156,23 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       // Update placeholders and hints
       if (prov === 'vertex') {
         if (modelInput) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave blank for official Google Vertex / AI Studio API.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... or Google Cloud Bearer token'; }
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google Vertex / Gemini endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... (Gemini API Key)'; }
       } else if (prov === 'openai') {
         if (modelInput) modelInput.value = 'gpt-4o';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.openai.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official OpenAI endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard OpenAI endpoint or custom proxy.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
       } else if (prov === 'anthropic') {
         if (modelInput) modelInput.value = 'claude-3-7-sonnet';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.anthropic.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official Anthropic endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Anthropic endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-ant-...'; }
       } else if (prov === 'deepseek') {
         if (modelInput) modelInput.value = 'deepseek-chat';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.deepseek.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official DeepSeek endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard DeepSeek OpenAI-compatible endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
       } else if (prov === 'openrouter') {
         if (modelInput) modelInput.value = 'z-ai/glm-5.2:free';
@@ -9117,10 +9222,13 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
             <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
             <div class="svc-ai-saved-prov-text">
               <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
-              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key configured' : 'No key'}</small>
+              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key')}</small>
             </div>
           </div>
-          <div class="svc-ai-saved-prov-actions">
+          <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 2px 8px;">
+              <i data-lucide="plus"></i><span>Model</span>
+            </button>
             ${isActive
               ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
               : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
@@ -9155,6 +9263,19 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       };
     });
 
+    // Add Model under same provider button
+    savedProvidersList.querySelectorAll('.svc-ai-add-model-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const prov = btn.dataset.prov;
+        if (providerSel) providerSel.value = prov;
+        providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
+        switchTab('onboard');
+        modelInput?.focus();
+        toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
+      };
+    });
+
     // Delete buttons
     savedProvidersList.querySelectorAll('.svc-ai-del-prov-btn').forEach(btn => {
       btn.onclick = async (e) => {
@@ -9183,6 +9304,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
+      currentLoadedSettings = s;
       const currentProv = s.provider || 'vertex';
       if (providerSel) providerSel.value = currentProv;
 
@@ -9199,6 +9321,14 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
       if (promptInput) promptInput.value = s.system_prompt || '';
+      if (customSkillsInput) customSkillsInput.value = s.custom_models || '';
+
+      if (s.tools_enabled) {
+        try {
+          const parsed = typeof s.tools_enabled === 'string' ? JSON.parse(s.tools_enabled) : s.tools_enabled;
+          if (Array.isArray(parsed)) parsed.forEach(sk => enabledSkillsSet.add(sk));
+        } catch (_) {}
+      }
 
       savedProvidersListState = s.saved_providers || [];
       renderPresetChips();
@@ -9213,8 +9343,12 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     testBtn.onclick = async () => {
       hideAlert();
       const selectedProvider = providerSel?.value || 'vertex';
-      const enteredKey = apiKeyInput?.value?.trim() || '';
-      const hasExistingKey = apiKeyInput?.placeholder && apiKeyInput.placeholder !== 'AIzaSy... / sk-...' && !apiKeyInput.placeholder.startsWith('AIzaSy...');
+      let enteredKey = apiKeyInput?.value?.trim() || '';
+      if (!enteredKey) {
+        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
+        if (matchingSaved) enteredKey = matchingSaved.api_key;
+      }
+      const hasExistingKey = currentLoadedSettings?.has_api_key && (currentLoadedSettings.provider === selectedProvider || !enteredKey);
       if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
         showAlert(`Please enter your ${selectedProvider.toUpperCase()} API Key before testing the connection.`);
         apiKeyInput?.focus();
@@ -9282,8 +9416,18 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
       const selectedProvider = providerSel?.value || 'vertex';
       const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
-      const enteredKey = apiKeyInput?.value?.trim() || '';
+      let enteredKey = apiKeyInput?.value?.trim() || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+
+      // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
+      if (!enteredKey) {
+        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
+        if (matchingSaved) {
+          enteredKey = matchingSaved.api_key;
+        } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === selectedProvider) {
+          enteredKey = currentLoadedSettings.api_key || '';
+        }
+      }
 
       // Create/update entry in savedProvidersListState
       const newProvEntry = {
@@ -9312,6 +9456,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
         system_prompt: promptInput?.value || '',
+        custom_models: customSkillsInput?.value || '',
+        tools_enabled: JSON.stringify([...enabledSkillsSet]),
         saved_providers: savedProvidersListState,
       };
       if (enteredKey) {
@@ -11321,11 +11467,64 @@ document.getElementById('settings-github-disconnect-btn')?.addEventListener('cli
 document.getElementById('settings-github-refresh-repos-btn')?.addEventListener('click', () => {
   void loadSettingsGithubRepositories();
 });
-document.getElementById('settings-github-repo-filter')?.addEventListener('input', () => {
-  renderSettingsGithubRepositories();
+document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());
+
+document.getElementById('clear-cache-btn')?.addEventListener('click', async () => {
+  const button = document.getElementById('clear-cache-btn');
+  const resultBox = document.getElementById('cache-clear-result');
+  if (!await operatorAuthenticated()) {
+    showLoginScreen('settings');
+    return;
+  }
+  if (button) { button.disabled = true; button.textContent = 'Cleaning…'; }
+  if (resultBox) {
+    resultBox.classList.remove('hidden');
+    resultBox.style.background = 'var(--bg-input)';
+    resultBox.style.color = 'var(--text-muted)';
+    resultBox.style.border = '1px solid var(--border)';
+    resultBox.textContent = 'Deleting junk files and cleaning caches…';
+  }
+  try {
+    const res = await api('/settings/cache/clear', { method: 'POST' });
+    if (res && res.ok) {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(34, 197, 94, 0.12)';
+        resultBox.style.color = '#16a34a';
+        resultBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+        const itemsText = (res.cleaned_items || []).join(' · ');
+        resultBox.textContent = `✓ ${res.message}${itemsText ? ` (${itemsText})` : ''}`;
+      }
+      toast(res.message || 'Cache cleared successfully');
+      await loadCacheSettings();
+    } else {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+        resultBox.style.color = '#dc2626';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resultBox.textContent = `✗ ${res.error || 'Failed to clear cache'}`;
+      }
+    }
+  } catch (err) {
+    if (resultBox) {
+      resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+      resultBox.style.color = '#dc2626';
+      resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+      resultBox.textContent = `✗ Error: ${err.message}`;
+    }
+    toast(`Error: ${err.message}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i data-lucide="trash-2"></i><span>Delete Cache</span>';
+      refreshIcons();
+    }
+  }
 });
 
-document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());
+document.getElementById('scan-cache-btn')?.addEventListener('click', () => {
+  void loadCacheSettings();
+});
+
 restoreSettingsMiniTab();
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {

@@ -160,10 +160,17 @@ async def activate_saved_provider(
                 break
 
     if target:
+        provider_name = target.get("provider") or current.get("provider")
+        api_key = target.get("api_key") or current.get("api_key") or ""
+        if not api_key:
+            for p in saved_list:
+                if (p.get("provider") == provider_name or not provider_name) and p.get("api_key"):
+                    api_key = p.get("api_key")
+                    break
         updates = {
-            "provider": target.get("provider") or current.get("provider"),
+            "provider": provider_name,
             "model": target.get("model") or model or current.get("model"),
-            "api_key": target.get("api_key") or current.get("api_key"),
+            "api_key": api_key,
             "base_url": target.get("base_url") if target.get("base_url") is not None else current.get("base_url"),
         }
         saved = await save_ai_builder_settings(project_id, updates)
@@ -287,7 +294,7 @@ async def project_ai_chat_stream(
 
     async def sse_generator():
         try:
-            async for event_payload in session_manager.subscribe(project_id, replay=True):
+            async for event_payload in session_manager.subscribe(project_id, replay=False):
                 event_name = event_payload.get("event", "message")
                 data_str = json.dumps(event_payload)
                 yield f"event: {event_name}\ndata: {data_str}\n\n"

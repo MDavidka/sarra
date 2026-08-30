@@ -1769,6 +1769,36 @@
                 <div class="github-pr-list" id="github-pr-list"></div>
               </div>
             </div>
+
+            <!-- ADVANCED SETTINGS PANEL -->
+            <div class="projects-card panel-form hidden" data-settings-panel="advanced" id="settings-advanced-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="trash-2" class="projects-icon"></i>
+                <div>
+                  <h1>System Cache &amp; Junk Cleaner</h1>
+                  <p class="settings-card-subtitle">Delete temporary caches, Python bytecode, package manager wheel cache, and stale junk files to free disk space.</p>
+                </div>
+              </div>
+              <div class="form-inner">
+                <div id="settings-cache-breakdown" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                  <div class="git-state-item" style="padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+                    <span class="git-state-label" style="font-weight: 500;">Estimated Cache &amp; Junk Size</span>
+                    <span class="git-state-value" id="settings-cache-total-size" style="font-weight: 600; color: var(--accent);">Scanning…</span>
+                  </div>
+                </div>
+
+                <div class="form-actions" style="display: flex; gap: 10px; align-items: center;">
+                  <button type="button" class="btn-pill btn-danger" id="clear-cache-btn">
+                    <i data-lucide="trash-2"></i><span>Delete Cache</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost" id="scan-cache-btn">
+                    <i data-lucide="refresh-cw"></i><span>Scan Cache</span>
+                  </button>
+                </div>
+
+                <div id="cache-clear-result" class="hint hidden" style="margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.82rem; font-weight: 500;"></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1796,6 +1826,9 @@
         <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-saved" data-tab="saved">
           <i data-lucide="layers"></i><span>Saved Providers</span>
           <span class="svc-ai-tab-badge" id="svc-ai-saved-count">0</span>
+        </button>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-skills" data-tab="skills">
+          <i data-lucide="book-open"></i><span>Skills</span>
         </button>
         <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-advanced" data-tab="advanced">
           <i data-lucide="sliders"></i><span>Prompt &amp; Params</span>
@@ -1955,7 +1988,33 @@
             </div>
           </div>
 
-          <!-- TAB 3: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
+          <!-- TAB 3: AGENT SKILLS & CUSTOMIZATION -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-skills">
+            <div class="svc-ai-saved-providers-header">
+              <div>
+                <strong>Agent Skills &amp; Domain Blueprints</strong>
+                <p class="hint" style="margin:2px 0 0;">Modular skills, engineering guidelines, and design systems active for this agent.</p>
+              </div>
+              <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-refresh-skills-btn">
+                <i data-lucide="refresh-cw"></i><span>Refresh Skills</span>
+              </button>
+            </div>
+
+            <div class="svc-ai-skills-grid" id="svc-ai-skills-catalog" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px;">
+              <!-- Dynamic skill cards rendered via JS -->
+            </div>
+
+            <fieldset class="svc-ai-form-section" style="margin-top: 20px;">
+              <legend><i data-lucide="sparkles"></i><span>Custom Skill &amp; Engineering Rules</span></legend>
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-custom-skills-input">Project-Specific Rules &amp; Guidelines</label>
+                <textarea id="svc-ai-custom-skills-input" rows="4" placeholder="Enter custom coding standards, tech stack rules, design system guidelines, or constraints for this project..."></textarea>
+                <span class="hint">These instructions are automatically injected into the agent's context alongside active skills.</span>
+              </div>
+            </fieldset>
+          </div>
+
+          <!-- TAB 4: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
           <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-advanced">
           <fieldset class="svc-ai-form-section">
             <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
