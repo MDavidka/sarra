@@ -7512,6 +7512,32 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       }
     }
 
+    // Wire three-dot dropdown menu
+    const menuBtn = document.getElementById('svc-build-menu-btn');
+    const menuDropdown = document.getElementById('svc-build-actions-dropdown');
+    const copyAllBtn = document.getElementById('svc-build-modal-copy-all-btn');
+
+    if (menuBtn && menuDropdown) {
+      menuDropdown.classList.add('hidden');
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        menuDropdown.classList.toggle('hidden');
+      };
+      document.addEventListener('click', (e) => {
+        if (!menuBtn.contains(e.target) && !menuDropdown.contains(e.target)) {
+          menuDropdown.classList.add('hidden');
+        }
+      }, { once: true });
+    }
+
+    if (copyAllBtn) {
+      copyAllBtn.onclick = () => {
+        if (menuDropdown) menuDropdown.classList.add('hidden');
+        navigator.clipboard.writeText(logOutput);
+        toast('All build logs copied to clipboard');
+      };
+    }
+
     if (copyBtn) {
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(logOutput);
@@ -7521,6 +7547,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
 
     if (downloadBtn) {
       downloadBtn.onclick = () => {
+        if (menuDropdown) menuDropdown.classList.add('hidden');
         const blob = new Blob([logOutput], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

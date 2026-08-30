@@ -12161,101 +12161,362 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 /* ========================================================
-   Deployment & Build Log Modal (Phone & PC Optimized)
-/* ========================================================
-   Deployment & Build Log Inspector Modal (PC & Mobile Responsive)
+   Deployment & Build Log Inspector Modal (Shrunk Top + Big Log)
    ======================================================== */
 .svc-build-log-modal {
   border: none;
   background: transparent;
   padding: 0;
-  max-width: 680px;
+  max-width: 760px;
   width: calc(100% - 24px);
   margin: auto;
   outline: none;
 }
 
 .svc-build-log-modal::backdrop {
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .svc-build-log-modal-card {
   background: #f4f4f6;
-  border-radius: 28px;
+  border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
-  position: relative;
-  padding: 18px 18px 20px 18px;
+  height: 88vh;
+  max-height: 900px;
+  padding: 14px 14px 16px 14px;
   box-sizing: border-box;
 }
 
 .svc-modal-mobile-handle {
   display: none;
   width: 40px;
-  height: 4.5px;
+  height: 4px;
   border-radius: 9999px;
   background: #a1a1aa;
-  margin: 0 auto 12px auto;
+  margin: 0 auto 10px auto;
 }
 
-.svc-modal-close-corner-btn {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 10;
+/* Shrunken Top Status Card */
+.svc-deploy-banner-card.is-shrunk {
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.svc-deploy-banner-card.is-shrunk.is-success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.svc-deploy-banner-card.is-shrunk.is-building {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.svc-banner-shrunk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.svc-banner-shrunk-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.svc-deploy-banner-icon-sm {
   width: 32px;
   height: 32px;
   border-radius: 50%;
+  background: #dc2626;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+}
+
+.svc-deploy-banner-icon-sm svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.5;
+}
+
+.svc-deploy-banner-card.is-success .svc-deploy-banner-icon-sm {
+  background: #16a34a;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+
+.svc-deploy-banner-card.is-building .svc-deploy-banner-icon-sm {
+  background: #2563eb;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.svc-banner-shrunk-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.svc-banner-shrunk-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.svc-banner-shrunk-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #09090b;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-banner-shrunk-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.svc-shrunk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.svc-shrunk-chip svg {
+  width: 12px;
+  height: 12px;
+  color: #09090b;
+}
+
+.svc-avatar-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #18181b;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 8.5px;
+  font-weight: 800;
+}
+
+.svc-banner-shrunk-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Three-dot accessibility menu */
+.svc-action-menu-wrap {
+  position: relative;
+}
+
+.svc-menu-trigger-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+
+.svc-menu-trigger-btn:hover {
+  background: #f4f4f5;
+  border-color: #cbd5e1;
+  color: #09090b;
+  transform: scale(1.04);
+}
+
+.svc-menu-trigger-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.svc-modal-close-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: #ffffff;
   border: 1px solid #e4e4e7;
   color: #71717a;
   display: grid;
   place-items: center;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
 }
 
-.svc-modal-close-corner-btn:hover {
+.svc-modal-close-icon-btn:hover {
   background: #f4f4f5;
   color: #09090b;
-  transform: scale(1.06);
+  transform: scale(1.04);
 }
 
-.svc-modal-close-corner-btn svg {
+.svc-modal-close-icon-btn svg {
   width: 16px;
   height: 16px;
 }
 
-.svc-modal-cards-wrap {
+.svc-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  min-width: 190px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 2px;
-  box-sizing: border-box;
+  gap: 2px;
 }
 
-/* ========================================================
-   Mobile Viewport Optimizations (<= 640px)
-   ======================================================== */
+.svc-dropdown-menu.hidden {
+  display: none !important;
+}
+
+.svc-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #18181b;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+  transition: all 0.12s ease;
+}
+
+.svc-dropdown-item:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.svc-dropdown-item svg {
+  width: 14px;
+  height: 14px;
+  color: #475569;
+}
+
+.svc-dropdown-item svg.icon-xs {
+  width: 11px;
+  height: 11px;
+  margin-left: auto;
+  color: #94a3b8;
+}
+
+/* Expanded High-Visibility White Build Logs Card */
+.svc-build-logs-card.is-expanded {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.svc-build-logs-card.is-expanded .svc-build-logs-card-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.svc-build-logs-card.is-expanded .svc-build-logs-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-build-logs-card.is-expanded .svc-terminal-prompt-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.svc-build-logs-card.is-expanded .svc-terminal-prompt-box svg {
+  width: 14px;
+  height: 14px;
+}
+
+.svc-build-logs-card.is-expanded .svc-build-logs-title-wrap h3 {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #09090b;
+  margin: 0;
+}
+
+.svc-build-logs-card.is-expanded .svc-build-logs-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-build-logs-console.is-large {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: 14px 18px 20px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: #111827;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Mobile responsive adjustments */
 @media (max-width: 640px) {
-  .svc-build-commit-title {
-    max-width: 100%;
-    font-size: 14px;
-  }
-
-  .svc-build-track-card {
-    padding: 14px 16px;
-    border-radius: 18px;
-  }
-
   .svc-build-log-modal {
     width: 100%;
     max-width: 100%;
@@ -12268,118 +12529,53 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 
   .svc-build-log-modal-card {
-    border-radius: 26px 26px 0 0;
-    padding: 12px 12px 20px 12px;
-    max-height: 93vh;
+    border-radius: 24px 24px 0 0;
+    padding: 10px 10px 18px 10px;
+    height: 92vh;
+    max-height: 94vh;
   }
 
   .svc-modal-mobile-handle {
     display: block;
   }
 
-  .svc-deploy-banner-card {
-    padding: 16px 14px;
-    border-radius: 20px;
-    gap: 14px;
+  .svc-deploy-banner-card.is-shrunk {
+    padding: 8px 10px;
+    border-radius: 14px;
   }
 
-  .svc-deploy-banner-top {
-    gap: 10px;
+  .svc-deploy-banner-icon-sm {
+    width: 28px;
+    height: 28px;
   }
 
-  .svc-deploy-banner-icon {
-    width: 38px;
-    height: 38px;
+  .svc-banner-shrunk-title {
+    font-size: 13.5px;
   }
 
-  .svc-deploy-banner-icon svg {
-    width: 19px;
-    height: 19px;
+  .svc-banner-shrunk-chips {
+    gap: 5px;
   }
 
-  .svc-deploy-banner-title {
-    font-size: 17px;
+  .svc-shrunk-chip {
+    font-size: 10.5px;
   }
 
-  .svc-deploy-banner-sub {
-    font-size: 12px;
-    line-height: 1.4;
+  .svc-build-logs-card.is-expanded {
+    border-radius: 16px;
   }
 
-  .svc-deploy-status-badge {
+  .svc-build-logs-card.is-expanded .svc-build-logs-card-header {
+    padding: 10px 12px;
+  }
+
+  .svc-build-logs-console.is-large {
+    padding: 10px 12px 16px;
     font-size: 11.5px;
-    padding: 3px 10px;
-  }
-
-  .svc-deploy-banner-meta {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    padding: 10px 0;
-  }
-
-  .svc-banner-meta-col {
-    padding: 0 4px;
-    gap: 6px;
-  }
-
-  .svc-banner-meta-col svg {
-    width: 15px;
-    height: 15px;
-  }
-
-  .svc-banner-author-avatar {
-    width: 18px;
-    height: 18px;
-    font-size: 9px;
-  }
-
-  .svc-banner-meta-data strong {
-    font-size: 11.5px;
-  }
-
-  .svc-banner-meta-data span {
-    font-size: 9.5px;
-  }
-
-  .svc-deploy-banner-actions {
-    gap: 8px;
-  }
-
-  .btn-banner-action {
-    padding: 8px 14px;
-    font-size: 12.5px;
-    border-radius: 10px;
-  }
-
-  .svc-build-logs-card {
-    border-radius: 20px;
-  }
-
-  .svc-build-logs-card-header {
-    padding: 14px 16px;
-  }
-
-  .svc-build-logs-title-wrap h3 {
-    font-size: 15px;
-  }
-
-  .svc-build-logs-title-wrap p {
-    font-size: 12px;
-  }
-
-  .svc-build-logs-toolbar {
-    padding: 8px 14px;
-  }
-
-  .svc-build-logs-console {
-    padding: 12px 14px 16px 14px;
-    font-size: 11.5px;
-    line-height: 1.65;
-    max-height: 44vh;
   }
 
   .svc-log-ts {
-    width: 60px;
-    font-size: 10.5px;
+    width: 58px;
+    font-size: 10px;
   }
 }

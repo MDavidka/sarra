@@ -2146,99 +2146,84 @@
     </div>
   </dialog>
 
-  <!-- Deployment & Build Log Inspector Modal (Exact UI from media_1788108473176.png) -->
+  <!-- Deployment & Build Log Inspector Modal (Shrunken Top, Three-Dot Menu, Bigger Log) -->
   <dialog id="svc-build-log-modal" class="svc-build-log-modal">
     <div class="svc-build-log-modal-card">
       <div class="svc-modal-mobile-handle"></div>
-      <button type="button" class="svc-modal-close-corner-btn" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
-        <i data-lucide="x"></i>
-      </button>
 
-      <div class="svc-modal-cards-wrap">
-        <!-- Top Status Banner Card -->
-        <section class="svc-deploy-banner-card is-failed" id="svc-build-banner-card">
-          <div class="svc-deploy-banner-top">
-            <div class="svc-deploy-banner-icon-wrap">
-              <div class="svc-deploy-banner-icon" id="svc-build-log-banner-icon">
-                <i data-lucide="alert-circle"></i>
-              </div>
-              <div class="svc-deploy-banner-info">
-                <span class="svc-deploy-banner-category" id="svc-build-log-banner-category">DEPLOYMENT</span>
-                <h2 class="svc-deploy-banner-title" id="svc-build-log-commit-title">Deployment failed</h2>
-                <p class="svc-deploy-banner-sub" id="svc-build-log-sub">The build process exited with an error.</p>
-              </div>
+      <!-- Shrunken Minimalist Top Status Header -->
+      <section class="svc-deploy-banner-card is-shrunk is-failed" id="svc-build-banner-card">
+        <div class="svc-banner-shrunk-row">
+          <div class="svc-banner-shrunk-left">
+            <div class="svc-deploy-banner-icon-sm" id="svc-build-log-banner-icon">
+              <i data-lucide="alert-circle"></i>
             </div>
-            <span class="svc-deploy-status-badge is-failed" id="svc-build-log-status-badge">
-              <span id="svc-build-log-status-text">Failed</span>
-            </span>
-          </div>
-
-          <div class="svc-deploy-banner-meta">
-            <div class="svc-banner-meta-col">
-              <i data-lucide="git-branch"></i>
-              <div class="svc-banner-meta-data">
-                <strong id="svc-build-log-branch">main</strong>
-                <span>BRANCH</span>
+            <div class="svc-banner-shrunk-meta">
+              <div class="svc-banner-shrunk-title-line">
+                <h2 class="svc-banner-shrunk-title" id="svc-build-log-commit-title">Deployment failed</h2>
+                <span class="svc-deploy-status-badge is-failed" id="svc-build-log-status-badge">
+                  <span id="svc-build-log-status-text">Failed</span>
+                </span>
               </div>
-            </div>
-            <div class="svc-banner-meta-col">
-              <span class="svc-banner-author-avatar" id="svc-modal-author-avatar">M</span>
-              <div class="svc-banner-meta-data">
-                <strong id="svc-build-log-commit">build commit</strong>
-                <span>COMMIT</span>
-              </div>
-            </div>
-            <div class="svc-banner-meta-col">
-              <i data-lucide="clock"></i>
-              <div class="svc-banner-meta-data">
-                <strong id="svc-build-log-time">2s ago</strong>
-                <span>DEPLOYED</span>
+              <div class="svc-banner-shrunk-chips">
+                <span class="svc-shrunk-chip"><i data-lucide="git-branch"></i><span id="svc-build-log-branch">main</span></span>
+                <span class="svc-shrunk-chip"><span class="svc-avatar-dot" id="svc-modal-author-avatar">M</span><span id="svc-build-log-commit">build commit</span></span>
+                <span class="svc-shrunk-chip"><i data-lucide="clock"></i><span id="svc-build-log-time">2s ago</span></span>
               </div>
             </div>
           </div>
 
-          <div class="svc-deploy-banner-actions">
-            <button type="button" class="btn-banner-action btn-danger" id="svc-build-redeploy-btn">
-              <i data-lucide="refresh-cw"></i>
-              <span id="svc-modal-redeploy-text">Try again</span>
-            </button>
-            <a href="#" target="_blank" rel="noopener" class="btn-banner-action btn-outline" id="svc-modal-banner-github-btn">
-              <i data-lucide="github"></i>
-              <span>View on GitHub</span>
-              <i data-lucide="external-link" class="icon-sm"></i>
-            </a>
-            <button type="button" class="btn-banner-action btn-outline hidden" id="svc-build-log-ai-fix-btn">
-              <i data-lucide="sparkles"></i>
-              <span>Ask AI to Fix</span>
-            </button>
-            <button type="button" class="btn-banner-action btn-outline" id="svc-build-download-btn" title="Download build logs">
-              <i data-lucide="download"></i>
-              <span>Download</span>
+          <div class="svc-banner-shrunk-right">
+            <!-- Three-dot accessibility action menu -->
+            <div class="svc-action-menu-wrap">
+              <button type="button" class="svc-menu-trigger-btn" id="svc-build-menu-btn" title="Actions & Options" aria-label="Deployment actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="svc-dropdown-menu hidden" id="svc-build-actions-dropdown">
+                <button type="button" class="svc-dropdown-item" id="svc-build-redeploy-btn">
+                  <i data-lucide="refresh-cw"></i>
+                  <span id="svc-modal-redeploy-text">Try again / Redeploy</span>
+                </button>
+                <a href="#" target="_blank" rel="noopener" class="svc-dropdown-item" id="svc-modal-banner-github-btn">
+                  <i data-lucide="github"></i>
+                  <span>View on GitHub</span>
+                  <i data-lucide="external-link" class="icon-xs"></i>
+                </a>
+                <button type="button" class="svc-dropdown-item hidden" id="svc-build-log-ai-fix-btn">
+                  <i data-lucide="sparkles"></i>
+                  <span>Ask AI to Fix</span>
+                </button>
+                <button type="button" class="svc-dropdown-item" id="svc-build-download-btn">
+                  <i data-lucide="download"></i>
+                  <span>Download Logs</span>
+                </button>
+                <button type="button" class="svc-dropdown-item" id="svc-build-modal-copy-all-btn">
+                  <i data-lucide="copy"></i>
+                  <span>Copy All Logs</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Close Modal button -->
+            <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
+              <i data-lucide="x"></i>
             </button>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Bottom Build Logs Card -->
-        <section class="svc-build-logs-card" id="svc-build-logs-card">
-          <div class="svc-build-logs-card-header">
-            <div class="svc-build-logs-header-left">
-              <div class="svc-terminal-prompt-box">
-                <i data-lucide="terminal"></i>
-              </div>
-              <div class="svc-build-logs-title-wrap">
-                <h3>Build Logs</h3>
-                <p>View the build output and errors.</p>
-              </div>
+      <!-- Bottom Build Logs Card (Big & Spacious) -->
+      <section class="svc-build-logs-card is-expanded" id="svc-build-logs-card">
+        <div class="svc-build-logs-card-header">
+          <div class="svc-build-logs-header-left">
+            <div class="svc-terminal-prompt-box">
+              <i data-lucide="terminal"></i>
             </div>
-            <div class="svc-build-logs-header-right">
-              <span class="svc-build-logs-duration" id="svc-build-log-duration">2s</span>
-              <span class="svc-build-logs-error-icon" id="svc-build-log-header-status-icon">
-                <i data-lucide="alert-circle"></i>
-              </span>
+            <div class="svc-build-logs-title-wrap">
+              <h3>Build Logs</h3>
             </div>
           </div>
-
-          <div class="svc-build-logs-toolbar">
+          <div class="svc-build-logs-header-right">
             <button type="button" class="svc-toolbar-copy-btn" id="svc-build-log-copy-btn" title="Copy build logs">
               <i data-lucide="copy"></i>
               <span id="svc-build-log-line-count">16 lines</span>
@@ -2247,16 +2232,17 @@
               <i data-lucide="x-circle"></i>
               <span id="svc-build-log-error-count">1</span>
             </div>
+            <span class="svc-build-logs-duration" id="svc-build-log-duration">2s</span>
           </div>
+        </div>
 
-          <div class="svc-build-logs-console" id="svc-build-log-code">
-            <div class="svc-log-line-item">
-              <span class="svc-log-ts">14:14:42</span>
-              <span class="svc-log-msg">Loading deployment build logs…</span>
-            </div>
+        <div class="svc-build-logs-console is-large" id="svc-build-log-code">
+          <div class="svc-log-line-item">
+            <span class="svc-log-ts">14:14:42</span>
+            <span class="svc-log-msg">Loading deployment build logs…</span>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   </dialog>
 
