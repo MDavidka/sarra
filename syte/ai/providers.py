@@ -111,6 +111,8 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
             else:
                 url = f"{url}/openai"
 
+    return url or DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1")
+
 def repair_json_string(raw_str: str) -> str:
     """Safely repair unclosed quotes and brackets in truncated JSON strings."""
     if not raw_str or not raw_str.strip():
@@ -282,10 +284,10 @@ class UnifiedAIClient:
             return
 
         effective_model = self.model
-        if self.provider in ("vertex", "gemini") or "generativelanguage.googleapis.com" in self.base_url:
+        if self.provider in ("vertex", "gemini") or "generativelanguage.googleapis.com" in (self.base_url or ""):
             effective_model = _normalize_google_model(self.model)
 
-        url = f"{self.base_url}/chat/completions"
+        url = f"{(self.base_url or '').rstrip('/')}/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
@@ -328,7 +330,7 @@ class UnifiedAIClient:
                 break
             except urllib.error.HTTPError as err:
                 # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
-                if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in url):
+                if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")):
                     fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                     if fallback_url != url:
                         fallback_payload = dict(payload)
