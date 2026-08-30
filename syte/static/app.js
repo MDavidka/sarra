@@ -7348,65 +7348,96 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   const modal = document.getElementById('svc-build-log-modal');
   if (!modal) return;
 
+  const bannerCard = document.getElementById('svc-build-banner-card');
+  const bannerIcon = document.getElementById('svc-build-log-banner-icon');
+  const categoryEl = document.getElementById('svc-build-log-banner-category');
   const titleEl = document.getElementById('svc-build-log-commit-title');
-  const projNameEl = document.getElementById('svc-build-log-project-name');
+  const subEl = document.getElementById('svc-build-log-sub');
   const badgeEl = document.getElementById('svc-build-log-status-badge');
   const badgeText = document.getElementById('svc-build-log-status-text');
-  const shaEl = document.getElementById('svc-build-log-sha');
+  const branchEl = document.getElementById('svc-build-log-branch');
+  const commitEl = document.getElementById('svc-build-log-commit');
   const timeEl = document.getElementById('svc-build-log-time');
-  const durEl = document.getElementById('svc-build-log-duration');
-  const triggerEl = document.getElementById('svc-build-log-trigger');
-  const authorNameEl = document.getElementById('svc-modal-author-name');
-  const authorAvatarEl = document.getElementById('svc-modal-author-avatar');
-  const errorBanner = document.getElementById('svc-build-log-error-banner');
-  const errorText = document.getElementById('svc-build-log-error-text');
-  const codeEl = document.getElementById('svc-build-log-code');
-  const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
-  const previewBtn = document.getElementById('svc-build-log-preview-btn');
-  const copyBtn = document.getElementById('svc-build-log-copy-btn');
-  const downloadBtn = document.getElementById('svc-build-download-btn');
+  const avatarEl = document.getElementById('svc-modal-author-avatar');
   const redeployBtn = document.getElementById('svc-build-redeploy-btn');
+  const redeployText = document.getElementById('svc-modal-redeploy-text');
+  const githubBtn = document.getElementById('svc-modal-banner-github-btn');
+  const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
+  const downloadBtn = document.getElementById('svc-build-download-btn');
+
+  const logsCard = document.getElementById('svc-build-logs-card');
+  const logsDuration = document.getElementById('svc-build-log-duration');
+  const logsErrorIcon = document.getElementById('svc-build-log-header-status-icon');
+  const lineCountEl = document.getElementById('svc-build-log-line-count');
+  const errorCountEl = document.getElementById('svc-build-log-error-count');
+  const copyBtn = document.getElementById('svc-build-log-copy-btn');
+  const codeEl = document.getElementById('svc-build-log-code');
 
   const b = buildData || {};
   const currentProj = (projects && projects.find(p => p.id === projectId)) || selectedAIProject || { id: projectId, name: projectId, domain: 'test.sycord.site' };
 
-  const initialAuthor = b.author || currentProj.owner || 'MDavidka';
-  const initialLetter = (b.author_initial || initialAuthor[0] || 'M').toUpperCase();
-
-  if (titleEl) titleEl.textContent = b.commit_title || 'Use one delivery address field';
-  if (projNameEl) projNameEl.textContent = b.repo || currentProj.name || currentProj.domain || 'shipwreck-35c18c';
-  if (shaEl) shaEl.textContent = `commit ${(b.commit_sha || '8a304e6').slice(0, 7)}`;
-  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : '30/08/2026, 19:00:45';
-  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '21s';
-  if (triggerEl) triggerEl.textContent = (b.trigger || 'PROJECT-IMPORT').toUpperCase();
-  if (authorNameEl) authorNameEl.textContent = initialAuthor;
-  if (authorAvatarEl) authorAvatarEl.textContent = initialLetter;
-
   const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
-  const isFailed = b.status === 'failed' || (!isSuccess && b.status);
+  const isDeploying = b.status === 'building' || b.status === 'deploying';
+  const isFailed = b.status === 'failed' || (!isSuccess && !isDeploying);
+
+  if (bannerCard) {
+    bannerCard.className = `svc-deploy-banner-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
+  }
+  if (logsCard) {
+    logsCard.className = `svc-build-logs-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
+  }
+
+  if (bannerIcon) {
+    bannerIcon.innerHTML = isFailed
+      ? '<i data-lucide="alert-circle"></i>'
+      : (isSuccess ? '<i data-lucide="check"></i>' : '<i data-lucide="refresh-cw" class="spinning"></i>');
+  }
+
+  if (categoryEl) categoryEl.textContent = 'DEPLOYMENT';
+  if (titleEl) {
+    titleEl.textContent = b.commit_title || (isFailed ? 'Deployment failed' : (isSuccess ? 'Deployment ready' : 'Deploying...'));
+  }
+  if (subEl) {
+    subEl.textContent = isFailed
+      ? (b.error || 'The build process exited with an error.')
+      : (isSuccess ? 'Your project is live and responding to traffic.' : 'Zero-downtime container compilation in progress.');
+  }
+
   if (badgeEl) {
-    badgeEl.className = `svc-build-log-badge ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
+    badgeEl.className = `svc-deploy-status-badge ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
   }
   if (badgeText) {
-    badgeText.textContent = isFailed ? 'Failed' : (isSuccess ? 'Ready' : (b.status || 'Building'));
+    badgeText.textContent = isFailed ? 'Failed' : (isSuccess ? 'Ready' : 'Building');
   }
 
-  if (errorBanner) errorBanner.classList.add('hidden');
-  if (aiFixBtn) aiFixBtn.classList.add('hidden');
-  if (codeEl) codeEl.innerHTML = '<span class="log-empty">Loading detailed build logs from VM…</span>';
-
-  if (previewBtn) {
-    previewBtn.onclick = () => {
-      modal.close();
-      servicePreviewStart(projectId);
-    };
+  if (branchEl) branchEl.textContent = b.branch || currentProj.branch || 'main';
+  if (commitEl) commitEl.textContent = b.commit_message || (b.commit_sha ? `commit ${b.commit_sha.slice(0, 7)}` : 'build commit');
+  if (timeEl) timeEl.textContent = timeAgo(b.started_at);
+  if (avatarEl) {
+    const authorName = b.author || currentProj.owner || 'MDavid';
+    avatarEl.textContent = (b.author_initial || authorName[0] || 'M').toUpperCase();
   }
 
   if (redeployBtn) {
+    if (redeployText) redeployText.textContent = isFailed ? 'Try again' : 'Redeploy';
     redeployBtn.onclick = () => {
       modal.close();
       serviceAction(projectId, 'deploy');
     };
+  }
+
+  if (githubBtn) {
+    if (currentProj.git_url) {
+      githubBtn.href = currentProj.git_url;
+      githubBtn.classList.remove('hidden');
+    } else {
+      githubBtn.href = '#';
+    }
+  }
+
+  if (aiFixBtn) aiFixBtn.classList.add('hidden');
+  if (codeEl) {
+    codeEl.innerHTML = '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Loading detailed build logs from VM…</span></div>';
   }
 
   modal.showModal();
@@ -7415,22 +7446,56 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   try {
     const res = await api(`/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/logs`);
     const logOutput = res.log || 'No log output recorded.';
-    if (codeEl) codeEl.innerHTML = formatDeploymentLogLines(logOutput);
+    const lines = logOutput ? logOutput.split('\n') : [];
+
+    if (logsDuration) {
+      logsDuration.textContent = res.duration_ms ? `${Math.round(res.duration_ms / 1000)}s` : (b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '2s');
+    }
 
     if (res.commit_message && titleEl) titleEl.textContent = res.commit_message;
-    if (res.commit_sha && shaEl) shaEl.textContent = `commit ${res.commit_sha.slice(0, 7)}`;
-    if (res.duration_ms && durEl) durEl.textContent = `${Math.round(res.duration_ms / 1000)}s`;
-    if (res.trigger && triggerEl) triggerEl.textContent = res.trigger.toUpperCase();
+    if (res.commit_sha && commitEl) commitEl.textContent = `commit ${res.commit_sha.slice(0, 7)}`;
 
-    const isRunFailed = res.status === 'failed' || b.status === 'failed' || Boolean(res.error);
+    let errorCount = 0;
+    const baseTime = new Date(res.started_at || Date.now());
+
+    const formattedRows = lines.map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+
+      const isErr = /error:|failed|exception|fatal|exit (code )?[1-9]|npm ERR!/i.test(trimmed);
+      if (isErr) errorCount++;
+
+      const lineTime = new Date(baseTime.getTime() + idx * 1000);
+      const tsStr = lineTime.toTimeString().split(' ')[0] || '14:14:42';
+      const urlEscaped = esc(trimmed).replace(/(https?:\/\/[^\s]+)/g, '<u>$1</u>');
+
+      return `
+        <div class="svc-log-line-item ${isErr ? 'is-error' : ''}">
+          <span class="svc-log-ts">${esc(tsStr)}</span>
+          <span class="svc-log-msg">${urlEscaped}</span>
+        </div>
+      `;
+    }).filter(Boolean);
+
+    if (codeEl) {
+      codeEl.innerHTML = formattedRows.length
+        ? formattedRows.join('')
+        : '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">No log output recorded.</span></div>';
+    }
+
+    if (lineCountEl) lineCountEl.textContent = `${lines.length || 1} lines`;
+    if (errorCountEl) errorCountEl.textContent = String(errorCount || (isFailed ? 1 : 0));
+
+    const isRunFailed = res.status === 'failed' || b.status === 'failed' || Boolean(res.error) || errorCount > 0;
     if (isRunFailed) {
-      if (badgeEl) badgeEl.className = 'svc-build-log-badge is-failed';
+      if (bannerCard) bannerCard.className = 'svc-deploy-banner-card is-failed';
+      if (logsCard) logsCard.className = 'svc-build-logs-card is-failed';
+      if (badgeEl) badgeEl.className = 'svc-deploy-status-badge is-failed';
       if (badgeText) badgeText.textContent = 'Failed';
-      const errMsg = res.error || b.error || 'Docker build could not use the configured Dockerfile. Check its path and build output.';
-      if (errorBanner) {
-        errorBanner.classList.remove('hidden');
-        if (errorText) errorText.textContent = errMsg;
-      }
+      if (bannerIcon) bannerIcon.innerHTML = '<i data-lucide="alert-circle"></i>';
+      const errMsg = res.error || b.error || 'The build process exited with an error.';
+      if (subEl) subEl.textContent = errMsg;
+
       if (aiFixBtn) {
         aiFixBtn.classList.remove('hidden');
         aiFixBtn.onclick = () => {
@@ -7468,8 +7533,11 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       };
     }
   } catch (err) {
-    if (codeEl) codeEl.innerHTML = `<span class="log-badge-error">Unable to fetch build log: ${esc(err.message)}</span>`;
+    if (codeEl) {
+      codeEl.innerHTML = `<div class="svc-log-line-item is-error"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Unable to fetch build log: ${esc(err.message)}</span></div>`;
+    }
   }
+  refreshIcons();
 }
 
 function releaseEventTime(value) {
@@ -10043,7 +10111,10 @@ function renderServiceDashboard(p, resetLogs) {
   renderServiceManagementWorkspaces(p);
 
   if (activeSvcTab === 'general') {
-    void renderGeneralDeploymentScreen(p);
+    renderQuickActions(p);
+    renderStackBadge(p);
+    void loadServiceHealth(p.id);
+    void loadDeploymentHistory(p.id);
   }
 
   if (activeSvcTab === 'preview') {
@@ -10067,140 +10138,11 @@ function renderServiceDashboard(p, resetLogs) {
     }
   } else if (activeSvcTab === 'general') {
     updateServiceStatusDot(p);
+    renderQuickActions(p);
   }
 
   const editBtn = document.getElementById('svc-edit-btn');
   if (editBtn) editBtn.onclick = () => openServiceEditModal(p);
-  refreshIcons();
-}
-
-async function renderGeneralDeploymentScreen(p) {
-  const bannerCard = document.getElementById('svc-deploy-banner-card');
-  const bannerIcon = document.getElementById('svc-deploy-banner-status-icon');
-  const categoryEl = document.getElementById('svc-deploy-banner-category');
-  const titleEl = document.getElementById('svc-deploy-banner-title');
-  const subEl = document.getElementById('svc-deploy-banner-sub');
-  const badgeEl = document.getElementById('svc-deploy-banner-badge');
-  const branchEl = document.getElementById('svc-banner-branch');
-  const commitEl = document.getElementById('svc-banner-commit');
-  const timeEl = document.getElementById('svc-banner-time');
-  const avatarEl = document.getElementById('svc-banner-author-avatar');
-  const redeployBtn = document.getElementById('svc-banner-redeploy-btn');
-  const redeployText = document.getElementById('svc-banner-redeploy-text');
-  const githubBtn = document.getElementById('svc-banner-github-btn');
-
-  const logsCard = document.getElementById('svc-build-logs-card');
-  const logsDuration = document.getElementById('svc-build-logs-duration');
-  const lineCountEl = document.getElementById('svc-build-logs-line-count');
-  const errorCountEl = document.getElementById('svc-build-logs-error-count');
-  const copyBtn = document.getElementById('svc-build-logs-copy-btn');
-  const consoleEl = document.getElementById('svc-build-logs-console');
-
-  if (!bannerCard) return;
-
-  const isSuccess = p.running || p.status === 'ready' || p.status === 'succeeded';
-  const isDeploying = p.status === 'deploying' || p.status === 'building';
-  const isFailed = p.status === 'failed' || (!isSuccess && !isDeploying);
-
-  // Banner status classes
-  bannerCard.className = `svc-deploy-banner-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
-  if (logsCard) logsCard.className = `svc-build-logs-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
-
-  if (bannerIcon) {
-    bannerIcon.innerHTML = isFailed
-      ? '<i data-lucide="alert-circle"></i>'
-      : (isSuccess ? '<i data-lucide="check"></i>' : '<i data-lucide="refresh-cw" class="spinning"></i>');
-  }
-
-  if (categoryEl) categoryEl.textContent = 'DEPLOYMENT';
-  if (titleEl) {
-    titleEl.textContent = isFailed
-      ? 'Deployment failed'
-      : (isSuccess ? 'Deployment ready' : 'Deploying project…');
-  }
-  if (subEl) {
-    subEl.textContent = isFailed
-      ? (p.error || 'The build process exited with an error.')
-      : (isSuccess ? 'Your project is live and responding to traffic.' : 'Zero-downtime container compilation in progress.');
-  }
-  if (badgeEl) {
-    badgeEl.className = `svc-deploy-status-badge ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
-    badgeEl.textContent = isFailed ? 'Failed' : (isSuccess ? 'Ready' : 'Building');
-  }
-
-  if (branchEl) branchEl.textContent = p.branch || 'main';
-  if (commitEl) commitEl.textContent = p.commit_message || (p.last_deployed_commit ? `commit ${p.last_deployed_commit.slice(0, 7)}` : 'build commit');
-  if (timeEl) timeEl.textContent = timeAgo(p.updated_at || p.created_at);
-  if (avatarEl) avatarEl.textContent = ((p.owner || p.name || 'M')[0]).toUpperCase();
-
-  if (redeployBtn) {
-    if (redeployText) redeployText.textContent = isFailed ? 'Try again' : 'Redeploy';
-    redeployBtn.onclick = () => serviceDeploy(p.id);
-  }
-
-  if (githubBtn) {
-    if (p.git_url) {
-      githubBtn.href = p.git_url;
-      githubBtn.classList.remove('hidden');
-    } else {
-      githubBtn.href = '#';
-    }
-  }
-
-  // Load and render logs into Card 2 console
-  try {
-    const res = await api(`/projects/${encodeURIComponent(p.id)}/builds/live/logs`);
-    const logText = res.log || '';
-    const lines = logText ? logText.split('\n') : [];
-    
-    if (logsDuration) {
-      logsDuration.textContent = res.duration_ms ? `${Math.round(res.duration_ms / 1000)}s` : '2s';
-    }
-    
-    let errorCount = 0;
-    const baseTime = new Date(res.started_at || Date.now());
-    
-    const formattedRows = lines.map((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed) return '';
-      
-      const isErr = /error:|failed|exception|fatal|exit (code )?[1-9]|npm ERR!/i.test(trimmed);
-      if (isErr) errorCount++;
-
-      const lineTime = new Date(baseTime.getTime() + idx * 1000);
-      const tsStr = lineTime.toTimeString().split(' ')[0] || '14:14:42';
-
-      // Underline URLs
-      const urlEscaped = esc(trimmed).replace(/(https?:\/\/[^\s]+)/g, '<u>$1</u>');
-
-      return `
-        <div class="svc-log-line-item ${isErr ? 'is-error' : ''}">
-          <span class="svc-log-ts">${esc(tsStr)}</span>
-          <span class="svc-log-msg">${urlEscaped}</span>
-        </div>
-      `;
-    }).filter(Boolean);
-
-    if (consoleEl) {
-      consoleEl.innerHTML = formattedRows.length
-        ? formattedRows.join('')
-        : '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">No deployment logs recorded yet. Click "Try again" to trigger a deployment.</span></div>';
-    }
-
-    if (lineCountEl) lineCountEl.textContent = `${lines.length || 1} lines`;
-    if (errorCountEl) errorCountEl.textContent = String(errorCount || (isFailed ? 1 : 0));
-
-    if (copyBtn) {
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(logText);
-        toast('Build logs copied to clipboard');
-      };
-    }
-  } catch (err) {
-    if (consoleEl) {
-      consoleEl.innerHTML = `<div class="svc-log-line-item is-error"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Error loading logs: ${esc(err.message)}</span></div>`;
-    }
-  }
   refreshIcons();
 }
 
