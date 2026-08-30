@@ -3297,11 +3297,12 @@ function toggleNavGroup(groupId) {
 }
 
 function setSettingsMiniTab(tab = 'general') {
-  const allowed = ['general', 'git', 'advanced'];
+  const allowed = ['general', 'git', 'github', 'advanced'];
   const next = allowed.includes(tab) ? tab : 'general';
   const descriptions = {
     general: 'Server, domains, and preview access',
-    git: 'Track the install branch and review open pull requests',
+    git: 'System updates, installed version, and release channels',
+    github: 'Configure GitHub personal access tokens and Git connection credentials',
     advanced: 'AI and feature controls',
   };
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
@@ -3315,7 +3316,7 @@ function setSettingsMiniTab(tab = 'general') {
   const hint = document.getElementById('settings-tab-hint');
   if (hint) hint.textContent = descriptions[next];
   try { localStorage.setItem('syte_settings_tab', next); } catch { /* private browsing */ }
-  if (next === 'git') void loadGitTracking();
+  if (next === 'git' || next === 'github') void loadGitTracking();
   refreshIcons();
 }
 
@@ -10633,11 +10634,6 @@ async function loadSettings() {
     if (githubTokenStatus) githubTokenStatus.textContent = s.github_token_set
       ? `Token configured via ${s.github_token_source || 'settings'}. It is never shown here.`
       : 'Token is not configured. Public repositories can still be read with GitHub rate limits.';
-    const githubTrackingCard = document.getElementById('github-tracking-card');
-    const githubCredentialsLoaded = Boolean(
-      s.github_token_set || (s.github_token_source && s.github_token_source !== 'none')
-    );
-    if (githubTrackingCard) githubTrackingCard.classList.toggle('hidden', githubCredentialsLoaded);
 
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -11123,19 +11119,72 @@ document.getElementById('save-github-settings-btn')?.addEventListener('click', a
     return;
   }
   const button = document.getElementById('save-github-settings-btn');
-  if (button) { button.disabled = true; button.textContent = 'saving…'; }
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
     const body = { repo };
     if (token) body.token = token;
     const result = await api('/settings/github', { method: 'PUT', body: JSON.stringify(body) });
-    toast((result.messages || []).join(' ') || 'Git settings saved');
+    toast((result.messages || []).join(' ') || 'GitHub credentials saved');
     if (token) document.getElementById('github-token').value = '';
     await loadSettings();
     await loadGitTracking();
   } catch (error) {
-    toast(`Git settings failed: ${error.message}`);
+    toast(`Saving credentials failed: ${error.message}`);
   } finally {
-    if (button) { button.disabled = false; button.textContent = 'Save Git settings'; }
+    if (button) { button.disabled = false; button.textContent = 'Save Credentials'; }
+  }
+});
+document.getElementById('test-github-conn-btn')?.addEventListener('click', async () => {
+  const button = document.getElementById('test-github-conn-btn');
+  const resultBox = document.getElementById('github-conn-test-result');
+  const token = document.getElementById('github-token')?.value.trim();
+  if (button) { button.disabled = true; button.textContent = 'Testing…'; }
+  if (resultBox) {
+    resultBox.classList.remove('hidden');
+    resultBox.style.background = 'var(--bg-input)';
+    resultBox.style.color = 'var(--text-muted)';
+    resultBox.style.border = '1px solid var(--border)';
+    resultBox.textContent = 'Testing connection to GitHub…';
+  }
+  try {
+    const payload = token ? { token } : {};
+    const res = await api('/settings/github/test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.ok && res.authenticated) {
+      const user = res.username ? `@${res.username}` : 'Authenticated user';
+      const scopes = res.scopes && res.scopes.length ? ` · Scopes: ${res.scopes.join(', ')}` : '';
+      if (resultBox) {
+        resultBox.style.background = 'rgba(34, 197, 94, 0.12)';
+        resultBox.style.color = '#16a34a';
+        resultBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+        resultBox.textContent = `✓ Successfully connected to GitHub as ${user}${scopes}`;
+      }
+      toast(`Connected to GitHub as ${user}`);
+    } else {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+        resultBox.style.color = '#dc2626';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resultBox.textContent = `✗ ${res.error || 'Connection failed — invalid credentials or rate limit exceeded'}`;
+      }
+      toast(res.error || 'GitHub connection failed');
+    }
+  } catch (err) {
+    if (resultBox) {
+      resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+      resultBox.style.color = '#dc2626';
+      resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+      resultBox.textContent = `✗ Error testing connection: ${err.message}`;
+    }
+    toast(`Error: ${err.message}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i data-lucide="shield-check"></i><span>Test Connection</span>';
+      refreshIcons();
+    }
   }
 });
 document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());

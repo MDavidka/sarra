@@ -1546,6 +1546,9 @@
             <button type="button" class="settings-mini-tab" data-settings-tab="git" role="tab" aria-selected="false">
               <i data-lucide="git-branch"></i><span>Git &amp; updates</span>
             </button>
+            <button type="button" class="settings-mini-tab" data-settings-tab="github" role="tab" aria-selected="false">
+              <i data-lucide="github"></i><span>GitHub</span>
+            </button>
             <button type="button" class="settings-mini-tab" data-settings-tab="advanced" role="tab" aria-selected="false">
               <i data-lucide="settings-2"></i><span>Advanced</span>
             </button>
@@ -1620,8 +1623,6 @@
               </div>
             </div>
 
-
-
             <div class="projects-card panel-form" data-settings-panel="git">
               <div class="projects-title-block mb">
                 <i data-lucide="refresh-cw" class="projects-icon"></i>
@@ -1645,33 +1646,37 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form" data-settings-panel="git" id="github-tracking-card">
+            <div class="projects-card panel-form" data-settings-panel="github" id="github-tracking-card">
               <div class="projects-title-block mb">
-                <i data-lucide="git-pull-request" class="projects-icon"></i>
+                <i data-lucide="github" class="projects-icon"></i>
                 <div>
-                  <h1>GitHub tracking</h1>
-                  <p class="settings-card-subtitle">Follow branches and review merge readiness without leaving Syte.</p>
+                  <h1>GitHub Credentials &amp; Git Connection</h1>
+                  <p class="settings-card-subtitle">Connect credentials to clone repositories, track pull requests, and deploy updates.</p>
                 </div>
               </div>
               <div class="form-inner">
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="github-repo">Repository</label>
+                    <label for="github-token">Personal Access Token (PAT)</label>
+                    <input type="password" id="github-token" placeholder="ghp_... or github_pat_..." autocomplete="off">
+                    <span class="hint" id="github-token-status">Token is not configured.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="github-repo">Tracked Repository</label>
                     <input type="text" id="github-repo" placeholder="owner/repository" autocomplete="off">
                     <span class="hint">Use <code>owner/repo</code> or a GitHub URL.</span>
                   </div>
-                  <div class="form-group">
-                    <label for="github-token">GitHub token</label>
-                    <input type="password" id="github-token" placeholder="token saved — enter to replace" autocomplete="off">
-                    <span class="hint" id="github-token-status">Token is not configured.</span>
-                  </div>
                 </div>
                 <div class="form-actions settings-git-actions">
-                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Git settings</button>
+                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Credentials</button>
+                  <button type="button" class="btn-pill btn-ghost" id="test-github-conn-btn">
+                    <i data-lucide="shield-check"></i><span>Test Connection</span>
+                  </button>
                   <button type="button" class="btn-pill btn-ghost" id="refresh-github-tracking-btn">
-                    <i data-lucide="refresh-cw"></i><span>Refresh tracking</span>
+                    <i data-lucide="refresh-cw"></i><span>Refresh Tracking</span>
                   </button>
                 </div>
+                <div id="github-conn-test-result" class="hint hidden" style="margin-top: 0.5rem; padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500;"></div>
                 <div class="git-tracking-summary" id="github-tracking-summary">
                   <p class="hint">Sign in to load branch and pull request status.</p>
                 </div>
@@ -1679,8 +1684,6 @@
               </div>
             </div>
           </div>
-
-
         </div>
       </section>
   <!-- AI BUILDER SETTINGS MODAL / DRAWER -->

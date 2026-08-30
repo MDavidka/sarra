@@ -357,6 +357,10 @@ class GitHubSettingsRequest(BaseModel):
     token: str | None = None
 
 
+class GitHubTestRequest(BaseModel):
+    token: str | None = None
+
+
 class GitHubMergeRequest(BaseModel):
     method: str = "squash"
     force: bool = False
@@ -889,6 +893,18 @@ async def api_save_github_settings(
         await set_setting("github_token", token)
         messages.append("GitHub token saved." if token else "GitHub token cleared.")
     return {"ok": True, "messages": messages}
+
+
+@app.post("/api/settings/github/test")
+async def api_test_github_settings(
+    body: GitHubTestRequest | None = None,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Test GitHub connection credentials against GitHub's /user API."""
+    from syte.github_prs import test_github_connection
+
+    token = body.token if body else None
+    return await test_github_connection(token)
 
 
 @app.get("/api/github/status")
