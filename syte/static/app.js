@@ -7341,24 +7341,25 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   const b = buildData || {};
   const currentProj = (projects && projects.find(p => p.id === projectId)) || selectedAIProject || { id: projectId, name: projectId, domain: 'test.sycord.site' };
 
-  if (titleEl) titleEl.textContent = b.commit_title || 'Build run';
-  if (projNameEl) projNameEl.textContent = currentProj.domain || currentProj.name || projectId;
-  if (shaEl) shaEl.textContent = b.commit_sha ? `commit ${b.commit_sha}` : 'live';
-  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : 'Just now';
-  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '38s';
-  if (triggerEl) triggerEl.textContent = (b.trigger || 'Manual').toUpperCase();
+  const initialAuthor = b.author || currentProj.owner || 'MDavidka';
+  const initialLetter = (b.author_initial || initialAuthor[0] || 'M').toUpperCase();
 
-  const author = b.author || currentProj.owner || 'MDavid';
-  const initial = (b.author_initial || author[0] || 'M').toUpperCase();
-  if (authorNameEl) authorNameEl.textContent = author;
-  if (authorAvatarEl) authorAvatarEl.textContent = initial;
+  if (titleEl) titleEl.textContent = b.commit_title || 'Use one delivery address field';
+  if (projNameEl) projNameEl.textContent = b.repo || currentProj.name || currentProj.domain || 'shipwreck-35c18c';
+  if (shaEl) shaEl.textContent = `commit ${(b.commit_sha || '8a304e6').slice(0, 7)}`;
+  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : '30/08/2026, 19:00:45';
+  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '21s';
+  if (triggerEl) triggerEl.textContent = (b.trigger || 'PROJECT-IMPORT').toUpperCase();
+  if (authorNameEl) authorNameEl.textContent = initialAuthor;
+  if (authorAvatarEl) authorAvatarEl.textContent = initialLetter;
 
-  const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
+  const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
+  const isFailed = b.status === 'failed' || (!isSuccess && b.status);
   if (badgeEl) {
-    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building')}`;
+    badgeEl.className = `svc-build-log-badge ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
   }
   if (badgeText) {
-    badgeText.textContent = isSuccess ? 'Successful' : (b.status === 'failed' ? 'Failed' : (b.status || 'Building'));
+    badgeText.textContent = isFailed ? 'Failed' : (isSuccess ? 'Ready' : (b.status || 'Building'));
   }
 
   if (errorBanner) errorBanner.classList.add('hidden');
@@ -7387,8 +7388,16 @@ async function openBuildLogModal(projectId, buildId, buildData) {
     const logOutput = res.log || 'No log output recorded.';
     if (codeEl) codeEl.textContent = logOutput;
 
-    if (res.error || b.status === 'failed' || res.status === 'failed') {
-      const errMsg = res.error || 'Deployment container or build command exited with failure.';
+    if (res.commit_message && titleEl) titleEl.textContent = res.commit_message;
+    if (res.commit_sha && shaEl) shaEl.textContent = `commit ${res.commit_sha.slice(0, 7)}`;
+    if (res.duration_ms && durEl) durEl.textContent = `${Math.round(res.duration_ms / 1000)}s`;
+    if (res.trigger && triggerEl) triggerEl.textContent = res.trigger.toUpperCase();
+
+    const isRunFailed = res.status === 'failed' || b.status === 'failed' || Boolean(res.error);
+    if (isRunFailed) {
+      if (badgeEl) badgeEl.className = 'svc-build-log-badge is-failed';
+      if (badgeText) badgeText.textContent = 'Failed';
+      const errMsg = res.error || b.error || 'Docker build could not use the configured Dockerfile. Check its path and build output.';
       if (errorBanner) {
         errorBanner.classList.remove('hidden');
         if (errorText) errorText.textContent = errMsg;
@@ -9901,7 +9910,7 @@ async function loadDeploymentHistory(projectId) {
       const author = (run.author || project?.name || 'D').trim().slice(0, 2).toUpperCase();
 
       return `
-        <div class="svc-exact-deploy-card">
+        <div class="svc-exact-deploy-card" onclick="openBuildLogModal('${esc(projectId)}', '${esc(run.id || 'db6a399f')}', ${JSON.stringify(run).replace(/"/g, '&quot;')})" style="cursor: pointer;" title="Click to view full build logs and deployment details">
           <div class="svc-deploy-card-top">
             <strong class="svc-deploy-card-title">${esc(title)}</strong>
             <div class="svc-deploy-card-status-group">
@@ -9912,10 +9921,10 @@ async function loadDeploymentHistory(projectId) {
           </div>
           <div class="svc-deploy-card-bottom">
             <div class="svc-deploy-card-bottom-left">
-              <a href="${esc(run.url || project?.url || '#')}" target="_blank" rel="noopener" class="svc-deploy-preview-pill">
+              <button type="button" onclick="event.stopPropagation(); servicePreviewStart('${esc(projectId)}')" class="svc-deploy-preview-pill">
                 <i data-lucide="eye"></i>
                 <span>Preview</span>
-              </a>
+              </button>
               <span class="svc-deploy-commit-pill">
                 <i data-lucide="git-commit"></i>
                 <span>${esc(commitHash)}</span>

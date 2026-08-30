@@ -2151,28 +2151,30 @@
     <div class="svc-build-log-modal-card">
       <div class="svc-modal-mobile-handle"></div>
       <div class="svc-build-log-modal-header">
-        <div class="svc-build-log-modal-identity">
-          <span class="svc-build-log-badge" id="svc-build-log-status-badge">
-            <span class="svc-build-status-dot"></span>
-            <span id="svc-build-log-status-text">Build Details</span>
-          </span>
-          <div class="svc-build-log-meta-group">
-            <h3 id="svc-build-log-commit-title">Commit title</h3>
-            <span class="svc-build-project-sub" id="svc-build-log-project-name">test.sycord.site</span>
+        <div class="svc-build-log-top-row">
+          <div class="svc-build-log-modal-identity">
+            <span class="svc-build-log-badge" id="svc-build-log-status-badge">
+              <span class="svc-build-status-dot"></span>
+              <span id="svc-build-log-status-text">Failed</span>
+            </span>
+            <div class="svc-build-log-meta-group">
+              <h3 id="svc-build-log-commit-title">Use one delivery address field</h3>
+              <span class="svc-build-project-sub" id="svc-build-log-project-name">shipwreck-35c18c</span>
+            </div>
           </div>
+          <button type="button" class="svc-modal-close-btn" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
+            <i data-lucide="x"></i>
+          </button>
         </div>
         <div class="svc-build-log-modal-actions">
-          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-preview-btn" title="Open fast preview">
+          <button type="button" class="btn-pill btn-light btn-sm" id="svc-build-log-preview-btn" title="Open fast preview">
             <i data-lucide="zap"></i><span>Preview</span>
           </button>
-          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-copy-btn" title="Copy build logs">
+          <button type="button" class="btn-pill btn-light btn-sm" id="svc-build-log-copy-btn" title="Copy build logs">
             <i data-lucide="copy"></i><span>Copy Logs</span>
           </button>
-          <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm hidden" id="svc-build-log-ai-fix-btn" title="Ask AI to fix error">
+          <button type="button" class="btn-pill btn-dark btn-sm hidden" id="svc-build-log-ai-fix-btn" title="Ask AI to fix error">
             <i data-lucide="sparkles"></i><span>Ask AI to Fix</span>
-          </button>
-          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
-            <i data-lucide="x"></i>
           </button>
         </div>
       </div>
