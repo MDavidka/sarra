@@ -197,11 +197,12 @@ class AIAgentEngine:
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
             "## 3. MANDATORY EXECUTION WORKFLOW\n"
             "1. **Plan**: For any multi-step task, start by calling `syte_create_plan` with actionable steps.\n"
-            "2. **Skills**: Discover or load domain skills with `syte_load_skill` (e.g. 'website-create' for UI/Tailwind/shadcn, 'integration' for APIs/Auth/DB, 'cloud-code' for DevOps).\n"
+            "2. **Skills Discovery**: Discover or load domain capabilities with `syte_discover_skills` and `syte_load_skill` (browse 'Design & Colors', 'Components & UI', 'App & Routing', 'Login & Auth', 'Server & Backend', 'Integrations & Database', 'Optimization & Build').\n"
             "3. **Inspect**: Read workspace files (`syte_read_file`, `syte_search_files`, `syte_list_workspace_files`).\n"
-            "4. **Write/Edit**: Create or modify code files (`syte_write_file`, `syte_edit_file`).\n"
-            "5. **Update Step Status**: Keep the user updated by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
-            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run terminal builds (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
+            "4. **Write/Edit Files (PRIMARY FOCUS)**: Generate complete, beautiful code files (`syte_write_file`, `syte_edit_file`).\n"
+            "   - **FILE GENERATION PRIORITY**: Prioritize generating and editing complete workspace files over running heavy VM processes. Syte automatically compiles, containerizes, hot-reloads, and serves workspace files. Do NOT waste tool turns attempting to run long-running, blocking background shell processes or complex terminal daemons.\n"
+            "5. **Update Step Status**: Keep the user updated with precise progress by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
+            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run quick compilation checks (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
             "   - **PREVIEW TESTING DIRECTIVE**: ALWAYS use `syte_start_preview` to test your changes against the live preview server during development. DO NOT trigger real production deployments (`syte_create_deployment`) for testing. Production deployments are reserved only for when explicitly requested by the user.\n"
             "7. **Deliver**: Provide a concise summary of what was accomplished only after all steps are done.\n"
             "------------------------------------------------------------------------\n"
@@ -399,6 +400,44 @@ class AIAgentEngine:
                 file_target = args.get("path") or args.get("source_path") or ""
                 cmd_target = args.get("command") or ""
 
+                # Generate precise human-readable status marker
+                status_msg = f"Executing {tool_name}…"
+                if tool_name == "syte_write_file" and file_target:
+                    status_msg = f"Creating file: {file_target}…"
+                elif tool_name == "syte_edit_file" and file_target:
+                    status_msg = f"Editing file: {file_target}…"
+                elif tool_name == "syte_read_file" and file_target:
+                    status_msg = f"Inspecting file: {file_target}…"
+                elif tool_name == "syte_read_file_lines" and file_target:
+                    status_msg = f"Reading lines from: {file_target}…"
+                elif tool_name == "syte_search_files":
+                    status_msg = f"Searching files for '{args.get('query', '')}'…"
+                elif tool_name in ("syte_list_files", "syte_list_workspace_files"):
+                    status_msg = "Listing workspace directory tree…"
+                elif tool_name == "syte_run_command" and cmd_target:
+                    status_msg = f"Running terminal: {cmd_target}…"
+                elif tool_name == "syte_start_preview":
+                    status_msg = "Starting hot-reloading preview dev server…"
+                elif tool_name == "syte_security_lint_scan":
+                    status_msg = "Scanning AST security and syntax across workspace…"
+                elif tool_name == "syte_discover_skills":
+                    status_msg = f"Browsing skill capabilities in {args.get('category') or 'all categories'}…"
+                elif tool_name == "syte_load_skill":
+                    status_msg = f"Loading domain skill blueprint: {args.get('skill_name', '')}…"
+                elif tool_name == "syte_create_plan":
+                    status_msg = f"Creating implementation plan: '{args.get('title', '')}'…"
+                elif tool_name == "syte_update_plan_step":
+                    status_msg = f"Updating plan step {args.get('step_id', '')} -> {args.get('status', '')}…"
+
+                yield {
+                    "event": "status",
+                    "message": status_msg,
+                    "tool_name": tool_name,
+                    "file_path": file_target,
+                    "command": cmd_target,
+                    "timestamp": now_stamp,
+                }
+
                 yield {
                     "event": "tool_call_start",
                     "tool_call_id": call_id,
@@ -406,6 +445,7 @@ class AIAgentEngine:
                     "arguments": args,
                     "file_path": file_target,
                     "command": cmd_target,
+                    "message": status_msg,
                     "timestamp": now_stamp,
                 }
 

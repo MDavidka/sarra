@@ -1,23 +1,215 @@
-"""Modular Skills Registry for Syte Autonomous AI Builder.
+"""Modular Skills & Capabilities Discovery Registry for Syte Autonomous AI Builder.
 
 Provides comprehensive, structured domain guides, best practices, design systems,
-and implementation blueprints that the AI agent can discover and load dynamically.
+and implementation blueprints that the AI agent can discover, search, browse, and load dynamically.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
+
+# -----------------------------------------------------------------------------
+# 1. Categorized Modular Capabilities Catalog
+# -----------------------------------------------------------------------------
+SKILLS_CATEGORIES_CATALOG: Dict[str, Dict[str, Any]] = {
+    "Design & Colors": {
+        "description": "Design tokens, typography scales, harmonious color palettes, Tailwind classes, spacing, and contrast standards.",
+        "capabilities": {
+            "get_color_palette": {
+                "summary": "Return modern semantic color tokens (neutral zinc, slate, primary, accent, surface, destructive).",
+                "tokens": {
+                    "background": "#ffffff",
+                    "card": "#ffffff",
+                    "card_subtle": "#fafafa",
+                    "page_bg": "#f8fafc",
+                    "border": "#e4e4e7",
+                    "border_subtle": "#f4f4f5",
+                    "foreground": "#09090b",
+                    "muted_foreground": "#71717a",
+                    "primary": "#18181b",
+                    "primary_foreground": "#ffffff",
+                    "accent_indigo": "#6366f1",
+                    "accent_emerald": "#10b981",
+                    "accent_sky": "#0284c7",
+                    "accent_rose": "#f43f5e",
+                },
+            },
+            "resolve_theme_token": {
+                "summary": "Map abstract CSS variables (`--primary`, `--muted`) to exact hex/rgb values for light and dark modes.",
+                "guide": "Use standard Tailwind CSS variables: `bg-background text-foreground border-border ring-ring` with CSS variables defined in `@layer base`.",
+            },
+            "get_typography_scale": {
+                "summary": "Full typography hierarchy from display headings (H1) down to small badges with font-family, sizes, weights, and tracking.",
+                "scale": {
+                    "display_hero": "text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight",
+                    "heading_h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+                    "heading_h3": "text-lg sm:text-xl font-semibold tracking-tight",
+                    "subheading_lead": "text-base sm:text-lg text-muted-foreground",
+                    "body": "text-sm sm:text-base leading-relaxed text-zinc-900",
+                    "caption": "text-xs font-medium tracking-wide text-zinc-500",
+                },
+            },
+            "validate_tailwind_classes": {
+                "summary": "Check for common class collisions (e.g. `p-4 px-2`), arbitrary value syntax (`bg-[#fff]`), and responsive breakpoints (`sm: md: lg:`).",
+            },
+            "apply_color_contrast_check": {
+                "summary": "WCAG AA/AAA compliant contrast ratios (4.5:1 for normal text, 3:1 for large text).",
+            },
+            "get_spacing_system": {
+                "summary": "Consistent 4px grid spacing scale (`p-2: 8px`, `p-4: 16px`, `p-6: 24px`, `p-8: 32px`, `gap-6: 24px`).",
+            },
+            "get_shadow_tokens": {
+                "summary": "Elevation shadows: `shadow-xs`, `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-2xl` with subtle alpha blending (`rgba(0,0,0,0.04)`).",
+            },
+            "get_border_radius_scale": {
+                "summary": "Modern border radii: `rounded-md: 6px`, `rounded-lg: 8px`, `rounded-xl: 12px`, `rounded-2xl: 16px`, `rounded-full: 9999px`.",
+            },
+        },
+    },
+    "Components & UI": {
+        "description": "Ready-to-use component signatures, variants, Lucide icons, layout templates, and JSX/TSX syntax patterns.",
+        "capabilities": {
+            "get_component_signature": {
+                "summary": "Standard TypeScript interfaces for buttons, modals, dropdowns, accordions, and cards.",
+            },
+            "list_available_components": {
+                "summary": "Catalog of shadcn/ui components available to generate: Button, Card, Dialog, Dropdown, Input, Tabs, Toast, Sheet, Table, Badge, Avatar.",
+            },
+            "get_component_variants": {
+                "summary": "Variant props mapping: `variant: 'default' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'link'` and `size: 'sm' | 'default' | 'lg' | 'icon'`.",
+            },
+            "get_icon_by_name": {
+                "summary": "Recommended Lucide icon mappings for common UI actions (e.g. `zap`, `sparkles`, `terminal`, `rocket`, `shield`, `chevron-right`).",
+            },
+            "get_layout_template": {
+                "summary": "Standard full-page responsive layouts: SaaS Landing Page, Admin Dashboard, Documentation, Settings Workspace, Auth Portal.",
+            },
+            "validate_jsx_syntax": {
+                "summary": "Verify closing tags, key props in loops, className instead of class, and proper React import signatures.",
+            },
+            "render_component_preview": {
+                "summary": "Isolated sandbox mounting guide for testing single UI components in Vite or Next.js preview.",
+            },
+        },
+    },
+    "App & Routing": {
+        "description": "Site manifests, Next.js App Router & Vite route trees, page metadata, dynamic paths, and navigation schemas.",
+        "capabilities": {
+            "read_site_manifest": {
+                "summary": "Inspect `package.json`, router config, and framework directory conventions (e.g. `app/`, `pages/`, `src/routes/`).",
+            },
+            "register_app_route": {
+                "summary": "Create route entrypoint: `app/[route]/page.tsx` or `src/pages/[route].tsx` with layout and loading skeleton.",
+            },
+            "get_route_tree": {
+                "summary": "Scan workspace to map active pages, dynamic segments (`[id]`, `[slug]`), and API endpoints.",
+            },
+            "validate_page_metadata": {
+                "summary": "Ensure Next.js `metadata` export with `title`, `description`, `openGraph`, and `robots` tags.",
+            },
+            "get_navigation_schema": {
+                "summary": "Top navigation and sidebar tree schemas with active state detection, badges, and breadcrumb trails.",
+            },
+        },
+    },
+    "Login & Auth": {
+        "description": "OAuth providers, JWT/Cookie session middleware, user schemas, route protection guards, and CSRF security.",
+        "capabilities": {
+            "get_auth_provider_schema": {
+                "summary": "OAuth2 configuration contracts for GitHub, Google, Discord, and Email magic links.",
+            },
+            "generate_auth_middleware": {
+                "summary": "Edge/Node.js authentication middleware verifying JWT tokens or session cookies before routing.",
+            },
+            "get_session_user_schema": {
+                "summary": "TypeScript user object schema: `{ id, email, name, role: 'admin' | 'member', avatar_url, created_at }`.",
+            },
+            "validate_permission_guard": {
+                "summary": "Role-Based Access Control (RBAC) route and API guard logic.",
+            },
+            "get_protected_routes": {
+                "summary": "Convention for securing `/dashboard/*`, `/settings/*`, and `/api/admin/*` behind auth barriers.",
+            },
+        },
+    },
+    "Server & Backend": {
+        "description": "Server actions, REST API route generation, environment variable manifests, and payload validation.",
+        "capabilities": {
+            "get_server_action_contract": {
+                "summary": "Next.js `'use server'` action patterns with input validation, error return objects, and revalidation.",
+            },
+            "list_api_endpoints": {
+                "summary": "Scan workspace for `route.ts`, `api/*.py`, or Express router files and list HTTP methods.",
+            },
+            "get_env_variables_manifest": {
+                "summary": "Generate documented `.env.example` template with key names, default fallback values, and security notes.",
+            },
+            "validate_request_payload": {
+                "summary": "Schema validation using Zod (`z.object({...})`) or Pydantic for API route inputs.",
+            },
+            "generate_api_route": {
+                "summary": "Generate complete API route handler with error handling, status codes, JSON serialization, and CORS headers.",
+            },
+        },
+    },
+    "Integrations & Database": {
+        "description": "Database schemas (Prisma, Drizzle, SQLite, Postgres), Stripe webhooks, storage buckets, and payment events.",
+        "capabilities": {
+            "get_database_schema": {
+                "summary": "Prisma (`schema.prisma`), Drizzle ORM, or SQL DDL templates for standard relational entities.",
+            },
+            "get_integration_config": {
+                "summary": "Third-party SDK connection setup (Stripe, OpenAI, Resend, Supabase, AWS S3, Cloudflare R2).",
+            },
+            "generate_webhook_handler": {
+                "summary": "Secure webhook handler verifying raw cryptographic signatures (e.g. `stripe.webhooks.constructEvent`).",
+            },
+            "get_storage_bucket_schema": {
+                "summary": "File upload and S3/R2 presigned URL generator for secure user media uploads.",
+            },
+            "validate_payment_event": {
+                "summary": "Handle Stripe checkout completion, subscription lifecycle, and customer billing portal redirection.",
+            },
+        },
+    },
+    "Optimization & Build": {
+        "description": "TypeScript type checks, linter auto-fixes, SEO tags, bundle size impact, and cache revalidation policies.",
+        "capabilities": {
+            "run_typescript_check": {
+                "summary": "Static TypeScript type diagnostics and missing type definition detection.",
+            },
+            "run_linter_fix": {
+                "summary": "ESLint and Prettier code formatting patterns and syntax sanitation.",
+            },
+            "validate_seo_tags": {
+                "summary": "Verify canonical URLs, meta descriptions, OpenGraph Twitter/Facebook preview tags, and sitemap.xml.",
+            },
+            "check_bundle_size_impact": {
+                "summary": "Best practices for dynamic imports (`next/dynamic` or `React.lazy`), tree shaking, and lightweight dependencies.",
+            },
+            "get_cache_revalidation_policy": {
+                "summary": "Next.js ISR caching (`revalidatePath`, `revalidateTag`, `stale-while-revalidate`) rules.",
+            },
+        },
+    },
+}
+
+
+# -----------------------------------------------------------------------------
+# 2. Main Full-Text Skill Blueprints
+# -----------------------------------------------------------------------------
 SKILLS_REGISTRY: Dict[str, Dict[str, Any]] = {
     "website-create": {
         "name": "website-create",
-        "aliases": ["shadcn-ui", "beautiful-ui", "design-system", "tailwind-ui"],
-        "category": "Frontend & Design",
+        "aliases": ["design-and-colors", "components-and-ui", "shadcn-ui", "beautiful-ui", "design-system", "tailwind-ui"],
+        "category": "Design & Colors",
         "description": "Comprehensive design system & UI blueprints using modern typography (Inter/Geist), shadcn/ui patterns, harmonious color palettes, sizing, and responsive components.",
-        "content": """# Skill: Modern Website Creation & Beautiful UI (shadcn / Inter / Tailwind)
+        "content": """# Skill: Modern Website Creation, Design & UI Components (shadcn / Inter / Tailwind)
 
-## 1. Typography & Font Hierarchy
-- **Primary Font**: Inter (`font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`)
+## 1. Typography & Hierarchy (Design & Colors)
+- **Primary Font**: Inter / Geist (`font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`)
 - **Monospace Font**: JetBrains Mono or SF Mono (`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`)
 - **Scale Hierarchy**:
   - `Display / Hero Title`: 40px - 56px (`text-4xl` to `text-6xl`), `font-bold` or `font-extrabold`, letter-spacing `-0.03em`, line-height `1.1`
@@ -27,7 +219,7 @@ SKILLS_REGISTRY: Dict[str, Dict[str, Any]] = {
   - `Body Text`: 14px - 15px (`text-sm` to `text-base`), line-height `1.6`, color `#18181b` (light) / `#f4f4f5` (dark)
   - `Caption / Badge`: 11px - 12px (`text-xs`), `font-medium` or `font-semibold`, tracking `0.02em`
 
-## 2. Harmonious Color Palettes
+## 2. Harmonious Color Palettes & Theme Tokens
 - **Neutral Palette (Zinc/Slate)**:
   - Background: `#ffffff` (Card: `#ffffff`, Sub-panel: `#fafafa`, Page BG: `#f8fafc`)
   - Border: `#e4e4e7` (Subtle: `#f4f4f5`, Hover: `#d4d4d8`, Focus: `#18181b`)
@@ -38,114 +230,128 @@ SKILLS_REGISTRY: Dict[str, Dict[str, Any]] = {
   - `Sky / Cyan`: `#0284c7` / `#0369a1` (Cloud, developer tools, infrastructure)
   - `Rose / Coral`: `#f43f5e` / `#e11d48` (E-commerce, creative tools)
 
-## 3. Sizing & Spacing Rules
-- **Container Max Widths**:
-  - Content / Article: `max-w-3xl` (768px)
-  - Main App / Dashboard: `max-w-6xl` (1152px) or `max-w-7xl` (1280px)
-  - Hero Section: `max-w-5xl` (1024px)
-- **Component Padding & Radii**:
-  - Buttons: `h-10 px-4 py-2` (Small: `h-8 px-3 text-xs`, Large: `h-12 px-6 text-base`), `rounded-lg` (8px) or `rounded-full` (pills)
-  - Cards: `p-6` (Mobile: `p-4`), `rounded-xl` (12px) or `rounded-2xl` (16px), border `1px solid #e4e4e7`, shadow `0 1px 3px rgba(0,0,0,0.05)`
-  - Inputs: `h-10 px-3.5 py-2`, `rounded-lg`, border `1px solid #d4d4d8`, focus `ring-2 ring-zinc-900 ring-offset-2`
+## 3. Spacing, Borders & Shadows
+- **Container Max Widths**: Content: `max-w-3xl` (768px), Dashboard: `max-w-6xl` (1152px) or `max-w-7xl` (1280px), Hero: `max-w-5xl` (1024px)
+- **Component Radii**: Buttons (`rounded-lg: 8px`), Cards (`rounded-xl: 12px` or `rounded-2xl: 16px`), Badges (`rounded-full`)
 
-## 4. Essential shadcn/ui Component Patterns
-- **Buttons**: Primary (solid dark `#18181b`), Secondary (subtle `#f4f4f5` border `#e4e4e7`), Ghost (transparent hover `#f4f4f5`), Destructive (`#ef4444`).
-- **Cards**: Top badge/icon, Title H3, Description paragraph, Body content, Action footer with primary CTA.
-- **Navbar**: Sticky top, backdrop blur (`backdrop-blur-md bg-white/80`), Brand logo, Navigation links with active indicators, CTA button, Mobile hamburger sheet.
-- **Hero Section**: Eyebrow pill tag ("Introducing v2.0 ->"), H1 headline with gradient emphasis, Subtitle, Dual action buttons (Primary CTA + Secondary demo/doc button), Floating interactive preview/mockup card with subtle drop shadow.
-- **Feature Grid**: 3-column responsive grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`), with icon box, title, description, and interactive hover states.
+## 4. Components & UI Patterns
+- **Buttons**: Primary (solid dark `#18181b`), Secondary (subtle `#f4f4f5` border `#e4e4e7`), Ghost (`hover:bg-zinc-100`), Destructive (`#ef4444`).
+- **Cards**: Top icon/badge, Title H3, Subtitle, Body content, Action footer with primary CTA.
+- **Navbar**: Sticky top, backdrop blur (`backdrop-blur-md bg-white/80`), Brand logo, Navigation links with active indicators, CTA button.
+- **Hero Section**: Eyebrow pill tag ("Introducing v2.0 ->"), H1 headline with gradient emphasis, Subtitle, Dual action buttons.
+""",
+    },
+    "app-routing": {
+        "name": "app-routing",
+        "aliases": ["routing", "app-and-routing", "navigation", "manifest"],
+        "category": "App & Routing",
+        "description": "App structure, Next.js App Router conventions, dynamic routes, navigation schemas, and page metadata.",
+        "content": """# Skill: App Architecture, Routing & Navigation
 
-## 5. Responsive Design Standards
-- Mobile-first layout: Ensure all touch targets are at least `44px x 44px`.
-- Use `gap-4 sm:gap-6 lg:gap-8` for dynamic scaling.
-- Prevent horizontal overflows (`overflow-x-hidden`, `max-w-full`, `box-border`).
+## 1. Directory Conventions
+- Next.js App Router: `app/layout.tsx`, `app/page.tsx`, `app/(dashboard)/layout.tsx`, `app/api/[route]/route.ts`.
+- Vite / React SPA: `src/App.tsx`, `src/pages/Home.tsx`, `src/components/Navbar.tsx`, `src/routes.tsx`.
+
+## 2. Page Metadata & SEO
+- Always export `metadata` object in root and nested layouts with `title: { default: 'App', template: '%s | App' }`.
+- Include viewport settings: `width=device-width, initial-scale=1.0`.
+""",
+    },
+    "login-auth": {
+        "name": "login-auth",
+        "aliases": ["auth", "login-and-auth", "jwt", "oauth", "middleware"],
+        "category": "Login & Auth",
+        "description": "Authentication architectures: JWT tokens, HttpOnly session cookies, OAuth2 providers, and protected route middleware.",
+        "content": """# Skill: Login, Authentication & Security Middleware
+
+## 1. Secure Session Token Handling
+- Store access tokens in HttpOnly, SameSite=Lax cookies or Bearer Authorization headers.
+- Never store secrets or sensitive credentials in client-side localStorage.
+
+## 2. Route Protection Guard
+- Validate user session at the edge or server component before rendering protected views (`/dashboard`, `/settings`).
+- Redirect unauthenticated requests to `/login?redirect=...`.
 """,
     },
     "integration": {
         "name": "integration",
-        "aliases": ["api-integration", "auth", "database", "stripe", "webhooks"],
-        "category": "Backend & Architecture",
-        "description": "Enterprise API integrations, OAuth/JWT authentication, secure webhook processing, Stripe billing, and database connectivity (SQLite, PostgreSQL, Prisma, Drizzle).",
-        "content": """# Skill: Robust Backend Integrations & APIs
+        "aliases": ["server-and-backend", "integrations-and-database", "api-integration", "database", "stripe", "webhooks"],
+        "category": "Integrations & Database",
+        "description": "Backend API endpoints, database connectivity (SQLite, PostgreSQL, Prisma, Drizzle), Stripe checkout, and webhook verification.",
+        "content": """# Skill: Server, Database & Third-Party Integrations
 
 ## 1. Environment & Secret Management
-- Always access secrets via environment variables (`process.env.KEY` in Node, `os.environ.get('KEY')` in Python).
-- When a new secret is needed, request it using `syte_ask_env_var` so it is stored directly in server `.env` without exposing secrets in chat context.
+- Access runtime variables via `process.env.KEY`. Request missing secrets using `syte_ask_env_var`.
 
-## 2. Authentication Patterns
-- **JWT Authentication**: Store access token in HttpOnly SameSite cookies or Bearer Authorization headers. Always verify token expiry (`exp`) and signature.
-- **Session Tokens**: Use secure random tokens (`crypto.randomBytes(32).toString('hex')` / `secrets.token_hex(32)`) with database lookup and expiration timestamps.
+## 2. Database Connectivity & Queries
+- SQLite / aiosqlite / Postgres: Always use parameterized queries (`?` or `$1`) to avoid SQL injection.
+- Prisma: Store schema in `prisma/schema.prisma`. Run migrations cleanly.
 
-## 3. Database Connectivity
-- **SQLite / aiosqlite**: Use connection context managers and parameterized queries (`?` in SQLite, `%s` / `$1` in Postgres) to prevent SQL injection.
-- **Prisma / Drizzle**: Maintain schema files in `prisma/schema.prisma` or `src/db/schema.ts`. Always run migrations via terminal commands (`npx prisma migrate dev` / `npx drizzle-kit push`).
-
-## 4. Stripe & Payment Processing
-- **Checkout Sessions**: Create server-side session with line items, success_url, and cancel_url.
-- **Webhook Endpoint**: ALWAYS verify the webhook signature using `stripe.webhooks.constructEvent(payload, sig, endpointSecret)` before processing event types (`checkout.session.completed`, `customer.subscription.updated`).
-
-## 5. Webhook Handlers & Background Jobs
-- Return HTTP 200 immediately upon valid payload receipt, and process long-running tasks asynchronously.
-- Implement idempotency keys to avoid duplicate transaction processing.
+## 3. Stripe & Webhook Signatures
+- Verify raw webhook signatures before processing payment and subscription events.
 """,
     },
-    "providers": {
-        "name": "providers",
-        "aliases": ["llm-providers", "vertex-ai", "openai", "anthropic", "gemini", "openrouter"],
-        "category": "AI & LLMs",
-        "description": "Multi-provider LLM configurations, endpoints, streaming SSE parsers, tool calling schemas, and error handling for OpenAI, Anthropic, Google Cloud Vertex AI, Google Gemini, DeepSeek, and OpenRouter.",
-        "content": """# Skill: LLM Provider Configuration & Multi-Provider Architecture
+    "optimization-build": {
+        "name": "optimization-build",
+        "aliases": ["optimization-and-build", "typescript", "lint", "performance"],
+        "category": "Optimization & Build",
+        "description": "TypeScript compilation validation, linting rules, bundle optimization, and caching strategies.",
+        "content": """# Skill: Optimization, TypeScript Validation & Build Performance
 
-## 1. Provider Endpoint Map
-- **OpenAI**: `https://api.openai.com/v1/chat/completions` (Headers: `Authorization: Bearer <KEY>`)
-- **Anthropic**: `https://api.anthropic.com/v1/messages` (Headers: `x-api-key: <KEY>`, `anthropic-version: 2023-06-01`)
-- **Google Gemini**: `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` (Headers: `x-goog-api-key: <KEY>`, `Authorization: Bearer <KEY>`)
-- **Google Cloud Vertex AI**: `https://{REGION}-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/{REGION}/endpoints/openapi/chat/completions`
-- **DeepSeek**: `https://api.deepseek.com/v1/chat/completions`
-- **OpenRouter**: `https://openrouter.ai/api/v1/chat/completions` (Headers: `HTTP-Referer`, `X-Title`)
+## 1. File Generation Priority
+- Focus on producing complete, verified code files that Syte will automatically compile and serve.
+- Avoid spawning long-running shell scripts or blocking VM commands.
 
-## 2. Google Vertex AI & Gemini Best Practices
-- Dual Header Authentication: Google endpoints accept `x-goog-api-key` for API keys (`AIzaSy...`) and `Authorization: Bearer` for OAuth2 access tokens (`ya29...`).
-- When project ID is not specified or endpoint returns 404, fallback to `generativelanguage.googleapis.com/v1beta/openai`.
-- Model aliases: `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-pro`, `gemini-1.5-flash`.
-
-## 3. Tool Calling Format
-- OpenAI / OpenAI-Compatible: `tools: [{type: 'function', function: {name, description, parameters}}]`, `tool_choice: 'auto'`.
-- SSE Stream chunks: Accumulate `delta.tool_calls` by index until complete JSON argument string is parsed.
-""",
-    },
-    "cloud-code": {
-        "name": "cloud-code",
-        "aliases": ["devops", "deployments", "docker", "containers", "vm-runtime"],
-        "category": "Infrastructure & DevOps",
-        "description": "Zero-downtime production deployments, optimized Dockerfile multi-stage builds, process management, health checking, and reverse proxy routing on Syte host VM.",
-        "content": """# Skill: Cloud-Code DevOps, Containerization & Zero-Downtime Deployments
-
-## 1. Project Runtime Management on Syte
-- Node.js apps: Build with `npm run build` or `pnpm build`, serve on assigned `$PORT`.
-- Python apps: Use `uvicorn` / `gunicorn` or FastAPI entrypoints binding to `0.0.0.0:$PORT`.
-- Static apps: Serve via internal Syte static file server or nginx.
-
-## 2. Dockerfile Optimization
-- Use multi-stage builds:
-  - Stage 1 (Builder): Install full dependencies and compile assets (`node:20-alpine` or `python:3.12-slim`).
-  - Stage 2 (Runner): Copy only build artifacts and production node_modules / virtualenv.
-- Ensure non-root user execution (`USER node` / `USER appuser`).
-
-## 3. Health Checks & Process Verification
-- Implement `/health` or `/api/health` endpoint returning `{"status": "ok"}`.
-- Check live listening ports using `syte_run_command` with `ss -tulpn | grep :PORT` or `curl -I http://localhost:PORT`.
-
-## 4. Deployment Diagnostics
-- When a build fails, inspect stdout/stderr logs with `syte_get_deployment_logs`.
-- Common failure vectors: Missing npm dependencies, TypeScript compilation errors (`tsc`), missing environment variables, port conflicts.
+## 2. Syntax & AST Verification
+- Run `syte_security_lint_scan` to verify JSX/TSX syntax and ensure clean AST parsing before delivery.
 """,
     },
 }
 
 
+# -----------------------------------------------------------------------------
+# 3. Discovery Helper Functions
+# -----------------------------------------------------------------------------
+def discover_skills_catalog(
+    category: Optional[str] = None,
+    query: Optional[str] = None,
+    detailed: bool = False,
+) -> Dict[str, Any]:
+    """Search and browse all modular skills and capabilities categorized by domain capability."""
+    results: Dict[str, Any] = {}
+    q = (query or "").lower().strip()
+    cat_filter = (category or "").lower().strip()
+
+    for cat_name, cat_data in SKILLS_CATEGORIES_CATALOG.items():
+        if cat_filter and cat_filter not in cat_name.lower():
+            continue
+
+        matched_capabilities = {}
+        for cap_name, cap_info in cat_data.get("capabilities", {}).items():
+            if not q or q in cap_name.lower() or q in str(cap_info.get("summary", "")).lower():
+                if detailed:
+                    matched_capabilities[cap_name] = cap_info
+                else:
+                    matched_capabilities[cap_name] = cap_info.get("summary", "")
+
+        if matched_capabilities or (not q and not cat_filter):
+            results[cat_name] = {
+                "description": cat_data.get("description", ""),
+                "capabilities_count": len(matched_capabilities),
+                "capabilities": matched_capabilities,
+            }
+
+    return {
+        "ok": True,
+        "query": query,
+        "category_filter": category,
+        "categories_count": len(results),
+        "catalog": results,
+    }
+
+
 def list_available_skills() -> List[Dict[str, Any]]:
-    """Return summary list of all registered skills."""
+    """Return summary list of all registered skills and high-level categories."""
     skills = []
     for key, skill in SKILLS_REGISTRY.items():
         skills.append(
@@ -160,13 +366,16 @@ def list_available_skills() -> List[Dict[str, Any]]:
 
 
 def get_skill_content(skill_name: str) -> Optional[str]:
-    """Retrieve full markdown content for a requested skill name or alias."""
+    """Retrieve full markdown content for a requested skill name, category, or capability."""
     query = (skill_name or "").lower().strip()
-    # Exact match
+    if not query:
+        return None
+
+    # 1. Exact match in full skills registry
     if query in SKILLS_REGISTRY:
         return SKILLS_REGISTRY[query]["content"]
 
-    # Alias / substring match
+    # 2. Alias / substring match in full skills registry
     for key, skill in SKILLS_REGISTRY.items():
         aliases = skill.get("aliases") or []
         if query == key or (isinstance(aliases, list) and query in aliases):
@@ -174,4 +383,17 @@ def get_skill_content(skill_name: str) -> Optional[str]:
         if isinstance(aliases, list) and any(query in alias for alias in aliases if isinstance(alias, str)):
             return skill.get("content")
 
-    return None
+    # 3. Check if query matches a capability in the modular category catalog
+    for cat_name, cat_data in SKILLS_CATEGORIES_CATALOG.items():
+        if query in cat_name.lower():
+            caps_text = "\n".join([f"- **`{k}`**: {v.get('summary', '')}" for k, v in cat_data.get("capabilities", {}).items()])
+            return f"# Domain Skill Blueprint: {cat_name}\n\n{cat_data.get('description')}\n\n## Capabilities:\n{caps_text}"
+
+        for cap_name, cap_info in cat_data.get("capabilities", {}).items():
+            if query == cap_name.lower() or query in cap_name.lower():
+                info_json = json.dumps(cap_info, indent=2)
+                return f"# Capability Blueprint: `{cap_name}` ({cat_name})\n\n**Summary**: {cap_info.get('summary')}\n\n```json\n{info_json}\n```"
+
+    # Default fallback
+    return SKILLS_REGISTRY["website-create"]["content"]
+

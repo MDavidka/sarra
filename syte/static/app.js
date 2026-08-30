@@ -7714,8 +7714,9 @@ function processAIServerEvent(data, project, messagesList, state) {
     const toolName = data.tool_name || '';
     const filePath = data.file_path || (data.arguments && (data.arguments.path || data.arguments.source_path));
     const command = data.command || (data.arguments && data.arguments.command);
+    const args = data.arguments || {};
 
-    if (filePath) {
+    if (filePath && (toolName === 'syte_write_file' || toolName === 'syte_edit_file')) {
       if (!state.fileBadgesRowEl || !messagesList.contains(state.fileBadgesRowEl)) {
         state.fileBadgesRowEl = document.createElement('div');
         state.fileBadgesRowEl.className = 'svc-ai-files-edited-row';
@@ -7730,39 +7731,75 @@ function processAIServerEvent(data, project, messagesList, state) {
         state.fileBadgesRowEl.appendChild(tempDiv.firstElementChild);
         refreshIcons();
       }
-    } else if (command) {
-      state.fileBadgesRowEl = null;
-      const cmdEl = document.createElement('div');
-      cmdEl.className = 'svc-ai-activity-row';
-      cmdEl.id = `cmd-${data.tool_call_id}`;
-      cmdEl.innerHTML = `
+    }
+
+    // Precise status row
+    state.fileBadgesRowEl = null;
+    const actEl = document.createElement('div');
+    actEl.className = 'svc-ai-activity-row svc-ai-status-precise';
+    actEl.id = `act-${data.tool_call_id}`;
+
+    if (toolName === 'syte_write_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
+        <span>Creating file: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_edit_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
+        <span>Editing file: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_read_file') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
+        <span>Inspecting: <strong>${escapeHtml(filePath)}</strong></span>
+      `;
+    } else if (toolName === 'syte_run_command') {
+      actEl.id = `cmd-${data.tool_call_id}`;
+      actEl.innerHTML = `
         <span class="svc-ai-activity-icon spinning"><i data-lucide="terminal"></i></span>
-        <span>bash: <strong>${escapeHtml(command)}</strong></span>
+        <span>bash: <strong>${escapeHtml(command || args.command || '')}</strong></span>
       `;
-      messagesList.appendChild(cmdEl);
-      refreshIcons();
     } else if (toolName === 'syte_start_preview') {
-      state.fileBadgesRowEl = null;
-      const prevEl = document.createElement('div');
-      prevEl.className = 'svc-ai-activity-row';
-      prevEl.id = `prev-${data.tool_call_id}`;
-      prevEl.innerHTML = `
+      actEl.id = `prev-${data.tool_call_id}`;
+      actEl.innerHTML = `
         <span class="svc-ai-activity-icon spinning"><i data-lucide="zap"></i></span>
-        <span>starting live preview server…</span>
+        <span>Starting live preview dev server…</span>
       `;
-      messagesList.appendChild(prevEl);
-      refreshIcons();
+    } else if (toolName === 'syte_security_lint_scan') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
+        <span>Scanning AST security and syntax across workspace…</span>
+      `;
+    } else if (toolName === 'syte_discover_skills') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
+        <span>Discovering modular skills in <strong>${escapeHtml(args.category || 'all categories')}</strong>…</span>
+      `;
+    } else if (toolName === 'syte_load_skill') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Loaded skill blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
+      `;
+    } else if (toolName === 'syte_create_plan') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
+        <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+      `;
+    } else if (toolName === 'syte_update_plan_step') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
+        <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
+      `;
     } else {
-      state.fileBadgesRowEl = null;
-      const actEl = document.createElement('div');
-      actEl.className = 'svc-ai-activity-row';
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="refresh-cw"></i></span>
-        <span>${escapeHtml(data.message || 'progress update')}</span>
+        <span>${escapeHtml(data.message || 'Progress update')}</span>
       `;
-      messagesList.appendChild(actEl);
-      refreshIcons();
     }
+
+    messagesList.appendChild(actEl);
+    refreshIcons();
     smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_result') {
     clearLiveMarkers();
@@ -8003,12 +8040,30 @@ async function reconnectAIChatSession(project) {
     fileBadgesRowEl: null,
   };
 
+  // Add live reconnect status badge if not present
+  let banner = document.getElementById('svc-ai-active-session-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'svc-ai-active-session-banner';
+    banner.className = 'svc-ai-active-session-banner';
+    banner.innerHTML = `
+      <span class="svc-ai-running-pulse"></span>
+      <span>Agent actively executing in Cloud VM · Streaming live session…</span>
+      <button type="button" class="btn-pill btn-ghost btn-sm" onclick="stopAIChatTurn('${escapeHtml(project.id)}')">
+        <i data-lucide="square"></i> Stop
+      </button>
+    `;
+    messagesList.appendChild(banner);
+    refreshIcons();
+    smartScrollToBottom(messagesList);
+  }
+
   try {
     const chatHeaders = { 'Content-Type': 'application/json' };
     if (syraCsrfToken) chatHeaders['X-Syte-CSRF'] = syraCsrfToken;
     if (getApiKey()) chatHeaders['X-API-Key'] = getApiKey();
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events?replay=0`, {
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/ai/events?replay=1`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: chatHeaders,
@@ -8040,6 +8095,8 @@ async function reconnectAIChatSession(project) {
   } catch (_) {
   } finally {
     setAIChatSendingState(false, project);
+    const existingBanner = document.getElementById('svc-ai-active-session-banner');
+    if (existingBanner) existingBanner.remove();
     if (streamState.liveThinkingMarkerEl) {
       streamState.liveThinkingMarkerEl.remove();
     }
@@ -8213,8 +8270,32 @@ async function renderAIChatWorkspace(project) {
                 let args = {};
                 try { args = JSON.parse(fn.arguments || '{}'); } catch (_) {}
                 const fnName = fn.name || '';
-                if (fnName.includes('file') && (args.path || args.source_path)) {
-                  pendingFiles.push(args.path || args.source_path);
+                const fPath = args.path || args.source_path || '';
+                if (fnName.includes('file') && fPath && (fnName === 'syte_write_file' || fnName === 'syte_edit_file')) {
+                  pendingFiles.push(fPath);
+                }
+
+                if (fnName === 'syte_write_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
+                      <span>Created: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_edit_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
+                      <span>Edited: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_read_file') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
+                      <span>Inspected: <strong>${escapeHtml(fPath)}</strong></span>
+                    </div>
+                  `;
                 } else if (fnName === 'syte_run_command') {
                   if (pendingFiles.length) {
                     toolsHtml += `
@@ -8226,16 +8307,51 @@ async function renderAIChatWorkspace(project) {
                     pendingFiles = [];
                   }
                   toolsHtml += `
-                    <div class="svc-ai-activity-row">
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
                       <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
                       <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
                     </div>
                   `;
                 } else if (fnName === 'syte_start_preview') {
                   toolsHtml += `
-                    <div class="svc-ai-activity-row">
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
                       <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
-                      <span>starting preview server…</span>
+                      <span>Starting preview server…</span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_discover_skills') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
+                      <span>Discovered skills in <strong>${escapeHtml(args.category || 'all categories')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_load_skill') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+                      <span>Loaded blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_security_lint_scan') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
+                      <span>AST security & syntax scan verified</span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_create_plan') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
+                      <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+                    </div>
+                  `;
+                } else if (fnName === 'syte_update_plan_step') {
+                  toolsHtml += `
+                    <div class="svc-ai-activity-row svc-ai-status-precise">
+                      <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
+                      <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
                     </div>
                   `;
                 }

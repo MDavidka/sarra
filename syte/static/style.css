@@ -9220,7 +9220,22 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #3f3f46;
   font-size: 13.5px;
   font-weight: 550;
-  margin: 2px 0;
+  margin: 3px 0;
+}
+
+.svc-ai-activity-row.svc-ai-status-precise {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  font-size: 12.5px;
+  color: #27272a;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.svc-ai-activity-row.svc-ai-status-precise strong {
+  color: #09090b;
 }
 
 .svc-ai-activity-icon {
@@ -9234,13 +9249,53 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-activity-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .svc-ai-activity-icon.spinning svg {
   animation: spin 1s linear infinite;
   color: #0284c7;
+}
+
+/* Active Live Cloud VM Session Banner */
+.svc-ai-active-session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  color: #0369a1;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin: 4px 0 10px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.svc-ai-running-pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0284c7;
+  box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.7);
+  animation: pulse-ring 1.4s infinite cubic-bezier(0.66, 0, 0, 1);
+  flex-shrink: 0;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(2, 132, 199, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(2, 132, 199, 0);
+  }
 }
 
 /* Edited File Badges Stack */
