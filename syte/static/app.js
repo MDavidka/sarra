@@ -7216,6 +7216,34 @@ function renderServiceManagementWorkspaces(project) {
   refreshIcons();
 }
 
+function formatDeploymentLogLines(rawLog) {
+  if (!rawLog) return '<span class="log-empty">No deployment log recorded.</span>';
+  const lines = String(rawLog).split('\n');
+  return lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return '<div class="log-row log-empty-row">&nbsp;</div>';
+    
+    // Deploy session header
+    if (/^===\s*Deploy session/i.test(trimmed) || /^===\s*Build/i.test(trimmed)) {
+      return `<div class="log-row log-header-row"><span class="log-badge-session">${esc(trimmed)}</span></div>`;
+    }
+    // Errors
+    if (/error:|failed|exception|fatal|exit (code )?[1-9]|npm ERR!/i.test(trimmed)) {
+      return `<div class="log-row log-error-row"><span class="log-badge-error">${esc(trimmed)}</span></div>`;
+    }
+    // Success / ready
+    if (/^(\* branch|already up to date|deploy finished|ready|listening on|✓|successfully built)/i.test(trimmed)) {
+      return `<div class="log-row log-success-row"><span class="log-text-success">${esc(trimmed)}</span></div>`;
+    }
+    // Preflight / config / cloning / docker steps
+    if (/^(preflight|configuration:|cloning|dockerfile:|step\s+\d+|pulling|installing|building)/i.test(trimmed)) {
+      return `<div class="log-row log-info-row"><span class="log-text-info">${esc(trimmed)}</span></div>`;
+    }
+    // Standard stdout line
+    return `<div class="log-row log-default-row">${esc(trimmed)}</div>`;
+  }).join('');
+}
+
 async function renderBuildWorkspace(project) {
   const target = document.getElementById('svc-build-cards-list');
   if (!target) return;
@@ -7249,18 +7277,22 @@ async function renderBuildWorkspace(project) {
       return;
     }
 
-    target.innerHTML = builds.map((b) => {
-      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
-      const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
-      const statusLabel = isSuccess ? 'successful' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
-      const statusIcon = isSuccess
-        ? '<span class="svc-status-marker-dot marker-green"></span>'
-        : (b.status === 'failed'
-            ? '<span class="svc-status-marker-square marker-red"></span>'
-            : '<span class="svc-status-marker-dot marker-amber spinning"></span>');
+    target.innerHTML = builds.map((b, idx) => {
+      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
+      const isFailed = b.status === 'failed' || (!isSuccess && b.status);
+      const statusClass = isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building');
+      const statusLabel = isFailed ? 'failed' : (isSuccess ? 'ready' : (b.status_label || 'building'));
       
-      const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'operator/app');
-      const titleText = b.commit_title || 'deploy: update workspace build';
+      let statusIcon = '<span class="svc-status-marker-dot marker-green"></span>';
+      if (isFailed) {
+        statusIcon = (idx % 2 === 1)
+          ? '<span class="svc-status-marker-triangle marker-amber"></span>'
+          : '<span class="svc-status-marker-square marker-red"></span>';
+      } else if (!isSuccess) {
+        statusIcon = '<span class="svc-status-marker-dot marker-amber spinning"></span>';
+      }
+      
+      const titleText = b.commit_title || 'fix(refactor) deployment test for ui';
       const timeStr = timeAgo(b.started_at);
       const author = b.author || (project.owner) || 'MDavid';
       const initial = (b.author_initial || author[0] || 'M').toUpperCase();
@@ -7285,9 +7317,6 @@ async function renderBuildWorkspace(project) {
                 <i data-lucide="zap"></i>
                 <span>preview</span>
               </button>
-            </div>
-            <div class="svc-build-meta-right">
-              <span class="svc-build-sha-tag font-mono">${esc(b.commit_sha || 'live')}</span>
             </div>
           </div>
         </article>
@@ -7364,7 +7393,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
 
   if (errorBanner) errorBanner.classList.add('hidden');
   if (aiFixBtn) aiFixBtn.classList.add('hidden');
-  if (codeEl) codeEl.textContent = 'Loading detailed build logs from VM…';
+  if (codeEl) codeEl.innerHTML = '<span class="log-empty">Loading detailed build logs from VM…</span>';
 
   if (previewBtn) {
     previewBtn.onclick = () => {
@@ -7386,7 +7415,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   try {
     const res = await api(`/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/logs`);
     const logOutput = res.log || 'No log output recorded.';
-    if (codeEl) codeEl.textContent = logOutput;
+    if (codeEl) codeEl.innerHTML = formatDeploymentLogLines(logOutput);
 
     if (res.commit_message && titleEl) titleEl.textContent = res.commit_message;
     if (res.commit_sha && shaEl) shaEl.textContent = `commit ${res.commit_sha.slice(0, 7)}`;
@@ -7439,7 +7468,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       };
     }
   } catch (err) {
-    if (codeEl) codeEl.textContent = `Unable to fetch build log: ${err.message}`;
+    if (codeEl) codeEl.innerHTML = `<span class="log-badge-error">Unable to fetch build log: ${esc(err.message)}</span>`;
   }
 }
 
