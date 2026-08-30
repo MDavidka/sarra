@@ -6939,115 +6939,461 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 .svc-pill-tab svg { width: 14px; height: 14px; }
 
-/* General Tab Meta Grid */
-.svc-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 4px 0 0;
-}
-.svc-meta-item {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-.svc-meta-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #71717a;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.svc-meta-val-row {
+/* ========================================================
+   Redesigned Modern Deployment Screen (Exact to Design)
+   ======================================================== */
+.svc-deploy-screen-wrap {
+  max-width: 740px;
+  margin: 0 auto;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px 4px 40px;
 }
-.svc-mono-val {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  color: #09090b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* Card 1: Top Status Banner Card */
+.svc-deploy-banner-card {
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 24px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
 }
-.svc-domain-link {
-  font-size: 13px;
-  font-weight: 600;
-  color: #2563eb;
-  text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+.svc-deploy-banner-card.is-success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
 }
-.svc-domain-link:hover { text-decoration: underline; }
-.svc-source-text {
-  font-size: 12px;
-  color: #52525b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+.svc-deploy-banner-card.is-building {
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
-.svc-meta-action-btn {
+
+.svc-deploy-banner-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.svc-deploy-banner-icon-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.svc-deploy-banner-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #ffffff;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+}
+
+.svc-deploy-banner-icon svg {
   width: 22px;
   height: 22px;
-  border: 1px solid #e4e4e7;
-  border-radius: 5px;
-  background: #f4f4f5;
-  color: #52525b;
-  cursor: pointer;
-  flex-shrink: 0;
+  stroke-width: 2.5;
 }
-.svc-meta-action-btn svg { width: 12px; height: 12px; }
-.svc-branch-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  font-size: 11px;
-  font-weight: 600;
-  color: #18181b;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.svc-branch-pill-btn svg { width: 12px; height: 12px; }
 
-/* Deploy Logs Card (shadcn terminal) */
-.svc-deploy-logs-card {
-  margin-top: 0;
+.svc-deploy-banner-card.is-success .svc-deploy-banner-icon {
+  background: #16a34a;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
 }
-.svc-logs-stats-bar {
+
+.svc-deploy-banner-card.is-building .svc-deploy-banner-icon {
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.svc-deploy-banner-category {
+  font-size: 11px;
+  font-weight: 800;
+  color: #dc2626;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.svc-deploy-banner-card.is-success .svc-deploy-banner-category {
+  color: #16a34a;
+}
+
+.svc-deploy-banner-card.is-building .svc-deploy-banner-category {
+  color: #2563eb;
+}
+
+.svc-deploy-banner-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.02em;
+}
+
+.svc-deploy-banner-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.svc-deploy-status-badge {
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 4px 14px;
+  flex-shrink: 0;
+}
+
+.svc-deploy-status-badge.is-success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.svc-deploy-status-badge.is-building {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.svc-deploy-banner-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 14px 0;
+}
+
+.svc-banner-meta-col {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #fafafa;
-  border-bottom: 1px solid #eaeaea;
-  font-size: 12px;
-  gap: 8px;
+  gap: 10px;
+  padding: 0 12px;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
 }
-.svc-logs-stat-left {
+
+.svc-banner-meta-col:last-child {
+  border-right: none;
+}
+
+.svc-banner-meta-col svg {
+  width: 18px;
+  height: 18px;
+  color: #09090b;
+  flex-shrink: 0;
+}
+
+.svc-banner-author-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #09090b;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.svc-banner-meta-data {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.svc-banner-meta-data strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-banner-meta-data span {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.svc-deploy-banner-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
-.svc-logs-stat-item {
+
+.btn-banner-action {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  color: #52525b;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 22px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.btn-banner-action.btn-danger {
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+}
+
+.btn-banner-action.btn-danger:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.btn-banner-action.btn-outline {
+  background: #ffffff;
+  color: #09090b;
+  border: 1px solid #e4e4e7;
+}
+
+.btn-banner-action.btn-outline:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.btn-banner-action svg.icon-sm {
+  width: 13px;
+  height: 13px;
+  color: #71717a;
+}
+
+/* Card 2: Bottom Build Logs Card */
+.svc-build-logs-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-build-logs-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+}
+
+.svc-build-logs-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.svc-terminal-prompt-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #18181b;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+}
+
+.svc-terminal-prompt-box svg {
+  width: 18px;
+  height: 18px;
+  color: #ffffff;
+}
+
+.svc-build-logs-title-wrap h3 {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 800;
+  color: #09090b;
+}
+
+.svc-build-logs-title-wrap p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.svc-build-logs-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-build-logs-duration {
+  font-size: 13px;
   font-weight: 600;
+  color: #64748b;
+}
+
+.svc-build-logs-error-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+}
+
+.svc-build-logs-error-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.svc-build-logs-card.is-success .svc-build-logs-error-icon {
+  background: #16a34a;
+}
+
+.svc-build-logs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  border-top: 1px solid #f3f4f6;
+  border-bottom: 1px solid #f3f4f6;
+  background: #ffffff;
+}
+
+.svc-toolbar-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.svc-toolbar-copy-btn:hover {
+  background: #f1f5f9;
+  color: #09090b;
+}
+
+.svc-toolbar-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.svc-toolbar-error-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.svc-toolbar-error-badge svg {
+  width: 15px;
+  height: 15px;
+  color: #09090b;
+}
+
+.svc-build-logs-console {
+  padding: 16px 24px 24px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #111827;
+  background: #ffffff;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.svc-log-line-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.svc-log-line-item.is-error {
+  background: #fef2f2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.svc-log-ts {
+  width: 75px;
+  color: #9ca3af;
+  font-family: monospace;
+  flex-shrink: 0;
+  user-select: none;
   font-size: 12px;
 }
-.svc-logs-stat-item.warn { color: #d97706; }
-.svc-logs-stat-item svg { width: 14px; height: 14px; }
+
+.svc-log-line-item.is-error .svc-log-ts {
+  color: #f87171;
+}
+
+.svc-log-msg {
+  flex: 1;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.svc-log-msg u {
+  color: #09090b;
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .svc-deploy-banner-meta {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .svc-banner-meta-col {
+    border-right: none;
+    padding: 0;
+  }
+  .svc-deploy-banner-card {
+    padding: 18px;
+  }
+  .svc-build-logs-card-header {
+    padding: 16px;
+  }
+  .svc-build-logs-toolbar {
+    padding: 8px 16px;
+  }
+  .svc-build-logs-console {
+    padding: 12px 16px;
+    font-size: 11.5px;
+  }
+  .svc-log-ts {
+    width: 65px;
+    font-size: 11px;
+  }
+}
+
 .svc-redacted-badge {
   display: inline-flex;
   align-items: center;
