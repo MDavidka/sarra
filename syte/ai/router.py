@@ -316,6 +316,44 @@ async def stop_project_ai_agent(
     return res
 
 
+@router.get("/api/projects/{project_id}/ai/file")
+async def get_project_workspace_file_content(
+    project_id: str,
+    path: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Retrieve content of a specific workspace file for code viewing / inspection."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = _get_project_workspace_dir(project)
+    else:
+        from syte.config import settings
+        ws_dir = settings.data_dir
+
+    rel_path = path.lstrip("/\\").strip()
+    if not rel_path or rel_path in (".", "/"):
+        raise HTTPException(400, "Invalid file path")
+
+    file_path = ws_dir / rel_path
+    if not file_path.resolve().is_relative_to(ws_dir.resolve()):
+        raise HTTPException(403, "Access denied: Path escapes workspace")
+
+    if not file_path.exists() or file_path.is_dir():
+        raise HTTPException(404, f"File '{rel_path}' not found")
+
+    content = file_path.read_text(encoding="utf-8", errors="replace")
+    return {
+        "ok": True,
+        "path": rel_path,
+        "size_bytes": len(content),
+        "lines_count": len(content.splitlines()),
+        "content": content,
+    }
+
+
 @router.get("/api/projects/{project_id}/ai/diagnostics")
 async def export_project_ai_diagnostics(
     project_id: str,

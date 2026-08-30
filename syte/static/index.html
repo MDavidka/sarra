@@ -299,11 +299,21 @@
 
             <!-- Bottom Input Composer Card -->
             <footer class="svc-ai-composer-wrapper">
+              <div class="svc-ai-slash-menu" id="svc-ai-slash-menu" style="display:none;">
+                <div class="svc-ai-slash-header">
+                  <i data-lucide="sparkles"></i>
+                  <span>Quick Slash Commands</span>
+                </div>
+                <div class="svc-ai-slash-list" id="svc-ai-slash-list">
+                  <!-- Injected dynamically -->
+                </div>
+              </div>
+
               <form class="svc-ai-composer-card" id="svc-ai-chat-form">
                 <textarea
                   id="svc-ai-input"
                   class="svc-ai-composer-textarea"
-                  placeholder="Describe what you want to build, debug, or understand."
+                  placeholder="Describe what you want to build, debug, or understand. (Type / for commands)"
                   rows="2"
                   autocomplete="off"
                 ></textarea>
@@ -1913,6 +1923,26 @@
       </div>
     </div>
   </div>
+
+  <!-- AI File Inspector Modal -->
+  <dialog id="svc-ai-file-modal" class="svc-ai-file-modal">
+    <div class="svc-ai-file-modal-card">
+      <div class="svc-ai-file-modal-header">
+        <div class="svc-ai-file-modal-title">
+          <i data-lucide="file-code"></i>
+          <span id="svc-ai-file-modal-path">file</span>
+          <span class="svc-ai-file-modal-meta" id="svc-ai-file-modal-meta"></span>
+        </div>
+        <div class="svc-ai-file-modal-actions">
+          <button type="button" class="svc-code-copy-btn" id="svc-ai-file-modal-copy-btn"><i data-lucide="copy"></i> Copy Code</button>
+          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-ai-file-modal').close()"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+      <div class="svc-ai-file-modal-body">
+        <pre><code id="svc-ai-file-modal-code"></code></pre>
+      </div>
+    </div>
+  </dialog>
 
   <div id="toast" class="toast hidden"></div>
 

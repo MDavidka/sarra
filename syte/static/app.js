@@ -7341,6 +7341,53 @@ function getSkillBadgeHtml(skillName) {
   `;
 }
 
+function getFileBadgeHtml(filePath) {
+  if (!filePath) return '';
+  const cleanPath = String(filePath).trim();
+  const ext = (cleanPath.split('.').pop() || 'file').toUpperCase();
+  return `
+    <button type="button" class="svc-ai-file-badge" onclick="openAIFilePreview('${escapeHtml(cleanPath)}')" title="Inspect file: ${escapeHtml(cleanPath)}">
+      <span class="svc-ai-file-ext ${ext.toLowerCase()}">${escapeHtml(ext)}</span>
+      <span class="svc-ai-file-name">${escapeHtml(cleanPath)}</span>
+    </button>
+  `;
+}
+
+async function openAIFilePreview(filePath) {
+  const currentProject = selectedAIProject || (projects && projects[0]) || { id: 'global' };
+  try {
+    const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/file?path=${encodeURIComponent(filePath)}`);
+    if (res && res.ok) {
+      showAIFileModal(res.path, res.content, res.lines_count, res.size_bytes);
+    } else {
+      toast(`Could not load file '${filePath}'`);
+    }
+  } catch (err) {
+    toast(`Error loading file '${filePath}': ${err.message}`);
+  }
+}
+
+function showAIFileModal(path, content, lines, size) {
+  const modal = document.getElementById('svc-ai-file-modal');
+  if (!modal) return;
+  const pathEl = document.getElementById('svc-ai-file-modal-path');
+  const metaEl = document.getElementById('svc-ai-file-modal-meta');
+  const codeEl = document.getElementById('svc-ai-file-modal-code');
+  const copyBtn = document.getElementById('svc-ai-file-modal-copy-btn');
+
+  if (pathEl) pathEl.textContent = path || 'file';
+  if (metaEl) metaEl.textContent = `(${lines || 0} lines · ${Math.round((size || 0)/1024 * 10)/10} KB)`;
+  if (codeEl) codeEl.textContent = content || '';
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(content || '');
+      toast('Copied code to clipboard');
+    };
+  }
+  modal.showModal();
+  refreshIcons();
+}
+
 async function submitAIUserAnswer(projectId, payload, containerId) {
   const container = document.getElementById(containerId);
   if (container) {
@@ -8140,16 +8187,111 @@ async function renderAIChatWorkspace(project) {
     } catch (_) {}
   }
 
-  // Auto-resize textarea
+  // Slash Commands Menu & Autocomplete
+  const slashMenu = document.getElementById('svc-ai-slash-menu');
+  const slashList = document.getElementById('svc-ai-slash-list');
+
+  const slashCommands = [
+    { cmd: '/plan', desc: 'Create a structured plan before coding', icon: 'list-checks', prompt: 'Create an end-to-end implementation plan for ' },
+    { cmd: '/redesign', desc: 'Redesign UI with modern Tailwind & shadcn', icon: 'palette', prompt: 'Redesign the frontend UI with modern Tailwind and shadcn styling: ' },
+    { cmd: '/build', desc: 'Build and verify project compilation', icon: 'hammer', prompt: 'Run project build, test for syntax/compilation errors, and fix any issues.' },
+    { cmd: '/scan', desc: 'Run security, syntax, and vulnerability scan', icon: 'shield-check', prompt: 'Run a security and syntax scan across the workspace and fix any detected issues.' },
+    { cmd: '/preview', desc: 'Start or restart live preview dev server', icon: 'zap', prompt: 'Start the live development preview server and verify the preview endpoint.' },
+    { cmd: '/deploy', desc: 'Deploy project to production domain', icon: 'rocket', prompt: 'Deploy the latest changes to the production domain and check deployment logs.' },
+    { cmd: '/skills', desc: 'List and load domain skills & blueprints', icon: 'book-open', prompt: 'List all available domain skills and load the relevant blueprint.' },
+    { cmd: '/clear', desc: 'Clear conversation history', icon: 'trash-2', action: 'clear' },
+  ];
+
+  let selectedSlashIndex = 0;
+  let currentFilteredSlash = [];
+
+  function renderSlashMenu(filterText = '') {
+    if (!slashMenu || !slashList) return;
+    const query = filterText.toLowerCase().replace(/^\//, '');
+    currentFilteredSlash = slashCommands.filter(c => c.cmd.toLowerCase().includes(query) || c.desc.toLowerCase().includes(query));
+    if (!currentFilteredSlash.length) {
+      slashMenu.style.display = 'none';
+      return;
+    }
+    selectedSlashIndex = Math.max(0, Math.min(selectedSlashIndex, currentFilteredSlash.length - 1));
+    slashList.innerHTML = currentFilteredSlash.map((c, i) => `
+      <div class="svc-ai-slash-item ${i === selectedSlashIndex ? 'active' : ''}" data-cmd="${c.cmd}">
+        <div class="svc-ai-slash-item-left">
+          <i data-lucide="${c.icon}"></i>
+          <span class="svc-ai-slash-cmd">${c.cmd}</span>
+        </div>
+        <span class="svc-ai-slash-desc">${c.desc}</span>
+      </div>
+    `).join('');
+    slashMenu.style.display = 'block';
+    refreshIcons();
+
+    slashList.querySelectorAll('.svc-ai-slash-item').forEach(item => {
+      item.onmousedown = (e) => {
+        e.preventDefault();
+        const cmdName = item.dataset.cmd;
+        const targetCmd = slashCommands.find(c => c.cmd === cmdName);
+        if (targetCmd) executeSlashCommand(targetCmd);
+      };
+    });
+  }
+
+  function executeSlashCommand(cmdObj) {
+    if (!cmdObj) return;
+    if (cmdObj.action === 'clear') {
+      if (clearBtn) clearBtn.click();
+      if (textarea) textarea.value = '';
+    } else {
+      if (textarea) {
+        textarea.value = cmdObj.prompt || `${cmdObj.cmd} `;
+        textarea.focus();
+        textarea.style.height = 'auto';
+        textarea.style.height = `${Math.min(160, textarea.scrollHeight)}px`;
+      }
+    }
+    if (slashMenu) slashMenu.style.display = 'none';
+  }
+
+  // Auto-resize textarea & Slash commands navigation
   if (textarea && !textarea.dataset.bound) {
     textarea.dataset.bound = 'true';
     textarea.addEventListener('input', () => {
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(160, textarea.scrollHeight)}px`;
+      const val = textarea.value.trim();
+      if (val.startsWith('/') && !val.includes('\n')) {
+        renderSlashMenu(val);
+      } else if (slashMenu) {
+        slashMenu.style.display = 'none';
+      }
     });
+
     textarea.addEventListener('keydown', e => {
+      if (slashMenu && slashMenu.style.display !== 'none' && currentFilteredSlash.length) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          selectedSlashIndex = (selectedSlashIndex + 1) % currentFilteredSlash.length;
+          renderSlashMenu(textarea.value.trim());
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          selectedSlashIndex = (selectedSlashIndex - 1 + currentFilteredSlash.length) % currentFilteredSlash.length;
+          renderSlashMenu(textarea.value.trim());
+          return;
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          const targetCmd = currentFilteredSlash[selectedSlashIndex];
+          if (targetCmd) executeSlashCommand(targetCmd);
+          return;
+        } else if (e.key === 'Escape') {
+          slashMenu.style.display = 'none';
+          return;
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
+        if (slashMenu) slashMenu.style.display = 'none';
         if (form) form.dispatchEvent(new Event('submit'));
       }
     });
