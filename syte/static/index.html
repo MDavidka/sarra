@@ -801,80 +801,95 @@
                 </section>
               </div>
 
-              <!-- 3. DOMAINS TAB (Exact Image 2 layout in white theme) -->
+              <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
                 <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header: Back Arrow + Title + Action -->
-                  <div class="svc-domains-top-bar">
-                    <button type="button" class="svc-domains-back-link" data-svc-open="general" title="Back to overview">
-                      <i data-lucide="chevron-left"></i>
-                    </button>
-                    <h2 class="svc-domains-heading">Domains</h2>
-                    <button type="button" class="svc-domains-top-action" title="Network routing" aria-label="Network routing">
-                      <i data-lucide="network"></i>
-                    </button>
-                  </div>
-
-                  <!-- Action Buttons: Add Existing | Buy -->
-                  <div class="svc-domains-action-pair">
-                    <button type="button" class="svc-domain-pair-btn dark" id="svc-domain-add-toggle-btn">
-                      <i data-lucide="plus"></i>
-                      <span>Add Domain</span>
-                    </button>
-                    <button type="button" class="svc-domain-pair-btn light" data-svc-open-certificates>
-                      <i data-lucide="shield-check"></i>
-                      <span>Certificates</span>
-                    </button>
-                  </div>
-
-                  <!-- Add Domain Pop-up Modal (Clean Shadcn Redesign) -->
-                  <div class="svc-domain-modal hidden" id="svc-domain-add-modal" role="dialog" aria-modal="true" aria-labelledby="svc-domain-modal-title">
-                    <div class="svc-domain-modal-backdrop" id="svc-domain-modal-backdrop"></div>
-                    <div class="svc-domain-modal-dialog">
-                      <header class="svc-domain-modal-header">
-                        <div class="svc-domain-modal-identity">
-                          <span class="svc-domain-modal-icon"><i data-lucide="globe"></i></span>
-                          <div>
-                            <h3 id="svc-domain-modal-title">Connect Custom Domain</h3>
-                            <p>Attach a custom domain or subdomain to route traffic to this project.</p>
-                          </div>
-                        </div>
-                        <button type="button" class="svc-domain-modal-close" id="svc-domain-modal-close-btn" aria-label="Close dialog"><i data-lucide="x"></i></button>
-                      </header>
-                      <form class="svc-domain-modal-form" id="svc-add-domain-form">
-                        <div class="svc-domain-form-field">
-                          <label for="svc-new-domain-input">Domain or Subdomain</label>
-                          <div class="svc-domain-input-wrap">
-                            <i data-lucide="link-2"></i>
-                            <input id="svc-new-domain-input" placeholder="e.g. app.mydomain.com or mydomain.com" autocomplete="off" required>
-                          </div>
-                        </div>
-                        <div class="svc-domain-dns-hint">
-                          <i data-lucide="info"></i>
-                          <span>Ensure your DNS <code>CNAME</code> or <code>A</code> record points to this server's public IP. Automated TLS will be issued immediately.</span>
-                        </div>
-                        <div class="svc-domain-modal-footer">
-                          <button type="button" class="btn-pill btn-ghost" id="svc-domain-modal-cancel-btn">Cancel</button>
-                          <button type="submit" class="btn-pill btn-primary"><i data-lucide="plus"></i><span>Connect Domain</span></button>
-                        </div>
-                      </form>
+                  <!-- Header Section -->
+                  <div class="svc-domains-header">
+                    <div class="svc-domains-header-text">
+                      <span class="svc-section-tag">DEPLOYMENT</span>
+                      <h2 class="svc-domains-title">Domains</h2>
+                      <p class="svc-domains-sub">Manage your custom domains, DNS settings, and SSL certificates.</p>
+                    </div>
+                    <div class="svc-domains-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
                     </div>
                   </div>
 
-                  <!-- Filter & Search Row -->
-                  <div class="svc-domain-toolbar">
-                    <div class="svc-toolbar-filter-btn" title="Domain filters">
-                      <i data-lucide="sliders-horizontal"></i>
+                  <!-- Action Bar: Add Domain + Certificates -->
+                  <div class="svc-domains-action-bar">
+                    <button type="button" class="btn-trigger-build" id="svc-domain-add-toggle-btn">
+                      <i data-lucide="plus"></i><span>Add Domain</span>
+                    </button>
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-domain-certificates-btn">
+                      <i data-lucide="shield-check"></i><span>Certificates</span>
+                    </button>
+                  </div>
+
+                  <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
+                  <div class="svc-domain-stats-grid">
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-total-num">1</strong>
+                          <span id="svc-domain-stat-total-label">Domain</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
                     </div>
-                    <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-green"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-active-num">0</strong>
+                          <span>Active</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-amber"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-pending-num">1</strong>
+                          <span>Pending</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+                  </div>
+
+                  <!-- Search & Filter Controls -->
+                  <div class="svc-domain-search-row">
+                    <div class="svc-search-input-wrap">
                       <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search connected domains..." autocomplete="off">
-                    </label>
+                      <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
+                    </div>
+                    <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
+                      <i data-lucide="sliders-horizontal"></i>
+                    </button>
                   </div>
 
-                  <!-- Grouped Domains Card List (Unified card matching Image 2) -->
+                  <!-- Domain Cards List Container -->
                   <div class="svc-domains-card-list" id="svc-domains-card-list">
                     <!-- Populated dynamically by renderServiceDomainsList -->
+                  </div>
+
+                  <!-- Bottom "Connect your domain" Prompt Card (Matching Screenshot) -->
+                  <div class="svc-connect-domain-prompt-card">
+                    <div class="svc-prompt-plus-circle">
+                      <i data-lucide="plus"></i>
+                    </div>
+                    <h3 class="svc-prompt-title">Connect your domain</h3>
+                    <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
+                    <button type="button" class="btn-trigger-build" onclick="document.getElementById('svc-domain-add-toggle-btn')?.click()">
+                      <i data-lucide="plus"></i><span>Add Domain</span>
+                    </button>
                   </div>
                 </section>
               </div>
@@ -2429,6 +2444,143 @@
           </div>
         </div>
       </section>
+    </div>
+  <!-- ========================================================
+       DOMAINS MODALS
+       ======================================================== -->
+  <!-- 1. CONNECT CUSTOM DOMAIN MODAL -->
+  <dialog id="svc-domain-add-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="globe"></i></span>
+          <div>
+            <h3 id="svc-domain-modal-title">Connect Custom Domain</h3>
+            <p>Attach a custom domain or subdomain to route traffic to this project.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domain-add-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form class="svc-clean-dialog-form" id="svc-add-domain-form">
+        <div class="svc-dialog-field">
+          <label for="svc-new-domain-input">
+            <span>Domain or Subdomain</span>
+            <span class="svc-field-hint">e.g. app.mydomain.com or mydomain.com</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">https://</span>
+            <input id="svc-new-domain-input" class="shadcn-input" placeholder="mydomain.com" autocomplete="off" required>
+          </div>
+        </div>
+
+        <div class="svc-doc-card" style="margin-top: 2px;">
+          <h4><i data-lucide="info"></i> DNS Configuration Required</h4>
+          <p style="font-size: 12px; color: #52525b; margin: 0; line-height: 1.4;">
+            Point your DNS provider's <strong>A</strong> record or <strong>CNAME</strong> record to this host. Automatic TLS certificate will be provisioned by Caddy once DNS resolves.
+          </p>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-domain-add-modal').close()">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="plus"></i><span>Connect Domain</span></button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 2. DOMAIN EDIT / DETAILS MODAL -->
+  <dialog id="svc-domain-edit-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="globe"></i></span>
+          <div>
+            <h3 id="svc-domain-edit-modal-title">Domain Details</h3>
+            <p id="svc-domain-edit-modal-sub">View routing settings and DNS status.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domain-edit-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-doc-card">
+          <h4><i data-lucide="shield-check"></i> DNS & TLS Status</h4>
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:12.5px; margin-top:6px;">
+            <div>Domain: <strong id="svc-domain-detail-name">localhost:3000</strong></div>
+            <div>Status: <span class="svc-state-pill is-active" id="svc-domain-detail-status">Valid Configuration</span></div>
+            <div>SSL Certificate: <strong>Automatic Let's Encrypt / ZeroSSL</strong></div>
+            <div>Environment: <strong>Production</strong></div>
+          </div>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-domain-edit-modal').close()">Close</button>
+          <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-domain-remove-btn" style="padding: 8px 14px; font-size: 13px;">
+            <i data-lucide="trash-2"></i><span>Remove Domain</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 3. CERTIFICATES MODAL -->
+  <dialog id="svc-certificates-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="shield-check"></i></span>
+          <div>
+            <h3>SSL / TLS Certificates</h3>
+            <p>Automated HTTPS certificate management.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-certificates-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="lock"></i> Automated TLS (ACME)</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            All connected custom domains automatically receive free, auto-renewing SSL/TLS certificates via Let's Encrypt and ZeroSSL managed by Caddy. HTTP requests are automatically upgraded to HTTPS.
+          </p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 4. DOMAINS DOCUMENTATION GUIDE MODAL -->
+  <dialog id="svc-domains-docs-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>Custom Domains Guide</h3>
+            <p>Configuring DNS records, apex domains, and subdomains.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domains-docs-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="globe"></i> Apex / Root Domains</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            For root domains (like <code>example.com</code>), add an <strong>A</strong> record in your DNS provider pointing to this server's public IP.
+          </p>
+        </section>
+        <section class="svc-doc-card">
+          <h4><i data-lucide="link"></i> Subdomains</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            For subdomains (like <code>app.example.com</code> or <code>www.example.com</code>), add a <strong>CNAME</strong> record pointing to your server domain or public IP.
+          </p>
+        </section>
+      </div>
     </div>
   </dialog>
 

@@ -6647,58 +6647,254 @@ function getProjectDomainsArray(project) {
   return list;
 }
 
+let domainStatusFilter = 'all';
+
+function formatDomainAddedDate(iso) {
+  if (!iso) return 'Added Aug 31, 2026';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Added Aug 31, 2026';
+    return `Added ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  } catch (_) {
+    return 'Added Aug 31, 2026';
+  }
+}
+
 function renderServiceDomainsList(project) {
   const container = document.getElementById('svc-domains-card-list');
   if (!container) return;
+
+  const totalNumEl = document.getElementById('svc-domain-stat-total-num');
+  const totalLabelEl = document.getElementById('svc-domain-stat-total-label');
+  const activeNumEl = document.getElementById('svc-domain-stat-active-num');
+  const pendingNumEl = document.getElementById('svc-domain-stat-pending-num');
+
+  const pillTotal = document.getElementById('svc-stat-pill-total');
+  const pillActive = document.getElementById('svc-stat-pill-active');
+  const pillPending = document.getElementById('svc-stat-pill-pending');
+  const filterBtn = document.getElementById('svc-domain-filter-btn');
+
+  const addBtn = document.getElementById('svc-domain-add-toggle-btn');
+  const certsBtn = document.getElementById('svc-domain-certificates-btn');
+  const learnMoreBtn = document.getElementById('svc-domain-learn-more-btn');
+
   const searchInput = document.getElementById('svc-domain-search-input');
   const query = (searchInput?.value || '').toLowerCase().trim();
 
+  // Wires for header buttons
+  if (addBtn && !addBtn.dataset.wired) {
+    addBtn.dataset.wired = 'true';
+    addBtn.onclick = () => openDomainAddModal(project);
+  }
+  if (certsBtn && !certsBtn.dataset.wired) {
+    certsBtn.dataset.wired = 'true';
+    certsBtn.onclick = () => openCertificatesModal();
+  }
+  if (learnMoreBtn && !learnMoreBtn.dataset.wired) {
+    learnMoreBtn.dataset.wired = 'true';
+    learnMoreBtn.onclick = () => openDomainsDocsModal();
+  }
+
+  // Wires for 3 stat pills
+  if (pillTotal && !pillTotal.dataset.wired) {
+    pillTotal.dataset.wired = 'true';
+    pillTotal.onclick = () => {
+      domainStatusFilter = 'all';
+      toast('Showing all domains');
+      renderServiceDomainsList(project);
+    };
+  }
+  if (pillActive && !pillActive.dataset.wired) {
+    pillActive.dataset.wired = 'true';
+    pillActive.onclick = () => {
+      domainStatusFilter = 'active';
+      toast('Filtered: Active domains');
+      renderServiceDomainsList(project);
+    };
+  }
+  if (pillPending && !pillPending.dataset.wired) {
+    pillPending.dataset.wired = 'true';
+    pillPending.onclick = () => {
+      domainStatusFilter = 'pending';
+      toast('Filtered: Pending domains');
+      renderServiceDomainsList(project);
+    };
+  }
+  if (filterBtn && !filterBtn.dataset.wired) {
+    filterBtn.dataset.wired = 'true';
+    filterBtn.onclick = () => {
+      if (domainStatusFilter === 'all') domainStatusFilter = 'active';
+      else if (domainStatusFilter === 'active') domainStatusFilter = 'pending';
+      else domainStatusFilter = 'all';
+      toast(`Domain filter: ${domainStatusFilter.toUpperCase()}`);
+      renderServiceDomainsList(project);
+    };
+  }
+
   const domainRows = getProjectDomainsArray(project);
-  const filtered = query
-    ? domainRows.filter(d => d.domain.toLowerCase().includes(query))
-    : domainRows;
+  const totalCount = domainRows.length;
+  const activeCount = domainRows.filter(d => d.valid).length;
+  const pendingCount = domainRows.filter(d => !d.valid).length;
+
+  if (totalNumEl) totalNumEl.textContent = totalCount;
+  if (totalLabelEl) totalLabelEl.textContent = totalCount === 1 ? 'Domain' : 'Domains';
+  if (activeNumEl) activeNumEl.textContent = activeCount;
+  if (pendingNumEl) pendingNumEl.textContent = pendingCount;
+
+  let filtered = domainRows;
+  if (query) {
+    filtered = filtered.filter(d => d.domain.toLowerCase().includes(query));
+  }
+  if (domainStatusFilter === 'active') {
+    filtered = filtered.filter(d => d.valid);
+  } else if (domainStatusFilter === 'pending') {
+    filtered = filtered.filter(d => !d.valid);
+  }
 
   if (!filtered.length) {
     container.innerHTML = `
-      <div class="svc-domain-empty-state">
-        <i data-lucide="globe"></i>
-        <p>${query ? `No domains match “${esc(query)}”` : 'No domains connected yet.'}</p>
+      <div class="svc-domain-empty-state" style="padding: 24px; text-align: center; background: #fff; border: 1px solid #ececee; border-radius: 16px;">
+        <i data-lucide="globe" style="width: 32px; height: 32px; color: #a1a1aa; margin-bottom: 8px;"></i>
+        <p style="color: #71717a; font-size: 13.5px; margin: 0;">${query ? `No domains match “${esc(query)}”` : 'No domains match selected filter.'}</p>
       </div>
     `;
     refreshIcons();
     return;
   }
 
-  container.innerHTML = `
-    <div class="svc-domain-group-card">
-      ${filtered.map(item => `
-        <div class="svc-domain-list-row ${item.valid ? 'is-valid' : ''}">
-          <div class="svc-domain-row-left">
-            <span class="svc-domain-circle-check ${item.valid ? 'checked' : ''}">
-              <i data-lucide="${item.valid ? 'check' : 'circle'}"></i>
-            </span>
-            <div class="svc-domain-info">
-              <strong class="svc-domain-name">${esc(item.domain)}</strong>
-              ${item.valid
-                ? '<span class="svc-domain-valid-subtext">Valid Configuration</span>'
-                : '<span class="svc-domain-pending-subtext"><span class="svc-domain-spinner"></span> Provisioning DNS & TLS...</span>'}
+  const dateLabel = formatDomainAddedDate(project.created_at || project.updated_at);
+
+  container.innerHTML = filtered.map(item => {
+    const isPending = !item.valid;
+    const sslStatus = isPending ? 'Pending' : 'Active';
+    const redirectLabel = item.domain.startsWith('www.') ? item.domain.replace(/^www\./, '') : 'None';
+
+    return `
+      <!-- Exact Domain Card matching media_1788169957679.jpg -->
+      <article class="svc-domain-exact-card" data-domain-name="${esc(item.domain)}">
+        <!-- Top Row: Icon + Name & Status + Edit Pill + 3-Dot -->
+        <div class="svc-domain-exact-top-row">
+          <div class="svc-domain-exact-left">
+            <div class="svc-domain-icon-sq">
+              <i data-lucide="globe"></i>
+            </div>
+            <div class="svc-domain-exact-info">
+              <strong class="svc-domain-exact-title">${esc(item.domain)}</strong>
+              <div class="svc-domain-status-row ${isPending ? 'is-pending' : 'is-valid'}">
+                <span class="svc-domain-status-bullet-dot"></span>
+                <span>${isPending ? 'Provisioning DNS & TLS...' : 'Valid Configuration'}</span>
+              </div>
+              <span class="svc-domain-added-time">${esc(dateLabel)}</span>
             </div>
           </div>
-          <div class="svc-domain-row-right">
-            <button type="button" class="svc-domain-row-edit-btn" data-svc-domain-edit="${esc(item.domain)}">
-              <span>Edit</span>
+          <div class="svc-domain-exact-actions">
+            <button type="button" class="btn-domain-edit-pill" onclick="openDomainEditModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+              Edit
+            </button>
+            <button type="button" class="btn-domain-menu" title="Domain actions" onclick="openDomainEditModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+              <i data-lucide="more-vertical"></i>
             </button>
           </div>
         </div>
-      `).join('')}
-    </div>
-  `;
 
-  container.querySelectorAll('[data-svc-domain-edit]').forEach(btn => {
-    btn.onclick = () => openServiceEditModal(project);
-  });
+        <!-- 3-Column Metadata Row with Vertical Dividers -->
+        <div class="svc-domain-exact-meta-cols">
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="corner-down-right"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">Redirects</span>
+              <span class="svc-meta-col-val">${esc(redirectLabel)}</span>
+            </div>
+          </div>
+
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="lock"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">SSL</span>
+              <span class="svc-meta-col-val">${esc(sslStatus)}</span>
+            </div>
+          </div>
+
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="layers"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">Environment</span>
+              <span class="svc-meta-col-val">Production</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
 
   refreshIcons();
+}
+
+function openDomainAddModal(project) {
+  const modal = document.getElementById('svc-domain-add-modal');
+  if (!modal) return;
+  const input = document.getElementById('svc-new-domain-input');
+  if (input) input.value = '';
+  modal.showModal();
+  refreshIcons();
+}
+
+function openDomainEditModal(project, item) {
+  const modal = document.getElementById('svc-domain-edit-modal');
+  if (!modal) return;
+  const nameEl = document.getElementById('svc-domain-detail-name');
+  const statusEl = document.getElementById('svc-domain-detail-status');
+  const removeBtn = document.getElementById('svc-domain-remove-btn');
+
+  if (nameEl) nameEl.textContent = item.domain;
+  if (statusEl) {
+    statusEl.textContent = item.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
+    statusEl.className = item.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
+  }
+
+  if (removeBtn) {
+    removeBtn.onclick = async () => {
+      if (!confirm(`Are you sure you want to disconnect ${item.domain}?`)) return;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/domain`, {
+          method: 'DELETE',
+          body: JSON.stringify({ domain: item.domain }),
+        });
+        toast(`Removed domain ${item.domain}`);
+        modal.close();
+        await loadProjects();
+        const refreshed = projects.find(p => p.id === project.id) || project;
+        renderServiceDomainsList(refreshed);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
+      }
+    };
+  }
+
+  modal.showModal();
+  refreshIcons();
+}
+
+function openCertificatesModal() {
+  const modal = document.getElementById('svc-certificates-modal');
+  if (modal) {
+    modal.showModal();
+    refreshIcons();
+  }
+}
+
+function openDomainsDocsModal() {
+  const modal = document.getElementById('svc-domains-docs-modal');
+  if (modal) {
+    modal.showModal();
+    refreshIcons();
+  }
 }
 
 let redirectsSearchQuery = '';
@@ -7667,19 +7863,22 @@ function renderServiceManagementWorkspaces(project) {
   const newDomainInput = document.getElementById('svc-new-domain-input');
 
   const closeDomainModal = () => {
-    if (domainAddModal) domainAddModal.classList.add('hidden');
+    if (domainAddModal) {
+      if (typeof domainAddModal.close === 'function') domainAddModal.close();
+      domainAddModal.classList.add('hidden');
+    }
     document.body.classList.remove('modal-open');
   };
   const openDomainModal = () => {
-    if (domainAddModal) domainAddModal.classList.remove('hidden');
+    if (domainAddModal) {
+      if (typeof domainAddModal.showModal === 'function') domainAddModal.showModal();
+      domainAddModal.classList.remove('hidden');
+    }
     document.body.classList.add('modal-open');
     newDomainInput?.focus();
   };
 
   if (domainAddToggle) domainAddToggle.onclick = openDomainModal;
-  if (domainModalClose) domainModalClose.onclick = closeDomainModal;
-  if (domainModalCancel) domainModalCancel.onclick = closeDomainModal;
-  if (domainModalBackdrop) domainModalBackdrop.onclick = closeDomainModal;
 
   if (addDomainForm) {
     addDomainForm.onsubmit = async (e) => {
