@@ -7100,9 +7100,25 @@ function openDomainsDocsModal() {
   }
 }
 
+function initSheetDialogDismiss(modal) {
+  if (!modal || modal.dataset.dismissWired) return;
+  modal.dataset.dismissWired = 'true';
+  modal.addEventListener('click', (e) => {
+    const rect = modal.getBoundingClientRect();
+    const isInDialog = (
+      rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+      rect.left <= e.clientX && e.clientX <= rect.left + rect.width
+    );
+    if (!isInDialog) {
+      modal.close();
+    }
+  });
+}
+
 function openFwAddRuleModal(project) {
   const modal = document.getElementById('svc-modal-fw-add-rule');
   if (!modal) return;
+  initSheetDialogDismiss(modal);
   const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null);
 
   let selectedAction = 'block';
@@ -7195,18 +7211,19 @@ function openFwAddRuleModal(project) {
       const ruleName = nameInput?.value.trim() || 'Custom Firewall Rule';
       toast(`Firewall rule created: ${ruleName} (${selectedAction.toUpperCase()})`);
       if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
     };
   }
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
+  if (!modal.open && typeof modal.showModal === 'function') {
+    modal.showModal();
+  }
   refreshIcons();
 }
 
 function openFwRateLimitModal(project) {
   const modal = document.getElementById('svc-modal-fw-rate-limit');
   if (!modal) return;
+  initSheetDialogDismiss(modal);
 
   let selectedAction = 'block';
   const actionCards = modal.querySelectorAll('[data-rl-action]');
@@ -7267,18 +7284,19 @@ function openFwRateLimitModal(project) {
       const nameVal = nameInput?.value.trim() || 'IP Rate Limit';
       toast(`Rate limit rule created: ${requests} req / ${windowVal} (${nameVal})`);
       if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
     };
   }
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
+  if (!modal.open && typeof modal.showModal === 'function') {
+    modal.showModal();
+  }
   refreshIcons();
 }
 
 function openFwBotProtectModal(project) {
   const modal = document.getElementById('svc-modal-fw-bot-protect');
   if (!modal) return;
+  initSheetDialogDismiss(modal);
 
   let selectedLevel = 'balanced';
   const levelCards = modal.querySelectorAll('[data-bot-level]');
@@ -7355,18 +7373,19 @@ function openFwBotProtectModal(project) {
       const enabled = Boolean(document.getElementById('fw-bot-main-toggle')?.checked);
       toast(`Bot protection updated: ${enabled ? 'Enabled' : 'Disabled'} (${selectedLevel}, ${selectedAction})`);
       if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
     };
   }
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
+  if (!modal.open && typeof modal.showModal === 'function') {
+    modal.showModal();
+  }
   refreshIcons();
 }
 
 function openFwIpBlockModal(project) {
   const modal = document.getElementById('svc-modal-fw-ip-block');
   if (!modal) return;
+  initSheetDialogDismiss(modal);
 
   let selectedAction = 'block';
   const actionCards = modal.querySelectorAll('[data-ipb-action]');
@@ -7411,12 +7430,12 @@ function openFwIpBlockModal(project) {
       const nameVal = nameInput?.value.trim() || 'IP Rule';
       toast(`IP access rule created: ${selectedAction.toUpperCase()} for ${target}`);
       if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
     };
   }
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
+  if (!modal.open && typeof modal.showModal === 'function') {
+    modal.showModal();
+  }
   refreshIcons();
 }
 

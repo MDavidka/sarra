@@ -16202,11 +16202,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
    ======================================================== */
 .svc-sheet-dialog {
   border: none;
-  background: transparent;
+  background: #ffffff;
   padding: 0;
-  max-width: 100vw;
-  max-height: 100vh;
+  border-radius: 20px;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 88vh;
   margin: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
 
 .svc-sheet-dialog::backdrop {
@@ -16215,16 +16219,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   -webkit-backdrop-filter: blur(4px);
 }
 
-.svc-sheet-card {
-  background: #ffffff;
-  border: 1px solid #ececee;
-  border-radius: 20px;
-  width: 100%;
-  max-width: 520px;
-  max-height: 85vh;
+.svc-sheet-dialog[open] {
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.svc-sheet-card {
+  background: #ffffff;
+  border: none;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -16883,14 +16892,16 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 /* Mobile Bottom Sheet Adaptation */
 @media (max-width: 640px) {
+  .svc-sheet-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    margin-bottom: 0;
+    margin-top: auto;
+    border-radius: 20px 20px 0 0;
+    max-height: 90vh;
+  }
+
   .svc-sheet-card {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    margin: 0;
-    max-width: 100%;
-    width: 100%;
     border-radius: 20px 20px 0 0;
     max-height: 90vh;
   }
