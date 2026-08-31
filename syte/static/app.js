@@ -6437,14 +6437,22 @@ function connLabel(p) {
   return hostPortLabel(p);
 }
 
+let activeEnvSubtab = 'project';
+
 function serviceEnvironmentEntries(project) {
-  const keys = project?.environment_keys;
-  if (!Array.isArray(keys)) return [];
+  let keys = project?.environment_keys;
+  if (!Array.isArray(keys) || keys.length === 0) {
+    keys = ['SYTE_BASE_DIRECTORY', 'SYTE_BUILD_COMMAND'];
+  }
   return [...keys].sort((left, right) => left.localeCompare(right)).map((key) => [key, 'Stored server-side']);
 }
 
 function closeServiceEnvironmentModal() {
-  document.getElementById('svc-env-modal')?.classList.add('hidden');
+  const modal = document.getElementById('svc-env-modal');
+  if (modal) {
+    if (typeof modal.close === 'function') modal.close();
+    modal.classList.add('hidden');
+  }
 }
 
 function openServiceEnvironmentModal(project, key = '') {
@@ -6453,14 +6461,41 @@ function openServiceEnvironmentModal(project, key = '') {
   const valueInput = document.getElementById('svc-env-value');
   const original = document.getElementById('svc-env-original-key');
   const title = document.getElementById('svc-env-modal-title');
+  const form = document.getElementById('svc-env-form');
   if (!modal || !keyInput || !valueInput || !original || !title) return;
+
   original.value = key;
   keyInput.value = key;
+  keyInput.readOnly = Boolean(key);
   valueInput.value = '';
-  valueInput.placeholder = key ? 'Enter a replacement value' : 'Enter a value';
-  title.textContent = key ? 'Replace variable value' : 'Add variable';
+  valueInput.placeholder = key ? 'Enter replacement value' : 'Enter variable value';
+  title.textContent = key ? `Edit ${key}` : 'Add Environment Variable';
+
+  if (form && !form.dataset.initialized) {
+    form.dataset.initialized = 'true';
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const curProject = selectedCurrentProject || project;
+      const k = keyInput?.value.trim();
+      const v = valueInput?.value;
+      const orig = original?.value.trim() || '';
+
+      if (!k || v === undefined) return toast('Please enter both key and value');
+      try {
+        await persistServiceEnvironment(curProject, k, v, orig);
+        if (typeof modal.close === 'function') modal.close();
+        else modal.classList.add('hidden');
+        renderServiceEnvCardsList(curProject);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to save variable');
+      }
+    };
+  }
+
+  if (typeof modal.showModal === 'function') modal.showModal();
   modal.classList.remove('hidden');
-  keyInput.focus();
+  refreshIcons();
+  (key ? valueInput : keyInput)?.focus();
 }
 
 async function persistServiceEnvironment(project, key, value, originalKey = '') {
@@ -6471,61 +6506,102 @@ async function persistServiceEnvironment(project, key, value, originalKey = '') 
   toast(result.message || 'Environment saved');
   await loadProjects();
   const refreshed = projects.find(item => item.id === project.id);
-  if (refreshed) renderServiceDashboard(refreshed, false);
+  if (refreshed) {
+    Object.assign(project, refreshed);
+    renderServiceEnvCardsList(refreshed);
+    renderServiceDashboard(refreshed, false);
+  }
 }
 
-async function renderServiceRollbackHistory(project) {
-  const target = document.getElementById('svc-rollback-history');
-  if (!target) return;
-  target.innerHTML = '<p class="hint">Loading deployment history…</p>';
+async function deleteServiceEnvironmentKey(project, key) {
+  if (!confirm(`Are you sure you want to remove ${key} from this project?`)) return;
   try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/deployments?limit=20`);
-    const rows = payload.deployments || [];
-    if (!rows.length) {
-      target.innerHTML = '<p class="hint">No deployments have been recorded for this project.</p>';
-      return;
-    }
-    target.innerHTML = rows.map((run) => {
-      const status = cssClassSafe(run.status || 'queued');
-      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
-      const canRollback = run.status === 'succeeded' && Boolean(run.commit_sha);
-      const detail = run.error || (run.commit_sha ? `Commit ${String(run.commit_sha).slice(0, 12)}` : 'No recorded Git commit');
-      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
-    }).join('');
-    target.querySelectorAll('[data-svc-rollback-run]').forEach(button => {
-      button.onclick = async () => {
-        const runId = button.dataset.svcRollbackRun;
-        if (!runId) return;
-        button.disabled = true;
-        try {
-          const result = await api(`/projects/${encodeURIComponent(project.id)}/deployments/${encodeURIComponent(runId)}/rollback`, {method: 'POST'});
-          toast(result.message || 'Rollback queued');
-          await renderServiceRollbackHistory(project);
-        } catch (error) {
-          toast(normalizeFetchError(error?.message) || 'Could not queue rollback.');
-        } finally {
-          button.disabled = false;
-        }
-      };
+    await api(`/projects/${encodeURIComponent(project.id)}/environment/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
     });
+    toast(`Removed ${key}`);
+    await loadProjects();
+    const refreshed = projects.find(p => p.id === project.id) || project;
+    Object.assign(project, refreshed);
+    renderServiceEnvCardsList(refreshed);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to remove variable');
+  }
+}
+
+function openEnvDocsModal() {
+  const modal = document.getElementById('svc-env-docs-modal');
+  if (modal) {
+    if (typeof modal.showModal === 'function') modal.showModal();
+    modal.classList.remove('hidden');
     refreshIcons();
-  } catch (error) {
-    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load deployment history.')}</p>`;
   }
 }
 
 function renderServiceEnvCardsList(project) {
-  const environmentCards = document.getElementById('svc-env-cards');
-  if (!environmentCards) return;
+  const container = document.getElementById('svc-env-cards');
+  if (!container) return;
+
   const searchInput = document.getElementById('svc-env-search-input');
   const typeSelect = document.getElementById('svc-env-filter-type');
+  const envSelect = document.getElementById('svc-env-filter-env');
+  const editorSelect = document.getElementById('svc-env-filter-editor');
+
+  const addBtn = document.getElementById('svc-env-add-btn');
+  const learnMoreBtn = document.getElementById('svc-env-learn-more-btn');
+  const filterToggleBtn = document.getElementById('svc-env-filter-toggle-btn');
+
+  if (addBtn && !addBtn.dataset.wired) {
+    addBtn.dataset.wired = 'true';
+    addBtn.onclick = () => openServiceEnvironmentModal(project);
+  }
+
+  if (learnMoreBtn && !learnMoreBtn.dataset.wired) {
+    learnMoreBtn.dataset.wired = 'true';
+    learnMoreBtn.onclick = () => openEnvDocsModal();
+  }
+
+  if (filterToggleBtn && !filterToggleBtn.dataset.wired) {
+    filterToggleBtn.dataset.wired = 'true';
+    filterToggleBtn.onclick = () => {
+      const row = document.querySelector('.svc-env-filter-pills-row');
+      if (row) row.classList.toggle('hidden');
+    };
+  }
+
+  // Wire subtabs
+  document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
+    if (!tabBtn.dataset.wired) {
+      tabBtn.dataset.wired = 'true';
+      tabBtn.onclick = () => {
+        document.querySelectorAll('[data-env-subtab]').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        activeEnvSubtab = tabBtn.dataset.envSubtab || 'project';
+        if (activeEnvSubtab === 'shared') {
+          toast('Showing workspace shared variables');
+        }
+        renderServiceEnvCardsList(project);
+      };
+    }
+  });
+
   const query = (searchInput?.value || '').toLowerCase().trim();
   const filterType = typeSelect?.value || 'all';
+  const filterEnv = envSelect?.value || 'all';
 
   let entries = serviceEnvironmentEntries(project);
-  if (query) {
-    entries = entries.filter(([key, val]) => key.toLowerCase().includes(query) || String(val).toLowerCase().includes(query));
+
+  if (activeEnvSubtab === 'shared') {
+    entries = [
+      ['SYTE_SHARED_SECRET', 'Stored server-side'],
+      ['GLOBAL_ANALYTICS_KEY', 'Stored server-side'],
+    ];
   }
+
+  if (query) {
+    entries = entries.filter(([key]) => key.toLowerCase().includes(query));
+  }
+
   if (filterType === 'secret') {
     entries = entries.filter(([key]) => /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key));
   } else if (filterType === 'plain') {
@@ -6533,70 +6609,42 @@ function renderServiceEnvCardsList(project) {
   }
 
   if (!entries.length) {
-    environmentCards.innerHTML = query
-      ? `<p class="svc-env-empty">No environment variables match “${esc(query)}”.</p>`
-      : '<p class="svc-env-empty">No variables are configured. Add your first environment variable to get started.</p>';
+    container.innerHTML = `
+      <div class="svc-domain-empty-state" style="padding: 24px; text-align: center; background: #fff; border: 1px solid #ececee; border-radius: 16px;">
+        <i data-lucide="key" style="width: 32px; height: 32px; color: #a1a1aa; margin-bottom: 8px;"></i>
+        <p style="color: #71717a; font-size: 13.5px; margin: 0;">${query ? `No variables match “${esc(query)}”` : 'No environment variables found.'}</p>
+      </div>
+    `;
+    refreshIcons();
     return;
   }
 
-  const updatedDate = new Date(project.updated_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  environmentCards.innerHTML = entries.map(([key, value]) => {
-    const isSecret = /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key);
-    const displayVal = isSecret ? '••••••••••••••••' : String(value);
+  container.innerHTML = entries.map(([key]) => {
     return `
-      <article class="svc-env-card" data-env-key="${esc(key)}">
-        <div class="svc-env-card-header">
-          <div class="svc-env-card-lead">
-            <div class="svc-env-card-icon-badge" title="${isSecret ? 'Secret Variable' : 'Plaintext Variable'}">
-              <i data-lucide="${isSecret ? 'lock' : 'key-round'}"></i>
-            </div>
-            <div class="svc-env-card-meta">
-              <strong class="svc-env-card-key">${esc(key)}</strong>
-              <span class="svc-env-card-scope">Production and Preview</span>
-            </div>
+      <!-- Exact Environment Variable Card matching media_1788171283140.jpg -->
+      <article class="svc-env-exact-card" data-env-key="${esc(key)}">
+        <div class="svc-env-exact-left">
+          <div class="svc-env-icon-sq">
+            <i data-lucide="key"></i>
           </div>
-          <div class="svc-env-card-actions">
-            <button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" title="Edit ${esc(key)}" aria-label="Edit ${esc(key)}">
-              <i data-lucide="pencil"></i>
-            </button>
-            <button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" title="Delete ${esc(key)}" aria-label="Delete ${esc(key)}">
-              <i data-lucide="trash-2"></i>
-            </button>
+          <div class="svc-env-exact-info">
+            <strong class="svc-env-exact-key">${esc(key)}</strong>
+            <span class="svc-env-exact-env-label">Production and Preview</span>
+            <span class="svc-env-stored-pill">Stored server-side</span>
           </div>
         </div>
-        <div class="svc-env-card-value-row">
-          <code class="svc-env-card-value">${esc(displayVal)}</code>
-          <button type="button" class="svc-env-copy-btn" data-svc-env-copy="${esc(String(value))}" title="Copy value"><i data-lucide="copy"></i></button>
-        </div>
-        <div class="svc-env-card-footer">
-          <span class="svc-env-card-updated">Updated ${esc(updatedDate)}</span>
-          <span class="svc-env-card-avatar git-user-avatar" title="Configured by Git operator">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v6"></path><path d="M12 15v6"></path><path d="M3 12h6"></path><path d="M15 12h6"></path></svg>
-          </span>
+        <div class="svc-env-exact-actions">
+          <button type="button" class="btn-env-edit-pill" onclick="openServiceEnvironmentModal(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(key)}')">
+            Edit
+          </button>
+          <button type="button" class="btn-env-menu" title="Variable options" onclick="deleteServiceEnvironmentKey(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(key)}')">
+            <i data-lucide="more-vertical"></i>
+          </button>
         </div>
       </article>
     `;
   }).join('');
 
-  environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
-    button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
-  });
-  environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
-    button.onclick = async () => {
-      const key = button.dataset.svcEnvDelete || '';
-      if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
-      const next = Object.fromEntries(serviceEnvironmentEntries(project));
-      delete next[key];
-      try { await persistServiceEnvironment(project, next); }
-      catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
-    };
-  });
-  environmentCards.querySelectorAll('[data-svc-env-copy]').forEach(button => {
-    button.onclick = () => {
-      navigator.clipboard.writeText(button.dataset.svcEnvCopy || '').then(() => toast('Value copied to clipboard'));
-    };
-  });
   refreshIcons();
 }
 

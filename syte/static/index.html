@@ -870,48 +870,57 @@
                 </section>
               </div>
 
-              <!-- 4. ENVIRONMENT VARIABLES TAB -->
+              <!-- 4. ENVIRONMENT VARIABLES TAB (Exact match to media_1788171283140.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
                 <section class="svc-env-screen" aria-label="Environment variables">
-                  <!-- Header & Descriptions -->
+                  <!-- Header Section -->
                   <div class="svc-env-screen-header">
-                    <div class="svc-env-heading-group">
-                      <h2>Environment Variables</h2>
-                      <p class="svc-env-description">Store API keys, tokens, and config securely.</p>
-                      <p class="svc-env-links">
-                        <a href="https://docs.sycord.com/environment-variables" target="_blank" rel="noopener" class="svc-blue-link">Learn more about environment variables <i data-lucide="external-link"></i></a>
-                        <span class="svc-dot-sep">·</span>
-                        <a href="#" class="svc-blue-link" id="svc-env-secret-values-link">Separate Production Secret Values</a>
-                      </p>
+                    <div class="svc-env-header-text">
+                      <span class="svc-section-tag">PROJECT</span>
+                      <h2 class="svc-env-title">Environment Variables</h2>
+                      <p class="svc-env-sub">Store API keys, tokens, and config securely.</p>
                     </div>
-                    <!-- Action Buttons -->
-                    <div class="svc-env-actions-stack">
-                      <button type="button" class="btn-pill btn-primary btn-full" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add Environment Variable</span></button>
-                      <button type="button" class="btn-pill btn-primary btn-full" id="svc-env-link-shared-btn"><i data-lucide="link"></i><span>Link Shared Variable</span></button>
+                    <div class="svc-env-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-env-learn-more-btn">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
                     </div>
                   </div>
 
-                  <!-- Segmented Sub-Tabs (Project | Shared) -->
-                  <div class="svc-env-segmented-bar" role="tablist">
-                    <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
-                    <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
+                  <!-- Subtabs (Project | Shared) + Right Add Button -->
+                  <div class="svc-env-tab-row">
+                    <div class="svc-env-subtabs-nav" role="tablist">
+                      <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
+                      <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
+                    </div>
+                    <button type="button" class="btn-env-add-icon" id="svc-env-add-btn" title="Add Environment Variable">
+                      <i data-lucide="plus"></i>
+                    </button>
                   </div>
 
-                  <!-- Search & Filter Controls -->
-                  <div class="svc-env-controls-row">
-                    <label class="svc-env-search-wrap" for="svc-env-search-input">
-                      <i data-lucide="search"></i>
-                      <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
-                    </label>
-                    <div class="svc-env-filter-pills">
-                      <div class="svc-pill-select-wrap">
+                  <!-- Search & Filter Bar -->
+                  <div class="svc-env-search-section">
+                    <!-- Search Input + Filter Toggle -->
+                    <div class="svc-env-search-row">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
+                      </div>
+                      <button type="button" class="btn-domain-filter" id="svc-env-filter-toggle-btn" title="Toggle filters">
+                        <i data-lucide="sliders-horizontal"></i>
+                      </button>
+                    </div>
+
+                    <!-- 3 Pill Dropdowns Row -->
+                    <div class="svc-env-filter-pills-row">
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-type">
                           <option value="all">All Types</option>
                           <option value="plain">Plaintext</option>
                           <option value="secret">Secret</option>
                         </select>
                       </div>
-                      <div class="svc-pill-select-wrap">
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-env">
                           <option value="all">All Environments</option>
                           <option value="production">Production</option>
@@ -919,55 +928,21 @@
                           <option value="development">Development</option>
                         </select>
                       </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="search" class="select-leading-icon"></i>
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-editor">
                           <option value="all">All Editors</option>
-                        </select>
-                      </div>
-                      <div class="svc-pill-select-wrap">
-                        <select id="svc-env-filter-sort">
-                          <option value="all">All Variables</option>
-                          <option value="name">Alphabetical</option>
-                        </select>
-                      </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="arrow-down-up" class="select-leading-icon"></i>
-                        <select id="svc-env-filter-order">
-                          <option value="updated">Last Updated</option>
-                          <option value="created">Created</option>
+                          <option value="operator">Operator</option>
+                          <option value="git">Git</option>
                         </select>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Variable Cards Container -->
-                  <div class="svc-env-cards-stack" id="svc-env-cards"></div>
-
-                  <p class="svc-field-help"><i data-lucide="info"></i> Save changes, then deploy or restart to apply the updated environment.</p>
+                  <!-- Environment Variable Cards Stack -->
+                  <div class="svc-env-cards-stack" id="svc-env-cards">
+                    <!-- Populated dynamically by renderServiceEnvCardsList -->
+                  </div>
                 </section>
-
-                <!-- Environment Variable Modal Dialog -->
-                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title">
-                  <div class="svc-env-modal-backdrop" data-svc-env-close></div>
-                  <form class="svc-env-dialog" id="svc-env-form">
-                    <button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button>
-                    <p>Environment variable</p>
-                    <h3 id="svc-env-modal-title">Add Environment Variable</h3>
-                    <input type="hidden" id="svc-env-original-key">
-                    <label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DEPLOYER_API_KEY" autocomplete="off"></label>
-                    <label>Value<input id="svc-env-value" required placeholder="Enter value or token" autocomplete="off"></label>
-                    <label>Environments
-                      <select id="svc-env-scope-select">
-                        <option value="Production and Preview">Production and Preview</option>
-                        <option value="Production">Production only</option>
-                        <option value="Preview">Preview only</option>
-                        <option value="All">All Environments</option>
-                      </select>
-                    </label>
-                    <div><button type="submit" class="btn-pill btn-primary btn-full"><i data-lucide="save"></i><span>Save Variable</span></button></div>
-                  </form>
-                </div>
               </div>
 
               <!-- 5. FIREWALL TAB -->
@@ -2421,6 +2396,96 @@
         </div>
       </section>
     </div>
+  <!-- ========================================================
+       ENVIRONMENT VARIABLES MODALS
+       ======================================================== -->
+  <!-- 1. ADD / EDIT ENV VARIABLE MODAL -->
+  <dialog id="svc-env-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="key"></i></span>
+          <div>
+            <h3 id="svc-env-modal-title">Add Environment Variable</h3>
+            <p>Store secure config, API secrets, and runtime settings.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-env-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form class="svc-clean-dialog-form" id="svc-env-form">
+        <input type="hidden" id="svc-env-original-key">
+        <div class="svc-dialog-field">
+          <label for="svc-env-key">
+            <span>Variable Key</span>
+            <span class="svc-field-hint">e.g. DATABASE_URL or API_SECRET</span>
+          </label>
+          <input id="svc-env-key" class="shadcn-input" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="API_SECRET_KEY" autocomplete="off" style="font-family: monospace;">
+        </div>
+
+        <div class="svc-dialog-field">
+          <label for="svc-env-value">
+            <span>Value</span>
+            <span class="svc-field-hint">Plaintext or encrypted token</span>
+          </label>
+          <input id="svc-env-value" class="shadcn-input" required placeholder="Enter variable value" autocomplete="off">
+        </div>
+
+        <div class="svc-dialog-field">
+          <label for="svc-env-scope-select">
+            <span>Environment Scope</span>
+          </label>
+          <select id="svc-env-scope-select" class="shadcn-select">
+            <option value="Production and Preview">Production and Preview</option>
+            <option value="Production">Production only</option>
+            <option value="Preview">Preview only</option>
+            <option value="Development">Development only</option>
+            <option value="All Environments">All Environments</option>
+          </select>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-env-modal').close()">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Variable</span></button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 2. ENV VARIABLES DOCUMENTATION MODAL -->
+  <dialog id="svc-env-docs-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>Environment Variables Guide</h3>
+            <p>Managing runtime secrets, encryption at rest, and deployment injection.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-env-docs-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="lock"></i> Encryption at Rest</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            Environment variables are encrypted at rest with AES-GCM and injected securely into container runtime processes without exposure in browser network payloads.
+          </p>
+        </section>
+        <section class="svc-doc-card">
+          <h4><i data-lucide="layers"></i> Scopes (Production vs Preview)</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            Configure production-only keys (such as live Stripe keys) separate from preview and development keys.
+          </p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ========================================================
        DOMAINS MODALS
        ======================================================== -->

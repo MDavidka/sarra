@@ -7559,195 +7559,356 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 /* ==========================================================================
    Existing Retained Surfaces (Environment, Domains, Firewall)
    ========================================================================== */
-.svc-env-screen { display: grid; gap: 14px; }
-.svc-env-screen-header { display: grid; gap: 10px; padding: 4px 0 12px; border-bottom: 1px solid #eaeaea; }
-.svc-env-heading-group h2 { margin: 0; font-size: 24px; font-weight: 700; color: #09090b; letter-spacing: -0.03em; }
-.svc-env-description { margin: 4px 0 0; color: #52525b; font-size: 13px; line-height: 1.45; }
-.svc-env-links { margin: 6px 0 0; font-size: 12px; color: #71717a; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.svc-blue-link { color: #2563eb; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; font-weight: 500; }
-.svc-blue-link:hover { text-decoration: underline; }
-.svc-blue-link svg { width: 12px; height: 12px; }
-.svc-dot-sep { color: #a1a1aa; }
-.svc-env-actions-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
-#svc-env-link-shared-btn {
-  background: #18181b !important;
-  color: #ffffff !important;
-  border: 1px solid #18181b !important;
-}
-#svc-env-link-shared-btn:hover {
-  background: #27272a !important;
-  color: #ffffff !important;
-}
-#svc-env-link-shared-btn i,
-#svc-env-link-shared-btn svg {
-  color: #ffffff !important;
-}
-
-.svc-env-segmented-bar { display: flex; gap: 24px; border-bottom: 1px solid #eaeaea; margin-top: 4px; }
-.svc-env-subtab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 8px 4px;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: #71717a;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.svc-env-subtab:hover { color: #18181b; }
-.svc-env-subtab.active { color: #09090b; border-bottom-color: #09090b; }
-
-.svc-env-controls-row { display: grid; gap: 10px; }
-.svc-env-search-wrap, .svc-toolbar-search-wrap {
+/* ========================================================
+   Redesigned Environment Variables Screen (Matching media_1788171283140.jpg)
+   ======================================================== */
+.svc-env-screen {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 9px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  width: 100%;
-  box-sizing: border-box;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 4px 0 40px;
 }
-.svc-env-search-wrap:focus-within, .svc-toolbar-search-wrap:focus-within {
-  border-color: #18181b;
-  box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.06);
+
+.svc-env-screen-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
-.svc-env-search-wrap input, .svc-toolbar-search-wrap input {
-  border: none;
-  outline: none;
-  width: 100%;
-  font: inherit;
-  font-size: 13px;
-  background: transparent;
+
+.svc-env-title {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 800;
   color: #09090b;
+  letter-spacing: -0.02em;
 }
-.svc-env-search-wrap svg, .svc-toolbar-search-wrap svg { width: 16px; height: 16px; color: #71717a; flex-shrink: 0; }
 
-.svc-env-filter-pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
-.svc-env-filter-pills::-webkit-scrollbar { display: none; }
-.svc-pill-select-wrap { position: relative; display: inline-flex; align-items: center; }
-.svc-pill-select-wrap select {
-  appearance: none;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 8px;
-  padding: 6px 26px 6px 10px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  color: #3f3f46;
-  cursor: pointer;
-  height: 34px;
-}
-.svc-pill-select-wrap select:focus { border-color: #18181b; outline: none; }
-.svc-pill-select-wrap::after { content: '⌵'; position: absolute; right: 8px; pointer-events: none; color: #71717a; font-size: 10px; }
-.svc-pill-select-wrap .select-leading-icon { position: absolute; left: 8px; width: 13px; height: 13px; color: #71717a; pointer-events: none; }
-.svc-pill-select-wrap:has(.select-leading-icon) select { padding-left: 26px; }
-
-.svc-env-cards-stack { display: grid; gap: 10px; }
-.svc-env-card {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.svc-env-card:hover { border-color: #d4d4d8; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
-.svc-env-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 6px; }
-.svc-env-card-lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.svc-env-card-icon-badge {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  color: #18181b;
-  flex-shrink: 0;
-}
-.svc-env-card-icon-badge svg { width: 17px; height: 17px; }
-.svc-env-card-meta { display: grid; gap: 2px; min-width: 0; }
-.svc-env-card-key {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.svc-env-sub {
+  margin: 4px 0 0;
   font-size: 13.5px;
-  font-weight: 700;
-  color: #09090b;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.svc-env-card-scope { font-size: 11px; color: #71717a; }
-.svc-env-card-actions { display: flex; align-items: center; gap: 4px; }
-.svc-env-card-action {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
   color: #71717a;
-  cursor: pointer;
-  transition: all 0.15s;
+  line-height: 1.4;
 }
-.svc-env-card-action:hover { background: #f4f4f5; color: #18181b; }
-.svc-env-card-action.danger:hover { background: #fee2e2; color: #dc2626; }
-.svc-env-card-action svg { width: 15px; height: 15px; }
 
-.svc-env-card-value-row { padding: 4px 14px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.svc-env-card-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: #3f3f46;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  padding: 4px 8px;
-  border-radius: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 80%;
-}
-.svc-env-copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font: inherit;
-  font-size: 11px;
-  color: #52525b;
-  cursor: pointer;
-}
-.svc-env-copy-btn:hover { background: #f4f4f5; color: #18181b; }
-.svc-env-copy-btn svg { width: 12px; height: 12px; }
-
-.svc-env-card-footer {
+/* Subtabs & Add Button Row */
+.svc-env-tab-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
-  background: #fafafa;
-  border-top: 1px solid #eaeaea;
-  font-size: 11px;
-  color: #71717a;
+  border-bottom: 1px solid #e4e4e7;
+  padding-bottom: 2px;
 }
-.svc-env-card-avatar {
+
+.svc-env-subtabs-nav {
+  display: flex;
+  gap: 20px;
+}
+
+.svc-env-subtab {
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding: 6px 2px 10px;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.svc-env-subtab:hover {
+  color: #09090b;
+}
+
+.svc-env-subtab.active {
+  color: #09090b;
+  font-weight: 700;
+  border-bottom-color: #09090b;
+}
+
+.btn-env-add-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #f4f4f5;
+  border: 1px solid #ececee;
+  color: #09090b;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #18181b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-env-add-icon:hover {
+  background: #e4e4e7;
+  border-color: #d4d4d8;
+}
+
+.btn-env-add-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Search and Filter Section */
+.svc-env-search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.svc-env-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-env-filter-pills-row {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  gap: 10px;
+}
+
+.svc-env-pill-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.svc-env-pill-select-wrap select {
+  width: 100%;
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 8px 30px 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #18181b;
+  cursor: pointer;
+  height: 40px;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.svc-env-pill-select-wrap select:focus {
+  border-color: #09090b;
+  outline: none;
+}
+
+.svc-env-pill-select-wrap::after {
+  content: '⌵';
+  position: absolute;
+  right: 12px;
+  pointer-events: none;
+  color: #71717a;
+  font-size: 11px;
+}
+
+/* Environment Variable Cards */
+.svc-env-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.svc-env-exact-card {
+  background: #ffffff;
+  border: 1px solid #ececee;
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
+}
+
+.svc-env-exact-card:hover {
+  border-color: #d4d4d8;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.svc-env-exact-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.svc-env-icon-sq {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f4f4f5;
+  color: #18181b;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.svc-env-icon-sq svg {
+  width: 19px;
+  height: 19px;
+}
+
+.svc-env-exact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.svc-env-exact-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.01em;
+  word-break: break-all;
+}
+
+.svc-env-exact-env-label {
+  font-size: 12.5px;
+  color: #71717a;
+  font-weight: 500;
+}
+
+.svc-env-stored-pill {
+  background: #f4f4f5;
+  color: #52525b;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-top: 4px;
+  display: inline-block;
+  align-self: flex-start;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.svc-env-exact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-env-edit-pill {
+  background: #f4f4f5;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #09090b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-env-edit-pill:hover {
+  background: #e4e4e7;
+}
+
+.btn-env-menu {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #71717a;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-env-menu:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.btn-env-menu svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Mobile Responsive Compact Mode for Environment Screen */
+@media (max-width: 640px) {
+  .svc-env-screen {
+    gap: 12px;
+    padding: 0 0 24px;
+  }
+
+  .svc-env-screen-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .svc-env-title {
+    font-size: 20px;
+  }
+
+  .svc-env-sub {
+    font-size: 12.5px;
+  }
+
+  .svc-env-filter-pills-row {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .svc-env-pill-select-wrap select {
+    font-size: 11.5px;
+    padding: 6px 20px 6px 8px;
+    height: 34px;
+  }
+
+  .svc-env-exact-card {
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .svc-env-icon-sq {
+    width: 34px;
+    height: 34px;
+  }
+
+  .svc-env-icon-sq svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .svc-env-exact-key {
+    font-size: 13.5px;
+  }
+
+  .svc-env-exact-env-label {
+    font-size: 11.5px;
+  }
+
+  .svc-env-stored-pill {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .btn-env-edit-pill {
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+
+  .btn-env-menu {
+    width: 28px;
+    height: 28px;
+  }
+}
   color: #ffffff;
   font-size: 10px;
   font-weight: 700;
