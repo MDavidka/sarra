@@ -6300,8 +6300,9 @@ function renderGithubRepositories() {
   list.innerHTML = repositories.map((repo) => {
     const framework = repositoryFramework(repo);
     const details = [framework?.label || repo.language || '', repo.private ? 'Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    const isSelected = githubSourceSelection?.full_name === repo.full_name;
     return `
-      <div class="svc-repo-row ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+      <div class="svc-repo-row ${isSelected ? 'is-selected' : ''}" role="option" aria-selected="${isSelected}" data-github-repository="${esc(repo.full_name)}">
         <div class="svc-repo-row-left">
           <div class="svc-repo-icon-box">
             <i data-lucide="git-branch"></i>
@@ -6311,23 +6312,17 @@ function renderGithubRepositories() {
             <span class="svc-repo-row-meta">${details}</span>
           </div>
         </div>
-        <button type="button" class="btn-repo-import-action git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
-          <span>Import</span>
+        <button type="button" class="btn-repo-import-action ${isSelected ? 'is-selected' : ''}" data-select-repo="${esc(repo.full_name)}">
+          <span>${isSelected ? 'Selected ✓' : 'Select'}</span>
         </button>
       </div>
     `;
   }).join('');
 
-  list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+  list.querySelectorAll('.svc-repo-row, [data-select-repo]').forEach((el) => {
+    el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const repo = e.currentTarget.dataset.fastAddRepo;
-      if (repo) fastAddGithubRepository(repo);
-    });
-  });
-  list.querySelectorAll('.svc-repo-row').forEach((row) => {
-    row.addEventListener('click', () => {
-      const repoName = row.dataset.githubRepository;
+      const repoName = el.dataset.githubRepository || el.dataset.selectRepo || el.closest('[data-github-repository]')?.dataset.githubRepository;
       if (repoName) selectGithubRepository(repoName);
     });
   });
@@ -6537,14 +6532,24 @@ function closeServiceEnvironmentModal() {
 }
 
 function openServiceEnvironmentModal(project, key = '') {
+  const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null) || selectedCurrentProject;
   const modal = document.getElementById('svc-env-modal');
   const keyInput = document.getElementById('svc-env-key');
   const valueInput = document.getElementById('svc-env-value');
   const original = document.getElementById('svc-env-original-key');
   const title = document.getElementById('svc-env-modal-title');
   const form = document.getElementById('svc-env-form');
-  if (!modal || !keyInput || !valueInput || !original || !title) return;
+  if (!modal || !keyInput || !valueInput || !original || !title) {
+    // Fallback: quick prompt if modal element is not available
+    const promptKey = prompt(key ? `Edit value for ${key}:` : 'Enter Environment Variable Key (e.g. DATABASE_URL):', key);
+    if (!promptKey || !promptKey.trim()) return;
+    const promptVal = prompt(`Enter value for ${promptKey.trim()}:`, '');
+    if (promptVal === null) return;
+    if (curProject) persistServiceEnvironment(curProject, promptKey.trim(), promptVal, key);
+    return;
+  }
 
+  if (curProject?.id) modal.dataset.projectId = curProject.id;
   original.value = key;
   keyInput.value = key;
   keyInput.readOnly = Boolean(key);
@@ -6552,59 +6557,67 @@ function openServiceEnvironmentModal(project, key = '') {
   valueInput.placeholder = key ? 'Enter replacement value' : 'Enter variable value';
   title.textContent = key ? `Edit ${key}` : 'Add Environment Variable';
 
-  if (form && !form.dataset.initialized) {
-    form.dataset.initialized = 'true';
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const curProject = selectedCurrentProject || project;
-      const k = keyInput?.value.trim();
-      const v = valueInput?.value;
-      const orig = original?.value.trim() || '';
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const targetProjId = modal.dataset.projectId || curProject?.id || activeServiceId;
+    const targetProject = projects.find(x => x.id === targetProjId) || curProject;
+    let k = keyInput?.value.trim().replace(/\s+/g, '_');
+    const v = valueInput?.value;
+    const orig = original?.value.trim() || '';
 
-      if (!k || v === undefined) return toast('Please enter both key and value');
-      try {
-        await persistServiceEnvironment(curProject, k, v, orig);
-        if (typeof modal.close === 'function') modal.close();
-        else modal.classList.add('hidden');
-        renderServiceEnvCardsList(curProject);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to save variable');
-      }
-    };
-  }
+    if (!k || v === undefined) return toast('Please enter both key and value');
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+      k = k.replace(/[^A-Za-z0-9_]/g, '_');
+    }
+    try {
+      await persistServiceEnvironment(targetProject, k, v, orig);
+      if (typeof modal.close === 'function') modal.close();
+      else modal.classList.add('hidden');
+      if (targetProject) renderServiceEnvCardsList(targetProject);
+    } catch (err) {
+      toast(normalizeFetchError(err?.message) || 'Failed to save variable');
+    }
+  };
 
   if (typeof modal.showModal === 'function') modal.showModal();
   modal.classList.remove('hidden');
   refreshIcons();
-  (key ? valueInput : keyInput)?.focus();
+  setTimeout(() => (key ? valueInput : keyInput)?.focus(), 50);
 }
 
 async function persistServiceEnvironment(project, key, value, originalKey = '') {
-  const result = await api(`/projects/${encodeURIComponent(project.id)}/environment`, {
+  const projId = project?.id || activeServiceId;
+  if (!projId) return toast('No active project found');
+  const result = await api(`/projects/${encodeURIComponent(projId)}/environment`, {
     method: 'PUT',
     body: JSON.stringify({key, value, original_key: originalKey}),
   });
-  toast(result.message || 'Environment saved');
+  toast(result.message || `Saved ${key}`);
   await loadProjects();
-  const refreshed = projects.find(item => item.id === project.id);
+  const refreshed = projects.find(item => item.id === projId) || project;
   if (refreshed) {
-    Object.assign(project, refreshed);
+    if (project) Object.assign(project, refreshed);
     renderServiceEnvCardsList(refreshed);
     renderServiceDashboard(refreshed, false);
+    updateEnvironmentRequirementBadge(refreshed);
   }
 }
 
 async function deleteServiceEnvironmentKey(project, key) {
+  const projId = project?.id || activeServiceId;
   if (!confirm(`Are you sure you want to remove ${key} from this project?`)) return;
   try {
-    await api(`/projects/${encodeURIComponent(project.id)}/environment/${encodeURIComponent(key)}`, {
+    await api(`/projects/${encodeURIComponent(projId)}/environment/${encodeURIComponent(key)}`, {
       method: 'DELETE',
     });
     toast(`Removed ${key}`);
     await loadProjects();
-    const refreshed = projects.find(p => p.id === project.id) || project;
-    Object.assign(project, refreshed);
-    renderServiceEnvCardsList(refreshed);
+    const refreshed = projects.find(p => p.id === projId) || project;
+    if (refreshed) {
+      if (project) Object.assign(project, refreshed);
+      renderServiceEnvCardsList(refreshed);
+      updateEnvironmentRequirementBadge(refreshed);
+    }
   } catch (err) {
     toast(normalizeFetchError(err?.message) || 'Failed to remove variable');
   }
@@ -12245,8 +12258,76 @@ async function deployImportedProject() {
   return result;
 }
 
+function showBuildFailSaveModal(projectId, errorMsg) {
+  const modal = document.getElementById('svc-build-fail-save-modal');
+  const errorText = document.getElementById('svc-build-fail-error-text');
+  const discardBtn = document.getElementById('svc-fail-discard-btn');
+  const saveBtn = document.getElementById('svc-fail-save-btn');
+  if (!modal) {
+    if (confirm(`Build failed: ${errorMsg}\n\nDo you still want to save this project anyway?`)) {
+      if (projectId) {
+        loadProjects().then(() => {
+          openService(projectId);
+          switchSvcTab('env');
+        });
+      }
+    } else if (projectId) {
+      api(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }).catch(() => {});
+      importedProjectId = null;
+    }
+    return;
+  }
+
+  if (errorText) errorText.textContent = errorMsg || 'Build process encountered an error.';
+
+  if (discardBtn) {
+    discardBtn.onclick = async () => {
+      if (typeof modal.close === 'function') modal.close();
+      else modal.classList.add('hidden');
+      if (projectId) {
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+          toast('Draft project discarded');
+        } catch {}
+      }
+      importedProjectId = null;
+      setProjectDeployButton('Deploy Project', 'rocket');
+    };
+  }
+
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      if (typeof modal.close === 'function') modal.close();
+      else modal.classList.add('hidden');
+      toast('Project saved. Configure environment variables to retry build.');
+      await loadProjects();
+      if (projectId) {
+        openService(projectId);
+        switchSvcTab('env');
+      }
+    };
+  }
+
+  if (typeof modal.showModal === 'function') modal.showModal();
+  modal.classList.remove('hidden');
+  refreshIcons();
+}
+
 document.getElementById('create-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const nameInput = document.getElementById('create-name');
+  const nameVal = (nameInput?.value || '').trim();
+  if (!nameVal || nameVal.length < 2) {
+    nameInput?.focus();
+    return toast('Please enter a valid project name (at least 2 characters)');
+  }
+
+  if (projectImportSource === 'git' && !githubSourceSelection && !document.getElementById('create-git-url')?.value.trim()) {
+    toast('Please select a repository to deploy');
+    document.getElementById('github-repository-search')?.focus();
+    return;
+  }
+
   const logPanel = document.getElementById('deploy-log-panel');
   const placeholder = document.getElementById('create-log-placeholder');
   placeholder?.classList.add('hidden'); logPanel?.classList.remove('hidden'); clearLogPanel(logPanel);
@@ -12257,10 +12338,10 @@ document.getElementById('create-form')?.addEventListener('submit', async (event)
       importedProjectId = result.project.id;
       appendLogLine(logPanel, result.message || 'Source imported', 'log-ok');
       renderProjectAnalysis(result.analysis);
-      toast(`Detected ${result.analysis.framework || result.analysis.language || 'project'} application`);
-      return;
+      toast(`Imported ${result.project.name || nameVal}. Starting build…`);
     }
-    setProjectDeployButton('Deploying…', 'loader-circle', true);
+
+    setProjectDeployButton('Building & Deploying…', 'loader-circle', true);
     const result = await deployImportedProject();
     appendLogLine(logPanel, result.message || 'Deployment queued', 'log-info');
     toast('Deployment queued');
@@ -12271,9 +12352,11 @@ document.getElementById('create-form')?.addEventListener('submit', async (event)
     loadLogSnapshot(importedProjectId, logs).then(() => startLogStream(importedProjectId, logs, { liveOnly: true, clearFirst: false }));
   } catch (error) {
     appendLogLine(logPanel, 'Error: ' + error.message, 'log-err');
-    toast(error.message);
-    if (!importedProjectId) setProjectDeployButton('Analyze source');
-    else setProjectDeployButton('Deploy project', 'rocket');
+    toast(error.message, 'danger');
+    setProjectDeployButton('Deploy Project', 'rocket');
+    if (importedProjectId) {
+      showBuildFailSaveModal(importedProjectId, error.message);
+    }
   }
 });
 

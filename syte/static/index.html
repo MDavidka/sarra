@@ -2797,15 +2797,15 @@
             <span>Variable Key</span>
             <span class="svc-field-hint">e.g. DATABASE_URL or API_SECRET</span>
           </label>
-          <input id="svc-env-key" class="shadcn-input" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="API_SECRET_KEY" autocomplete="off" style="font-family: monospace;">
+          <input id="svc-env-key" class="shadcn-input" required placeholder="DATABASE_URL" autocomplete="off" spellcheck="false" style="font-family: monospace;">
         </div>
 
         <div class="svc-dialog-field">
           <label for="svc-env-value">
             <span>Value</span>
-            <span class="svc-field-hint">Plaintext or encrypted token</span>
+            <span class="svc-field-hint">Plaintext or secret string</span>
           </label>
-          <input id="svc-env-value" class="shadcn-input" required placeholder="Enter variable value" autocomplete="off">
+          <input id="svc-env-value" class="shadcn-input" required placeholder="Enter variable value" autocomplete="off" spellcheck="false">
         </div>
 
         <div class="svc-dialog-field">
@@ -2826,6 +2826,37 @@
           <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Variable</span></button>
         </div>
       </form>
+    </div>
+  </dialog>
+
+  <!-- 1B. BUILD FAILED SAVE CONFIRMATION POP-UP MODAL -->
+  <dialog id="svc-build-fail-save-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge" style="background:#fee2e2;color:#dc2626;"><i data-lucide="alert-triangle"></i></span>
+          <div>
+            <h3>Build Failed</h3>
+            <p>Initial compilation or deployment encountered an issue.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-build-fail-save-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div style="padding: 16px 20px 8px;">
+        <div class="svc-fail-reason-box" id="svc-build-fail-error-text">Build process failed</div>
+        <p style="font-size: 13.5px; color: #3f3f46; line-height: 1.5; margin: 0 0 6px;">
+          <strong>Do you still want to save this project?</strong>
+        </p>
+        <p style="font-size: 12.5px; color: #71717a; line-height: 1.4; margin: 0;">
+          Saving lets you configure required environment variables, update build commands, and re-trigger deployment whenever you are ready.
+        </p>
+      </div>
+      <div class="svc-clean-dialog-footer">
+        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-fail-discard-btn">Discard Project</button>
+        <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-fail-save-btn"><i data-lucide="check"></i><span>Save Project Anyway</span></button>
+      </div>
     </div>
   </dialog>
 

@@ -10909,36 +10909,37 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 /* ========================================================
-   Redesigned New Project / Deploy Screen (media_1788173977152.jpg)
+   Redesigned New Project / Deploy Screen (media_1788173977152.jpg) - Compact Mode
    ======================================================== */
 .svc-new-project-screen {
-  max-width: 680px;
+  max-width: 620px;
   margin: 0 auto;
-  padding: 12px 6px 60px;
+  padding: 8px 4px 40px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .svc-new-project-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  padding: 0 2px;
 }
 
 .svc-eyebrow-badge {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #71717a;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .svc-new-project-main-title {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 800;
   color: #09090b;
   letter-spacing: -0.02em;
@@ -10947,21 +10948,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-new-project-sub {
-  font-size: 14px;
+  font-size: 13px;
   color: #71717a;
-  margin: 6px 0 0 0;
+  margin: 3px 0 0 0;
   font-weight: 500;
 }
 
 .btn-new-proj-learn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 5px 10px;
   background: #f4f4f5;
   border: 1px solid #e4e4e7;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 7px;
+  font-size: 12px;
   font-weight: 600;
   color: #18181b;
   text-decoration: none;
@@ -10976,14 +10977,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-new-project-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .svc-new-proj-card {
   background: #ffffff;
   border: 1px solid #ececee;
-  border-radius: 18px;
-  padding: 20px 22px;
+  border-radius: 14px;
+  padding: 14px 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
@@ -10993,26 +10994,26 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 4px;
+  gap: 10px;
+  margin-bottom: 2px;
 }
 
 .svc-card-field-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 700;
   color: #09090b;
 }
 
 .svc-card-field-hint {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   color: #71717a;
 }
 
 .svc-card-field-sub {
-  font-size: 13px;
+  font-size: 12.5px;
   color: #71717a;
-  margin: 2px 0 16px 0;
+  margin: 1px 0 10px 0;
   font-weight: 500;
 }
 
@@ -11020,15 +11021,15 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   position: relative;
   display: flex;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .svc-proj-input {
   width: 100%;
   border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  padding: 10px 38px 10px 14px;
-  font-size: 14px;
+  border-radius: 9px;
+  padding: 8px 34px 8px 12px;
+  font-size: 13.5px;
   font-weight: 500;
   color: #09090b;
   background: #fafafa;
@@ -11040,12 +11041,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-proj-input:focus {
   background: #ffffff;
   border-color: #09090b;
-  box-shadow: 0 0 0 2px rgba(9, 9, 11, 0.08);
+  box-shadow: 0 0 0 2px rgba(9, 9, 11, 0.06);
 }
 
 .svc-input-trailing-icon {
   position: absolute;
-  right: 10px;
+  right: 8px;
   background: transparent;
   border: none;
   color: #71717a;
@@ -11056,23 +11057,23 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-input-trailing-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 /* 2-Option Select Grid (Git vs ZIP) */
 .svc-source-options-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .svc-source-option-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: 1px solid #e4e4e7;
   background: #ffffff;
   cursor: pointer;
@@ -11094,12 +11095,12 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-source-option-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .svc-source-icon-box {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -11111,18 +11112,18 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-source-icon-box svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .svc-source-option-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .svc-source-option-title {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
   color: #09090b;
 }
@@ -11132,7 +11133,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-source-option-desc {
-  font-size: 11.5px;
+  font-size: 11px;
   color: #71717a;
 }
 
@@ -11141,8 +11142,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-source-radio {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 1.5px solid #d4d4d8;
   display: grid;
@@ -11155,8 +11156,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-radio-bullet {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: transparent;
 }
@@ -11569,19 +11570,42 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .btn-repo-import-action {
-  background: #09090b;
-  color: #ffffff;
-  border: none;
+  background: #f4f4f5;
+  color: #18181b;
+  border: 1px solid #e4e4e7;
   border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  font-weight: 700;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-repo-import-action:hover {
-  background: #27272a;
+  background: #e4e4e7;
+}
+
+.svc-repo-row.is-selected .btn-repo-import-action,
+.btn-repo-import-action.is-selected {
+  background: #09090b;
+  color: #ffffff;
+  border-color: #09090b;
+}
+
+/* Build Fail Save Pop-up Modal */
+.svc-fail-reason-box {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: #991b1b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  max-height: 120px;
+  overflow-y: auto;
+  margin: 12px 0 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ZIP Upload Dropzone */
