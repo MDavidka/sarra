@@ -1481,15 +1481,151 @@ class ProjectRedirectRequest(BaseModel):
     source_path: str = Field(..., min_length=1, max_length=512)
     target_url: str = Field(..., min_length=1, max_length=2048)
     status_code: int = Field(default=301)
+    is_active: bool = Field(default=True)
+    preserve_query: bool = Field(default=True)
+    case_sensitive: bool = Field(default=False)
+    trailing_slash: str = Field(default="ignore")
+    environments: list[str] = Field(default=["production", "preview", "development"])
+    description: str = Field(default="")
+
+
+class ProjectRedirectUpdateRequest(BaseModel):
+    source_path: str | None = None
+    target_url: str | None = None
+    status_code: int | None = None
+    is_active: bool | None = None
+    preserve_query: bool | None = None
+    case_sensitive: bool | None = None
+    trailing_slash: str | None = None
+    environments: list[str] | None = None
+    description: str | None = None
+
+
+class ProjectRedirectReorderRequest(BaseModel):
+    redirect_ids: list[str] = Field(default_factory=list)
+
+
+class ProjectRedirectBulkRequest(BaseModel):
+    redirect_ids: list[str] = Field(default_factory=list)
+    action: str = Field(..., pattern="^(enable|disable|delete)$")
+
+
+class ProjectRedirectTestRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+
+
+class ProjectRedirectImportRequest(BaseModel):
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+    mode: str = Field(default="append")
+
+
+def _simulate_redirect(test_url: str, redirects: list[dict[str, Any]]) -> dict[str, Any]:
+    import re
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+    parsed = urlparse(test_url.strip() if test_url.startswith(("http://", "https://")) else f"https://example.com{test_url.strip() if test_url.startswith('/') else '/' + test_url.strip()}")
+    req_path = parsed.path or "/"
+    req_query = parsed.query
+
+    for r in redirects:
+        if not r.get("is_active"):
+            continue
+
+        src = r.get("source_path", "").strip()
+        if not src.startswith("/"):
+            src = "/" + src
+        
+        target = r.get("target_url", "").strip()
+        case_sensitive = bool(r.get("case_sensitive", False))
+        trailing_slash = r.get("trailing_slash", "ignore")
+        preserve_query = bool(r.get("preserve_query", True))
+
+        flags = 0 if case_sensitive else re.IGNORECASE
+        
+        # Build Regex Pattern for matching
+        if ":" in src:
+            # Named parameters e.g. /blog/:slug -> ^/blog/(?P<slug>[^/]+)$
+            pattern_str = "^" + re.sub(r":([a-zA-Z0-9_]+)", r"(?P<\1>[^/]+)", re.escape(src).replace(r"\:", ":")) + "$"
+        elif "*" in src:
+            # Wildcard e.g. /blog/* -> ^/blog/(?P<wildcard>.*)$
+            pattern_str = "^" + re.escape(src).replace(r"\*", r"(?P<wildcard>.*)") + "$"
+        else:
+            if trailing_slash == "ignore":
+                clean_base = src.rstrip("/")
+                pattern_str = f"^{re.escape(clean_base)}/?$"
+            else:
+                pattern_str = f"^{re.escape(src)}$"
+
+        try:
+            match = re.match(pattern_str, req_path, flags=flags)
+        except Exception:
+            match = None
+
+        if match:
+            # Generate destination
+            dest = target
+            named_groups = match.groupdict()
+            for k, v in named_groups.items():
+                if k == "wildcard":
+                    dest = dest.replace("*", v)
+                else:
+                    dest = dest.replace(f":{k}", v)
+            
+            # Handle Query params
+            if preserve_query and req_query:
+                dest_parsed = urlparse(dest)
+                existing_q = parse_qs(dest_parsed.query, keep_blank_values=True)
+                new_q = parse_qs(req_query, keep_blank_values=True)
+                for k, v in new_q.items():
+                    if k not in existing_q:
+                        existing_q[k] = v
+                merged_query = urlencode(existing_q, doseq=True)
+                dest = urlunparse((
+                    dest_parsed.scheme,
+                    dest_parsed.netloc,
+                    dest_parsed.path,
+                    dest_parsed.params,
+                    merged_query,
+                    dest_parsed.fragment,
+                ))
+
+            # Detect loops
+            is_loop = False
+            dest_p = urlparse(dest)
+            dest_path_clean = dest_p.path or "/"
+            if dest_path_clean == req_path:
+                is_loop = True
+
+            return {
+                "matched": True,
+                "redirect_id": r.get("id"),
+                "source": r.get("source_path"),
+                "destination": dest,
+                "status_code": r.get("status_code", 301),
+                "is_loop": is_loop,
+                "rule": r,
+            }
+
+    return {"matched": False, "message": "No redirect rule matched this URL."}
 
 
 @app.get("/api/projects/{project_id}/redirects")
-async def api_get_project_redirects(project_id: str):
+async def api_get_project_redirects(
+    project_id: str,
+    search: str = "",
+    status: str = "",
+    code: str = "",
+    type: str = "",
+):
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    from syte.database import list_project_redirects
-    return {"project_id": project_id, "redirects": await list_project_redirects(project_id)}
+    from syte.database import list_project_redirects, get_project_redirect_stats
+    redirects = await list_project_redirects(
+        project_id, search=search, status=status, code=code, dest_type=type
+    )
+    stats = await get_project_redirect_stats(project_id)
+    return {"project_id": project_id, "redirects": redirects, "stats": stats}
 
 
 @app.post("/api/projects/{project_id}/redirects")
@@ -1501,14 +1637,47 @@ async def api_create_project_redirect(
     project = await get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+
+    clean_src = "/" + body.source_path.strip().lstrip("/")
+    clean_target = body.target_url.strip()
+
+    # Self redirect validation
+    if clean_src == clean_target:
+        raise HTTPException(400, "A redirect cannot point directly to itself.")
+
     from syte.database import create_project_redirect
     redirect = await create_project_redirect(
         project_id=project_id,
-        source_path=body.source_path,
-        target_url=body.target_url,
+        source_path=clean_src,
+        target_url=clean_target,
         status_code=body.status_code,
+        is_active=body.is_active,
+        preserve_query=body.preserve_query,
+        case_sensitive=body.case_sensitive,
+        trailing_slash=body.trailing_slash,
+        environments=body.environments,
+        description=body.description,
     )
     return {"ok": True, "redirect": redirect}
+
+
+@app.patch("/api/projects/{project_id}/redirects/{redirect_id}")
+async def api_update_project_redirect(
+    project_id: str,
+    redirect_id: str,
+    body: ProjectRedirectUpdateRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    
+    update_data = {k: v for k, v in body.dict().items() if v is not None}
+    from syte.database import update_project_redirect
+    updated = await update_project_redirect(project_id, redirect_id, **update_data)
+    if not updated:
+        raise HTTPException(404, "Redirect rule not found")
+    return {"ok": True, "redirect": updated}
 
 
 @app.delete("/api/projects/{project_id}/redirects/{redirect_id}")
@@ -1525,6 +1694,98 @@ async def api_delete_project_redirect(
     if not deleted:
         raise HTTPException(404, "Redirect rule not found")
     return {"ok": True, "redirect_id": redirect_id}
+
+
+@app.post("/api/projects/{project_id}/redirects/reorder")
+async def api_reorder_project_redirects(
+    project_id: str,
+    body: ProjectRedirectReorderRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import reorder_project_redirects
+    await reorder_project_redirects(project_id, body.redirect_ids)
+    return {"ok": True, "message": "Redirects reordered successfully"}
+
+
+@app.post("/api/projects/{project_id}/redirects/bulk")
+async def api_bulk_project_redirects(
+    project_id: str,
+    body: ProjectRedirectBulkRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import bulk_update_project_redirects
+    count = await bulk_update_project_redirects(project_id, body.redirect_ids, body.action)
+    return {"ok": True, "count": count, "action": body.action}
+
+
+@app.post("/api/projects/{project_id}/redirects/test")
+async def api_test_project_redirects(
+    project_id: str,
+    body: ProjectRedirectTestRequest,
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    from syte.database import list_project_redirects
+    redirects = await list_project_redirects(project_id)
+    result = _simulate_redirect(body.url, redirects)
+    return result
+
+
+@app.post("/api/projects/{project_id}/redirects/import")
+async def api_import_project_redirects(
+    project_id: str,
+    body: ProjectRedirectImportRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    
+    from syte.database import list_project_redirects, create_project_redirect
+    existing = await list_project_redirects(project_id)
+    existing_srcs = {r["source_path"].lower() for r in existing}
+
+    imported_count = 0
+    errors = []
+
+    for idx, rule in enumerate(body.rules):
+        src = (rule.get("source") or rule.get("source_path") or "").strip()
+        dst = (rule.get("destination") or rule.get("target_url") or "").strip()
+        if not src:
+            errors.append(f"Rule #{idx+1}: missing source path")
+            continue
+        if not dst:
+            errors.append(f"Rule #{idx+1}: missing destination URL")
+            continue
+        if not src.startswith("/"):
+            src = "/" + src
+        if src.lower() in existing_srcs:
+            errors.append(f"Rule #{idx+1}: duplicate source path '{src}' skipped")
+            continue
+
+        status_code = int(rule.get("statusCode") or rule.get("status_code") or 301)
+        is_active = bool(rule.get("enabled", rule.get("is_active", True)))
+        preserve_query = bool(rule.get("preserveQuery", rule.get("preserve_query", True)))
+
+        await create_project_redirect(
+            project_id=project_id,
+            source_path=src,
+            target_url=dst,
+            status_code=status_code,
+            is_active=is_active,
+            preserve_query=preserve_query,
+        )
+        existing_srcs.add(src.lower())
+        imported_count += 1
+
+    return {"ok": True, "imported": imported_count, "errors": errors}
 
 
 @app.get("/api/projects/{project_id}/stats")

@@ -6701,109 +6701,781 @@ function renderServiceDomainsList(project) {
   refreshIcons();
 }
 
+let redirectsSearchQuery = '';
+let redirectsStatusFilter = '';
+let redirectsCodeFilter = '';
+let selectedRedirectIds = new Set();
+let allProjectRedirectsCache = [];
+
 async function renderRedirectsWorkspace(project) {
   const target = document.getElementById('svc-redirects-list');
   if (!target) return;
-  target.innerHTML = '<p class="hint">Loading redirect rules…</p>';
 
-  const openBtn = document.getElementById('svc-redirect-add-open-btn');
-  const addCard = document.getElementById('svc-redirect-add-card');
-  const cancelBtn = document.getElementById('svc-redirect-add-cancel');
-  const addForm = document.getElementById('svc-redirect-add-form');
+  const statTotalEl = document.getElementById('svc-stat-total');
+  const statActiveEl = document.getElementById('svc-stat-active');
+  const statDisabledEl = document.getElementById('svc-stat-disabled');
+  const statReqsEl = document.getElementById('svc-stat-requests');
 
-  if (openBtn && addCard) {
-    openBtn.onclick = () => addCard.classList.toggle('hidden');
+  const addBtn = document.getElementById('svc-redirect-add-open-btn');
+  const testBtn = document.getElementById('svc-redirect-test-open-btn');
+  const ioBtn = document.getElementById('svc-redirect-io-open-btn');
+  const learnMoreBtn = document.getElementById('svc-redirect-learn-more-btn');
+
+  const searchInput = document.getElementById('svc-redirects-search-input');
+  const statusFilterSelect = document.getElementById('svc-redirects-filter-status');
+  const codeFilterSelect = document.getElementById('svc-redirects-filter-code');
+
+  const bulkBar = document.getElementById('svc-redirects-bulk-bar');
+  const bulkCountLabel = document.getElementById('svc-bulk-count-label');
+  const selectAllCheckbox = document.getElementById('svc-redirect-select-all');
+  const bulkEnableBtn = document.getElementById('svc-bulk-enable-btn');
+  const bulkDisableBtn = document.getElementById('svc-bulk-disable-btn');
+  const bulkDeleteBtn = document.getElementById('svc-bulk-delete-btn');
+
+  // Open Modals Handlers
+  if (addBtn) addBtn.onclick = () => openAddRedirectModal(project);
+  if (testBtn) testBtn.onclick = () => openRedirectTestModal(project);
+  if (ioBtn) ioBtn.onclick = () => openRedirectIoModal(project);
+  if (learnMoreBtn) learnMoreBtn.onclick = () => openRedirectDocsModal();
+
+  // Search & Filter listeners
+  if (searchInput && !searchInput.dataset.initialized) {
+    searchInput.dataset.initialized = 'true';
+    let searchDebounceTimer;
+    searchInput.oninput = () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        redirectsSearchQuery = searchInput.value.trim();
+        renderRedirectsWorkspace(project);
+      }, 250);
+    };
   }
-  if (cancelBtn && addCard) {
-    cancelBtn.onclick = () => addCard.classList.add('hidden');
+
+  if (statusFilterSelect && !statusFilterSelect.dataset.initialized) {
+    statusFilterSelect.dataset.initialized = 'true';
+    statusFilterSelect.onchange = () => {
+      redirectsStatusFilter = statusFilterSelect.value;
+      renderRedirectsWorkspace(project);
+    };
   }
 
-  if (addForm) {
-    addForm.onsubmit = async (event) => {
-      event.preventDefault();
-      const srcInput = document.getElementById('svc-redirect-src');
-      const targetInput = document.getElementById('svc-redirect-target');
-      const statusInput = document.getElementById('svc-redirect-status');
-      const src = srcInput?.value.trim();
-      const dest = targetInput?.value.trim();
-      const status = Number(statusInput?.value || 301);
+  if (codeFilterSelect && !codeFilterSelect.dataset.initialized) {
+    codeFilterSelect.dataset.initialized = 'true';
+    codeFilterSelect.onchange = () => {
+      redirectsCodeFilter = codeFilterSelect.value;
+      renderRedirectsWorkspace(project);
+    };
+  }
 
-      if (!src || !dest) return toast('Please provide both source and destination.');
+  // Bulk action handlers
+  if (selectAllCheckbox && !selectAllCheckbox.dataset.initialized) {
+    selectAllCheckbox.dataset.initialized = 'true';
+    selectAllCheckbox.onchange = () => {
+      if (selectAllCheckbox.checked) {
+        allProjectRedirectsCache.forEach(r => selectedRedirectIds.add(r.id));
+      } else {
+        selectedRedirectIds.clear();
+      }
+      updateRedirectBulkToolbarUI();
+      renderRedirectCardSelectionUI();
+    };
+  }
+
+  if (bulkEnableBtn && !bulkEnableBtn.dataset.initialized) {
+    bulkEnableBtn.dataset.initialized = 'true';
+    bulkEnableBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
       try {
-        await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
           method: 'POST',
-          body: JSON.stringify({ source_path: src, target_url: dest, status_code: status }),
+          body: JSON.stringify({ redirect_ids: ids, action: 'enable' }),
         });
-        toast('Redirect rule added');
-        if (addCard) addCard.classList.add('hidden');
-        if (srcInput) srcInput.value = '';
-        if (targetInput) targetInput.value = '';
+        toast(`Enabled ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
         await renderRedirectsWorkspace(project);
       } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to create redirect');
+        toast(normalizeFetchError(err?.message) || 'Bulk enable failed');
+      }
+    };
+  }
+
+  if (bulkDisableBtn && !bulkDisableBtn.dataset.initialized) {
+    bulkDisableBtn.dataset.initialized = 'true';
+    bulkDisableBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
+          method: 'POST',
+          body: JSON.stringify({ redirect_ids: ids, action: 'disable' }),
+        });
+        toast(`Disabled ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Bulk disable failed');
+      }
+    };
+  }
+
+  if (bulkDeleteBtn && !bulkDeleteBtn.dataset.initialized) {
+    bulkDeleteBtn.dataset.initialized = 'true';
+    bulkDeleteBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
+      if (!confirm(`Are you sure you want to permanently delete ${ids.length} redirect rule(s)?`)) return;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
+          method: 'POST',
+          body: JSON.stringify({ redirect_ids: ids, action: 'delete' }),
+        });
+        toast(`Deleted ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Bulk delete failed');
       }
     };
   }
 
   try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/redirects`);
+    const queryParams = new URLSearchParams();
+    if (redirectsSearchQuery) queryParams.set('search', redirectsSearchQuery);
+    if (redirectsStatusFilter) queryParams.set('status', redirectsStatusFilter);
+    if (redirectsCodeFilter) queryParams.set('code', redirectsCodeFilter);
+
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/redirects?${queryParams.toString()}`);
     const redirects = payload.redirects || [];
-    if (!redirects.length) {
+    allProjectRedirectsCache = redirects;
+
+    // Update stats cards
+    const stats = payload.stats || {};
+    if (statTotalEl) statTotalEl.textContent = stats.total || redirects.length;
+    if (statActiveEl) statActiveEl.textContent = stats.active || 0;
+    if (statDisabledEl) statDisabledEl.textContent = stats.disabled || 0;
+    if (statReqsEl) statReqsEl.textContent = stats.requests_redirected || 0;
+
+    // Empty state (matching media_1788169123183.jpg)
+    if (!redirects.length && !redirectsSearchQuery && !redirectsStatusFilter && !redirectsCodeFilter) {
+      if (bulkBar) bulkBar.classList.add('hidden');
       target.innerHTML = `
-        <div class="svc-domain-empty-state">
-          <i data-lucide="shuffle"></i>
-          <p>No redirect rules configured for this project yet.</p>
+        <!-- Empty State Card (Exact Match to media_1788169123183.jpg) -->
+        <div class="svc-redirect-empty-card">
+          <div class="svc-redirect-empty-icon">
+            <i data-lucide="shuffle"></i>
+          </div>
+          <h3 class="svc-redirect-empty-title">No redirect rules configured</h3>
+          <p class="svc-redirect-empty-sub">Start by adding your first redirect to forward requests to a different path or URL.</p>
+          <button type="button" class="btn-trigger-build" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+            <i data-lucide="plus"></i><span>Add Redirect</span>
+          </button>
+        </div>
+
+        <!-- Features Showcase Card (Exact Match to media_1788169123183.jpg) -->
+        <div class="svc-features-showcase-card">
+          <div class="svc-features-header">
+            <h3>Features at the Redirects tab</h3>
+            <p>Everything you can do in one place.</p>
+          </div>
+          <div class="svc-features-list">
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="plus"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Add redirect</strong>
+                  <span class="svc-feature-desc">Create a new redirect rule (301 / 302 / 307 / 308).</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="list"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">List & manage</strong>
+                  <span class="svc-feature-desc">View all redirects with source, destination, status and date.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="document.getElementById('svc-redirects-search-input')?.focus()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="search"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Search & filter</strong>
+                  <span class="svc-feature-desc">Search and filter by status, code, or destination type.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="edit-3"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Edit & delete</strong>
+                  <span class="svc-feature-desc">Modify or remove existing rules.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="arrow-up-down"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Reorder</strong>
+                  <span class="svc-feature-desc">Change the order of rules (priority evaluation).</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="toggle-right"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Enable / disable</strong>
+                  <span class="svc-feature-desc">Temporarily disable a redirect without deletion.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectIoModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="copy"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Bulk actions & Import</strong>
+                  <span class="svc-feature-desc">Select multiple rules, bulk edit, or import/export JSON & CSV.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectTestModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="shield-check"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Validation & Tester</strong>
+                  <span class="svc-feature-desc">Validate paths and URLs with loop detection and real-time simulator.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+          </div>
         </div>
       `;
       refreshIcons();
       return;
     }
 
-    target.innerHTML = `
-      <div class="svc-domain-group-card">
-        ${redirects.map((r) => `
-          <div class="svc-domain-list-row is-valid">
-            <div class="svc-domain-row-left">
-              <span class="svc-domain-circle-check checked">
-                <i data-lucide="arrow-right-left"></i>
+    if (!redirects.length) {
+      if (bulkBar) bulkBar.classList.add('hidden');
+      target.innerHTML = `
+        <div class="svc-redirect-empty-card">
+          <p class="hint">No redirects match your current search or filter criteria.</p>
+        </div>
+      `;
+      refreshIcons();
+      return;
+    }
+
+    // Render Redirects Cards List
+    target.innerHTML = redirects.map((r, idx) => {
+      const isChecked = selectedRedirectIds.has(r.id);
+      const isExternal = r.destination_type === 'external';
+      const statusCodeStr = `${r.status_code} ${r.status_code === 301 || r.status_code === 308 ? 'Permanent' : 'Temporary'}`;
+      const timeLabel = timeAgo(r.created_at || r.updated_at);
+      const isFirst = idx === 0;
+      const isLast = idx === redirects.length - 1;
+
+      return `
+        <article class="svc-redirect-card ${r.is_active ? '' : 'is-disabled'}" data-redirect-id="${esc(r.id)}">
+          <!-- Top Row: Checkbox, Source, Arrow, Destination -->
+          <div class="svc-redirect-card-top">
+            <div class="svc-redirect-path-wrap">
+              <input type="checkbox" class="svc-redirect-item-checkbox" data-rid="${esc(r.id)}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); toggleRedirectSelect('${esc(r.id)}')">
+              <span class="svc-path-source" title="Click to copy source path" onclick="copyTextToClipboard('${esc(r.source_path)}', 'Source path copied!')">
+                ${esc(r.source_path)}
               </span>
-              <div class="svc-domain-info">
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <strong class="svc-domain-name">${esc(r.source_path)}</strong>
-                  <i data-lucide="arrow-right" style="width: 14px; height: 14px; color: #71717a;"></i>
-                  <span style="font-size: 13.5px; font-weight: 600; color: #09090b;">${esc(r.target_url)}</span>
-                </div>
-                <span class="svc-domain-valid-subtext">${r.status_code === 302 ? '302 Temporary Redirect' : '301 Permanent Redirect'}</span>
-              </div>
-            </div>
-            <div class="svc-domain-row-right">
-              <button type="button" class="svc-domain-row-edit-btn" data-svc-redirect-del="${esc(r.id)}" title="Delete rule" style="color: #ef4444;">
-                <i data-lucide="trash-2"></i>
-              </button>
+              <span class="svc-path-arrow">➔</span>
+              <span class="svc-path-dest" title="Click to copy destination" onclick="copyTextToClipboard('${esc(r.target_url)}', 'Destination copied!')">
+                ${isExternal ? '<i data-lucide="external-link" class="icon-xs" style="margin-right:3px;"></i>' : ''}${esc(r.target_url)}
+              </span>
             </div>
           </div>
-        `).join('')}
-      </div>
-    `;
 
-    target.querySelectorAll('[data-svc-redirect-del]').forEach((btn) => {
-      btn.onclick = async () => {
-        const rid = btn.dataset.svcRedirectDel;
-        if (!confirm('Are you sure you want to delete this redirect?')) return;
-        try {
-          await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
-            method: 'DELETE',
-          });
-          toast('Redirect rule removed');
-          await renderRedirectsWorkspace(project);
-        } catch (err) {
-          toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
-        }
-      };
-    });
+          <!-- Meta Row: Code Badge, State Badge, Time -->
+          <div class="svc-redirect-meta-row">
+            <div class="svc-redirect-meta-left">
+              <span class="svc-code-pill">${esc(statusCodeStr)}</span>
+              <span class="svc-state-pill ${r.is_active ? 'is-active' : 'is-disabled'}">
+                <span class="svc-status-bullet"></span>
+                <span>${r.is_active ? 'Active' : 'Disabled'}</span>
+              </span>
+              ${r.description ? `<span style="color:#52525b; font-style:italic;">"${esc(r.description)}"</span>` : ''}
+            </div>
+            <span>Created ${esc(timeLabel)}</span>
+          </div>
+
+          <!-- Actions Toolbar -->
+          <div class="svc-redirect-actions-row">
+            <button type="button" class="btn-card-action" onclick="openRedirectTestModal(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.source_path)}')">
+              <i data-lucide="flask-conical"></i><span>Test</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="openEditRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+              <i data-lucide="edit-3"></i><span>Edit</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="duplicateRedirectRule(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+              <i data-lucide="copy"></i><span>Duplicate</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="toggleRedirectActiveState(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', ${!r.is_active})">
+              <i data-lucide="${r.is_active ? 'pause' : 'play'}"></i><span>${r.is_active ? 'Disable' : 'Enable'}</span>
+            </button>
+            ${!isFirst ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', -1)" title="Move up"><i data-lucide="arrow-up"></i></button>` : ''}
+            ${!isLast ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', 1)" title="Move down"><i data-lucide="arrow-down"></i></button>` : ''}
+            <button type="button" class="btn-card-action btn-action-delete" onclick="deleteSingleRedirect(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}')">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    updateRedirectBulkToolbarUI();
     refreshIcons();
   } catch (err) {
     target.innerHTML = `<p class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to load redirects.')}</p>`;
+  }
+}
+
+function updateRedirectBulkToolbarUI() {
+  const bulkBar = document.getElementById('svc-redirects-bulk-bar');
+  const countLabel = document.getElementById('svc-bulk-count-label');
+  const selectAll = document.getElementById('svc-redirect-select-all');
+  if (!bulkBar) return;
+
+  const count = selectedRedirectIds.size;
+  if (count > 0) {
+    bulkBar.classList.remove('hidden');
+    if (countLabel) countLabel.textContent = `${count} selected`;
+    if (selectAll) selectAll.checked = allProjectRedirectsCache.length > 0 && count === allProjectRedirectsCache.length;
+  } else {
+    bulkBar.classList.add('hidden');
+    if (selectAll) selectAll.checked = false;
+  }
+}
+
+function renderRedirectCardSelectionUI() {
+  document.querySelectorAll('.svc-redirect-item-checkbox').forEach(cb => {
+    cb.checked = selectedRedirectIds.has(cb.dataset.rid);
+  });
+}
+
+function toggleRedirectSelect(rid) {
+  if (selectedRedirectIds.has(rid)) {
+    selectedRedirectIds.delete(rid);
+  } else {
+    selectedRedirectIds.add(rid);
+  }
+  updateRedirectBulkToolbarUI();
+  renderRedirectCardSelectionUI();
+}
+
+async function toggleRedirectActiveState(project, rid, nextState) {
+  try {
+    await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: nextState }),
+    });
+    toast(nextState ? 'Redirect enabled' : 'Redirect disabled');
+    await renderRedirectsWorkspace(project);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to update redirect');
+  }
+}
+
+async function deleteSingleRedirect(project, rid) {
+  if (!confirm('Are you sure you want to permanently delete this redirect rule?')) return;
+  try {
+    await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
+      method: 'DELETE',
+    });
+    toast('Redirect permanently deleted');
+    selectedRedirectIds.delete(rid);
+    await renderRedirectsWorkspace(project);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
+  }
+}
+
+async function duplicateRedirectRule(project, rule) {
+  try {
+    const newSrc = rule.source_path + '-copy';
+    await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_path: newSrc,
+        target_url: rule.target_url,
+        status_code: rule.status_code,
+        is_active: false,
+        preserve_query: rule.preserve_query,
+        case_sensitive: rule.case_sensitive,
+        trailing_slash: rule.trailing_slash,
+        environments: rule.environments,
+        description: `Copy of ${rule.source_path}`,
+      }),
+    });
+    toast(`Duplicated as ${newSrc} (disabled by default)`);
+    await renderRedirectsWorkspace(project);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to duplicate redirect');
+  }
+}
+
+async function moveRedirectPriority(project, rid, direction) {
+  const currentIds = allProjectRedirectsCache.map(r => r.id);
+  const idx = currentIds.indexOf(rid);
+  if (idx === -1) return;
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= currentIds.length) return;
+
+  // Swap
+  const temp = currentIds[idx];
+  currentIds[idx] = currentIds[targetIdx];
+  currentIds[targetIdx] = temp;
+
+  try {
+    await api(`/projects/${encodeURIComponent(project.id)}/redirects/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ redirect_ids: currentIds }),
+    });
+    toast('Priority order updated');
+    await renderRedirectsWorkspace(project);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to reorder');
+  }
+}
+
+function openAddRedirectModal(project) {
+  const modal = document.getElementById('svc-redirect-modal');
+  if (!modal) return;
+  const title = document.getElementById('svc-redirect-modal-title');
+  const editId = document.getElementById('svc-redirect-edit-id');
+  const src = document.getElementById('svc-redirect-form-src');
+  const target = document.getElementById('svc-redirect-form-target');
+  const notes = document.getElementById('svc-redirect-notes');
+
+  if (title) title.textContent = 'Add HTTP Redirect';
+  if (editId) editId.value = '';
+  if (src) src.value = '';
+  if (target) target.value = '';
+  if (notes) notes.value = '';
+
+  setupRedirectModalForm(project);
+  modal.showModal();
+  refreshIcons();
+}
+
+function openEditRedirectModal(project, rule) {
+  const modal = document.getElementById('svc-redirect-modal');
+  if (!modal) return;
+  const title = document.getElementById('svc-redirect-modal-title');
+  const editId = document.getElementById('svc-redirect-edit-id');
+  const src = document.getElementById('svc-redirect-form-src');
+  const target = document.getElementById('svc-redirect-form-target');
+  const notes = document.getElementById('svc-redirect-notes');
+
+  if (title) title.textContent = 'Edit HTTP Redirect';
+  if (editId) editId.value = rule.id;
+  if (src) src.value = rule.source_path;
+  if (target) target.value = rule.target_url;
+  if (notes) notes.value = rule.description || '';
+
+  const codeRadio = document.querySelector(`input[name="redirect-status-code"][value="${rule.status_code}"]`);
+  if (codeRadio) codeRadio.checked = true;
+
+  const preserveRadio = document.querySelector(`input[name="redirect-preserve-query"][value="${rule.preserve_query ? 'preserve' : 'remove'}"]`);
+  if (preserveRadio) preserveRadio.checked = true;
+
+  const caseBox = document.getElementById('svc-redirect-case-sensitive');
+  if (caseBox) caseBox.checked = bool(rule.case_sensitive);
+
+  const slashBox = document.getElementById('svc-redirect-ignore-slash');
+  if (slashBox) slashBox.checked = rule.trailing_slash === 'ignore';
+
+  setupRedirectModalForm(project);
+  modal.showModal();
+  refreshIcons();
+}
+
+function setupRedirectModalForm(project) {
+  const form = document.getElementById('svc-redirect-modal-form');
+  const srcInput = document.getElementById('svc-redirect-form-src');
+  const targetInput = document.getElementById('svc-redirect-form-target');
+  const srcError = document.getElementById('svc-redirect-src-error');
+  const targetError = document.getElementById('svc-redirect-target-error');
+  const simFrom = document.getElementById('svc-sim-from');
+  const simTo = document.getElementById('svc-sim-to');
+
+  function updateLiveSim() {
+    const s = (srcInput?.value || '').trim();
+    const t = (targetInput?.value || '').trim();
+    if (simFrom) simFrom.textContent = s || '/old-path';
+    if (simTo) simTo.textContent = t || '/new-path';
+
+    if (srcError) {
+      if (s && !s.startsWith('/')) {
+        srcError.textContent = 'Source path must begin with "/"';
+        srcError.classList.remove('hidden');
+      } else if (s && t && s === t) {
+        srcError.textContent = 'A redirect cannot point directly to itself.';
+        srcError.classList.remove('hidden');
+      } else {
+        srcError.classList.add('hidden');
+      }
+    }
+  }
+
+  if (srcInput) srcInput.oninput = updateLiveSim;
+  if (targetInput) targetInput.oninput = updateLiveSim;
+  updateLiveSim();
+
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById('svc-redirect-edit-id')?.value;
+      const s = srcInput?.value.trim();
+      const t = targetInput?.value.trim();
+      const code = Number(document.querySelector('input[name="redirect-status-code"]:checked')?.value || 301);
+      const preserveQuery = document.querySelector('input[name="redirect-preserve-query"]:checked')?.value === 'preserve';
+      const caseSensitive = Boolean(document.getElementById('svc-redirect-case-sensitive')?.checked);
+      const ignoreSlash = Boolean(document.getElementById('svc-redirect-ignore-slash')?.checked);
+      const notes = document.getElementById('svc-redirect-notes')?.value.trim() || '';
+
+      const envs = [];
+      if (document.getElementById('svc-redir-env-prod')?.checked) envs.push('production');
+      if (document.getElementById('svc-redir-env-prev')?.checked) envs.push('preview');
+      if (document.getElementById('svc-redir-env-dev')?.checked) envs.push('development');
+
+      if (!s || !t) return toast('Please provide both source and destination');
+      if (!s.startsWith('/')) return toast('Source path must begin with "/"');
+      if (s === t) return toast('A redirect cannot point directly to itself');
+
+      const bodyData = {
+        source_path: s,
+        target_url: t,
+        status_code: code,
+        preserve_query: preserveQuery,
+        case_sensitive: caseSensitive,
+        trailing_slash: ignoreSlash ? 'ignore' : 'exact',
+        environments: envs.length ? envs : ['production', 'preview', 'development'],
+        description: notes,
+      };
+
+      try {
+        if (editId) {
+          await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(editId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(bodyData),
+          });
+          toast('Redirect rule updated');
+        } else {
+          await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+            method: 'POST',
+            body: JSON.stringify({ ...bodyData, is_active: true }),
+          });
+          toast('Redirect rule created');
+        }
+        document.getElementById('svc-redirect-modal')?.close();
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to save redirect');
+      }
+    };
+  }
+}
+
+function openRedirectTestModal(project, initialPath = '') {
+  const modal = document.getElementById('svc-redirect-test-modal');
+  if (!modal) return;
+  const input = document.getElementById('svc-test-url-input');
+  const runBtn = document.getElementById('svc-run-test-btn');
+  const resultBox = document.getElementById('svc-test-result-box');
+
+  if (input) input.value = initialPath ? `https://example.com${initialPath.startsWith('/') ? '' : '/'}${initialPath}` : '';
+  if (resultBox) resultBox.innerHTML = '<p class="hint">Enter a URL above to test redirect evaluation and query parameter propagation.</p>';
+
+  if (runBtn) {
+    runBtn.onclick = async () => {
+      const url = input?.value.trim();
+      if (!url) return toast('Please enter a URL to test');
+      resultBox.innerHTML = '<p class="hint">Evaluating redirect matching…</p>';
+      try {
+        const res = await api(`/projects/${encodeURIComponent(project.id)}/redirects/test`, {
+          method: 'POST',
+          body: JSON.stringify({ url }),
+        });
+        if (res.matched) {
+          resultBox.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="svc-state-pill is-active"><i data-lucide="check-circle-2" class="icon-xs"></i> Matched Rule</span>
+                <strong style="font-family:monospace; font-size:13.5px;">${esc(res.source)}</strong>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; font-family:monospace; font-size:13.5px;">
+                <span style="color:#71717a;">Redirects to:</span>
+                <strong style="color:#2563eb;">${esc(res.destination)}</strong>
+              </div>
+              <div style="font-size:12.5px; color:#71717a;">
+                <span>Status Code: <strong>${esc(String(res.status_code))}</strong></span>
+              </div>
+              ${res.is_loop ? `<div style="background:#fee2e2; color:#dc2626; padding:6px 10px; border-radius:8px; font-size:12px; font-weight:700;">⚠️ Potential redirect loop detected!</div>` : ''}
+            </div>
+          `;
+        } else {
+          resultBox.innerHTML = `
+            <div style="color:#71717a; font-size:13px;">
+              <i data-lucide="info" style="width:16px; height:16px; vertical-align:middle; margin-right:4px;"></i>
+              No active redirect rule matched this URL.
+            </div>
+          `;
+        }
+        refreshIcons();
+      } catch (err) {
+        resultBox.innerHTML = `<p class="hint" style="color:#dc2626;">${esc(normalizeFetchError(err?.message) || 'Simulation error')}</p>`;
+      }
+    };
+  }
+
+  modal.showModal();
+  refreshIcons();
+}
+
+function openRedirectIoModal(project) {
+  const modal = document.getElementById('svc-redirect-io-modal');
+  if (!modal) return;
+
+  const exportJsonBtn = document.getElementById('svc-export-json-btn');
+  const exportCsvBtn = document.getElementById('svc-export-csv-btn');
+  const runImportBtn = document.getElementById('svc-run-import-btn');
+  const fileInput = document.getElementById('svc-import-file-input');
+  const textarea = document.getElementById('svc-import-textarea');
+  const reportBox = document.getElementById('svc-import-report-box');
+
+  if (reportBox) reportBox.classList.add('hidden');
+
+  // Export Handlers
+  if (exportJsonBtn) {
+    exportJsonBtn.onclick = () => {
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allProjectRedirectsCache, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute('href', dataStr);
+      a.setAttribute('download', `redirects-${project.id}.json`);
+      a.click();
+      toast('Exported redirects as JSON');
+    };
+  }
+
+  if (exportCsvBtn) {
+    exportCsvBtn.onclick = () => {
+      const headers = ['source', 'destination', 'statusCode', 'enabled'];
+      const rows = allProjectRedirectsCache.map(r => [
+        `"${(r.source_path || '').replace(/"/g, '""')}"`,
+        `"${(r.target_url || '').replace(/"/g, '""')}"`,
+        r.status_code || 301,
+        r.is_active ? 'true' : 'false',
+      ].join(','));
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent([headers.join(','), ...rows].join('\n'));
+      const a = document.createElement('a');
+      a.setAttribute('href', csvContent);
+      a.setAttribute('download', `redirects-${project.id}.csv`);
+      a.click();
+      toast('Exported redirects as CSV');
+    };
+  }
+
+  // File Upload Handler
+  if (fileInput) {
+    fileInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        if (textarea) textarea.value = evt.target?.result || '';
+      };
+      reader.readAsText(file);
+    };
+  }
+
+  // Import Run Handler
+  if (runImportBtn) {
+    runImportBtn.onclick = async () => {
+      const raw = textarea?.value.trim();
+      if (!raw) return toast('Please paste JSON rules or upload a file');
+      let rules = [];
+      try {
+        if (raw.startsWith('[') || raw.startsWith('{')) {
+          rules = JSON.parse(raw);
+          if (!Array.isArray(rules)) rules = [rules];
+        } else {
+          // Parse CSV
+          const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+          const firstLine = lines[0].toLowerCase();
+          const startIdx = (firstLine.includes('source') || firstLine.includes('from')) ? 1 : 0;
+          for (let i = startIdx; i < lines.length; i++) {
+            const parts = lines[i].split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+            if (parts.length >= 2) {
+              rules.push({
+                source: parts[0],
+                destination: parts[1],
+                statusCode: Number(parts[2] || 301),
+                enabled: parts[3] !== 'false',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        return toast('Invalid JSON or CSV format: ' + err.message);
+      }
+
+      if (!rules.length) return toast('No valid rules found to import');
+
+      try {
+        const res = await api(`/projects/${encodeURIComponent(project.id)}/redirects/import`, {
+          method: 'POST',
+          body: JSON.stringify({ rules }),
+        });
+        toast(`Imported ${res.imported} redirect rule(s)`);
+        if (reportBox) {
+          reportBox.classList.remove('hidden');
+          reportBox.innerHTML = `
+            <div style="background:#f4f4f5; padding:10px; border-radius:8px; font-size:12px; margin-top:8px;">
+              <strong>${res.imported} rule(s) imported.</strong>
+              ${res.errors?.length ? `<ul style="margin:4px 0 0 16px; color:#dc2626;">${res.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+            </div>
+          `;
+        }
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Import failed');
+      }
+    };
+  }
+
+  modal.showModal();
+  refreshIcons();
+}
+
+function openRedirectDocsModal() {
+  const modal = document.getElementById('svc-redirect-docs-modal');
+  if (modal) {
+    modal.showModal();
+    refreshIcons();
   }
 }
 

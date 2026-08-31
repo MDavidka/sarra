@@ -172,6 +172,9 @@
               <button type="button" class="sidebar-tree-link" data-svc-tab="release">
                 <i data-lucide="zap"></i><span>Release</span>
               </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="redirects">
+                <i data-lucide="shuffle"></i><span>Redirects</span>
+              </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="firewall">
                 <i data-lucide="shield"></i><span>Firewall</span>
               </button>
@@ -1193,47 +1196,92 @@
                 </section>
               </div>
 
-              <!-- 6. REDIRECTS TAB -->
+              <!-- 6. REDIRECTS TAB (Exact match to media_1788169123183.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-redirects" data-svc-panel="redirects">
                 <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
+                  <!-- Header Section -->
                   <div class="svc-redirects-header">
-                    <div>
+                    <div class="svc-redirects-header-text">
+                      <span class="svc-section-tag">NETWORK</span>
                       <h2 class="svc-redirects-title">HTTP Redirects</h2>
                       <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
                     </div>
-                    <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-redirect-add-open-btn">
+                    <div class="svc-redirects-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn">
+                        <i data-lucide="external-link"></i><span>Learn more</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
+                  <div class="svc-redirects-action-bar">
+                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn">
                       <i data-lucide="plus"></i><span>Add Redirect</span>
+                    </button>
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn">
+                      <i data-lucide="flask-conical"></i><span>Test URL</span>
+                    </button>
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn">
+                      <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
                     </button>
                   </div>
 
-                  <!-- Inline Add Redirect Card -->
-                  <div class="svc-redirect-add-card hidden" id="svc-redirect-add-card">
-                    <form id="svc-redirect-add-form" class="svc-redirect-form">
-                      <div class="svc-redirect-form-grid">
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-src">Source Path</label>
-                          <input type="text" id="svc-redirect-src" class="shadcn-input" placeholder="/old-path" required>
-                        </div>
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-target">Destination URL / Path</label>
-                          <input type="text" id="svc-redirect-target" class="shadcn-input" placeholder="https://example.com or /new-path" required>
-                        </div>
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-status">Status Code</label>
-                          <select id="svc-redirect-status" class="shadcn-select">
-                            <option value="301">301 - Permanent Redirect</option>
-                            <option value="302">302 - Temporary Redirect</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div class="svc-redirect-form-actions">
-                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-add-cancel">Cancel</button>
-                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Rule</span></button>
-                      </div>
-                    </form>
+                  <!-- Search & Filter Controls -->
+                  <div class="svc-redirects-filter-bar">
+                    <div class="svc-search-input-wrap">
+                      <i data-lucide="search"></i>
+                      <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                    </div>
+                    <div class="svc-filter-select-wrap">
+                      <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
+                        <option value="">All status</option>
+                        <option value="active">Active</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
+                        <option value="">All codes</option>
+                        <option value="301">301 - Permanent</option>
+                        <option value="302">302 - Temporary</option>
+                        <option value="307">307 - Preserving</option>
+                        <option value="308">308 - Perm Preserving</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <!-- Redirects List -->
+                  <!-- Statistics Overview Row -->
+                  <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Total Redirects</span>
+                      <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Active</span>
+                      <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Disabled</span>
+                      <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Requests Redirected</span>
+                      <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
+                    </div>
+                  </div>
+
+                  <!-- Bulk Actions Toolbar (Conditional) -->
+                  <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
+                    <div class="svc-bulk-left">
+                      <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
+                      <span id="svc-bulk-count-label">0 selected</span>
+                    </div>
+                    <div class="svc-bulk-actions">
+                      <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
+                      <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
+                      <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
+                    </div>
+                  </div>
+
+                  <!-- Redirects List Container -->
                   <div class="svc-redirects-list" id="svc-redirects-list">
                     <p class="hint">Loading redirect rules…</p>
                   </div>
@@ -2384,8 +2432,276 @@
     </div>
   </dialog>
 
-  <div id="toast" class="toast hidden"></div>
+  <!-- ========================================================
+       REDIRECTS MODALS
+       ======================================================== -->
+  <!-- 1. ADD / EDIT REDIRECT MODAL -->
+  <dialog id="svc-redirect-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="shuffle"></i></span>
+          <div>
+            <h3 id="svc-redirect-modal-title">Add HTTP Redirect</h3>
+            <p id="svc-redirect-modal-sub">Forward incoming request paths to custom paths or external URLs.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
 
+      <form id="svc-redirect-modal-form" class="svc-clean-dialog-form">
+        <input type="hidden" id="svc-redirect-edit-id" value="">
+
+        <!-- Source Path -->
+        <div class="svc-dialog-field">
+          <label for="svc-redirect-form-src">
+            <span>Source Path</span>
+            <span class="svc-field-hint">Must begin with / (supports wildcards * and named :slug)</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">path</span>
+            <input type="text" id="svc-redirect-form-src" class="shadcn-input" placeholder="/blog/:slug" required autocomplete="off">
+          </div>
+          <p class="svc-field-error hidden" id="svc-redirect-src-error"></p>
+        </div>
+
+        <!-- Destination URL -->
+        <div class="svc-dialog-field">
+          <label for="svc-redirect-form-target">
+            <span>Destination</span>
+            <span class="svc-field-hint">Internal path (/articles) or external URL (https://...)</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">to</span>
+            <input type="text" id="svc-redirect-form-target" class="shadcn-input" placeholder="/articles/:slug" required autocomplete="off">
+          </div>
+          <p class="svc-field-error hidden" id="svc-redirect-target-error"></p>
+        </div>
+
+        <!-- Status Code Selector -->
+        <div class="svc-dialog-field">
+          <label><span>Redirect Status Code</span></label>
+          <div class="svc-status-code-grid">
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="301" checked>
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>301</strong><span class="svc-code-badge">Permanent</span></div>
+                <small>Moved Permanently (SEO friendly, cached by browsers)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="302">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>302</strong><span class="svc-code-badge">Temporary</span></div>
+                <small>Found / Temporary redirect (not cached)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="307">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>307</strong><span class="svc-code-badge">Temporary</span></div>
+                <small>Temporary redirect, preserves HTTP method (POST/PUT)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="308">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>308</strong><span class="svc-code-badge">Permanent</span></div>
+                <small>Permanent redirect, preserves HTTP method (POST/PUT)</small>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Advanced Options Details/Accordion -->
+        <details class="svc-dialog-details">
+          <summary>
+            <span><i data-lucide="sliders"></i> Advanced matching & query parameters</span>
+            <i data-lucide="chevron-down" class="svc-details-chevron"></i>
+          </summary>
+          <div class="svc-details-body">
+            <!-- Query Parameters Handling -->
+            <div class="svc-dialog-field">
+              <label>Query Parameters</label>
+              <div class="svc-radio-pills">
+                <label><input type="radio" name="redirect-preserve-query" value="preserve" checked><span>Preserve query string</span></label>
+                <label><input type="radio" name="redirect-preserve-query" value="remove"><span>Remove query string</span></label>
+              </div>
+            </div>
+
+            <!-- Matching Sensitivity -->
+            <div class="svc-dialog-grid-2">
+              <label class="svc-checkbox-label">
+                <input type="checkbox" id="svc-redirect-case-sensitive">
+                <span>Case sensitive matching</span>
+              </label>
+              <label class="svc-checkbox-label">
+                <input type="checkbox" id="svc-redirect-ignore-slash" checked>
+                <span>Ignore trailing slash (/blog = /blog/)</span>
+              </label>
+            </div>
+
+            <!-- Environments -->
+            <div class="svc-dialog-field" style="margin-top: 8px;">
+              <label>Apply to Environments</label>
+              <div class="svc-env-checkboxes">
+                <label><input type="checkbox" id="svc-redir-env-prod" checked> Production</label>
+                <label><input type="checkbox" id="svc-redir-env-prev" checked> Preview</label>
+                <label><input type="checkbox" id="svc-redir-env-dev" checked> Development</label>
+              </div>
+            </div>
+
+            <!-- Notes / Description -->
+            <div class="svc-dialog-field" style="margin-top: 8px;">
+              <label for="svc-redirect-notes">Description / Notes</label>
+              <input type="text" id="svc-redirect-notes" class="shadcn-input" placeholder="e.g. Migration from legacy blog">
+            </div>
+          </div>
+        </details>
+
+        <!-- Live Simulation Preview in Modal -->
+        <div class="svc-modal-simulation-card" id="svc-modal-simulation-card">
+          <span class="svc-sim-title"><i data-lucide="sparkles"></i> Live Rule Simulation</span>
+          <div class="svc-sim-preview-row">
+            <span class="svc-sim-from" id="svc-sim-from">/blog/hello</span>
+            <span class="svc-sim-arrow">➔</span>
+            <span class="svc-sim-to" id="svc-sim-to">/articles/hello</span>
+          </div>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-redirect-modal').close()">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default" id="svc-redirect-submit-btn">
+            <i data-lucide="check"></i><span>Save Redirect</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 2. REDIRECT TESTER MODAL -->
+  <dialog id="svc-redirect-test-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="flask-conical"></i></span>
+          <div>
+            <h3>Test HTTP Redirects</h3>
+            <p>Simulate an incoming URL against your active redirect rules.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-test-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-dialog-field">
+          <label for="svc-test-url-input">Incoming Request URL</label>
+          <div class="svc-test-input-row">
+            <input type="text" id="svc-test-url-input" class="shadcn-input" placeholder="https://example.com/blog/my-post?ref=google" autocomplete="off">
+            <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-run-test-btn"><i data-lucide="play"></i><span>Test</span></button>
+          </div>
+        </div>
+
+        <div class="svc-test-result-box" id="svc-test-result-box">
+          <p class="hint">Enter a URL above to test redirect evaluation and query parameter propagation.</p>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 3. IMPORT / EXPORT MODAL -->
+  <dialog id="svc-redirect-io-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="arrow-down-up"></i></span>
+          <div>
+            <h3>Import / Export Redirects</h3>
+            <p>Backup or bulk import redirect configurations in JSON or CSV format.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-io-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <!-- Export Section -->
+        <div class="svc-io-section">
+          <h4>Export Active Rules</h4>
+          <p class="svc-io-sub">Download your complete project redirect configuration.</p>
+          <div class="svc-io-buttons">
+            <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-export-json-btn"><i data-lucide="file-json"></i><span>Export as JSON</span></button>
+            <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-export-csv-btn"><i data-lucide="file-spreadsheet"></i><span>Export as CSV</span></button>
+          </div>
+        </div>
+
+        <hr class="svc-io-divider">
+
+        <!-- Import Section -->
+        <div class="svc-io-section">
+          <h4>Import Rules</h4>
+          <p class="svc-io-sub">Paste JSON rules or upload a JSON/CSV file. Rules will be validated before saving.</p>
+          <textarea id="svc-import-textarea" class="shadcn-textarea" rows="5" placeholder='[
+  { "source": "/old-docs", "destination": "/docs", "statusCode": 301 }
+]'></textarea>
+          <div class="svc-io-upload-row">
+            <input type="file" id="svc-import-file-input" accept=".json,.csv" class="hidden">
+            <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-import-file-input').click()"><i data-lucide="upload"></i><span>Choose File</span></button>
+            <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-run-import-btn"><i data-lucide="check"></i><span>Validate & Import</span></button>
+          </div>
+          <div id="svc-import-report-box" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 4. LEARN MORE DOCUMENTATION MODAL -->
+  <dialog id="svc-redirect-docs-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>HTTP Redirects Guide</h3>
+            <p>Understanding status codes, wildcards, parameters, and matching order.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-docs-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="git-commit"></i> Status Codes Overview</h4>
+          <ul class="svc-doc-list">
+            <li><strong>301 Moved Permanently</strong>: Use when a URL is permanently moved. Search engines transfer SEO authority. Browsers cache aggressively.</li>
+            <li><strong>302 Found (Temporary)</strong>: Use for temporary promotions or maintenance. Browsers do not cache indefinitely.</li>
+            <li><strong>307 Temporary Redirect</strong>: Preserves the HTTP method. A POST request to the source URL remains a POST to the destination.</li>
+            <li><strong>308 Permanent Redirect</strong>: Permanent redirect that guarantees the HTTP method (POST/PUT/DELETE) is preserved.</li>
+          </ul>
+        </section>
+
+        <section class="svc-doc-card">
+          <h4><i data-lucide="code-2"></i> Wildcards & Named Parameters</h4>
+          <ul class="svc-doc-list">
+            <li><strong>Wildcards (<code>*</code>)</strong>: <code>/blog/*</code> ➔ <code>/articles/*</code> matches <code>/blog/post-1</code> and redirects to <code>/articles/post-1</code>.</li>
+            <li><strong>Named Parameters (<code>:param</code>)</strong>: <code>/docs/:version/:topic</code> ➔ <code>/documentation/:version/:topic</code> captures specific path segments.</li>
+          </ul>
+        </section>
+
+        <section class="svc-doc-card">
+          <h4><i data-lucide="layers"></i> Priority & Loop Protection</h4>
+          <ul class="svc-doc-list">
+            <li><strong>Top-to-Bottom Evaluation</strong>: Rules are evaluated sequentially from top to bottom. Place specific rules above broad wildcard rules.</li>
+            <li><strong>Loop Prevention</strong>: The system detects infinite bounce loops (e.g. <code>/a ➔ /b</code> and <code>/b ➔ /a</code>) and alerts before saving.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </dialog>
 
   <script src="/static/app.js?v=__VERSION__"></script>
 </body>
