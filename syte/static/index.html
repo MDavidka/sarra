@@ -3291,14 +3291,530 @@
           </ul>
         </section>
 
-        <section class="svc-doc-card">
-          <h4><i data-lucide="layers"></i> Priority & Loop Protection</h4>
-          <ul class="svc-doc-list">
-            <li><strong>Top-to-Bottom Evaluation</strong>: Rules are evaluated sequentially from top to bottom. Place specific rules above broad wildcard rules.</li>
-            <li><strong>Loop Prevention</strong>: The system detects infinite bounce loops (e.g. <code>/a ➔ /b</code> and <code>/b ➔ /a</code>) and alerts before saving.</li>
-          </ul>
-        </section>
-      </div>
+  <!-- ========================================================
+       FIREWALL MODALS (Exact match to screenshots)
+       ======================================================== -->
+  <!-- 1. ADD FIREWALL RULE MODAL (media_1788178893851.jpg) -->
+  <dialog id="svc-modal-fw-add-rule" class="svc-clean-dialog svc-sheet-dialog">
+    <div class="svc-clean-dialog-card svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div>
+            <h3 class="svc-sheet-main-title">Add Firewall Rule</h3>
+            <p class="svc-sheet-sub-title">Create a rule to control and protect your application at the edge.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-add-rule').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-add-rule" class="svc-sheet-form-body">
+        <!-- 1. Action Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">What should happen when the rule matches?</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rule Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-fw-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="allow" role="radio" aria-checked="false">
+              <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+              <span>Allow</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Condition Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Condition</strong>
+            <span class="svc-fw-section-desc">Select what to match against.</span>
+          </div>
+          <div class="svc-fw-condition-stack" id="fw-rule-condition-stack">
+            <div class="svc-fw-condition-item">
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Field</span>
+                <div class="svc-fw-row-input-wrap">
+                  <select class="svc-fw-row-select" id="fw-rule-field">
+                    <option value="ip">IP address</option>
+                    <option value="path">Path / URI</option>
+                    <option value="header">Header</option>
+                    <option value="country">Country / Geo</option>
+                    <option value="user_agent">User Agent</option>
+                  </select>
+                  <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                </div>
+              </div>
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Operator</span>
+                <div class="svc-fw-row-input-wrap">
+                  <select class="svc-fw-row-select" id="fw-rule-operator">
+                    <option value="equals">Equals</option>
+                    <option value="contains">Contains</option>
+                    <option value="starts_with">Starts with</option>
+                    <option value="matches_regex">Matches regex</option>
+                    <option value="in_list">In list</option>
+                  </select>
+                  <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                </div>
+              </div>
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Value</span>
+                <div class="svc-fw-row-input-wrap">
+                  <input type="text" class="svc-fw-row-input" id="fw-rule-value" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn-fw-add-condition" id="fw-rule-add-condition-btn">
+            <i data-lucide="plus"></i>
+            <span>Add another condition</span>
+          </button>
+        </div>
+
+        <!-- 3. Rule Name Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-rule-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block suspicious IP" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-rule-name-count">0/64</span>
+          </div>
+        </div>
+
+        <!-- 4. Notes Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-rule-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Blocks abusive IP from incident #123"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-rule-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-add-rule').close()">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-rule-submit-btn">Create Rule</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 2. IP RATE LIMIT MODAL (media_1788178893971.jpg) -->
+  <dialog id="svc-modal-fw-rate-limit" class="svc-clean-dialog svc-sheet-dialog">
+    <div class="svc-clean-dialog-card svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle">
+            <i data-lucide="gauge"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">IP Rate Limit</h3>
+            <p class="svc-sheet-sub-title">Limit the number of requests from an IP address.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-rate-limit').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-rate-limit" class="svc-sheet-form-body">
+        <!-- 1. Action Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">What should happen when the limit is exceeded?</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rate Limit Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-rl-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="throttle" role="radio" aria-checked="false">
+              <i data-lucide="clock" class="action-icon icon-blue"></i>
+              <span>Throttle</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Limit Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Limit</strong>
+            <span class="svc-fw-section-desc">Set the number of requests allowed.</span>
+          </div>
+          <div class="svc-fw-limit-row">
+            <div class="svc-fw-limit-col">
+              <label for="fw-rl-requests-input" class="svc-fw-input-mini-label">Requests</label>
+              <input type="number" id="fw-rl-requests-input" class="svc-fw-styled-input" value="100" min="1" max="1000000">
+            </div>
+            <div class="svc-fw-limit-col">
+              <label for="fw-rl-window-select" class="svc-fw-input-mini-label">Per</label>
+              <div class="svc-fw-select-wrap-block">
+                <select id="fw-rl-window-select" class="svc-fw-styled-select">
+                  <option value="10 seconds">10 seconds</option>
+                  <option value="1 minute" selected>1 minute</option>
+                  <option value="5 minutes">5 minutes</option>
+                  <option value="1 hour">1 hour</option>
+                </select>
+                <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Scope (optional) Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Scope (optional)</strong>
+            <span class="svc-fw-section-desc">Apply to a specific path or leave empty for all routes.</span>
+          </div>
+          <div class="svc-fw-select-wrap-block">
+            <select id="fw-rl-scope-select" class="svc-fw-styled-select">
+              <option value="All routes" selected>All routes</option>
+              <option value="/api/*">/api/*</option>
+              <option value="/login">/login</option>
+              <option value="/admin/*">/admin/*</option>
+            </select>
+            <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+          </div>
+          <span class="svc-fw-helper-text">e.g. /api/*, /login, /admin/*</span>
+        </div>
+
+        <!-- 4. IP Filtering Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">IP filtering (optional)</strong>
+            <span class="svc-fw-section-desc">Apply to specific IPs or ranges.</span>
+          </div>
+          <div class="svc-fw-segmented-toggle-bar">
+            <button type="button" class="svc-fw-seg-btn active" data-ip-mode="all">All IPs</button>
+            <button type="button" class="svc-fw-seg-btn" data-ip-mode="specific">Specific IPs</button>
+          </div>
+          <div class="svc-fw-callout-box" id="fw-rl-ip-callout">
+            <i data-lucide="globe"></i>
+            <span>This rule will apply to all IP addresses.</span>
+          </div>
+        </div>
+
+        <!-- 5. Rule Name Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-rl-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Limit API abuse" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-rl-name-count">0/64</span>
+          </div>
+        </div>
+
+        <!-- 6. Notes Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-rl-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Prevents abuse on public API endpoints"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-rl-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-rate-limit').close()">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-rl-submit-btn">Create Rule</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 3. BOT PROTECTION MODAL (media_1788178893972.jpg) -->
+  <dialog id="svc-modal-fw-bot-protect" class="svc-clean-dialog svc-sheet-dialog">
+    <div class="svc-clean-dialog-card svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle">
+            <i data-lucide="bot"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">Bot Protection</h3>
+            <p class="svc-sheet-sub-title">Detect and manage automated traffic, scrapers, and malicious bots.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-bot-protect').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-bot-protect" class="svc-sheet-form-body">
+        <!-- 1. Enable Bot Protection Toggle Row -->
+        <div class="svc-fw-toggle-card">
+          <div class="svc-fw-toggle-info">
+            <strong class="svc-fw-toggle-title">Enable Bot Protection</strong>
+            <span class="svc-fw-toggle-desc">Automatically detect and challenge suspicious bots.</span>
+          </div>
+          <label class="svc-apple-switch">
+            <input type="checkbox" id="fw-bot-main-toggle" checked>
+            <span class="svc-apple-slider"></span>
+          </label>
+        </div>
+
+        <!-- 2. Protection Level Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Protection level</strong>
+            <span class="svc-fw-section-desc">Choose how aggressive the bot detection should be.</span>
+          </div>
+          <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Protection level">
+            <div class="svc-fw-level-card" data-bot-level="light" role="radio" aria-checked="false">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Light</strong>
+                <span class="svc-fw-level-desc">Minimal challenges</span>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+            <div class="svc-fw-level-card is-active" data-bot-level="balanced" role="radio" aria-checked="true">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Balanced</strong>
+                <span class="svc-fw-level-desc">Recommended</span>
+              </div>
+              <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-level="strict" role="radio" aria-checked="false">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Strict</strong>
+                <span class="svc-fw-level-desc">Maximum protection</span>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Action for Bots Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action for bots</strong>
+            <span class="svc-fw-section-desc">Choose what to do with detected bots.</span>
+          </div>
+          <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Action for bots">
+            <div class="svc-fw-level-card is-active" data-bot-action="challenge" role="radio" aria-checked="true">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Challenge</strong>
+                  <span class="svc-fw-level-desc">Show verification</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-action="block" role="radio" aria-checked="false">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="ban" class="action-icon icon-red"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Block</strong>
+                  <span class="svc-fw-level-desc">Deny access</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-action="log" role="radio" aria-checked="false">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Log only</strong>
+                  <span class="svc-fw-level-desc">Monitor only</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. AI Detection (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-toggle-card inline-toggle">
+            <div class="svc-fw-toggle-info">
+              <strong class="svc-fw-toggle-title">AI detection (optional)</strong>
+              <span class="svc-fw-toggle-desc">Use advanced detection to identify more sophisticated bots.</span>
+            </div>
+            <label class="svc-apple-switch">
+              <input type="checkbox" id="fw-bot-ai-toggle" checked>
+              <span class="svc-apple-slider"></span>
+            </label>
+          </div>
+          <div class="svc-fw-callout-box info-callout">
+            <i data-lucide="info"></i>
+            <span>Uses machine learning to detect headless browsers, scrapers, and automated tools.</span>
+          </div>
+        </div>
+
+        <!-- 5. Allow Verified Bots Toggle -->
+        <div class="svc-fw-toggle-card">
+          <div class="svc-fw-toggle-info">
+            <strong class="svc-fw-toggle-title">Allow verified bots</strong>
+            <span class="svc-fw-toggle-desc">Allow known good bots (e.g. Google, Bing, Discord) to access your site.</span>
+          </div>
+          <label class="svc-apple-switch">
+            <input type="checkbox" id="fw-bot-verified-toggle" checked>
+            <span class="svc-apple-slider"></span>
+          </label>
+        </div>
+
+        <!-- 6. Custom Allowlist (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Custom allowlist (optional)</strong>
+            <span class="svc-fw-section-desc">Add IPs, user agents, or URL patterns to bypass bot protection.</span>
+          </div>
+          <button type="button" class="svc-fw-nav-action-row" id="fw-bot-add-allowlist-btn">
+            <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to allowlist</span></span>
+            <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+          </button>
+        </div>
+
+        <!-- 7. Blocklist (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Blocklist (optional)</strong>
+            <span class="svc-fw-section-desc">Block specific bad bots, user agents, or IP ranges.</span>
+          </div>
+          <button type="button" class="svc-fw-nav-action-row" id="fw-bot-add-blocklist-btn">
+            <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to blocklist</span></span>
+            <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+          </button>
+        </div>
+
+        <!-- 8. Rule Name (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name (optional)</strong>
+            <span class="svc-fw-section-desc">Give this configuration a name for reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-bot-rule-name-input" class="svc-fw-styled-input" maxlength="64" value="Bot protection (balanced)" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-bot-rule-name-count">25/64</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-bot-protect').close()">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-bot-submit-btn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 4. IP BLOCKLIST MODAL -->
+  <dialog id="svc-modal-fw-ip-block" class="svc-clean-dialog svc-sheet-dialog">
+    <div class="svc-clean-dialog-card svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle" style="background:#fee2e2;color:#dc2626;">
+            <i data-lucide="shield-alert"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">IP Blocklist & Access</h3>
+            <p class="svc-sheet-sub-title">Block or restrict malicious IPs, CIDR subnets, and ASNs.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-ip-block').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-ip-block" class="svc-sheet-form-body">
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">Choose action to enforce on matching IP addresses.</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="IP Block Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-ipb-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="allow" role="radio" aria-checked="false">
+              <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+              <span>Allow</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">IP or CIDR Range</strong>
+            <span class="svc-fw-section-desc">Single IPv4/IPv6 address or CIDR network range.</span>
+          </div>
+          <input type="text" id="fw-ipb-target-input" class="svc-fw-styled-input" placeholder="e.g. 203.0.113.195 or 198.51.100.0/24" autocomplete="off" spellcheck="false" required>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this block rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-ipb-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block known bad IP range" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-ipb-name-count">0/64</span>
+          </div>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-ipb-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Added following scrapers incident on /api/graphql"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-ipb-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-ip-block').close()">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-ipb-submit-btn">Create Rule</button>
+        </div>
+      </form>
     </div>
   </dialog>
 
