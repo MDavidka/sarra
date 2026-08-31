@@ -642,22 +642,39 @@
                 </div>
               </div>
 
-              <!-- 2. BUILD TAB (Exact match to screenshot in white theme) -->
+              <!-- 2. BUILD TAB (Exact match to media_1788168374780.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-build" data-svc-panel="build" data-svc-panel-alias="release">
                 <section class="svc-build-track-screen" aria-label="Project build tracking">
+                  <!-- Header: Title + Filters Dropdown -->
                   <div class="svc-build-track-header">
                     <div class="svc-build-track-title-wrap">
-                      <h2>Builds</h2>
+                      <h2 class="svc-build-main-title">Builds</h2>
                       <p class="svc-build-track-sub">Track active compilation, git commits, build stages, and deploy history.</p>
                     </div>
-                    <div class="svc-build-track-actions">
-                      <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-build-trigger-btn">
-                        <i data-lucide="play"></i><span>Trigger Build</span>
+                    <div class="svc-build-filter-wrap">
+                      <button type="button" class="btn-builds-filter" id="svc-build-filter-btn">
+                        <i data-lucide="sliders-horizontal"></i>
+                        <span id="svc-build-filter-label">Filters</span>
+                        <i data-lucide="chevron-down" class="icon-xs"></i>
                       </button>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-icon-sm" id="svc-build-refresh-btn" title="Refresh builds">
-                        <i data-lucide="refresh-cw"></i>
-                      </button>
+                      <div class="svc-build-filter-menu hidden" id="svc-build-filter-menu">
+                        <button type="button" class="svc-filter-item active" data-filter="all">All builds</button>
+                        <button type="button" class="svc-filter-item" data-filter="ready">Ready (Succeeded)</button>
+                        <button type="button" class="svc-filter-item" data-filter="failed">Failed</button>
+                        <button type="button" class="svc-filter-item" data-filter="building">Building / Queued</button>
+                      </div>
                     </div>
+                  </div>
+
+                  <!-- Actions: Trigger Build + Refresh -->
+                  <div class="svc-build-action-row">
+                    <button type="button" class="btn-trigger-build" id="svc-build-trigger-btn">
+                      <i data-lucide="play"></i>
+                      <span>Trigger Build</span>
+                    </button>
+                    <button type="button" class="btn-refresh-builds" id="svc-build-refresh-btn" title="Refresh builds">
+                      <i data-lucide="refresh-cw"></i>
+                    </button>
                   </div>
 
                   <!-- Build Cards List -->

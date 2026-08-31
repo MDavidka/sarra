@@ -7753,81 +7753,446 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 700;
 }
 
-/* Build Screen (Exact match to screenshot in white theme) */
-.svc-build-track-screen { display: grid; gap: 14px; }
+/* ========================================================
+   Exact Builds Screen (Matching media_1788168374780.jpg)
+   ======================================================== */
+.svc-build-track-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 4px 0 40px;
+}
+
 .svc-build-track-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.svc-build-main-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.svc-build-track-sub {
+  font-size: 13.5px;
+  color: #71717a;
+  margin: 3px 0 0 0;
+  font-weight: 500;
+}
+
+.svc-build-filter-wrap {
+  position: relative;
+}
+
+.btn-builds-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+
+.btn-builds-filter:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.btn-builds-filter svg {
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+}
+
+.svc-build-filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-build-filter-menu.hidden {
+  display: none !important;
+}
+
+.svc-filter-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #18181b;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.svc-filter-item:hover, .svc-filter-item.active {
+  background: #f4f4f5;
+  color: #09090b;
+  font-weight: 600;
+}
+
+.svc-build-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-trigger-build {
+  background: #09090b;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: all 0.15s ease;
+}
+
+.btn-trigger-build:hover {
+  background: #27272a;
+  transform: translateY(-1px);
+}
+
+.btn-trigger-build svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.btn-refresh-builds {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #18181b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-refresh-builds:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.btn-refresh-builds svg {
+  width: 15px;
+  height: 15px;
+}
+
+.svc-build-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Exact Build Card */
+.svc-build-exact-card {
+  background: #ffffff;
+  border: 1px solid #ececee;
+  border-radius: 20px;
+  padding: 18px 22px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-build-exact-card:hover {
+  border-color: #d4d4d8;
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+/* Row 1: Status Icon + Title + Meta + Pill */
+.svc-build-exact-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.svc-build-exact-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.svc-build-exact-icon-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.svc-build-exact-icon-badge svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.2;
+}
+
+.svc-build-exact-icon-badge.is-failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.svc-build-exact-icon-badge.is-warning {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.svc-build-exact-icon-badge.is-ready {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.svc-build-exact-icon-badge.is-building {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.svc-build-exact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.svc-build-exact-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-build-exact-meta-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: #71717a;
+  font-weight: 500;
+}
+
+.svc-build-num {
+  font-weight: 600;
+  color: #71717a;
+}
+
+.svc-build-exact-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.svc-build-exact-status-pill .svc-status-bullet {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.svc-build-exact-status-pill.is-failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.svc-build-exact-status-pill.is-failed .svc-status-bullet {
+  background: #dc2626;
+}
+
+.svc-build-exact-status-pill.is-warning {
+  background: #ffedd5;
+  color: #ea580c;
+}
+.svc-build-exact-status-pill.is-warning .svc-status-bullet {
+  background: #ea580c;
+}
+
+.svc-build-exact-status-pill.is-ready {
+  background: #dcfce7;
+  color: #15803d;
+}
+.svc-build-exact-status-pill.is-ready .svc-status-bullet {
+  background: #16a34a;
+}
+
+.svc-build-exact-status-pill.is-building {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.svc-build-exact-status-pill.is-building .svc-status-bullet {
+  background: #2563eb;
+}
+
+/* Row 2: Git Chips */
+.svc-build-exact-git-row {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.svc-git-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #27272a;
+}
+
+.svc-git-chip svg {
+  width: 15px;
+  height: 15px;
+  color: #09090b;
+  flex-shrink: 0;
+}
+
+/* Row 3: Author & Actions */
+.svc-build-exact-bottom-row {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f4f4f5;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
 }
-.svc-build-track-title-wrap h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: #09090b;
-  letter-spacing: -0.02em;
-}
-.svc-build-track-sub {
-  margin: 3px 0 0;
-  font-size: 13px;
-  color: #71717a;
-}
-.svc-build-track-actions {
+
+.svc-build-exact-author-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.svc-build-cards-list {
+
+.svc-author-avatar-black {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #09090b;
+  color: #ffffff;
   display: grid;
-  gap: 12px;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  flex-shrink: 0;
 }
-.svc-build-track-card {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  display: flex;
-  flex-direction: column;
+
+.svc-author-exact-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #09090b;
 }
-.svc-build-card-top {
+
+.svc-trigger-reason {
+  font-size: 12.5px;
+  color: #71717a;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.svc-build-exact-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px;
-  background: #ffffff;
+  gap: 8px;
 }
-.svc-build-commit-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #09090b;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.svc-build-status-pill {
+
+.btn-exact-preview {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
-}
-.svc-build-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #2563eb;
-}
-.svc-build-status-pill.is-success .svc-build-status-dot { background: #2563eb; }
-.svc-build-status-pill.is-building .svc-build-status-dot { background: #f59e0b; }
-.svc-build-status-pill.is-failed .svc-build-status-dot { background: #ef4444; }
-.svc-build-status-text {
-  font-size: 13.5px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 9999px;
+  padding: 6px 16px;
+  font-size: 13px;
   font-weight: 700;
   color: #09090b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-exact-preview:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+
+.btn-exact-preview svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-exact-menu {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #71717a;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-exact-menu:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.btn-exact-menu svg {
+  width: 16px;
+  height: 16px;
+}
 }
 .svc-build-card-bottom {
   display: flex;

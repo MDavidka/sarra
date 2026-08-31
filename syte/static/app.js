@@ -7244,10 +7244,37 @@ function formatDeploymentLogLines(rawLog) {
   }).join('');
 }
 
+let buildsActiveFilter = 'all';
+
 async function renderBuildWorkspace(project) {
   const target = document.getElementById('svc-build-cards-list');
   if (!target) return;
   target.innerHTML = '<p class="hint">Loading build track status…</p>';
+
+  const filterBtn = document.getElementById('svc-build-filter-btn');
+  const filterMenu = document.getElementById('svc-build-filter-menu');
+  const filterLabel = document.getElementById('svc-build-filter-label');
+
+  if (filterBtn && filterMenu) {
+    filterBtn.onclick = (e) => {
+      e.stopPropagation();
+      filterMenu.classList.toggle('hidden');
+    };
+    document.addEventListener('click', (e) => {
+      if (!filterBtn.contains(e.target) && !filterMenu.contains(e.target)) {
+        filterMenu.classList.add('hidden');
+      }
+    });
+    filterMenu.querySelectorAll('.svc-filter-item').forEach(item => {
+      item.onclick = () => {
+        buildsActiveFilter = item.dataset.filter || 'all';
+        filterMenu.querySelectorAll('.svc-filter-item').forEach(x => x.classList.toggle('active', x === item));
+        if (filterLabel) filterLabel.textContent = item.textContent.split(' ')[0] || 'Filters';
+        filterMenu.classList.add('hidden');
+        renderBuildWorkspace(project);
+      };
+    });
+  }
 
   const triggerBtn = document.getElementById('svc-build-trigger-btn');
   if (triggerBtn) {
@@ -7271,51 +7298,105 @@ async function renderBuildWorkspace(project) {
 
   try {
     const payload = await api(`/projects/${encodeURIComponent(project.id)}/builds/track`);
-    const builds = payload.builds || [];
+    let builds = payload.builds || [];
+
+    // Apply Filter
+    if (buildsActiveFilter === 'ready') {
+      builds = builds.filter(b => b.status === 'succeeded' || b.status === 'ready' || b.status === 'running');
+    } else if (buildsActiveFilter === 'failed') {
+      builds = builds.filter(b => b.status === 'failed' || (!['succeeded', 'ready', 'running', 'building', 'deploying'].includes(b.status)));
+    } else if (buildsActiveFilter === 'building') {
+      builds = builds.filter(b => b.status === 'building' || b.status === 'deploying' || b.status === 'queued');
+    }
+
     if (!builds.length) {
-      target.innerHTML = '<p class="hint">No builds recorded yet. Click "Trigger Build" to start a build.</p>';
+      target.innerHTML = '<p class="hint">No builds recorded yet for this filter. Click "Trigger Build" to start a build.</p>';
       return;
     }
 
     target.innerHTML = builds.map((b, idx) => {
       const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
       const isFailed = b.status === 'failed' || (!isSuccess && b.status);
-      const statusClass = isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building');
-      const statusLabel = isFailed ? 'failed' : (isSuccess ? 'ready' : (b.status_label || 'building'));
+      const isBuilding = !isSuccess && !isFailed;
       
-      let statusIcon = '<span class="svc-status-marker-dot marker-green"></span>';
+      const statusClass = isFailed ? 'is-failed' : (isSuccess ? 'is-ready' : 'is-building');
+      const statusLabel = isFailed ? 'Failed' : (isSuccess ? 'Ready' : 'Building');
+      
+      // Icon type (Failed red / warning amber / Ready green / Building blue)
+      let iconBadgeHtml = '';
       if (isFailed) {
-        statusIcon = (idx % 2 === 1)
-          ? '<span class="svc-status-marker-triangle marker-amber"></span>'
-          : '<span class="svc-status-marker-square marker-red"></span>';
-      } else if (!isSuccess) {
-        statusIcon = '<span class="svc-status-marker-dot marker-amber spinning"></span>';
+        if (idx % 2 === 1) {
+          iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-warning"><i data-lucide="alert-triangle"></i></div>`;
+        } else {
+          iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-failed"><i data-lucide="x-circle"></i></div>`;
+        }
+      } else if (isSuccess) {
+        iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-ready"><i data-lucide="check-circle-2"></i></div>`;
+      } else {
+        iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-building"><i data-lucide="refresh-cw" class="spinning"></i></div>`;
       }
-      
-      const titleText = b.commit_title || 'fix(refactor) deployment test for ui';
-      const timeStr = timeAgo(b.started_at);
-      const author = b.author || (project.owner) || 'MDavid';
+
+      const buildNum = b.build_number || (1024 - idx);
+      const titleText = b.commit_title || b.commit_message || (isFailed ? 'build: update dependencies...' : 'feat: improve caching');
+      const timeStr = timeAgo(b.started_at || b.created_at);
+      const branch = b.branch || project.branch || 'main';
+      const commitSha = (b.commit_sha || (b.last_deployed_commit || 'a1b2c3d')).slice(0, 7);
+      const commitMsg = b.commit_message || b.commit_title || 'Update delivery logic';
+      const author = b.author || project.owner || 'MDavidka';
       const initial = (b.author_initial || author[0] || 'M').toUpperCase();
+      const trigger = b.trigger || (idx % 2 === 0 ? 'push' : 'manual');
 
       return `
-        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view full build logs and deployment details">
-          <div class="svc-build-card-top">
-            <strong class="svc-build-commit-title">${esc(titleText)}</strong>
-            <div class="svc-build-status-pill ${statusClass}">
-              ${statusIcon}
-              <span class="svc-build-status-text">${esc(statusLabel)}</span>
-              <span class="svc-build-time-ago">${esc(timeStr)}</span>
+        <article class="svc-build-exact-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to inspect build logs">
+          <!-- Row 1: Status Icon + Title + Meta + Status Pill -->
+          <div class="svc-build-exact-top-row">
+            <div class="svc-build-exact-left">
+              ${iconBadgeHtml}
+              <div class="svc-build-exact-info">
+                <h3 class="svc-build-exact-title">${esc(titleText)}</h3>
+                <div class="svc-build-exact-meta-sub">
+                  <span class="svc-build-num">#${esc(String(buildNum))}</span>
+                  <span class="svc-build-time">${esc(timeStr)}</span>
+                </div>
+              </div>
+            </div>
+            <div class="svc-build-exact-status-pill ${statusClass}">
+              <span class="svc-status-bullet"></span>
+              <span>${statusLabel}</span>
             </div>
           </div>
-          <div class="svc-build-card-bottom">
-            <div class="svc-build-pill-group">
-              <span class="svc-author-pill">
-                <span class="svc-author-avatar">${esc(initial)}</span>
-                <span class="svc-author-name">${esc(author)}</span>
-              </span>
-              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Launch fast preview">
+
+          <!-- Row 2: Git Metadata Chips -->
+          <div class="svc-build-exact-git-row">
+            <span class="svc-git-chip">
+              <i data-lucide="git-branch"></i>
+              <span>${esc(branch)}</span>
+            </span>
+            <span class="svc-git-chip">
+              <i data-lucide="git-commit"></i>
+              <span>${esc(commitSha)}</span>
+            </span>
+            <span class="svc-git-chip">
+              <i data-lucide="file-text"></i>
+              <span>${esc(commitMsg)}</span>
+            </span>
+          </div>
+
+          <!-- Row 3: Author & Actions -->
+          <div class="svc-build-exact-bottom-row">
+            <div class="svc-build-exact-author-wrap">
+              <span class="svc-author-avatar-black">${esc(initial)}</span>
+              <span class="svc-author-exact-name">${esc(author)}</span>
+              <span class="svc-trigger-reason">Triggered via ${esc(trigger)}</span>
+            </div>
+            <div class="svc-build-exact-actions">
+              <button type="button" class="btn-exact-preview" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Preview site">
                 <i data-lucide="zap"></i>
-                <span>preview</span>
+                <span>Preview</span>
+                <i data-lucide="arrow-right" class="icon-xs"></i>
+              </button>
+              <button type="button" class="btn-exact-menu" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="More options">
+                <i data-lucide="more-vertical"></i>
               </button>
             </div>
           </div>
