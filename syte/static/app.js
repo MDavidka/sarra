@@ -8133,8 +8133,6 @@ function renderServiceManagementWorkspaces(project) {
 
   void renderProjectPerformanceStats(project);
 
-  const branch = document.getElementById('svc-settings-branch');
-  const startCommand = document.getElementById('svc-settings-start-command');
   // Settings Tab Wiring (Matching media_1788171912849.jpg)
   const projNameInput = document.getElementById('svc-settings-project-name');
   const projIdDisplay = document.getElementById('svc-settings-project-id-display');
