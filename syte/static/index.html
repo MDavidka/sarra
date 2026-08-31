@@ -1254,60 +1254,289 @@
                 </section>
               </div>
 
-              <!-- 9. SETTINGS TAB (shadcn architecture) -->
+              <!-- 9. SETTINGS TAB (Exact match to media_1788171912849.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <span class="shadcn-badge shadcn-badge-secondary">Build & Branch</span>
-                    <h2 class="shadcn-card-title" style="margin-top: 4px;">Project Settings</h2>
-                    <p class="shadcn-card-description">Configure default git tracking branch, start commands, and automated CI/CD deployment rules.</p>
+                <section class="svc-settings-screen" aria-label="Project Settings">
+                  <!-- Header Section -->
+                  <div class="svc-settings-header">
+                    <span class="svc-section-tag">PROJECT</span>
+                    <h2 class="svc-settings-title">Settings</h2>
+                    <p class="svc-settings-sub">Manage your project configuration and preferences.</p>
                   </div>
-                  <div class="shadcn-card-content">
-                    <form id="svc-deployment-settings-form" class="svc-deployment-settings-form">
-                      <div class="shadcn-grid-2">
-                        <div class="shadcn-form-item">
-                          <label class="shadcn-label" for="svc-settings-branch">Production Branch</label>
-                          <input id="svc-settings-branch" class="shadcn-input" placeholder="main" autocomplete="off">
-                        </div>
-                        <div class="shadcn-form-item">
-                          <label class="shadcn-label" for="svc-settings-start-command">Start Command</label>
-                          <input id="svc-settings-start-command" class="shadcn-input" placeholder="npm start" autocomplete="off">
-                        </div>
-                      </div>
 
-                      <div class="shadcn-switch-card" style="margin-top: 14px;">
-                        <label class="svc-auto-deploy-toggle" style="cursor: pointer; display: flex; align-items: flex-start; gap: 12px; padding: 0;">
-                          <input type="checkbox" id="svc-settings-auto-deploy" style="margin-top: 3px; accent-color: #18181b; width: 18px; height: 18px;">
-                          <div style="display: grid; gap: 2px;">
-                            <strong style="color: #09090b; font-size: 13px;">Automatically redeploy new branch commits</strong>
-                            <small style="color: #71717a; font-size: 12px; line-height: 1.4;">Periodically polls the configured repository branch and triggers automatic build & zero-downtime deployment.</small>
+                  <!-- 2-Column Main Settings Grid -->
+                  <div class="svc-settings-main-grid">
+                    <!-- Left Sidebar Nav -->
+                    <nav class="svc-settings-sidebar-nav" aria-label="Settings categories">
+                      <button type="button" class="svc-settings-nav-item active" data-settings-tab="project">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="settings"></i>
+                          <span>Project</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="visibility">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="globe"></i>
+                          <span>Visibility</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="security">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="lock"></i>
+                          <span>Security</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="alerts">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="bell"></i>
+                          <span>Alerts</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="trusted">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="shield-check"></i>
+                          <span>Trusted Sources</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="git">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="git-branch"></i>
+                          <span>Git</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="static-ip">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="wifi"></i>
+                          <span>Static IP</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+                    </nav>
+
+                    <!-- Right Card: Active Settings Pane -->
+                    <div class="svc-settings-card-wrap">
+                      <!-- 1. PROJECT SETTINGS PANE -->
+                      <div class="svc-settings-pane active" id="svc-pane-project">
+                        <form id="svc-project-general-form">
+                          <div class="svc-pane-header">
+                            <h3 class="svc-pane-title">Project Settings</h3>
+                            <p class="svc-pane-desc">Basic information about your project.</p>
                           </div>
-                        </label>
+
+                          <div class="svc-settings-form-body">
+                            <!-- Project Name -->
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-project-name">Project Name</label>
+                              <input id="svc-settings-project-name" class="svc-settings-input" type="text" placeholder="shipwreck-" autocomplete="off" required>
+                            </div>
+
+                            <!-- Project ID -->
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-project-id-display">Project ID</label>
+                              <div class="svc-settings-input-copy-wrap">
+                                <input id="svc-settings-project-id-display" class="svc-settings-input readonly" type="text" readonly>
+                                <button type="button" class="btn-copy-id" id="svc-settings-copy-id-btn" title="Copy Project ID">
+                                  <i data-lucide="copy"></i>
+                                </button>
+                              </div>
+                            </div>
+
+                            <!-- Project Icon -->
+                            <div class="svc-settings-field">
+                              <label>Project Icon</label>
+                              <div class="svc-project-icon-row">
+                                <div class="svc-project-icon-avatar" id="svc-settings-project-icon-preview">
+                                  <span id="svc-settings-project-icon-letter">M</span>
+                                </div>
+                                <button type="button" class="btn-change-icon" id="svc-settings-change-icon-btn">Change Icon</button>
+                              </div>
+                            </div>
+
+                            <hr class="svc-settings-divider">
+
+                            <!-- Transfer Project -->
+                            <div class="svc-settings-transfer-section">
+                              <h4 class="svc-transfer-title">Transfer Project</h4>
+                              <p class="svc-transfer-desc">Transfer ownership to another user.</p>
+                              <button type="button" class="btn-transfer-project" id="svc-settings-transfer-btn">
+                                <i data-lucide="user-plus"></i><span>Transfer Project</span>
+                              </button>
+                            </div>
+
+                            <div class="svc-settings-actions-bottom">
+                              <button type="submit" class="btn-save-settings">Save Changes</button>
+                            </div>
+                          </div>
+                        </form>
                       </div>
 
-                      <p class="svc-auto-deploy-state" id="svc-auto-deploy-state" style="margin: 12px 0 0; font-size: 12px; color: #71717a;">Connect GitHub and select a repository before enabling.</p>
-
-                      <div style="margin-top: 16px;">
-                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Project Settings</span></button>
+                      <!-- 2. VISIBILITY PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-visibility">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Project Visibility</h3>
+                          <p class="svc-pane-desc">Manage public accessibility, team permissions, and deployment tokens.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Deployment Access</label>
+                            <select id="svc-settings-visibility-select" class="svc-settings-input">
+                              <option value="public">Public (Anyone can view deployed site)</option>
+                              <option value="private">Private (Restricted to authenticated team)</option>
+                              <option value="password">Password Protected (Prompt for passphrase)</option>
+                            </select>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Visibility preferences updated')">Save Changes</button>
+                          </div>
+                        </div>
                       </div>
-                    </form>
-                  </div>
-                </div>
 
-                <!-- Danger Zone in Settings Tab -->
-                <div class="shadcn-card" style="margin-top: 16px; border-color: #fecaca; background: #fffbfb;">
-                  <div class="shadcn-card-header">
-                    <span class="shadcn-badge" style="background: #fee2e2; color: #dc2626; border-color: #fca5a5;">Danger Zone</span>
-                    <h2 class="shadcn-card-title" style="margin-top: 4px; color: #991b1b;">Delete Project from VM</h2>
-                    <p class="shadcn-card-description" style="color: #7f1d1d;">Permanently stop and delete this project, workspace directory from the host VM disk, and all associated database records.</p>
+                      <!-- 3. SECURITY PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-security">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Security & Headers</h3>
+                          <p class="svc-pane-desc">Automatic HTTPS enforcement, HSTS headers, and L7 protection.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-checkbox-item">
+                            <label>
+                              <input type="checkbox" checked disabled>
+                              <div>
+                                <strong>Automatic SSL / TLS Encryption</strong>
+                                <p>Caddy automatically provisions and renews Let's Encrypt certificates.</p>
+                              </div>
+                            </label>
+                          </div>
+                          <div class="svc-settings-checkbox-item">
+                            <label>
+                              <input type="checkbox" id="svc-security-hsts" checked>
+                              <div>
+                                <strong>Strict-Transport-Security (HSTS)</strong>
+                                <p>Enforce HTTPS connections and prevent SSL stripping.</p>
+                              </div>
+                            </label>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Security rules saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. ALERTS PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-alerts">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Alerts & Notifications</h3>
+                          <p class="svc-pane-desc">Get notified when builds fail, certificates renew, or domains change.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Notification Webhook URL</label>
+                            <input class="svc-settings-input" type="url" placeholder="https://discord.com/api/webhooks/..." autocomplete="off">
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Alert preferences saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 5. TRUSTED SOURCES PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-trusted">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Trusted Sources</h3>
+                          <p class="svc-pane-desc">IP address whitelisting and edge origin restrictions.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Allowed IP Addresses / CIDRs (Optional)</label>
+                            <textarea class="svc-settings-input" style="height: 70px; resize: vertical;" placeholder="0.0.0.0/0 (Leave blank for all traffic)"></textarea>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Trusted sources saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 6. GIT PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-git">
+                        <form id="svc-deployment-settings-form">
+                          <div class="svc-pane-header">
+                            <h3 class="svc-pane-title">Git & Continuous Deployment</h3>
+                            <p class="svc-pane-desc">Configure branch tracking, build commands, and automatic deployment.</p>
+                          </div>
+                          <div class="svc-settings-form-body">
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-branch">Production Branch</label>
+                              <input id="svc-settings-branch" class="svc-settings-input" placeholder="main" autocomplete="off">
+                            </div>
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-start-command">Start Command</label>
+                              <input id="svc-settings-start-command" class="svc-settings-input" placeholder="npm start" autocomplete="off">
+                            </div>
+                            <div class="svc-settings-checkbox-item">
+                              <label>
+                                <input type="checkbox" id="svc-settings-auto-deploy">
+                                <div>
+                                  <strong>Automatically redeploy new branch commits</strong>
+                                  <p>Polls repository branch and triggers zero-downtime deployment.</p>
+                                </div>
+                              </label>
+                            </div>
+                            <p class="svc-auto-deploy-state" id="svc-auto-deploy-state" style="margin: 6px 0 0; font-size: 12px; color: #71717a;"></p>
+                            <div class="svc-settings-actions-bottom">
+                              <button type="submit" class="btn-save-settings">Save Git Settings</button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+
+                      <!-- 7. STATIC IP PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-static-ip">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Static IP & Egress</h3>
+                          <p class="svc-pane-desc">Host IP addressing and dedicated gateway routes.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Host VM Public IP</label>
+                            <input class="svc-settings-input readonly" type="text" value="45.135.148.5" readonly>
+                          </div>
+                          <div class="svc-settings-field">
+                            <label>Edge Ingress Gateway</label>
+                            <input class="svc-settings-input readonly" type="text" value="sycord.site" readonly>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div class="shadcn-card-content">
-                    <p style="font-size: 13px; color: #7f1d1d; margin: 0 0 14px; line-height: 1.45;">This action cannot be undone. All repository source code on disk, running containers, domain routing, and logs will be permanently erased.</p>
-                    <button type="button" class="btn-pill btn-danger" id="svc-settings-delete-project-btn">
-                      <i data-lucide="trash-2"></i><span>Delete project from VM</span>
+
+                  <!-- Bottom Danger Zone Card (Exact Match to Screenshot) -->
+                  <div class="svc-danger-zone-card">
+                    <div class="svc-danger-zone-left">
+                      <div class="svc-danger-zone-title-row">
+                        <i data-lucide="trash-2"></i>
+                        <strong>Danger Zone</strong>
+                      </div>
+                      <p class="svc-danger-zone-desc">
+                        Permanently stop and delete this project, workspace directory from the host VM disk, and all associated resources.
+                      </p>
+                    </div>
+                    <button type="button" class="btn-delete-project-danger" id="svc-settings-delete-project-btn">
+                      Delete Project
                     </button>
                   </div>
-                </div>
+                </section>
               </div>
 
               <!-- 10. APP ROUTER LOGS TAB (Exact match to image in clean white) -->
@@ -2276,7 +2505,67 @@
         <button type="button" class="btn-pill btn-ghost" id="crash-dismiss-btn"><span>Dismiss</span></button>
       </div>
     </div>
-  </div>
+  <!-- Transfer Project Modal -->
+  <dialog id="svc-transfer-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="user-plus"></i></span>
+          <div>
+            <h3>Transfer Project Ownership</h3>
+            <p>Transfer this project to another Syte user or organization.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-transfer-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <form class="svc-clean-dialog-form" id="svc-transfer-project-form" onsubmit="event.preventDefault(); toast('Transfer invite sent'); document.getElementById('svc-transfer-modal').close();">
+        <div class="svc-dialog-field">
+          <label for="svc-transfer-email">
+            <span>Recipient Email or Username</span>
+            <span class="svc-field-hint">User must have an active Syte account</span>
+          </label>
+          <input id="svc-transfer-email" class="shadcn-input" type="email" placeholder="user@company.com" required>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-transfer-modal').close()">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="send"></i><span>Send Transfer Request</span></button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Change Project Icon Modal -->
+  <dialog id="svc-change-icon-modal" class="svc-clean-dialog">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="smile"></i></span>
+          <div>
+            <h3>Choose Project Icon</h3>
+            <p>Select an avatar symbol or letter to represent this project.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-change-icon-modal').close()" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-icon-picker-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 10px 0;">
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🚀')">🚀</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('⚡')">⚡</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🔥')">🔥</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('💎')">💎</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🌐')">🌐</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('📦')">📦</button>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-change-icon-modal').close()">Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <!-- AI File Inspector Modal -->
   <dialog id="svc-ai-file-modal" class="svc-ai-file-modal">

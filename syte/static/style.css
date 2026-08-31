@@ -14917,3 +14917,477 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 }
 
+/* ========================================================
+   Redesigned Settings Screen (Exact match to media_1788171912849.jpg)
+   ======================================================== */
+.svc-settings-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 4px 0 40px;
+}
+
+.svc-settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-settings-title {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.02em;
+}
+
+.svc-settings-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: #71717a;
+  line-height: 1.4;
+}
+
+/* 2-Column Main Settings Grid */
+.svc-settings-main-grid {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Left Sidebar Nav */
+.svc-settings-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.svc-settings-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #52525b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.svc-settings-nav-item:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.svc-settings-nav-item.active {
+  background: #f4f4f5;
+  color: #09090b;
+  font-weight: 700;
+}
+
+.svc-settings-nav-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.svc-settings-nav-label svg {
+  width: 16px;
+  height: 16px;
+  color: #71717a;
+}
+
+.svc-settings-nav-item.active .svc-settings-nav-label svg {
+  color: #09090b;
+}
+
+.svc-nav-chevron {
+  width: 14px;
+  height: 14px;
+  color: #a1a1aa;
+}
+
+/* Right Card: Active Settings Pane */
+.svc-settings-card-wrap {
+  background: #ffffff;
+  border: 1px solid #ececee;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.svc-settings-pane {
+  display: none;
+}
+
+.svc-settings-pane.active {
+  display: block;
+}
+
+.svc-pane-header {
+  margin-bottom: 20px;
+}
+
+.svc-pane-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.01em;
+}
+
+.svc-pane-desc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #71717a;
+}
+
+.svc-settings-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.svc-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.svc-settings-field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.svc-settings-input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13.5px;
+  color: #09090b;
+  background: #ffffff;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.svc-settings-input:focus {
+  border-color: #09090b;
+  outline: none;
+}
+
+.svc-settings-input.readonly {
+  background: #f9fafb;
+  color: #71717a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.svc-settings-input-copy-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.btn-copy-id {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: #71717a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-copy-id:hover {
+  background: #e4e4e7;
+  color: #09090b;
+}
+
+.btn-copy-id svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Project Icon Row */
+.svc-project-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.svc-project-icon-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #09090b;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.btn-change-icon {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #09090b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-change-icon:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+
+.svc-settings-divider {
+  border: none;
+  border-top: 1px solid #f4f4f5;
+  margin: 8px 0;
+}
+
+/* Transfer Section */
+.svc-settings-transfer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.svc-transfer-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.svc-transfer-desc {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: #71717a;
+}
+
+.btn-transfer-project {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #09090b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-transfer-project:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+
+.btn-transfer-project svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Bottom Save Button */
+.svc-settings-actions-bottom {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.btn-save-settings {
+  background: #09090b;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-save-settings:hover {
+  background: #27272a;
+}
+
+/* Danger Zone Card (Exact match to media_1788171912849.jpg) */
+.svc-danger-zone-card {
+  background: #fff8f8;
+  border: 1px solid #fee2e2;
+  border-radius: 16px;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.svc-danger-zone-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.svc-danger-zone-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #dc2626;
+}
+
+.svc-danger-zone-title-row svg {
+  width: 16px;
+  height: 16px;
+}
+
+.svc-danger-zone-title-row strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #b91c1c;
+}
+
+.svc-danger-zone-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: #991b1b;
+  line-height: 1.45;
+}
+
+.btn-delete-project-danger {
+  background: #ffffff;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-delete-project-danger:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.svc-settings-checkbox-item label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.svc-settings-checkbox-item input {
+  margin-top: 3px;
+  accent-color: #09090b;
+  width: 16px;
+  height: 16px;
+}
+
+.svc-settings-checkbox-item strong {
+  font-size: 13px;
+  color: #09090b;
+}
+
+.svc-settings-checkbox-item p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #71717a;
+}
+
+.svc-icon-choice-btn {
+  font-size: 24px;
+  height: 48px;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.svc-icon-choice-btn:hover {
+  background: #f4f4f5;
+  border-color: #09090b;
+}
+
+/* Mobile Responsiveness for Settings */
+@media (max-width: 768px) {
+  .svc-settings-main-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .svc-settings-sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    gap: 6px;
+  }
+
+  .svc-settings-sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .svc-settings-nav-item {
+    white-space: nowrap;
+    padding: 7px 12px;
+  }
+
+  .svc-nav-chevron {
+    display: none;
+  }
+
+  .svc-settings-card-wrap {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .svc-danger-zone-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .btn-delete-project-danger {
+    width: 100%;
+  }
+}
+

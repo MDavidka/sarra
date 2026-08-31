@@ -6538,6 +6538,14 @@ function openEnvDocsModal() {
   }
 }
 
+function selectProjectIcon(icon) {
+  const letter = document.getElementById('svc-settings-project-icon-letter');
+  if (letter) letter.textContent = icon;
+  const modal = document.getElementById('svc-change-icon-modal');
+  if (modal) modal.close();
+  toast(`Project icon updated to ${icon}`);
+}
+
 function renderServiceEnvCardsList(project) {
   const container = document.getElementById('svc-env-cards');
   if (!container) return;
@@ -8127,6 +8135,83 @@ function renderServiceManagementWorkspaces(project) {
 
   const branch = document.getElementById('svc-settings-branch');
   const startCommand = document.getElementById('svc-settings-start-command');
+  // Settings Tab Wiring (Matching media_1788171912849.jpg)
+  const projNameInput = document.getElementById('svc-settings-project-name');
+  const projIdDisplay = document.getElementById('svc-settings-project-id-display');
+  const projIconLetter = document.getElementById('svc-settings-project-icon-letter');
+  const copyIdBtn = document.getElementById('svc-settings-copy-id-btn');
+  const changeIconBtn = document.getElementById('svc-settings-change-icon-btn');
+  const transferBtn = document.getElementById('svc-settings-transfer-btn');
+  const generalForm = document.getElementById('svc-project-general-form');
+
+  if (projNameInput) projNameInput.value = project.name || project.id || '';
+  if (projIdDisplay) projIdDisplay.value = project.id || '';
+  if (projIconLetter) {
+    const title = project.name || project.id || 'P';
+    projIconLetter.textContent = title.charAt(0).toUpperCase();
+  }
+
+  if (copyIdBtn && !copyIdBtn.dataset.wired) {
+    copyIdBtn.dataset.wired = 'true';
+    copyIdBtn.onclick = () => {
+      navigator.clipboard.writeText(project.id).then(() => toast('Project ID copied to clipboard'));
+    };
+  }
+
+  if (changeIconBtn && !changeIconBtn.dataset.wired) {
+    changeIconBtn.dataset.wired = 'true';
+    changeIconBtn.onclick = () => {
+      const modal = document.getElementById('svc-change-icon-modal');
+      if (modal) modal.showModal();
+    };
+  }
+
+  if (transferBtn && !transferBtn.dataset.wired) {
+    transferBtn.dataset.wired = 'true';
+    transferBtn.onclick = () => {
+      const modal = document.getElementById('svc-transfer-modal');
+      if (modal) modal.showModal();
+    };
+  }
+
+  // Sidebar navigation for settings panes
+  document.querySelectorAll('[data-settings-tab]').forEach(tabBtn => {
+    if (!tabBtn.dataset.wired) {
+      tabBtn.dataset.wired = 'true';
+      tabBtn.onclick = () => {
+        document.querySelectorAll('[data-settings-tab]').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        const targetTab = tabBtn.dataset.settingsTab || 'project';
+        document.querySelectorAll('.svc-settings-pane').forEach(pane => pane.classList.remove('active'));
+        const activePane = document.getElementById(`svc-pane-${targetTab}`);
+        if (activePane) activePane.classList.add('active');
+      };
+    }
+  });
+
+  if (generalForm && !generalForm.dataset.wired) {
+    generalForm.dataset.wired = 'true';
+    generalForm.onsubmit = async event => {
+      event.preventDefault();
+      const newName = projNameInput?.value.trim();
+      if (!newName) return toast('Project name cannot be empty');
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: newName }),
+        });
+        toast(result.message || 'Project settings saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save project settings.');
+      }
+    };
+  }
+
+  const branch = document.getElementById('svc-settings-branch');
+  const startCommand = document.getElementById('svc-settings-start-command');
   const autoDeploy = document.getElementById('svc-settings-auto-deploy');
   if (branch) branch.value = project.branch || 'main';
   if (startCommand) startCommand.value = project.start_command || '';
@@ -8152,7 +8237,7 @@ function renderServiceManagementWorkspaces(project) {
             auto_deploy: Boolean(autoDeploy?.checked),
           }),
         });
-        toast(result.message || 'Deployment settings saved');
+        toast(result.message || 'Git deployment settings saved');
         await loadProjects();
         const refreshed = projects.find(item => item.id === project.id);
         if (refreshed) renderServiceDashboard(refreshed, false);
