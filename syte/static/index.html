@@ -801,33 +801,9 @@
                 </section>
               </div>
 
-              <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
+              <!-- 3. DOMAINS TAB -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
                 <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header Section -->
-                  <div class="svc-domains-header">
-                    <div class="svc-domains-header-text">
-                      <span class="svc-section-tag">DEPLOYMENT</span>
-                      <h2 class="svc-domains-title">Domains</h2>
-                      <p class="svc-domains-sub">Manage your custom domains, DNS settings, and SSL certificates.</p>
-                    </div>
-                    <div class="svc-domains-header-actions">
-                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn">
-                        <span>Learn more</span><i data-lucide="external-link"></i>
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Action Bar: Add Domain + Certificates -->
-                  <div class="svc-domains-action-bar">
-                    <button type="button" class="btn-trigger-build" id="svc-domain-add-toggle-btn">
-                      <i data-lucide="plus"></i><span>Add Domain</span>
-                    </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-domain-certificates-btn">
-                      <i data-lucide="shield-check"></i><span>Certificates</span>
-                    </button>
-                  </div>
-
                   <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
                   <div class="svc-domain-stats-grid">
                     <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
@@ -887,7 +863,7 @@
                     </div>
                     <h3 class="svc-prompt-title">Connect your domain</h3>
                     <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
-                    <button type="button" class="btn-trigger-build" onclick="document.getElementById('svc-domain-add-toggle-btn')?.click()">
+                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal(selectedCurrentProject)">
                       <i data-lucide="plus"></i><span>Add Domain</span>
                     </button>
                   </div>
