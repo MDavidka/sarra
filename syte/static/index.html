@@ -3291,12 +3291,23 @@
           </ul>
         </section>
 
+        <section class="svc-doc-card">
+          <h4><i data-lucide="layers"></i> Priority & Loop Protection</h4>
+          <ul class="svc-doc-list">
+            <li><strong>Top-to-Bottom Evaluation</strong>: Rules are evaluated sequentially from top to bottom. Place specific rules above broad wildcard rules.</li>
+            <li><strong>Loop Prevention</strong>: The system detects infinite bounce loops (e.g. <code>/a ➔ /b</code> and <code>/b ➔ /a</code>) and alerts before saving.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ========================================================
        FIREWALL MODALS (Exact match to screenshots)
        ======================================================== -->
   <!-- 1. ADD FIREWALL RULE MODAL (media_1788178893851.jpg) -->
   <dialog id="svc-modal-fw-add-rule" class="svc-clean-dialog svc-sheet-dialog">
-    <div class="svc-clean-dialog-card svc-sheet-card">
+    <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3420,7 +3431,7 @@
 
   <!-- 2. IP RATE LIMIT MODAL (media_1788178893971.jpg) -->
   <dialog id="svc-modal-fw-rate-limit" class="svc-clean-dialog svc-sheet-dialog">
-    <div class="svc-clean-dialog-card svc-sheet-card">
+    <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3559,7 +3570,7 @@
 
   <!-- 3. BOT PROTECTION MODAL (media_1788178893972.jpg) -->
   <dialog id="svc-modal-fw-bot-protect" class="svc-clean-dialog svc-sheet-dialog">
-    <div class="svc-clean-dialog-card svc-sheet-card">
+    <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3737,7 +3748,7 @@
 
   <!-- 4. IP BLOCKLIST MODAL -->
   <dialog id="svc-modal-fw-ip-block" class="svc-clean-dialog svc-sheet-dialog">
-    <div class="svc-clean-dialog-card svc-sheet-card">
+    <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
