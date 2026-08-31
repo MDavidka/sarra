@@ -351,70 +351,259 @@
         </section>
 
         <section id="view-new-service" class="view">
-          <div class="create-project deployment-structured-page">
-            <div class="create-brand">
-              <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
-              <span class="create-brand-name">syte</span>
+          <div class="svc-new-project-screen">
+            <!-- Header: CREATE PROJECT / Deploy a repository / Learn more -->
+            <div class="svc-new-project-header">
+              <div class="svc-new-project-title-box">
+                <span class="svc-eyebrow-badge">CREATE PROJECT</span>
+                <h1 class="svc-new-project-main-title">Deploy a repository</h1>
+                <p class="svc-new-project-sub">Connect your code and deploy it in seconds.</p>
+              </div>
+              <a href="https://docs.sycord.site" target="_blank" rel="noopener noreferrer" class="btn-new-proj-learn">
+                <span>Learn more</span>
+                <i data-lucide="external-link" class="icon-xs"></i>
+              </a>
             </div>
 
-            <form id="create-form" class="create-form vercel-create-form" novalidate>
-              <header class="deploy-create-header deployment-structured-header">
-                <h1>Deploy a repository</h1>
-              </header>
-
-              <div class="create-name-field">
-                <div class="create-name-label-row">
-                  <label for="create-name">project name</label>
-                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name"><i data-lucide="square-pen"></i></button>
+            <form id="create-form" class="svc-new-project-form" novalidate>
+              <!-- Card 1: Project Name -->
+              <div class="svc-new-proj-card">
+                <div class="svc-card-field-header">
+                  <label for="create-name" class="svc-card-field-title">Project name</label>
+                  <span class="svc-card-field-hint">3-32 characters</span>
                 </div>
-                <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
+                <div class="svc-input-with-icon">
+                  <input type="text" id="create-name" class="svc-proj-input" required placeholder="my-app" autocomplete="off" minlength="3" maxlength="32">
+                  <button type="button" class="svc-input-trailing-icon" id="create-name-focus" aria-label="Focus name">
+                    <i data-lucide="pencil"></i>
+                  </button>
+                </div>
               </div>
 
-              <section class="deploy-source-section" aria-label="Project source">
-                <div class="deploy-source-tabs" role="tablist" aria-label="Project source">
-                  <button class="deploy-source-tab active" type="button" data-import-source="git" role="tab" aria-selected="true"><i data-lucide="git-branch"></i><span>Git repository</span></button>
-                  <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
+              <!-- Card 2: Source (Git repository vs Upload ZIP) -->
+              <div class="svc-new-proj-card">
+                <div class="svc-card-field-header">
+                  <span class="svc-card-field-title">Source</span>
                 </div>
-                <div class="deploy-source-fields" id="deploy-git-fields">
-                  <section class="github-source-connect deployment-structured-account" aria-labelledby="github-source-title">
-                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub</strong><p id="github-source-description">Connect an account to browse repositories.</p></div></div>
-                    <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
-                    <div id="github-source-account" class="github-source-account hidden"></div>
-                  </section>
-                  <section id="github-repository-browser" class="github-repository-browser deployment-structured-browser hidden" aria-labelledby="github-repository-title">
-                    <div class="github-browser-toolbar deployment-structured-toolbar"><h3 id="github-repository-title">Repositories</h3><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
-                    <label class="deployment-structured-search" for="github-repository-search"><i data-lucide="search"></i><input id="github-repository-search" type="search" autocomplete="off" placeholder="Search repositories"></label>
-                    <div id="github-repository-list" class="github-repository-list deployment-structured-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
-                    <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
-                  </section>
-                  <div class="github-manual-divider"><span>or use a public URL</span></div>
-                  <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
-                  <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
-                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Manual URLs are for public HTTPS repositories.</p>
-                </div>
-                <div class="deploy-source-fields hidden" id="deploy-zip-fields">
-                  <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>
-                  <label for="create-zip-base-directory">Base directory<input id="create-zip-base-directory" type="text" value="/" placeholder="/ or apps/web"></label>
-                </div>
-              </section>
+                <p class="svc-card-field-sub">Choose how you want to import your project.</p>
 
+                <div class="svc-source-options-grid" role="tablist" aria-label="Project source">
+                  <!-- Option 1: Git repository -->
+                  <button type="button" class="svc-source-option-btn active" data-import-source="git" role="tab" aria-selected="true">
+                    <div class="svc-source-option-left">
+                      <div class="svc-source-icon-box">
+                        <i data-lucide="git-branch"></i>
+                      </div>
+                      <div class="svc-source-option-info">
+                        <strong class="svc-source-option-title">Git repository</strong>
+                        <span class="svc-source-option-desc">Connect a Git provider</span>
+                      </div>
+                    </div>
+                    <div class="svc-source-radio">
+                      <span class="svc-radio-bullet"></span>
+                    </div>
+                  </button>
+
+                  <!-- Option 2: Upload ZIP -->
+                  <button type="button" class="svc-source-option-btn" data-import-source="zip" role="tab" aria-selected="false">
+                    <div class="svc-source-option-left">
+                      <div class="svc-source-icon-box">
+                        <i data-lucide="file-archive"></i>
+                      </div>
+                      <div class="svc-source-option-info">
+                        <strong class="svc-source-option-title">Upload ZIP</strong>
+                        <span class="svc-source-option-desc">Deploy from a file</span>
+                      </div>
+                    </div>
+                    <div class="svc-source-radio">
+                      <span class="svc-radio-bullet"></span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 3: GitHub Connection -->
+              <div class="svc-new-proj-card" id="deploy-github-connection-card">
+                <div class="svc-github-conn-top">
+                  <div class="svc-github-conn-left">
+                    <div class="svc-github-conn-logo">
+                      <i data-lucide="github"></i>
+                    </div>
+                    <div class="svc-github-conn-info">
+                      <strong class="svc-github-conn-title">GitHub connection</strong>
+                      <p class="svc-github-conn-sub" id="github-source-description">Connect your GitHub account to access your repositories.</p>
+                    </div>
+                  </div>
+                  <div class="svc-github-conn-actions">
+                    <button type="button" class="btn-github-action" id="github-connect-btn">
+                      <span>Connect</span>
+                    </button>
+                    <button type="button" class="btn-github-action btn-disconnect hidden" id="github-disconnect-btn">
+                      <span>Disconnect</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Connected Account Row -->
+                <div class="svc-github-account-row" id="github-source-account">
+                  <div class="svc-github-user-left">
+                    <span class="svc-github-user-avatar" id="github-user-avatar">M</span>
+                    <div class="svc-github-user-names">
+                      <strong class="svc-github-display-name" id="github-user-name">Connected as MDavidka</strong>
+                      <span class="svc-github-login-name" id="github-user-login">mdavidka</span>
+                    </div>
+                  </div>
+                  <div class="svc-github-connected-pill" id="github-connected-pill">
+                    <span class="svc-connected-dot"></span>
+                    <span>Connected</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card 4: Repositories List / Empty State (For Git Source) -->
+              <div class="svc-new-proj-card" id="deploy-git-fields">
+                <div class="svc-card-field-header">
+                  <div>
+                    <span class="svc-card-field-title">Repositories</span>
+                    <p class="svc-card-field-sub" style="margin-bottom:0;">Choose a repository to deploy.</p>
+                  </div>
+                  <button type="button" class="btn-repos-refresh" id="github-repositories-refresh" title="Refresh repositories">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                <!-- Search Input -->
+                <div class="svc-repos-search-wrap">
+                  <i data-lucide="search" class="svc-search-icon"></i>
+                  <input type="search" id="github-repository-search" class="svc-repos-search-input" placeholder="Search repositories..." autocomplete="off">
+                </div>
+
+                <!-- Filters Row (All / Personal / Organization / Forks + Sort) -->
+                <div class="svc-repos-filter-row">
+                  <div class="svc-repos-filter-pills" id="github-repo-filters">
+                    <button type="button" class="svc-repo-filter-pill active" data-filter="all">All</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="personal">Personal</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="org">Organization</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="forks">Forks</button>
+                  </div>
+                  <div class="svc-repos-sort-wrap">
+                    <button type="button" class="btn-repos-sort" id="github-repo-sort-btn">
+                      <i data-lucide="sliders-horizontal"></i>
+                      <span>Sort</span>
+                      <i data-lucide="chevron-down" class="icon-xs"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Repository List Container -->
+                <div id="github-repository-list" class="svc-repos-list-container">
+                  <!-- Empty State (matching media_1788173977152.jpg) -->
+                  <div class="svc-repos-empty-box" id="github-repos-empty-state">
+                    <div class="svc-repos-empty-icon">
+                      <i data-lucide="folder"></i>
+                    </div>
+                    <strong class="svc-repos-empty-title">No repositories found</strong>
+                    <p class="svc-repos-empty-sub">No repositories are available to this GitHub connection. Make sure you have access to at least one repository.</p>
+                    <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-view-github">
+                      <i data-lucide="github"></i>
+                      <span>View GitHub</span>
+                      <i data-lucide="external-link" class="icon-xs"></i>
+                    </a>
+                  </div>
+                </div>
+
+                <!-- Optional Manual Public Git URL or branch selection -->
+                <div class="svc-manual-git-section" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed #e4e4e7;">
+                  <div class="deploy-field-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <label for="github-branch-select" style="font-size: 12.5px; font-weight: 600; color: #71717a;">
+                      Branch
+                      <select id="github-branch-select" class="svc-proj-input" style="margin-top: 4px;" disabled>
+                        <option value="">Choose a repository first</option>
+                      </select>
+                    </label>
+                    <label for="create-base-directory" style="font-size: 12.5px; font-weight: 600; color: #71717a;">
+                      Base directory
+                      <input id="create-base-directory" class="svc-proj-input" style="margin-top: 4px;" type="text" value="/" placeholder="/">
+                    </label>
+                  </div>
+
+                  <details class="svc-manual-url-details" style="margin-top: 12px; font-size: 13px;">
+                    <summary style="cursor: pointer; color: #71717a; font-weight: 600;">Or deploy with manual public Git URL</summary>
+                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                      <input id="create-git-url" class="svc-proj-input" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git">
+                      <input id="create-branch" class="svc-proj-input" type="text" value="main" placeholder="Branch: main">
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <!-- ZIP upload fields (shown when ZIP is selected) -->
+              <div class="svc-new-proj-card hidden" id="deploy-zip-fields">
+                <div class="svc-card-field-header">
+                  <span class="svc-card-field-title">Upload Archive</span>
+                </div>
+                <p class="svc-card-field-sub">Choose a ZIP archive (up to 75 MB). It will be scanned automatically.</p>
+                <label class="svc-zip-upload-dropzone" for="create-source-zip">
+                  <input id="create-source-zip" type="file" accept=".zip,application/zip" hidden>
+                  <div class="svc-zip-drop-icon"><i data-lucide="upload-cloud"></i></div>
+                  <strong style="font-size: 14px; color: #09090b;">Click or drag ZIP archive here</strong>
+                  <span style="font-size: 12px; color: #71717a;">ZIP archive containing code and build files</span>
+                </label>
+                <label for="create-zip-base-directory" style="margin-top: 12px; font-size: 12.5px; font-weight: 600; color: #71717a; display: block;">
+                  Base directory
+                  <input id="create-zip-base-directory" class="svc-proj-input" style="margin-top: 4px;" type="text" value="/" placeholder="/ or apps/web">
+                </label>
+              </div>
+
+              <!-- Analysis & Build Options -->
               <section class="deploy-analysis hidden" id="deploy-analysis" aria-live="polite">
-                <div class="deploy-section-heading"><span class="deploy-step">2</span><div><p class="eyebrow">Detected configuration</p><h2>Review build plan</h2></div><button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm"><i data-lucide="refresh-cw"></i>Analyze again</button></div>
+                <div class="deploy-section-heading">
+                  <span class="deploy-step">2</span>
+                  <div>
+                    <p class="eyebrow">Detected configuration</p>
+                    <h2>Review build plan</h2>
+                  </div>
+                  <button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Analyze again</span>
+                  </button>
+                </div>
                 <div class="deploy-detection-grid" id="deploy-detection-grid"></div>
-                <div class="deploy-env-panel"><div><h3>Suggested environment variables</h3><p>Only variable names and source locations are detected. Values are never read or imported.</p></div><div id="deploy-env-suggestions" class="deploy-env-suggestions"></div></div>
-                <label class="deploy-env-editor" for="create-env-vars"><span>Environment values</span><textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea></label>
-                <label class="deploy-notification-optin" for="create-in-app-notifications"><input id="create-in-app-notifications" type="checkbox" checked><span><strong>Notify in Sycord PWA</strong><small>Show deployment, project, preview, domain, and health events in the installed app. On iPhone, install Sycord to Home Screen before enabling device alerts.</small></span></label>
-
-                <details class="deploy-build-overrides"><summary>Build settings <i data-lucide="chevron-down"></i></summary><div><label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label><label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label></div></details>
+                <div class="deploy-env-panel">
+                  <div>
+                    <h3>Suggested environment variables</h3>
+                    <p>Only variable names and source locations are detected. Values are never read or imported.</p>
+                  </div>
+                  <div id="deploy-env-suggestions" class="deploy-env-suggestions"></div>
+                </div>
+                <label class="deploy-env-editor" for="create-env-vars">
+                  <span>Environment values</span>
+                  <textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea>
+                </label>
+                <label class="deploy-notification-optin" for="create-in-app-notifications">
+                  <input id="create-in-app-notifications" type="checkbox" checked>
+                  <span><strong>Notify in Sycord PWA</strong><small>Show deployment, project, preview, domain, and health events in the installed app.</small></span>
+                </label>
+                <details class="deploy-build-overrides">
+                  <summary>Build settings <i data-lucide="chevron-down"></i></summary>
+                  <div>
+                    <label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label>
+                    <label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label>
+                  </div>
+                </details>
               </section>
 
+              <!-- Log output panel -->
               <div class="create-log-box logs-panel" id="create-log-wrap">
                 <div class="create-log-placeholder" id="create-log-placeholder">Import a source to see its deployment plan.</div>
                 <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
               </div>
 
-              <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
-                <i data-lucide="scan-search"></i><span>Analyze source</span>
+              <!-- Submit Action Button -->
+              <button type="submit" class="btn-deploy-main-action" id="deploy-btn">
+                <i data-lucide="rocket"></i>
+                <span>Deploy Project</span>
               </button>
             </form>
           </div>

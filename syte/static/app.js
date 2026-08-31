@@ -5906,25 +5906,40 @@ function renderGithubSourceStatus(status) {
   const connect = document.getElementById('github-connect-btn');
   const disconnect = document.getElementById('github-disconnect-btn');
   const account = document.getElementById('github-source-account');
-  const browser = document.getElementById('github-repository-browser');
   const description = document.getElementById('github-source-description');
-  if (!connect || !disconnect || !account || !browser || !description) return;
+  if (!connect || !disconnect || !account || !description) return;
   const configured = Boolean(githubSourceStatus.configured);
   const connected = Boolean(githubSourceStatus.connected);
   connect.classList.toggle('hidden', connected);
   disconnect.classList.toggle('hidden', !connected);
   connect.disabled = !configured;
-  browser.classList.toggle('hidden', !connected);
   if (!configured) {
     description.textContent = 'GitHub OAuth must be configured by an operator before accounts can connect.';
     account.classList.add('hidden');
   } else if (!connected) {
-    description.textContent = 'Connect GitHub to browse repositories you can access, including private repositories.';
+    description.textContent = 'Connect your GitHub account to access your repositories.';
     account.classList.add('hidden');
   } else {
-    description.textContent = 'Choose a repository and branch. OAuth credentials stay encrypted and never become part of the Git remote.';
+    description.textContent = 'Connect your GitHub account to access your repositories.';
     account.classList.remove('hidden');
-    account.innerHTML = `${githubSourceStatus.avatar_url ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="">` : '<i data-lucide="circle-user-round"></i>'}<span class="github-connected-dot"></span><span>Connected as <strong>${esc(githubSourceStatus.login || 'GitHub account')}</strong></span>`;
+    const login = githubSourceStatus.login || 'MDavidka';
+    const initial = login.charAt(0).toUpperCase();
+    const avatarHtml = githubSourceStatus.avatar_url 
+      ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="${esc(login)}" class="svc-github-user-avatar-img">`
+      : `<span class="svc-github-user-avatar">${esc(initial)}</span>`;
+    account.innerHTML = `
+      <div class="svc-github-user-left">
+        ${avatarHtml}
+        <div class="svc-github-user-names">
+          <strong class="svc-github-display-name">Connected as ${esc(login)}</strong>
+          <span class="svc-github-login-name">${esc(login.toLowerCase())}</span>
+        </div>
+      </div>
+      <div class="svc-github-connected-pill">
+        <span class="svc-connected-dot"></span>
+        <span>Connected</span>
+      </div>
+    `;
   }
   refreshIcons();
 }
@@ -6219,36 +6234,101 @@ function renderRepositoryFrameworkIcon(framework) {
   return `<span class="deployment-structured-repository-icon deployment-structured-framework-icon" title="${esc(framework.label)}"><img src="/static/vendor/frameworks/${framework.asset}?v=__VERSION__" alt="${esc(framework.label)}"></span>`;
 }
 
+let githubRepoFilter = 'all';
+
 function renderGithubRepositories() {
   const list = document.getElementById('github-repository-list');
   const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
   if (!list) return;
-  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
+
+  // Wire filter pills
+  document.querySelectorAll('#github-repo-filters button').forEach(pill => {
+    if (!pill.dataset.wired) {
+      pill.dataset.wired = 'true';
+      pill.onclick = () => {
+        githubRepoFilter = pill.dataset.filter || 'all';
+        document.querySelectorAll('#github-repo-filters button').forEach(p => p.classList.toggle('active', p === pill));
+        renderGithubRepositories();
+      };
+    }
+  });
+
+  const searchInput = document.getElementById('github-repository-search');
+  if (searchInput && !searchInput.dataset.wired) {
+    searchInput.dataset.wired = 'true';
+    searchInput.oninput = () => renderGithubRepositories();
+  }
+
+  const refreshBtn = document.getElementById('github-repositories-refresh');
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = 'true';
+    refreshBtn.onclick = () => loadGithubRepositories();
+  }
+
+  let repositories = githubSourceRepositories || [];
+  if (githubRepoFilter === 'personal') {
+    repositories = repositories.filter(r => !r.fork && (!r.owner || r.owner.type === 'User'));
+  } else if (githubRepoFilter === 'org') {
+    repositories = repositories.filter(r => r.owner && r.owner.type === 'Organization');
+  } else if (githubRepoFilter === 'forks') {
+    repositories = repositories.filter(r => r.fork);
+  }
+
+  if (search) {
+    repositories = repositories.filter((repo) => [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
+  }
+
   if (!repositories.length) {
-    list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
+    list.innerHTML = `
+      <div class="svc-repos-empty-box" id="github-repos-empty-state">
+        <div class="svc-repos-empty-icon">
+          <i data-lucide="folder"></i>
+        </div>
+        <strong class="svc-repos-empty-title">No repositories found</strong>
+        <p class="svc-repos-empty-sub">${githubSourceRepositories.length ? 'No repositories match this search or filter.' : 'No repositories are available to this GitHub connection. Make sure you have access to at least one repository.'}</p>
+        <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-view-github">
+          <i data-lucide="github"></i>
+          <span>View GitHub</span>
+          <i data-lucide="external-link" class="icon-xs"></i>
+        </a>
+      </div>
+    `;
+    refreshIcons();
     return;
   }
+
   list.innerHTML = repositories.map((repo) => {
     const framework = repositoryFramework(repo);
-    const details = [framework?.label || repo.language || '', repo.private ? '<i data-lucide="lock-keyhole"></i> Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    const details = [framework?.label || repo.language || '', repo.private ? 'Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
     return `
-      <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
-        ${renderRepositoryFrameworkIcon(framework)}
-        <div class="deployment-structured-repository-copy">
-          <span class="github-repository-name">${esc(repo.full_name)}</span>
-          <span class="deployment-structured-repository-meta">${details}</span>
+      <div class="svc-repo-row ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
+        <div class="svc-repo-row-left">
+          <div class="svc-repo-icon-box">
+            <i data-lucide="git-branch"></i>
+          </div>
+          <div class="svc-repo-row-info">
+            <strong class="svc-repo-row-title">${esc(repo.full_name)}</strong>
+            <span class="svc-repo-row-meta">${details}</span>
+          </div>
         </div>
-        <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
+        <button type="button" class="btn-repo-import-action git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
           <span>Import</span>
         </button>
       </div>
     `;
   }).join('');
+
   list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const repo = e.currentTarget.dataset.fastAddRepo;
       if (repo) fastAddGithubRepository(repo);
+    });
+  });
+  list.querySelectorAll('.svc-repo-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const repoName = row.dataset.githubRepository;
+      if (repoName) selectGithubRepository(repoName);
     });
   });
   refreshIcons();
@@ -6344,6 +6424,7 @@ function setProjectImportSource(source) {
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
   });
+  document.getElementById('deploy-github-connection-card')?.classList.toggle('hidden', projectImportSource !== 'git');
   document.getElementById('deploy-git-fields')?.classList.toggle('hidden', projectImportSource !== 'git');
   document.getElementById('deploy-zip-fields')?.classList.toggle('hidden', projectImportSource !== 'zip');
   refreshIcons();
