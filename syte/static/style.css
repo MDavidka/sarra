@@ -6900,44 +6900,52 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 /* Horizontally Scrollable Pill Tabs */
 .svc-top-nav-bar {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   overflow-x: auto;
-  padding: 4px 2px 10px;
+  padding: 6px 4px 12px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid #eaeaea;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .svc-top-nav-bar::-webkit-scrollbar { display: none; }
 
 .svc-pill-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  min-height: 34px;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  height: 38px;
+  border-radius: 9999px;
   border: 1px solid transparent;
   background: transparent;
   color: #71717a;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .svc-pill-tab:hover {
   background: #f4f4f5;
   color: #18181b;
 }
 .svc-pill-tab.active {
-  background: #18181b;
+  background: #09090b;
   color: #ffffff;
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
-.svc-pill-tab svg { width: 14px; height: 14px; }
+.svc-pill-tab svg, .svc-pill-tab i {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
 
 /* ========================================================
    Redesigned Modern Deployment Screen (Exact to Design)
@@ -7920,7 +7928,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-build-track-screen {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   max-width: 900px;
   margin: 0 auto;
   padding: 4px 0 40px;
@@ -7934,7 +7942,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-build-main-title {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   color: #09090b;
   letter-spacing: -0.02em;
@@ -7955,17 +7963,19 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .btn-builds-filter {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: #ffffff;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
-  padding: 7px 14px;
+  height: 38px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 600;
   color: #18181b;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
+  box-sizing: border-box;
 }
 
 .btn-builds-filter:hover {
@@ -8023,7 +8033,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-build-action-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-top: -2px;
 }
 
 .btn-trigger-build {
@@ -8031,8 +8042,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #ffffff;
   border: none;
   border-radius: 10px;
-  padding: 9px 18px;
-  font-size: 13.5px;
+  height: 38px;
+  padding: 0 18px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   display: inline-flex;
@@ -8040,6 +8052,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   gap: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   transition: all 0.15s ease;
+  box-sizing: border-box;
 }
 
 .btn-trigger-build:hover {
@@ -8064,6 +8077,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #18181b;
   cursor: pointer;
   transition: all 0.15s ease;
+  box-sizing: border-box;
 }
 
 .btn-refresh-builds:hover {

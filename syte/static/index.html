@@ -187,9 +187,6 @@
               <button type="button" class="sidebar-tree-link" data-svc-tab="rollbacks">
                 <i data-lucide="history"></i><span>Rollbacks</span>
               </button>
-              <button type="button" class="sidebar-tree-link" data-svc-tab="preview">
-                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
-              </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="settings">
                 <i data-lucide="settings-2"></i><span>Settings</span>
               </button>
@@ -436,8 +433,6 @@
               <button type="button" class="svc-pill-tab" data-svc-tab="redirects" role="tab"><i data-lucide="shuffle"></i><span>Redirects</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="cdn" role="tab"><i data-lucide="cloud"></i><span>CDN</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="preview" role="tab"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="settings" role="tab"><i data-lucide="settings-2"></i><span>Settings</span></button>
             </div>
 
@@ -1030,33 +1025,6 @@
                 </section>
               </div>
 
-              <!-- 6. CDN TAB (shadcn architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Edge Routing</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">CDN & Cloudflare Delivery</h2>
-                        <p class="shadcn-card-description">Configure edge proxying and DNS routing for high-speed global delivery.</p>
-                      </div>
-                      <img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare" style="width: 32px; height: 32px; object-fit: contain;">
-                    </div>
-                  </div>
-                  <div class="shadcn-card-content">
-                    <div class="svc-cdn-flow">
-                      <span>Browser</span><i data-lucide="arrow-right"></i>
-                      <span>Cloudflare DNS / CDN</span><i data-lucide="arrow-right"></i>
-                      <span>Sycord Caddy</span>
-                    </div>
-                    <p class="svc-card-subtext" style="margin: 10px 0 14px; font-size: 12px; color: #71717a; line-height: 1.45;">Keep Cloudflare proxying (orange cloud) paused while validating or issuing initial Let's Encrypt certificates.</p>
-                    <div>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review Certificate DNS Status</span></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- 7. SPEED & RESOURCES TAB (Exact match to screenshot in white theme) -->
               <div class="svc-tab-panel" id="svc-panel-speed" data-svc-panel="speed">
                 <section class="svc-resources-screen" aria-label="Project performance and resource allocation">
@@ -1613,105 +1581,6 @@
                     <span>No more logs to show within selected timeline</span>
                   </div>
                 </section>
-              </div>
-
-              <!-- 11. PREVIEW TAB (shadcn architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <div class="svc-preview-workspace-card">
-                  <!-- Top Controls Bar -->
-                  <div class="svc-preview-workspace-header">
-                    <div class="svc-preview-header-left">
-                      <div class="svc-preview-title-box">
-                        <span class="svc-preview-status-pill-badge" id="svc-preview-status-pill">
-                          <span class="svc-preview-status-dot"></span>
-                          <span id="svc-preview-status-text">Dev Server Ready</span>
-                        </span>
-                        <div class="svc-stack-badge" id="svc-stack-badge">
-                          <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                          <span id="svc-stack-label">next.js</span>
-                        </div>
-                      </div>
-                      <p class="svc-preview-subtitle">Hot-reloading isolated sandbox development server.</p>
-                    </div>
-
-                    <!-- Viewport switcher: Desktop / Tablet / Mobile -->
-                    <div class="svc-preview-viewport-controls">
-                      <button type="button" class="svc-viewport-btn active" data-viewport="desktop" title="Desktop view (100%)">
-                        <i data-lucide="monitor"></i><span>Desktop</span>
-                      </button>
-                      <button type="button" class="svc-viewport-btn" data-viewport="tablet" title="Tablet view (768px)">
-                        <i data-lucide="tablet"></i><span>Tablet</span>
-                      </button>
-                      <button type="button" class="svc-viewport-btn" data-viewport="mobile" title="Mobile view (375px)">
-                        <i data-lucide="smartphone"></i><span>Mobile</span>
-                      </button>
-                    </div>
-
-                    <!-- Action buttons -->
-                    <div class="svc-preview-actions-bar" id="svc-preview-actions">
-                      <!-- Rendered dynamically by renderPreviewSection -->
-                    </div>
-                  </div>
-
-                  <!-- URL and Address Bar -->
-                  <div class="svc-preview-browser-bar">
-                    <div class="svc-preview-browser-nav">
-                      <button type="button" class="svc-preview-nav-btn" id="svc-preview-reload-btn" title="Reload preview frame">
-                        <i data-lucide="rotate-cw"></i>
-                      </button>
-                    </div>
-                    <div class="svc-preview-address-box">
-                      <i data-lucide="lock" class="svc-preview-lock-icon"></i>
-                      <span class="svc-preview-url-text" id="svc-preview-domain">—</span>
-                      <button type="button" class="svc-preview-copy-url-btn" id="svc-preview-copy-btn" title="Copy preview URL">
-                        <i data-lucide="copy"></i>
-                      </button>
-                      <a id="svc-preview-external-link" href="#" target="_blank" rel="noopener noreferrer" class="svc-preview-ext-btn" title="Open in new window">
-                        <i data-lucide="external-link"></i>
-                      </a>
-                    </div>
-                    <div class="svc-preview-hint-pill" id="svc-preview-hint">
-                      Fast dev server with hot reload
-                    </div>
-                  </div>
-
-                  <!-- Device Container Frame -->
-                  <div class="svc-preview-viewport-stage">
-                    <div class="svc-preview-device-frame" id="svc-preview-frame-container" data-current-viewport="desktop">
-                      <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                      
-                      <!-- Informative stopped state / placeholder -->
-                      <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                        <div class="svc-preview-placeholder-art">
-                          <i data-lucide="layout-template"></i>
-                        </div>
-                        <h3>Interactive Live Preview</h3>
-                        <p>Launch an isolated, lightning-fast development server with hot module replacement directly on the host VM.</p>
-                        <div class="svc-preview-placeholder-actions">
-                          <button type="button" class="shadcn-btn shadcn-btn-default" onclick="if(activeServiceId) servicePreviewStart(activeServiceId)">
-                            <i data-lucide="play"></i><span>Start Development Server</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Collapsible Dev Server Logs -->
-                  <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap" style="margin-top: 16px;">
-                    <div class="logs-toolbar logs-toolbar-compact">
-                      <div class="logs-toolbar-left">
-                        <span class="logs-live-dot" id="svc-preview-logs-live"></span>
-                        <span class="logs-toolbar-label">Dev Server Process Stream</span>
-                      </div>
-                      <div class="logs-toolbar-right">
-                        <button type="button" class="svc-log-tool-btn" onclick="clearLogPanel(document.getElementById('svc-preview-logs'))" title="Clear logs">
-                          <i data-lucide="trash-2"></i><span>Clear</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
-                  </div>
-                </div>
               </div>
 
             </div>
