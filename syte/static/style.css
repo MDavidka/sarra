@@ -8090,92 +8090,97 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   height: 15px;
 }
 
+/* ========================================================
+   Redesigned Build Screen (Exact match to media_1788173806631.jpg)
+   ======================================================== */
 .svc-build-cards-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* Exact Build Card */
-.svc-build-exact-card {
   background: #ffffff;
   border: 1px solid #ececee;
-  border-radius: 20px;
-  padding: 18px 22px;
+  border-radius: 18px;
+  overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  cursor: pointer;
-  transition: all 0.15s ease;
   display: flex;
   flex-direction: column;
 }
 
-.svc-build-exact-card:hover {
-  border-color: #d4d4d8;
-  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1px);
-}
-
-/* Row 1: Status Icon + Title + Meta + Pill */
-.svc-build-exact-top-row {
+.svc-build-list-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f1f4;
+  background: #ffffff;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.svc-build-exact-left {
+.svc-build-list-item:last-child {
+  border-bottom: none;
+}
+
+.svc-build-list-item:hover {
+  background: #fafafa;
+}
+
+.svc-build-item-left {
   display: flex;
   align-items: center;
   gap: 14px;
   min-width: 0;
 }
 
-.svc-build-exact-icon-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
+/* Circular status icons */
+.svc-build-circle-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 
-.svc-build-exact-icon-badge svg {
-  width: 22px;
-  height: 22px;
+.svc-build-circle-icon svg {
+  width: 20px;
+  height: 20px;
   stroke-width: 2.2;
 }
 
-.svc-build-exact-icon-badge.is-failed {
-  background: #fee2e2;
+.svc-build-circle-icon.is-failed {
+  background: #fef2f2;
   color: #dc2626;
 }
 
-.svc-build-exact-icon-badge.is-warning {
-  background: #ffedd5;
+.svc-build-circle-icon.is-warning {
+  background: #fff7ed;
   color: #ea580c;
 }
 
-.svc-build-exact-icon-badge.is-ready {
-  background: #dcfce7;
+.svc-build-circle-icon.is-success {
+  background: #f0fdf4;
   color: #16a34a;
 }
 
-.svc-build-exact-icon-badge.is-building {
-  background: #dbeafe;
+.svc-build-circle-icon.is-canceled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.svc-build-circle-icon.is-building {
+  background: #eff6ff;
   color: #2563eb;
 }
 
-.svc-build-exact-info {
+.svc-build-item-details {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
-.svc-build-exact-title {
-  margin: 0;
-  font-size: 15.5px;
-  font-weight: 800;
+.svc-build-item-title {
+  font-size: 15px;
+  font-weight: 700;
   color: #09090b;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -8183,170 +8188,97 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   text-overflow: ellipsis;
 }
 
-.svc-build-exact-meta-sub {
+.svc-build-item-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13.5px;
+  gap: 8px;
+  font-size: 13px;
   color: #71717a;
   font-weight: 500;
 }
 
-.svc-build-num {
-  font-weight: 600;
+.svc-build-meta-branch,
+.svc-build-meta-commit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.svc-build-meta-branch svg,
+.svc-build-meta-commit svg {
+  width: 14px;
+  height: 14px;
   color: #71717a;
 }
 
-.svc-build-exact-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
-  border-radius: 9999px;
+.svc-build-meta-sep {
+  color: #a1a1aa;
+}
+
+.svc-build-meta-time {
   font-size: 12.5px;
-  font-weight: 700;
+  color: #71717a;
+}
+
+.svc-build-item-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex-shrink: 0;
 }
 
-.svc-build-exact-status-pill .svc-status-bullet {
-  width: 7px;
-  height: 7px;
+/* Status Pill */
+.svc-build-status-pill-v2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.svc-build-bullet-v2 {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 
-.svc-build-exact-status-pill.is-failed {
-  background: #fee2e2;
+.svc-build-status-pill-v2.is-failed {
+  background: #fef2f2;
   color: #dc2626;
 }
-.svc-build-exact-status-pill.is-failed .svc-status-bullet {
+.svc-build-status-pill-v2.is-failed .svc-build-bullet-v2 {
   background: #dc2626;
 }
 
-.svc-build-exact-status-pill.is-warning {
-  background: #ffedd5;
-  color: #ea580c;
+.svc-build-status-pill-v2.is-success {
+  background: #f0fdf4;
+  color: #16a34a;
 }
-.svc-build-exact-status-pill.is-warning .svc-status-bullet {
-  background: #ea580c;
-}
-
-.svc-build-exact-status-pill.is-ready {
-  background: #dcfce7;
-  color: #15803d;
-}
-.svc-build-exact-status-pill.is-ready .svc-status-bullet {
+.svc-build-status-pill-v2.is-success .svc-build-bullet-v2 {
   background: #16a34a;
 }
 
-.svc-build-exact-status-pill.is-building {
-  background: #dbeafe;
-  color: #1d4ed8;
+.svc-build-status-pill-v2.is-canceled {
+  background: #f1f5f9;
+  color: #475569;
 }
-.svc-build-exact-status-pill.is-building .svc-status-bullet {
+.svc-build-status-pill-v2.is-canceled .svc-build-bullet-v2 {
+  background: #64748b;
+}
+
+.svc-build-status-pill-v2.is-building {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.svc-build-status-pill-v2.is-building .svc-build-bullet-v2 {
   background: #2563eb;
 }
 
-/* Row 2: Git Chips */
-.svc-build-exact-git-row {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.svc-git-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #27272a;
-}
-
-.svc-git-chip svg {
-  width: 15px;
-  height: 15px;
-  color: #09090b;
-  flex-shrink: 0;
-}
-
-/* Row 3: Author & Actions */
-.svc-build-exact-bottom-row {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid #f4f4f5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.svc-build-exact-author-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.svc-author-avatar-black {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #09090b;
-  color: #ffffff;
-  display: grid;
-  place-items: center;
-  font-size: 10.5px;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.svc-author-exact-name {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #09090b;
-}
-
-.svc-trigger-reason {
-  font-size: 12.5px;
-  color: #71717a;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.svc-build-exact-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-exact-preview {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 9999px;
-  padding: 6px 16px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #09090b;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-exact-preview:hover {
-  background: #f4f4f5;
-  border-color: #d4d4d8;
-}
-
-.btn-exact-preview svg {
-  width: 14px;
-  height: 14px;
-}
-
-.btn-exact-menu {
+.btn-build-row-more {
   width: 32px;
   height: 32px;
   border-radius: 8px;
@@ -8359,14 +8291,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   transition: all 0.15s ease;
 }
 
-.btn-exact-menu:hover {
+.btn-build-row-more:hover {
   background: #f4f4f5;
   color: #09090b;
 }
 
-.btn-exact-menu svg {
-  width: 16px;
-  height: 16px;
+.btn-build-row-more svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* Compact on mobile or smaller screens (<= 640px) */
@@ -8389,7 +8321,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 
   .btn-builds-filter {
-    padding: 5px 10px;
+    padding: 0 10px;
+    height: 34px;
     font-size: 12px;
     border-radius: 8px;
   }
@@ -8399,8 +8332,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 
   .btn-trigger-build {
-    padding: 7px 14px;
-    font-size: 12.5px;
+    height: 34px;
+    padding: 0 14px;
+    font-size: 12px;
     border-radius: 8px;
   }
 
@@ -8411,114 +8345,43 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 
   .svc-build-cards-list {
+    border-radius: 14px;
+  }
+
+  .svc-build-list-item {
+    padding: 12px 14px;
     gap: 10px;
   }
 
-  /* Compact Build Card on Mobile */
-  .svc-build-exact-card {
-    border-radius: 16px;
-    padding: 14px 14px 12px 14px;
-  }
-
-  .svc-build-exact-top-row {
-    gap: 8px;
-  }
-
-  .svc-build-exact-left {
-    gap: 10px;
-  }
-
-  .svc-build-exact-icon-badge {
+  .svc-build-circle-icon {
     width: 34px;
     height: 34px;
-    border-radius: 10px;
   }
 
-  .svc-build-exact-icon-badge svg {
-    width: 18px;
-    height: 18px;
+  .svc-build-circle-icon svg {
+    width: 16px;
+    height: 16px;
   }
 
-  .svc-build-exact-title {
+  .svc-build-item-title {
     font-size: 13.5px;
-    max-width: 180px;
+    max-width: 170px;
   }
 
-  .svc-build-exact-meta-sub {
-    font-size: 12px;
-    gap: 6px;
+  .svc-build-item-meta {
+    font-size: 11.5px;
+    gap: 5px;
   }
 
-  .svc-build-exact-status-pill {
-    padding: 3px 9px;
+  .svc-build-status-pill-v2 {
+    padding: 3px 8px;
     font-size: 11px;
     gap: 4px;
   }
 
-  .svc-build-exact-status-pill .svc-status-bullet {
-    width: 6px;
-    height: 6px;
-  }
-
-  .svc-build-exact-git-row {
-    margin-top: 10px;
-    gap: 8px 12px;
-  }
-
-  .svc-git-chip {
-    font-size: 11.5px;
-    gap: 4px;
-  }
-
-  .svc-git-chip svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .svc-build-exact-bottom-row {
-    margin-top: 12px;
-    padding-top: 10px;
-    gap: 8px;
-  }
-
-  .svc-author-avatar-black {
-    width: 20px;
-    height: 20px;
-    font-size: 9px;
-  }
-
-  .svc-author-exact-name {
-    font-size: 12px;
-  }
-
-  .svc-trigger-reason {
-    font-size: 11px;
-    margin-left: 4px;
-  }
-
-  .svc-build-exact-actions {
-    gap: 4px;
-  }
-
-  .btn-exact-preview {
-    padding: 4px 10px;
-    font-size: 11.5px;
-    gap: 4px;
-  }
-
-  .btn-exact-preview svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .btn-exact-menu {
+  .btn-build-row-more {
     width: 28px;
     height: 28px;
-  }
-
-  .btn-exact-menu svg {
-    width: 14px;
-    height: 14px;
   }
 }
 

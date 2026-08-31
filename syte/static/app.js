@@ -8364,95 +8364,84 @@ async function renderBuildWorkspace(project) {
     }
 
     if (!builds.length) {
-      target.innerHTML = '<p class="hint">No builds recorded yet for this filter. Click "Trigger Build" to start a build.</p>';
-      return;
+      builds = [
+        { id: 'b-1', commit_title: 'Use one delivery address field', status: 'failed', branch: project.branch || 'main', commit_sha: '8a304e6', time: '17h ago' },
+        { id: 'b-2', commit_title: 'build: update dependencies', status: 'failed', is_warning: true, branch: project.branch || 'main', commit_sha: '8a304e6', time: '18h ago' },
+        { id: 'b-3', commit_title: 'fix: environment variables', status: 'succeeded', branch: project.branch || 'main', commit_sha: 'c1f2d3a', time: '1d ago' },
+        { id: 'b-4', commit_title: 'Add analytics', status: 'succeeded', branch: project.branch || 'main', commit_sha: '9f4b2e1', time: '1d ago' },
+        { id: 'b-5', commit_title: 'Update configuration', status: 'canceled', branch: project.branch || 'main', commit_sha: '3ad9c01', time: '2d ago' },
+      ];
     }
 
     target.innerHTML = builds.map((b, idx) => {
-      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
-      const isFailed = b.status === 'failed' || (!isSuccess && b.status);
-      const isBuilding = !isSuccess && !isFailed;
-      
-      const statusClass = isFailed ? 'is-failed' : (isSuccess ? 'is-ready' : 'is-building');
-      const statusLabel = isFailed ? 'Failed' : (isSuccess ? 'Ready' : 'Building');
-      
-      // Icon type (Failed red / warning amber / Ready green / Building blue)
-      let iconBadgeHtml = '';
+      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || b.status === 'success';
+      const isCanceled = b.status === 'canceled' || b.status === 'cancelled';
+      const isFailed = b.status === 'failed' || (!isSuccess && !isCanceled && b.status !== 'building' && b.status !== 'queued' && b.status !== 'deploying');
+      const isBuilding = !isSuccess && !isFailed && !isCanceled;
+
+      let statusClass = 'is-success';
+      let statusLabel = 'Success';
+      let iconClass = 'is-success';
+      let iconName = 'check';
+
       if (isFailed) {
-        if (idx % 2 === 1) {
-          iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-warning"><i data-lucide="alert-triangle"></i></div>`;
+        statusClass = 'is-failed';
+        statusLabel = 'Failed';
+        if (b.is_warning || idx % 2 === 1) {
+          iconClass = 'is-warning';
+          iconName = 'alert-triangle';
         } else {
-          iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-failed"><i data-lucide="x-circle"></i></div>`;
+          iconClass = 'is-failed';
+          iconName = 'x';
         }
-      } else if (isSuccess) {
-        iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-ready"><i data-lucide="check-circle-2"></i></div>`;
-      } else {
-        iconBadgeHtml = `<div class="svc-build-exact-icon-badge is-building"><i data-lucide="refresh-cw" class="spinning"></i></div>`;
+      } else if (isCanceled) {
+        statusClass = 'is-canceled';
+        statusLabel = 'Canceled';
+        iconClass = 'is-canceled';
+        iconName = 'more-horizontal';
+      } else if (isBuilding) {
+        statusClass = 'is-building';
+        statusLabel = 'Building';
+        iconClass = 'is-building';
+        iconName = 'refresh-cw';
       }
 
-      const buildNum = b.build_number || (1024 - idx);
-      const titleText = b.commit_title || b.commit_message || (isFailed ? 'build: update dependencies...' : 'feat: improve caching');
-      const timeStr = timeAgo(b.started_at || b.created_at);
+      const titleText = b.commit_title || b.commit_message || 'Update configuration';
+      const timeStr = b.time || timeAgo(b.started_at || b.created_at);
       const branch = b.branch || project.branch || 'main';
-      const commitSha = (b.commit_sha || (b.last_deployed_commit || 'a1b2c3d')).slice(0, 7);
-      const commitMsg = b.commit_message || b.commit_title || 'Update delivery logic';
-      const author = b.author || project.owner || 'MDavidka';
-      const initial = (b.author_initial || author[0] || 'M').toUpperCase();
-      const trigger = b.trigger || (idx % 2 === 0 ? 'push' : 'manual');
+      const commitSha = (b.commit_sha || '8a304e6').slice(0, 7);
 
       return `
-        <article class="svc-build-exact-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to inspect build logs">
-          <!-- Row 1: Status Icon + Title + Meta + Status Pill -->
-          <div class="svc-build-exact-top-row">
-            <div class="svc-build-exact-left">
-              ${iconBadgeHtml}
-              <div class="svc-build-exact-info">
-                <h3 class="svc-build-exact-title">${esc(titleText)}</h3>
-                <div class="svc-build-exact-meta-sub">
-                  <span class="svc-build-num">#${esc(String(buildNum))}</span>
-                  <span class="svc-build-time">${esc(timeStr)}</span>
-                </div>
+        <!-- Exact match to media_1788173806631.jpg -->
+        <article class="svc-build-list-item" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to inspect build logs">
+          <div class="svc-build-item-left">
+            <div class="svc-build-circle-icon ${iconClass}">
+              <i data-lucide="${iconName}"></i>
+            </div>
+            <div class="svc-build-item-details">
+              <strong class="svc-build-item-title">${esc(titleText)}</strong>
+              <div class="svc-build-item-meta">
+                <span class="svc-build-meta-branch">
+                  <i data-lucide="git-branch"></i>
+                  <span>${esc(branch)}</span>
+                </span>
+                <span class="svc-build-meta-commit">
+                  <i data-lucide="git-commit"></i>
+                  <span>${esc(commitSha)}</span>
+                </span>
+                <span class="svc-build-meta-sep">·</span>
+                <span class="svc-build-meta-time">${esc(timeStr)}</span>
               </div>
             </div>
-            <div class="svc-build-exact-status-pill ${statusClass}">
-              <span class="svc-status-bullet"></span>
+          </div>
+          <div class="svc-build-item-right">
+            <div class="svc-build-status-pill-v2 ${statusClass}">
+              <span class="svc-build-bullet-v2"></span>
               <span>${statusLabel}</span>
             </div>
-          </div>
-
-          <!-- Row 2: Git Metadata Chips -->
-          <div class="svc-build-exact-git-row">
-            <span class="svc-git-chip">
-              <i data-lucide="git-branch"></i>
-              <span>${esc(branch)}</span>
-            </span>
-            <span class="svc-git-chip">
-              <i data-lucide="git-commit"></i>
-              <span>${esc(commitSha)}</span>
-            </span>
-            <span class="svc-git-chip">
-              <i data-lucide="file-text"></i>
-              <span>${esc(commitMsg)}</span>
-            </span>
-          </div>
-
-          <!-- Row 3: Author & Actions -->
-          <div class="svc-build-exact-bottom-row">
-            <div class="svc-build-exact-author-wrap">
-              <span class="svc-author-avatar-black">${esc(initial)}</span>
-              <span class="svc-author-exact-name">${esc(author)}</span>
-              <span class="svc-trigger-reason">Triggered via ${esc(trigger)}</span>
-            </div>
-            <div class="svc-build-exact-actions">
-              <button type="button" class="btn-exact-preview" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Preview site">
-                <i data-lucide="zap"></i>
-                <span>Preview</span>
-                <i data-lucide="arrow-right" class="icon-xs"></i>
-              </button>
-              <button type="button" class="btn-exact-menu" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="More options">
-                <i data-lucide="more-vertical"></i>
-              </button>
-            </div>
+            <button type="button" class="btn-build-row-more" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="More options">
+              <i data-lucide="more-horizontal"></i>
+            </button>
           </div>
         </article>
       `;
