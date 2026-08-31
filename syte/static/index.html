@@ -157,6 +157,12 @@
               <button type="button" class="sidebar-tree-link active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>Overview</span>
               </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="build">
+                <i data-lucide="rocket"></i><span>Build</span>
+              </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="sources">
+                <i data-lucide="folder"></i><span>Sources</span>
+              </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="domains">
                 <i data-lucide="globe"></i><span>Domain</span>
               </button>
@@ -420,6 +426,7 @@
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="sources" role="tab"><i data-lucide="folder"></i><span>Sources</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
@@ -656,6 +663,120 @@
                   <!-- Build Cards List -->
                   <div class="svc-build-cards-list" id="svc-build-cards-list">
                     <p class="hint">Loading build track status…</p>
+                  </div>
+                </section>
+              </div>
+
+              <!-- SOURCES / WORKSPACE FILES TAB (Exact match to screenshot media_1788168092651.jpg) -->
+              <div class="svc-tab-panel" id="svc-panel-sources" data-svc-panel="sources">
+                <section class="svc-sources-screen" aria-label="Project workspace sources and files">
+                  <!-- Header: Files title + New / Upload buttons -->
+                  <div class="svc-sources-header">
+                    <div class="svc-sources-title-wrap">
+                      <h2 class="svc-sources-title">Files</h2>
+                      <p class="svc-sources-sub">Browse and manage your project files.</p>
+                    </div>
+                    <div class="svc-sources-actions">
+                      <!-- New Menu Dropdown -->
+                      <div class="svc-sources-dropdown-wrap">
+                        <button type="button" class="btn-sources-action btn-sources-light" id="svc-sources-new-btn">
+                          <i data-lucide="folder-plus"></i>
+                          <span>New</span>
+                          <i data-lucide="chevron-down" class="icon-xs"></i>
+                        </button>
+                        <div class="svc-sources-dropdown-menu hidden" id="svc-sources-new-menu">
+                          <button type="button" class="svc-sources-dropdown-item" id="svc-sources-action-new-file">
+                            <i data-lucide="file-plus"></i>
+                            <span>New File</span>
+                          </button>
+                          <button type="button" class="svc-sources-dropdown-item" id="svc-sources-action-new-folder">
+                            <i data-lucide="folder-plus"></i>
+                            <span>New Folder</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Upload Button -->
+                      <button type="button" class="btn-sources-action btn-sources-dark" id="svc-sources-upload-btn">
+                        <i data-lucide="upload"></i>
+                        <span>Upload</span>
+                      </button>
+                      <input type="file" id="svc-sources-file-input" class="hidden" multiple>
+                    </div>
+                  </div>
+
+                  <!-- 2-Pane Workspace Layout -->
+                  <div class="svc-sources-workspace-layout">
+                    <!-- Left Pane: File Tree Explorer -->
+                    <aside class="svc-sources-tree-pane">
+                      <!-- Search Files Box -->
+                      <div class="svc-sources-search-box">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="svc-sources-search-input" placeholder="Search files..." autocomplete="off">
+                        <span class="svc-search-kbd-tag">⌘ K</span>
+                      </div>
+
+                      <!-- Directory Navigation / Breadcrumbs -->
+                      <div class="svc-sources-tree-nav" id="svc-sources-tree-nav">
+                        <div class="svc-tree-item is-root active" id="svc-tree-root-btn" title="Root directory">
+                          <div class="svc-tree-item-left">
+                            <i data-lucide="folder"></i>
+                            <span class="svc-tree-name">/</span>
+                          </div>
+                          <i data-lucide="chevron-right" class="svc-tree-chevron"></i>
+                        </div>
+                      </div>
+
+                      <!-- File & Folder List -->
+                      <div class="svc-sources-file-list" id="svc-sources-file-list">
+                        <div class="svc-sources-tree-loading">
+                          <i data-lucide="refresh-cw" class="spinning"></i>
+                          <span>Loading workspace files…</span>
+                        </div>
+                      </div>
+                    </aside>
+
+                    <!-- Right Pane: File Viewer / Editor / Empty State -->
+                    <main class="svc-sources-viewer-pane">
+                      <!-- Empty State (No file selected) -->
+                      <div class="svc-sources-empty-state" id="svc-sources-empty-state">
+                        <div class="svc-sources-empty-icon">
+                          <i data-lucide="file-text"></i>
+                        </div>
+                        <h3 class="svc-sources-empty-title">Select a file</h3>
+                        <p class="svc-sources-empty-sub">Choose a file from the sidebar to view its contents, or create a new file.</p>
+                      </div>
+
+                      <!-- Active File Viewer / Editor (Visible when file selected) -->
+                      <div class="svc-sources-file-viewer hidden" id="svc-sources-file-viewer">
+                        <div class="svc-file-viewer-toolbar">
+                          <div class="svc-file-viewer-breadcrumb" id="svc-file-viewer-breadcrumb">
+                            <i data-lucide="file-code" id="svc-file-type-icon"></i>
+                            <span class="svc-file-path-text" id="svc-file-current-path">package.json</span>
+                            <span class="svc-file-size-badge" id="svc-file-current-size">1.2 KB</span>
+                          </div>
+                          <div class="svc-file-viewer-actions">
+                            <button type="button" class="btn-file-tool" id="svc-file-copy-btn" title="Copy file content">
+                              <i data-lucide="copy"></i>
+                              <span>Copy</span>
+                            </button>
+                            <button type="button" class="btn-file-tool btn-file-save" id="svc-file-save-btn" title="Save changes">
+                              <i data-lucide="save"></i>
+                              <span>Save</span>
+                            </button>
+                            <button type="button" class="btn-file-tool btn-file-danger" id="svc-file-delete-btn" title="Delete file">
+                              <i data-lucide="trash-2"></i>
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div class="svc-file-editor-wrap">
+                          <div class="svc-file-line-numbers" id="svc-file-line-numbers">1</div>
+                          <textarea id="svc-file-editor-textarea" spellcheck="false" placeholder="File is empty..."></textarea>
+                        </div>
+                      </div>
+                    </main>
                   </div>
                 </section>
               </div>

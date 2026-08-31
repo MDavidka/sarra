@@ -9671,23 +9671,362 @@ async function renderGlobalAIChat() {
   await renderAIChatWorkspace(selectedAIProject);
 }
 
+let sourcesCurrentDir = '';
+let sourcesActiveFile = null;
+let sourcesWorkspaceFiles = [];
+let sourcesWorkspaceSearchQuery = '';
+
+async function renderSourcesWorkspace(project) {
+  const p = project || (projects && projects.find(x => x.id === activeServiceId));
+  if (!p) return;
+  const listEl = document.getElementById('svc-sources-file-list');
+  const searchInput = document.getElementById('svc-sources-search-input');
+  const newBtn = document.getElementById('svc-sources-new-btn');
+  const newMenu = document.getElementById('svc-sources-new-menu');
+  const actionNewFile = document.getElementById('svc-sources-action-new-file');
+  const actionNewFolder = document.getElementById('svc-sources-action-new-folder');
+  const uploadBtn = document.getElementById('svc-sources-upload-btn');
+  const fileInput = document.getElementById('svc-sources-file-input');
+
+  // Setup New dropdown
+  if (newBtn && newMenu) {
+    newBtn.onclick = (e) => {
+      e.stopPropagation();
+      newMenu.classList.toggle('hidden');
+    };
+    document.addEventListener('click', (e) => {
+      if (!newBtn.contains(e.target) && !newMenu.contains(e.target)) {
+        newMenu.classList.add('hidden');
+      }
+    });
+  }
+
+  if (actionNewFile) {
+    actionNewFile.onclick = () => {
+      if (newMenu) newMenu.classList.add('hidden');
+      promptCreateSourcesFile(p.id);
+    };
+  }
+
+  if (actionNewFolder) {
+    actionNewFolder.onclick = () => {
+      if (newMenu) newMenu.classList.add('hidden');
+      promptCreateSourcesFolder(p.id);
+    };
+  }
+
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      if (!fileInput.files || !fileInput.files.length) return;
+      await uploadSourcesFiles(p.id, fileInput.files);
+      fileInput.value = '';
+    };
+  }
+
+  if (searchInput) {
+    searchInput.oninput = () => {
+      sourcesWorkspaceSearchQuery = searchInput.value.trim().toLowerCase();
+      renderSourcesFileListUI(p.id);
+    };
+    // Shortcut ⌘K / Ctrl+K
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && activeSvcTab === 'sources') {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+    });
+  }
+
+  await loadSourcesDirectory(p.id, sourcesCurrentDir);
+}
+
+async function loadSourcesDirectory(projectId, subpath = '') {
+  sourcesCurrentDir = subpath;
+  const listEl = document.getElementById('svc-sources-file-list');
+  const treeNav = document.getElementById('svc-sources-tree-nav');
+  if (listEl) {
+    listEl.innerHTML = `
+      <div class="svc-sources-tree-loading">
+        <i data-lucide="refresh-cw" class="spinning"></i>
+        <span>Loading files…</span>
+      </div>
+    `;
+    refreshIcons();
+  }
+
+  // Update root / breadcrumb item
+  if (treeNav) {
+    const isRoot = !sourcesCurrentDir || sourcesCurrentDir === '/';
+    const parts = sourcesCurrentDir.split('/').filter(Boolean);
+    let navHtml = `
+      <div class="svc-tree-item is-root ${isRoot ? 'active' : ''}" onclick="loadSourcesDirectory('${esc(projectId)}', '')" title="Workspace Root">
+        <div class="svc-tree-item-left">
+          <i data-lucide="folder"></i>
+          <span class="svc-tree-name">/ ${parts.length ? parts.join(' / ') : ''}</span>
+        </div>
+        ${parts.length ? `<button type="button" class="btn-file-tool" style="padding:2px 6px; font-size:11px;" onclick="event.stopPropagation(); navigateSourcesUp('${esc(projectId)}');"><i data-lucide="arrow-up"></i> Up</button>` : `<i data-lucide="chevron-right" class="svc-tree-chevron"></i>`}
+      </div>
+    `;
+    treeNav.innerHTML = navHtml;
+  }
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/workspace/files?path=${encodeURIComponent(sourcesCurrentDir)}`);
+    sourcesWorkspaceFiles = res.files || [];
+    renderSourcesFileListUI(projectId);
+  } catch (err) {
+    if (listEl) {
+      listEl.innerHTML = `<div class="svc-sources-tree-loading" style="color:#ef4444;"><i data-lucide="alert-circle"></i><span>Failed to load files: ${esc(err.message)}</span></div>`;
+      refreshIcons();
+    }
+  }
+}
+
+function navigateSourcesUp(projectId) {
+  if (!sourcesCurrentDir) return;
+  const parts = sourcesCurrentDir.split('/').filter(Boolean);
+  parts.pop();
+  loadSourcesDirectory(projectId, parts.join('/'));
+}
+
+function getFileIconName(filename, isDir) {
+  if (isDir) return 'folder';
+  const ext = filename.split('.').pop().toLowerCase();
+  if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'].includes(ext)) return 'file-code';
+  if (['json', 'yaml', 'yml', 'toml', 'xml'].includes(ext)) return 'file-text';
+  if (['css', 'scss', 'sass', 'less'].includes(ext)) return 'file-text';
+  if (['md', 'mdx', 'txt', 'rtf'].includes(ext)) return 'file-text';
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext)) return 'image';
+  return 'file';
+}
+
+function renderSourcesFileListUI(projectId) {
+  const listEl = document.getElementById('svc-sources-file-list');
+  if (!listEl) return;
+
+  let items = [...sourcesWorkspaceFiles];
+  if (sourcesWorkspaceSearchQuery) {
+    items = items.filter(it => it.name.toLowerCase().includes(sourcesWorkspaceSearchQuery) || it.path.toLowerCase().includes(sourcesWorkspaceSearchQuery));
+  }
+
+  if (!items.length) {
+    listEl.innerHTML = `
+      <div class="svc-sources-tree-loading" style="color:#a1a1aa; font-style:italic;">
+        <span>${sourcesWorkspaceSearchQuery ? 'No matching files found.' : 'This directory is empty.'}</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort folders first, then files
+  items.sort((a, b) => {
+    if (a.type === 'directory' && b.type !== 'directory') return -1;
+    if (a.type !== 'directory' && b.type === 'directory') return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const html = items.map(item => {
+    const isDir = item.type === 'directory';
+    const isSelected = sourcesActiveFile === item.path;
+    const icon = getFileIconName(item.name, isDir);
+
+    return `
+      <div class="svc-tree-item ${isDir ? 'is-dir' : 'is-file'} ${isSelected ? 'active' : ''}"
+           onclick="${isDir ? `loadSourcesDirectory('${esc(projectId)}', '${esc(item.path)}')` : `openSourcesFile('${esc(projectId)}', '${esc(item.path)}', ${item.size || 0})`}"
+           title="${esc(item.path)}">
+        <div class="svc-tree-item-left">
+          <i data-lucide="${icon}"></i>
+          <span class="svc-tree-name">${esc(item.name)}</span>
+        </div>
+        ${isDir ? `<i data-lucide="chevron-right" class="svc-tree-chevron"></i>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  listEl.innerHTML = html;
+  refreshIcons();
+}
+
+async function openSourcesFile(projectId, filePath, fileSize) {
+  sourcesActiveFile = filePath;
+  renderSourcesFileListUI(projectId);
+
+  const emptyState = document.getElementById('svc-sources-empty-state');
+  const viewer = document.getElementById('svc-sources-file-viewer');
+  const pathEl = document.getElementById('svc-file-current-path');
+  const sizeEl = document.getElementById('svc-file-current-size');
+  const iconEl = document.getElementById('svc-file-type-icon');
+  const textarea = document.getElementById('svc-file-editor-textarea');
+  const lineNumbers = document.getElementById('svc-file-line-numbers');
+  const saveBtn = document.getElementById('svc-file-save-btn');
+  const copyBtn = document.getElementById('svc-file-copy-btn');
+  const deleteBtn = document.getElementById('svc-file-delete-btn');
+
+  if (emptyState) emptyState.classList.add('hidden');
+  if (viewer) viewer.classList.remove('hidden');
+
+  const fileName = filePath.split('/').pop();
+  if (pathEl) pathEl.textContent = filePath;
+  if (sizeEl) sizeEl.textContent = fileSize ? formatBytes(fileSize) : '';
+  if (iconEl) iconEl.setAttribute('data-lucide', getFileIconName(fileName, false));
+
+  if (textarea) {
+    textarea.value = 'Loading file content…';
+    textarea.disabled = true;
+  }
+  refreshIcons();
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/workspace/file?path=${encodeURIComponent(filePath)}`);
+    let content = res.content || '';
+    if (res.is_binary) {
+      content = `[Binary file — ${formatBytes(fileSize || 0)}]`;
+    }
+
+    if (textarea) {
+      textarea.value = content;
+      textarea.disabled = Boolean(res.is_binary);
+      updateEditorLineNumbers(textarea, lineNumbers);
+      textarea.oninput = () => updateEditorLineNumbers(textarea, lineNumbers);
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = Boolean(res.is_binary);
+      saveBtn.onclick = async () => {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i data-lucide="refresh-cw" class="spinning"></i><span>Saving…</span>';
+        refreshIcons();
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}/workspace/file`, {
+            method: 'POST',
+            body: JSON.stringify({ path: filePath, content: textarea.value }),
+          });
+          toast(`Saved ${fileName}`);
+        } catch (err) {
+          toast(`Save failed: ${err.message}`, 'danger');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<i data-lucide="save"></i><span>Save</span>';
+          refreshIcons();
+        }
+      };
+    }
+
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(textarea.value);
+        toast(`Copied ${fileName} to clipboard`);
+      };
+    }
+
+    if (deleteBtn) {
+      deleteBtn.onclick = async () => {
+        if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}/workspace/file?path=${encodeURIComponent(filePath)}`, {
+            method: 'DELETE',
+          });
+          toast(`Deleted ${fileName}`);
+          sourcesActiveFile = null;
+          if (viewer) viewer.classList.add('hidden');
+          if (emptyState) emptyState.classList.remove('hidden');
+          await loadSourcesDirectory(projectId, sourcesCurrentDir);
+        } catch (err) {
+          toast(`Delete failed: ${err.message}`, 'danger');
+        }
+      };
+    }
+  } catch (err) {
+    if (textarea) {
+      textarea.value = `Error loading file: ${err.message}`;
+      textarea.disabled = true;
+    }
+  }
+  refreshIcons();
+}
+
+function updateEditorLineNumbers(textarea, lineNumbersEl) {
+  if (!textarea || !lineNumbersEl) return;
+  const lines = textarea.value.split('\n').length;
+  lineNumbersEl.textContent = Array.from({ length: Math.max(lines, 1) }, (_, i) => i + 1).join('\n');
+}
+
+async function promptCreateSourcesFile(projectId) {
+  const name = prompt('Enter new file name (e.g. index.ts, style.css, app/components/Nav.tsx):');
+  if (!name || !name.trim()) return;
+  const fullPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${name.trim().replace(/^\/+/, '')}` : name.trim();
+  try {
+    await api(`/projects/${encodeURIComponent(projectId)}/workspace/file`, {
+      method: 'POST',
+      body: JSON.stringify({ path: fullPath, content: '' }),
+    });
+    toast(`Created file ${name}`);
+    await loadSourcesDirectory(projectId, sourcesCurrentDir);
+    await openSourcesFile(projectId, fullPath, 0);
+  } catch (err) {
+    toast(`Failed to create file: ${err.message}`, 'danger');
+  }
+}
+
+async function promptCreateSourcesFolder(projectId) {
+  const name = prompt('Enter new folder name:');
+  if (!name || !name.trim()) return;
+  const fullPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${name.trim().replace(/^\/+/, '')}` : name.trim();
+  try {
+    await api(`/projects/${encodeURIComponent(projectId)}/workspace/mkdir`, {
+      method: 'POST',
+      body: JSON.stringify({ path: fullPath }),
+    });
+    toast(`Created folder ${name}`);
+    await loadSourcesDirectory(projectId, sourcesCurrentDir);
+  } catch (err) {
+    toast(`Failed to create folder: ${err.message}`, 'danger');
+  }
+}
+
+async function uploadSourcesFiles(projectId, fileList) {
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    const formData = new FormData();
+    const targetPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${file.name}` : file.name;
+    formData.append('path', targetPath);
+    formData.append('file', file);
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspace/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!resp.ok) {
+        const errorJson = await resp.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(errorJson.detail || 'Upload failed');
+      }
+      toast(`Uploaded ${file.name}`);
+    } catch (err) {
+      toast(`Failed to upload ${file.name}: ${err.message}`, 'danger');
+    }
+  }
+  await loadSourcesDirectory(projectId, sourcesCurrentDir);
+}
+
 function switchSvcTab(tab) {
-  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
+  const allowed = ['general', 'build', 'release', 'sources', 'files', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
   document.querySelectorAll('.sidebar-tree-link[data-svc-tab], .nav-sublink[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build') || (tab === 'sources' && btn.dataset.svcTab === 'files'));
   });
   document.querySelectorAll('.svc-pill-tab[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build') || (tab === 'sources' && btn.dataset.svcTab === 'files'));
   });
   const activePill = document.querySelector(`.svc-pill-tab[data-svc-tab="${tab}"]`);
   if (activePill) {
     activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')));
+    panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'sources' && (panel.dataset.svcPanel === 'sources' || panel.dataset.svcPanel === 'files')));
   });
   const p = projects.find(x => x.id === activeServiceId);
   if (p) {
@@ -9695,6 +10034,8 @@ function switchSvcTab(tab) {
       renderServiceDashboard(p, false);
     } else if (tab === 'build' || tab === 'release') {
       void renderBuildWorkspace(p);
+    } else if (tab === 'sources' || tab === 'files') {
+      void renderSourcesWorkspace(p);
     } else if (tab === 'domains') {
       renderServiceDomainsList(p);
     } else if (tab === 'env') {

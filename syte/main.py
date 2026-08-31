@@ -2491,6 +2491,135 @@ async def api_workspace_files(project_id: str, path: str = ""):
     return {"uuid": project_id, "path": path or "/", "files": files}
 
 
+@app.get("/api/projects/{project_id}/workspace/file")
+async def api_get_workspace_file(project_id: str, path: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not path:
+        raise HTTPException(400, "File path is required")
+    try:
+        ok, content, kind = await workspace_api.read_file(project_id, path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not ok:
+        raise HTTPException(404, str(content) or "File not found")
+    if kind == "binary":
+        import base64
+        return {
+            "ok": True,
+            "path": path,
+            "encoding": "base64",
+            "is_binary": True,
+            "content": base64.b64encode(content).decode(),
+        }
+    return {
+        "ok": True,
+        "path": path,
+        "encoding": "utf-8",
+        "is_binary": False,
+        "content": content,
+    }
+
+
+class WorkspaceFilePayload(BaseModel):
+    path: str
+    content: str = ""
+
+
+@app.post("/api/projects/{project_id}/workspace/file")
+async def api_save_workspace_file(
+    project_id: str,
+    payload: WorkspaceFilePayload,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    try:
+        ok, message = await workspace_api.write_file(project_id, payload.path, payload.content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, "path": payload.path}
+
+
+class WorkspaceMkdirPayload(BaseModel):
+    path: str
+
+
+@app.post("/api/projects/{project_id}/workspace/mkdir")
+async def api_mkdir_workspace_file(
+    project_id: str,
+    payload: WorkspaceMkdirPayload,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    try:
+        target = workspace_api._resolve_workspace_path(project_id, payload.path)
+        target.mkdir(parents=True, exist_ok=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(400, f"Failed to create directory: {exc}") from exc
+    return {"ok": True, "message": f"Created directory {payload.path}", "path": payload.path}
+
+
+@app.delete("/api/projects/{project_id}/workspace/file")
+async def api_delete_workspace_file(
+    project_id: str,
+    path: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    try:
+        target = workspace_api._resolve_workspace_path(project_id, path)
+        if not target.exists():
+            raise HTTPException(404, f"Path not found: {path}")
+        ws = workspace_path(project_id).resolve()
+        if target == ws:
+            raise HTTPException(400, "Cannot delete workspace root")
+        if target.is_dir():
+            import shutil
+            shutil.rmtree(target)
+            return {"ok": True, "message": f"Deleted directory {path}"}
+        target.unlink()
+        return {"ok": True, "message": f"Deleted file {path}"}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(400, f"Delete failed: {exc}") from exc
+
+
+@app.post("/api/projects/{project_id}/workspace/upload")
+async def api_upload_workspace_file(
+    project_id: str,
+    path: str = Form(...),
+    file: UploadFile = File(...),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    async def chunks():
+        while chunk := await file.read(65536):
+            yield chunk
+    try:
+        ok, message, written = await workspace_api.upload_file_stream(project_id, path, chunks())
+    except workspace_api.UploadTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, "path": path, "bytes": written}
+
+
 @app.get("/api/projects/{project_id}/logs/stream")
 async def api_logs_stream(project_id: str, request: Request, live: bool = False):
     project = await get_project(project_id)
