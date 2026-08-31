@@ -2652,6 +2652,19 @@ async def api_set_domain(project_id: str, body: DomainRequest):
     return {"project": _enrich(project), "message": message}
 
 
+@app.delete("/api/projects/{project_id}/domain")
+async def api_remove_domain(project_id: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    await update_project(project_id, {"domain": None})
+    await deployment.apply_proxy_config()
+    project = await get_project(project_id)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.domain_updated", project_id=project_id, message=f"Custom domain removed from {project.get('name', project_id)}.")
+    return {"project": _enrich(project), "message": "Domain removed"}
+
+
 @app.delete("/api/projects/{project_id}")
 async def api_delete(project_id: str):
     project = await get_project(project_id)
@@ -3042,8 +3055,8 @@ def _project_url(project: dict) -> str:
     if project.get("domain"):
         from syte.domain_utils import build_https_url
         return build_https_url(project["domain"])
-    ip = settings.resolved_public_ip
-    return f"http://{ip}:{project['port']}"
+    slug = (project.get("name") or project.get("id") or "app").strip("-").lower()
+    return f"https://{slug}.sycord.site"
 
 
 def _running(project: dict) -> bool:

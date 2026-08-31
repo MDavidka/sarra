@@ -6620,10 +6620,16 @@ function formatRelativeTime(dateInput) {
 function getProjectDomainsArray(project) {
   const list = [];
   const seen = new Set();
+  const isIpOrLocalhost = (d) => {
+    if (!d) return true;
+    const clean = String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+    return clean === 'localhost' || clean === '127.0.0.1' || clean === '0.0.0.0' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean);
+  };
+
   const add = (dom, isPrimary = false, valid = false, label = 'Custom Domain') => {
     if (!dom) return;
     const clean = String(dom).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    if (!clean || seen.has(clean)) return;
+    if (!clean || seen.has(clean) || isIpOrLocalhost(clean)) return;
     seen.add(clean);
     list.push({
       domain: clean,
@@ -6633,17 +6639,26 @@ function getProjectDomainsArray(project) {
     });
   };
 
-  const primary = project.domain || (project.port ? `localhost:${project.port}` : '');
-  if (primary) {
-    add(primary, true, Boolean(project.running && !project.error), 'Primary Domain');
+  // 1. Custom primary domain if valid and not an IP
+  if (project.domain && !isIpOrLocalhost(project.domain)) {
+    add(project.domain, true, true, 'Primary Domain');
   }
 
+  // 2. Additional connected domains
   if (Array.isArray(project.domains)) {
-    project.domains.forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
+    project.domains.forEach(d => add(d, false, true, 'Connected Domain'));
   } else if (typeof project.domains === 'string' && project.domains.trim()) {
-    project.domains.split(/[\s,]+/).forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
+    project.domains.split(/[\s,]+/).forEach(d => add(d, false, true, 'Connected Domain'));
   }
   if (project.custom_tls_domain) add(project.custom_tls_domain, false, true, 'TLS Domain');
+
+  // 3. Fallback platform domain if no custom domain configured (Ensures project ALWAYS gets a domain and NO IP is shown)
+  if (list.length === 0) {
+    const rawName = String(project.name || project.id || 'app').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '') || 'app';
+    const fallbackDomain = `${rawName}.sycord.site`;
+    add(fallbackDomain, true, true, 'Platform Domain');
+  }
+
   return list;
 }
 
@@ -6840,7 +6855,44 @@ function openDomainAddModal(project) {
   const modal = document.getElementById('svc-domain-add-modal');
   if (!modal) return;
   const input = document.getElementById('svc-new-domain-input');
+  const form = document.getElementById('svc-add-domain-form');
   if (input) input.value = '';
+
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const curProject = selectedCurrentProject || project;
+      if (!curProject) return toast('No active project selected');
+      let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (!val) return toast('Please enter a domain name');
+
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
+        return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
+      }
+
+      try {
+        const res = await api(`/projects/${encodeURIComponent(curProject.id)}/domain`, {
+          method: 'POST',
+          body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
+        });
+        if (res?.project) {
+          Object.assign(curProject, res.project);
+        } else {
+          curProject.domain = val;
+        }
+        if (input) input.value = '';
+        modal.close();
+        await loadProjects();
+        const refreshed = projects.find(p => p.id === curProject.id) || curProject;
+        renderServiceDomainsList(refreshed);
+        renderServiceDashboard(refreshed, false);
+        toast(`Connected domain ${val}`);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
+      }
+    };
+  }
+
   modal.showModal();
   refreshIcons();
 }
