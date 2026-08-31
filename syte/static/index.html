@@ -617,7 +617,7 @@
               <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="sources" role="tab"><i data-lucide="folder"></i><span>Sources</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span><span class="svc-nav-warn-badge hidden" id="svc-env-warn-badge">!</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="redirects" role="tab"><i data-lucide="shuffle"></i><span>Redirects</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
@@ -629,28 +629,6 @@
               <!-- 1. GENERAL / DEPLOYMENT TAB (Exact match to screenshot in white theme) -->
               <div class="svc-tab-panel active" id="svc-panel-general" data-svc-panel="general">
                 <div class="svc-exact-screen-stack">
-                  <!-- Environment Type Switcher: Production vs Preview -->
-                  <div class="svc-env-switcher-card">
-                    <div class="svc-env-segmented-bar" role="tablist" aria-label="Deployment Environment">
-                      <button type="button" class="svc-env-segment-btn active" id="svc-env-btn-production" data-deploy-env="production">
-                        <i data-lucide="globe"></i>
-                        <div class="svc-env-segment-info">
-                          <span class="svc-env-name">Production</span>
-                          <span class="svc-env-desc">Main Domain · 24/7 Live</span>
-                        </div>
-                        <span class="svc-env-status-badge is-prod">Production</span>
-                      </button>
-                      <button type="button" class="svc-env-segment-btn" id="svc-env-btn-preview" data-deploy-env="preview">
-                        <i data-lucide="sparkles"></i>
-                        <div class="svc-env-segment-info">
-                          <span class="svc-env-name">Preview</span>
-                          <span class="svc-env-desc">Preview Host · 24/7 Dev</span>
-                        </div>
-                        <span class="svc-env-status-badge is-preview">Preview</span>
-                      </button>
-                    </div>
-                  </div>
-
                   <!-- 1. Large Rounded Showcase Card (Globe placeholder / live preview) -->
                   <div class="svc-exact-showcase-card" id="svc-exact-showcase-card">
                     <iframe class="hidden" id="svc-deploy-preview-frame" title="Live project preview" sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"></iframe>
@@ -1005,107 +983,157 @@
                 </section>
               </div>
 
-              <!-- 3. DOMAINS TAB -->
+              <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
-                <!-- Domains Screen Layout -->
-                <section class="svc-domains-screen" aria-label="Project domains configuration">
-                  <!-- Header: Domains title + Learn More Link -->
-                  <div class="svc-domains-header">
-                    <div class="svc-domains-title-wrap">
-                      <h2 class="svc-domains-main-title">Domains</h2>
-                      <p class="svc-domains-sub">These domains are assigned to your project deployments.</p>
-                    </div>
-                    <a href="https://caddyserver.com/docs/" target="_blank" rel="noopener noreferrer" class="btn-domains-learn">
-                      <span>Learn more</span>
-                      <i data-lucide="external-link" class="icon-xs"></i>
-                    </a>
-                  </div>
-
-                  <!-- Add Domain Card -->
-                  <div class="svc-add-domain-card">
-                    <label for="svc-custom-domain-input" class="svc-add-domain-label">Add custom domain</label>
-                    <div class="svc-add-domain-input-row">
-                      <div class="svc-input-prefix-wrapper">
-                        <i data-lucide="globe" class="svc-input-globe-icon"></i>
-                        <input type="text" id="svc-custom-domain-input" class="svc-domain-text-input" placeholder="app.yourdomain.com" autocomplete="off" spellcheck="false">
+                <section class="svc-domains-screen" aria-label="Project domains">
+                  <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
+                  <div class="svc-domain-stats-grid">
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-total-num">1</strong>
+                          <span id="svc-domain-stat-total-label">Domain</span>
+                        </div>
                       </div>
-                      <button type="button" class="btn-add-domain-primary" id="svc-add-domain-btn">
-                        <i data-lucide="plus"></i>
-                        <span>Add</span>
-                      </button>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-green"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-active-num">0</strong>
+                          <span>Active</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-amber"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-pending-num">1</strong>
+                          <span>Pending</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
                     </div>
                   </div>
 
-                  <!-- Domains List Container (Rendered dynamically) -->
-                  <div class="svc-domains-cards-stack" id="svc-domain-cards-stack">
-                    <p class="hint">Loading configured domains…</p>
+                  <!-- Search & Filter Controls -->
+                  <div class="svc-domain-search-row">
+                    <div class="svc-search-input-wrap">
+                      <i data-lucide="search"></i>
+                      <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
+                    </div>
+                    <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
+                      <i data-lucide="sliders-horizontal"></i>
+                    </button>
+                  </div>
+
+                  <!-- Domain Cards List Container -->
+                  <div class="svc-domains-card-list" id="svc-domains-card-list">
+                    <!-- Populated dynamically by renderServiceDomainsList -->
+                  </div>
+
+                  <!-- Bottom "Connect your domain" Prompt Card (Matching Screenshot) -->
+                  <div class="svc-connect-domain-prompt-card">
+                    <div class="svc-prompt-plus-circle">
+                      <i data-lucide="plus"></i>
+                    </div>
+                    <h3 class="svc-prompt-title">Connect your domain</h3>
+                    <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
+                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal(selectedCurrentProject)">
+                      <i data-lucide="plus"></i><span>Add Domain</span>
+                    </button>
                   </div>
                 </section>
               </div>
 
-              <!-- 4. ENVIRONMENT VARIABLES TAB -->
+              <!-- 4. ENVIRONMENT VARIABLES TAB (Exact match to media_1788171283140.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <section class="svc-env-screen" aria-label="Project environment variables">
-                  <!-- Header: Title + Subtitle -->
+                <section class="svc-env-screen" aria-label="Environment variables">
+                  <!-- Header Section -->
                   <div class="svc-env-screen-header">
-                    <div class="svc-env-title-wrap">
-                      <h2 class="svc-env-main-title">Environment Variables</h2>
-                      <p class="svc-env-sub">Environment variables are available at build and runtime for your app.</p>
+                    <div class="svc-env-header-text">
+                      <span class="svc-section-tag">PROJECT</span>
+                      <h2 class="svc-env-title">Environment Variables</h2>
+                      <p class="svc-env-sub">Store API keys, tokens, and config securely.</p>
+                    </div>
+                    <div class="svc-env-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-env-learn-more-btn">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
                     </div>
                   </div>
 
-                  <!-- Add Variable Card -->
-                  <div class="svc-add-env-card">
-                    <div class="svc-add-env-grid">
-                      <div class="svc-env-input-col">
-                        <label for="svc-env-new-key" class="svc-env-field-label">Key</label>
-                        <input type="text" id="svc-env-new-key" class="svc-env-field-input" placeholder="e.g. DATABASE_URL" spellcheck="false" autocomplete="off">
-                      </div>
-                      <div class="svc-env-input-col">
-                        <label for="svc-env-new-val" class="svc-env-field-label">Value</label>
-                        <div class="svc-env-val-wrapper">
-                          <input type="password" id="svc-env-new-val" class="svc-env-field-input" placeholder="Secret value..." spellcheck="false" autocomplete="off">
-                          <button type="button" class="btn-toggle-secret-input" id="svc-env-toggle-new-val" title="Toggle visibility">
-                            <i data-lucide="eye"></i>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="svc-env-input-col svc-col-action">
-                        <label class="svc-env-field-label">&nbsp;</label>
-                        <button type="button" class="btn-add-env-primary" id="svc-env-add-btn">
-                          <i data-lucide="plus"></i>
-                          <span>Add</span>
-                        </button>
-                      </div>
+                  <!-- Alert banner when env is required/needed -->
+                  <div class="svc-env-needed-banner hidden" id="svc-env-needed-banner">
+                    <div class="svc-env-needed-icon">
+                      <i data-lucide="alert-triangle"></i>
+                    </div>
+                    <div class="svc-env-needed-text">
+                      <strong>Environment variables required</strong>
+                      <span>This deployment needs environment variables loaded before release. Add your keys or upload a .env file.</span>
                     </div>
                   </div>
 
-                  <!-- Search, Filter & Bulk Actions Bar -->
-                  <div class="svc-env-toolbar">
-                    <div class="svc-env-search-wrap">
-                      <i data-lucide="search"></i>
-                      <input type="search" id="svc-env-search-input" placeholder="Search variables..." autocomplete="off">
+                  <!-- Subtabs (Project | Shared) + Right Add Button -->
+                  <div class="svc-env-tab-row">
+                    <div class="svc-env-subtabs-nav" role="tablist">
+                      <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
+                      <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
                     </div>
-                    <div class="svc-env-filter-pills" id="svc-env-filter-pills">
-                      <button type="button" class="svc-env-pill active" data-filter="all">All</button>
-                      <button type="button" class="svc-env-pill" data-filter="production">Production</button>
-                      <button type="button" class="svc-env-pill" data-filter="preview">Preview</button>
+                    <button type="button" class="btn-env-add-icon" id="svc-env-add-btn" title="Add Environment Variable">
+                      <i data-lucide="plus"></i>
+                    </button>
+                  </div>
+
+                  <!-- Search & Filter Bar -->
+                  <div class="svc-env-search-section">
+                    <!-- Search Input + Filter Toggle -->
+                    <div class="svc-env-search-row">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
+                      </div>
+                      <button type="button" class="btn-domain-filter" id="svc-env-filter-toggle-btn" title="Toggle filters">
+                        <i data-lucide="sliders-horizontal"></i>
+                      </button>
                     </div>
-                    <div class="svc-env-bulk-actions">
-                      <button type="button" class="btn-env-tool" id="svc-env-reveal-all-btn" title="Toggle reveal all values">
-                        <i data-lucide="eye"></i>
-                        <span>Reveal all</span>
-                      </button>
-                      <button type="button" class="btn-env-tool" id="svc-env-import-export-btn" title="Import / Export .env">
-                        <i data-lucide="file-code"></i>
-                        <span>.env File</span>
-                      </button>
+
+                    <!-- 3 Pill Dropdowns Row -->
+                    <div class="svc-env-filter-pills-row">
+                      <div class="svc-env-pill-select-wrap">
+                        <select id="svc-env-filter-type">
+                          <option value="all">All Types</option>
+                          <option value="plain">Plaintext</option>
+                          <option value="secret">Secret</option>
+                        </select>
+                      </div>
+                      <div class="svc-env-pill-select-wrap">
+                        <select id="svc-env-filter-env">
+                          <option value="all">All Environments</option>
+                          <option value="production">Production</option>
+                          <option value="preview">Preview</option>
+                          <option value="development">Development</option>
+                        </select>
+                      </div>
+                      <div class="svc-env-pill-select-wrap">
+                        <select id="svc-env-filter-editor">
+                          <option value="all">All Editors</option>
+                          <option value="operator">Operator</option>
+                          <option value="git">Git</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
                   <!-- Environment Variable Cards Stack -->
                   <div class="svc-env-cards-stack" id="svc-env-cards">
-                    <!-- Populated dynamically -->
+                    <!-- Populated dynamically by renderServiceEnvCardsList -->
                   </div>
                 </section>
               </div>

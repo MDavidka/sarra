@@ -6630,6 +6630,7 @@ function selectProjectIcon(icon) {
 function renderServiceEnvCardsList(project) {
   const container = document.getElementById('svc-env-cards');
   if (!container) return;
+  updateEnvironmentRequirementBadge(project);
 
   const searchInput = document.getElementById('svc-env-search-input');
   const typeSelect = document.getElementById('svc-env-filter-type');
@@ -8508,8 +8509,13 @@ async function renderBuildWorkspace(project) {
       const branch = b.branch || project.branch || 'main';
       const commitSha = (b.commit_sha || '8a304e6').slice(0, 7);
 
+      const isProduction = b.target === 'production' || b.environment === 'production' || (!b.target && (branch === 'main' || branch === 'master' || branch === 'prod'));
+      const envBadgeClass = isProduction ? 'is-prod' : 'is-preview';
+      const envBadgeLabel = isProduction ? 'Production' : 'Preview';
+      const envBadgeIcon = isProduction ? 'globe' : 'sparkles';
+
       return `
-        <!-- Exact match to media_1788173806631.jpg -->
+        <!-- Exact match to media_1788173806631.jpg with Production/Preview tag -->
         <article class="svc-build-list-item" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to inspect build logs">
           <div class="svc-build-item-left">
             <div class="svc-build-circle-icon ${iconClass}">
@@ -8532,6 +8538,10 @@ async function renderBuildWorkspace(project) {
             </div>
           </div>
           <div class="svc-build-item-right">
+            <span class="svc-build-env-tag ${envBadgeClass}" title="${envBadgeLabel} Deployment">
+              <i data-lucide="${envBadgeIcon}"></i>
+              <span>${envBadgeLabel}</span>
+            </span>
             <div class="svc-build-status-pill-v2 ${statusClass}">
               <span class="svc-build-bullet-v2"></span>
               <span>${statusLabel}</span>
@@ -11520,7 +11530,33 @@ function renderServiceEmbed(p) {
   renderPreviewSection(p);
 }
 
-let currentActiveDeployEnv = 'production';
+function updateEnvironmentRequirementBadge(p) {
+  if (!p) return;
+  const envVarsObj = (() => {
+    try {
+      if (typeof p.env_vars === 'object' && p.env_vars) return p.env_vars;
+      return JSON.parse(p.env_vars || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const hasEnvVars = Object.keys(envVarsObj).length > 0;
+  const needsEnv = Boolean(p.needs_env || p.missing_env || (!hasEnvVars && p.status !== 'ready'));
+
+  const envBadge = document.getElementById('svc-env-warn-badge');
+  if (envBadge) {
+    envBadge.classList.toggle('hidden', !needsEnv);
+    envBadge.title = 'Environment variables required before deployment';
+  }
+  const sidebarEnvBadge = document.getElementById('svc-sidebar-env-warn-badge');
+  if (sidebarEnvBadge) {
+    sidebarEnvBadge.classList.toggle('hidden', !needsEnv);
+  }
+  const envBanner = document.getElementById('svc-env-needed-banner');
+  if (envBanner) {
+    envBanner.classList.toggle('hidden', !needsEnv);
+  }
+}
 
 function renderDeploymentSitePreview(p) {
   const frame = document.getElementById('svc-deploy-preview-frame');
@@ -11531,52 +11567,22 @@ function renderDeploymentSitePreview(p) {
   const statusSummary = document.getElementById('svc-deploy-status-summary');
   const statusDot = document.getElementById('svc-status-dot');
 
-  // Wire Environment Switcher Buttons
-  const prodBtn = document.getElementById('svc-env-btn-production');
-  const prevBtn = document.getElementById('svc-env-btn-preview');
-  if (prodBtn && !prodBtn.dataset.wired) {
-    prodBtn.dataset.wired = 'true';
-    prodBtn.onclick = () => {
-      currentActiveDeployEnv = 'production';
-      prodBtn.classList.add('active');
-      prevBtn?.classList.remove('active');
-      renderDeploymentSitePreview(p);
-    };
-  }
-  if (prevBtn && !prevBtn.dataset.wired) {
-    prevBtn.dataset.wired = 'true';
-    prevBtn.onclick = () => {
-      currentActiveDeployEnv = 'preview';
-      prevBtn.classList.add('active');
-      prodBtn?.classList.remove('active');
-      renderDeploymentSitePreview(p);
-    };
-  }
-
-  const isProd = currentActiveDeployEnv === 'production';
-  const prodUrl = p.url || (p.domain ? (p.domain.startsWith('http') ? p.domain : `https://${p.domain}`) : '');
-  const previewUrl = p.preview_domain_url || p.preview_fetch_url || p.preview_url || (p.preview_domain ? `https://${p.preview_domain}` : '');
-  
-  const targetUrl = isProd ? prodUrl : previewUrl;
-  const isRunning = isProd ? Boolean(p.running && prodUrl) : Boolean(p.preview_running || previewUrl);
+  const url = p.url || (p.domain ? (p.domain.startsWith('http') ? p.domain : `https://${p.domain}`) : '');
+  const live = Boolean(url && p.running);
 
   if (statusSummary) {
-    if (isProd) {
-      statusSummary.textContent = p.running ? (p.domain || 'Ready · 24/7 Live') : (p.status === 'deploying' ? 'Deploying to Production…' : 'Production offline');
-    } else {
-      statusSummary.textContent = p.preview_running ? (p.preview_domain || 'Preview Active · 24/7 Host') : (previewUrl ? 'Preview Ready · 24/7 Host' : 'Preview offline');
-    }
+    statusSummary.textContent = p.running ? (p.domain || 'Ready · 24/7 Live') : (p.status === 'deploying' ? 'Deploying…' : 'Not deployed');
   }
 
   if (statusDot) {
     statusDot.className = 'svc-status-dot';
-    statusDot.classList.toggle('is-healthy', Boolean(isRunning));
+    statusDot.classList.toggle('is-healthy', Boolean(p.running));
     statusDot.classList.toggle('is-deploying', p.status === 'deploying');
   }
 
   if (visitBtn) {
-    if (targetUrl) {
-      visitBtn.href = targetUrl;
+    if (live && url) {
+      visitBtn.href = url;
       visitBtn.removeAttribute('aria-disabled');
       visitBtn.classList.remove('disabled');
     } else {
@@ -11585,17 +11591,17 @@ function renderDeploymentSitePreview(p) {
     }
   }
 
-  if (previewLabel) previewLabel.textContent = isRunning ? (targetUrl || 'Live site preview') : 'Preparing environment';
+  if (previewLabel) previewLabel.textContent = live ? (p.domain || connLabel(p) || 'Live site preview') : 'Preparing live site';
   if (previewOpen) {
-    previewOpen.href = isRunning ? targetUrl : '#';
-    previewOpen.toggleAttribute('aria-disabled', !isRunning);
+    previewOpen.href = live ? url : '#';
+    previewOpen.toggleAttribute('aria-disabled', !live);
   }
 
   if (!frame || !placeholder) return;
-  if (targetUrl && isRunning) {
-    if (frame.dataset.previewUrl !== targetUrl) {
-      frame.src = targetUrl;
-      frame.dataset.previewUrl = targetUrl;
+  if (live && url) {
+    if (frame.dataset.previewUrl !== url) {
+      frame.src = url;
+      frame.dataset.previewUrl = url;
     }
     frame.classList.remove('hidden');
     placeholder.classList.add('hidden');
@@ -11605,8 +11611,10 @@ function renderDeploymentSitePreview(p) {
     delete frame.dataset.previewUrl;
     const title = placeholder.querySelector('strong');
     const detail = placeholder.querySelector('span');
-    if (title) title.textContent = isProd ? (p.status === 'deploying' ? 'Deploying to Production' : 'Production Not Deployed') : 'Preview Offline';
-    if (detail) detail.textContent = isProd ? 'Deploy your project to make it accessible on the main domain.' : 'Start 24/7 preview dev server on the deployment server.';
+    if (title) title.textContent = p.status === 'deploying' ? 'Deployment in progress' : 'No deployment yet';
+    if (detail) detail.textContent = p.status === 'deploying'
+      ? 'Your site will appear here as soon as the release starts.'
+      : 'Deploy your site to see a live\npreview';
     placeholder.classList.remove('hidden');
   }
 }
@@ -11763,6 +11771,7 @@ function renderServiceDashboard(p, resetLogs) {
   if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
   renderDeploymentSitePreview(p);
   renderServiceManagementWorkspaces(p);
+  updateEnvironmentRequirementBadge(p);
 
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
