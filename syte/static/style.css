@@ -7923,37 +7923,201 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 /* ========================================================
-   Exact Builds Screen (Matching media_1788168374780.jpg)
+   Environment Type Switcher: Production vs Preview
+   ======================================================== */
+.svc-env-switcher-card {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.svc-env-segmented-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #f4f4f5;
+  padding: 6px;
+  border-radius: 16px;
+  border: 1px solid #e4e4e7;
+}
+
+.svc-env-segment-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.svc-env-segment-btn:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.svc-env-segment-btn.active {
+  background: #ffffff;
+  border-color: #e4e4e7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.svc-env-segment-btn svg {
+  width: 22px;
+  height: 22px;
+  color: #71717a;
+  flex-shrink: 0;
+}
+
+.svc-env-segment-btn.active svg {
+  color: #09090b;
+}
+
+.svc-env-segment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.svc-env-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.svc-env-desc {
+  font-size: 12px;
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-env-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.svc-env-status-badge.is-prod {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.svc-env-status-badge.is-preview {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+/* ========================================================
+   Exact Builds Screen (Matching media_1788168374780.jpg & media_1788174475752.png)
    ======================================================== */
 .svc-build-track-screen {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   max-width: 900px;
   margin: 0 auto;
-  padding: 4px 0 40px;
+  padding: 8px 0 40px;
 }
 
 .svc-build-track-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .svc-build-main-title {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 800;
   color: #09090b;
   letter-spacing: -0.02em;
   margin: 0;
+  line-height: 1.2;
 }
 
 .svc-build-track-sub {
-  font-size: 13.5px;
+  font-size: 14px;
   color: #71717a;
-  margin: 3px 0 0 0;
+  margin: 0;
   font-weight: 500;
+  line-height: 1.45;
+}
+
+.svc-build-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.svc-build-action-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-trigger-build {
+  background: #09090b;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  height: 38px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.btn-trigger-build:hover {
+  background: #27272a;
+  transform: translateY(-1px);
+}
+
+.btn-trigger-build svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.btn-refresh-builds {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #18181b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.btn-refresh-builds:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+
+.btn-refresh-builds svg {
+  width: 15px;
+  height: 15px;
 }
 
 .svc-build-filter-wrap {
@@ -8030,69 +8194,6 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   font-weight: 600;
 }
 
-.svc-build-action-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: -2px;
-}
-
-.btn-trigger-build {
-  background: #09090b;
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  height: 38px;
-  padding: 0 18px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: all 0.15s ease;
-  box-sizing: border-box;
-}
-
-.btn-trigger-build:hover {
-  background: #27272a;
-  transform: translateY(-1px);
-}
-
-.btn-trigger-build svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
-}
-
-.btn-refresh-builds {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  color: #18181b;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  box-sizing: border-box;
-}
-
-.btn-refresh-builds:hover {
-  background: #f4f4f5;
-  color: #09090b;
-}
-
-.btn-refresh-builds svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* ========================================================
-   Redesigned Build Screen (Exact match to media_1788173806631.jpg)
-   ======================================================== */
 .svc-build-cards-list {
   background: #ffffff;
   border: 1px solid #ececee;
@@ -8130,7 +8231,6 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   min-width: 0;
 }
 
-/* Circular status icons */
 .svc-build-circle-icon {
   width: 40px;
   height: 40px;
@@ -8229,7 +8329,6 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex-shrink: 0;
 }
 
-/* Status Pill */
 .svc-build-status-pill-v2 {
   display: inline-flex;
   align-items: center;
@@ -8303,45 +8402,53 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 /* Compact on mobile or smaller screens (<= 640px) */
 @media (max-width: 640px) {
+  .svc-env-segmented-bar {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 5px;
+  }
+
   .svc-build-track-screen {
-    gap: 12px;
-    padding: 0 0 24px;
+    gap: 16px;
+    padding: 4px 0 28px;
   }
 
   .svc-build-track-header {
-    gap: 10px;
+    gap: 4px;
   }
 
   .svc-build-main-title {
-    font-size: 20px;
+    font-size: 22px;
   }
 
   .svc-build-track-sub {
-    font-size: 12px;
-  }
-
-  .btn-builds-filter {
-    padding: 0 10px;
-    height: 34px;
-    font-size: 12px;
-    border-radius: 8px;
+    font-size: 13px;
   }
 
   .svc-build-action-row {
-    gap: 8px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    gap: 10px;
+  }
+
+  .btn-builds-filter {
+    padding: 0 12px;
+    height: 36px;
+    font-size: 12.5px;
+    border-radius: 9px;
   }
 
   .btn-trigger-build {
-    height: 34px;
-    padding: 0 14px;
-    font-size: 12px;
-    border-radius: 8px;
+    height: 36px;
+    padding: 0 16px;
+    font-size: 12.5px;
+    border-radius: 9px;
   }
 
   .btn-refresh-builds {
-    width: 34px;
-    height: 34px;
-    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
   }
 
   .svc-build-cards-list {
@@ -10528,32 +10635,119 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-deploy-time { font-size: 12px; color: #71717a; }
 
 /* Firewall Screen */
-.svc-firewall-screen { display: grid; gap: 14px; }
-.svc-firewall-header-group { display: grid; gap: 10px; }
+.svc-firewall-screen { display: grid; gap: 16px; max-width: 960px; margin: 0 auto; }
+.svc-firewall-header-group { display: grid; gap: 12px; }
 .svc-icon-btn-border {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border: 1px solid #e4e4e7;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #ffffff;
-  color: #52525b;
+  color: #18181b;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
+.svc-icon-btn-border:hover { background: #f4f4f5; }
 .svc-icon-btn-border svg { width: 16px; height: 16px; }
-.svc-firewall-filter-bar { display: flex; gap: 8px; }
+.svc-firewall-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.svc-pill-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.svc-pill-select-wrap .select-leading-icon {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+  pointer-events: none;
+}
+.svc-pill-select-wrap select {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 9px;
+  padding: 6px 28px 6px 30px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #18181b;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.svc-pill-select-wrap select:focus {
+  border-color: #09090b;
+}
+
+/* Firewall Action Toolbar & Buttons */
+.svc-firewall-action-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.btn-firewall-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  color: #18181b;
+  user-select: none;
+}
+
+.btn-firewall-action:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+}
+
+.btn-firewall-action.btn-fw-primary {
+  background: #09090b;
+  color: #ffffff;
+  border-color: #09090b;
+}
+
+.btn-firewall-action.btn-fw-primary:hover {
+  background: #27272a;
+}
+
+.btn-firewall-action.btn-fw-secondary {
+  background: #f4f4f5;
+  color: #18181b;
+  border-color: #e4e4e7;
+}
+
+.btn-firewall-action.btn-fw-secondary:hover {
+  background: #e4e4e7;
+}
+
+.btn-firewall-action svg {
+  width: 14px;
+  height: 14px;
+}
 
 .svc-firewall-hero-card {
-  background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 100%);
-  border: 1px solid #bfdbfe;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  border: 1px solid #bbf7d0;
   border-radius: 16px;
   padding: 22px 18px;
   text-align: center;
   display: grid;
   justify-items: center;
   gap: 6px;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.04);
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.04);
 }
 .svc-firewall-shield-badge {
   width: 48px;
@@ -10561,17 +10755,17 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #dbeafe;
-  color: #2563eb;
+  background: #dcfce7;
+  color: #16a34a;
   margin-bottom: 6px;
 }
 .svc-firewall-shield-badge svg { width: 28px; height: 28px; }
-.svc-firewall-hero-title { margin: 0; font-size: 18px; font-weight: 700; color: #09090b; }
-.svc-firewall-hero-subtitle { margin: 0 0 14px; font-size: 12px; color: #71717a; }
+.svc-firewall-hero-title { margin: 0; font-size: 18px; font-weight: 800; color: #09090b; }
+.svc-firewall-hero-subtitle { margin: 0 0 14px; font-size: 12.5px; color: #71717a; }
 .svc-firewall-metrics-list {
   width: 100%;
   max-width: 420px;
-  border-top: 1px solid #e0eeff;
+  border-top: 1px solid #e2f5e9;
   padding-top: 12px;
   display: grid;
   gap: 10px;
@@ -15061,25 +15255,32 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #52525b;
 }
 
-/* 2-Pane Workspace Layout */
+/* Sources Filebase Workspace Layout */
 .svc-sources-workspace-layout {
-  display: grid;
-  grid-template-columns: 290px 1fr;
+  display: flex;
   border: 1px solid #e4e4e7;
   border-radius: 16px;
   overflow: hidden;
   background: #ffffff;
-  min-height: 620px;
+  min-height: 540px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  position: relative;
 }
 
-/* Left Pane: Tree */
+/* Left Pane: Tree & Filebase Explorer */
 .svc-sources-tree-pane {
-  border-right: 1px solid #e4e4e7;
+  flex: 1;
+  width: 100%;
   background: #ffffff;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.svc-sources-workspace-layout:has(.svc-sources-viewer-pane:not(.hidden)) .svc-sources-tree-pane {
+  flex: 0 0 280px;
+  border-right: 1px solid #e4e4e7;
 }
 
 .svc-sources-search-box {
@@ -15214,8 +15415,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   height: 14px;
 }
 
-/* Right Pane: Viewer / Editor */
+/* Right Pane: Viewer / Editor (Visible ONLY after clicking a file) */
 .svc-sources-viewer-pane {
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -15223,51 +15425,8 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   position: relative;
 }
 
-/* Empty state */
-.svc-sources-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 520px;
-  padding: 40px 20px;
-  text-align: center;
-  box-sizing: border-box;
-}
-
-.svc-sources-empty-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: #f4f4f5;
-  display: grid;
-  place-items: center;
-  color: #71717a;
-  margin-bottom: 16px;
-}
-
-.svc-sources-empty-icon svg {
-  width: 30px;
-  height: 30px;
-  stroke-width: 1.6;
-}
-
-.svc-sources-empty-title {
-  font-size: 19px;
-  font-weight: 800;
-  color: #09090b;
-  margin: 0 0 6px 0;
-  letter-spacing: -0.01em;
-}
-
-.svc-sources-empty-sub {
-  font-size: 13.5px;
-  color: #71717a;
-  max-width: 330px;
-  margin: 0;
-  line-height: 1.5;
-  font-weight: 500;
+.svc-sources-viewer-pane.hidden {
+  display: none !important;
 }
 
 /* Active File Viewer */
