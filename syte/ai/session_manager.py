@@ -30,8 +30,10 @@ class ProjectAISession:
         self.event_buffer: List[Dict[str, Any]] = []
         self.subscribers: List[asyncio.Queue] = []
         self.active_plan: Optional[Dict[str, Any]] = None
+        self.pending_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
+        self.plan_decision_queue: asyncio.Queue = asyncio.Queue()
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
@@ -109,14 +111,67 @@ class ProjectAISession:
         except Exception:
             return False
 
+    async def wait_for_plan_decision(self, plan_data: Dict[str, Any], timeout: float = 10.0, require_approval: bool = False) -> Dict[str, Any]:
+        """Pause agent turn until user accepts, rejects, or auto-start timer finishes."""
+        self.pending_plan = plan_data
+
+        while not self.plan_decision_queue.empty():
+            try:
+                self.plan_decision_queue.get_nowait()
+            except Exception:
+                break
+
+        self.add_event({
+            "event": "plan_approval_required",
+            "plan": plan_data,
+            "requires_approval": require_approval,
+            "countdown_seconds": None if require_approval else int(timeout),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        if require_approval:
+            # Wait up to 10 minutes for manual user approval
+            try:
+                decision = await asyncio.wait_for(self.plan_decision_queue.get(), timeout=600.0)
+                return decision
+            except asyncio.TimeoutError:
+                return {"action": "timeout", "message": "Plan approval timed out."}
+            finally:
+                self.pending_plan = None
+        else:
+            # Auto-start countdown (e.g. 10s)
+            try:
+                decision = await asyncio.wait_for(self.plan_decision_queue.get(), timeout=timeout)
+                return decision
+            except asyncio.TimeoutError:
+                # 10s countdown completed without user interruption -> auto-start!
+                return {"action": "auto_start", "message": "Countdown completed. Auto-starting plan execution."}
+            finally:
+                self.pending_plan = None
+
+    def resolve_plan_decision(self, decision_payload: Dict[str, Any]) -> bool:
+        """Submit user decision (accept / pause / revise) on the active plan."""
+        self.pending_plan = None
+        try:
+            self.plan_decision_queue.put_nowait(decision_payload)
+            return True
+        except Exception:
+            return False
+
     def clear(self) -> None:
         """Reset the session buffers, plan, and pending questions."""
         self.event_buffer.clear()
         self.active_plan = None
+        self.pending_plan = None
         self.pending_question = None
         while not self.answer_queue.empty():
             try:
                 self.answer_queue.get_nowait()
+            except Exception:
+                break
+        while not self.plan_decision_queue.empty():
+            try:
+                self.plan_decision_queue.get_nowait()
             except Exception:
                 break
 
@@ -127,6 +182,7 @@ class ProjectAISession:
             "is_running": self.is_running,
             "current_turn": self.current_turn,
             "active_plan": self.active_plan,
+            "pending_plan": self.pending_plan,
             "pending_question": self.pending_question,
             "events_in_buffer": len(self.event_buffer),
             "subscribers_count": len(self.subscribers),
@@ -276,6 +332,17 @@ class AIAgentSessionManager:
         # General question response
         resolved = session.resolve_user_answer({"answer": answer})
         return {"ok": True, "resumed_agent": resolved}
+
+    async def handle_user_plan_decision(self, project_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle user plan decision (accept, start now, pause, revise)."""
+        session = self.get_or_create_session(project_id)
+        resolved = session.resolve_plan_decision(payload)
+        session.add_event({
+            "event": "plan_decision_received",
+            "decision": payload,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"ok": True, "resolved": resolved, "decision": payload}
 
 
 # Global accessor

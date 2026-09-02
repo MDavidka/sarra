@@ -44,6 +44,9 @@ class AISettingsUpdateRequest(BaseModel):
     system_prompt: Optional[str] = None
     tools_enabled: Optional[str] = None
     custom_models: Optional[str] = None
+    execution_speed: Optional[str] = None
+    intelligence_level: Optional[str] = None
+    plan_approval_mode: Optional[str] = None
 
 
 class AITestConnectionRequest(BaseModel):
@@ -262,6 +265,22 @@ async def submit_project_ai_answer(
             raise HTTPException(404, "Project not found")
 
     res = await session_manager.handle_user_answer(project_id, body)
+    return res
+
+
+@router.post("/api/projects/{project_id}/ai/plan/decision")
+async def submit_project_ai_plan_decision(
+    project_id: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Submit user decision on active plan (accept, start now, pause, revise)."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+
+    res = await session_manager.handle_user_plan_decision(project_id, body)
     return res
 
 

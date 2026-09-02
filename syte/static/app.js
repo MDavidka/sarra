@@ -9399,6 +9399,138 @@ function createLiveAssistantMessageCard(messagesList) {
   return card;
 }
 
+let activePlanCountdownTimer = null;
+
+function renderPlanApprovalCard(plan, project, countdownSeconds, requiresApproval) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList || !plan) return;
+
+  const existing = document.getElementById('svc-ai-active-plan-card');
+  if (existing) existing.remove();
+
+  if (activePlanCountdownTimer) {
+    clearInterval(activePlanCountdownTimer);
+    activePlanCountdownTimer = null;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'svc-ai-plan-approval-card';
+  card.id = 'svc-ai-active-plan-card';
+
+  const steps = plan.steps || [];
+  const initialSeconds = typeof countdownSeconds === 'number' ? countdownSeconds : 10;
+  let remainingSeconds = initialSeconds;
+
+  card.innerHTML = `
+    <div class="svc-ai-plan-card-header">
+      <div class="svc-ai-plan-title-wrap">
+        <div class="svc-ai-plan-icon"><i data-lucide="list-checks"></i></div>
+        <div>
+          <h4>${escapeHtml(plan.title || 'Implementation Plan')}</h4>
+          <span style="font-size:11.5px; color:#71717a;">Saved as <code>plan.md</code> in project root</span>
+        </div>
+      </div>
+      <span class="svc-ai-plan-badge">${steps.length} Steps</span>
+    </div>
+
+    ${plan.rationale ? `<div class="svc-ai-plan-rationale">${escapeHtml(plan.rationale)}</div>` : ''}
+
+    <div class="svc-ai-plan-steps-list" id="svc-ai-plan-steps-container">
+      ${steps.map((st, idx) => `
+        <div class="svc-ai-plan-step-item" id="svc-plan-step-${escapeHtml(st.id || idx + 1)}">
+          <span class="svc-ai-step-check ${st.status || 'pending'}">
+            ${st.status === 'completed' ? '<i data-lucide="check" style="width:12px;height:12px;"></i>' : (st.status === 'in_progress' ? '<i data-lucide="loader" class="spinning" style="width:12px;height:12px;"></i>' : '')}
+          </span>
+          <div>
+            <strong>Step ${escapeHtml(st.id || idx + 1)}:</strong> ${escapeHtml(st.title || '')}
+            ${st.description ? `<span style="font-size:11.5px; color:#71717a; margin-left:4px;">${escapeHtml(st.description)}</span>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${!requiresApproval ? `
+      <div class="svc-ai-plan-countdown-bar-wrap">
+        <div class="svc-ai-plan-countdown-bar" id="svc-ai-plan-countdown-fill"></div>
+      </div>
+    ` : ''}
+
+    <div class="svc-ai-plan-actions-row">
+      <div class="svc-ai-plan-countdown-text" id="svc-ai-plan-timer-label">
+        ${!requiresApproval ? `⏱️ Auto-starting in ${remainingSeconds}s…` : '✋ Awaiting your review & approval to start'}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-plan-accept-btn">
+          <i data-lucide="play"></i><span>Accept &amp; Start Now</span>
+        </button>
+        <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-plan-pause-btn">
+          <i data-lucide="pause"></i><span>Pause / Revise</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  messagesList.appendChild(card);
+  refreshIcons();
+  smartScrollToBottom(messagesList);
+
+  const acceptBtn = card.querySelector('#svc-ai-plan-accept-btn');
+  const pauseBtn = card.querySelector('#svc-ai-plan-pause-btn');
+  const timerLabel = card.querySelector('#svc-ai-plan-timer-label');
+  const countdownFill = card.querySelector('#svc-ai-plan-countdown-fill');
+
+  const stopCountdown = () => {
+    if (activePlanCountdownTimer) {
+      clearInterval(activePlanCountdownTimer);
+      activePlanCountdownTimer = null;
+    }
+  };
+
+  const handleDecision = async (action, notes = '') => {
+    stopCountdown();
+    if (acceptBtn) acceptBtn.disabled = true;
+    if (pauseBtn) pauseBtn.disabled = true;
+
+    try {
+      await api(`/projects/${encodeURIComponent(project.id)}/ai/plan/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ action, notes }),
+      });
+      if (action === 'accept' || action === 'auto_start') {
+        if (timerLabel) timerLabel.innerHTML = '⚡ Plan accepted — executing steps…';
+        if (acceptBtn) acceptBtn.innerHTML = '<i data-lucide="check"></i><span>Started</span>';
+      } else if (action === 'pause') {
+        if (timerLabel) timerLabel.innerHTML = '⏸️ Plan paused. Type in chat to adjust requirements.';
+        const input = document.getElementById('svc-ai-input');
+        if (input) input.focus();
+      }
+      refreshIcons();
+    } catch (err) {
+      toast(`Error submitting plan decision: ${err.message}`);
+    }
+  };
+
+  if (acceptBtn) acceptBtn.onclick = () => handleDecision('accept');
+  if (pauseBtn) pauseBtn.onclick = () => handleDecision('pause');
+
+  if (!requiresApproval && countdownSeconds) {
+    activePlanCountdownTimer = setInterval(() => {
+      remainingSeconds -= 1;
+      if (remainingSeconds <= 0) {
+        stopCountdown();
+        if (countdownFill) countdownFill.style.width = '0%';
+        void handleDecision('auto_start');
+      } else {
+        if (timerLabel) timerLabel.textContent = `⏱️ Auto-starting in ${remainingSeconds}s…`;
+        if (countdownFill) {
+          const pct = Math.max(0, (remainingSeconds / initialSeconds) * 100);
+          countdownFill.style.width = `${pct}%`;
+        }
+      }
+    }, 1000);
+  }
+}
+
 function processAIServerEvent(data, project, messagesList, state) {
   const eventType = data.event;
 
@@ -9550,12 +9682,27 @@ function processAIServerEvent(data, project, messagesList, state) {
     } else if (toolName === 'syte_create_plan') {
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
-        <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+        <span>Generating plan.md: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong>…</span>
       `;
     } else if (toolName === 'syte_update_plan_step') {
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
         <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
+      `;
+    } else if (toolName === 'syte_analyze_project_structure') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="cpu"></i></span>
+        <span>Running machine project scanner &amp; AST validation…</span>
+      `;
+    } else if (toolName === 'syte_search_web') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="globe"></i></span>
+        <span>Searching online registries &amp; docs for <strong>${escapeHtml(args.query || '')}</strong>…</span>
+      `;
+    } else if (toolName === 'syte_fetch_docs') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Fetching documentation from <strong>${escapeHtml(args.url || '')}</strong>…</span>
       `;
     } else {
       actEl.innerHTML = `
@@ -9567,6 +9714,19 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(actEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'plan_approval_required') {
+    clearLiveMarkers();
+    renderPlanApprovalCard(data.plan, project, data.countdown_seconds, data.requires_approval);
+  } else if (eventType === 'plan_decision_applied') {
+    const timerLabel = document.getElementById('svc-ai-plan-timer-label');
+    const acceptBtn = document.getElementById('svc-ai-plan-accept-btn');
+    if (data.decision?.action === 'accept' || data.decision?.action === 'auto_start') {
+      if (timerLabel) timerLabel.innerHTML = '⚡ Plan accepted — executing steps…';
+      if (acceptBtn) acceptBtn.innerHTML = '<i data-lucide="check"></i><span>Started</span>';
+    } else if (data.decision?.action === 'pause') {
+      if (timerLabel) timerLabel.innerHTML = '⏸️ Plan paused by user.';
+    }
+    refreshIcons();
   } else if (eventType === 'tool_call_result') {
     clearLiveMarkers();
     const res = data.result || {};
@@ -9583,25 +9743,48 @@ function processAIServerEvent(data, project, messagesList, state) {
       refreshIcons();
     }
     if (res.plan) {
-      const planCardEl = document.getElementById('active-plan-card');
-      if (planCardEl) {
-        planCardEl.outerHTML = getPlanCardHtml(res.plan);
-      } else {
-        const planDiv = document.createElement('div');
-        planDiv.innerHTML = getPlanCardHtml(res.plan);
-        if (planDiv.firstElementChild) messagesList.appendChild(planDiv.firstElementChild);
-      }
-      refreshIcons();
+      renderPlanApprovalCard(res.plan, project, res.auto_start_countdown || 10, res.requires_approval);
     } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
-      api(`/projects/${encodeURIComponent(project.id)}/ai/session`).then(sRes => {
-        if (sRes && sRes.session && sRes.session.active_plan) {
-          const planCardEl = document.getElementById('active-plan-card');
-          if (planCardEl) {
-            planCardEl.outerHTML = getPlanCardHtml(sRes.session.active_plan);
-            refreshIcons();
+      const stepEl = document.getElementById(`svc-plan-step-${res.step_id}`);
+      if (stepEl) {
+        const checkEl = stepEl.querySelector('.svc-ai-step-check');
+        if (checkEl) {
+          checkEl.className = `svc-ai-step-check ${res.status}`;
+          if (res.status === 'completed') {
+            checkEl.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;"></i>';
+          } else if (res.status === 'in_progress') {
+            checkEl.innerHTML = '<i data-lucide="loader" class="spinning" style="width:12px;height:12px;"></i>';
           }
+          refreshIcons();
         }
-      }).catch(() => {});
+      }
+    } else if (data.tool_name === 'syte_analyze_project_structure') {
+      const mDiv = document.createElement('div');
+      mDiv.className = 'svc-ai-activity-row';
+      mDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="cpu"></i></span>
+        <span>Machine analysis: <strong>${escapeHtml(res.project_type || 'Project')}</strong> · Frameworks: <em>${escapeHtml((res.frameworks || []).join(', ') || 'Standard')}</em> · Syntax: <strong>${res.syntax_health?.valid ? '✓ Valid' : '⚠️ Errors'}</strong></span>
+      `;
+      messagesList.appendChild(mDiv);
+      refreshIcons();
+    } else if (data.tool_name === 'syte_search_web') {
+      const sDiv = document.createElement('div');
+      sDiv.className = 'svc-ai-activity-row';
+      sDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="globe"></i></span>
+        <span>Online search for '<strong>${escapeHtml(res.query || '')}</strong>' found ${res.results_count || 0} reference(s)</span>
+      `;
+      messagesList.appendChild(sDiv);
+      refreshIcons();
+    } else if (data.tool_name === 'syte_fetch_docs') {
+      const dDiv = document.createElement('div');
+      dDiv.className = 'svc-ai-activity-row';
+      dDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Fetched docs: <strong>${escapeHtml(res.title || res.url || '')}</strong> (${res.length_chars || 0} chars)</span>
+      `;
+      messagesList.appendChild(dDiv);
+      refreshIcons();
     } else if (res.skill_name) {
       const skillDiv = document.createElement('div');
       skillDiv.innerHTML = getSkillBadgeHtml(res.skill_name);
@@ -9983,8 +10166,19 @@ async function renderAIChatWorkspace(project) {
     }
   } catch (_) {}
 
-  // Load Messages History in Strict Ascending Order
+  // Load Messages History & Active Session
   if (messagesList) {
+    if (!aiChatSending && !messagesList.querySelector('.svc-ai-message')) {
+      messagesList.innerHTML = `
+        <div class="svc-ai-loading-session" id="svc-ai-loading-session">
+          <div class="svc-ai-loading-spinner"></div>
+          <div class="svc-ai-loading-text">
+            <strong>Retrieving session content…</strong>
+            <span>Syncing background agent activity &amp; workspace state</span>
+          </div>
+        </div>
+      `;
+    }
     try {
       const hRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`);
       const msgs = hRes.messages || [];
@@ -10293,6 +10487,8 @@ async function renderAIChatWorkspace(project) {
         const sess = sRes.session;
         if (sess.is_running && !aiChatSending) {
           void reconnectAIChatSession(currentProject);
+        } else if (sess.pending_plan) {
+          renderPlanApprovalCard(sess.pending_plan, currentProject, sess.pending_plan.countdown_seconds || 10, sess.pending_plan.requires_approval);
         } else if (sess.pending_question) {
           const qData = sess.pending_question;
           const qEl = document.createElement('div');
@@ -10313,7 +10509,10 @@ async function renderAIChatWorkspace(project) {
   const slashList = document.getElementById('svc-ai-slash-list');
 
   const slashCommands = [
-    { cmd: '/plan', desc: 'Create a structured plan before coding', icon: 'list-checks', prompt: 'Create an end-to-end implementation plan for ' },
+    { cmd: '/teamwork', desc: 'Craft task prompt following /teamwork-preview guidelines', icon: 'users', prompt: 'Follow the /teamwork-preview multi-agent workflow: elicit the project idea, specify requirements blocks (R1, R2), define objective verification, and establish acceptance criteria guardrails before creating plan.md: ' },
+    { cmd: '/plan', desc: 'Create a structured plan before coding', icon: 'list-checks', prompt: 'Create an end-to-end implementation plan and write plan.md for: ' },
+    { cmd: '/search', desc: 'Search online package registries & docs', icon: 'globe', prompt: 'Search online documentation and package registries for: ' },
+    { cmd: '/analyze', desc: 'Run deterministic machine structure & syntax scan', icon: 'cpu', prompt: 'Run syte_analyze_project_structure to inspect package manifests, frameworks, entrypoints, and AST syntax validity.' },
     { cmd: '/redesign', desc: 'Redesign UI with modern Tailwind & shadcn', icon: 'palette', prompt: 'Redesign the frontend UI with modern Tailwind and shadcn styling: ' },
     { cmd: '/build', desc: 'Build and verify project compilation', icon: 'hammer', prompt: 'Run project build, test for syntax/compilation errors, and fix any issues.' },
     { cmd: '/scan', desc: 'Run security, syntax, and vulnerability scan', icon: 'shield-check', prompt: 'Run a security and syntax scan across the workspace and fix any detected issues.' },
@@ -10639,6 +10838,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const maxTokensInput = document.getElementById('svc-ai-setting-maxtokens');
   const maxTokensVal = document.getElementById('svc-ai-maxtokens-val');
   const thinkingSel = document.getElementById('svc-ai-setting-thinking');
+  const speedInput = document.getElementById('svc-ai-setting-speed');
+  const intelInput = document.getElementById('svc-ai-setting-intelligence');
+  const planModeInput = document.getElementById('svc-ai-setting-plan-mode');
   const promptInput = document.getElementById('svc-ai-setting-prompt');
   const testBtn = document.getElementById('svc-ai-test-connection-btn');
   const quickSaveBtn = document.getElementById('svc-ai-quick-save-btn');
@@ -11035,6 +11237,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       if (tempInput) { tempInput.value = s.temperature || 0.7; if (tempVal) tempVal.textContent = s.temperature || 0.7; }
       if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
+      if (speedInput && s.execution_speed) speedInput.value = s.execution_speed;
+      if (intelInput && s.intelligence_level) intelInput.value = s.intelligence_level;
+      if (planModeInput && s.plan_approval_mode) planModeInput.value = s.plan_approval_mode;
       if (promptInput) promptInput.value = s.system_prompt || '';
       if (customSkillsInput) customSkillsInput.value = s.custom_models || '';
 
@@ -11170,6 +11375,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         temperature: parseFloat(tempInput?.value || 0.7),
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
+        execution_speed: speedInput?.value || 'balanced',
+        intelligence_level: intelInput?.value || 'high',
+        plan_approval_mode: planModeInput?.value || 'auto_start_10s',
         system_prompt: promptInput?.value || '',
         custom_models: customSkillsInput?.value || '',
         tools_enabled: JSON.stringify([...enabledSkillsSet]),

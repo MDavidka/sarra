@@ -670,6 +670,58 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        # 11. Machine Understanding & Web Research
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_analyze_project_structure",
+                "description": "Non-AI deterministic machine analysis of the project workspace: scans manifests (package.json, requirements.txt, pyproject.toml, Cargo.toml), identifies framework, entrypoint, build scripts, detected environment variables, and executes AST syntax validation.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_search_web",
+                "description": "Search public online technical registries, documentation, repositories, and technical sources for package APIs, error codes, and library specifications.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Technical search query (e.g. 'tailwindcss grid utilities', 'shadcn button react', 'fastapi sse streaming').",
+                        },
+                        "source": {
+                            "type": "string",
+                            "enum": ["all", "npm", "pypi", "github"],
+                            "description": "Optional search source filter (default 'all').",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of results to return (default 5).",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_fetch_docs",
+                "description": "Fetch and extract clean documentation text and code examples from an online technical reference or URL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL of the documentation page, README, or API guide to fetch.",
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
     ]
 
 
@@ -890,6 +942,233 @@ def _build_workspace_tree(ws_dir: Path, max_depth: int = 3) -> Dict[str, Any]:
         return items
 
     return {"root": str(ws_dir.name), "tree": _walk(ws_dir, 1)}
+
+
+def _analyze_project_structure(ws_dir: Path) -> Dict[str, Any]:
+    """Perform deterministic (non-AI rule-based) structural analysis of project workspace."""
+    analysis = {
+        "ok": True,
+        "workspace": str(ws_dir),
+        "project_type": "unknown",
+        "frameworks": [],
+        "entrypoints": [],
+        "manifests": [],
+        "detected_scripts": {},
+        "detected_env_vars": [],
+        "syntax_health": {"valid": True, "errors_count": 0, "errors": []},
+        "dependencies_count": 0,
+        "recommendations": [],
+    }
+
+    # 1. Inspect package manifests
+    pkg_json = ws_dir / "package.json"
+    if pkg_json.exists():
+        analysis["manifests"].append("package.json")
+        try:
+            data = json.loads(pkg_json.read_text(encoding="utf-8", errors="replace"))
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            analysis["dependencies_count"] += len(deps)
+            analysis["detected_scripts"] = data.get("scripts", {})
+            analysis["project_type"] = "Node.js / JavaScript"
+
+            # Framework detection
+            if "next" in deps:
+                analysis["frameworks"].append("Next.js")
+            if "react" in deps:
+                analysis["frameworks"].append("React")
+            if "vue" in deps:
+                analysis["frameworks"].append("Vue.js")
+            if "svelte" in deps or "@sveltejs/kit" in deps:
+                analysis["frameworks"].append("Svelte")
+            if "vite" in deps:
+                analysis["frameworks"].append("Vite")
+            if "express" in deps:
+                analysis["frameworks"].append("Express.js")
+            if "fastify" in deps:
+                analysis["frameworks"].append("Fastify")
+            if "tailwindcss" in deps:
+                analysis["frameworks"].append("Tailwind CSS")
+            if "@shadcn/ui" in deps or any("@radix-ui" in d for d in deps):
+                analysis["frameworks"].append("shadcn/ui (Radix UI)")
+            if "lucide-react" in deps or "lucide" in deps:
+                analysis["frameworks"].append("Lucide Icons")
+            if data.get("main"):
+                analysis["entrypoints"].append(data["main"])
+        except Exception as e:
+            analysis["syntax_health"]["valid"] = False
+            analysis["syntax_health"]["errors"].append({"file": "package.json", "error": f"JSON parse error: {e}"})
+
+    req_txt = ws_dir / "requirements.txt"
+    pyproject = ws_dir / "pyproject.toml"
+    if req_txt.exists() or pyproject.exists():
+        analysis["project_type"] = "Python"
+        if req_txt.exists():
+            analysis["manifests"].append("requirements.txt")
+            try:
+                content = req_txt.read_text(encoding="utf-8", errors="replace").lower()
+                if "fastapi" in content:
+                    analysis["frameworks"].append("FastAPI")
+                if "flask" in content:
+                    analysis["frameworks"].append("Flask")
+                if "django" in content:
+                    analysis["frameworks"].append("Django")
+                if "uvicorn" in content:
+                    analysis["frameworks"].append("Uvicorn ASGI")
+            except Exception:
+                pass
+        if pyproject.exists():
+            analysis["manifests"].append("pyproject.toml")
+
+    cargo = ws_dir / "Cargo.toml"
+    if cargo.exists():
+        analysis["project_type"] = "Rust"
+        analysis["manifests"].append("Cargo.toml")
+
+    gomod = ws_dir / "go.mod"
+    if gomod.exists():
+        analysis["project_type"] = "Go"
+        analysis["manifests"].append("go.mod")
+
+    # Static HTML detection
+    if (ws_dir / "index.html").exists():
+        analysis["entrypoints"].append("index.html")
+        if analysis["project_type"] == "unknown":
+            analysis["project_type"] = "Static Web (HTML/CSS/JS)"
+
+    # Other common entry points
+    for ep in ["server.js", "app.js", "main.py", "app.py", "src/main.tsx", "src/App.tsx", "src/index.ts", "pages/index.tsx", "app/page.tsx", "app/page.jsx"]:
+        if (ws_dir / ep).exists() and ep not in analysis["entrypoints"]:
+            analysis["entrypoints"].append(ep)
+
+    # 2. Deterministic AST syntax checks
+    syntax_scan = _perform_security_lint_scan(ws_dir)
+    errors = syntax_scan.get("syntax_errors", [])
+    if errors:
+        analysis["syntax_health"]["valid"] = False
+        analysis["syntax_health"]["errors_count"] = len(errors)
+        analysis["syntax_health"]["errors"] = errors[:10]
+
+    # 3. Scan for detected environment variables
+    env_vars_found = set()
+    for ext in [".js", ".ts", ".jsx", ".tsx", ".py"]:
+        for f in ws_dir.rglob(f"*{ext}"):
+            if any(ign in f.parts for ign in [".git", "node_modules", ".venv", "__pycache__", "dist", "build"]):
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+                for m in re.finditer(r"process\.env\.([A-Z0-9_]{3,})", txt):
+                    env_vars_found.add(m.group(1))
+                for m in re.finditer(r"os\.environ(?:\[|\.get\()[\"']([A-Z0-9_]{3,})[\"']", txt):
+                    env_vars_found.add(m.group(1))
+                if len(env_vars_found) >= 30:
+                    break
+            except Exception:
+                pass
+    analysis["detected_env_vars"] = sorted(list(env_vars_found))
+
+    # Recommendations
+    if not analysis["frameworks"] and analysis["project_type"] == "unknown":
+        analysis["recommendations"].append("Project root does not contain standard package manifests. Inspect files with syte_list_workspace_files.")
+    if analysis["syntax_health"]["errors_count"] > 0:
+        analysis["recommendations"].append(f"Detected {analysis['syntax_health']['errors_count']} syntax errors in workspace. Fix syntax errors using syte_edit_file.")
+
+    return analysis
+
+
+def _search_online_web(query: str, source: str = "all", limit: int = 5) -> List[Dict[str, Any]]:
+    """Search public technical registries (NPM, PyPI, GitHub) and web references."""
+    import urllib.request
+    import urllib.parse
+    results = []
+    q_clean = (query or "").strip()
+    if not q_clean:
+        return []
+
+    # 1. If searching npm or all
+    if source in ("all", "npm"):
+        try:
+            npm_url = f"https://registry.npmjs.org/-/v1/search?text={urllib.parse.quote(q_clean)}&size={limit}"
+            req = urllib.request.Request(npm_url, headers={"User-Agent": "SyteAgent/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                for obj in data.get("objects", [])[:limit]:
+                    pkg = obj.get("package", {})
+                    results.append({
+                        "source": "npm",
+                        "title": f"npm: {pkg.get('name')} (v{pkg.get('version')})",
+                        "description": pkg.get("description") or "",
+                        "url": pkg.get("links", {}).get("npm") or f"https://www.npmjs.com/package/{pkg.get('name')}",
+                    })
+        except Exception:
+            pass
+
+    # 2. If searching pypi or all
+    if source in ("all", "pypi") and len(results) < limit:
+        try:
+            pypi_url = f"https://pypi.org/pypi/{urllib.parse.quote(q_clean.replace(' ', '-'))}/json"
+            req = urllib.request.Request(pypi_url, headers={"User-Agent": "SyteAgent/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                info = data.get("info", {})
+                if info.get("name"):
+                    results.append({
+                        "source": "pypi",
+                        "title": f"pypi: {info.get('name')} (v{info.get('version')})",
+                        "description": info.get("summary") or "",
+                        "url": info.get("project_url") or f"https://pypi.org/project/{info.get('name')}/",
+                    })
+        except Exception:
+            pass
+
+    # 3. GitHub repository search
+    if source in ("all", "github") and len(results) < limit:
+        try:
+            gh_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(q_clean)}&per_page={limit}"
+            req = urllib.request.Request(gh_url, headers={"User-Agent": "SyteAgent/1.0", "Accept": "application/vnd.github.v3+json"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                for item in data.get("items", [])[:limit]:
+                    results.append({
+                        "source": "github",
+                        "title": item.get("full_name"),
+                        "description": item.get("description") or "",
+                        "url": item.get("html_url"),
+                        "stars": item.get("stargazers_count"),
+                    })
+        except Exception:
+            pass
+
+    return results[:limit]
+
+
+def _fetch_online_doc(url: str) -> Dict[str, Any]:
+    """Fetch clean technical documentation text from an online URL."""
+    import urllib.request
+    import urllib.parse
+    clean_url = (url or "").strip()
+    if not clean_url.startswith(("http://", "https://")):
+        return {"ok": False, "error": "Invalid URL protocol. Must start with http:// or https://"}
+
+    try:
+        req = urllib.request.Request(clean_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            title_m = re.search(r"<title>(.*?)</title>", raw, re.IGNORECASE)
+            title = title_m.group(1).strip() if title_m else ""
+            clean = re.sub(r"<(script|style|svg|nav|footer|header)[^>]*>[\s\S]*?</\1>", " ", raw, flags=re.IGNORECASE)
+            clean = re.sub(r"<[^>]+>", " ", clean)
+            clean = re.sub(r"\s+", " ", clean).strip()
+            if len(clean) > 8000:
+                clean = clean[:7950] + "\n...[truncated for token efficiency]..."
+            return {
+                "ok": True,
+                "url": clean_url,
+                "title": title or "Documentation",
+                "length_chars": len(clean),
+                "content": clean,
+            }
+    except Exception as exc:
+        return {"ok": False, "url": clean_url, "error": f"Failed to fetch doc URL: {str(exc)}"}
 
 
 async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1327,17 +1606,59 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                         "description": "",
                     })
             plan_data = {"title": title, "steps": steps, "rationale": rationale}
+
+            # Write plan.md directly into project workspace root
+            try:
+                md_lines = [
+                    f"# Implementation Plan: {title}",
+                    "",
+                    "> **Status**: Ready for execution",
+                    f"> **Total Steps**: {len(steps)}",
+                    "",
+                    "## Architecture & Approach",
+                    rationale or "Autonomous end-to-end execution.",
+                    "",
+                    "## Execution Steps",
+                ]
+                for st in steps:
+                    checked = "x" if st.get("status") == "completed" else " "
+                    desc = f" - {st.get('description')}" if st.get("description") else ""
+                    md_lines.append(f"- [{checked}] **Step {st.get('id')}**: {st.get('title')}{desc}")
+                md_lines.extend(["", "---", "*Generated autonomously by Syte AI Builder*"])
+                (ws_dir / "plan.md").write_text("\n".join(md_lines), encoding="utf-8")
+            except Exception as pe:
+                logger.warning(f"Failed to write plan.md: {pe}")
+
             return {
                 "ok": True,
                 "plan": plan_data,
                 "steps_count": len(steps),
-                "message": f"Created implementation plan with {len(steps)} steps: '{title}'.",
+                "plan_file": "plan.md",
+                "requires_approval": True,
+                "auto_start_countdown": 10,
+                "message": f"Created implementation plan with {len(steps)} steps: '{title}'. Written to plan.md.",
             }
 
         elif tool_name == "syte_update_plan_step":
             step_id = str(arguments.get("step_id") or "").strip()
             status = str(arguments.get("status") or "completed").strip()
             notes = str(arguments.get("notes") or "").strip()
+
+            # Update plan.md on disk
+            try:
+                plan_file = ws_dir / "plan.md"
+                if plan_file.exists():
+                    p_txt = plan_file.read_text(encoding="utf-8")
+                    if status == "completed":
+                        p_txt = re.sub(
+                            rf"- \[ \] \*\*Step {re.escape(step_id)}\*\*",
+                            f"- [x] **Step {step_id}**",
+                            p_txt,
+                        )
+                    plan_file.write_text(p_txt, encoding="utf-8")
+            except Exception as pe:
+                logger.warning(f"Failed to sync plan.md: {pe}")
+
             return {
                 "ok": True,
                 "step_id": step_id,
@@ -1431,6 +1752,20 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             depth = int(arguments.get("max_depth") or 3)
             tree = _build_workspace_tree(ws_dir, max_depth=depth)
             return {"ok": True, "workspace_tree": tree}
+
+        elif tool_name == "syte_analyze_project_structure":
+            return _analyze_project_structure(ws_dir)
+
+        elif tool_name == "syte_search_web":
+            q = str(arguments.get("query") or "").strip()
+            src = str(arguments.get("source") or "all").strip()
+            lim = int(arguments.get("limit") or 5)
+            results = _search_online_web(q, source=src, limit=lim)
+            return {"ok": True, "query": q, "results_count": len(results), "results": results}
+
+        elif tool_name == "syte_fetch_docs":
+            url = str(arguments.get("url") or "").strip()
+            return _fetch_online_doc(url)
 
         return {"ok": False, "error": f"Unknown tool: '{tool_name}'"}
 

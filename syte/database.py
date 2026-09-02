@@ -297,6 +297,9 @@ CREATE TABLE IF NOT EXISTS ai_builder_settings (
     tools_enabled TEXT NOT NULL DEFAULT 'all',
     custom_models TEXT DEFAULT '',
     saved_providers TEXT DEFAULT '[]',
+    execution_speed TEXT NOT NULL DEFAULT 'balanced',
+    intelligence_level TEXT NOT NULL DEFAULT 'high',
+    plan_approval_mode TEXT NOT NULL DEFAULT 'auto_start_10s',
     updated_at TEXT NOT NULL
 );
 
@@ -416,6 +419,12 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ai_builder_cols = {row[1] for row in await cur.fetchall()}
     if ai_builder_cols and "saved_providers" not in ai_builder_cols:
         await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN saved_providers TEXT DEFAULT '[]'")
+    if ai_builder_cols and "execution_speed" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN execution_speed TEXT DEFAULT 'balanced'")
+    if ai_builder_cols and "intelligence_level" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN intelligence_level TEXT DEFAULT 'high'")
+    if ai_builder_cols and "plan_approval_mode" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN plan_approval_mode TEXT DEFAULT 'auto_start_10s'")
     async with db.execute("PRAGMA table_info(project_redirects)") as cur:
         redir_cols = {row[1] for row in await cur.fetchall()}
     if redir_cols and "preserve_query" not in redir_cols:
@@ -1353,11 +1362,14 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
         "tools_enabled": "all",
         "custom_models": "gpt-4o,gpt-4o-mini,o3-mini,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,gemini-1.5-pro,gemini-2.0-flash,deepseek-chat,deepseek-reasoner,qwen2.5-coder",
         "saved_providers": [],
+        "execution_speed": "balanced",
+        "intelligence_level": "high",
+        "plan_approval_mode": "auto_start_10s",
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
+            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, execution_speed, intelligence_level, plan_approval_mode, updated_at "
             "FROM ai_builder_settings WHERE project_id = ?",
             (project_id,),
         ) as cursor:
@@ -1383,7 +1395,10 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                     "tools_enabled": row[9] or "all",
                     "custom_models": row[10] or default_settings["custom_models"],
                     "saved_providers": saved_p if isinstance(saved_p, list) else [],
-                    "updated_at": row[12] if len(row) > 12 else "",
+                    "execution_speed": row[12] or "balanced",
+                    "intelligence_level": row[13] or "high",
+                    "plan_approval_mode": row[14] or "auto_start_10s",
+                    "updated_at": row[15] if len(row) > 15 else "",
                 }
                 if not res["api_key"] and project_id != "global":
                     async with db.execute("SELECT api_key, saved_providers FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
@@ -1400,7 +1415,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
         # If project-specific is not found, fallback to global settings if querying project
         if project_id != "global":
             async with db.execute(
-                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
+                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, execution_speed, intelligence_level, plan_approval_mode, updated_at "
                 "FROM ai_builder_settings WHERE project_id = 'global'"
             ) as cursor:
                 g_row = await cursor.fetchone()
@@ -1425,7 +1440,10 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                         "tools_enabled": g_row[9] or "all",
                         "custom_models": g_row[10] or default_settings["custom_models"],
                         "saved_providers": saved_p if isinstance(saved_p, list) else [],
-                        "updated_at": g_row[12] if len(g_row) > 12 else "",
+                        "execution_speed": g_row[12] or "balanced",
+                        "intelligence_level": g_row[13] or "high",
+                        "plan_approval_mode": g_row[14] or "auto_start_10s",
+                        "updated_at": g_row[15] if len(g_row) > 15 else "",
                     }
 
     return default_settings
@@ -1443,6 +1461,9 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     system_prompt = str(data.get("system_prompt") or "").strip()
     tools_enabled = str(data.get("tools_enabled") or "all").strip()
     custom_models = str(data.get("custom_models") or "").strip()
+    execution_speed = str(data.get("execution_speed") or "balanced").strip()
+    intelligence_level = str(data.get("intelligence_level") or "high").strip()
+    plan_approval_mode = str(data.get("plan_approval_mode") or "auto_start_10s").strip()
 
     # Handle saved_providers list
     raw_saved = data.get("saved_providers")
@@ -1461,8 +1482,8 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         for pid in set([project_id, "global"]):
             await db.execute(
-                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, execution_speed, intelligence_level, plan_approval_mode, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id) DO UPDATE SET "
                 "provider = excluded.provider, "
                 "model = excluded.model, "
@@ -1475,6 +1496,9 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
                 "tools_enabled = excluded.tools_enabled, "
                 "custom_models = excluded.custom_models, "
                 "saved_providers = CASE WHEN excluded.saved_providers != '[]' THEN excluded.saved_providers ELSE ai_builder_settings.saved_providers END, "
+                "execution_speed = excluded.execution_speed, "
+                "intelligence_level = excluded.intelligence_level, "
+                "plan_approval_mode = excluded.plan_approval_mode, "
                 "updated_at = excluded.updated_at",
                 (
                     pid,
@@ -1489,6 +1513,9 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
                     tools_enabled,
                     custom_models,
                     saved_providers_str,
+                    execution_speed,
+                    intelligence_level,
+                    plan_approval_mode,
                     now,
                 ),
             )

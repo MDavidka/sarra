@@ -3290,6 +3290,40 @@
 
           <!-- TAB 4: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
           <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-advanced">
+          <!-- Section 1: Speed, Intelligence & Planning Mode -->
+          <fieldset class="svc-ai-form-section">
+            <legend><i data-lucide="gauge"></i><span>Speed, Intelligence &amp; Autonomous Planning</span></legend>
+            <div class="svc-ai-form-grid">
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-setting-speed">Execution Speed Profile</label>
+                <select id="svc-ai-setting-speed">
+                  <option value="ultra_fast">⚡ Ultra Fast (Fast stream, minimal latency)</option>
+                  <option value="balanced" selected>⚖️ Balanced (Recommended - optimal quality &amp; speed)</option>
+                  <option value="deep_reasoning">🧠 Deep Reasoning (Extended thinking &amp; multi-pass checks)</option>
+                </select>
+                <span class="hint">Adjusts latency, token streaming, and reasoning budgets.</span>
+              </div>
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-setting-intelligence">Intelligence Tier</label>
+                <select id="svc-ai-setting-intelligence">
+                  <option value="standard">Standard Fast (Quick tasks &amp; minor tweaks)</option>
+                  <option value="high" selected>High Intelligence (GPT-4o / Claude 3.7 / Gemini 2.0)</option>
+                  <option value="max_reasoning">Max Autonomous Intelligence (Full self-healing architecture)</option>
+                </select>
+                <span class="hint">Controls cognitive depth and tool orchestration capabilities.</span>
+              </div>
+            </div>
+            <div class="svc-ai-form-field" style="margin-top: 12px;">
+              <label for="svc-ai-setting-plan-mode">Plan Approval &amp; Execution Mode</label>
+              <select id="svc-ai-setting-plan-mode">
+                <option value="auto_start_10s" selected>⏱️ Auto-Start after 10s Countdown (Recommended)</option>
+                <option value="require_approval">✋ Require Manual User Approval Before Starting Plan</option>
+                <option value="autonomous">🚀 Fully Autonomous (Execute Plan Steps Immediately)</option>
+              </select>
+              <span class="hint">When enabled, the agent writes <code>plan.md</code> to the workspace and renders an approval card with countdown.</span>
+            </div>
+          </fieldset>
+
           <fieldset class="svc-ai-form-section">
             <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
             <div class="svc-ai-form-grid">

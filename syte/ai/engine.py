@@ -8,11 +8,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from syte.ai.providers import UnifiedAIClient
-from syte.ai.tools import execute_syte_tool, get_ai_tools_schema, _get_project_workspace_dir
+from syte.ai.tools import (
+    _analyze_project_structure,
+    _get_project_workspace_dir,
+    execute_syte_tool,
+    get_ai_tools_schema,
+)
 from syte.database import (
     get_ai_builder_settings,
     get_project,
@@ -150,6 +156,14 @@ class AIAgentEngine:
                         ws_files_list.append(str(rel) + ("/" if p.is_dir() else ""))
             ws_files_summary = "\n".join(f"  - {f}" for f in ws_files_list) if ws_files_list else "  (Workspace directory is currently empty)"
 
+            # Deterministic Machine (Non-AI) Analysis
+            m_analysis = _analyze_project_structure(ws_dir) if ws_dir.exists() else {}
+            m_frameworks = ", ".join(m_analysis.get("frameworks") or ["None identified"])
+            m_entrypoints = ", ".join(m_analysis.get("entrypoints") or ["None identified"])
+            m_manifests = ", ".join(m_analysis.get("manifests") or ["None identified"])
+            m_env_vars = ", ".join(m_analysis.get("detected_env_vars")[:15]) or "None detected"
+            m_syntax = "Passed (Valid syntax across project)" if m_analysis.get("syntax_health", {}).get("valid") else f"Errors detected ({m_analysis.get('syntax_health', {}).get('errors_count')} syntax issues)"
+
             context_prompt = (
                 f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
                 f"- Project ID: {project.get('id')}\n"
@@ -161,7 +175,14 @@ class AIAgentEngine:
                 f"- Logged-in Git / GitHub Account: {github_info}\n"
                 f"- VM Workspace Directory: {str(ws_dir)}\n"
                 f"Existing Workspace Files:\n{ws_files_summary}\n"
-                f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, and trigger zero-downtime deployments.\n"
+                f"\n--- DETERMINISTIC MACHINE (NON-AI RULE SCANNER) GROUND TRUTH ---\n"
+                f"- Detected Project Type: {m_analysis.get('project_type', 'unknown')}\n"
+                f"- Detected Frameworks: {m_frameworks}\n"
+                f"- Entrypoint Files: {m_entrypoints}\n"
+                f"- Detected Manifests: {m_manifests}\n"
+                f"- Detected Environment Variables in Code: {m_env_vars}\n"
+                f"- AST Syntax Verification Status: {m_syntax}\n"
+                f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, search online package registries/docs, and trigger zero-downtime deployments.\n"
                 f"------------------------------------\n"
             )
 
@@ -170,41 +191,77 @@ class AIAgentEngine:
         if settings_override:
             ai_settings.update(settings_override)
 
+        exec_speed = str(ai_settings.get("execution_speed") or "balanced").strip()
+        intel_level = str(ai_settings.get("intelligence_level") or "high").strip()
+        plan_approval_mode = str(ai_settings.get("plan_approval_mode") or "auto_start_10s").strip()
+
+        temperature = float(ai_settings.get("temperature", 0.7))
+        thinking_level = ai_settings.get("thinking_level", "medium")
+
+        if exec_speed == "ultra_fast":
+            temperature = 0.3
+            thinking_level = "low"
+        elif exec_speed == "deep_reasoning":
+            temperature = 0.5
+            thinking_level = "high"
+
         client = UnifiedAIClient(
             provider=ai_settings.get("provider", "openai"),
             model=ai_settings.get("model", "gpt-4o"),
             api_key=ai_settings.get("api_key", ""),
             base_url=ai_settings.get("base_url", ""),
-            temperature=float(ai_settings.get("temperature", 0.7)),
+            temperature=temperature,
             max_tokens=int(ai_settings.get("max_tokens", 4096)),
-            thinking_level=ai_settings.get("thinking_level", "medium"),
+            thinking_level=thinking_level,
         )
 
-        # 4. Assemble system prompt with live project context & workflow rules
+        # 4. Load modular agent markdown documentation files
+        docs_dir = Path(__file__).parent / "agent_docs"
+        teamwork_guide = ""
+        planning_guide = ""
+        tools_guide = ""
+        try:
+            if (docs_dir / "teamwork_preview.md").exists():
+                teamwork_guide = (docs_dir / "teamwork_preview.md").read_text("utf-8", errors="replace")
+            if (docs_dir / "planning_standards.md").exists():
+                planning_guide = (docs_dir / "planning_standards.md").read_text("utf-8", errors="replace")
+            if (docs_dir / "tools_reference.md").exists():
+                tools_guide = (docs_dir / "tools_reference.md").read_text("utf-8", errors="replace")
+        except Exception as de:
+            logger.warning(f"Could not load agent docs: {de}")
+
+        # Assemble system prompt with live project context & workflow rules
         base_prompt = ai_settings.get("system_prompt") or ""
         autonomous_instructions = (
             "\n\n--- SYTE AUTONOMOUS AGENT CORE ARCHITECTURE & EXECUTION STANDARDS ---\n"
             "You are the Syte Autonomous AI Builder & Principal Site Architect — an elite autonomous AI engineer embedded directly in the Syte platform, operating at the quality bar of v0, Google Cloud Code, and Antigravity.\n\n"
-            "## 1. AUTONOMOUS END-TO-END OWNERSHIP\n"
-            "- When given a request (e.g. 'redesign frontend', 'add auth', 'build landing page', 'fix bug', 'optimize build'), YOU MUST NOT STOP UNTIL THE TASK IS 100% READY.\n"
-            "- Do not give partial advice or ask 'shall I proceed?'. Take action immediately by creating a plan, reading files, writing complete code, verifying syntax, and testing.\n"
-            "- If a plan has uncompleted steps, you will continue automatically to the next step without pausing or waiting for human approval.\n\n"
-            "## 2. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
+            "## 1. STREAMING & REAL-TIME EMISSION PROTOCOL\n"
+            "- Your output is streamed live to the user via Server-Sent Events (SSE).\n"
+            "- Formulate structured, continuous responses with thought streams and token deltas.\n"
+            "- Never stall, produce blank turns, or output placeholder responses. Every turn must make tangible progress.\n\n"
+            "## 2. MANDATORY PLANNING & PLAN.MD PROTOCOL\n"
+            "- For any task requiring multiple steps, new features, UI redesigns, or architectural refactors, YOU MUST call `syte_create_plan`.\n"
+            "- Calling `syte_create_plan` will automatically generate and write `plan.md` in the project root with checkable boxes `- [ ]`.\n"
+            "- An interactive Plan Approval Card with a 10-second auto-start countdown is rendered for the user.\n"
+            "- Update `plan.md` steps using `syte_update_plan_step` as each step commences and completes.\n\n"
+            "## 3. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
             "- **Typography**: Modern font stack (Inter, Geist Sans, system UI). Strict hierarchy: Display H1 (tight tracking `-0.03em`), Section H2, Card H3, muted lead copy, and crisp caption badges.\n"
             "- **Color & Styling**: Tailwind CSS / modern CSS. Zinc/Slate neutral scale, glassmorphism (`backdrop-blur-md bg-white/80 border border-zinc-200/60`), vibrant accent colors (Indigo `#6366f1`, Sky `#0284c7`, Emerald `#10b981`).\n"
             "- **Component Library**: Use shadcn/ui style components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and Lucide icons.\n"
             "- **Zero-Placeholder Guarantee**: ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or incomplete functions.\n"
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
-            "## 3. MANDATORY EXECUTION WORKFLOW\n"
-            "1. **Plan**: For any multi-step task, start by calling `syte_create_plan` with actionable steps.\n"
-            "2. **Skills Discovery**: Discover or load domain capabilities with `syte_discover_skills` and `syte_load_skill` (browse 'Design & Colors', 'Components & UI', 'App & Routing', 'Login & Auth', 'Server & Backend', 'Integrations & Database', 'Optimization & Build').\n"
-            "3. **Inspect**: Read workspace files (`syte_read_file`, `syte_search_files`, `syte_list_workspace_files`).\n"
-            "4. **Write/Edit Files (PRIMARY FOCUS)**: Generate complete, beautiful code files (`syte_write_file`, `syte_edit_file`).\n"
-            "   - **FILE GENERATION PRIORITY**: Prioritize generating and editing complete workspace files over running heavy VM processes. Syte automatically compiles, containerizes, hot-reloads, and serves workspace files. Do NOT waste tool turns attempting to run long-running, blocking background shell processes or complex terminal daemons.\n"
-            "5. **Update Step Status**: Keep the user updated with precise progress by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
-            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run quick compilation checks (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
-            "   - **PREVIEW TESTING DIRECTIVE**: ALWAYS use `syte_start_preview` to test your changes against the live preview server during development. DO NOT trigger real production deployments (`syte_create_deployment`) for testing. Production deployments are reserved only for when explicitly requested by the user.\n"
-            "7. **Deliver**: Provide a concise summary of what was accomplished only after all steps are done.\n"
+            "## 4. MANDATORY EXECUTION WORKFLOW\n"
+            "1. **Plan**: Start by creating a plan (`syte_create_plan`) and check existing structure (`syte_analyze_project_structure`).\n"
+            "2. **Skills & Docs Discovery**: Discover or load domain blueprints (`syte_discover_skills`, `syte_load_skill`) and search online packages/docs (`syte_search_web`, `syte_fetch_docs`).\n"
+            "3. **Inspect**: Read workspace files (`syte_read_file`, `syte_read_file_lines`, `syte_search_files`, `syte_list_workspace_files`).\n"
+            "4. **Write/Edit Files**: Generate complete, beautiful code files (`syte_write_file`, `syte_edit_file`). Prioritize generating complete workspace files over running heavy blocking daemons.\n"
+            "5. **Update Step Status**: Mark steps `in_progress` then `completed` (`syte_update_plan_step`).\n"
+            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax, quick command checks (`syte_run_command`), and preview servers (`syte_start_preview`).\n"
+            "7. **Deliver**: Provide a concise summary of what was accomplished after all steps are done.\n\n"
+            f"--- REFERENCE STANDARDS & PROTOCOLS ---\n"
+            f"{planning_guide}\n\n"
+            f"{teamwork_guide}\n\n"
+            f"{tools_guide}\n"
             "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
@@ -497,6 +554,17 @@ class AIAgentEngine:
                 # Sync active plan in session
                 if tool_name == "syte_create_plan" and tool_result.get("plan") and self.session:
                     self.session.active_plan = tool_result.get("plan")
+                    if plan_approval_mode != "autonomous":
+                        plan_decision = await self.session.wait_for_plan_decision(
+                            tool_result.get("plan"),
+                            timeout=10.0,
+                            require_approval=(plan_approval_mode == "require_approval"),
+                        )
+                        yield {
+                            "event": "plan_decision_applied",
+                            "decision": plan_decision,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
                 elif tool_name == "syte_update_plan_step" and self.session and getattr(self.session, "active_plan", None):
                     step_id = str(args.get("step_id") or "")
                     new_status = str(args.get("status") or "completed")
