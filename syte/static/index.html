@@ -986,6 +986,26 @@
               <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
                 <section class="svc-domains-screen" aria-label="Project domains">
+                  <!-- Header Section -->
+                  <div class="svc-env-screen-header">
+                    <div class="svc-env-header-text">
+                      <span class="svc-section-tag">DOMAINS</span>
+                      <h2 class="svc-env-title">Custom Domains</h2>
+                      <p class="svc-env-sub">Connect and manage domains with automatic SSL certificates.</p>
+                    </div>
+                    <div class="svc-env-header-actions" style="display: flex; gap: 8px;">
+                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn" onclick="openDomainsDocsModal()">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
+                      <button type="button" class="btn-learn-more" id="svc-domain-certificates-btn" onclick="openCertificatesModal()">
+                        <i data-lucide="badge-check"></i><span>Certificates</span>
+                      </button>
+                      <button type="button" class="btn-env-add-icon" id="svc-domain-add-toggle-btn" onclick="openDomainAddModal()" title="Connect Domain">
+                        <i data-lucide="plus"></i>
+                      </button>
+                    </div>
+                  </div>
+
                   <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
                   <div class="svc-domain-stats-grid">
                     <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
@@ -1045,7 +1065,7 @@
                     </div>
                     <h3 class="svc-prompt-title">Connect your domain</h3>
                     <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
-                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal(selectedCurrentProject)">
+                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal()">
                       <i data-lucide="plus"></i><span>Add Domain</span>
                     </button>
                   </div>
@@ -1063,7 +1083,7 @@
                       <p class="svc-env-sub">Store API keys, tokens, and config securely.</p>
                     </div>
                     <div class="svc-env-header-actions">
-                      <button type="button" class="btn-learn-more" id="svc-env-learn-more-btn">
+                      <button type="button" class="btn-learn-more" id="svc-env-learn-more-btn" onclick="openEnvDocsModal()">
                         <span>Learn more</span><i data-lucide="external-link"></i>
                       </button>
                     </div>
@@ -1086,7 +1106,7 @@
                       <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
                       <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
                     </div>
-                    <button type="button" class="btn-env-add-icon" id="svc-env-add-btn" title="Add Environment Variable">
+                    <button type="button" class="btn-env-add-icon" id="svc-env-add-btn" onclick="openServiceEnvironmentModal()" title="Add Environment Variable">
                       <i data-lucide="plus"></i>
                     </button>
                   </div>
@@ -1170,19 +1190,19 @@
 
                     <!-- Firewall Styled Action Buttons Toolbar -->
                     <div class="svc-firewall-action-toolbar">
-                      <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn">
+                      <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="openFwAddRuleModal()">
                         <i data-lucide="plus"></i>
                         <span>Add Rule</span>
                       </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn">
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="openFwRateLimitModal()">
                         <i data-lucide="gauge"></i>
                         <span>Rate Limiting</span>
                       </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn">
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="openFwBotProtectModal()">
                         <i data-lucide="bot"></i>
                         <span>Bot Defense</span>
                       </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn">
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="openFwIpBlockModal()">
                         <i data-lucide="shield-alert"></i>
                         <span>IP Blocklist</span>
                       </button>
@@ -1358,7 +1378,7 @@
                       <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
                     </div>
                     <div class="svc-redirects-header-actions">
-                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn">
+                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
                         <i data-lucide="external-link"></i><span>Learn more</span>
                       </button>
                     </div>
@@ -1366,13 +1386,13 @@
 
                   <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
                   <div class="svc-redirects-action-bar">
-                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn">
+                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="openAddRedirectModal()">
                       <i data-lucide="plus"></i><span>Add Redirect</span>
                     </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn">
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
                       <i data-lucide="flask-conical"></i><span>Test URL</span>
                     </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn">
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
                       <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
                     </button>
                   </div>
@@ -2592,7 +2612,7 @@
       </div>
     </div>
   <!-- Transfer Project Modal -->
-  <dialog id="svc-transfer-modal" class="svc-clean-dialog">
+  <div id="svc-transfer-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2602,11 +2622,11 @@
             <p>Transfer this project to another Syte user or organization.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-transfer-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-transfer-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
-      <form class="svc-clean-dialog-form" id="svc-transfer-project-form" onsubmit="event.preventDefault(); toast('Transfer invite sent'); document.getElementById('svc-transfer-modal').close();">
+      <form class="svc-clean-dialog-form" id="svc-transfer-project-form" onsubmit="event.preventDefault(); toast('Transfer invite sent'); safeCloseModal('svc-transfer-modal');">
         <div class="svc-dialog-field">
           <label for="svc-transfer-email">
             <span>Recipient Email or Username</span>
@@ -2615,15 +2635,15 @@
           <input id="svc-transfer-email" class="shadcn-input" type="email" placeholder="user@company.com" required>
         </div>
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-transfer-modal').close()">Cancel</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-transfer-modal')">Cancel</button>
           <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="send"></i><span>Send Transfer Request</span></button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- Change Project Icon Modal -->
-  <dialog id="svc-change-icon-modal" class="svc-clean-dialog">
+  <div id="svc-change-icon-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2633,7 +2653,7 @@
             <p>Select an avatar symbol or letter to represent this project.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-change-icon-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-change-icon-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2647,14 +2667,14 @@
           <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('📦')">📦</button>
         </div>
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-change-icon-modal').close()">Close</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-change-icon-modal')">Close</button>
         </div>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- AI File Inspector Modal -->
-  <dialog id="svc-ai-file-modal" class="svc-ai-file-modal">
+  <div id="svc-ai-file-modal" class="svc-ai-file-modal hidden" role="dialog" aria-modal="true">
     <div class="svc-ai-file-modal-card">
       <div class="svc-ai-file-modal-header">
         <div class="svc-ai-file-modal-title">
@@ -2664,17 +2684,17 @@
         </div>
         <div class="svc-ai-file-modal-actions">
           <button type="button" class="svc-code-copy-btn" id="svc-ai-file-modal-copy-btn"><i data-lucide="copy"></i> Copy Code</button>
-          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-ai-file-modal').close()"><i data-lucide="x"></i></button>
+          <button type="button" class="svc-ai-file-modal-close" onclick="safeCloseModal('svc-ai-file-modal')"><i data-lucide="x"></i></button>
         </div>
       </div>
       <div class="svc-ai-file-modal-body">
         <pre><code id="svc-ai-file-modal-code"></code></pre>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- Deployment & Build Log Inspector Modal (Shrunken Top, Three-Dot Menu, Bigger Log) -->
-  <dialog id="svc-build-log-modal" class="svc-build-log-modal">
+  <div id="svc-build-log-modal" class="svc-build-log-modal hidden" role="dialog" aria-modal="true">
     <div class="svc-build-log-modal-card">
       <div class="svc-modal-mobile-handle"></div>
 
@@ -2732,7 +2752,7 @@
             </div>
 
             <!-- Close Modal button -->
-            <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
+            <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-build-log-modal')" aria-label="Close build modal">
               <i data-lucide="x"></i>
             </button>
           </div>
@@ -2771,13 +2791,13 @@
         </div>
       </section>
     </div>
-  </dialog>
+  </div>
 
   <!-- ========================================================
        ENVIRONMENT VARIABLES MODALS
        ======================================================== -->
   <!-- 1. ADD / EDIT ENV VARIABLE MODAL -->
-  <dialog id="svc-env-modal" class="svc-clean-dialog">
+  <div id="svc-env-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2787,7 +2807,7 @@
             <p>Store secure config, API secrets, and runtime settings.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-env-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-env-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2824,15 +2844,15 @@
         </div>
 
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-env-modal').close()">Cancel</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-env-modal')">Cancel</button>
           <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Variable</span></button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 1B. BUILD FAILED SAVE CONFIRMATION POP-UP MODAL -->
-  <dialog id="svc-build-fail-save-modal" class="svc-clean-dialog">
+  <div id="svc-build-fail-save-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2842,7 +2862,7 @@
             <p>Initial compilation or deployment encountered an issue.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-build-fail-save-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-build-fail-save-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2860,10 +2880,10 @@
         <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-fail-save-btn"><i data-lucide="check"></i><span>Save Project Anyway</span></button>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- 2. ENV VARIABLES DOCUMENTATION MODAL -->
-  <dialog id="svc-env-docs-modal" class="svc-clean-dialog">
+  <div id="svc-env-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card is-wide">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2873,7 +2893,7 @@
             <p>Managing runtime secrets, encryption at rest, and deployment injection.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-env-docs-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-env-docs-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2892,13 +2912,13 @@
         </section>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- ========================================================
        DOMAINS MODALS
        ======================================================== -->
   <!-- 1. CONNECT CUSTOM DOMAIN MODAL -->
-  <dialog id="svc-domain-add-modal" class="svc-clean-dialog">
+  <div id="svc-domain-add-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2908,7 +2928,7 @@
             <p>Attach a custom domain or subdomain to route traffic to this project.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domain-add-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domain-add-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2933,15 +2953,15 @@
         </div>
 
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-domain-add-modal').close()">Cancel</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-domain-add-modal')">Cancel</button>
           <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="plus"></i><span>Connect Domain</span></button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 2. DOMAIN EDIT / DETAILS MODAL -->
-  <dialog id="svc-domain-edit-modal" class="svc-clean-dialog">
+  <div id="svc-domain-edit-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2951,7 +2971,7 @@
             <p id="svc-domain-edit-modal-sub">View routing settings and DNS status.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domain-edit-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domain-edit-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2966,17 +2986,17 @@
           </div>
         </div>
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-domain-edit-modal').close()">Close</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-domain-edit-modal')">Close</button>
           <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-domain-remove-btn" style="padding: 8px 14px; font-size: 13px;">
             <i data-lucide="trash-2"></i><span>Remove Domain</span>
           </button>
         </div>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- 3. CERTIFICATES MODAL -->
-  <dialog id="svc-certificates-modal" class="svc-clean-dialog">
+  <div id="svc-certificates-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -2986,7 +3006,7 @@
             <p>Automated HTTPS certificate management.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-certificates-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-certificates-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -2999,10 +3019,10 @@
         </section>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- 4. DOMAINS DOCUMENTATION GUIDE MODAL -->
-  <dialog id="svc-domains-docs-modal" class="svc-clean-dialog">
+  <div id="svc-domains-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card is-wide">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3012,7 +3032,7 @@
             <p>Configuring DNS records, apex domains, and subdomains.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-domains-docs-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domains-docs-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3031,13 +3051,13 @@
         </section>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- ========================================================
        REDIRECTS MODALS
        ======================================================== -->
   <!-- 1. ADD / EDIT REDIRECT MODAL -->
-  <dialog id="svc-redirect-modal" class="svc-clean-dialog">
+  <div id="svc-redirect-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3047,7 +3067,7 @@
             <p id="svc-redirect-modal-sub">Forward incoming request paths to custom paths or external URLs.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3173,17 +3193,17 @@
         </div>
 
         <div class="svc-clean-dialog-footer">
-          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-redirect-modal').close()">Cancel</button>
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-redirect-modal')">Cancel</button>
           <button type="submit" class="shadcn-btn shadcn-btn-default" id="svc-redirect-submit-btn">
             <i data-lucide="check"></i><span>Save Redirect</span>
           </button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 2. REDIRECT TESTER MODAL -->
-  <dialog id="svc-redirect-test-modal" class="svc-clean-dialog">
+  <div id="svc-redirect-test-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3193,7 +3213,7 @@
             <p>Simulate an incoming URL against your active redirect rules.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-test-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-test-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3211,10 +3231,10 @@
         </div>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- 3. IMPORT / EXPORT MODAL -->
-  <dialog id="svc-redirect-io-modal" class="svc-clean-dialog">
+  <div id="svc-redirect-io-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3224,7 +3244,7 @@
             <p>Backup or bulk import redirect configurations in JSON or CSV format.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-io-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-io-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3257,10 +3277,10 @@
         </div>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- 4. LEARN MORE DOCUMENTATION MODAL -->
-  <dialog id="svc-redirect-docs-modal" class="svc-clean-dialog">
+  <div id="svc-redirect-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-clean-dialog-card is-wide">
       <header class="svc-clean-dialog-header">
         <div class="svc-dialog-title-wrap">
@@ -3270,7 +3290,7 @@
             <p>Understanding status codes, wildcards, parameters, and matching order.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-redirect-docs-modal').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-docs-modal')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3302,13 +3322,13 @@
         </section>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- ========================================================
        FIREWALL MODALS (Exact match to screenshots)
        ======================================================== -->
   <!-- 1. ADD FIREWALL RULE MODAL (media_1788178893851.jpg) -->
-  <dialog id="svc-modal-fw-add-rule" class="svc-sheet-dialog">
+  <div id="svc-modal-fw-add-rule" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
@@ -3318,7 +3338,7 @@
             <p class="svc-sheet-sub-title">Create a rule to control and protect your application at the edge.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-add-rule').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-add-rule')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3424,15 +3444,15 @@
 
         <!-- Footer -->
         <div class="svc-sheet-footer">
-          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-add-rule').close()">Cancel</button>
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-add-rule')">Cancel</button>
           <button type="submit" class="btn-sheet-primary" id="fw-rule-submit-btn">Create Rule</button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 2. IP RATE LIMIT MODAL (media_1788178893971.jpg) -->
-  <dialog id="svc-modal-fw-rate-limit" class="svc-sheet-dialog">
+  <div id="svc-modal-fw-rate-limit" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
@@ -3445,7 +3465,7 @@
             <p class="svc-sheet-sub-title">Limit the number of requests from an IP address.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-rate-limit').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-rate-limit')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3563,15 +3583,15 @@
 
         <!-- Footer -->
         <div class="svc-sheet-footer">
-          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-rate-limit').close()">Cancel</button>
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-rate-limit')">Cancel</button>
           <button type="submit" class="btn-sheet-primary" id="fw-rl-submit-btn">Create Rule</button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 3. BOT PROTECTION MODAL (media_1788178893972.jpg) -->
-  <dialog id="svc-modal-fw-bot-protect" class="svc-sheet-dialog">
+  <div id="svc-modal-fw-bot-protect" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
@@ -3584,7 +3604,7 @@
             <p class="svc-sheet-sub-title">Detect and manage automated traffic, scrapers, and malicious bots.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-bot-protect').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-bot-protect')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3741,15 +3761,15 @@
 
         <!-- Footer -->
         <div class="svc-sheet-footer">
-          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-bot-protect').close()">Cancel</button>
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-bot-protect')">Cancel</button>
           <button type="submit" class="btn-sheet-primary" id="fw-bot-submit-btn">Save Changes</button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <!-- 4. IP BLOCKLIST MODAL -->
-  <dialog id="svc-modal-fw-ip-block" class="svc-sheet-dialog">
+  <div id="svc-modal-fw-ip-block" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
     <div class="svc-sheet-card">
       <div class="svc-sheet-drag-handle"></div>
       <header class="svc-clean-dialog-header">
@@ -3762,7 +3782,7 @@
             <p class="svc-sheet-sub-title">Block or restrict malicious IPs, CIDR subnets, and ASNs.</p>
           </div>
         </div>
-        <button type="button" class="svc-modal-close-icon-btn" onclick="document.getElementById('svc-modal-fw-ip-block').close()" aria-label="Close dialog">
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-ip-block')" aria-label="Close dialog">
           <i data-lucide="x"></i>
         </button>
       </header>
@@ -3824,12 +3844,12 @@
         </div>
 
         <div class="svc-sheet-footer">
-          <button type="button" class="btn-sheet-cancel" onclick="document.getElementById('svc-modal-fw-ip-block').close()">Cancel</button>
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-ip-block')">Cancel</button>
           <button type="submit" class="btn-sheet-primary" id="fw-ipb-submit-btn">Create Rule</button>
         </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
   <script src="/static/app.js?v=__VERSION__"></script>
 </body>

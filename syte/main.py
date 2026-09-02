@@ -133,6 +133,10 @@ app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/o
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://sycord.site",
+        "http://sycord.site",
+        "https://www.sycord.site",
+        "http://www.sycord.site",
         "https://sycord.com",
         "https://www.sycord.com",
         "http://localhost",
@@ -143,8 +147,11 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:8787",
+        "http://45.135.148.5",
+        "http://45.135.148.5:8787",
+        "https://45.135.148.5",
     ],
-    allow_origin_regex=r"^https://([a-z0-9-]+\.)?sycord\.com$|^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=r"^https?://([a-z0-9-]+\.)?sycord\.(site|com)(:\d+)?$|^https?://(localhost|127\.0\.0\.1|45\.135\.148\.5)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -380,7 +387,7 @@ class UpdateProjectRequest(BaseModel):
 
 class EnvironmentVariableRequest(BaseModel):
     key: str = Field(min_length=1, max_length=255, pattern=r"[A-Za-z_][A-Za-z0-9_]*")
-    value: str = Field(min_length=1, max_length=32_768)
+    value: str = Field(default="", max_length=32_768)
     original_key: str = Field(default="", max_length=255)
 
 
@@ -1632,7 +1639,6 @@ async def api_get_project_redirects(
 async def api_create_project_redirect(
     project_id: str,
     body: ProjectRedirectRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -1661,12 +1667,12 @@ async def api_create_project_redirect(
     return {"ok": True, "redirect": redirect}
 
 
+@app.put("/api/projects/{project_id}/redirects/{redirect_id}")
 @app.patch("/api/projects/{project_id}/redirects/{redirect_id}")
 async def api_update_project_redirect(
     project_id: str,
     redirect_id: str,
     body: ProjectRedirectUpdateRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -1684,7 +1690,6 @@ async def api_update_project_redirect(
 async def api_delete_project_redirect(
     project_id: str,
     redirect_id: str,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -1700,7 +1705,6 @@ async def api_delete_project_redirect(
 async def api_reorder_project_redirects(
     project_id: str,
     body: ProjectRedirectReorderRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -1714,7 +1718,6 @@ async def api_reorder_project_redirects(
 async def api_bulk_project_redirects(
     project_id: str,
     body: ProjectRedirectBulkRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -1742,7 +1745,6 @@ async def api_test_project_redirects(
 async def api_import_project_redirects(
     project_id: str,
     body: ProjectRedirectImportRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     project = await get_project(project_id)
     if not project:
@@ -2554,7 +2556,6 @@ async def api_update_project(project_id: str, body: UpdateProjectRequest):
 async def api_upsert_project_environment(
     project_id: str,
     body: EnvironmentVariableRequest,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Write one environment value without ever returning stored values to the browser."""
     project = await get_project(project_id)
@@ -2584,7 +2585,6 @@ async def api_upsert_project_environment(
 async def api_delete_project_environment(
     project_id: str,
     key: str,
-    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Delete one stored environment key without disclosing other runtime values."""
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):

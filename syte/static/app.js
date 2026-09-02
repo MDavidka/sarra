@@ -6,6 +6,82 @@ let projects = [];
 let logStream = null;
 let previewStream = null;
 let activeServiceId = null;
+let selectedCurrentProject = null;
+if (typeof window !== 'undefined') window.selectedCurrentProject = null;
+
+function resolveActiveProject(project) {
+  if (project && project.id) {
+    const found = projects.find(p => p.id === project.id);
+    return found || project;
+  }
+  if (activeServiceId) {
+    const found = projects.find(p => p.id === activeServiceId);
+    if (found) return found;
+  }
+  if (selectedCurrentProject && selectedCurrentProject.id) {
+    const found = projects.find(p => p.id === selectedCurrentProject.id);
+    if (found) return found;
+  }
+  const editModal = document.getElementById('svc-edit-modal');
+  if (editModal && editModal.dataset.projectId) {
+    const found = projects.find(p => p.id === editModal.dataset.projectId);
+    if (found) return found;
+  }
+  if (projects && projects.length > 0) {
+    return projects[0];
+  }
+  return null;
+}
+
+function wireBackdropDismiss(modal) {
+  if (!modal || modal.dataset.backdropWired) return;
+  modal.dataset.backdropWired = 'true';
+  let pointerDownOnBackdrop = false;
+  modal.addEventListener('pointerdown', (e) => {
+    pointerDownOnBackdrop = (e.target === modal);
+  });
+  modal.addEventListener('touchstart', (e) => {
+    pointerDownOnBackdrop = (e.target === modal);
+  }, { passive: true });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal && pointerDownOnBackdrop) {
+      console.log('[Modal] Backdrop clicked, closing modal:', modal.id);
+      safeCloseModal(modal);
+    }
+    pointerDownOnBackdrop = false;
+  });
+}
+
+function safeShowModal(modal) {
+  if (typeof modal === 'string') modal = document.getElementById(modal);
+  if (!modal) {
+    console.warn('[Modal] safeShowModal called with null modal element');
+    return;
+  }
+  console.log('[Modal] safeShowModal showing modal:', modal.id);
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  wireBackdropDismiss(modal);
+  if (typeof refreshIcons === 'function') refreshIcons();
+}
+
+function safeCloseModal(modal) {
+  if (typeof modal === 'string') modal = document.getElementById(modal);
+  if (!modal) return;
+  console.log('[Modal] safeCloseModal closing modal:', modal.id);
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+  if (typeof modal.close === 'function') {
+    try { modal.close(); } catch (_) {}
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.safeShowModal = safeShowModal;
+  window.safeCloseModal = safeCloseModal;
+  window.closeModal = safeCloseModal;
+}
+
 let deployPollTimer = null;
 let previewPollTimer = null;
 let lastPreviewFrameSrc = '';
@@ -4875,12 +4951,13 @@ async function api(path, opts = {}) {
   }
   let res;
   try {
-    res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
+    const fetchOpts = { credentials: 'include', ...opts, headers };
+    res = await fetch(API + path, fetchOpts);
     if (res.status === 401 && getApiKey()) {
       setApiKey('');
       const retryHeaders = { ...headers };
       delete retryHeaders['X-API-Key'];
-      res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+      res = await fetch(API + path, { credentials: 'include', ...opts, headers: retryHeaders });
     }
     if (res.status === 403 && isMutating && !opts._retriedCsrf) {
       const cloned = res.clone();
@@ -4891,22 +4968,14 @@ async function api(path, opts = {}) {
         try { await restoreOperatorSession(); } catch (_) {}
         if (syraCsrfToken) {
           const retryHeaders = { ...headers, 'X-Syte-CSRF': syraCsrfToken };
-          res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+          res = await fetch(API + path, { credentials: 'include', ...opts, headers: retryHeaders });
         }
       }
     }
   } catch (err) {
-    highLoadNetworkErrorCount++;
+    console.warn('[API Network Error]:', path, err);
     const rawMsg = String(err?.message || err || '');
     const isNetwork = !rawMsg || rawMsg === 'TypeError' || rawMsg.includes('Load failed') || rawMsg.includes('Failed to fetch') || rawMsg.includes('NetworkError');
-    if (highLoadNetworkErrorCount >= 4) {
-      showCrashScreen({
-        title: 'Network / High Load Error',
-        subtitle: 'The server is unreachable or under high load.',
-        message: 'Multiple consecutive API requests failed due to high load or network loss.',
-        details: err?.stack || String(err)
-      });
-    }
     const normalizedMsg = normalizeFetchError(rawMsg);
     const apiErr = new Error(normalizedMsg);
     apiErr.isNetworkError = isNetwork;
@@ -6524,15 +6593,11 @@ function serviceEnvironmentEntries(project) {
 }
 
 function closeServiceEnvironmentModal() {
-  const modal = document.getElementById('svc-env-modal');
-  if (modal) {
-    if (typeof modal.close === 'function') modal.close();
-    modal.classList.add('hidden');
-  }
+  safeCloseModal('svc-env-modal');
 }
 
 function openServiceEnvironmentModal(project, key = '') {
-  const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null) || selectedCurrentProject;
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-env-modal');
   const keyInput = document.getElementById('svc-env-key');
   const valueInput = document.getElementById('svc-env-value');
@@ -6560,7 +6625,7 @@ function openServiceEnvironmentModal(project, key = '') {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const targetProjId = modal.dataset.projectId || curProject?.id || activeServiceId;
-    const targetProject = projects.find(x => x.id === targetProjId) || curProject;
+    const targetProject = resolveActiveProject({ id: targetProjId }) || curProject;
     let k = keyInput?.value.trim().replace(/\s+/g, '_');
     const v = valueInput?.value;
     const orig = original?.value.trim() || '';
@@ -6571,22 +6636,20 @@ function openServiceEnvironmentModal(project, key = '') {
     }
     try {
       await persistServiceEnvironment(targetProject, k, v, orig);
-      if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
+      safeCloseModal(modal);
       if (targetProject) renderServiceEnvCardsList(targetProject);
     } catch (err) {
       toast(normalizeFetchError(err?.message) || 'Failed to save variable');
     }
   };
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
-  refreshIcons();
+  safeShowModal(modal);
   setTimeout(() => (key ? valueInput : keyInput)?.focus(), 50);
 }
 
 async function persistServiceEnvironment(project, key, value, originalKey = '') {
-  const projId = project?.id || activeServiceId;
+  const curProject = resolveActiveProject(project);
+  const projId = curProject?.id;
   if (!projId) return toast('No active project found');
   const result = await api(`/projects/${encodeURIComponent(projId)}/environment`, {
     method: 'PUT',
@@ -6594,9 +6657,9 @@ async function persistServiceEnvironment(project, key, value, originalKey = '') 
   });
   toast(result.message || `Saved ${key}`);
   await loadProjects();
-  const refreshed = projects.find(item => item.id === projId) || project;
+  const refreshed = projects.find(item => item.id === projId) || curProject;
   if (refreshed) {
-    if (project) Object.assign(project, refreshed);
+    if (curProject) Object.assign(curProject, refreshed);
     renderServiceEnvCardsList(refreshed);
     renderServiceDashboard(refreshed, false);
     updateEnvironmentRequirementBadge(refreshed);
@@ -6604,7 +6667,9 @@ async function persistServiceEnvironment(project, key, value, originalKey = '') 
 }
 
 async function deleteServiceEnvironmentKey(project, key) {
-  const projId = project?.id || activeServiceId;
+  const curProject = resolveActiveProject(project);
+  const projId = curProject?.id;
+  if (!projId) return toast('No active project found');
   if (!confirm(`Are you sure you want to remove ${key} from this project?`)) return;
   try {
     await api(`/projects/${encodeURIComponent(projId)}/environment/${encodeURIComponent(key)}`, {
@@ -6612,9 +6677,9 @@ async function deleteServiceEnvironmentKey(project, key) {
     });
     toast(`Removed ${key}`);
     await loadProjects();
-    const refreshed = projects.find(p => p.id === projId) || project;
+    const refreshed = projects.find(p => p.id === projId) || curProject;
     if (refreshed) {
-      if (project) Object.assign(project, refreshed);
+      if (curProject) Object.assign(curProject, refreshed);
       renderServiceEnvCardsList(refreshed);
       updateEnvironmentRequirementBadge(refreshed);
     }
@@ -6625,25 +6690,26 @@ async function deleteServiceEnvironmentKey(project, key) {
 
 function openEnvDocsModal() {
   const modal = document.getElementById('svc-env-docs-modal');
-  if (modal) {
-    if (typeof modal.showModal === 'function') modal.showModal();
-    modal.classList.remove('hidden');
-    refreshIcons();
-  }
+  safeShowModal(modal);
 }
 
 function selectProjectIcon(icon) {
   const letter = document.getElementById('svc-settings-project-icon-letter');
   if (letter) letter.textContent = icon;
   const modal = document.getElementById('svc-change-icon-modal');
-  if (modal) modal.close();
+  if (modal) safeCloseModal(modal);
   toast(`Project icon updated to ${icon}`);
 }
 
 function renderServiceEnvCardsList(project) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
   const container = document.getElementById('svc-env-cards');
   if (!container) return;
-  updateEnvironmentRequirementBadge(project);
+  updateEnvironmentRequirementBadge(curProject);
 
   const searchInput = document.getElementById('svc-env-search-input');
   const typeSelect = document.getElementById('svc-env-filter-type');
@@ -6654,13 +6720,11 @@ function renderServiceEnvCardsList(project) {
   const learnMoreBtn = document.getElementById('svc-env-learn-more-btn');
   const filterToggleBtn = document.getElementById('svc-env-filter-toggle-btn');
 
-  if (addBtn && !addBtn.dataset.wired) {
-    addBtn.dataset.wired = 'true';
-    addBtn.onclick = () => openServiceEnvironmentModal(project);
+  if (addBtn) {
+    addBtn.onclick = () => openServiceEnvironmentModal(curProject);
   }
 
-  if (learnMoreBtn && !learnMoreBtn.dataset.wired) {
-    learnMoreBtn.dataset.wired = 'true';
+  if (learnMoreBtn) {
     learnMoreBtn.onclick = () => openEnvDocsModal();
   }
 
@@ -6683,7 +6747,7 @@ function renderServiceEnvCardsList(project) {
         if (activeEnvSubtab === 'shared') {
           toast('Showing workspace shared variables');
         }
-        renderServiceEnvCardsList(project);
+        renderServiceEnvCardsList(curProject);
       };
     }
   });
@@ -6692,7 +6756,7 @@ function renderServiceEnvCardsList(project) {
   const filterType = typeSelect?.value || 'all';
   const filterEnv = envSelect?.value || 'all';
 
-  let entries = serviceEnvironmentEntries(project);
+  let entries = serviceEnvironmentEntries(curProject);
 
   if (activeEnvSubtab === 'shared') {
     entries = [
@@ -6737,10 +6801,10 @@ function renderServiceEnvCardsList(project) {
           </div>
         </div>
         <div class="svc-env-exact-actions">
-          <button type="button" class="btn-env-edit-pill" onclick="openServiceEnvironmentModal(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(key)}')">
+          <button type="button" class="btn-env-edit-pill" onclick="openServiceEnvironmentModal(null, '${esc(key)}')">
             Edit
           </button>
-          <button type="button" class="btn-env-menu" title="Variable options" onclick="deleteServiceEnvironmentKey(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(key)}')">
+          <button type="button" class="btn-env-menu" title="Variable options" onclick="deleteServiceEnvironmentKey(null, '${esc(key)}')">
             <i data-lucide="more-vertical"></i>
           </button>
         </div>
@@ -6827,6 +6891,11 @@ function formatDomainAddedDate(iso) {
 }
 
 function renderServiceDomainsList(project) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
   const container = document.getElementById('svc-domains-card-list');
   if (!container) return;
 
@@ -6848,16 +6917,13 @@ function renderServiceDomainsList(project) {
   const query = (searchInput?.value || '').toLowerCase().trim();
 
   // Wires for header buttons
-  if (addBtn && !addBtn.dataset.wired) {
-    addBtn.dataset.wired = 'true';
-    addBtn.onclick = () => openDomainAddModal(project);
+  if (addBtn) {
+    addBtn.onclick = () => openDomainAddModal(curProject);
   }
-  if (certsBtn && !certsBtn.dataset.wired) {
-    certsBtn.dataset.wired = 'true';
+  if (certsBtn) {
     certsBtn.onclick = () => openCertificatesModal();
   }
-  if (learnMoreBtn && !learnMoreBtn.dataset.wired) {
-    learnMoreBtn.dataset.wired = 'true';
+  if (learnMoreBtn) {
     learnMoreBtn.onclick = () => openDomainsDocsModal();
   }
 
@@ -6867,7 +6933,7 @@ function renderServiceDomainsList(project) {
     pillTotal.onclick = () => {
       domainStatusFilter = 'all';
       toast('Showing all domains');
-      renderServiceDomainsList(project);
+      renderServiceDomainsList(curProject);
     };
   }
   if (pillActive && !pillActive.dataset.wired) {
@@ -6875,7 +6941,7 @@ function renderServiceDomainsList(project) {
     pillActive.onclick = () => {
       domainStatusFilter = 'active';
       toast('Filtered: Active domains');
-      renderServiceDomainsList(project);
+      renderServiceDomainsList(curProject);
     };
   }
   if (pillPending && !pillPending.dataset.wired) {
@@ -6883,7 +6949,7 @@ function renderServiceDomainsList(project) {
     pillPending.onclick = () => {
       domainStatusFilter = 'pending';
       toast('Filtered: Pending domains');
-      renderServiceDomainsList(project);
+      renderServiceDomainsList(curProject);
     };
   }
   if (filterBtn && !filterBtn.dataset.wired) {
@@ -6893,11 +6959,11 @@ function renderServiceDomainsList(project) {
       else if (domainStatusFilter === 'active') domainStatusFilter = 'pending';
       else domainStatusFilter = 'all';
       toast(`Domain filter: ${domainStatusFilter.toUpperCase()}`);
-      renderServiceDomainsList(project);
+      renderServiceDomainsList(curProject);
     };
   }
 
-  const domainRows = getProjectDomainsArray(project);
+  const domainRows = getProjectDomainsArray(curProject);
   const totalCount = domainRows.length;
   const activeCount = domainRows.filter(d => d.valid).length;
   const pendingCount = domainRows.filter(d => !d.valid).length;
@@ -6928,7 +6994,7 @@ function renderServiceDomainsList(project) {
     return;
   }
 
-  const dateLabel = formatDomainAddedDate(project.created_at || project.updated_at);
+  const dateLabel = formatDomainAddedDate(curProject.created_at || curProject.updated_at);
 
   container.innerHTML = filtered.map(item => {
     const isPending = !item.valid;
@@ -6954,10 +7020,10 @@ function renderServiceDomainsList(project) {
             </div>
           </div>
           <div class="svc-domain-exact-actions">
-            <button type="button" class="btn-domain-edit-pill" onclick="openDomainEditModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+            <button type="button" class="btn-domain-edit-pill" onclick="openDomainEditModal(null, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
               Edit
             </button>
-            <button type="button" class="btn-domain-menu" title="Domain actions" onclick="openDomainEditModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+            <button type="button" class="btn-domain-menu" title="Domain actions" onclick="openDomainEditModal(null, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
               <i data-lucide="more-vertical"></i>
             </button>
           </div>
@@ -7003,6 +7069,7 @@ function renderServiceDomainsList(project) {
 }
 
 function openDomainAddModal(project) {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-domain-add-modal');
   if (!modal) return;
   const input = document.getElementById('svc-new-domain-input');
@@ -7012,8 +7079,8 @@ function openDomainAddModal(project) {
   if (form) {
     form.onsubmit = async (e) => {
       e.preventDefault();
-      const curProject = selectedCurrentProject || project;
-      if (!curProject) return toast('No active project selected');
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
       let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       if (!val) return toast('Please enter a domain name');
 
@@ -7022,19 +7089,19 @@ function openDomainAddModal(project) {
       }
 
       try {
-        const res = await api(`/projects/${encodeURIComponent(curProject.id)}/domain`, {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
           method: 'POST',
           body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
         });
         if (res?.project) {
-          Object.assign(curProject, res.project);
+          Object.assign(activeProj, res.project);
         } else {
-          curProject.domain = val;
+          activeProj.domain = val;
         }
         if (input) input.value = '';
-        modal.close();
+        safeCloseModal(modal);
         await loadProjects();
-        const refreshed = projects.find(p => p.id === curProject.id) || curProject;
+        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
         renderServiceDomainsList(refreshed);
         renderServiceDashboard(refreshed, false);
         toast(`Connected domain ${val}`);
@@ -7044,35 +7111,37 @@ function openDomainAddModal(project) {
     };
   }
 
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openDomainEditModal(project, item) {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-domain-edit-modal');
   if (!modal) return;
   const nameEl = document.getElementById('svc-domain-detail-name');
   const statusEl = document.getElementById('svc-domain-detail-status');
   const removeBtn = document.getElementById('svc-domain-remove-btn');
 
-  if (nameEl) nameEl.textContent = item.domain;
+  if (nameEl) nameEl.textContent = item?.domain || '';
   if (statusEl) {
-    statusEl.textContent = item.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
-    statusEl.className = item.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
+    statusEl.textContent = item?.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
+    statusEl.className = item?.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
   }
 
   if (removeBtn) {
     removeBtn.onclick = async () => {
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
       if (!confirm(`Are you sure you want to disconnect ${item.domain}?`)) return;
       try {
-        await api(`/projects/${encodeURIComponent(project.id)}/domain`, {
+        await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
           method: 'DELETE',
           body: JSON.stringify({ domain: item.domain }),
         });
         toast(`Removed domain ${item.domain}`);
-        modal.close();
+        safeCloseModal(modal);
         await loadProjects();
-        const refreshed = projects.find(p => p.id === project.id) || project;
+        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
         renderServiceDomainsList(refreshed);
       } catch (err) {
         toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
@@ -7080,44 +7149,26 @@ function openDomainEditModal(project, item) {
     };
   }
 
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openCertificatesModal() {
   const modal = document.getElementById('svc-certificates-modal');
-  if (modal) {
-    modal.showModal();
-    refreshIcons();
-  }
+  safeShowModal(modal);
 }
 
 function openDomainsDocsModal() {
   const modal = document.getElementById('svc-domains-docs-modal');
-  if (modal) {
-    modal.showModal();
-    refreshIcons();
-  }
+  safeShowModal(modal);
 }
-
 function initSheetDialogDismiss(modal) {
-  if (!modal || modal.dataset.dismissWired) return;
-  modal.dataset.dismissWired = 'true';
-  modal.addEventListener('click', (e) => {
-    const rect = modal.getBoundingClientRect();
-    const isInDialog = (
-      rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
-      rect.left <= e.clientX && e.clientX <= rect.left + rect.width
-    );
-    if (!isInDialog) {
-      modal.close();
-    }
-  });
+  wireBackdropDismiss(modal);
 }
 
 function openFwAddRuleModal(project) {
+  console.log('[Firewall] openFwAddRuleModal clicked for project:', project?.id || activeServiceId);
   const modal = document.getElementById('svc-modal-fw-add-rule');
-  if (!modal) return;
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-add-rule element not found');
   initSheetDialogDismiss(modal);
   const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null);
 
@@ -7125,6 +7176,7 @@ function openFwAddRuleModal(project) {
   const actionCards = modal.querySelectorAll('.svc-fw-action-choice-card');
   actionCards.forEach(card => {
     card.onclick = () => {
+      console.log('[Firewall Rule] Action selected:', card.dataset.fwAction);
       actionCards.forEach(c => {
         c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
         c.setAttribute('aria-checked', 'false');
@@ -7159,6 +7211,7 @@ function openFwAddRuleModal(project) {
   if (addCondBtn && !addCondBtn.dataset.wired) {
     addCondBtn.dataset.wired = 'true';
     addCondBtn.onclick = () => {
+      console.log('[Firewall Rule] Add condition clicked');
       const stack = document.getElementById('fw-rule-condition-stack');
       if (stack) {
         const item = document.createElement('div');
@@ -7209,26 +7262,26 @@ function openFwAddRuleModal(project) {
     form.onsubmit = (e) => {
       e.preventDefault();
       const ruleName = nameInput?.value.trim() || 'Custom Firewall Rule';
+      console.log('[Firewall Rule] Rule submitted:', ruleName, selectedAction);
       toast(`Firewall rule created: ${ruleName} (${selectedAction.toUpperCase()})`);
-      if (typeof modal.close === 'function') modal.close();
+      safeCloseModal(modal);
     };
   }
 
-  if (!modal.open && typeof modal.showModal === 'function') {
-    modal.showModal();
-  }
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openFwRateLimitModal(project) {
+  console.log('[Firewall] openFwRateLimitModal clicked for project:', project?.id || activeServiceId);
   const modal = document.getElementById('svc-modal-fw-rate-limit');
-  if (!modal) return;
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-rate-limit element not found');
   initSheetDialogDismiss(modal);
 
   let selectedAction = 'block';
   const actionCards = modal.querySelectorAll('[data-rl-action]');
   actionCards.forEach(card => {
     card.onclick = () => {
+      console.log('[Rate Limit] Action selected:', card.dataset.rlAction);
       actionCards.forEach(c => {
         c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
         c.setAttribute('aria-checked', 'false');
@@ -7247,6 +7300,7 @@ function openFwRateLimitModal(project) {
   const callout = document.getElementById('fw-rl-ip-callout');
   segBtns.forEach(btn => {
     btn.onclick = () => {
+      console.log('[Rate Limit] IP mode selected:', btn.dataset.ipMode);
       segBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const mode = btn.dataset.ipMode;
@@ -7282,26 +7336,26 @@ function openFwRateLimitModal(project) {
       const requests = document.getElementById('fw-rl-requests-input')?.value || '100';
       const windowVal = document.getElementById('fw-rl-window-select')?.value || '1 minute';
       const nameVal = nameInput?.value.trim() || 'IP Rate Limit';
+      console.log('[Rate Limit] Rule submitted:', nameVal, requests, windowVal);
       toast(`Rate limit rule created: ${requests} req / ${windowVal} (${nameVal})`);
-      if (typeof modal.close === 'function') modal.close();
+      safeCloseModal(modal);
     };
   }
 
-  if (!modal.open && typeof modal.showModal === 'function') {
-    modal.showModal();
-  }
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openFwBotProtectModal(project) {
+  console.log('[Firewall] openFwBotProtectModal clicked for project:', project?.id || activeServiceId);
   const modal = document.getElementById('svc-modal-fw-bot-protect');
-  if (!modal) return;
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-bot-protect element not found');
   initSheetDialogDismiss(modal);
 
   let selectedLevel = 'balanced';
   const levelCards = modal.querySelectorAll('[data-bot-level]');
   levelCards.forEach(card => {
     card.onclick = () => {
+      console.log('[Bot Protect] Level selected:', card.dataset.botLevel);
       levelCards.forEach(c => {
         c.classList.remove('is-active');
         c.setAttribute('aria-checked', 'false');
@@ -7327,6 +7381,7 @@ function openFwBotProtectModal(project) {
   const actionCards = modal.querySelectorAll('[data-bot-action]');
   actionCards.forEach(card => {
     card.onclick = () => {
+      console.log('[Bot Protect] Action selected:', card.dataset.botAction);
       actionCards.forEach(c => {
         c.classList.remove('is-active');
         c.setAttribute('aria-checked', 'false');
@@ -7352,6 +7407,7 @@ function openFwBotProtectModal(project) {
   if (allowlistBtn && !allowlistBtn.dataset.wired) {
     allowlistBtn.dataset.wired = 'true';
     allowlistBtn.onclick = () => {
+      console.log('[Bot Protect] Add allowlist clicked');
       const ip = prompt('Enter IP, User Agent, or URL pattern to allow:', '');
       if (ip && ip.trim()) toast(`Added ${ip.trim()} to bot allowlist`);
     };
@@ -7361,6 +7417,7 @@ function openFwBotProtectModal(project) {
   if (blocklistBtn && !blocklistBtn.dataset.wired) {
     blocklistBtn.dataset.wired = 'true';
     blocklistBtn.onclick = () => {
+      console.log('[Bot Protect] Add blocklist clicked');
       const bot = prompt('Enter bot signature, User Agent, or IP range to block:', '');
       if (bot && bot.trim()) toast(`Added ${bot.trim()} to bot blocklist`);
     };
@@ -7371,26 +7428,26 @@ function openFwBotProtectModal(project) {
     form.onsubmit = (e) => {
       e.preventDefault();
       const enabled = Boolean(document.getElementById('fw-bot-main-toggle')?.checked);
+      console.log('[Bot Protect] Form submitted, enabled:', enabled);
       toast(`Bot protection updated: ${enabled ? 'Enabled' : 'Disabled'} (${selectedLevel}, ${selectedAction})`);
-      if (typeof modal.close === 'function') modal.close();
+      safeCloseModal(modal);
     };
   }
 
-  if (!modal.open && typeof modal.showModal === 'function') {
-    modal.showModal();
-  }
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openFwIpBlockModal(project) {
+  console.log('[Firewall] openFwIpBlockModal clicked for project:', project?.id || activeServiceId);
   const modal = document.getElementById('svc-modal-fw-ip-block');
-  if (!modal) return;
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-ip-block element not found');
   initSheetDialogDismiss(modal);
 
   let selectedAction = 'block';
   const actionCards = modal.querySelectorAll('[data-ipb-action]');
   actionCards.forEach(card => {
     card.onclick = () => {
+      console.log('[IP Block] Action selected:', card.dataset.ipbAction);
       actionCards.forEach(c => {
         c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
         c.setAttribute('aria-checked', 'false');
@@ -7428,15 +7485,13 @@ function openFwIpBlockModal(project) {
       const target = document.getElementById('fw-ipb-target-input')?.value.trim() || '';
       if (!target) return toast('Please enter an IP or CIDR range');
       const nameVal = nameInput?.value.trim() || 'IP Rule';
+      console.log('[IP Block] Rule submitted:', nameVal, target, selectedAction);
       toast(`IP access rule created: ${selectedAction.toUpperCase()} for ${target}`);
-      if (typeof modal.close === 'function') modal.close();
+      safeCloseModal(modal);
     };
   }
 
-  if (!modal.open && typeof modal.showModal === 'function') {
-    modal.showModal();
-  }
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 let redirectsSearchQuery = '';
@@ -7446,6 +7501,12 @@ let selectedRedirectIds = new Set();
 let allProjectRedirectsCache = [];
 
 async function renderRedirectsWorkspace(project) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  project = curProject;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
   const target = document.getElementById('svc-redirects-list');
   if (!target) return;
 
@@ -7605,7 +7666,7 @@ async function renderRedirectsWorkspace(project) {
           </div>
           <h3 class="svc-redirect-empty-title">No redirect rules configured</h3>
           <p class="svc-redirect-empty-sub">Start by adding your first redirect to forward requests to a different path or URL.</p>
-          <button type="button" class="btn-trigger-build" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+          <button type="button" class="btn-trigger-build" onclick="openAddRedirectModal()">
             <i data-lucide="plus"></i><span>Add Redirect</span>
           </button>
         </div>
@@ -7617,7 +7678,7 @@ async function renderRedirectsWorkspace(project) {
             <p>Everything you can do in one place.</p>
           </div>
           <div class="svc-features-list">
-            <div class="svc-feature-row-item" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal()">
               <div class="svc-feature-left">
                 <span class="svc-feature-icon-sq"><i data-lucide="plus"></i></span>
                 <div class="svc-feature-info">
@@ -7650,7 +7711,7 @@ async function renderRedirectsWorkspace(project) {
               <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
             </div>
 
-            <div class="svc-feature-row-item" onclick="openAddRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal()">
               <div class="svc-feature-left">
                 <span class="svc-feature-icon-sq"><i data-lucide="edit-3"></i></span>
                 <div class="svc-feature-info">
@@ -7683,7 +7744,7 @@ async function renderRedirectsWorkspace(project) {
               <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
             </div>
 
-            <div class="svc-feature-row-item" onclick="openRedirectIoModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+            <div class="svc-feature-row-item" onclick="openRedirectIoModal()">
               <div class="svc-feature-left">
                 <span class="svc-feature-icon-sq"><i data-lucide="copy"></i></span>
                 <div class="svc-feature-info">
@@ -7694,7 +7755,7 @@ async function renderRedirectsWorkspace(project) {
               <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
             </div>
 
-            <div class="svc-feature-row-item" onclick="openRedirectTestModal(selectedCurrentProject || { id: '${esc(project.id)}' })">
+            <div class="svc-feature-row-item" onclick="openRedirectTestModal()">
               <div class="svc-feature-left">
                 <span class="svc-feature-icon-sq"><i data-lucide="shield-check"></i></span>
                 <div class="svc-feature-info">
@@ -7762,21 +7823,21 @@ async function renderRedirectsWorkspace(project) {
 
           <!-- Actions Toolbar -->
           <div class="svc-redirect-actions-row">
-            <button type="button" class="btn-card-action" onclick="openRedirectTestModal(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.source_path)}')">
+            <button type="button" class="btn-card-action" onclick="openRedirectTestModal(null, '${esc(r.source_path)}')">
               <i data-lucide="flask-conical"></i><span>Test</span>
             </button>
-            <button type="button" class="btn-card-action" onclick="openEditRedirectModal(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+            <button type="button" class="btn-card-action" onclick="openEditRedirectModal(null, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
               <i data-lucide="edit-3"></i><span>Edit</span>
             </button>
-            <button type="button" class="btn-card-action" onclick="duplicateRedirectRule(selectedCurrentProject || { id: '${esc(project.id)}' }, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+            <button type="button" class="btn-card-action" onclick="duplicateRedirectRule(null, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
               <i data-lucide="copy"></i><span>Duplicate</span>
             </button>
-            <button type="button" class="btn-card-action" onclick="toggleRedirectActiveState(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', ${!r.is_active})">
+            <button type="button" class="btn-card-action" onclick="toggleRedirectActiveState(null, '${esc(r.id)}', ${!r.is_active})">
               <i data-lucide="${r.is_active ? 'pause' : 'play'}"></i><span>${r.is_active ? 'Disable' : 'Enable'}</span>
             </button>
-            ${!isFirst ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', -1)" title="Move up"><i data-lucide="arrow-up"></i></button>` : ''}
-            ${!isLast ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}', 1)" title="Move down"><i data-lucide="arrow-down"></i></button>` : ''}
-            <button type="button" class="btn-card-action btn-action-delete" onclick="deleteSingleRedirect(selectedCurrentProject || { id: '${esc(project.id)}' }, '${esc(r.id)}')">
+            ${!isFirst ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(null, '${esc(r.id)}', -1)" title="Move up"><i data-lucide="arrow-up"></i></button>` : ''}
+            ${!isLast ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(null, '${esc(r.id)}', 1)" title="Move down"><i data-lucide="arrow-down"></i></button>` : ''}
+            <button type="button" class="btn-card-action btn-action-delete" onclick="deleteSingleRedirect(null, '${esc(r.id)}')">
               <i data-lucide="trash-2"></i>
             </button>
           </div>
@@ -7791,115 +7852,8 @@ async function renderRedirectsWorkspace(project) {
   }
 }
 
-function updateRedirectBulkToolbarUI() {
-  const bulkBar = document.getElementById('svc-redirects-bulk-bar');
-  const countLabel = document.getElementById('svc-bulk-count-label');
-  const selectAll = document.getElementById('svc-redirect-select-all');
-  if (!bulkBar) return;
-
-  const count = selectedRedirectIds.size;
-  if (count > 0) {
-    bulkBar.classList.remove('hidden');
-    if (countLabel) countLabel.textContent = `${count} selected`;
-    if (selectAll) selectAll.checked = allProjectRedirectsCache.length > 0 && count === allProjectRedirectsCache.length;
-  } else {
-    bulkBar.classList.add('hidden');
-    if (selectAll) selectAll.checked = false;
-  }
-}
-
-function renderRedirectCardSelectionUI() {
-  document.querySelectorAll('.svc-redirect-item-checkbox').forEach(cb => {
-    cb.checked = selectedRedirectIds.has(cb.dataset.rid);
-  });
-}
-
-function toggleRedirectSelect(rid) {
-  if (selectedRedirectIds.has(rid)) {
-    selectedRedirectIds.delete(rid);
-  } else {
-    selectedRedirectIds.add(rid);
-  }
-  updateRedirectBulkToolbarUI();
-  renderRedirectCardSelectionUI();
-}
-
-async function toggleRedirectActiveState(project, rid, nextState) {
-  try {
-    await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ is_active: nextState }),
-    });
-    toast(nextState ? 'Redirect enabled' : 'Redirect disabled');
-    await renderRedirectsWorkspace(project);
-  } catch (err) {
-    toast(normalizeFetchError(err?.message) || 'Failed to update redirect');
-  }
-}
-
-async function deleteSingleRedirect(project, rid) {
-  if (!confirm('Are you sure you want to permanently delete this redirect rule?')) return;
-  try {
-    await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
-      method: 'DELETE',
-    });
-    toast('Redirect permanently deleted');
-    selectedRedirectIds.delete(rid);
-    await renderRedirectsWorkspace(project);
-  } catch (err) {
-    toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
-  }
-}
-
-async function duplicateRedirectRule(project, rule) {
-  try {
-    const newSrc = rule.source_path + '-copy';
-    await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
-      method: 'POST',
-      body: JSON.stringify({
-        source_path: newSrc,
-        target_url: rule.target_url,
-        status_code: rule.status_code,
-        is_active: false,
-        preserve_query: rule.preserve_query,
-        case_sensitive: rule.case_sensitive,
-        trailing_slash: rule.trailing_slash,
-        environments: rule.environments,
-        description: `Copy of ${rule.source_path}`,
-      }),
-    });
-    toast(`Duplicated as ${newSrc} (disabled by default)`);
-    await renderRedirectsWorkspace(project);
-  } catch (err) {
-    toast(normalizeFetchError(err?.message) || 'Failed to duplicate redirect');
-  }
-}
-
-async function moveRedirectPriority(project, rid, direction) {
-  const currentIds = allProjectRedirectsCache.map(r => r.id);
-  const idx = currentIds.indexOf(rid);
-  if (idx === -1) return;
-  const targetIdx = idx + direction;
-  if (targetIdx < 0 || targetIdx >= currentIds.length) return;
-
-  // Swap
-  const temp = currentIds[idx];
-  currentIds[idx] = currentIds[targetIdx];
-  currentIds[targetIdx] = temp;
-
-  try {
-    await api(`/projects/${encodeURIComponent(project.id)}/redirects/reorder`, {
-      method: 'POST',
-      body: JSON.stringify({ redirect_ids: currentIds }),
-    });
-    toast('Priority order updated');
-    await renderRedirectsWorkspace(project);
-  } catch (err) {
-    toast(normalizeFetchError(err?.message) || 'Failed to reorder');
-  }
-}
-
 function openAddRedirectModal(project) {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-redirect-modal');
   if (!modal) return;
   const title = document.getElementById('svc-redirect-modal-title');
@@ -7914,12 +7868,12 @@ function openAddRedirectModal(project) {
   if (target) target.value = '';
   if (notes) notes.value = '';
 
-  setupRedirectModalForm(project);
-  modal.showModal();
-  refreshIcons();
+  if (curProject) setupRedirectModalForm(curProject);
+  safeShowModal(modal);
 }
 
 function openEditRedirectModal(project, rule) {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-redirect-modal');
   if (!modal) return;
   const title = document.getElementById('svc-redirect-modal-title');
@@ -7929,29 +7883,31 @@ function openEditRedirectModal(project, rule) {
   const notes = document.getElementById('svc-redirect-notes');
 
   if (title) title.textContent = 'Edit HTTP Redirect';
-  if (editId) editId.value = rule.id;
-  if (src) src.value = rule.source_path;
-  if (target) target.value = rule.target_url;
-  if (notes) notes.value = rule.description || '';
+  if (editId) editId.value = rule?.id || '';
+  if (src) src.value = rule?.source_path || '';
+  if (target) target.value = rule?.target_url || '';
+  if (notes) notes.value = rule?.description || '';
 
-  const codeRadio = document.querySelector(`input[name="redirect-status-code"][value="${rule.status_code}"]`);
-  if (codeRadio) codeRadio.checked = true;
+  if (rule) {
+    const codeRadio = document.querySelector(`input[name="redirect-status-code"][value="${rule.status_code}"]`);
+    if (codeRadio) codeRadio.checked = true;
 
-  const preserveRadio = document.querySelector(`input[name="redirect-preserve-query"][value="${rule.preserve_query ? 'preserve' : 'remove'}"]`);
-  if (preserveRadio) preserveRadio.checked = true;
+    const preserveRadio = document.querySelector(`input[name="redirect-preserve-query"][value="${rule.preserve_query ? 'preserve' : 'remove'}"]`);
+    if (preserveRadio) preserveRadio.checked = true;
 
-  const caseBox = document.getElementById('svc-redirect-case-sensitive');
-  if (caseBox) caseBox.checked = bool(rule.case_sensitive);
+    const caseBox = document.getElementById('svc-redirect-case-sensitive');
+    if (caseBox) caseBox.checked = bool(rule.case_sensitive);
 
-  const slashBox = document.getElementById('svc-redirect-ignore-slash');
-  if (slashBox) slashBox.checked = rule.trailing_slash === 'ignore';
+    const slashBox = document.getElementById('svc-redirect-ignore-slash');
+    if (slashBox) slashBox.checked = rule.trailing_slash === 'ignore';
+  }
 
-  setupRedirectModalForm(project);
-  modal.showModal();
-  refreshIcons();
+  if (curProject) setupRedirectModalForm(curProject);
+  safeShowModal(modal);
 }
 
 function setupRedirectModalForm(project) {
+  const curProject = resolveActiveProject(project);
   const form = document.getElementById('svc-redirect-modal-form');
   const srcInput = document.getElementById('svc-redirect-form-src');
   const targetInput = document.getElementById('svc-redirect-form-target');
@@ -7969,12 +7925,15 @@ function setupRedirectModalForm(project) {
     if (srcError) {
       if (s && !s.startsWith('/')) {
         srcError.textContent = 'Source path must begin with "/"';
-        srcError.classList.remove('hidden');
-      } else if (s && t && s === t) {
-        srcError.textContent = 'A redirect cannot point directly to itself.';
-        srcError.classList.remove('hidden');
       } else {
-        srcError.classList.add('hidden');
+        srcError.textContent = '';
+      }
+    }
+    if (targetError) {
+      if (t && !t.startsWith('/') && !t.startsWith('http://') && !t.startsWith('https://')) {
+        targetError.textContent = 'Destination must be a relative path (/...) or full URL (https://...)';
+      } else {
+        targetError.textContent = '';
       }
     }
   }
@@ -7986,51 +7945,48 @@ function setupRedirectModalForm(project) {
   if (form) {
     form.onsubmit = async (e) => {
       e.preventDefault();
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
       const editId = document.getElementById('svc-redirect-edit-id')?.value;
-      const s = srcInput?.value.trim();
-      const t = targetInput?.value.trim();
-      const code = Number(document.querySelector('input[name="redirect-status-code"]:checked')?.value || 301);
+      const sourcePath = srcInput?.value.trim();
+      const targetUrl = targetInput?.value.trim();
+      const statusCode = Number(document.querySelector('input[name="redirect-status-code"]:checked')?.value || 301);
       const preserveQuery = document.querySelector('input[name="redirect-preserve-query"]:checked')?.value === 'preserve';
       const caseSensitive = Boolean(document.getElementById('svc-redirect-case-sensitive')?.checked);
-      const ignoreSlash = Boolean(document.getElementById('svc-redirect-ignore-slash')?.checked);
-      const notes = document.getElementById('svc-redirect-notes')?.value.trim() || '';
+      const trailingSlash = document.getElementById('svc-redirect-ignore-slash')?.checked ? 'ignore' : 'strict';
+      const description = document.getElementById('svc-redirect-notes')?.value.trim() || '';
 
-      const envs = [];
-      if (document.getElementById('svc-redir-env-prod')?.checked) envs.push('production');
-      if (document.getElementById('svc-redir-env-prev')?.checked) envs.push('preview');
-      if (document.getElementById('svc-redir-env-dev')?.checked) envs.push('development');
-
-      if (!s || !t) return toast('Please provide both source and destination');
-      if (!s.startsWith('/')) return toast('Source path must begin with "/"');
-      if (s === t) return toast('A redirect cannot point directly to itself');
-
-      const bodyData = {
-        source_path: s,
-        target_url: t,
-        status_code: code,
-        preserve_query: preserveQuery,
-        case_sensitive: caseSensitive,
-        trailing_slash: ignoreSlash ? 'ignore' : 'exact',
-        environments: envs.length ? envs : ['production', 'preview', 'development'],
-        description: notes,
-      };
+      if (!sourcePath || !targetUrl) return toast('Source path and destination URL are required');
+      if (!sourcePath.startsWith('/')) return toast('Source path must start with "/"');
 
       try {
+        const payload = {
+          source_path: sourcePath,
+          target_url: targetUrl,
+          status_code: statusCode,
+          preserve_query: preserveQuery,
+          case_sensitive: caseSensitive,
+          trailing_slash: trailingSlash,
+          description: description,
+        };
+
         if (editId) {
-          await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(editId)}`, {
-            method: 'PATCH',
-            body: JSON.stringify(bodyData),
+          await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/${encodeURIComponent(editId)}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload),
           });
           toast('Redirect rule updated');
         } else {
-          await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+          await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects`, {
             method: 'POST',
-            body: JSON.stringify({ ...bodyData, is_active: true }),
+            body: JSON.stringify(payload),
           });
-          toast('Redirect rule created');
+          toast('Redirect rule added');
         }
-        document.getElementById('svc-redirect-modal')?.close();
-        await renderRedirectsWorkspace(project);
+
+        const modal = document.getElementById('svc-redirect-modal');
+        if (modal) safeCloseModal(modal);
+        await renderRedirectsWorkspace(activeProj);
       } catch (err) {
         toast(normalizeFetchError(err?.message) || 'Failed to save redirect');
       }
@@ -8038,41 +7994,109 @@ function setupRedirectModalForm(project) {
   }
 }
 
+async function duplicateRedirectRule(project, rule) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    const payload = {
+      source_path: `${rule.source_path}-copy`,
+      target_url: rule.target_url,
+      status_code: rule.status_code || 301,
+      preserve_query: rule.preserve_query !== false,
+      case_sensitive: Boolean(rule.case_sensitive),
+      trailing_slash: rule.trailing_slash || 'ignore',
+      description: rule.description ? `${rule.description} (Copy)` : '',
+    };
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    toast('Redirect rule duplicated');
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to duplicate redirect');
+  }
+}
+
+async function toggleRedirectActiveState(project, ruleId, newState) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}/state`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: newState }),
+    });
+    toast(`Redirect rule ${newState ? 'enabled' : 'disabled'}`);
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to toggle redirect');
+  }
+}
+
+async function moveRedirectPriority(project, ruleId, delta) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}/priority`, {
+      method: 'PATCH',
+      body: JSON.stringify({ delta }),
+    });
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to reorder redirect');
+  }
+}
+
+async function deleteSingleRedirect(project, ruleId) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  if (!confirm('Are you sure you want to delete this redirect rule?')) return;
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}`, {
+      method: 'DELETE',
+    });
+    toast('Redirect rule deleted');
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
+  }
+}
+
 function openRedirectTestModal(project, initialPath = '') {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-redirect-test-modal');
   if (!modal) return;
   const input = document.getElementById('svc-test-url-input');
-  const runBtn = document.getElementById('svc-run-test-btn');
+  const runBtn = document.getElementById('svc-test-run-btn') || document.getElementById('svc-run-test-btn');
   const resultBox = document.getElementById('svc-test-result-box');
 
-  if (input) input.value = initialPath ? `https://example.com${initialPath.startsWith('/') ? '' : '/'}${initialPath}` : '';
-  if (resultBox) resultBox.innerHTML = '<p class="hint">Enter a URL above to test redirect evaluation and query parameter propagation.</p>';
+  if (input) input.value = initialPath || '/';
+  if (resultBox) {
+    resultBox.innerHTML = '<p class="hint">Enter a URL or path to simulate redirect routing.</p>';
+  }
 
   if (runBtn) {
     runBtn.onclick = async () => {
-      const url = input?.value.trim();
-      if (!url) return toast('Please enter a URL to test');
-      resultBox.innerHTML = '<p class="hint">Evaluating redirect matching…</p>';
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project found');
+      const testPath = (input?.value || '').trim();
+      if (!testPath) return toast('Please enter a test URL or path');
+      resultBox.innerHTML = '<p class="hint">Simulating redirect evaluation...</p>';
+
       try {
-        const res = await api(`/projects/${encodeURIComponent(project.id)}/redirects/test`, {
-          method: 'POST',
-          body: JSON.stringify({ url }),
-        });
-        if (res.matched) {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/simulate?path=${encodeURIComponent(testPath)}`);
+        if (res.matched && res.rule) {
           resultBox.innerHTML = `
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="svc-state-pill is-active"><i data-lucide="check-circle-2" class="icon-xs"></i> Matched Rule</span>
-                <strong style="font-family:monospace; font-size:13.5px;">${esc(res.source)}</strong>
+            <div class="svc-sim-success-box">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span class="svc-state-pill is-active"><span class="svc-status-bullet"></span> MATCHED</span>
+                <span class="svc-code-pill">${res.rule.status_code} Redirect</span>
               </div>
-              <div style="display:flex; align-items:center; gap:8px; font-family:monospace; font-size:13.5px;">
-                <span style="color:#71717a;">Redirects to:</span>
-                <strong style="color:#2563eb;">${esc(res.destination)}</strong>
+              <div style="font-size:13px; font-family:monospace; background:#fff; padding:8px 10px; border-radius:6px; border:1px solid #e4e4e7;">
+                <strong>From:</strong> ${esc(testPath)}<br>
+                <strong>To:</strong> <span style="color:#16a34a; font-weight:700;">${esc(res.destination)}</span>
               </div>
-              <div style="font-size:12.5px; color:#71717a;">
-                <span>Status Code: <strong>${esc(String(res.status_code))}</strong></span>
-              </div>
-              ${res.is_loop ? `<div style="background:#fee2e2; color:#dc2626; padding:6px 10px; border-radius:8px; font-size:12px; font-weight:700;">⚠️ Potential redirect loop detected!</div>` : ''}
+              ${res.loops_detected ? '<div style="color:#dc2626; font-size:12px; margin-top:6px; font-weight:700;">⚠️ Loop detected in evaluation chain!</div>' : ''}
             </div>
           `;
         } else {
@@ -8090,11 +8114,11 @@ function openRedirectTestModal(project, initialPath = '') {
     };
   }
 
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openRedirectIoModal(project) {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-redirect-io-modal');
   if (!modal) return;
 
@@ -8110,10 +8134,11 @@ function openRedirectIoModal(project) {
   // Export Handlers
   if (exportJsonBtn) {
     exportJsonBtn.onclick = () => {
+      const activeProj = resolveActiveProject(curProject);
       const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allProjectRedirectsCache, null, 2));
       const a = document.createElement('a');
       a.setAttribute('href', dataStr);
-      a.setAttribute('download', `redirects-${project.id}.json`);
+      a.setAttribute('download', `redirects-${activeProj?.id || 'rules'}.json`);
       a.click();
       toast('Exported redirects as JSON');
     };
@@ -8121,6 +8146,7 @@ function openRedirectIoModal(project) {
 
   if (exportCsvBtn) {
     exportCsvBtn.onclick = () => {
+      const activeProj = resolveActiveProject(curProject);
       const headers = ['source', 'destination', 'statusCode', 'enabled'];
       const rows = allProjectRedirectsCache.map(r => [
         `"${(r.source_path || '').replace(/"/g, '""')}"`,
@@ -8131,7 +8157,7 @@ function openRedirectIoModal(project) {
       const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent([headers.join(','), ...rows].join('\n'));
       const a = document.createElement('a');
       a.setAttribute('href', csvContent);
-      a.setAttribute('download', `redirects-${project.id}.csv`);
+      a.setAttribute('download', `redirects-${activeProj?.id || 'rules'}.csv`);
       a.click();
       toast('Exported redirects as CSV');
     };
@@ -8153,6 +8179,8 @@ function openRedirectIoModal(project) {
   // Import Run Handler
   if (runImportBtn) {
     runImportBtn.onclick = async () => {
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
       const raw = textarea?.value.trim();
       if (!raw) return toast('Please paste JSON rules or upload a file');
       let rules = [];
@@ -8184,7 +8212,7 @@ function openRedirectIoModal(project) {
       if (!rules.length) return toast('No valid rules found to import');
 
       try {
-        const res = await api(`/projects/${encodeURIComponent(project.id)}/redirects/import`, {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/import`, {
           method: 'POST',
           body: JSON.stringify({ rules }),
         });
@@ -8198,23 +8226,19 @@ function openRedirectIoModal(project) {
             </div>
           `;
         }
-        await renderRedirectsWorkspace(project);
+        await renderRedirectsWorkspace(activeProj);
       } catch (err) {
         toast(normalizeFetchError(err?.message) || 'Import failed');
       }
     };
   }
 
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 function openRedirectDocsModal() {
   const modal = document.getElementById('svc-redirect-docs-modal');
-  if (modal) {
-    modal.showModal();
-    refreshIcons();
-  }
+  safeShowModal(modal);
 }
 
 async function renderVisitorWidget(project) {
@@ -8396,65 +8420,10 @@ function renderServiceManagementWorkspaces(project) {
   const domainSearch = document.getElementById('svc-domain-search-input');
   if (domainSearch) domainSearch.oninput = () => renderServiceDomainsList(project);
 
+  // Domain add button — delegate to the global openDomainAddModal which uses safeShowModal
   const domainAddToggle = document.getElementById('svc-domain-add-toggle-btn');
-  const domainAddModal = document.getElementById('svc-domain-add-modal');
-  const domainModalClose = document.getElementById('svc-domain-modal-close-btn');
-  const domainModalCancel = document.getElementById('svc-domain-modal-cancel-btn');
-  const domainModalBackdrop = document.getElementById('svc-domain-modal-backdrop');
-  const addDomainForm = document.getElementById('svc-add-domain-form');
-  const newDomainInput = document.getElementById('svc-new-domain-input');
-
-  const closeDomainModal = () => {
-    if (domainAddModal) {
-      if (typeof domainAddModal.close === 'function') domainAddModal.close();
-      domainAddModal.classList.add('hidden');
-    }
-    document.body.classList.remove('modal-open');
-  };
-  const openDomainModal = () => {
-    if (domainAddModal) {
-      if (typeof domainAddModal.showModal === 'function') domainAddModal.showModal();
-      domainAddModal.classList.remove('hidden');
-    }
-    document.body.classList.add('modal-open');
-    newDomainInput?.focus();
-  };
-
-  if (domainAddToggle) domainAddToggle.onclick = openDomainModal;
-
-  if (addDomainForm) {
-    addDomainForm.onsubmit = async (e) => {
-      e.preventDefault();
-      const val = (newDomainInput?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      if (!val) return;
-      const current = getProjectDomainsArray(project).map(d => d.domain);
-      if (current.includes(val)) {
-        toast('This domain is already connected.');
-        return;
-      }
-      try {
-        const settingsRes = await api('/settings').catch(() => ({}));
-        const email = settingsRes?.admin_email || 'admin@localhost';
-        const res = await api(`/projects/${encodeURIComponent(project.id)}/domain`, {
-          method: 'POST',
-          body: JSON.stringify({ domain: val, email }),
-        });
-        if (res?.project) {
-          Object.assign(project, res.project);
-        } else {
-          project.domain = val;
-        }
-        if (newDomainInput) newDomainInput.value = '';
-        closeDomainModal();
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === project.id) || project;
-        renderServiceDomainsList(refreshed);
-        renderServiceDashboard(refreshed, false);
-        toast(`Connected domain ${val}`);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
-      }
-    };
+  if (domainAddToggle) {
+    domainAddToggle.onclick = () => openDomainAddModal(project);
   }
 
   document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
@@ -8475,23 +8444,6 @@ function renderServiceManagementWorkspaces(project) {
   const addEnvironment = document.getElementById('svc-env-add-btn');
   if (addEnvironment) addEnvironment.onclick = () => openServiceEnvironmentModal(project);
   document.querySelectorAll('[data-svc-env-close]').forEach(button => { button.onclick = closeServiceEnvironmentModal; });
-  const envForm = document.getElementById('svc-env-form');
-  if (envForm) {
-    envForm.onsubmit = async event => {
-      event.preventDefault();
-      const original = document.getElementById('svc-env-original-key')?.value || '';
-      const key = document.getElementById('svc-env-key')?.value.trim() || '';
-      const value = document.getElementById('svc-env-value')?.value || '';
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return toast('Use a valid environment variable key.');
-      if (!value) return toast('Enter a value. Existing values are never shown in the browser.');
-      try {
-        await persistServiceEnvironment(project, key, value, original);
-        closeServiceEnvironmentModal();
-      } catch (error) {
-        toast(normalizeFetchError(error?.message) || 'Could not save variable.');
-      }
-    };
-  }
 
   document.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
   const primaryDomain = document.getElementById('svc-primary-domain');
@@ -8596,7 +8548,7 @@ function renderServiceManagementWorkspaces(project) {
   if (projIdDisplay) projIdDisplay.value = project.id || '';
   if (projIconLetter) {
     const title = project.name || project.id || 'P';
-    projIconLetter.textContent = title.charAt(0).toUpperCase();
+    projIconLetter.textContent = (title.charAt(0) || 'P').toUpperCase();
   }
 
   if (copyIdBtn && !copyIdBtn.dataset.wired) {
@@ -8610,7 +8562,7 @@ function renderServiceManagementWorkspaces(project) {
     changeIconBtn.dataset.wired = 'true';
     changeIconBtn.onclick = () => {
       const modal = document.getElementById('svc-change-icon-modal');
-      if (modal) modal.showModal();
+      safeShowModal(modal);
     };
   }
 
@@ -8618,7 +8570,7 @@ function renderServiceManagementWorkspaces(project) {
     transferBtn.dataset.wired = 'true';
     transferBtn.onclick = () => {
       const modal = document.getElementById('svc-transfer-modal');
-      if (modal) modal.showModal();
+      safeShowModal(modal);
     };
   }
 
@@ -9004,7 +8956,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   if (redeployBtn) {
     if (redeployText) redeployText.textContent = isFailed ? 'Try again' : 'Redeploy';
     redeployBtn.onclick = () => {
-      modal.close();
+      safeCloseModal(modal);
       serviceAction(projectId, 'deploy');
     };
   }
@@ -9023,8 +8975,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
     codeEl.innerHTML = '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Loading detailed build logs from VM…</span></div>';
   }
 
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 
   try {
     const res = await api(`/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/logs`);
@@ -9082,7 +9033,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       if (aiFixBtn) {
         aiFixBtn.classList.remove('hidden');
         aiFixBtn.onclick = () => {
-          modal.close();
+          safeCloseModal(modal);
           switchSvcTab('ai-builder');
           const input = document.getElementById('svc-ai-input');
           if (input) {
@@ -9381,8 +9332,7 @@ function showAIFileModal(path, content, lines, size) {
       toast('Copied code to clipboard');
     };
   }
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 async function submitAIUserAnswer(projectId, payload, containerId) {
@@ -12621,8 +12571,7 @@ function showBuildFailSaveModal(projectId, errorMsg) {
 
   if (discardBtn) {
     discardBtn.onclick = async () => {
-      if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
+      safeCloseModal(modal);
       if (projectId) {
         try {
           await api(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
@@ -12636,8 +12585,7 @@ function showBuildFailSaveModal(projectId, errorMsg) {
 
   if (saveBtn) {
     saveBtn.onclick = async () => {
-      if (typeof modal.close === 'function') modal.close();
-      else modal.classList.add('hidden');
+      safeCloseModal(modal);
       toast('Project saved. Configure environment variables to retry build.');
       await loadProjects();
       if (projectId) {
@@ -12647,9 +12595,7 @@ function showBuildFailSaveModal(projectId, errorMsg) {
     };
   }
 
-  if (typeof modal.showModal === 'function') modal.showModal();
-  modal.classList.remove('hidden');
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 document.getElementById('create-form')?.addEventListener('submit', async (event) => {
@@ -13478,35 +13424,10 @@ window.addEventListener('error', (event) => {
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event?.reason;
   const rawMsg = String(reason?.message || reason?.name || reason || '');
-  const isLoadFailed = !rawMsg || rawMsg === 'TypeError' || /^typeerror/i.test(rawMsg) || /load failed/i.test(rawMsg) || /failed to fetch/i.test(rawMsg) || /networkerror/i.test(rawMsg);
-
-  if (isLoadFailed) {
-    highLoadNetworkErrorCount++;
-    console.warn('[Syte] Handled network/load rejection:', rawMsg || 'Load failed');
-    if (event && typeof event.preventDefault === 'function') {
-      event.preventDefault();
-    }
-    if (highLoadNetworkErrorCount >= 4) {
-      showCrashScreen({
-        title: 'High Load / Connection Loss',
-        subtitle: 'The server is unreachable or failing under load.',
-        message: 'Could not reach the Syte server. Server may be down or experiencing high load.',
-        details: reason?.stack || String(reason || 'Load failed')
-      });
-    }
-    return;
-  }
-
-  console.error('[Syte] Unhandled promise rejection:', reason);
+  console.warn('[Syte] Unhandled async/network event:', rawMsg || reason);
   if (event && typeof event.preventDefault === 'function') {
     event.preventDefault();
   }
-  showCrashScreen({
-    title: 'Unhandled Async Error',
-    subtitle: 'An unexpected async error occurred in the application.',
-    message: reason?.message || String(reason || 'Unhandled Promise Rejection'),
-    details: reason?.stack || ''
-  });
 });
 
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
