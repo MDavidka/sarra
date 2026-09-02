@@ -1160,106 +1160,624 @@
 
               <!-- 5. FIREWALL TAB -->
               <div class="svc-tab-panel" id="svc-panel-firewall" data-svc-panel="firewall">
-                <section class="svc-firewall-screen" aria-label="Application firewall boundary">
-                  <!-- Header & Filter Row -->
-                  <div class="svc-firewall-header-group">
-                    <div class="svc-screen-header">
-                      <div class="svc-screen-title-wrap">
-                        <h2>Firewall</h2>
-                        <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
+                <!-- Subview 1: Main Firewall Overview (Default) -->
+                <div id="svc-fw-subview-main" class="svc-fw-subview">
+                  <section class="svc-firewall-screen" aria-label="Application firewall boundary">
+                    <!-- Header & Filter Row -->
+                    <div class="svc-firewall-header-group">
+                      <div class="svc-screen-header">
+                        <div class="svc-screen-title-wrap">
+                          <h2>Firewall</h2>
+                          <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
+                        </div>
                       </div>
-                    </div>
-                    <div class="svc-firewall-filter-bar">
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="calendar" class="select-leading-icon"></i>
-                        <select id="svc-fw-timeframe">
-                          <option value="day">Past Day</option>
-                          <option value="week">Past Week</option>
-                          <option value="month">Past Month</option>
-                        </select>
+                      <div class="svc-firewall-filter-bar">
+                        <div class="svc-pill-select-wrap">
+                          <i data-lucide="calendar" class="select-leading-icon"></i>
+                          <select id="svc-fw-timeframe">
+                            <option value="day">Past Day</option>
+                            <option value="week">Past Week</option>
+                            <option value="month">Past Month</option>
+                          </select>
+                        </div>
+                        <div class="svc-pill-select-wrap">
+                          <i data-lucide="search" class="select-leading-icon"></i>
+                          <select id="svc-fw-view">
+                            <option value="overview">Overview</option>
+                            <option value="rules">Rules</option>
+                            <option value="mitigations">Mitigations</option>
+                          </select>
+                        </div>
                       </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="search" class="select-leading-icon"></i>
-                        <select id="svc-fw-view">
-                          <option value="overview">Overview</option>
-                          <option value="rules">Rules</option>
-                          <option value="mitigations">Mitigations</option>
-                        </select>
+
+                      <!-- Firewall Styled Action Buttons Toolbar -->
+                      <div class="svc-firewall-action-toolbar">
+                        <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="showFirewallSubview('add-rule')">
+                          <i data-lucide="plus"></i>
+                          <span>Add Rule</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="showFirewallSubview('rate-limit')">
+                          <i data-lucide="gauge"></i>
+                          <span>Rate Limiting</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="showFirewallSubview('bot')">
+                          <i data-lucide="bot"></i>
+                          <span>Bot Defense</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="showFirewallSubview('ip-block')">
+                          <i data-lucide="shield-alert"></i>
+                          <span>IP Blocklist</span>
+                        </button>
                       </div>
                     </div>
 
-                    <!-- Firewall Styled Action Buttons Toolbar -->
-                    <div class="svc-firewall-action-toolbar">
-                      <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="openFwAddRuleModal()">
-                        <i data-lucide="plus"></i>
-                        <span>Add Rule</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="openFwRateLimitModal()">
-                        <i data-lucide="gauge"></i>
-                        <span>Rate Limiting</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="openFwBotProtectModal()">
-                        <i data-lucide="bot"></i>
-                        <span>Bot Defense</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="openFwIpBlockModal()">
-                        <i data-lucide="shield-alert"></i>
-                        <span>IP Blocklist</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Hero Status Card with Shield -->
-                  <div class="svc-firewall-hero-card">
-                    <div class="svc-firewall-shield-badge">
-                      <i data-lucide="shield-check"></i>
-                    </div>
-                    <h3 class="svc-firewall-hero-title">Firewall is active</h3>
-                    <p class="svc-firewall-hero-subtitle">All systems normal · DDoS & L7 Edge Protection</p>
-                    <div class="svc-firewall-metrics-list">
-                      <div class="svc-fw-stat-row">
-                        <span>System Mitigations</span>
-                        <strong class="text-status-active">Active</strong>
+                    <!-- Hero Status Card with Shield -->
+                    <div class="svc-firewall-hero-card">
+                      <div class="svc-firewall-shield-badge">
+                        <i data-lucide="shield-check"></i>
                       </div>
-                      <div class="svc-fw-stat-row">
-                        <span>Custom Rules</span>
-                        <strong>2 active</strong>
-                      </div>
-                      <div class="svc-fw-stat-row">
-                        <span>Bot Protection</span>
-                        <span class="text-status-active">Active</span>
+                      <h3 class="svc-firewall-hero-title">Firewall is active</h3>
+                      <p class="svc-firewall-hero-subtitle">All systems normal · DDoS & L7 Edge Protection</p>
+                      <div class="svc-firewall-metrics-list">
+                        <div class="svc-fw-stat-row">
+                          <span>System Mitigations</span>
+                          <strong class="text-status-active">Active</strong>
+                        </div>
+                        <div class="svc-fw-stat-row">
+                          <span>Custom Rules</span>
+                          <strong>2 active</strong>
+                        </div>
+                        <div class="svc-fw-stat-row">
+                          <span>Bot Protection</span>
+                          <span class="text-status-active">Active</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <!-- Analytics Metrics Card -->
-                  <div class="svc-firewall-analytics-card">
-                    <div class="svc-fw-metrics-pills">
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-blue"></i> Allowed <strong id="fw-metric-allowed">189</strong></span>
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-red"></i> Denied <strong id="fw-metric-denied">404</strong></span>
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
+                    <!-- Analytics Metrics Card -->
+                    <div class="svc-firewall-analytics-card">
+                      <div class="svc-fw-metrics-pills">
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-blue"></i> Allowed <strong id="fw-metric-allowed">189</strong></span>
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-red"></i> Denied <strong id="fw-metric-denied">404</strong></span>
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
+                      </div>
+                      <div class="svc-fw-query-action">
+                        <button type="button" class="btn-firewall-action btn-fw-secondary" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
+                      </div>
                     </div>
-                    <div class="svc-fw-query-action">
-                      <button type="button" class="btn-firewall-action btn-fw-secondary" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
-                    </div>
-                  </div>
 
-                  <!-- Firewall Rules & Boundaries -->
-                  <div class="svc-firewall-lines-card">
-                    <div class="svc-firewall-line-item">
-                      <strong>Public entry</strong>
-                      <span>HTTPS via configured Caddy domain with automated TLS handshake and header filtering</span>
+                    <!-- Firewall Rules & Boundaries -->
+                    <div class="svc-firewall-lines-card">
+                      <div class="svc-firewall-line-item">
+                        <strong>Public entry</strong>
+                        <span>HTTPS via configured Caddy domain with automated TLS handshake and header filtering</span>
+                      </div>
+                      <div class="svc-firewall-line-item">
+                        <strong>Direct application port</strong>
+                        <span>Direct TCP traffic is isolated on internal bridge; do not publish unless configured</span>
+                      </div>
+                      <div class="svc-firewall-line-item">
+                        <strong>Change control</strong>
+                        <span>Use server-level workspace for host firewall (UFW/iptables) adjustments</span>
+                      </div>
                     </div>
-                    <div class="svc-firewall-line-item">
-                      <strong>Direct application port</strong>
-                      <span>Direct TCP traffic is isolated on internal bridge; do not publish unless configured</span>
-                    </div>
-                    <div class="svc-firewall-line-item">
-                      <strong>Change control</strong>
-                      <span>Use server-level workspace for host firewall (UFW/iptables) adjustments</span>
-                    </div>
+                  </section>
+                </div>
+
+                <!-- Subview 2: Bot Protection (Exact copy of media_1788378523419.jpg) -->
+                <div id="svc-fw-subview-bot" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="bot"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">Bot Protection</h3>
+                          <p class="svc-sheet-sub-title">Detect and manage automated traffic, scrapers, and malicious bots.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-bot-protect" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Bot protection updated'); showFirewallSubview('main');">
+                      <!-- 1. Enable Bot Protection Toggle Row -->
+                      <div class="svc-fw-toggle-card">
+                        <div class="svc-fw-toggle-info">
+                          <strong class="svc-fw-toggle-title">Enable Bot Protection</strong>
+                          <span class="svc-fw-toggle-desc">Automatically detect and challenge suspicious bots.</span>
+                        </div>
+                        <label class="svc-apple-switch">
+                          <input type="checkbox" id="page-fw-bot-main-toggle" checked>
+                          <span class="svc-apple-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- 2. Protection Level Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Protection level</strong>
+                          <span class="svc-fw-section-desc">Choose how aggressive the bot detection should be.</span>
+                        </div>
+                        <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Protection level">
+                          <div class="svc-fw-level-card" data-pbot-level="light" role="radio" aria-checked="false" onclick="selectBotLevel(this, 'light')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Light</strong>
+                              <span class="svc-fw-level-desc">Minimal challenges</span>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                          <div class="svc-fw-level-card is-active" data-pbot-level="balanced" role="radio" aria-checked="true" onclick="selectBotLevel(this, 'balanced')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Balanced</strong>
+                              <span class="svc-fw-level-desc">Recommended</span>
+                            </div>
+                            <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-level="strict" role="radio" aria-checked="false" onclick="selectBotLevel(this, 'strict')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Strict</strong>
+                              <span class="svc-fw-level-desc">Maximum protection</span>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 3. Action for Bots Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action for bots</strong>
+                          <span class="svc-fw-section-desc">Choose what to do with detected bots.</span>
+                        </div>
+                        <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Action for bots">
+                          <div class="svc-fw-level-card is-active" data-pbot-action="challenge" role="radio" aria-checked="true" onclick="selectBotAction(this, 'challenge')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Challenge</strong>
+                                <span class="svc-fw-level-desc">Show verification</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-action="block" role="radio" aria-checked="false" onclick="selectBotAction(this, 'block')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="ban" class="action-icon icon-red"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Block</strong>
+                                <span class="svc-fw-level-desc">Deny access</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-action="log" role="radio" aria-checked="false" onclick="selectBotAction(this, 'log')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Log only</strong>
+                                <span class="svc-fw-level-desc">Monitor only</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. AI Detection (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-toggle-card inline-toggle">
+                          <div class="svc-fw-toggle-info">
+                            <strong class="svc-fw-toggle-title">AI detection (optional)</strong>
+                            <span class="svc-fw-toggle-desc">Use advanced detection to identify more sophisticated bots.</span>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="page-fw-bot-ai-toggle" checked>
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+                        <div class="svc-fw-callout-box info-callout">
+                          <i data-lucide="info"></i>
+                          <span>Uses machine learning to detect headless browsers, scrapers, and automated tools.</span>
+                        </div>
+                      </div>
+
+                      <!-- 5. Allow Verified Bots Toggle -->
+                      <div class="svc-fw-toggle-card">
+                        <div class="svc-fw-toggle-info">
+                          <strong class="svc-fw-toggle-title">Allow verified bots</strong>
+                          <span class="svc-fw-toggle-desc">Allow known good bots (e.g. Google, Bing, Discord) to access your site.</span>
+                        </div>
+                        <label class="svc-apple-switch">
+                          <input type="checkbox" id="page-fw-bot-verified-toggle" checked>
+                          <span class="svc-apple-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- 6. Custom Allowlist (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Custom allowlist (optional)</strong>
+                          <span class="svc-fw-section-desc">Add IPs, user agents, or URL patterns to bypass bot protection.</span>
+                        </div>
+                        <button type="button" class="svc-fw-nav-action-row" onclick="const v = prompt('Enter IP, User Agent, or URL pattern to allow:'); if (v) toast('Added to allowlist: ' + v);">
+                          <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to allowlist</span></span>
+                          <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+                        </button>
+                      </div>
+
+                      <!-- 7. Blocklist (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Blocklist (optional)</strong>
+                          <span class="svc-fw-section-desc">Block specific bad bots, user agents, or IP ranges.</span>
+                        </div>
+                        <button type="button" class="svc-fw-nav-action-row" onclick="const v = prompt('Enter bot signature, User Agent, or IP range to block:'); if (v) toast('Added to blocklist: ' + v);">
+                          <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to blocklist</span></span>
+                          <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+                        </button>
+                      </div>
+
+                      <!-- 8. Rule Name (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name (optional)</strong>
+                          <span class="svc-fw-section-desc">Give this configuration a name for reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="page-fw-bot-rule-name-input" class="svc-fw-styled-input" maxlength="64" value="Bot protection (balanced)" oninput="document.getElementById('page-fw-bot-rule-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-bot-rule-name-count">25/64</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Save Changes</button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
+
+                <!-- Subview 3: IP Rate Limit (Exact copy of media_1788378523297.jpg) -->
+                <div id="svc-fw-subview-rate-limit" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="gauge"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">IP Rate Limit</h3>
+                          <p class="svc-sheet-sub-title">Limit the number of requests from an IP address.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-rate-limit" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Rate limit rule created'); showFirewallSubview('main');">
+                      <!-- 1. Action Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What should happen when the limit is exceeded?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rate Limit Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-prl-action="block" role="radio" aria-checked="true" onclick="selectRateLimitAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="challenge" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="throttle" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'throttle')">
+                            <i data-lucide="clock" class="action-icon icon-blue"></i>
+                            <span>Throttle</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="log" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 2. Limit Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Limit</strong>
+                          <span class="svc-fw-section-desc">Set the number of requests allowed.</span>
+                        </div>
+                        <div class="svc-fw-limit-row">
+                          <div class="svc-fw-limit-col">
+                            <label class="svc-fw-input-mini-label">Requests</label>
+                            <input type="number" class="svc-fw-styled-input" value="100" min="1" max="1000000">
+                          </div>
+                          <div class="svc-fw-limit-col">
+                            <label class="svc-fw-input-mini-label">Per</label>
+                            <div class="svc-fw-select-wrap-block">
+                              <select class="svc-fw-styled-select">
+                                <option value="10 seconds">10 seconds</option>
+                                <option value="1 minute" selected>1 minute</option>
+                                <option value="5 minutes">5 minutes</option>
+                                <option value="1 hour">1 hour</option>
+                              </select>
+                              <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 3. Scope (optional) Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Scope (optional)</strong>
+                          <span class="svc-fw-section-desc">Apply to a specific path or leave empty for all routes.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <select class="svc-fw-styled-select">
+                            <option value="All routes" selected>All routes</option>
+                            <option value="/api/*">/api/*</option>
+                            <option value="/login">/login</option>
+                            <option value="/admin/*">/admin/*</option>
+                          </select>
+                          <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                        </div>
+                        <span class="svc-fw-helper-text">e.g. /api/*, /login, /admin/*</span>
+                      </div>
+
+                      <!-- 4. IP Filtering Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">IP filtering (optional)</strong>
+                          <span class="svc-fw-section-desc">Apply to specific IPs or ranges.</span>
+                        </div>
+                        <div class="svc-fw-segmented-toggle-bar">
+                          <button type="button" class="svc-fw-seg-btn active" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active'); document.getElementById('page-fw-rl-ip-callout').innerHTML = '<i data-lucide=\'globe\'></i><span>This rule will apply to all IP addresses.</span>'; refreshIcons();">All IPs</button>
+                          <button type="button" class="svc-fw-seg-btn" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active'); document.getElementById('page-fw-rl-ip-callout').innerHTML = '<i data-lucide=\'filter\'></i><span>This rule will apply to configured custom IP ranges.</span>'; refreshIcons();">Specific IPs</button>
+                        </div>
+                        <div class="svc-fw-callout-box" id="page-fw-rl-ip-callout">
+                          <i data-lucide="globe"></i>
+                          <span>This rule will apply to all IP addresses.</span>
+                        </div>
+                      </div>
+
+                      <!-- 5. Rule Name Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Limit API abuse" oninput="document.getElementById('page-fw-rl-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-rl-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- 6. Notes Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Notes (optional)</strong>
+                          <span class="svc-fw-section-desc">Add a note for future reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <textarea class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Prevents abuse on public API endpoints" oninput="document.getElementById('page-fw-rl-notes-count').textContent = this.value.length + '/200'"></textarea>
+                          <span class="svc-fw-counter-tag" id="page-fw-rl-notes-count">0/200</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+                <!-- Subview 4: Add Firewall Rule (Exact copy of media_1788378523254.jpg) -->
+                <div id="svc-fw-subview-add-rule" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Firewall Rule</h3>
+                          <p class="svc-sheet-sub-title">Create a rule to control and protect your application at the edge.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-add-rule" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Firewall rule created'); showFirewallSubview('main');">
+                      <!-- 1. Action Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What should happen when the rule matches?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rule Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-prule-action="block" role="radio" aria-checked="true" onclick="selectRuleAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="challenge" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="allow" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'allow')">
+                            <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+                            <span>Allow</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="log" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 2. Condition Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Condition</strong>
+                          <span class="svc-fw-section-desc">Select what to match against.</span>
+                        </div>
+                        <div class="svc-fw-condition-stack" id="page-fw-rule-condition-stack">
+                          <div class="svc-fw-condition-item">
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Field</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <select class="svc-fw-row-select">
+                                  <option value="ip">IP address</option>
+                                  <option value="path">Path / URI</option>
+                                  <option value="header">Header</option>
+                                  <option value="country">Country / Geo</option>
+                                  <option value="user_agent">User Agent</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                              </div>
+                            </div>
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Operator</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <select class="svc-fw-row-select">
+                                  <option value="equals">Equals</option>
+                                  <option value="contains">Contains</option>
+                                  <option value="starts_with">Starts with</option>
+                                  <option value="matches_regex">Matches regex</option>
+                                  <option value="in_list">In list</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                              </div>
+                            </div>
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Value</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <button type="button" class="btn-fw-add-condition" onclick="addPageConditionRow()">
+                          <i data-lucide="plus"></i>
+                          <span>Add another condition</span>
+                        </button>
+                      </div>
+
+                      <!-- 3. Rule Name Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block suspicious IP" oninput="document.getElementById('page-fw-rule-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-rule-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- 4. Notes Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Notes (optional)</strong>
+                          <span class="svc-fw-section-desc">Add a note for future reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <textarea class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Blocks abusive IP from incident #123" oninput="document.getElementById('page-fw-rule-notes-count').textContent = this.value.length + '/200'"></textarea>
+                          <span class="svc-fw-counter-tag" id="page-fw-rule-notes-count">0/200</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+                <!-- Subview 5: IP Access Rule -->
+                <div id="svc-fw-subview-ip-block" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="shield-alert"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">IP Access Rule</h3>
+                          <p class="svc-sheet-sub-title">Block, allow, or challenge specific IP addresses or CIDR ranges.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-ip-block" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('IP access rule created'); showFirewallSubview('main');">
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What action to take for matching IPs?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="IP Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-pipb-action="block" role="radio" aria-checked="true" onclick="selectIpBlockAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="challenge" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="allow" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'allow')">
+                            <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+                            <span>Allow</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="log" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">IP or CIDR range</strong>
+                          <span class="svc-fw-section-desc">Enter an IPv4, IPv6, or subnet to match.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <input type="text" class="svc-fw-styled-input" placeholder="e.g. 203.0.113.195 or 198.51.100.0/24" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A label for this IP access rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Blocked scraper subnet" oninput="document.getElementById('page-fw-ipb-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-ipb-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </div>
 
               <!-- 7. SPEED & RESOURCES TAB (Exact match to screenshot in white theme) -->

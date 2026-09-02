@@ -7169,331 +7169,186 @@ function initSheetDialogDismiss(modal) {
   wireBackdropDismiss(modal);
 }
 
-function openFwBotProtectModal(project) {
-  const p = resolveActiveProject(project);
+function showFirewallSubview(name) {
+  const p = resolveActiveProject();
   if (p && p.id) {
     activeServiceId = p.id;
   }
-  const modal = document.getElementById('svc-modal-fw-bot-protect');
-  if (!modal) return;
-  initSheetDialogDismiss(modal);
+  showView('service');
+  switchSvcTab('firewall');
 
-  let selectedLevel = 'balanced';
-  const levelCards = modal.querySelectorAll('[data-bot-level]');
-  levelCards.forEach(card => {
-    card.onclick = () => {
-      levelCards.forEach(c => {
-        c.classList.remove('is-active');
-        c.setAttribute('aria-checked', 'false');
-        const radio = c.querySelector('.svc-fw-level-radio');
-        if (radio) radio.innerHTML = '';
-      });
-      selectedLevel = card.dataset.botLevel || 'balanced';
-      card.classList.add('is-active');
-      card.setAttribute('aria-checked', 'true');
-      const radio = card.querySelector('.svc-fw-level-radio');
-      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+  const subviews = document.querySelectorAll('.svc-fw-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
 
-      const nameInput = document.getElementById('fw-bot-rule-name-input');
-      const nameCount = document.getElementById('fw-bot-rule-name-count');
-      if (nameInput && nameCount) {
-        nameInput.value = `Bot protection (${selectedLevel})`;
-        nameCount.textContent = `${nameInput.value.length}/64`;
-      }
-    };
+  const target = document.getElementById(`svc-fw-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const main = document.getElementById('svc-fw-subview-main');
+    if (main) main.classList.remove('hidden');
+  }
+
+  // Update browser URL cleanly
+  if (window.history && window.history.pushState) {
+    if (name === 'bot') window.history.pushState(null, '', '/bot');
+    else if (name === 'rate-limit') window.history.pushState(null, '', '/rate-limit');
+    else if (name === 'add-rule') window.history.pushState(null, '', '/firewall-rule');
+    else if (name === 'ip-block') window.history.pushState(null, '', '/ip-block');
+    else if (activeServiceId) window.history.pushState(null, '', `/projects/${encodeURIComponent(activeServiceId)}`);
+  }
+
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function selectBotLevel(el, level) {
+  const row = el.closest('.svc-fw-level-cards-row');
+  if (!row) return;
+  row.querySelectorAll('.svc-fw-level-card').forEach(c => {
+    c.classList.remove('is-active');
+    c.setAttribute('aria-checked', 'false');
+    const radio = c.querySelector('.svc-fw-level-radio');
+    if (radio) radio.innerHTML = '';
   });
+  el.classList.add('is-active');
+  el.setAttribute('aria-checked', 'true');
+  const radio = el.querySelector('.svc-fw-level-radio');
+  if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
 
-  let selectedAction = 'challenge';
-  const actionCards = modal.querySelectorAll('[data-bot-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      actionCards.forEach(c => {
-        c.classList.remove('is-active');
-        c.setAttribute('aria-checked', 'false');
-        const radio = c.querySelector('.svc-fw-level-radio');
-        if (radio) radio.innerHTML = '';
-      });
-      selectedAction = card.dataset.botAction || 'challenge';
-      card.classList.add('is-active');
-      card.setAttribute('aria-checked', 'true');
-      const radio = card.querySelector('.svc-fw-level-radio');
-      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
-    };
-  });
-
-  const nameInput = document.getElementById('fw-bot-rule-name-input');
-  const nameCount = document.getElementById('fw-bot-rule-name-count');
+  const nameInput = document.getElementById('page-fw-bot-rule-name-input');
+  const nameCount = document.getElementById('page-fw-bot-rule-name-count');
   if (nameInput && nameCount) {
+    nameInput.value = `Bot protection (${level})`;
     nameCount.textContent = `${nameInput.value.length}/64`;
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
   }
+}
 
-  const allowlistBtn = document.getElementById('fw-bot-add-allowlist-btn');
-  if (allowlistBtn && !allowlistBtn.dataset.wired) {
-    allowlistBtn.dataset.wired = 'true';
-    allowlistBtn.onclick = () => {
-      const ip = prompt('Enter IP, User Agent, or URL pattern to allow:', '');
-      if (ip && ip.trim()) toast(`Added ${ip.trim()} to bot allowlist`);
-    };
-  }
+function selectBotAction(el, action) {
+  const row = el.closest('.svc-fw-level-cards-row');
+  if (!row) return;
+  row.querySelectorAll('.svc-fw-level-card').forEach(c => {
+    c.classList.remove('is-active');
+    c.setAttribute('aria-checked', 'false');
+    const radio = c.querySelector('.svc-fw-level-radio');
+    if (radio) radio.innerHTML = '';
+  });
+  el.classList.add('is-active');
+  el.setAttribute('aria-checked', 'true');
+  const radio = el.querySelector('.svc-fw-level-radio');
+  if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+}
 
-  const blocklistBtn = document.getElementById('fw-bot-add-blocklist-btn');
-  if (blocklistBtn && !blocklistBtn.dataset.wired) {
-    blocklistBtn.dataset.wired = 'true';
-    blocklistBtn.onclick = () => {
-      const bot = prompt('Enter bot signature, User Agent, or IP range to block:', '');
-      if (bot && bot.trim()) toast(`Added ${bot.trim()} to bot blocklist`);
-    };
-  }
+function selectRateLimitAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'throttle') el.classList.add('is-blue');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
 
-  const form = document.getElementById('svc-form-fw-bot-protect');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const enabled = Boolean(document.getElementById('fw-bot-main-toggle')?.checked);
-      toast(`Bot protection updated: ${enabled ? 'Enabled' : 'Disabled'} (${selectedLevel}, ${selectedAction})`);
-      safeCloseModal(modal);
-    };
-  }
+function selectRuleAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'allow') el.classList.add('is-green');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
 
-  safeShowModal(modal);
+function selectIpBlockAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'allow') el.classList.add('is-green');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
+
+function addPageConditionRow() {
+  const stack = document.getElementById('page-fw-rule-condition-stack');
+  if (!stack) return;
+  const item = document.createElement('div');
+  item.className = 'svc-fw-condition-item';
+  item.style.marginTop = '6px';
+  item.innerHTML = `
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Field</span>
+      <div class="svc-fw-row-input-wrap">
+        <select class="svc-fw-row-select">
+          <option value="ip">IP address</option>
+          <option value="path">Path / URI</option>
+          <option value="header">Header</option>
+          <option value="country">Country / Geo</option>
+          <option value="user_agent">User Agent</option>
+        </select>
+        <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+      </div>
+    </div>
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Operator</span>
+      <div class="svc-fw-row-input-wrap">
+        <select class="svc-fw-row-select">
+          <option value="equals">Equals</option>
+          <option value="contains">Contains</option>
+          <option value="starts_with">Starts with</option>
+          <option value="matches_regex">Matches regex</option>
+          <option value="in_list">In list</option>
+        </select>
+        <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+      </div>
+    </div>
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Value</span>
+      <div class="svc-fw-row-input-wrap">
+        <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  `;
+  stack.appendChild(item);
+  refreshIcons();
+}
+
+function openFwBotProtectModal(project) {
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('bot');
 }
 
 function openFwRateLimitModal(project) {
   const p = resolveActiveProject(project);
-  if (p && p.id) {
-    activeServiceId = p.id;
-  }
-  const modal = document.getElementById('svc-modal-fw-rate-limit');
-  if (!modal) return;
-  initSheetDialogDismiss(modal);
-
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('[data-rl-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.rlAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'throttle') card.classList.add('is-blue');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
-  });
-
-  const segBtns = modal.querySelectorAll('.svc-fw-seg-btn');
-  const callout = document.getElementById('fw-rl-ip-callout');
-  segBtns.forEach(btn => {
-    btn.onclick = () => {
-      segBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const mode = btn.dataset.ipMode;
-      if (callout) {
-        callout.innerHTML = mode === 'all'
-          ? '<i data-lucide="globe"></i><span>This rule will apply to all IP addresses.</span>'
-          : '<i data-lucide="filter"></i><span>This rule will apply to configured custom IP ranges.</span>';
-        refreshIcons();
-      }
-    };
-  });
-
-  const nameInput = document.getElementById('fw-rl-name-input');
-  const nameCount = document.getElementById('fw-rl-name-count');
-  if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
-  }
-
-  const notesInput = document.getElementById('fw-rl-notes-input');
-  const notesCount = document.getElementById('fw-rl-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
-  }
-
-  const form = document.getElementById('svc-form-fw-rate-limit');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const requests = document.getElementById('fw-rl-requests-input')?.value || '100';
-      const windowVal = document.getElementById('fw-rl-window-select')?.value || '1 minute';
-      const nameVal = nameInput?.value.trim() || 'IP Rate Limit';
-      toast(`Rate limit rule created: ${requests} req / ${windowVal} (${nameVal})`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('rate-limit');
 }
 
 function openFwAddRuleModal(project) {
   const p = resolveActiveProject(project);
-  if (p && p.id) {
-    activeServiceId = p.id;
-  }
-  const modal = document.getElementById('svc-modal-fw-add-rule');
-  if (!modal) return;
-  initSheetDialogDismiss(modal);
-
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('.svc-fw-action-choice-card');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.fwAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'allow') card.classList.add('is-green');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
-  });
-
-  const nameInput = document.getElementById('fw-rule-name-input');
-  const nameCount = document.getElementById('fw-rule-name-count');
-  if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
-  }
-
-  const notesInput = document.getElementById('fw-rule-notes-input');
-  const notesCount = document.getElementById('fw-rule-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
-  }
-
-  const addCondBtn = document.getElementById('fw-rule-add-condition-btn');
-  if (addCondBtn && !addCondBtn.dataset.wired) {
-    addCondBtn.dataset.wired = 'true';
-    addCondBtn.onclick = () => {
-      const stack = document.getElementById('fw-rule-condition-stack');
-      if (stack) {
-        const item = document.createElement('div');
-        item.className = 'svc-fw-condition-item';
-        item.style.marginTop = '6px';
-        item.innerHTML = `
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Field</span>
-            <div class="svc-fw-row-input-wrap">
-              <select class="svc-fw-row-select">
-                <option value="ip">IP address</option>
-                <option value="path">Path / URI</option>
-                <option value="header">Header</option>
-                <option value="country">Country / Geo</option>
-                <option value="user_agent">User Agent</option>
-              </select>
-              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
-            </div>
-          </div>
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Operator</span>
-            <div class="svc-fw-row-input-wrap">
-              <select class="svc-fw-row-select">
-                <option value="equals">Equals</option>
-                <option value="contains">Contains</option>
-                <option value="starts_with">Starts with</option>
-                <option value="matches_regex">Matches regex</option>
-                <option value="in_list">In list</option>
-              </select>
-              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
-            </div>
-          </div>
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Value</span>
-            <div class="svc-fw-row-input-wrap">
-              <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off">
-            </div>
-          </div>
-        `;
-        stack.appendChild(item);
-        refreshIcons();
-      }
-    };
-  }
-
-  const form = document.getElementById('svc-form-fw-add-rule');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const ruleName = nameInput?.value.trim() || 'Custom Firewall Rule';
-      toast(`Firewall rule created: ${ruleName} (${selectedAction.toUpperCase()})`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('add-rule');
 }
 
 function openFwIpBlockModal(project) {
   const p = resolveActiveProject(project);
-  if (p && p.id) {
-    activeServiceId = p.id;
-  }
-  const modal = document.getElementById('svc-modal-fw-ip-block');
-  if (!modal) return;
-  initSheetDialogDismiss(modal);
-
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('[data-ipb-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.ipbAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'allow') card.classList.add('is-green');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
-  });
-
-  const nameInput = document.getElementById('fw-ipb-name-input');
-  const nameCount = document.getElementById('fw-ipb-name-count');
-  if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
-  }
-
-  const notesInput = document.getElementById('fw-ipb-notes-input');
-  const notesCount = document.getElementById('fw-ipb-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
-  }
-
-  const form = document.getElementById('svc-form-fw-ip-block');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const target = document.getElementById('fw-ipb-target-input')?.value.trim() || '';
-      if (!target) return toast('Please enter an IP or CIDR range');
-      const nameVal = nameInput?.value.trim() || 'IP Rule';
-      toast(`IP access rule created: ${selectedAction.toUpperCase()} for ${target}`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('ip-block');
 }
 
 const openFwBotProtectPage = openFwBotProtectModal;
@@ -14828,8 +14683,16 @@ function escapeHtml(value) {
   }[character]));
 }
 
-// Expose firewall modal openers globally
+// Expose firewall subview and action functions globally
 if (typeof window !== 'undefined') {
+  window.showFirewallSubview = showFirewallSubview;
+  window.selectBotLevel = selectBotLevel;
+  window.selectBotAction = selectBotAction;
+  window.selectRateLimitAction = selectRateLimitAction;
+  window.selectRuleAction = selectRuleAction;
+  window.selectIpBlockAction = selectIpBlockAction;
+  window.addPageConditionRow = addPageConditionRow;
+
   window.openFwBotProtectModal = openFwBotProtectModal;
   window.openFwAddRuleModal = openFwAddRuleModal;
   window.openFwRateLimitModal = openFwRateLimitModal;
@@ -14842,13 +14705,13 @@ if (typeof window !== 'undefined') {
   function handleAppDedicatedRoute() {
     const path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
     if (path === '/bot') {
-      openFwBotProtectModal();
+      showFirewallSubview('bot');
     } else if (path === '/firewall-rule') {
-      openFwAddRuleModal();
+      showFirewallSubview('add-rule');
     } else if (path === '/rate-limit') {
-      openFwRateLimitModal();
+      showFirewallSubview('rate-limit');
     } else if (path === '/ip-block') {
-      openFwIpBlockModal();
+      showFirewallSubview('ip-block');
     }
   }
 

@@ -16978,3 +16978,56 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 }
 
+/* ========================================================
+   In-Page Firewall Subviews (Direct Paged Structure)
+   ======================================================== */
+.svc-fw-subview {
+  width: 100%;
+}
+
+.svc-fw-subview.hidden {
+  display: none !important;
+}
+
+.svc-fw-page-card {
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 20px;
+  max-width: 580px;
+  margin: 12px auto 48px;
+  padding: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-fw-page-card .svc-sheet-drag-handle {
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.svc-fw-page-card .svc-clean-dialog-header {
+  border-bottom: none;
+  padding: 6px 18px 12px;
+}
+
+.svc-fw-page-card .svc-sheet-form-body {
+  padding: 6px 16px 20px;
+}
+
+@media (max-width: 640px) {
+  .svc-fw-page-card {
+    border-radius: 16px;
+    margin: 6px auto 32px;
+    border: 1px solid #f0f0f2;
+    box-shadow: none;
+    max-width: 100%;
+  }
+
+  .svc-fw-page-card .svc-sheet-form-body {
+    padding: 6px 12px 24px;
+  }
+}
+
+
