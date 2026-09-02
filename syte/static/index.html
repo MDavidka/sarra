@@ -263,47 +263,42 @@
           </div>
         </section>
 
-        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace) -->
+        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace - Exact match to media_1788380843870.png) -->
         <section id="view-ai" class="view">
           <div class="svc-ai-workspace" id="svc-ai-workspace">
-            <!-- OpenCode Styled Dark Header -->
+            <!-- Header matching media_1788380843870.png -->
             <header class="svc-ai-header">
               <div class="svc-ai-header-left">
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu">
+                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu" onclick="typeof toggleSidebar === 'function' && toggleSidebar()">
                   <i data-lucide="menu"></i>
                 </button>
-                <div class="svc-ai-session-title" id="svc-ai-session-title">Session</div>
+                <div class="svc-ai-header-title-box">
+                  <span class="svc-ai-session-title">Session</span>
+                  <span class="svc-ai-session-sub">Chat with AI</span>
+                </div>
               </div>
               <div class="svc-ai-header-right">
                 <!-- Repository Pill Selector -->
                 <div class="svc-ai-repo-pill" id="svc-ai-repo-pill-btn" title="Switch project repository">
-                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">sarra</span>
-                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
                   <i data-lucide="github" class="svc-ai-github-icon"></i>
+                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">zsomBro</span>
+                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
                   <select id="svc-ai-project-select" class="svc-ai-hidden-select" aria-label="Select Target Project">
                     <!-- Populated dynamically -->
                   </select>
                 </div>
 
-                <!-- Action buttons -->
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-debug-btn" title="Download AI Diagnostic JSON Bundle">
-                  <i data-lucide="bug"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
-                  <i data-lucide="settings-2"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-clear-btn" title="Clear chat history">
-                  <i data-lucide="trash-2"></i>
-                </button>
+                <!-- Account Avatar Circle -->
+                <div class="svc-ai-user-avatar" id="svc-ai-user-avatar" title="Account">M</div>
               </div>
             </header>
 
             <!-- Chat Messages Container / OpenCode Activity Stream -->
             <div class="svc-ai-messages-container" id="svc-ai-messages-list">
-              <!-- Populated dynamically -->
+              <!-- Populated dynamically with welcome screen matching screenshot or messages -->
             </div>
 
-            <!-- Bottom Input Composer Card -->
+            <!-- Bottom Input Composer Card (Exact match to media_1788380843870.png) -->
             <footer class="svc-ai-composer-wrapper">
               <div class="svc-ai-slash-menu" id="svc-ai-slash-menu" style="display:none;">
                 <div class="svc-ai-slash-header">
@@ -319,19 +314,26 @@
                 <textarea
                   id="svc-ai-input"
                   class="svc-ai-composer-textarea"
-                  placeholder="Describe what you want to build, debug, or understand. (Type / for commands)"
+                  placeholder="Ask anything about your project..."
                   rows="2"
                   autocomplete="off"
                 ></textarea>
 
                 <div class="svc-ai-composer-bottom-bar">
                   <div class="svc-ai-composer-actions-left">
-                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach file or context">
+                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach file or context" onclick="document.getElementById('svc-ai-file-upload-input')?.click()">
                       <i data-lucide="paperclip"></i>
                     </button>
+                    <input type="file" id="svc-ai-file-upload-input" style="display:none;" onchange="if (this.files[0]) toast('Attached: ' + this.files[0].name)">
                     <button type="button" class="svc-ai-model-pill" id="svc-ai-model-selector-btn" title="Switch AI model">
-                      <span class="svc-ai-model-provider-icon"><i data-lucide="cpu"></i></span>
-                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">gpt-4o</span>
+                      <span class="svc-ai-model-provider-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <path d="M12 8v8"></path>
+                          <path d="M8 12h8"></path>
+                        </svg>
+                      </span>
+                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">GPT-4o</span>
                       <i data-lucide="chevron-down" class="svc-ai-chevron-small"></i>
                     </button>
                   </div>

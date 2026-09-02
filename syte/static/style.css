@@ -17200,5 +17200,286 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   color: #71717a;
 }
 
+/* ========================================================
+   AI Session Chat & Home Screen (media_1788380843870.png)
+   ======================================================== */
+.svc-ai-header-title-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-ai-session-title {
+  font-size: 16px;
+  font-weight: 750;
+  color: #09090b;
+  line-height: 1.2;
+}
+
+.svc-ai-session-sub {
+  font-size: 11.5px;
+  color: #71717a;
+  font-weight: 500;
+}
+
+.svc-ai-user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #09090b;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Home / Empty State Container */
+.svc-ai-home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 580px;
+  margin: 0 auto;
+  padding: 16px 8px 24px;
+  box-sizing: border-box;
+}
+
+.svc-ai-hero-icon-sq {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #f4f4f5;
+  color: #09090b;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.svc-ai-hero-icon-sq svg {
+  width: 26px;
+  height: 26px;
+}
+
+.svc-ai-hero-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #09090b;
+  text-align: center;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.svc-ai-hero-sub {
+  font-size: 14px;
+  color: #71717a;
+  text-align: center;
+  line-height: 1.45;
+  margin: 0 0 24px;
+}
+
+/* 4 Quick Action Starter Cards (2x2 Grid) */
+.svc-ai-hero-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 480px) {
+  .svc-ai-hero-cards-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
+
+.svc-ai-starter-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid #ececee;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.svc-ai-starter-card:hover {
+  border-color: #d4d4d8;
+  background: #fafafa;
+  transform: translateY(-1px);
+}
+
+.svc-ai-starter-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.svc-ai-starter-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f4f4f5;
+  color: #09090b;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.svc-ai-starter-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.svc-ai-starter-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.svc-ai-starter-text strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-ai-starter-text span {
+  font-size: 11px;
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.svc-ai-starter-chevron {
+  width: 14px;
+  height: 14px;
+  color: #a1a1aa;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/* Recent Prompts Section */
+.svc-ai-recent-prompts-section {
+  width: 100%;
+}
+
+.svc-ai-recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.svc-ai-recent-header strong {
+  font-size: 14px;
+  font-weight: 750;
+  color: #09090b;
+}
+
+.svc-ai-see-all-btn {
+  background: none;
+  border: none;
+  color: #71717a;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+}
+
+.svc-ai-see-all-btn:hover {
+  color: #09090b;
+}
+
+.svc-ai-see-all-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.svc-ai-recent-prompts-card {
+  background: #ffffff;
+  border: 1px solid #ececee;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.svc-ai-recent-prompt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f4f4f5;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.svc-ai-recent-prompt-row:last-child {
+  border-bottom: none;
+}
+
+.svc-ai-recent-prompt-row:hover {
+  background: #f9f9fb;
+}
+
+.svc-ai-recent-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.svc-ai-recent-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  color: #71717a;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.svc-ai-recent-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.svc-ai-recent-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svc-ai-recent-time {
+  font-size: 11.5px;
+  color: #a1a1aa;
+  flex-shrink: 0;
+}
+
+
 
 

@@ -9990,10 +9990,90 @@ async function renderAIChatWorkspace(project) {
       const msgs = hRes.messages || [];
       if (!msgs.length) {
         messagesList.innerHTML = `
-          <div class="svc-ai-welcome-card" style="color:#a1a1aa; text-align:center; padding:40px 20px;">
-            <div style="font-size:24px; margin-bottom:8px;"><i data-lucide="sparkles" style="color:#38bdf8;"></i></div>
-            <h3 style="color:#f4f4f5; font-size:18px; margin:0 0 6px;">OpenCode Autonomous AI Workspace</h3>
-            <p style="font-size:13.5px; max-width:440px; margin:0 auto; line-height:1.5;">Direct terminal access, filesystem editing, hot preview servers, and zero-downtime deployments for <strong>${escapeHtml(currentProject.name || currentProject.id)}</strong>.</p>
+          <div class="svc-ai-home-hero">
+            <div class="svc-ai-hero-icon-sq">
+              <i data-lucide="sparkles"></i>
+            </div>
+            <h1 class="svc-ai-hero-title">What can I help you build?</h1>
+            <p class="svc-ai-hero-sub">Describe a feature, debug an error,<br>or ask about your project.</p>
+
+            <!-- 4 Quick Action Starter Cards (2x2 Grid) -->
+            <div class="svc-ai-hero-cards-grid">
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Build a feature: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="code-2"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Build a feature</strong>
+                    <span>Turn your idea into code</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Fix an error: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="bug"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Fix an error</strong>
+                    <span>Paste the error message</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Explain code: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="file-text"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Explain code</strong>
+                    <span>Get a simple explanation</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Improve this: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="sparkles"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Improve this</strong>
+                    <span>Make it better</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+            </div>
+
+            <!-- Recent Prompts Section -->
+            <div class="svc-ai-recent-prompts-section">
+              <div class="svc-ai-recent-header">
+                <strong>Recent prompts</strong>
+                <button type="button" class="svc-ai-see-all-btn">See all <i data-lucide="chevron-right"></i></button>
+              </div>
+              <div class="svc-ai-recent-prompts-card">
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Optimize my Next.js deployment')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Optimize my Next.js deployment</span>
+                  </div>
+                  <span class="svc-ai-recent-time">2h ago</span>
+                </div>
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Fix this MongoDB connection error')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Fix this MongoDB connection error</span>
+                  </div>
+                  <span class="svc-ai-recent-time">5h ago</span>
+                </div>
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Create a Discord bot command')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Create a Discord bot command</span>
+                  </div>
+                  <span class="svc-ai-recent-time">1d ago</span>
+                </div>
+              </div>
+            </div>
           </div>
         `;
       } else {
@@ -14790,8 +14870,26 @@ function escapeHtml(value) {
   }[character]));
 }
 
-// Expose firewall, domain, and redirect subview and action functions globally
+function setAIChatPrompt(text) {
+  const input = document.getElementById('svc-ai-input');
+  if (input) {
+    input.value = text;
+    input.focus();
+    if (text.endsWith(': ')) {
+      input.setSelectionRange(text.length, text.length);
+    } else {
+      const form = document.getElementById('svc-ai-chat-form');
+      if (form && typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      }
+    }
+  }
+}
+
+// Expose firewall, domain, redirect, and AI functions globally
 if (typeof window !== 'undefined') {
+  window.setAIChatPrompt = setAIChatPrompt;
+
   window.showFirewallSubview = showFirewallSubview;
   window.selectBotLevel = selectBotLevel;
   window.selectBotAction = selectBotAction;
