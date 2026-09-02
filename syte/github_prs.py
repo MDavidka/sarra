@@ -80,6 +80,63 @@ def _headers(token: str) -> dict[str, str]:
     return headers
 
 
+async def test_github_connection(token_override: str | None = None) -> dict[str, Any]:
+    """Test GitHub connection credentials against GitHub's /user API."""
+    token, source = await resolve_token()
+    if token_override:
+        token = token_override.strip()
+        source = "input"
+    if not token:
+        return {
+            "ok": False,
+            "authenticated": False,
+            "error": "No GitHub personal access token provided or configured.",
+        }
+    headers = _headers(token)
+    headers["User-Agent"] = "Syte-Git-Connection"
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(f"{GITHUB_API}/user", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                scopes_header = resp.headers.get("x-oauth-scopes", "")
+                scopes = [s.strip() for s in scopes_header.split(",") if s.strip()] if scopes_header else []
+                return {
+                    "ok": True,
+                    "authenticated": True,
+                    "username": data.get("login"),
+                    "name": data.get("name"),
+                    "avatar_url": data.get("avatar_url"),
+                    "html_url": data.get("html_url"),
+                    "scopes": scopes,
+                    "token_source": source,
+                }
+            elif resp.status_code == 401:
+                return {
+                    "ok": False,
+                    "authenticated": False,
+                    "error": "Bad credentials — the GitHub token is invalid or expired.",
+                }
+            elif resp.status_code == 403:
+                return {
+                    "ok": False,
+                    "authenticated": False,
+                    "error": f"GitHub API rate limit exceeded or access forbidden ({resp.status_code}).",
+                }
+            else:
+                return {
+                    "ok": False,
+                    "authenticated": False,
+                    "error": f"GitHub API returned status {resp.status_code}.",
+                }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "authenticated": False,
+            "error": f"Failed to connect to GitHub: {exc}",
+        }
+
+
 async def resolve_repo() -> str:
     """Determine the ``owner/repo`` this install tracks."""
     override = (os.environ.get("SYTE_GITHUB_REPO") or "").strip()

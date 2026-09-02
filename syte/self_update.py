@@ -23,7 +23,7 @@ UPDATE_WORK_BRANCH = "syte-update"
 
 def _version_tuple(version: str) -> tuple[int, ...]:
     parts: list[int] = []
-    for piece in re.split(r"[.\-]", version.strip().lstrip("v")):
+    for piece in re.split(r"[.\-\s]", version.strip().lstrip("v")):
         if piece.isdigit():
             parts.append(int(piece))
     return tuple(parts) if parts else (0,)

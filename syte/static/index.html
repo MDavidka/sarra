@@ -157,6 +157,12 @@
               <button type="button" class="sidebar-tree-link active" data-svc-tab="general">
                 <i data-lucide="layout-dashboard"></i><span>Overview</span>
               </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="build">
+                <i data-lucide="rocket"></i><span>Build</span>
+              </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="sources">
+                <i data-lucide="folder"></i><span>Sources</span>
+              </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="domains">
                 <i data-lucide="globe"></i><span>Domain</span>
               </button>
@@ -165,6 +171,9 @@
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="release">
                 <i data-lucide="zap"></i><span>Release</span>
+              </button>
+              <button type="button" class="sidebar-tree-link" data-svc-tab="redirects">
+                <i data-lucide="shuffle"></i><span>Redirects</span>
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="firewall">
                 <i data-lucide="shield"></i><span>Firewall</span>
@@ -177,9 +186,6 @@
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="rollbacks">
                 <i data-lucide="history"></i><span>Rollbacks</span>
-              </button>
-              <button type="button" class="sidebar-tree-link" data-svc-tab="preview">
-                <i data-lucide="monitor-smartphone"></i><span>Preview</span>
               </button>
               <button type="button" class="sidebar-tree-link" data-svc-tab="settings">
                 <i data-lucide="settings-2"></i><span>Settings</span>
@@ -345,70 +351,259 @@
         </section>
 
         <section id="view-new-service" class="view">
-          <div class="create-project deployment-structured-page">
-            <div class="create-brand">
-              <img src="/static/syte-logo.png?v=__VERSION__" alt="" class="create-logo">
-              <span class="create-brand-name">syte</span>
+          <div class="svc-new-project-screen">
+            <!-- Header: CREATE PROJECT / Deploy a repository / Learn more -->
+            <div class="svc-new-project-header">
+              <div class="svc-new-project-title-box">
+                <span class="svc-eyebrow-badge">CREATE PROJECT</span>
+                <h1 class="svc-new-project-main-title">Deploy a repository</h1>
+                <p class="svc-new-project-sub">Connect your code and deploy it in seconds.</p>
+              </div>
+              <a href="https://docs.sycord.site" target="_blank" rel="noopener noreferrer" class="btn-new-proj-learn">
+                <span>Learn more</span>
+                <i data-lucide="external-link" class="icon-xs"></i>
+              </a>
             </div>
 
-            <form id="create-form" class="create-form vercel-create-form" novalidate>
-              <header class="deploy-create-header deployment-structured-header">
-                <h1>Deploy a repository</h1>
-              </header>
-
-              <div class="create-name-field">
-                <div class="create-name-label-row">
-                  <label for="create-name">project name</label>
-                  <button type="button" class="svc-icon-btn" id="create-name-focus" aria-label="Focus name"><i data-lucide="square-pen"></i></button>
+            <form id="create-form" class="svc-new-project-form" novalidate>
+              <!-- Card 1: Project Name -->
+              <div class="svc-new-proj-card">
+                <div class="svc-card-field-header">
+                  <label for="create-name" class="svc-card-field-title">Project name</label>
+                  <span class="svc-card-field-hint">3-32 characters</span>
                 </div>
-                <input type="text" id="create-name" class="create-name-input" required placeholder="my-app" autocomplete="off">
+                <div class="svc-input-with-icon">
+                  <input type="text" id="create-name" class="svc-proj-input" required placeholder="my-app" autocomplete="off" minlength="3" maxlength="32">
+                  <button type="button" class="svc-input-trailing-icon" id="create-name-focus" aria-label="Focus name">
+                    <i data-lucide="pencil"></i>
+                  </button>
+                </div>
               </div>
 
-              <section class="deploy-source-section" aria-label="Project source">
-                <div class="deploy-source-tabs" role="tablist" aria-label="Project source">
-                  <button class="deploy-source-tab active" type="button" data-import-source="git" role="tab" aria-selected="true"><i data-lucide="git-branch"></i><span>Git repository</span></button>
-                  <button class="deploy-source-tab" type="button" data-import-source="zip" role="tab" aria-selected="false"><i data-lucide="file-archive"></i><span>Upload ZIP</span></button>
+              <!-- Card 2: Source (Git repository vs Upload ZIP) -->
+              <div class="svc-new-proj-card">
+                <div class="svc-card-field-header">
+                  <span class="svc-card-field-title">Source</span>
                 </div>
-                <div class="deploy-source-fields" id="deploy-git-fields">
-                  <section class="github-source-connect deployment-structured-account" aria-labelledby="github-source-title">
-                    <div class="github-source-heading"><span class="github-mark" aria-hidden="true"><i data-lucide="github"></i></span><div><strong id="github-source-title">GitHub</strong><p id="github-source-description">Connect an account to browse repositories.</p></div></div>
-                    <div class="github-source-actions"><button type="button" class="btn-pill btn-ghost btn-sm" id="github-connect-btn"><i data-lucide="github"></i><span>Connect GitHub</span></button><button type="button" class="btn-pill btn-ghost btn-sm hidden" id="github-disconnect-btn"><i data-lucide="unlink"></i><span>Disconnect</span></button></div>
-                    <div id="github-source-account" class="github-source-account hidden"></div>
-                  </section>
-                  <section id="github-repository-browser" class="github-repository-browser deployment-structured-browser hidden" aria-labelledby="github-repository-title">
-                    <div class="github-browser-toolbar deployment-structured-toolbar"><h3 id="github-repository-title">Repositories</h3><button type="button" class="btn-pill btn-ghost btn-sm" id="github-repositories-refresh" aria-label="Refresh GitHub repositories"><i data-lucide="refresh-cw"></i><span>Refresh</span></button></div>
-                    <label class="deployment-structured-search" for="github-repository-search"><i data-lucide="search"></i><input id="github-repository-search" type="search" autocomplete="off" placeholder="Search repositories"></label>
-                    <div id="github-repository-list" class="github-repository-list deployment-structured-repository-list" role="listbox" aria-label="Available GitHub repositories"></div>
-                    <div class="deploy-field-row"><label for="github-branch-select">Branch<select id="github-branch-select" disabled><option value="">Choose a repository first</option></select></label><label for="create-base-directory">Base directory<input id="create-base-directory" type="text" value="/" placeholder="/"></label></div>
-                  </section>
-                  <div class="github-manual-divider"><span>or use a public URL</span></div>
-                  <label for="create-git-url">Repository URL<input id="create-git-url" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git"></label>
-                  <label class="github-manual-branch" for="create-branch">Branch<input id="create-branch" type="text" value="main" placeholder="main"></label>
-                  <p class="deploy-field-hint"><i data-lucide="shield-check"></i>Manual URLs are for public HTTPS repositories.</p>
-                </div>
-                <div class="deploy-source-fields hidden" id="deploy-zip-fields">
-                  <label class="deploy-upload-zone" for="create-source-zip"><input id="create-source-zip" type="file" accept=".zip,application/zip" hidden><i data-lucide="upload-cloud"></i><strong>Choose a ZIP archive</strong><span>Up to 75 MB. The source is scanned before any deployment runs.</span></label>
-                  <label for="create-zip-base-directory">Base directory<input id="create-zip-base-directory" type="text" value="/" placeholder="/ or apps/web"></label>
-                </div>
-              </section>
+                <p class="svc-card-field-sub">Choose how you want to import your project.</p>
 
+                <div class="svc-source-options-grid" role="tablist" aria-label="Project source">
+                  <!-- Option 1: Git repository -->
+                  <button type="button" class="svc-source-option-btn active" data-import-source="git" role="tab" aria-selected="true">
+                    <div class="svc-source-option-left">
+                      <div class="svc-source-icon-box">
+                        <i data-lucide="git-branch"></i>
+                      </div>
+                      <div class="svc-source-option-info">
+                        <strong class="svc-source-option-title">Git repository</strong>
+                        <span class="svc-source-option-desc">Connect a Git provider</span>
+                      </div>
+                    </div>
+                    <div class="svc-source-radio">
+                      <span class="svc-radio-bullet"></span>
+                    </div>
+                  </button>
+
+                  <!-- Option 2: Upload ZIP -->
+                  <button type="button" class="svc-source-option-btn" data-import-source="zip" role="tab" aria-selected="false">
+                    <div class="svc-source-option-left">
+                      <div class="svc-source-icon-box">
+                        <i data-lucide="file-archive"></i>
+                      </div>
+                      <div class="svc-source-option-info">
+                        <strong class="svc-source-option-title">Upload ZIP</strong>
+                        <span class="svc-source-option-desc">Deploy from a file</span>
+                      </div>
+                    </div>
+                    <div class="svc-source-radio">
+                      <span class="svc-radio-bullet"></span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 3: GitHub Connection -->
+              <div class="svc-new-proj-card" id="deploy-github-connection-card">
+                <div class="svc-github-conn-top">
+                  <div class="svc-github-conn-left">
+                    <div class="svc-github-conn-logo">
+                      <i data-lucide="github"></i>
+                    </div>
+                    <div class="svc-github-conn-info">
+                      <strong class="svc-github-conn-title">GitHub connection</strong>
+                      <p class="svc-github-conn-sub" id="github-source-description">Connect your GitHub account to access your repositories.</p>
+                    </div>
+                  </div>
+                  <div class="svc-github-conn-actions">
+                    <button type="button" class="btn-github-action" id="github-connect-btn">
+                      <span>Connect</span>
+                    </button>
+                    <button type="button" class="btn-github-action btn-disconnect hidden" id="github-disconnect-btn">
+                      <span>Disconnect</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Connected Account Row -->
+                <div class="svc-github-account-row" id="github-source-account">
+                  <div class="svc-github-user-left">
+                    <span class="svc-github-user-avatar" id="github-user-avatar">M</span>
+                    <div class="svc-github-user-names">
+                      <strong class="svc-github-display-name" id="github-user-name">Connected as MDavidka</strong>
+                      <span class="svc-github-login-name" id="github-user-login">mdavidka</span>
+                    </div>
+                  </div>
+                  <div class="svc-github-connected-pill" id="github-connected-pill">
+                    <span class="svc-connected-dot"></span>
+                    <span>Connected</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card 4: Repositories List / Empty State (For Git Source) -->
+              <div class="svc-new-proj-card" id="deploy-git-fields">
+                <div class="svc-card-field-header">
+                  <div>
+                    <span class="svc-card-field-title">Repositories</span>
+                    <p class="svc-card-field-sub" style="margin-bottom:0;">Choose a repository to deploy.</p>
+                  </div>
+                  <button type="button" class="btn-repos-refresh" id="github-repositories-refresh" title="Refresh repositories">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                <!-- Search Input -->
+                <div class="svc-repos-search-wrap">
+                  <i data-lucide="search" class="svc-search-icon"></i>
+                  <input type="search" id="github-repository-search" class="svc-repos-search-input" placeholder="Search repositories..." autocomplete="off">
+                </div>
+
+                <!-- Filters Row (All / Personal / Organization / Forks + Sort) -->
+                <div class="svc-repos-filter-row">
+                  <div class="svc-repos-filter-pills" id="github-repo-filters">
+                    <button type="button" class="svc-repo-filter-pill active" data-filter="all">All</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="personal">Personal</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="org">Organization</button>
+                    <button type="button" class="svc-repo-filter-pill" data-filter="forks">Forks</button>
+                  </div>
+                  <div class="svc-repos-sort-wrap">
+                    <button type="button" class="btn-repos-sort" id="github-repo-sort-btn">
+                      <i data-lucide="sliders-horizontal"></i>
+                      <span>Sort</span>
+                      <i data-lucide="chevron-down" class="icon-xs"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Repository List Container -->
+                <div id="github-repository-list" class="svc-repos-list-container">
+                  <!-- Empty State (matching media_1788173977152.jpg) -->
+                  <div class="svc-repos-empty-box" id="github-repos-empty-state">
+                    <div class="svc-repos-empty-icon">
+                      <i data-lucide="folder"></i>
+                    </div>
+                    <strong class="svc-repos-empty-title">No repositories found</strong>
+                    <p class="svc-repos-empty-sub">No repositories are available to this GitHub connection. Make sure you have access to at least one repository.</p>
+                    <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-view-github">
+                      <i data-lucide="github"></i>
+                      <span>View GitHub</span>
+                      <i data-lucide="external-link" class="icon-xs"></i>
+                    </a>
+                  </div>
+                </div>
+
+                <!-- Optional Manual Public Git URL or branch selection -->
+                <div class="svc-manual-git-section" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed #e4e4e7;">
+                  <div class="deploy-field-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <label for="github-branch-select" style="font-size: 12.5px; font-weight: 600; color: #71717a;">
+                      Branch
+                      <select id="github-branch-select" class="svc-proj-input" style="margin-top: 4px;" disabled>
+                        <option value="">Choose a repository first</option>
+                      </select>
+                    </label>
+                    <label for="create-base-directory" style="font-size: 12.5px; font-weight: 600; color: #71717a;">
+                      Base directory
+                      <input id="create-base-directory" class="svc-proj-input" style="margin-top: 4px;" type="text" value="/" placeholder="/">
+                    </label>
+                  </div>
+
+                  <details class="svc-manual-url-details" style="margin-top: 12px; font-size: 13px;">
+                    <summary style="cursor: pointer; color: #71717a; font-weight: 600;">Or deploy with manual public Git URL</summary>
+                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                      <input id="create-git-url" class="svc-proj-input" type="url" inputmode="url" placeholder="https://github.com/you/your-app.git">
+                      <input id="create-branch" class="svc-proj-input" type="text" value="main" placeholder="Branch: main">
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <!-- ZIP upload fields (shown when ZIP is selected) -->
+              <div class="svc-new-proj-card hidden" id="deploy-zip-fields">
+                <div class="svc-card-field-header">
+                  <span class="svc-card-field-title">Upload Archive</span>
+                </div>
+                <p class="svc-card-field-sub">Choose a ZIP archive (up to 75 MB). It will be scanned automatically.</p>
+                <label class="svc-zip-upload-dropzone" for="create-source-zip">
+                  <input id="create-source-zip" type="file" accept=".zip,application/zip" hidden>
+                  <div class="svc-zip-drop-icon"><i data-lucide="upload-cloud"></i></div>
+                  <strong style="font-size: 14px; color: #09090b;">Click or drag ZIP archive here</strong>
+                  <span style="font-size: 12px; color: #71717a;">ZIP archive containing code and build files</span>
+                </label>
+                <label for="create-zip-base-directory" style="margin-top: 12px; font-size: 12.5px; font-weight: 600; color: #71717a; display: block;">
+                  Base directory
+                  <input id="create-zip-base-directory" class="svc-proj-input" style="margin-top: 4px;" type="text" value="/" placeholder="/ or apps/web">
+                </label>
+              </div>
+
+              <!-- Analysis & Build Options -->
               <section class="deploy-analysis hidden" id="deploy-analysis" aria-live="polite">
-                <div class="deploy-section-heading"><span class="deploy-step">2</span><div><p class="eyebrow">Detected configuration</p><h2>Review build plan</h2></div><button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm"><i data-lucide="refresh-cw"></i>Analyze again</button></div>
+                <div class="deploy-section-heading">
+                  <span class="deploy-step">2</span>
+                  <div>
+                    <p class="eyebrow">Detected configuration</p>
+                    <h2>Review build plan</h2>
+                  </div>
+                  <button type="button" id="reanalyze-source" class="btn-pill btn-ghost btn-sm">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Analyze again</span>
+                  </button>
+                </div>
                 <div class="deploy-detection-grid" id="deploy-detection-grid"></div>
-                <div class="deploy-env-panel"><div><h3>Suggested environment variables</h3><p>Only variable names and source locations are detected. Values are never read or imported.</p></div><div id="deploy-env-suggestions" class="deploy-env-suggestions"></div></div>
-                <label class="deploy-env-editor" for="create-env-vars"><span>Environment values</span><textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea></label>
-                <label class="deploy-notification-optin" for="create-in-app-notifications"><input id="create-in-app-notifications" type="checkbox" checked><span><strong>Notify in Sycord PWA</strong><small>Show deployment, project, preview, domain, and health events in the installed app. On iPhone, install Sycord to Home Screen before enabling device alerts.</small></span></label>
-
-                <details class="deploy-build-overrides"><summary>Build settings <i data-lucide="chevron-down"></i></summary><div><label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label><label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label></div></details>
+                <div class="deploy-env-panel">
+                  <div>
+                    <h3>Suggested environment variables</h3>
+                    <p>Only variable names and source locations are detected. Values are never read or imported.</p>
+                  </div>
+                  <div id="deploy-env-suggestions" class="deploy-env-suggestions"></div>
+                </div>
+                <label class="deploy-env-editor" for="create-env-vars">
+                  <span>Environment values</span>
+                  <textarea id="create-env-vars" rows="4" placeholder="DATABASE_URL=\nAPI_KEY="></textarea>
+                </label>
+                <label class="deploy-notification-optin" for="create-in-app-notifications">
+                  <input id="create-in-app-notifications" type="checkbox" checked>
+                  <span><strong>Notify in Sycord PWA</strong><small>Show deployment, project, preview, domain, and health events in the installed app.</small></span>
+                </label>
+                <details class="deploy-build-overrides">
+                  <summary>Build settings <i data-lucide="chevron-down"></i></summary>
+                  <div>
+                    <label for="create-start-cmd">Start command<input id="create-start-cmd" class="create-inline-input" placeholder="Detected automatically"></label>
+                    <label for="create-build-cmd">Build command<input id="create-build-cmd" class="create-inline-input" placeholder="Detected automatically"></label>
+                  </div>
+                </details>
               </section>
 
+              <!-- Log output panel -->
               <div class="create-log-box logs-panel" id="create-log-wrap">
                 <div class="create-log-placeholder" id="create-log-placeholder">Import a source to see its deployment plan.</div>
                 <div class="logs-terminal logs-terminal-dark create-log-terminal hidden" id="deploy-log-panel"></div>
               </div>
 
-              <button type="submit" class="svc-action-btn svc-action-deploy create-submit" id="deploy-btn">
-                <i data-lucide="scan-search"></i><span>Analyze source</span>
+              <!-- Submit Action Button -->
+              <button type="submit" class="btn-deploy-main-action" id="deploy-btn">
+                <i data-lucide="rocket"></i>
+                <span>Deploy Project</span>
               </button>
             </form>
           </div>
@@ -420,14 +615,13 @@
             <div class="svc-top-nav-bar" id="svc-top-nav-bar" role="tablist" aria-label="Project tabs">
               <button type="button" class="svc-pill-tab active" data-svc-tab="general" role="tab"><i data-lucide="layout-dashboard"></i><span>Deployment</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="build" role="tab"><i data-lucide="rocket"></i><span>Build</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="sources" role="tab"><i data-lucide="folder"></i><span>Sources</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="domains" role="tab"><i data-lucide="at-sign"></i><span>Domains</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span></button>
+              <button type="button" class="svc-pill-tab" data-svc-tab="env" role="tab"><i data-lucide="braces"></i><span>Environment</span><span class="svc-nav-warn-badge hidden" id="svc-env-warn-badge">!</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="redirects" role="tab"><i data-lucide="shuffle"></i><span>Redirects</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="logs" role="tab"><i data-lucide="terminal-square"></i><span>Logs</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="speed" role="tab"><i data-lucide="gauge"></i><span>Resources</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="cdn" role="tab"><i data-lucide="cloud"></i><span>CDN</span></button>
-              <button type="button" class="svc-pill-tab" data-svc-tab="preview" role="tab"><i data-lucide="monitor-smartphone"></i><span>Preview</span></button>
               <button type="button" class="svc-pill-tab" data-svc-tab="settings" role="tab"><i data-lucide="settings-2"></i><span>Settings</span></button>
             </div>
 
@@ -635,21 +829,40 @@
                 </div>
               </div>
 
-              <!-- 2. BUILD TAB (Exact match to screenshot in white theme) -->
+              <!-- 2. BUILD TAB (Exact match to media_1788168374780.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-build" data-svc-panel="build" data-svc-panel-alias="release">
                 <section class="svc-build-track-screen" aria-label="Project build tracking">
+                  <!-- Header: Title + Subtitle -->
                   <div class="svc-build-track-header">
                     <div class="svc-build-track-title-wrap">
-                      <h2>Builds</h2>
+                      <h2 class="svc-build-main-title">Builds</h2>
                       <p class="svc-build-track-sub">Track active compilation, git commits, build stages, and deploy history.</p>
                     </div>
-                    <div class="svc-build-track-actions">
-                      <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-build-trigger-btn">
-                        <i data-lucide="play"></i><span>Trigger Build</span>
+                  </div>
+
+                  <!-- Actions & Filter Control Row with proper spacing -->
+                  <div class="svc-build-action-row">
+                    <div class="svc-build-action-left">
+                      <button type="button" class="btn-trigger-build" id="svc-build-trigger-btn">
+                        <i data-lucide="play"></i>
+                        <span>Trigger Build</span>
                       </button>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-icon-sm" id="svc-build-refresh-btn" title="Refresh builds">
+                      <button type="button" class="btn-refresh-builds" id="svc-build-refresh-btn" title="Refresh builds">
                         <i data-lucide="refresh-cw"></i>
                       </button>
+                    </div>
+                    <div class="svc-build-filter-wrap">
+                      <button type="button" class="btn-builds-filter" id="svc-build-filter-btn">
+                        <i data-lucide="sliders-horizontal"></i>
+                        <span id="svc-build-filter-label">Filters</span>
+                        <i data-lucide="chevron-down" class="icon-xs"></i>
+                      </button>
+                      <div class="svc-build-filter-menu hidden" id="svc-build-filter-menu">
+                        <button type="button" class="svc-filter-item active" data-filter="all">All builds</button>
+                        <button type="button" class="svc-filter-item" data-filter="ready">Ready (Succeeded)</button>
+                        <button type="button" class="svc-filter-item" data-filter="failed">Failed</button>
+                        <button type="button" class="svc-filter-item" data-filter="building">Building / Queued</button>
+                      </div>
                     </div>
                   </div>
 
@@ -660,126 +873,267 @@
                 </section>
               </div>
 
-              <!-- 3. DOMAINS TAB (Exact Image 2 layout in white theme) -->
-              <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
-                <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header: Back Arrow + Title + Action -->
-                  <div class="svc-domains-top-bar">
-                    <button type="button" class="svc-domains-back-link" data-svc-open="general" title="Back to overview">
-                      <i data-lucide="chevron-left"></i>
-                    </button>
-                    <h2 class="svc-domains-heading">Domains</h2>
-                    <button type="button" class="svc-domains-top-action" title="Network routing" aria-label="Network routing">
-                      <i data-lucide="network"></i>
-                    </button>
-                  </div>
+              <!-- SOURCES / WORKSPACE FILES TAB (Exact match to screenshot media_1788168092651.jpg) -->
+              <div class="svc-tab-panel" id="svc-panel-sources" data-svc-panel="sources">
+                <section class="svc-sources-screen" aria-label="Project workspace sources and files">
+                  <!-- Header: Files title + New / Upload buttons -->
+                  <div class="svc-sources-header">
+                    <div class="svc-sources-title-wrap">
+                      <h2 class="svc-sources-title">Files</h2>
+                      <p class="svc-sources-sub">Browse and manage your project files.</p>
+                    </div>
+                    <div class="svc-sources-actions">
+                      <!-- New Dropdown (File / Folder) -->
+                      <div class="svc-sources-dropdown-wrap">
+                        <button type="button" class="btn-sources-action btn-sources-light" id="svc-sources-new-btn">
+                          <i data-lucide="plus"></i>
+                          <span>New</span>
+                          <i data-lucide="chevron-down" class="icon-xs"></i>
+                        </button>
+                        <div class="svc-sources-dropdown-menu hidden" id="svc-sources-new-menu">
+                          <button type="button" class="svc-sources-dropdown-item" id="svc-sources-action-new-file">
+                            <i data-lucide="file-plus"></i>
+                            <span>New File</span>
+                          </button>
+                          <button type="button" class="svc-sources-dropdown-item" id="svc-sources-action-new-folder">
+                            <i data-lucide="folder-plus"></i>
+                            <span>New Folder</span>
+                          </button>
+                        </div>
+                      </div>
 
-                  <!-- Action Buttons: Add Existing | Buy -->
-                  <div class="svc-domains-action-pair">
-                    <button type="button" class="svc-domain-pair-btn dark" id="svc-domain-add-toggle-btn">
-                      <i data-lucide="plus"></i>
-                      <span>Add Domain</span>
-                    </button>
-                    <button type="button" class="svc-domain-pair-btn light" data-svc-open-certificates>
-                      <i data-lucide="shield-check"></i>
-                      <span>Certificates</span>
-                    </button>
-                  </div>
-
-                  <!-- Add Domain Pop-up Modal (Clean Shadcn Redesign) -->
-                  <div class="svc-domain-modal hidden" id="svc-domain-add-modal" role="dialog" aria-modal="true" aria-labelledby="svc-domain-modal-title">
-                    <div class="svc-domain-modal-backdrop" id="svc-domain-modal-backdrop"></div>
-                    <div class="svc-domain-modal-dialog">
-                      <header class="svc-domain-modal-header">
-                        <div class="svc-domain-modal-identity">
-                          <span class="svc-domain-modal-icon"><i data-lucide="globe"></i></span>
-                          <div>
-                            <h3 id="svc-domain-modal-title">Connect Custom Domain</h3>
-                            <p>Attach a custom domain or subdomain to route traffic to this project.</p>
-                          </div>
-                        </div>
-                        <button type="button" class="svc-domain-modal-close" id="svc-domain-modal-close-btn" aria-label="Close dialog"><i data-lucide="x"></i></button>
-                      </header>
-                      <form class="svc-domain-modal-form" id="svc-add-domain-form">
-                        <div class="svc-domain-form-field">
-                          <label for="svc-new-domain-input">Domain or Subdomain</label>
-                          <div class="svc-domain-input-wrap">
-                            <i data-lucide="link-2"></i>
-                            <input id="svc-new-domain-input" placeholder="e.g. app.mydomain.com or mydomain.com" autocomplete="off" required>
-                          </div>
-                        </div>
-                        <div class="svc-domain-dns-hint">
-                          <i data-lucide="info"></i>
-                          <span>Ensure your DNS <code>CNAME</code> or <code>A</code> record points to this server's public IP. Automated TLS will be issued immediately.</span>
-                        </div>
-                        <div class="svc-domain-modal-footer">
-                          <button type="button" class="btn-pill btn-ghost" id="svc-domain-modal-cancel-btn">Cancel</button>
-                          <button type="submit" class="btn-pill btn-primary"><i data-lucide="plus"></i><span>Connect Domain</span></button>
-                        </div>
-                      </form>
+                      <!-- Upload Button -->
+                      <button type="button" class="btn-sources-action btn-sources-dark" id="svc-sources-upload-btn">
+                        <i data-lucide="upload-cloud"></i>
+                        <span>Upload</span>
+                      </button>
+                      <input type="file" id="svc-sources-file-input" class="hidden" multiple>
                     </div>
                   </div>
 
-                  <!-- Filter & Search Row -->
-                  <div class="svc-domain-toolbar">
-                    <div class="svc-toolbar-filter-btn" title="Domain filters">
-                      <i data-lucide="sliders-horizontal"></i>
-                    </div>
-                    <label class="svc-toolbar-search-wrap" for="svc-domain-search-input">
-                      <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search connected domains..." autocomplete="off">
-                    </label>
-                  </div>
+                  <!-- File Explorer Workspace Layout -->
+                  <div class="svc-sources-workspace-layout" id="svc-sources-workspace-layout">
+                    <!-- Left Sidebar: File Tree & Navigation -->
+                    <aside class="svc-sources-tree-pane" id="svc-sources-tree-pane">
+                      <!-- Search Files Bar -->
+                      <div class="svc-sources-search-box">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="svc-sources-search-input" placeholder="Search files..." autocomplete="off">
+                        <span class="svc-search-kbd-tag">⌘ K</span>
+                      </div>
 
-                  <!-- Grouped Domains Card List (Unified card matching Image 2) -->
-                  <div class="svc-domains-card-list" id="svc-domains-card-list">
-                    <!-- Populated dynamically by renderServiceDomainsList -->
+                      <!-- Directory Navigation / Breadcrumbs -->
+                      <div class="svc-sources-tree-nav" id="svc-sources-tree-nav">
+                        <div class="svc-tree-item is-root active" id="svc-tree-root-btn" title="Root directory">
+                          <div class="svc-tree-item-left">
+                            <i data-lucide="folder"></i>
+                            <span class="svc-tree-name">/</span>
+                          </div>
+                          <i data-lucide="chevron-right" class="svc-tree-chevron"></i>
+                        </div>
+                      </div>
+
+                      <!-- File & Folder List -->
+                      <div class="svc-sources-file-list" id="svc-sources-file-list">
+                        <div class="svc-sources-tree-loading">
+                          <i data-lucide="refresh-cw" class="spinning"></i>
+                          <span>Loading workspace files…</span>
+                        </div>
+                      </div>
+                    </aside>
+
+                    <!-- Right Pane: File Viewer / Editor (Appears only after clicking a file) -->
+                    <main class="svc-sources-viewer-pane hidden" id="svc-sources-viewer-pane">
+                      <!-- Active File Viewer / Editor -->
+                      <div class="svc-sources-file-viewer" id="svc-sources-file-viewer">
+                        <div class="svc-file-viewer-toolbar">
+                          <div class="svc-file-viewer-breadcrumb" id="svc-file-viewer-breadcrumb">
+                            <i data-lucide="file-code" id="svc-file-type-icon"></i>
+                            <span class="svc-file-path-text" id="svc-file-current-path">package.json</span>
+                            <span class="svc-file-size-badge" id="svc-file-current-size">1.2 KB</span>
+                          </div>
+                          <div class="svc-file-viewer-actions">
+                            <button type="button" class="btn-file-tool" id="svc-file-copy-btn" title="Copy file content">
+                              <i data-lucide="copy"></i>
+                              <span>Copy</span>
+                            </button>
+                            <button type="button" class="btn-file-tool btn-file-save" id="svc-file-save-btn" title="Save changes">
+                              <i data-lucide="save"></i>
+                              <span>Save</span>
+                            </button>
+                            <button type="button" class="btn-file-tool btn-file-danger" id="svc-file-delete-btn" title="Delete file">
+                              <i data-lucide="trash-2"></i>
+                              <span>Delete</span>
+                            </button>
+                            <button type="button" class="btn-file-tool btn-file-close" id="svc-file-close-btn" title="Close editor">
+                              <i data-lucide="x"></i>
+                              <span>Close</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <!-- Editor Body with Line Numbers -->
+                        <div class="svc-file-editor-body">
+                          <div class="svc-file-line-numbers" id="svc-file-line-numbers" aria-hidden="true">1</div>
+                          <textarea class="svc-file-editor-textarea" id="svc-file-editor-textarea" spellcheck="false" placeholder="File content…"></textarea>
+                        </div>
+                      </div>
+                    </main>
                   </div>
                 </section>
               </div>
 
-              <!-- 4. ENVIRONMENT VARIABLES TAB -->
-              <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
-                <section class="svc-env-screen" aria-label="Environment variables">
-                  <!-- Header & Descriptions -->
+              <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
+              <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
+                <section class="svc-domains-screen" aria-label="Project domains">
+                  <!-- Header Section -->
                   <div class="svc-env-screen-header">
-                    <div class="svc-env-heading-group">
-                      <h2>Environment Variables</h2>
-                      <p class="svc-env-description">Store API keys, tokens, and config securely.</p>
-                      <p class="svc-env-links">
-                        <a href="https://docs.sycord.com/environment-variables" target="_blank" rel="noopener" class="svc-blue-link">Learn more about environment variables <i data-lucide="external-link"></i></a>
-                        <span class="svc-dot-sep">·</span>
-                        <a href="#" class="svc-blue-link" id="svc-env-secret-values-link">Separate Production Secret Values</a>
-                      </p>
+                    <div class="svc-env-header-text">
+                      <span class="svc-section-tag">DOMAINS</span>
+                      <h2 class="svc-env-title">Custom Domains</h2>
+                      <p class="svc-env-sub">Connect and manage domains with automatic SSL certificates.</p>
                     </div>
-                    <!-- Action Buttons -->
-                    <div class="svc-env-actions-stack">
-                      <button type="button" class="btn-pill btn-primary btn-full" id="svc-env-add-btn"><i data-lucide="plus"></i><span>Add Environment Variable</span></button>
-                      <button type="button" class="btn-pill btn-primary btn-full" id="svc-env-link-shared-btn"><i data-lucide="link"></i><span>Link Shared Variable</span></button>
+                    <div class="svc-env-header-actions" style="display: flex; gap: 8px;">
+                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn" onclick="openDomainsDocsModal()">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
+                      <button type="button" class="btn-learn-more" id="svc-domain-certificates-btn" onclick="openCertificatesModal()">
+                        <i data-lucide="badge-check"></i><span>Certificates</span>
+                      </button>
+                      <button type="button" class="btn-env-add-icon" id="svc-domain-add-toggle-btn" onclick="openDomainAddModal()" title="Connect Domain">
+                        <i data-lucide="plus"></i>
+                      </button>
                     </div>
                   </div>
 
-                  <!-- Segmented Sub-Tabs (Project | Shared) -->
-                  <div class="svc-env-segmented-bar" role="tablist">
-                    <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
-                    <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
+                  <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
+                  <div class="svc-domain-stats-grid">
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-total-num">1</strong>
+                          <span id="svc-domain-stat-total-label">Domain</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-green"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-active-num">0</strong>
+                          <span>Active</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
+
+                    <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
+                      <div class="svc-stat-pill-left">
+                        <span class="svc-stat-dot-amber"></span>
+                        <div class="svc-stat-text-wrap">
+                          <strong id="svc-domain-stat-pending-num">1</strong>
+                          <span>Pending</span>
+                        </div>
+                      </div>
+                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                    </div>
                   </div>
 
                   <!-- Search & Filter Controls -->
-                  <div class="svc-env-controls-row">
-                    <label class="svc-env-search-wrap" for="svc-env-search-input">
+                  <div class="svc-domain-search-row">
+                    <div class="svc-search-input-wrap">
                       <i data-lucide="search"></i>
-                      <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
-                    </label>
-                    <div class="svc-env-filter-pills">
-                      <div class="svc-pill-select-wrap">
+                      <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
+                    </div>
+                    <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
+                      <i data-lucide="sliders-horizontal"></i>
+                    </button>
+                  </div>
+
+                  <!-- Domain Cards List Container -->
+                  <div class="svc-domains-card-list" id="svc-domains-card-list">
+                    <!-- Populated dynamically by renderServiceDomainsList -->
+                  </div>
+
+                  <!-- Bottom "Connect your domain" Prompt Card (Matching Screenshot) -->
+                  <div class="svc-connect-domain-prompt-card">
+                    <div class="svc-prompt-plus-circle">
+                      <i data-lucide="plus"></i>
+                    </div>
+                    <h3 class="svc-prompt-title">Connect your domain</h3>
+                    <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
+                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal()">
+                      <i data-lucide="plus"></i><span>Add Domain</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
+
+              <!-- 4. ENVIRONMENT VARIABLES TAB (Exact match to media_1788171283140.jpg) -->
+              <div class="svc-tab-panel" id="svc-panel-env" data-svc-panel="env">
+                <section class="svc-env-screen" aria-label="Environment variables">
+                  <!-- Header Section -->
+                  <div class="svc-env-screen-header">
+                    <div class="svc-env-header-text">
+                      <span class="svc-section-tag">PROJECT</span>
+                      <h2 class="svc-env-title">Environment Variables</h2>
+                      <p class="svc-env-sub">Store API keys, tokens, and config securely.</p>
+                    </div>
+                    <div class="svc-env-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-env-learn-more-btn" onclick="openEnvDocsModal()">
+                        <span>Learn more</span><i data-lucide="external-link"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Alert banner when env is required/needed -->
+                  <div class="svc-env-needed-banner hidden" id="svc-env-needed-banner">
+                    <div class="svc-env-needed-icon">
+                      <i data-lucide="alert-triangle"></i>
+                    </div>
+                    <div class="svc-env-needed-text">
+                      <strong>Environment variables required</strong>
+                      <span>This deployment needs environment variables loaded before release. Add your keys or upload a .env file.</span>
+                    </div>
+                  </div>
+
+                  <!-- Subtabs (Project | Shared) + Right Add Button -->
+                  <div class="svc-env-tab-row">
+                    <div class="svc-env-subtabs-nav" role="tablist">
+                      <button type="button" class="svc-env-subtab active" data-env-subtab="project">Project</button>
+                      <button type="button" class="svc-env-subtab" data-env-subtab="shared">Shared</button>
+                    </div>
+                    <button type="button" class="btn-env-add-icon" id="svc-env-add-btn" onclick="openServiceEnvironmentModal()" title="Add Environment Variable">
+                      <i data-lucide="plus"></i>
+                    </button>
+                  </div>
+
+                  <!-- Search & Filter Bar -->
+                  <div class="svc-env-search-section">
+                    <!-- Search Input + Filter Toggle -->
+                    <div class="svc-env-search-row">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input id="svc-env-search-input" type="search" placeholder="Search variables..." autocomplete="off">
+                      </div>
+                      <button type="button" class="btn-domain-filter" id="svc-env-filter-toggle-btn" title="Toggle filters">
+                        <i data-lucide="sliders-horizontal"></i>
+                      </button>
+                    </div>
+
+                    <!-- 3 Pill Dropdowns Row -->
+                    <div class="svc-env-filter-pills-row">
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-type">
                           <option value="all">All Types</option>
                           <option value="plain">Plaintext</option>
                           <option value="secret">Secret</option>
                         </select>
                       </div>
-                      <div class="svc-pill-select-wrap">
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-env">
                           <option value="all">All Environments</option>
                           <option value="production">Production</option>
@@ -787,55 +1141,21 @@
                           <option value="development">Development</option>
                         </select>
                       </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="search" class="select-leading-icon"></i>
+                      <div class="svc-env-pill-select-wrap">
                         <select id="svc-env-filter-editor">
                           <option value="all">All Editors</option>
-                        </select>
-                      </div>
-                      <div class="svc-pill-select-wrap">
-                        <select id="svc-env-filter-sort">
-                          <option value="all">All Variables</option>
-                          <option value="name">Alphabetical</option>
-                        </select>
-                      </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="arrow-down-up" class="select-leading-icon"></i>
-                        <select id="svc-env-filter-order">
-                          <option value="updated">Last Updated</option>
-                          <option value="created">Created</option>
+                          <option value="operator">Operator</option>
+                          <option value="git">Git</option>
                         </select>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Variable Cards Container -->
-                  <div class="svc-env-cards-stack" id="svc-env-cards"></div>
-
-                  <p class="svc-field-help"><i data-lucide="info"></i> Save changes, then deploy or restart to apply the updated environment.</p>
+                  <!-- Environment Variable Cards Stack -->
+                  <div class="svc-env-cards-stack" id="svc-env-cards">
+                    <!-- Populated dynamically by renderServiceEnvCardsList -->
+                  </div>
                 </section>
-
-                <!-- Environment Variable Modal Dialog -->
-                <div class="svc-env-modal hidden" id="svc-env-modal" role="dialog" aria-modal="true" aria-labelledby="svc-env-modal-title">
-                  <div class="svc-env-modal-backdrop" data-svc-env-close></div>
-                  <form class="svc-env-dialog" id="svc-env-form">
-                    <button type="button" class="svc-env-close" data-svc-env-close aria-label="Close"><i data-lucide="x"></i></button>
-                    <p>Environment variable</p>
-                    <h3 id="svc-env-modal-title">Add Environment Variable</h3>
-                    <input type="hidden" id="svc-env-original-key">
-                    <label>Key<input id="svc-env-key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="DEPLOYER_API_KEY" autocomplete="off"></label>
-                    <label>Value<input id="svc-env-value" required placeholder="Enter value or token" autocomplete="off"></label>
-                    <label>Environments
-                      <select id="svc-env-scope-select">
-                        <option value="Production and Preview">Production and Preview</option>
-                        <option value="Production">Production only</option>
-                        <option value="Preview">Preview only</option>
-                        <option value="All">All Environments</option>
-                      </select>
-                    </label>
-                    <div><button type="submit" class="btn-pill btn-primary btn-full"><i data-lucide="save"></i><span>Save Variable</span></button></div>
-                  </form>
-                </div>
               </div>
 
               <!-- 5. FIREWALL TAB -->
@@ -848,7 +1168,6 @@
                         <h2>Firewall</h2>
                         <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
                       </div>
-                      <button type="button" class="svc-icon-btn-border" id="svc-firewall-options-btn" aria-label="Firewall settings"><i data-lucide="more-horizontal"></i></button>
                     </div>
                     <div class="svc-firewall-filter-bar">
                       <div class="svc-pill-select-wrap">
@@ -868,6 +1187,26 @@
                         </select>
                       </div>
                     </div>
+
+                    <!-- Firewall Styled Action Buttons Toolbar -->
+                    <div class="svc-firewall-action-toolbar">
+                      <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="openFwAddRuleModal()">
+                        <i data-lucide="plus"></i>
+                        <span>Add Rule</span>
+                      </button>
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="openFwRateLimitModal()">
+                        <i data-lucide="gauge"></i>
+                        <span>Rate Limiting</span>
+                      </button>
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="openFwBotProtectModal()">
+                        <i data-lucide="bot"></i>
+                        <span>Bot Defense</span>
+                      </button>
+                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="openFwIpBlockModal()">
+                        <i data-lucide="shield-alert"></i>
+                        <span>IP Blocklist</span>
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Hero Status Card with Shield -->
@@ -876,7 +1215,7 @@
                       <i data-lucide="shield-check"></i>
                     </div>
                     <h3 class="svc-firewall-hero-title">Firewall is active</h3>
-                    <p class="svc-firewall-hero-subtitle">All systems normal</p>
+                    <p class="svc-firewall-hero-subtitle">All systems normal · DDoS & L7 Edge Protection</p>
                     <div class="svc-firewall-metrics-list">
                       <div class="svc-fw-stat-row">
                         <span>System Mitigations</span>
@@ -888,7 +1227,7 @@
                       </div>
                       <div class="svc-fw-stat-row">
                         <span>Bot Protection</span>
-                        <span class="text-status-muted">Inactive</span>
+                        <span class="text-status-active">Active</span>
                       </div>
                     </div>
                   </div>
@@ -901,7 +1240,7 @@
                       <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
                     </div>
                     <div class="svc-fw-query-action">
-                      <button type="button" class="btn-pill btn-secondary btn-sm" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
+                      <button type="button" class="btn-firewall-action btn-fw-secondary" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
                     </div>
                   </div>
 
@@ -921,33 +1260,6 @@
                     </div>
                   </div>
                 </section>
-              </div>
-
-              <!-- 6. CDN TAB (shadcn architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-cdn" data-svc-panel="cdn">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <div class="svc-card-header-flex">
-                      <div>
-                        <span class="shadcn-badge shadcn-badge-secondary">Edge Routing</span>
-                        <h2 class="shadcn-card-title" style="margin-top: 4px;">CDN & Cloudflare Delivery</h2>
-                        <p class="shadcn-card-description">Configure edge proxying and DNS routing for high-speed global delivery.</p>
-                      </div>
-                      <img src="/static/vendor/cloudflare-svgl.svg?v=__VERSION__" alt="Cloudflare" style="width: 32px; height: 32px; object-fit: contain;">
-                    </div>
-                  </div>
-                  <div class="shadcn-card-content">
-                    <div class="svc-cdn-flow">
-                      <span>Browser</span><i data-lucide="arrow-right"></i>
-                      <span>Cloudflare DNS / CDN</span><i data-lucide="arrow-right"></i>
-                      <span>Sycord Caddy</span>
-                    </div>
-                    <p class="svc-card-subtext" style="margin: 10px 0 14px; font-size: 12px; color: #71717a; line-height: 1.45;">Keep Cloudflare proxying (orange cloud) paused while validating or issuing initial Let's Encrypt certificates.</p>
-                    <div>
-                      <button type="button" class="shadcn-btn shadcn-btn-outline" data-svc-open-certificates><i data-lucide="shield-check"></i><span>Review Certificate DNS Status</span></button>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <!-- 7. SPEED & RESOURCES TAB (Exact match to screenshot in white theme) -->
@@ -1055,107 +1367,381 @@
                 </section>
               </div>
 
-              <!-- 6. REDIRECTS TAB -->
+              <!-- 6. REDIRECTS TAB (Exact match to media_1788169123183.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-redirects" data-svc-panel="redirects">
                 <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
+                  <!-- Header Section -->
                   <div class="svc-redirects-header">
-                    <div>
+                    <div class="svc-redirects-header-text">
+                      <span class="svc-section-tag">NETWORK</span>
                       <h2 class="svc-redirects-title">HTTP Redirects</h2>
                       <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
                     </div>
-                    <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-redirect-add-open-btn">
+                    <div class="svc-redirects-header-actions">
+                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
+                        <i data-lucide="external-link"></i><span>Learn more</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
+                  <div class="svc-redirects-action-bar">
+                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="openAddRedirectModal()">
                       <i data-lucide="plus"></i><span>Add Redirect</span>
+                    </button>
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
+                      <i data-lucide="flask-conical"></i><span>Test URL</span>
+                    </button>
+                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
+                      <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
                     </button>
                   </div>
 
-                  <!-- Inline Add Redirect Card -->
-                  <div class="svc-redirect-add-card hidden" id="svc-redirect-add-card">
-                    <form id="svc-redirect-add-form" class="svc-redirect-form">
-                      <div class="svc-redirect-form-grid">
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-src">Source Path</label>
-                          <input type="text" id="svc-redirect-src" class="shadcn-input" placeholder="/old-path" required>
-                        </div>
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-target">Destination URL / Path</label>
-                          <input type="text" id="svc-redirect-target" class="shadcn-input" placeholder="https://example.com or /new-path" required>
-                        </div>
-                        <div class="shadcn-field">
-                          <label for="svc-redirect-status">Status Code</label>
-                          <select id="svc-redirect-status" class="shadcn-select">
-                            <option value="301">301 - Permanent Redirect</option>
-                            <option value="302">302 - Temporary Redirect</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div class="svc-redirect-form-actions">
-                        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-add-cancel">Cancel</button>
-                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Rule</span></button>
-                      </div>
-                    </form>
+                  <!-- Search & Filter Controls -->
+                  <div class="svc-redirects-filter-bar">
+                    <div class="svc-search-input-wrap">
+                      <i data-lucide="search"></i>
+                      <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                    </div>
+                    <div class="svc-filter-select-wrap">
+                      <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
+                        <option value="">All status</option>
+                        <option value="active">Active</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
+                        <option value="">All codes</option>
+                        <option value="301">301 - Permanent</option>
+                        <option value="302">302 - Temporary</option>
+                        <option value="307">307 - Preserving</option>
+                        <option value="308">308 - Perm Preserving</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <!-- Redirects List -->
+                  <!-- Statistics Overview Row -->
+                  <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Total Redirects</span>
+                      <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Active</span>
+                      <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Disabled</span>
+                      <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
+                    </div>
+                    <div class="svc-redirect-stat-card">
+                      <span class="svc-stat-label">Requests Redirected</span>
+                      <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
+                    </div>
+                  </div>
+
+                  <!-- Bulk Actions Toolbar (Conditional) -->
+                  <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
+                    <div class="svc-bulk-left">
+                      <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
+                      <span id="svc-bulk-count-label">0 selected</span>
+                    </div>
+                    <div class="svc-bulk-actions">
+                      <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
+                      <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
+                      <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
+                    </div>
+                  </div>
+
+                  <!-- Redirects List Container -->
                   <div class="svc-redirects-list" id="svc-redirects-list">
                     <p class="hint">Loading redirect rules…</p>
                   </div>
                 </section>
               </div>
 
-              <!-- 9. SETTINGS TAB (shadcn architecture) -->
+              <!-- 9. SETTINGS TAB (Exact match to media_1788171912849.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-settings" data-svc-panel="settings">
-                <div class="shadcn-card">
-                  <div class="shadcn-card-header">
-                    <span class="shadcn-badge shadcn-badge-secondary">Build & Branch</span>
-                    <h2 class="shadcn-card-title" style="margin-top: 4px;">Project Settings</h2>
-                    <p class="shadcn-card-description">Configure default git tracking branch, start commands, and automated CI/CD deployment rules.</p>
+                <section class="svc-settings-screen" aria-label="Project Settings">
+                  <!-- Header Section -->
+                  <div class="svc-settings-header">
+                    <span class="svc-section-tag">PROJECT</span>
+                    <h2 class="svc-settings-title">Settings</h2>
+                    <p class="svc-settings-sub">Manage your project configuration and preferences.</p>
                   </div>
-                  <div class="shadcn-card-content">
-                    <form id="svc-deployment-settings-form" class="svc-deployment-settings-form">
-                      <div class="shadcn-grid-2">
-                        <div class="shadcn-form-item">
-                          <label class="shadcn-label" for="svc-settings-branch">Production Branch</label>
-                          <input id="svc-settings-branch" class="shadcn-input" placeholder="main" autocomplete="off">
-                        </div>
-                        <div class="shadcn-form-item">
-                          <label class="shadcn-label" for="svc-settings-start-command">Start Command</label>
-                          <input id="svc-settings-start-command" class="shadcn-input" placeholder="npm start" autocomplete="off">
-                        </div>
-                      </div>
 
-                      <div class="shadcn-switch-card" style="margin-top: 14px;">
-                        <label class="svc-auto-deploy-toggle" style="cursor: pointer; display: flex; align-items: flex-start; gap: 12px; padding: 0;">
-                          <input type="checkbox" id="svc-settings-auto-deploy" style="margin-top: 3px; accent-color: #18181b; width: 18px; height: 18px;">
-                          <div style="display: grid; gap: 2px;">
-                            <strong style="color: #09090b; font-size: 13px;">Automatically redeploy new branch commits</strong>
-                            <small style="color: #71717a; font-size: 12px; line-height: 1.4;">Periodically polls the configured repository branch and triggers automatic build & zero-downtime deployment.</small>
+                  <!-- 2-Column Main Settings Grid -->
+                  <div class="svc-settings-main-grid">
+                    <!-- Left Sidebar Nav -->
+                    <nav class="svc-settings-sidebar-nav" aria-label="Settings categories">
+                      <button type="button" class="svc-settings-nav-item active" data-settings-tab="project">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="settings"></i>
+                          <span>Project</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="visibility">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="globe"></i>
+                          <span>Visibility</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="security">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="lock"></i>
+                          <span>Security</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="alerts">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="bell"></i>
+                          <span>Alerts</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="trusted">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="shield-check"></i>
+                          <span>Trusted Sources</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="git">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="git-branch"></i>
+                          <span>Git</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+
+                      <button type="button" class="svc-settings-nav-item" data-settings-tab="static-ip">
+                        <div class="svc-settings-nav-label">
+                          <i data-lucide="wifi"></i>
+                          <span>Static IP</span>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-nav-chevron"></i>
+                      </button>
+                    </nav>
+
+                    <!-- Right Card: Active Settings Pane -->
+                    <div class="svc-settings-card-wrap">
+                      <!-- 1. PROJECT SETTINGS PANE -->
+                      <div class="svc-settings-pane active" id="svc-pane-project">
+                        <form id="svc-project-general-form">
+                          <div class="svc-pane-header">
+                            <h3 class="svc-pane-title">Project Settings</h3>
+                            <p class="svc-pane-desc">Basic information about your project.</p>
                           </div>
-                        </label>
+
+                          <div class="svc-settings-form-body">
+                            <!-- Project Name -->
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-project-name">Project Name</label>
+                              <input id="svc-settings-project-name" class="svc-settings-input" type="text" placeholder="shipwreck-" autocomplete="off" required>
+                            </div>
+
+                            <!-- Project ID -->
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-project-id-display">Project ID</label>
+                              <div class="svc-settings-input-copy-wrap">
+                                <input id="svc-settings-project-id-display" class="svc-settings-input readonly" type="text" readonly>
+                                <button type="button" class="btn-copy-id" id="svc-settings-copy-id-btn" title="Copy Project ID">
+                                  <i data-lucide="copy"></i>
+                                </button>
+                              </div>
+                            </div>
+
+                            <!-- Project Icon -->
+                            <div class="svc-settings-field">
+                              <label>Project Icon</label>
+                              <div class="svc-project-icon-row">
+                                <div class="svc-project-icon-avatar" id="svc-settings-project-icon-preview">
+                                  <span id="svc-settings-project-icon-letter">M</span>
+                                </div>
+                                <button type="button" class="btn-change-icon" id="svc-settings-change-icon-btn">Change Icon</button>
+                              </div>
+                            </div>
+
+                            <hr class="svc-settings-divider">
+
+                            <!-- Transfer Project -->
+                            <div class="svc-settings-transfer-section">
+                              <h4 class="svc-transfer-title">Transfer Project</h4>
+                              <p class="svc-transfer-desc">Transfer ownership to another user.</p>
+                              <button type="button" class="btn-transfer-project" id="svc-settings-transfer-btn">
+                                <i data-lucide="user-plus"></i><span>Transfer Project</span>
+                              </button>
+                            </div>
+
+                            <div class="svc-settings-actions-bottom">
+                              <button type="submit" class="btn-save-settings">Save Changes</button>
+                            </div>
+                          </div>
+                        </form>
                       </div>
 
-                      <p class="svc-auto-deploy-state" id="svc-auto-deploy-state" style="margin: 12px 0 0; font-size: 12px; color: #71717a;">Connect GitHub and select a repository before enabling.</p>
-
-                      <div style="margin-top: 16px;">
-                        <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Project Settings</span></button>
+                      <!-- 2. VISIBILITY PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-visibility">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Project Visibility</h3>
+                          <p class="svc-pane-desc">Manage public accessibility, team permissions, and deployment tokens.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Deployment Access</label>
+                            <select id="svc-settings-visibility-select" class="svc-settings-input">
+                              <option value="public">Public (Anyone can view deployed site)</option>
+                              <option value="private">Private (Restricted to authenticated team)</option>
+                              <option value="password">Password Protected (Prompt for passphrase)</option>
+                            </select>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Visibility preferences updated')">Save Changes</button>
+                          </div>
+                        </div>
                       </div>
-                    </form>
-                  </div>
-                </div>
 
-                <!-- Danger Zone in Settings Tab -->
-                <div class="shadcn-card" style="margin-top: 16px; border-color: #fecaca; background: #fffbfb;">
-                  <div class="shadcn-card-header">
-                    <span class="shadcn-badge" style="background: #fee2e2; color: #dc2626; border-color: #fca5a5;">Danger Zone</span>
-                    <h2 class="shadcn-card-title" style="margin-top: 4px; color: #991b1b;">Delete Project from VM</h2>
-                    <p class="shadcn-card-description" style="color: #7f1d1d;">Permanently stop and delete this project, workspace directory from the host VM disk, and all associated database records.</p>
+                      <!-- 3. SECURITY PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-security">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Security & Headers</h3>
+                          <p class="svc-pane-desc">Automatic HTTPS enforcement, HSTS headers, and L7 protection.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-checkbox-item">
+                            <label>
+                              <input type="checkbox" checked disabled>
+                              <div>
+                                <strong>Automatic SSL / TLS Encryption</strong>
+                                <p>Caddy automatically provisions and renews Let's Encrypt certificates.</p>
+                              </div>
+                            </label>
+                          </div>
+                          <div class="svc-settings-checkbox-item">
+                            <label>
+                              <input type="checkbox" id="svc-security-hsts" checked>
+                              <div>
+                                <strong>Strict-Transport-Security (HSTS)</strong>
+                                <p>Enforce HTTPS connections and prevent SSL stripping.</p>
+                              </div>
+                            </label>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Security rules saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. ALERTS PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-alerts">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Alerts & Notifications</h3>
+                          <p class="svc-pane-desc">Get notified when builds fail, certificates renew, or domains change.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Notification Webhook URL</label>
+                            <input class="svc-settings-input" type="url" placeholder="https://discord.com/api/webhooks/..." autocomplete="off">
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Alert preferences saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 5. TRUSTED SOURCES PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-trusted">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Trusted Sources</h3>
+                          <p class="svc-pane-desc">IP address whitelisting and edge origin restrictions.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Allowed IP Addresses / CIDRs (Optional)</label>
+                            <textarea class="svc-settings-input" style="height: 70px; resize: vertical;" placeholder="0.0.0.0/0 (Leave blank for all traffic)"></textarea>
+                          </div>
+                          <div class="svc-settings-actions-bottom">
+                            <button type="button" class="btn-save-settings" onclick="toast('Trusted sources saved')">Save Changes</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 6. GIT PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-git">
+                        <form id="svc-deployment-settings-form">
+                          <div class="svc-pane-header">
+                            <h3 class="svc-pane-title">Git & Continuous Deployment</h3>
+                            <p class="svc-pane-desc">Configure branch tracking, build commands, and automatic deployment.</p>
+                          </div>
+                          <div class="svc-settings-form-body">
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-branch">Production Branch</label>
+                              <input id="svc-settings-branch" class="svc-settings-input" placeholder="main" autocomplete="off">
+                            </div>
+                            <div class="svc-settings-field">
+                              <label for="svc-settings-start-command">Start Command</label>
+                              <input id="svc-settings-start-command" class="svc-settings-input" placeholder="npm start" autocomplete="off">
+                            </div>
+                            <div class="svc-settings-checkbox-item">
+                              <label>
+                                <input type="checkbox" id="svc-settings-auto-deploy">
+                                <div>
+                                  <strong>Automatically redeploy new branch commits</strong>
+                                  <p>Polls repository branch and triggers zero-downtime deployment.</p>
+                                </div>
+                              </label>
+                            </div>
+                            <p class="svc-auto-deploy-state" id="svc-auto-deploy-state" style="margin: 6px 0 0; font-size: 12px; color: #71717a;"></p>
+                            <div class="svc-settings-actions-bottom">
+                              <button type="submit" class="btn-save-settings">Save Git Settings</button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+
+                      <!-- 7. STATIC IP PANE -->
+                      <div class="svc-settings-pane" id="svc-pane-static-ip">
+                        <div class="svc-pane-header">
+                          <h3 class="svc-pane-title">Static IP & Egress</h3>
+                          <p class="svc-pane-desc">Host IP addressing and dedicated gateway routes.</p>
+                        </div>
+                        <div class="svc-settings-form-body">
+                          <div class="svc-settings-field">
+                            <label>Host VM Public IP</label>
+                            <input class="svc-settings-input readonly" type="text" value="45.135.148.5" readonly>
+                          </div>
+                          <div class="svc-settings-field">
+                            <label>Edge Ingress Gateway</label>
+                            <input class="svc-settings-input readonly" type="text" value="sycord.site" readonly>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div class="shadcn-card-content">
-                    <p style="font-size: 13px; color: #7f1d1d; margin: 0 0 14px; line-height: 1.45;">This action cannot be undone. All repository source code on disk, running containers, domain routing, and logs will be permanently erased.</p>
-                    <button type="button" class="btn-pill btn-danger" id="svc-settings-delete-project-btn">
-                      <i data-lucide="trash-2"></i><span>Delete project from VM</span>
+
+                  <!-- Bottom Danger Zone Card (Exact Match to Screenshot) -->
+                  <div class="svc-danger-zone-card">
+                    <div class="svc-danger-zone-left">
+                      <div class="svc-danger-zone-title-row">
+                        <i data-lucide="trash-2"></i>
+                        <strong>Danger Zone</strong>
+                      </div>
+                      <p class="svc-danger-zone-desc">
+                        Permanently stop and delete this project, workspace directory from the host VM disk, and all associated resources.
+                      </p>
+                    </div>
+                    <button type="button" class="btn-delete-project-danger" id="svc-settings-delete-project-btn">
+                      Delete Project
                     </button>
                   </div>
-                </div>
+                </section>
               </div>
 
               <!-- 10. APP ROUTER LOGS TAB (Exact match to image in clean white) -->
@@ -1232,105 +1818,6 @@
                     <span>No more logs to show within selected timeline</span>
                   </div>
                 </section>
-              </div>
-
-              <!-- 11. PREVIEW TAB (shadcn architecture) -->
-              <div class="svc-tab-panel" id="svc-panel-preview" data-svc-panel="preview">
-                <div class="svc-preview-workspace-card">
-                  <!-- Top Controls Bar -->
-                  <div class="svc-preview-workspace-header">
-                    <div class="svc-preview-header-left">
-                      <div class="svc-preview-title-box">
-                        <span class="svc-preview-status-pill-badge" id="svc-preview-status-pill">
-                          <span class="svc-preview-status-dot"></span>
-                          <span id="svc-preview-status-text">Dev Server Ready</span>
-                        </span>
-                        <div class="svc-stack-badge" id="svc-stack-badge">
-                          <span class="svc-stack-icon" id="svc-stack-icon">N</span>
-                          <span id="svc-stack-label">next.js</span>
-                        </div>
-                      </div>
-                      <p class="svc-preview-subtitle">Hot-reloading isolated sandbox development server.</p>
-                    </div>
-
-                    <!-- Viewport switcher: Desktop / Tablet / Mobile -->
-                    <div class="svc-preview-viewport-controls">
-                      <button type="button" class="svc-viewport-btn active" data-viewport="desktop" title="Desktop view (100%)">
-                        <i data-lucide="monitor"></i><span>Desktop</span>
-                      </button>
-                      <button type="button" class="svc-viewport-btn" data-viewport="tablet" title="Tablet view (768px)">
-                        <i data-lucide="tablet"></i><span>Tablet</span>
-                      </button>
-                      <button type="button" class="svc-viewport-btn" data-viewport="mobile" title="Mobile view (375px)">
-                        <i data-lucide="smartphone"></i><span>Mobile</span>
-                      </button>
-                    </div>
-
-                    <!-- Action buttons -->
-                    <div class="svc-preview-actions-bar" id="svc-preview-actions">
-                      <!-- Rendered dynamically by renderPreviewSection -->
-                    </div>
-                  </div>
-
-                  <!-- URL and Address Bar -->
-                  <div class="svc-preview-browser-bar">
-                    <div class="svc-preview-browser-nav">
-                      <button type="button" class="svc-preview-nav-btn" id="svc-preview-reload-btn" title="Reload preview frame">
-                        <i data-lucide="rotate-cw"></i>
-                      </button>
-                    </div>
-                    <div class="svc-preview-address-box">
-                      <i data-lucide="lock" class="svc-preview-lock-icon"></i>
-                      <span class="svc-preview-url-text" id="svc-preview-domain">—</span>
-                      <button type="button" class="svc-preview-copy-url-btn" id="svc-preview-copy-btn" title="Copy preview URL">
-                        <i data-lucide="copy"></i>
-                      </button>
-                      <a id="svc-preview-external-link" href="#" target="_blank" rel="noopener noreferrer" class="svc-preview-ext-btn" title="Open in new window">
-                        <i data-lucide="external-link"></i>
-                      </a>
-                    </div>
-                    <div class="svc-preview-hint-pill" id="svc-preview-hint">
-                      Fast dev server with hot reload
-                    </div>
-                  </div>
-
-                  <!-- Device Container Frame -->
-                  <div class="svc-preview-viewport-stage">
-                    <div class="svc-preview-device-frame" id="svc-preview-frame-container" data-current-viewport="desktop">
-                      <iframe id="svc-preview-frame" class="svc-embed-frame hidden" title="Live preview" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                      
-                      <!-- Informative stopped state / placeholder -->
-                      <div class="svc-preview-placeholder" id="svc-preview-placeholder">
-                        <div class="svc-preview-placeholder-art">
-                          <i data-lucide="layout-template"></i>
-                        </div>
-                        <h3>Interactive Live Preview</h3>
-                        <p>Launch an isolated, lightning-fast development server with hot module replacement directly on the host VM.</p>
-                        <div class="svc-preview-placeholder-actions">
-                          <button type="button" class="shadcn-btn shadcn-btn-default" onclick="if(activeServiceId) servicePreviewStart(activeServiceId)">
-                            <i data-lucide="play"></i><span>Start Development Server</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Collapsible Dev Server Logs -->
-                  <div class="logs-panel preview-logs-panel hidden" id="svc-preview-logs-wrap" style="margin-top: 16px;">
-                    <div class="logs-toolbar logs-toolbar-compact">
-                      <div class="logs-toolbar-left">
-                        <span class="logs-live-dot" id="svc-preview-logs-live"></span>
-                        <span class="logs-toolbar-label">Dev Server Process Stream</span>
-                      </div>
-                      <div class="logs-toolbar-right">
-                        <button type="button" class="svc-log-tool-btn" onclick="clearLogPanel(document.getElementById('svc-preview-logs'))" title="Clear logs">
-                          <i data-lucide="trash-2"></i><span>Clear</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="logs-terminal logs-terminal-dark preview-logs" id="svc-preview-logs"></div>
-                  </div>
-                </div>
               </div>
 
             </div>
@@ -1546,6 +2033,9 @@
             <button type="button" class="settings-mini-tab" data-settings-tab="git" role="tab" aria-selected="false">
               <i data-lucide="git-branch"></i><span>Git &amp; updates</span>
             </button>
+            <button type="button" class="settings-mini-tab" data-settings-tab="github" role="tab" aria-selected="false">
+              <i data-lucide="github"></i><span>GitHub</span>
+            </button>
             <button type="button" class="settings-mini-tab" data-settings-tab="advanced" role="tab" aria-selected="false">
               <i data-lucide="settings-2"></i><span>Advanced</span>
             </button>
@@ -1620,8 +2110,6 @@
               </div>
             </div>
 
-
-
             <div class="projects-card panel-form" data-settings-panel="git">
               <div class="projects-title-block mb">
                 <i data-lucide="refresh-cw" class="projects-icon"></i>
@@ -1645,42 +2133,160 @@
               </div>
             </div>
 
-            <div class="projects-card panel-form" data-settings-panel="git" id="github-tracking-card">
+            <div class="projects-card panel-form" data-settings-panel="github" id="github-oauth-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="github" class="projects-icon"></i>
+                <div>
+                  <h1>GitHub App &amp; 1-Click Connect</h1>
+                  <p class="settings-card-subtitle">Connect your GitHub App credentials to display your user avatar and deploy repositories in one click.</p>
+                </div>
+              </div>
+              <div class="form-inner">
+                <!-- Connected User Profile / 1-Click Status -->
+                <div id="settings-github-account-banner" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 16px;">
+                  <div id="settings-github-not-connected" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div>
+                      <strong style="font-size: 0.9rem;">No GitHub Account Connected</strong>
+                      <p class="hint" style="margin: 3px 0 0;">Save your GitHub App credentials below and click Connect to authorize repository access.</p>
+                    </div>
+                    <button type="button" class="btn-pill btn-primary btn-sm" id="settings-github-connect-btn">
+                      <i data-lucide="github"></i><span>Connect GitHub</span>
+                    </button>
+                  </div>
+                  <div id="settings-github-connected" class="hidden" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <img id="settings-github-avatar" src="/static/syte-logo.png" alt="User Avatar" style="width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--border); object-fit: cover;">
+                      <div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                          <strong id="settings-github-login" style="font-size: 0.95rem;">@user</strong>
+                          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e;"></span>
+                          <span style="font-size: 0.75rem; color: #16a34a; font-weight: 600;">Connected</span>
+                        </div>
+                        <p class="hint" id="settings-github-scopes-hint" style="margin: 2px 0 0;">1-Click deployment active</p>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="settings-github-refresh-repos-btn" title="Refresh repositories">
+                        <i data-lucide="refresh-cw"></i><span>Refresh Repos</span>
+                      </button>
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="settings-github-disconnect-btn">
+                        <i data-lucide="unlink"></i><span>Disconnect</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 1-Click Repositories List (When Connected) -->
+                <div id="settings-github-repos-container" class="hidden" style="margin-bottom: 20px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <label style="font-weight: 600; font-size: 0.85rem;">Your Repositories (1-Click Deploy)</label>
+                    <input type="text" id="settings-github-repo-filter" placeholder="Filter repositories…" style="max-width: 220px; font-size: 0.78rem; padding: 4px 8px;">
+                  </div>
+                  <div id="settings-github-repos-list" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+                    <p class="hint">Loading repositories…</p>
+                  </div>
+                </div>
+
+                <!-- GitHub App Credentials Form -->
+                <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+                  <h3 style="font-size: 0.88rem; margin-bottom: 10px; color: var(--text);">GitHub OAuth / App Credentials</h3>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="settings-github-client-id">Client ID (Public)</label>
+                      <input type="text" id="settings-github-client-id" placeholder="e.g. Iv1.1234567890abcdef" autocomplete="off">
+                      <span class="hint">Public client identifier from your GitHub OAuth/App.</span>
+                    </div>
+                    <div class="form-group">
+                      <label for="settings-github-client-secret">Client Secret (Secret Token)</label>
+                      <input type="password" id="settings-github-client-secret" placeholder="Enter secret token to configure" autocomplete="off">
+                      <span class="hint" id="settings-github-secret-status">Secret is not configured.</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-github-callback-url">Authorization Callback URL (Redirect URI)</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="text" id="settings-github-callback-url" readonly style="font-family: monospace; font-size: 0.78rem; background: var(--bg-input);" value="Loading…">
+                      <button type="button" class="btn-pill btn-ghost btn-sm" id="copy-github-callback-btn">
+                        <i data-lucide="copy"></i><span>Copy</span>
+                      </button>
+                    </div>
+                    <span class="hint">Add this exact URL into your GitHub App or OAuth App settings.</span>
+                  </div>
+                  <div class="form-actions">
+                    <button type="button" class="btn-pill btn-primary" id="save-github-app-btn">Save App Credentials</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="projects-card panel-form" data-settings-panel="github" id="github-tracking-card">
               <div class="projects-title-block mb">
                 <i data-lucide="git-pull-request" class="projects-icon"></i>
                 <div>
-                  <h1>GitHub tracking</h1>
-                  <p class="settings-card-subtitle">Follow branches and review merge readiness without leaving Syte.</p>
+                  <h1>Personal Access Token &amp; Tracking</h1>
+                  <p class="settings-card-subtitle">Optional Personal Access Token (PAT) for direct CI checks, PR tracking, and private updates.</p>
                 </div>
               </div>
               <div class="form-inner">
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="github-repo">Repository</label>
+                    <label for="github-token">Personal Access Token (PAT)</label>
+                    <input type="password" id="github-token" placeholder="ghp_... or github_pat_..." autocomplete="off">
+                    <span class="hint" id="github-token-status">Token is not configured.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="github-repo">Tracked Repository</label>
                     <input type="text" id="github-repo" placeholder="owner/repository" autocomplete="off">
                     <span class="hint">Use <code>owner/repo</code> or a GitHub URL.</span>
                   </div>
-                  <div class="form-group">
-                    <label for="github-token">GitHub token</label>
-                    <input type="password" id="github-token" placeholder="token saved — enter to replace" autocomplete="off">
-                    <span class="hint" id="github-token-status">Token is not configured.</span>
-                  </div>
                 </div>
                 <div class="form-actions settings-git-actions">
-                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save Git settings</button>
+                  <button type="button" class="btn-pill btn-primary" id="save-github-settings-btn">Save PAT &amp; Repo</button>
+                  <button type="button" class="btn-pill btn-ghost" id="test-github-conn-btn">
+                    <i data-lucide="shield-check"></i><span>Test Token</span>
+                  </button>
                   <button type="button" class="btn-pill btn-ghost" id="refresh-github-tracking-btn">
-                    <i data-lucide="refresh-cw"></i><span>Refresh tracking</span>
+                    <i data-lucide="refresh-cw"></i><span>Refresh Tracking</span>
                   </button>
                 </div>
+                <div id="github-conn-test-result" class="hint hidden" style="margin-top: 0.5rem; padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500;"></div>
                 <div class="git-tracking-summary" id="github-tracking-summary">
                   <p class="hint">Sign in to load branch and pull request status.</p>
                 </div>
                 <div class="github-pr-list" id="github-pr-list"></div>
               </div>
             </div>
+
+            <!-- ADVANCED SETTINGS PANEL -->
+            <div class="projects-card panel-form hidden" data-settings-panel="advanced" id="settings-advanced-card">
+              <div class="projects-title-block mb">
+                <i data-lucide="trash-2" class="projects-icon"></i>
+                <div>
+                  <h1>System Cache &amp; Junk Cleaner</h1>
+                  <p class="settings-card-subtitle">Delete temporary caches, Python bytecode, package manager wheel cache, and stale junk files to free disk space.</p>
+                </div>
+              </div>
+              <div class="form-inner">
+                <div id="settings-cache-breakdown" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                  <div class="git-state-item" style="padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+                    <span class="git-state-label" style="font-weight: 500;">Estimated Cache &amp; Junk Size</span>
+                    <span class="git-state-value" id="settings-cache-total-size" style="font-weight: 600; color: var(--accent);">Scanning…</span>
+                  </div>
+                </div>
+
+                <div class="form-actions" style="display: flex; gap: 10px; align-items: center;">
+                  <button type="button" class="btn-pill btn-danger" id="clear-cache-btn">
+                    <i data-lucide="trash-2"></i><span>Delete Cache</span>
+                  </button>
+                  <button type="button" class="btn-pill btn-ghost" id="scan-cache-btn">
+                    <i data-lucide="refresh-cw"></i><span>Scan Cache</span>
+                  </button>
+                </div>
+
+                <div id="cache-clear-result" class="hint hidden" style="margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.82rem; font-weight: 500;"></div>
+              </div>
+            </div>
           </div>
-
-
         </div>
       </section>
   <!-- AI BUILDER SETTINGS MODAL / DRAWER -->
@@ -1707,6 +2313,9 @@
         <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-saved" data-tab="saved">
           <i data-lucide="layers"></i><span>Saved Providers</span>
           <span class="svc-ai-tab-badge" id="svc-ai-saved-count">0</span>
+        </button>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-skills" data-tab="skills">
+          <i data-lucide="book-open"></i><span>Skills</span>
         </button>
         <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-advanced" data-tab="advanced">
           <i data-lucide="sliders"></i><span>Prompt &amp; Params</span>
@@ -1866,7 +2475,33 @@
             </div>
           </div>
 
-          <!-- TAB 3: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
+          <!-- TAB 3: AGENT SKILLS & CUSTOMIZATION -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-skills">
+            <div class="svc-ai-saved-providers-header">
+              <div>
+                <strong>Agent Skills &amp; Domain Blueprints</strong>
+                <p class="hint" style="margin:2px 0 0;">Modular skills, engineering guidelines, and design systems active for this agent.</p>
+              </div>
+              <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-refresh-skills-btn">
+                <i data-lucide="refresh-cw"></i><span>Refresh Skills</span>
+              </button>
+            </div>
+
+            <div class="svc-ai-skills-grid" id="svc-ai-skills-catalog" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px;">
+              <!-- Dynamic skill cards rendered via JS -->
+            </div>
+
+            <fieldset class="svc-ai-form-section" style="margin-top: 20px;">
+              <legend><i data-lucide="sparkles"></i><span>Custom Skill &amp; Engineering Rules</span></legend>
+              <div class="svc-ai-form-field">
+                <label for="svc-ai-custom-skills-input">Project-Specific Rules &amp; Guidelines</label>
+                <textarea id="svc-ai-custom-skills-input" rows="4" placeholder="Enter custom coding standards, tech stack rules, design system guidelines, or constraints for this project..."></textarea>
+                <span class="hint">These instructions are automatically injected into the agent's context alongside active skills.</span>
+              </div>
+            </fieldset>
+          </div>
+
+          <!-- TAB 4: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
           <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-advanced">
           <fieldset class="svc-ai-form-section">
             <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
@@ -1976,10 +2611,70 @@
         <button type="button" class="btn-pill btn-ghost" id="crash-dismiss-btn"><span>Dismiss</span></button>
       </div>
     </div>
+  <!-- Transfer Project Modal -->
+  <div id="svc-transfer-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="user-plus"></i></span>
+          <div>
+            <h3>Transfer Project Ownership</h3>
+            <p>Transfer this project to another Syte user or organization.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-transfer-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <form class="svc-clean-dialog-form" id="svc-transfer-project-form" onsubmit="event.preventDefault(); toast('Transfer invite sent'); safeCloseModal('svc-transfer-modal');">
+        <div class="svc-dialog-field">
+          <label for="svc-transfer-email">
+            <span>Recipient Email or Username</span>
+            <span class="svc-field-hint">User must have an active Syte account</span>
+          </label>
+          <input id="svc-transfer-email" class="shadcn-input" type="email" placeholder="user@company.com" required>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-transfer-modal')">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="send"></i><span>Send Transfer Request</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change Project Icon Modal -->
+  <div id="svc-change-icon-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="smile"></i></span>
+          <div>
+            <h3>Choose Project Icon</h3>
+            <p>Select an avatar symbol or letter to represent this project.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-change-icon-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-icon-picker-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 10px 0;">
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🚀')">🚀</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('⚡')">⚡</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🔥')">🔥</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('💎')">💎</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('🌐')">🌐</button>
+          <button type="button" class="svc-icon-choice-btn" onclick="selectProjectIcon('📦')">📦</button>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-change-icon-modal')">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- AI File Inspector Modal -->
-  <dialog id="svc-ai-file-modal" class="svc-ai-file-modal">
+  <div id="svc-ai-file-modal" class="svc-ai-file-modal hidden" role="dialog" aria-modal="true">
     <div class="svc-ai-file-modal-card">
       <div class="svc-ai-file-modal-header">
         <div class="svc-ai-file-modal-title">
@@ -1989,103 +2684,1172 @@
         </div>
         <div class="svc-ai-file-modal-actions">
           <button type="button" class="svc-code-copy-btn" id="svc-ai-file-modal-copy-btn"><i data-lucide="copy"></i> Copy Code</button>
-          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-ai-file-modal').close()"><i data-lucide="x"></i></button>
+          <button type="button" class="svc-ai-file-modal-close" onclick="safeCloseModal('svc-ai-file-modal')"><i data-lucide="x"></i></button>
         </div>
       </div>
       <div class="svc-ai-file-modal-body">
         <pre><code id="svc-ai-file-modal-code"></code></pre>
       </div>
     </div>
-  </dialog>
+  </div>
 
-  <!-- Deployment & Build Log Inspector Modal (Optimized for Phone and PC) -->
-  <dialog id="svc-build-log-modal" class="svc-build-log-modal">
+  <!-- Deployment & Build Log Inspector Modal (Shrunken Top, Three-Dot Menu, Bigger Log) -->
+  <div id="svc-build-log-modal" class="svc-build-log-modal hidden" role="dialog" aria-modal="true">
     <div class="svc-build-log-modal-card">
       <div class="svc-modal-mobile-handle"></div>
-      <div class="svc-build-log-modal-header">
-        <div class="svc-build-log-modal-identity">
-          <span class="svc-build-log-badge" id="svc-build-log-status-badge">
-            <span class="svc-build-status-dot"></span>
-            <span id="svc-build-log-status-text">Build Details</span>
-          </span>
-          <div class="svc-build-log-meta-group">
-            <h3 id="svc-build-log-commit-title">Commit title</h3>
-            <span class="svc-build-project-sub" id="svc-build-log-project-name">test.sycord.site</span>
+
+      <!-- Shrunken Minimalist Top Status Header -->
+      <section class="svc-deploy-banner-card is-shrunk is-failed" id="svc-build-banner-card">
+        <div class="svc-banner-shrunk-row">
+          <div class="svc-banner-shrunk-left">
+            <div class="svc-deploy-banner-icon-sm" id="svc-build-log-banner-icon">
+              <i data-lucide="alert-circle"></i>
+            </div>
+            <div class="svc-banner-shrunk-meta">
+              <div class="svc-banner-shrunk-title-line">
+                <h2 class="svc-banner-shrunk-title" id="svc-build-log-commit-title">Deployment failed</h2>
+                <span class="svc-deploy-status-badge is-failed" id="svc-build-log-status-badge">
+                  <span id="svc-build-log-status-text">Failed</span>
+                </span>
+              </div>
+              <div class="svc-banner-shrunk-chips">
+                <span class="svc-shrunk-chip"><i data-lucide="git-branch"></i><span id="svc-build-log-branch">main</span></span>
+                <span class="svc-shrunk-chip"><span class="svc-avatar-dot" id="svc-modal-author-avatar">M</span><span id="svc-build-log-commit">build commit</span></span>
+                <span class="svc-shrunk-chip"><i data-lucide="clock"></i><span id="svc-build-log-time">2s ago</span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="svc-banner-shrunk-right">
+            <!-- Three-dot accessibility action menu -->
+            <div class="svc-action-menu-wrap">
+              <button type="button" class="svc-menu-trigger-btn" id="svc-build-menu-btn" title="Actions & Options" aria-label="Deployment actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="svc-dropdown-menu hidden" id="svc-build-actions-dropdown">
+                <button type="button" class="svc-dropdown-item" id="svc-build-redeploy-btn">
+                  <i data-lucide="refresh-cw"></i>
+                  <span id="svc-modal-redeploy-text">Try again / Redeploy</span>
+                </button>
+                <a href="#" target="_blank" rel="noopener" class="svc-dropdown-item" id="svc-modal-banner-github-btn">
+                  <i data-lucide="github"></i>
+                  <span>View on GitHub</span>
+                  <i data-lucide="external-link" class="icon-xs"></i>
+                </a>
+                <button type="button" class="svc-dropdown-item hidden" id="svc-build-log-ai-fix-btn">
+                  <i data-lucide="sparkles"></i>
+                  <span>Ask AI to Fix</span>
+                </button>
+                <button type="button" class="svc-dropdown-item" id="svc-build-download-btn">
+                  <i data-lucide="download"></i>
+                  <span>Download Logs</span>
+                </button>
+                <button type="button" class="svc-dropdown-item" id="svc-build-modal-copy-all-btn">
+                  <i data-lucide="copy"></i>
+                  <span>Copy All Logs</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Close Modal button -->
+            <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-build-log-modal')" aria-label="Close build modal">
+              <i data-lucide="x"></i>
+            </button>
           </div>
         </div>
-        <div class="svc-build-log-modal-actions">
-          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-preview-btn" title="Open fast preview">
-            <i data-lucide="zap"></i><span>Preview</span>
-          </button>
-          <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-log-copy-btn" title="Copy build logs">
-            <i data-lucide="copy"></i><span>Copy Logs</span>
-          </button>
-          <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm hidden" id="svc-build-log-ai-fix-btn" title="Ask AI to fix error">
-            <i data-lucide="sparkles"></i><span>Ask AI to Fix</span>
-          </button>
-          <button type="button" class="svc-ai-file-modal-close" onclick="document.getElementById('svc-build-log-modal').close()" aria-label="Close build modal">
-            <i data-lucide="x"></i>
-          </button>
-        </div>
-      </div>
+      </section>
 
-      <!-- Error Diagnostics Callout Banner -->
-      <div class="svc-build-log-error-banner hidden" id="svc-build-log-error-banner">
-        <i data-lucide="alert-triangle"></i>
-        <div class="svc-build-error-text">
-          <strong>Deployment Error:</strong>
-          <span id="svc-build-log-error-text"></span>
-        </div>
-      </div>
-
-      <!-- Detail Info Bar (PC 4-col, Phone 2-col) -->
-      <div class="svc-build-meta-grid">
-        <div class="svc-meta-item">
-          <span class="svc-meta-label">Author</span>
-          <div class="svc-meta-value">
-            <span class="svc-author-avatar-sm" id="svc-modal-author-avatar">M</span>
-            <span id="svc-modal-author-name">MDavid</span>
+      <!-- Bottom Build Logs Card (Big & Spacious) -->
+      <section class="svc-build-logs-card is-expanded" id="svc-build-logs-card">
+        <div class="svc-build-logs-card-header">
+          <div class="svc-build-logs-header-left">
+            <div class="svc-terminal-prompt-box">
+              <i data-lucide="terminal"></i>
+            </div>
+            <div class="svc-build-logs-title-wrap">
+              <h3>Build Logs</h3>
+            </div>
+          </div>
+          <div class="svc-build-logs-header-right">
+            <button type="button" class="svc-toolbar-copy-btn" id="svc-build-log-copy-btn" title="Copy build logs">
+              <i data-lucide="copy"></i>
+              <span id="svc-build-log-line-count">16 lines</span>
+            </button>
+            <div class="svc-toolbar-error-badge" id="svc-build-log-error-counter">
+              <i data-lucide="x-circle"></i>
+              <span id="svc-build-log-error-count">1</span>
+            </div>
+            <span class="svc-build-logs-duration" id="svc-build-log-duration">2s</span>
           </div>
         </div>
-        <div class="svc-meta-item">
-          <span class="svc-meta-label">Commit SHA</span>
-          <span class="svc-meta-value font-mono" id="svc-build-log-sha">—</span>
-        </div>
-        <div class="svc-meta-item">
-          <span class="svc-meta-label">Duration</span>
-          <span class="svc-meta-value" id="svc-build-log-duration">—</span>
-        </div>
-        <div class="svc-meta-item">
-          <span class="svc-meta-label">Trigger</span>
-          <span class="svc-meta-value" id="svc-build-log-trigger">Manual</span>
-        </div>
-      </div>
 
-      <!-- Log Terminal Body -->
-      <div class="svc-build-log-modal-body">
-        <div class="svc-build-terminal-head">
-          <span class="svc-terminal-title"><i data-lucide="terminal"></i> Build stdout & stderr</span>
-          <span class="svc-terminal-time" id="svc-build-log-time">—</span>
+        <div class="svc-build-logs-console is-large" id="svc-build-log-code">
+          <div class="svc-log-line-item">
+            <span class="svc-log-ts">14:14:42</span>
+            <span class="svc-log-msg">Loading deployment build logs…</span>
+          </div>
         </div>
-        <div class="svc-build-log-terminal" id="svc-build-log-terminal">
-          <pre><code id="svc-build-log-code">Loading deployment build logs…</code></pre>
-        </div>
-      </div>
+      </section>
+    </div>
+  </div>
 
-      <!-- Modal Footer -->
-      <div class="svc-build-modal-footer">
-        <button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" id="svc-build-download-btn">
-          <i data-lucide="download"></i><span>Download Log</span>
+  <!-- ========================================================
+       ENVIRONMENT VARIABLES MODALS
+       ======================================================== -->
+  <!-- 1. ADD / EDIT ENV VARIABLE MODAL -->
+  <div id="svc-env-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="key"></i></span>
+          <div>
+            <h3 id="svc-env-modal-title">Add Environment Variable</h3>
+            <p>Store secure config, API secrets, and runtime settings.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-env-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
         </button>
-        <button type="button" class="shadcn-btn shadcn-btn-default shadcn-btn-sm" id="svc-build-redeploy-btn">
-          <i data-lucide="refresh-cw"></i><span>Re-trigger Build</span>
+      </header>
+
+      <form class="svc-clean-dialog-form" id="svc-env-form">
+        <input type="hidden" id="svc-env-original-key">
+        <div class="svc-dialog-field">
+          <label for="svc-env-key">
+            <span>Variable Key</span>
+            <span class="svc-field-hint">e.g. DATABASE_URL or API_SECRET</span>
+          </label>
+          <input id="svc-env-key" class="shadcn-input" required placeholder="DATABASE_URL" autocomplete="off" spellcheck="false" style="font-family: monospace;">
+        </div>
+
+        <div class="svc-dialog-field">
+          <label for="svc-env-value">
+            <span>Value</span>
+            <span class="svc-field-hint">Plaintext or secret string</span>
+          </label>
+          <input id="svc-env-value" class="shadcn-input" required placeholder="Enter variable value" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="svc-dialog-field">
+          <label for="svc-env-scope-select">
+            <span>Environment Scope</span>
+          </label>
+          <select id="svc-env-scope-select" class="shadcn-select">
+            <option value="Production and Preview">Production and Preview</option>
+            <option value="Production">Production only</option>
+            <option value="Preview">Preview only</option>
+            <option value="Development">Development only</option>
+            <option value="All Environments">All Environments</option>
+          </select>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-env-modal')">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="save"></i><span>Save Variable</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 1B. BUILD FAILED SAVE CONFIRMATION POP-UP MODAL -->
+  <div id="svc-build-fail-save-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge" style="background:#fee2e2;color:#dc2626;"><i data-lucide="alert-triangle"></i></span>
+          <div>
+            <h3>Build Failed</h3>
+            <p>Initial compilation or deployment encountered an issue.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-build-fail-save-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
         </button>
+      </header>
+      <div style="padding: 16px 20px 8px;">
+        <div class="svc-fail-reason-box" id="svc-build-fail-error-text">Build process failed</div>
+        <p style="font-size: 13.5px; color: #3f3f46; line-height: 1.5; margin: 0 0 6px;">
+          <strong>Do you still want to save this project?</strong>
+        </p>
+        <p style="font-size: 12.5px; color: #71717a; line-height: 1.4; margin: 0;">
+          Saving lets you configure required environment variables, update build commands, and re-trigger deployment whenever you are ready.
+        </p>
+      </div>
+      <div class="svc-clean-dialog-footer">
+        <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-fail-discard-btn">Discard Project</button>
+        <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-fail-save-btn"><i data-lucide="check"></i><span>Save Project Anyway</span></button>
       </div>
     </div>
-  </dialog>
+  </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <!-- 2. ENV VARIABLES DOCUMENTATION MODAL -->
+  <div id="svc-env-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>Environment Variables Guide</h3>
+            <p>Managing runtime secrets, encryption at rest, and deployment injection.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-env-docs-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="lock"></i> Encryption at Rest</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            Environment variables are encrypted at rest with AES-GCM and injected securely into container runtime processes without exposure in browser network payloads.
+          </p>
+        </section>
+        <section class="svc-doc-card">
+          <h4><i data-lucide="layers"></i> Scopes (Production vs Preview)</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            Configure production-only keys (such as live Stripe keys) separate from preview and development keys.
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>
 
+  <!-- ========================================================
+       DOMAINS MODALS
+       ======================================================== -->
+  <!-- 1. CONNECT CUSTOM DOMAIN MODAL -->
+  <div id="svc-domain-add-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="globe"></i></span>
+          <div>
+            <h3 id="svc-domain-modal-title">Connect Custom Domain</h3>
+            <p>Attach a custom domain or subdomain to route traffic to this project.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domain-add-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form class="svc-clean-dialog-form" id="svc-add-domain-form">
+        <div class="svc-dialog-field">
+          <label for="svc-new-domain-input">
+            <span>Domain or Subdomain</span>
+            <span class="svc-field-hint">e.g. app.mydomain.com or mydomain.com</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">https://</span>
+            <input id="svc-new-domain-input" class="shadcn-input" placeholder="mydomain.com" autocomplete="off" required>
+          </div>
+        </div>
+
+        <div class="svc-doc-card" style="margin-top: 2px;">
+          <h4><i data-lucide="info"></i> DNS Configuration Required</h4>
+          <p style="font-size: 12px; color: #52525b; margin: 0; line-height: 1.4;">
+            Point your DNS provider's <strong>A</strong> record or <strong>CNAME</strong> record to this host. Automatic TLS certificate will be provisioned by Caddy once DNS resolves.
+          </p>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-domain-add-modal')">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default"><i data-lucide="plus"></i><span>Connect Domain</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. DOMAIN EDIT / DETAILS MODAL -->
+  <div id="svc-domain-edit-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="globe"></i></span>
+          <div>
+            <h3 id="svc-domain-edit-modal-title">Domain Details</h3>
+            <p id="svc-domain-edit-modal-sub">View routing settings and DNS status.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domain-edit-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-doc-card">
+          <h4><i data-lucide="shield-check"></i> DNS & TLS Status</h4>
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:12.5px; margin-top:6px;">
+            <div>Domain: <strong id="svc-domain-detail-name">localhost:3000</strong></div>
+            <div>Status: <span class="svc-state-pill is-active" id="svc-domain-detail-status">Valid Configuration</span></div>
+            <div>SSL Certificate: <strong>Automatic Let's Encrypt / ZeroSSL</strong></div>
+            <div>Environment: <strong>Production</strong></div>
+          </div>
+        </div>
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-domain-edit-modal')">Close</button>
+          <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-domain-remove-btn" style="padding: 8px 14px; font-size: 13px;">
+            <i data-lucide="trash-2"></i><span>Remove Domain</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. CERTIFICATES MODAL -->
+  <div id="svc-certificates-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="shield-check"></i></span>
+          <div>
+            <h3>SSL / TLS Certificates</h3>
+            <p>Automated HTTPS certificate management.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-certificates-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="lock"></i> Automated TLS (ACME)</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            All connected custom domains automatically receive free, auto-renewing SSL/TLS certificates via Let's Encrypt and ZeroSSL managed by Caddy. HTTP requests are automatically upgraded to HTTPS.
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. DOMAINS DOCUMENTATION GUIDE MODAL -->
+  <div id="svc-domains-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>Custom Domains Guide</h3>
+            <p>Configuring DNS records, apex domains, and subdomains.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-domains-docs-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="globe"></i> Apex / Root Domains</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            For root domains (like <code>example.com</code>), add an <strong>A</strong> record in your DNS provider pointing to this server's public IP.
+          </p>
+        </section>
+        <section class="svc-doc-card">
+          <h4><i data-lucide="link"></i> Subdomains</h4>
+          <p style="font-size:12.5px; color:#52525b; line-height:1.4; margin:0;">
+            For subdomains (like <code>app.example.com</code> or <code>www.example.com</code>), add a <strong>CNAME</strong> record pointing to your server domain or public IP.
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       REDIRECTS MODALS
+       ======================================================== -->
+  <!-- 1. ADD / EDIT REDIRECT MODAL -->
+  <div id="svc-redirect-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="shuffle"></i></span>
+          <div>
+            <h3 id="svc-redirect-modal-title">Add HTTP Redirect</h3>
+            <p id="svc-redirect-modal-sub">Forward incoming request paths to custom paths or external URLs.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-redirect-modal-form" class="svc-clean-dialog-form">
+        <input type="hidden" id="svc-redirect-edit-id" value="">
+
+        <!-- Source Path -->
+        <div class="svc-dialog-field">
+          <label for="svc-redirect-form-src">
+            <span>Source Path</span>
+            <span class="svc-field-hint">Must begin with / (supports wildcards * and named :slug)</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">path</span>
+            <input type="text" id="svc-redirect-form-src" class="shadcn-input" placeholder="/blog/:slug" required autocomplete="off">
+          </div>
+          <p class="svc-field-error hidden" id="svc-redirect-src-error"></p>
+        </div>
+
+        <!-- Destination URL -->
+        <div class="svc-dialog-field">
+          <label for="svc-redirect-form-target">
+            <span>Destination</span>
+            <span class="svc-field-hint">Internal path (/articles) or external URL (https://...)</span>
+          </label>
+          <div class="svc-input-with-icon">
+            <span class="svc-input-prefix">to</span>
+            <input type="text" id="svc-redirect-form-target" class="shadcn-input" placeholder="/articles/:slug" required autocomplete="off">
+          </div>
+          <p class="svc-field-error hidden" id="svc-redirect-target-error"></p>
+        </div>
+
+        <!-- Status Code Selector -->
+        <div class="svc-dialog-field">
+          <label><span>Redirect Status Code</span></label>
+          <div class="svc-status-code-grid">
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="301" checked>
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>301</strong><span class="svc-code-badge">Permanent</span></div>
+                <small>Moved Permanently (SEO friendly, cached by browsers)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="302">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>302</strong><span class="svc-code-badge">Temporary</span></div>
+                <small>Found / Temporary redirect (not cached)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="307">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>307</strong><span class="svc-code-badge">Temporary</span></div>
+                <small>Temporary redirect, preserves HTTP method (POST/PUT)</small>
+              </div>
+            </label>
+            <label class="svc-code-choice">
+              <input type="radio" name="redirect-status-code" value="308">
+              <div class="svc-code-box">
+                <div class="svc-code-top"><strong>308</strong><span class="svc-code-badge">Permanent</span></div>
+                <small>Permanent redirect, preserves HTTP method (POST/PUT)</small>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Advanced Options Details/Accordion -->
+        <details class="svc-dialog-details">
+          <summary>
+            <span><i data-lucide="sliders"></i> Advanced matching & query parameters</span>
+            <i data-lucide="chevron-down" class="svc-details-chevron"></i>
+          </summary>
+          <div class="svc-details-body">
+            <!-- Query Parameters Handling -->
+            <div class="svc-dialog-field">
+              <label>Query Parameters</label>
+              <div class="svc-radio-pills">
+                <label><input type="radio" name="redirect-preserve-query" value="preserve" checked><span>Preserve query string</span></label>
+                <label><input type="radio" name="redirect-preserve-query" value="remove"><span>Remove query string</span></label>
+              </div>
+            </div>
+
+            <!-- Matching Sensitivity -->
+            <div class="svc-dialog-grid-2">
+              <label class="svc-checkbox-label">
+                <input type="checkbox" id="svc-redirect-case-sensitive">
+                <span>Case sensitive matching</span>
+              </label>
+              <label class="svc-checkbox-label">
+                <input type="checkbox" id="svc-redirect-ignore-slash" checked>
+                <span>Ignore trailing slash (/blog = /blog/)</span>
+              </label>
+            </div>
+
+            <!-- Environments -->
+            <div class="svc-dialog-field" style="margin-top: 8px;">
+              <label>Apply to Environments</label>
+              <div class="svc-env-checkboxes">
+                <label><input type="checkbox" id="svc-redir-env-prod" checked> Production</label>
+                <label><input type="checkbox" id="svc-redir-env-prev" checked> Preview</label>
+                <label><input type="checkbox" id="svc-redir-env-dev" checked> Development</label>
+              </div>
+            </div>
+
+            <!-- Notes / Description -->
+            <div class="svc-dialog-field" style="margin-top: 8px;">
+              <label for="svc-redirect-notes">Description / Notes</label>
+              <input type="text" id="svc-redirect-notes" class="shadcn-input" placeholder="e.g. Migration from legacy blog">
+            </div>
+          </div>
+        </details>
+
+        <!-- Live Simulation Preview in Modal -->
+        <div class="svc-modal-simulation-card" id="svc-modal-simulation-card">
+          <span class="svc-sim-title"><i data-lucide="sparkles"></i> Live Rule Simulation</span>
+          <div class="svc-sim-preview-row">
+            <span class="svc-sim-from" id="svc-sim-from">/blog/hello</span>
+            <span class="svc-sim-arrow">➔</span>
+            <span class="svc-sim-to" id="svc-sim-to">/articles/hello</span>
+          </div>
+        </div>
+
+        <div class="svc-clean-dialog-footer">
+          <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="safeCloseModal('svc-redirect-modal')">Cancel</button>
+          <button type="submit" class="shadcn-btn shadcn-btn-default" id="svc-redirect-submit-btn">
+            <i data-lucide="check"></i><span>Save Redirect</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. REDIRECT TESTER MODAL -->
+  <div id="svc-redirect-test-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="flask-conical"></i></span>
+          <div>
+            <h3>Test HTTP Redirects</h3>
+            <p>Simulate an incoming URL against your active redirect rules.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-test-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <div class="svc-dialog-field">
+          <label for="svc-test-url-input">Incoming Request URL</label>
+          <div class="svc-test-input-row">
+            <input type="text" id="svc-test-url-input" class="shadcn-input" placeholder="https://example.com/blog/my-post?ref=google" autocomplete="off">
+            <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-run-test-btn"><i data-lucide="play"></i><span>Test</span></button>
+          </div>
+        </div>
+
+        <div class="svc-test-result-box" id="svc-test-result-box">
+          <p class="hint">Enter a URL above to test redirect evaluation and query parameter propagation.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. IMPORT / EXPORT MODAL -->
+  <div id="svc-redirect-io-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="arrow-down-up"></i></span>
+          <div>
+            <h3>Import / Export Redirects</h3>
+            <p>Backup or bulk import redirect configurations in JSON or CSV format.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-io-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-clean-dialog-form">
+        <!-- Export Section -->
+        <div class="svc-io-section">
+          <h4>Export Active Rules</h4>
+          <p class="svc-io-sub">Download your complete project redirect configuration.</p>
+          <div class="svc-io-buttons">
+            <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-export-json-btn"><i data-lucide="file-json"></i><span>Export as JSON</span></button>
+            <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-export-csv-btn"><i data-lucide="file-spreadsheet"></i><span>Export as CSV</span></button>
+          </div>
+        </div>
+
+        <hr class="svc-io-divider">
+
+        <!-- Import Section -->
+        <div class="svc-io-section">
+          <h4>Import Rules</h4>
+          <p class="svc-io-sub">Paste JSON rules or upload a JSON/CSV file. Rules will be validated before saving.</p>
+          <textarea id="svc-import-textarea" class="shadcn-textarea" rows="5" placeholder='[
+  { "source": "/old-docs", "destination": "/docs", "statusCode": 301 }
+]'></textarea>
+          <div class="svc-io-upload-row">
+            <input type="file" id="svc-import-file-input" accept=".json,.csv" class="hidden">
+            <button type="button" class="shadcn-btn shadcn-btn-outline" onclick="document.getElementById('svc-import-file-input').click()"><i data-lucide="upload"></i><span>Choose File</span></button>
+            <button type="button" class="shadcn-btn shadcn-btn-default" id="svc-run-import-btn"><i data-lucide="check"></i><span>Validate & Import</span></button>
+          </div>
+          <div id="svc-import-report-box" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. LEARN MORE DOCUMENTATION MODAL -->
+  <div id="svc-redirect-docs-modal" class="svc-clean-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-clean-dialog-card is-wide">
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <span class="svc-dialog-icon-badge"><i data-lucide="book-open"></i></span>
+          <div>
+            <h3>HTTP Redirects Guide</h3>
+            <p>Understanding status codes, wildcards, parameters, and matching order.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-redirect-docs-modal')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="svc-docs-dialog-body">
+        <section class="svc-doc-card">
+          <h4><i data-lucide="git-commit"></i> Status Codes Overview</h4>
+          <ul class="svc-doc-list">
+            <li><strong>301 Moved Permanently</strong>: Use when a URL is permanently moved. Search engines transfer SEO authority. Browsers cache aggressively.</li>
+            <li><strong>302 Found (Temporary)</strong>: Use for temporary promotions or maintenance. Browsers do not cache indefinitely.</li>
+            <li><strong>307 Temporary Redirect</strong>: Preserves the HTTP method. A POST request to the source URL remains a POST to the destination.</li>
+            <li><strong>308 Permanent Redirect</strong>: Permanent redirect that guarantees the HTTP method (POST/PUT/DELETE) is preserved.</li>
+          </ul>
+        </section>
+
+        <section class="svc-doc-card">
+          <h4><i data-lucide="code-2"></i> Wildcards & Named Parameters</h4>
+          <ul class="svc-doc-list">
+            <li><strong>Wildcards (<code>*</code>)</strong>: <code>/blog/*</code> ➔ <code>/articles/*</code> matches <code>/blog/post-1</code> and redirects to <code>/articles/post-1</code>.</li>
+            <li><strong>Named Parameters (<code>:param</code>)</strong>: <code>/docs/:version/:topic</code> ➔ <code>/documentation/:version/:topic</code> captures specific path segments.</li>
+          </ul>
+        </section>
+
+        <section class="svc-doc-card">
+          <h4><i data-lucide="layers"></i> Priority & Loop Protection</h4>
+          <ul class="svc-doc-list">
+            <li><strong>Top-to-Bottom Evaluation</strong>: Rules are evaluated sequentially from top to bottom. Place specific rules above broad wildcard rules.</li>
+            <li><strong>Loop Prevention</strong>: The system detects infinite bounce loops (e.g. <code>/a ➔ /b</code> and <code>/b ➔ /a</code>) and alerts before saving.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       FIREWALL MODALS (Exact match to screenshots)
+       ======================================================== -->
+  <!-- 1. ADD FIREWALL RULE MODAL (media_1788178893851.jpg) -->
+  <div id="svc-modal-fw-add-rule" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div>
+            <h3 class="svc-sheet-main-title">Add Firewall Rule</h3>
+            <p class="svc-sheet-sub-title">Create a rule to control and protect your application at the edge.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-add-rule')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-add-rule" class="svc-sheet-form-body">
+        <!-- 1. Action Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">What should happen when the rule matches?</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rule Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-fw-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="allow" role="radio" aria-checked="false">
+              <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+              <span>Allow</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-fw-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Condition Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Condition</strong>
+            <span class="svc-fw-section-desc">Select what to match against.</span>
+          </div>
+          <div class="svc-fw-condition-stack" id="fw-rule-condition-stack">
+            <div class="svc-fw-condition-item">
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Field</span>
+                <div class="svc-fw-row-input-wrap">
+                  <select class="svc-fw-row-select" id="fw-rule-field">
+                    <option value="ip">IP address</option>
+                    <option value="path">Path / URI</option>
+                    <option value="header">Header</option>
+                    <option value="country">Country / Geo</option>
+                    <option value="user_agent">User Agent</option>
+                  </select>
+                  <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                </div>
+              </div>
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Operator</span>
+                <div class="svc-fw-row-input-wrap">
+                  <select class="svc-fw-row-select" id="fw-rule-operator">
+                    <option value="equals">Equals</option>
+                    <option value="contains">Contains</option>
+                    <option value="starts_with">Starts with</option>
+                    <option value="matches_regex">Matches regex</option>
+                    <option value="in_list">In list</option>
+                  </select>
+                  <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                </div>
+              </div>
+              <div class="svc-fw-inline-row">
+                <span class="svc-fw-row-label">Value</span>
+                <div class="svc-fw-row-input-wrap">
+                  <input type="text" class="svc-fw-row-input" id="fw-rule-value" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn-fw-add-condition" id="fw-rule-add-condition-btn">
+            <i data-lucide="plus"></i>
+            <span>Add another condition</span>
+          </button>
+        </div>
+
+        <!-- 3. Rule Name Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-rule-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block suspicious IP" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-rule-name-count">0/64</span>
+          </div>
+        </div>
+
+        <!-- 4. Notes Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-rule-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Blocks abusive IP from incident #123"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-rule-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-add-rule')">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-rule-submit-btn">Create Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. IP RATE LIMIT MODAL (media_1788178893971.jpg) -->
+  <div id="svc-modal-fw-rate-limit" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle">
+            <i data-lucide="gauge"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">IP Rate Limit</h3>
+            <p class="svc-sheet-sub-title">Limit the number of requests from an IP address.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-rate-limit')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-rate-limit" class="svc-sheet-form-body">
+        <!-- 1. Action Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">What should happen when the limit is exceeded?</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rate Limit Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-rl-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="throttle" role="radio" aria-checked="false">
+              <i data-lucide="clock" class="action-icon icon-blue"></i>
+              <span>Throttle</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-rl-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Limit Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Limit</strong>
+            <span class="svc-fw-section-desc">Set the number of requests allowed.</span>
+          </div>
+          <div class="svc-fw-limit-row">
+            <div class="svc-fw-limit-col">
+              <label for="fw-rl-requests-input" class="svc-fw-input-mini-label">Requests</label>
+              <input type="number" id="fw-rl-requests-input" class="svc-fw-styled-input" value="100" min="1" max="1000000">
+            </div>
+            <div class="svc-fw-limit-col">
+              <label for="fw-rl-window-select" class="svc-fw-input-mini-label">Per</label>
+              <div class="svc-fw-select-wrap-block">
+                <select id="fw-rl-window-select" class="svc-fw-styled-select">
+                  <option value="10 seconds">10 seconds</option>
+                  <option value="1 minute" selected>1 minute</option>
+                  <option value="5 minutes">5 minutes</option>
+                  <option value="1 hour">1 hour</option>
+                </select>
+                <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Scope (optional) Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Scope (optional)</strong>
+            <span class="svc-fw-section-desc">Apply to a specific path or leave empty for all routes.</span>
+          </div>
+          <div class="svc-fw-select-wrap-block">
+            <select id="fw-rl-scope-select" class="svc-fw-styled-select">
+              <option value="All routes" selected>All routes</option>
+              <option value="/api/*">/api/*</option>
+              <option value="/login">/login</option>
+              <option value="/admin/*">/admin/*</option>
+            </select>
+            <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+          </div>
+          <span class="svc-fw-helper-text">e.g. /api/*, /login, /admin/*</span>
+        </div>
+
+        <!-- 4. IP Filtering Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">IP filtering (optional)</strong>
+            <span class="svc-fw-section-desc">Apply to specific IPs or ranges.</span>
+          </div>
+          <div class="svc-fw-segmented-toggle-bar">
+            <button type="button" class="svc-fw-seg-btn active" data-ip-mode="all">All IPs</button>
+            <button type="button" class="svc-fw-seg-btn" data-ip-mode="specific">Specific IPs</button>
+          </div>
+          <div class="svc-fw-callout-box" id="fw-rl-ip-callout">
+            <i data-lucide="globe"></i>
+            <span>This rule will apply to all IP addresses.</span>
+          </div>
+        </div>
+
+        <!-- 5. Rule Name Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-rl-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Limit API abuse" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-rl-name-count">0/64</span>
+          </div>
+        </div>
+
+        <!-- 6. Notes Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-rl-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Prevents abuse on public API endpoints"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-rl-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-rate-limit')">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-rl-submit-btn">Create Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. BOT PROTECTION MODAL (media_1788178893972.jpg) -->
+  <div id="svc-modal-fw-bot-protect" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle">
+            <i data-lucide="bot"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">Bot Protection</h3>
+            <p class="svc-sheet-sub-title">Detect and manage automated traffic, scrapers, and malicious bots.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-bot-protect')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-bot-protect" class="svc-sheet-form-body">
+        <!-- 1. Enable Bot Protection Toggle Row -->
+        <div class="svc-fw-toggle-card">
+          <div class="svc-fw-toggle-info">
+            <strong class="svc-fw-toggle-title">Enable Bot Protection</strong>
+            <span class="svc-fw-toggle-desc">Automatically detect and challenge suspicious bots.</span>
+          </div>
+          <label class="svc-apple-switch">
+            <input type="checkbox" id="fw-bot-main-toggle" checked>
+            <span class="svc-apple-slider"></span>
+          </label>
+        </div>
+
+        <!-- 2. Protection Level Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Protection level</strong>
+            <span class="svc-fw-section-desc">Choose how aggressive the bot detection should be.</span>
+          </div>
+          <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Protection level">
+            <div class="svc-fw-level-card" data-bot-level="light" role="radio" aria-checked="false">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Light</strong>
+                <span class="svc-fw-level-desc">Minimal challenges</span>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+            <div class="svc-fw-level-card is-active" data-bot-level="balanced" role="radio" aria-checked="true">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Balanced</strong>
+                <span class="svc-fw-level-desc">Recommended</span>
+              </div>
+              <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-level="strict" role="radio" aria-checked="false">
+              <div class="svc-fw-level-text">
+                <strong class="svc-fw-level-name">Strict</strong>
+                <span class="svc-fw-level-desc">Maximum protection</span>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Action for Bots Section -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action for bots</strong>
+            <span class="svc-fw-section-desc">Choose what to do with detected bots.</span>
+          </div>
+          <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Action for bots">
+            <div class="svc-fw-level-card is-active" data-bot-action="challenge" role="radio" aria-checked="true">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Challenge</strong>
+                  <span class="svc-fw-level-desc">Show verification</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-action="block" role="radio" aria-checked="false">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="ban" class="action-icon icon-red"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Block</strong>
+                  <span class="svc-fw-level-desc">Deny access</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+            <div class="svc-fw-level-card" data-bot-action="log" role="radio" aria-checked="false">
+              <div class="svc-fw-bot-action-left">
+                <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                <div class="svc-fw-level-text">
+                  <strong class="svc-fw-level-name">Log only</strong>
+                  <span class="svc-fw-level-desc">Monitor only</span>
+                </div>
+              </div>
+              <span class="svc-fw-level-radio"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. AI Detection (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-toggle-card inline-toggle">
+            <div class="svc-fw-toggle-info">
+              <strong class="svc-fw-toggle-title">AI detection (optional)</strong>
+              <span class="svc-fw-toggle-desc">Use advanced detection to identify more sophisticated bots.</span>
+            </div>
+            <label class="svc-apple-switch">
+              <input type="checkbox" id="fw-bot-ai-toggle" checked>
+              <span class="svc-apple-slider"></span>
+            </label>
+          </div>
+          <div class="svc-fw-callout-box info-callout">
+            <i data-lucide="info"></i>
+            <span>Uses machine learning to detect headless browsers, scrapers, and automated tools.</span>
+          </div>
+        </div>
+
+        <!-- 5. Allow Verified Bots Toggle -->
+        <div class="svc-fw-toggle-card">
+          <div class="svc-fw-toggle-info">
+            <strong class="svc-fw-toggle-title">Allow verified bots</strong>
+            <span class="svc-fw-toggle-desc">Allow known good bots (e.g. Google, Bing, Discord) to access your site.</span>
+          </div>
+          <label class="svc-apple-switch">
+            <input type="checkbox" id="fw-bot-verified-toggle" checked>
+            <span class="svc-apple-slider"></span>
+          </label>
+        </div>
+
+        <!-- 6. Custom Allowlist (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Custom allowlist (optional)</strong>
+            <span class="svc-fw-section-desc">Add IPs, user agents, or URL patterns to bypass bot protection.</span>
+          </div>
+          <button type="button" class="svc-fw-nav-action-row" id="fw-bot-add-allowlist-btn">
+            <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to allowlist</span></span>
+            <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+          </button>
+        </div>
+
+        <!-- 7. Blocklist (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Blocklist (optional)</strong>
+            <span class="svc-fw-section-desc">Block specific bad bots, user agents, or IP ranges.</span>
+          </div>
+          <button type="button" class="svc-fw-nav-action-row" id="fw-bot-add-blocklist-btn">
+            <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to blocklist</span></span>
+            <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+          </button>
+        </div>
+
+        <!-- 8. Rule Name (optional) -->
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name (optional)</strong>
+            <span class="svc-fw-section-desc">Give this configuration a name for reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-bot-rule-name-input" class="svc-fw-styled-input" maxlength="64" value="Bot protection (balanced)" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-bot-rule-name-count">25/64</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-bot-protect')">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-bot-submit-btn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. IP BLOCKLIST MODAL -->
+  <div id="svc-modal-fw-ip-block" class="svc-sheet-dialog hidden" role="dialog" aria-modal="true">
+    <div class="svc-sheet-card">
+      <div class="svc-sheet-drag-handle"></div>
+      <header class="svc-clean-dialog-header">
+        <div class="svc-dialog-title-wrap">
+          <div class="svc-sheet-icon-circle" style="background:#fee2e2;color:#dc2626;">
+            <i data-lucide="shield-alert"></i>
+          </div>
+          <div>
+            <h3 class="svc-sheet-main-title">IP Blocklist & Access</h3>
+            <p class="svc-sheet-sub-title">Block or restrict malicious IPs, CIDR subnets, and ASNs.</p>
+          </div>
+        </div>
+        <button type="button" class="svc-modal-close-icon-btn" onclick="safeCloseModal('svc-modal-fw-ip-block')" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+
+      <form id="svc-form-fw-ip-block" class="svc-sheet-form-body">
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Action</strong>
+            <span class="svc-fw-section-desc">Choose action to enforce on matching IP addresses.</span>
+          </div>
+          <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="IP Block Action">
+            <button type="button" class="svc-fw-action-choice-card is-active is-red" data-ipb-action="block" role="radio" aria-checked="true">
+              <i data-lucide="ban" class="action-icon icon-red"></i>
+              <span>Block</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="challenge" role="radio" aria-checked="false">
+              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+              <span>Challenge</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="allow" role="radio" aria-checked="false">
+              <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+              <span>Allow</span>
+            </button>
+            <button type="button" class="svc-fw-action-choice-card" data-ipb-action="log" role="radio" aria-checked="false">
+              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+              <span>Log only</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">IP or CIDR Range</strong>
+            <span class="svc-fw-section-desc">Single IPv4/IPv6 address or CIDR network range.</span>
+          </div>
+          <input type="text" id="fw-ipb-target-input" class="svc-fw-styled-input" placeholder="e.g. 203.0.113.195 or 198.51.100.0/24" autocomplete="off" spellcheck="false" required>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Rule name</strong>
+            <span class="svc-fw-section-desc">A descriptive name to identify this block rule.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <input type="text" id="fw-ipb-name-input" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block known bad IP range" autocomplete="off">
+            <span class="svc-fw-counter-tag" id="fw-ipb-name-count">0/64</span>
+          </div>
+        </div>
+
+        <div class="svc-fw-section-card">
+          <div class="svc-fw-section-head">
+            <strong class="svc-fw-section-title">Notes (optional)</strong>
+            <span class="svc-fw-section-desc">Add a note for future reference.</span>
+          </div>
+          <div class="svc-fw-counter-input-box">
+            <textarea id="fw-ipb-notes-input" class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Added following scrapers incident on /api/graphql"></textarea>
+            <span class="svc-fw-counter-tag" id="fw-ipb-notes-count">0/200</span>
+          </div>
+        </div>
+
+        <div class="svc-sheet-footer">
+          <button type="button" class="btn-sheet-cancel" onclick="safeCloseModal('svc-modal-fw-ip-block')">Cancel</button>
+          <button type="submit" class="btn-sheet-primary" id="fw-ipb-submit-btn">Create Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="/static/app.js?v=__VERSION__"></script>
 </body>

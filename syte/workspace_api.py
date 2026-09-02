@@ -327,7 +327,7 @@ async def list_workspace_files(project_id: str, subpath: str = "") -> list[dict]
         }]
     entries = []
     for item in sorted(root.iterdir()):
-        if item.name.startswith(".") and item.name not in (".env", ".gitkeep"):
+        if item.name in (".git", ".hg", ".svn") or item.name.startswith(".syte-") or item.name.endswith(".syte-tmp"):
             continue
         rel = item.relative_to(workspace_path(project_id))
         entries.append({

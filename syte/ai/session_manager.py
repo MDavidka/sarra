@@ -190,6 +190,11 @@ class AIAgentSessionManager:
 
             session.is_running = True
             session.current_turn += 1
+            # Filter out old transient token deltas from buffer to prevent replay bloat
+            session.event_buffer = [
+                e for e in session.event_buffer
+                if e.get("event") not in ("token_delta", "thought_delta", "status")
+            ]
 
             async def _run_background_loop():
                 engine = AIAgentEngine(project_id, session=session)

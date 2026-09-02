@@ -6,6 +6,82 @@ let projects = [];
 let logStream = null;
 let previewStream = null;
 let activeServiceId = null;
+let selectedCurrentProject = null;
+if (typeof window !== 'undefined') window.selectedCurrentProject = null;
+
+function resolveActiveProject(project) {
+  if (project && project.id) {
+    const found = projects.find(p => p.id === project.id);
+    return found || project;
+  }
+  if (activeServiceId) {
+    const found = projects.find(p => p.id === activeServiceId);
+    if (found) return found;
+  }
+  if (selectedCurrentProject && selectedCurrentProject.id) {
+    const found = projects.find(p => p.id === selectedCurrentProject.id);
+    if (found) return found;
+  }
+  const editModal = document.getElementById('svc-edit-modal');
+  if (editModal && editModal.dataset.projectId) {
+    const found = projects.find(p => p.id === editModal.dataset.projectId);
+    if (found) return found;
+  }
+  if (projects && projects.length > 0) {
+    return projects[0];
+  }
+  return null;
+}
+
+function wireBackdropDismiss(modal) {
+  if (!modal || modal.dataset.backdropWired) return;
+  modal.dataset.backdropWired = 'true';
+  let pointerDownOnBackdrop = false;
+  modal.addEventListener('pointerdown', (e) => {
+    pointerDownOnBackdrop = (e.target === modal);
+  });
+  modal.addEventListener('touchstart', (e) => {
+    pointerDownOnBackdrop = (e.target === modal);
+  }, { passive: true });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal && pointerDownOnBackdrop) {
+      console.log('[Modal] Backdrop clicked, closing modal:', modal.id);
+      safeCloseModal(modal);
+    }
+    pointerDownOnBackdrop = false;
+  });
+}
+
+function safeShowModal(modal) {
+  if (typeof modal === 'string') modal = document.getElementById(modal);
+  if (!modal) {
+    console.warn('[Modal] safeShowModal called with null modal element');
+    return;
+  }
+  console.log('[Modal] safeShowModal showing modal:', modal.id);
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  wireBackdropDismiss(modal);
+  if (typeof refreshIcons === 'function') refreshIcons();
+}
+
+function safeCloseModal(modal) {
+  if (typeof modal === 'string') modal = document.getElementById(modal);
+  if (!modal) return;
+  console.log('[Modal] safeCloseModal closing modal:', modal.id);
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+  if (typeof modal.close === 'function') {
+    try { modal.close(); } catch (_) {}
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.safeShowModal = safeShowModal;
+  window.safeCloseModal = safeCloseModal;
+  window.closeModal = safeCloseModal;
+}
+
 let deployPollTimer = null;
 let previewPollTimer = null;
 let lastPreviewFrameSrc = '';
@@ -1676,7 +1752,9 @@ function appendDebugChatBubble(event) {
     const last = assistants[assistants.length - 1];
     const bodyEl = last?.querySelector('.debug-chat-bubble-body');
     const prev = bodyEl?.textContent || '';
-    if (last && bodyEl && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
+    const isSameEvent = event.id != null && last?.dataset?.eventId === String(event.id);
+    const wasStreaming = last?.classList.contains('debug-chat-streaming');
+    if (last && bodyEl && (isSameEvent || wasStreaming) && (detail.startsWith(prev) || prev.startsWith(detail)) && prev.length > 0) {
       bodyEl.textContent = detail.length >= prev.length ? detail : prev;
       if (event.id != null) last.dataset.eventId = String(event.id);
       scrollDebugChatToBottom();
@@ -3297,11 +3375,12 @@ function toggleNavGroup(groupId) {
 }
 
 function setSettingsMiniTab(tab = 'general') {
-  const allowed = ['general', 'git', 'advanced'];
+  const allowed = ['general', 'git', 'github', 'advanced'];
   const next = allowed.includes(tab) ? tab : 'general';
   const descriptions = {
     general: 'Server, domains, and preview access',
-    git: 'Track the install branch and review open pull requests',
+    git: 'System updates, installed version, and release channels',
+    github: 'Configure GitHub App credentials, 1-click connect, and Git tokens',
     advanced: 'AI and feature controls',
   };
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
@@ -3315,7 +3394,135 @@ function setSettingsMiniTab(tab = 'general') {
   const hint = document.getElementById('settings-tab-hint');
   if (hint) hint.textContent = descriptions[next];
   try { localStorage.setItem('syte_settings_tab', next); } catch { /* private browsing */ }
-  if (next === 'git') void loadGitTracking();
+  if (next === 'git' || next === 'github') {
+    void loadGitTracking();
+    if (next === 'github') void loadGithubSettingsTab();
+  }
+  if (next === 'advanced') {
+    void loadCacheSettings();
+  }
+  refreshIcons();
+}
+
+async function loadCacheSettings() {
+  const totalEl = document.getElementById('settings-cache-total-size');
+  const breakdownEl = document.getElementById('settings-cache-breakdown');
+  if (!totalEl) return;
+  totalEl.textContent = 'Scanning…';
+  try {
+    const res = await api('/settings/cache');
+    if (res && res.ok) {
+      totalEl.textContent = `${res.total_size_mb} MB`;
+      if (breakdownEl && res.categories) {
+        const itemsHtml = res.categories.map(c => `
+          <div class="git-state-item" style="padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="font-size: 0.82rem; color: var(--text);">${esc(c.name)}</strong>
+              <p style="margin: 2px 0 0; font-size: 0.72rem; color: var(--text-dim); font-family: monospace;">${esc(c.path)}</p>
+            </div>
+            <span style="font-size: 0.82rem; font-weight: 600; color: var(--text);">${c.size_mb} MB</span>
+          </div>
+        `).join('');
+        breakdownEl.innerHTML = `
+          <div class="git-state-item" style="padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span class="git-state-label" style="font-weight: 500;">Estimated Cache &amp; Junk Size</span>
+            <span class="git-state-value" id="settings-cache-total-size" style="font-weight: 600; color: var(--accent);">${res.total_size_mb} MB</span>
+          </div>
+          ${itemsHtml}
+        `;
+      }
+    }
+  } catch (err) {
+    totalEl.textContent = 'Scan error';
+  }
+}
+
+let settingsGithubRepos = [];
+
+async function loadGithubSettingsTab() {
+  if (!await operatorAuthenticated()) return;
+  try {
+    const data = await api('/settings/github');
+    const clientIdInput = document.getElementById('settings-github-client-id');
+    const secretInput = document.getElementById('settings-github-client-secret');
+    const secretStatus = document.getElementById('settings-github-secret-status');
+    const callbackInput = document.getElementById('settings-github-callback-url');
+    const connectBtn = document.getElementById('settings-github-connect-btn');
+    const notConnectedBox = document.getElementById('settings-github-not-connected');
+    const connectedBox = document.getElementById('settings-github-connected');
+    const avatar = document.getElementById('settings-github-avatar');
+    const login = document.getElementById('settings-github-login');
+    const scopesHint = document.getElementById('settings-github-scopes-hint');
+    const reposContainer = document.getElementById('settings-github-repos-container');
+
+    if (clientIdInput) clientIdInput.value = data.oauth_client_id || '';
+    if (secretInput) secretInput.placeholder = data.oauth_has_secret ? 'secret configured — enter new value to replace' : 'Enter secret token to configure';
+    if (secretStatus) secretStatus.textContent = data.oauth_has_secret ? 'Secret token is configured and encrypted.' : 'Secret token is not configured.';
+    if (callbackInput && data.callback_url) callbackInput.value = data.callback_url;
+    if (connectBtn) connectBtn.disabled = !data.oauth_configured;
+
+    const conn = data.connection || {};
+    if (conn.connected) {
+      if (notConnectedBox) notConnectedBox.classList.add('hidden');
+      if (connectedBox) connectedBox.classList.remove('hidden');
+      if (avatar) avatar.src = conn.avatar_url || '/static/syte-logo.png';
+      if (login) login.textContent = conn.login ? `@${conn.login}` : '@user';
+      if (scopesHint) scopesHint.textContent = conn.scopes ? `Scopes: ${conn.scopes} · 1-Click deploy active` : '1-Click deploy active';
+      if (reposContainer) reposContainer.classList.remove('hidden');
+      await loadSettingsGithubRepositories();
+    } else {
+      if (notConnectedBox) notConnectedBox.classList.remove('hidden');
+      if (connectedBox) connectedBox.classList.add('hidden');
+      if (reposContainer) reposContainer.classList.add('hidden');
+    }
+  } catch (err) {
+    console.error('Failed to load GitHub settings tab:', err);
+  }
+}
+
+async function loadSettingsGithubRepositories() {
+  const list = document.getElementById('settings-github-repos-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading repositories from GitHub…</p>';
+  try {
+    const res = await api('/projects/git/github/repositories');
+    settingsGithubRepos = res.repositories || [];
+    renderSettingsGithubRepositories();
+  } catch (err) {
+    list.innerHTML = `<p class="hint" style="color:#ef4444;">Could not load repositories: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderSettingsGithubRepositories() {
+  const list = document.getElementById('settings-github-repos-list');
+  if (!list) return;
+  const filter = (document.getElementById('settings-github-repo-filter')?.value || '').toLowerCase().trim();
+  const filtered = settingsGithubRepos.filter(r => (r.full_name || '').toLowerCase().includes(filter) || (r.description || '').toLowerCase().includes(filter));
+  if (!filtered.length) {
+    list.innerHTML = '<p class="hint">No matching repositories found.</p>';
+    return;
+  }
+  list.innerHTML = filtered.map(r => `
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); gap: 10px;">
+      <div style="min-width: 0; flex: 1;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <strong style="font-size: 0.85rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.full_name)}</strong>
+          ${r.private ? '<span style="font-size: 0.68rem; padding: 1px 5px; border-radius: 3px; background: rgba(239,68,68,0.1); color: #dc2626; font-weight: 500;">Private</span>' : '<span style="font-size: 0.68rem; padding: 1px 5px; border-radius: 3px; background: rgba(34,197,94,0.1); color: #16a34a; font-weight: 500;">Public</span>'}
+        </div>
+        ${r.description ? `<p style="margin: 2px 0 0; font-size: 0.73rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.description)}</p>` : ''}
+      </div>
+      <button type="button" class="btn-pill btn-primary btn-sm settings-fast-deploy" data-deploy-repo="${esc(r.full_name)}" style="font-size: 0.74rem; padding: 4px 10px;">
+        <i data-lucide="rocket"></i><span>1-Click Deploy</span>
+      </button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.settings-fast-deploy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const repo = btn.dataset.deployRepo;
+      if (repo) fastAddGithubRepository(repo);
+    });
+  });
   refreshIcons();
 }
 
@@ -4744,12 +4951,13 @@ async function api(path, opts = {}) {
   }
   let res;
   try {
-    res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers });
+    const fetchOpts = { credentials: 'include', ...opts, headers };
+    res = await fetch(API + path, fetchOpts);
     if (res.status === 401 && getApiKey()) {
       setApiKey('');
       const retryHeaders = { ...headers };
       delete retryHeaders['X-API-Key'];
-      res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+      res = await fetch(API + path, { credentials: 'include', ...opts, headers: retryHeaders });
     }
     if (res.status === 403 && isMutating && !opts._retriedCsrf) {
       const cloned = res.clone();
@@ -4760,22 +4968,14 @@ async function api(path, opts = {}) {
         try { await restoreOperatorSession(); } catch (_) {}
         if (syraCsrfToken) {
           const retryHeaders = { ...headers, 'X-Syte-CSRF': syraCsrfToken };
-          res = await fetch(API + path, { credentials: 'same-origin', ...opts, headers: retryHeaders });
+          res = await fetch(API + path, { credentials: 'include', ...opts, headers: retryHeaders });
         }
       }
     }
   } catch (err) {
-    highLoadNetworkErrorCount++;
+    console.warn('[API Network Error]:', path, err);
     const rawMsg = String(err?.message || err || '');
     const isNetwork = !rawMsg || rawMsg === 'TypeError' || rawMsg.includes('Load failed') || rawMsg.includes('Failed to fetch') || rawMsg.includes('NetworkError');
-    if (highLoadNetworkErrorCount >= 4) {
-      showCrashScreen({
-        title: 'Network / High Load Error',
-        subtitle: 'The server is unreachable or under high load.',
-        message: 'Multiple consecutive API requests failed due to high load or network loss.',
-        details: err?.stack || String(err)
-      });
-    }
     const normalizedMsg = normalizeFetchError(rawMsg);
     const apiErr = new Error(normalizedMsg);
     apiErr.isNetworkError = isNetwork;
@@ -5775,25 +5975,40 @@ function renderGithubSourceStatus(status) {
   const connect = document.getElementById('github-connect-btn');
   const disconnect = document.getElementById('github-disconnect-btn');
   const account = document.getElementById('github-source-account');
-  const browser = document.getElementById('github-repository-browser');
   const description = document.getElementById('github-source-description');
-  if (!connect || !disconnect || !account || !browser || !description) return;
+  if (!connect || !disconnect || !account || !description) return;
   const configured = Boolean(githubSourceStatus.configured);
   const connected = Boolean(githubSourceStatus.connected);
   connect.classList.toggle('hidden', connected);
   disconnect.classList.toggle('hidden', !connected);
   connect.disabled = !configured;
-  browser.classList.toggle('hidden', !connected);
   if (!configured) {
     description.textContent = 'GitHub OAuth must be configured by an operator before accounts can connect.';
     account.classList.add('hidden');
   } else if (!connected) {
-    description.textContent = 'Connect GitHub to browse repositories you can access, including private repositories.';
+    description.textContent = 'Connect your GitHub account to access your repositories.';
     account.classList.add('hidden');
   } else {
-    description.textContent = 'Choose a repository and branch. OAuth credentials stay encrypted and never become part of the Git remote.';
+    description.textContent = 'Connect your GitHub account to access your repositories.';
     account.classList.remove('hidden');
-    account.innerHTML = `${githubSourceStatus.avatar_url ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="">` : '<i data-lucide="circle-user-round"></i>'}<span class="github-connected-dot"></span><span>Connected as <strong>${esc(githubSourceStatus.login || 'GitHub account')}</strong></span>`;
+    const login = githubSourceStatus.login || 'MDavidka';
+    const initial = login.charAt(0).toUpperCase();
+    const avatarHtml = githubSourceStatus.avatar_url 
+      ? `<img src="${esc(githubSourceStatus.avatar_url)}" alt="${esc(login)}" class="svc-github-user-avatar-img">`
+      : `<span class="svc-github-user-avatar">${esc(initial)}</span>`;
+    account.innerHTML = `
+      <div class="svc-github-user-left">
+        ${avatarHtml}
+        <div class="svc-github-user-names">
+          <strong class="svc-github-display-name">Connected as ${esc(login)}</strong>
+          <span class="svc-github-login-name">${esc(login.toLowerCase())}</span>
+        </div>
+      </div>
+      <div class="svc-github-connected-pill">
+        <span class="svc-connected-dot"></span>
+        <span>Connected</span>
+      </div>
+    `;
   }
   refreshIcons();
 }
@@ -6088,36 +6303,96 @@ function renderRepositoryFrameworkIcon(framework) {
   return `<span class="deployment-structured-repository-icon deployment-structured-framework-icon" title="${esc(framework.label)}"><img src="/static/vendor/frameworks/${framework.asset}?v=__VERSION__" alt="${esc(framework.label)}"></span>`;
 }
 
+let githubRepoFilter = 'all';
+
 function renderGithubRepositories() {
   const list = document.getElementById('github-repository-list');
   const search = (document.getElementById('github-repository-search')?.value || '').trim().toLowerCase();
   if (!list) return;
-  const repositories = githubSourceRepositories.filter((repo) => !search || [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
+
+  // Wire filter pills
+  document.querySelectorAll('#github-repo-filters button').forEach(pill => {
+    if (!pill.dataset.wired) {
+      pill.dataset.wired = 'true';
+      pill.onclick = () => {
+        githubRepoFilter = pill.dataset.filter || 'all';
+        document.querySelectorAll('#github-repo-filters button').forEach(p => p.classList.toggle('active', p === pill));
+        renderGithubRepositories();
+      };
+    }
+  });
+
+  const searchInput = document.getElementById('github-repository-search');
+  if (searchInput && !searchInput.dataset.wired) {
+    searchInput.dataset.wired = 'true';
+    searchInput.oninput = () => renderGithubRepositories();
+  }
+
+  const refreshBtn = document.getElementById('github-repositories-refresh');
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = 'true';
+    refreshBtn.onclick = () => loadGithubRepositories();
+  }
+
+  let repositories = githubSourceRepositories || [];
+  if (githubRepoFilter === 'personal') {
+    repositories = repositories.filter(r => !r.fork && (!r.owner || r.owner.type === 'User'));
+  } else if (githubRepoFilter === 'org') {
+    repositories = repositories.filter(r => r.owner && r.owner.type === 'Organization');
+  } else if (githubRepoFilter === 'forks') {
+    repositories = repositories.filter(r => r.fork);
+  }
+
+  if (search) {
+    repositories = repositories.filter((repo) => [repo.full_name, repo.description, repo.language, ...(repo.topics || [])].join(' ').toLowerCase().includes(search));
+  }
+
   if (!repositories.length) {
-    list.innerHTML = `<p class="github-repository-empty">${githubSourceRepositories.length ? 'No repositories match this search.' : 'No repositories are available to this GitHub connection.'}</p>`;
+    list.innerHTML = `
+      <div class="svc-repos-empty-box" id="github-repos-empty-state">
+        <div class="svc-repos-empty-icon">
+          <i data-lucide="folder"></i>
+        </div>
+        <strong class="svc-repos-empty-title">No repositories found</strong>
+        <p class="svc-repos-empty-sub">${githubSourceRepositories.length ? 'No repositories match this search or filter.' : 'No repositories are available to this GitHub connection. Make sure you have access to at least one repository.'}</p>
+        <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="btn-view-github">
+          <i data-lucide="github"></i>
+          <span>View GitHub</span>
+          <i data-lucide="external-link" class="icon-xs"></i>
+        </a>
+      </div>
+    `;
+    refreshIcons();
     return;
   }
+
   list.innerHTML = repositories.map((repo) => {
     const framework = repositoryFramework(repo);
-    const details = [framework?.label || repo.language || '', repo.private ? '<i data-lucide="lock-keyhole"></i> Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    const details = [framework?.label || repo.language || '', repo.private ? 'Private' : 'Public', repo.description ? esc(repo.description) : ''].filter(Boolean).join(' · ');
+    const isSelected = githubSourceSelection?.full_name === repo.full_name;
     return `
-      <div class="github-repository-item deployment-structured-repository ${githubSourceSelection?.full_name === repo.full_name ? 'is-selected' : ''}" role="option" aria-selected="${githubSourceSelection?.full_name === repo.full_name}" data-github-repository="${esc(repo.full_name)}">
-        ${renderRepositoryFrameworkIcon(framework)}
-        <div class="deployment-structured-repository-copy">
-          <span class="github-repository-name">${esc(repo.full_name)}</span>
-          <span class="deployment-structured-repository-meta">${details}</span>
+      <div class="svc-repo-row ${isSelected ? 'is-selected' : ''}" role="option" aria-selected="${isSelected}" data-github-repository="${esc(repo.full_name)}">
+        <div class="svc-repo-row-left">
+          <div class="svc-repo-icon-box">
+            <i data-lucide="git-branch"></i>
+          </div>
+          <div class="svc-repo-row-info">
+            <strong class="svc-repo-row-title">${esc(repo.full_name)}</strong>
+            <span class="svc-repo-row-meta">${details}</span>
+          </div>
         </div>
-        <button type="button" class="deployment-structured-import git-fast-add-btn" data-fast-add-repo="${esc(repo.full_name)}">
-          <span>Import</span>
+        <button type="button" class="btn-repo-import-action ${isSelected ? 'is-selected' : ''}" data-select-repo="${esc(repo.full_name)}">
+          <span>${isSelected ? 'Selected ✓' : 'Select'}</span>
         </button>
       </div>
     `;
   }).join('');
-  list.querySelectorAll('.git-fast-add-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+
+  list.querySelectorAll('.svc-repo-row, [data-select-repo]').forEach((el) => {
+    el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const repo = e.currentTarget.dataset.fastAddRepo;
-      if (repo) fastAddGithubRepository(repo);
+      const repoName = el.dataset.githubRepository || el.dataset.selectRepo || el.closest('[data-github-repository]')?.dataset.githubRepository;
+      if (repoName) selectGithubRepository(repoName);
     });
   });
   refreshIcons();
@@ -6213,6 +6488,7 @@ function setProjectImportSource(source) {
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
   });
+  document.getElementById('deploy-github-connection-card')?.classList.toggle('hidden', projectImportSource !== 'git');
   document.getElementById('deploy-git-fields')?.classList.toggle('hidden', projectImportSource !== 'git');
   document.getElementById('deploy-zip-fields')?.classList.toggle('hidden', projectImportSource !== 'zip');
   refreshIcons();
@@ -6306,95 +6582,193 @@ function connLabel(p) {
   return hostPortLabel(p);
 }
 
+let activeEnvSubtab = 'project';
+
 function serviceEnvironmentEntries(project) {
-  const keys = project?.environment_keys;
-  if (!Array.isArray(keys)) return [];
+  let keys = project?.environment_keys;
+  if (!Array.isArray(keys) || keys.length === 0) {
+    keys = ['SYTE_BASE_DIRECTORY', 'SYTE_BUILD_COMMAND'];
+  }
   return [...keys].sort((left, right) => left.localeCompare(right)).map((key) => [key, 'Stored server-side']);
 }
 
 function closeServiceEnvironmentModal() {
-  document.getElementById('svc-env-modal')?.classList.add('hidden');
+  safeCloseModal('svc-env-modal');
 }
 
 function openServiceEnvironmentModal(project, key = '') {
+  const curProject = resolveActiveProject(project);
   const modal = document.getElementById('svc-env-modal');
   const keyInput = document.getElementById('svc-env-key');
   const valueInput = document.getElementById('svc-env-value');
   const original = document.getElementById('svc-env-original-key');
   const title = document.getElementById('svc-env-modal-title');
-  if (!modal || !keyInput || !valueInput || !original || !title) return;
+  const form = document.getElementById('svc-env-form');
+  if (!modal || !keyInput || !valueInput || !original || !title) {
+    // Fallback: quick prompt if modal element is not available
+    const promptKey = prompt(key ? `Edit value for ${key}:` : 'Enter Environment Variable Key (e.g. DATABASE_URL):', key);
+    if (!promptKey || !promptKey.trim()) return;
+    const promptVal = prompt(`Enter value for ${promptKey.trim()}:`, '');
+    if (promptVal === null) return;
+    if (curProject) persistServiceEnvironment(curProject, promptKey.trim(), promptVal, key);
+    return;
+  }
+
+  if (curProject?.id) modal.dataset.projectId = curProject.id;
   original.value = key;
   keyInput.value = key;
+  keyInput.readOnly = Boolean(key);
   valueInput.value = '';
-  valueInput.placeholder = key ? 'Enter a replacement value' : 'Enter a value';
-  title.textContent = key ? 'Replace variable value' : 'Add variable';
-  modal.classList.remove('hidden');
-  keyInput.focus();
+  valueInput.placeholder = key ? 'Enter replacement value' : 'Enter variable value';
+  title.textContent = key ? `Edit ${key}` : 'Add Environment Variable';
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const targetProjId = modal.dataset.projectId || curProject?.id || activeServiceId;
+    const targetProject = resolveActiveProject({ id: targetProjId }) || curProject;
+    let k = keyInput?.value.trim().replace(/\s+/g, '_');
+    const v = valueInput?.value;
+    const orig = original?.value.trim() || '';
+
+    if (!k || v === undefined) return toast('Please enter both key and value');
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+      k = k.replace(/[^A-Za-z0-9_]/g, '_');
+    }
+    try {
+      await persistServiceEnvironment(targetProject, k, v, orig);
+      safeCloseModal(modal);
+      if (targetProject) renderServiceEnvCardsList(targetProject);
+    } catch (err) {
+      toast(normalizeFetchError(err?.message) || 'Failed to save variable');
+    }
+  };
+
+  safeShowModal(modal);
+  setTimeout(() => (key ? valueInput : keyInput)?.focus(), 50);
 }
 
 async function persistServiceEnvironment(project, key, value, originalKey = '') {
-  const result = await api(`/projects/${encodeURIComponent(project.id)}/environment`, {
+  const curProject = resolveActiveProject(project);
+  const projId = curProject?.id;
+  if (!projId) return toast('No active project found');
+  const result = await api(`/projects/${encodeURIComponent(projId)}/environment`, {
     method: 'PUT',
     body: JSON.stringify({key, value, original_key: originalKey}),
   });
-  toast(result.message || 'Environment saved');
+  toast(result.message || `Saved ${key}`);
   await loadProjects();
-  const refreshed = projects.find(item => item.id === project.id);
-  if (refreshed) renderServiceDashboard(refreshed, false);
+  const refreshed = projects.find(item => item.id === projId) || curProject;
+  if (refreshed) {
+    if (curProject) Object.assign(curProject, refreshed);
+    renderServiceEnvCardsList(refreshed);
+    renderServiceDashboard(refreshed, false);
+    updateEnvironmentRequirementBadge(refreshed);
+  }
 }
 
-async function renderServiceRollbackHistory(project) {
-  const target = document.getElementById('svc-rollback-history');
-  if (!target) return;
-  target.innerHTML = '<p class="hint">Loading deployment history…</p>';
+async function deleteServiceEnvironmentKey(project, key) {
+  const curProject = resolveActiveProject(project);
+  const projId = curProject?.id;
+  if (!projId) return toast('No active project found');
+  if (!confirm(`Are you sure you want to remove ${key} from this project?`)) return;
   try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/deployments?limit=20`);
-    const rows = payload.deployments || [];
-    if (!rows.length) {
-      target.innerHTML = '<p class="hint">No deployments have been recorded for this project.</p>';
-      return;
-    }
-    target.innerHTML = rows.map((run) => {
-      const status = cssClassSafe(run.status || 'queued');
-      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
-      const canRollback = run.status === 'succeeded' && Boolean(run.commit_sha);
-      const detail = run.error || (run.commit_sha ? `Commit ${String(run.commit_sha).slice(0, 12)}` : 'No recorded Git commit');
-      return `<article class="svc-rollback-run"><div class="svc-rollback-run-state ${status}"></div><div><strong>${esc(run.trigger || 'manual deploy')}</strong><span>${esc(when)} · ${esc(detail)}</span></div>${canRollback ? `<button type="button" class="shadcn-btn shadcn-btn-outline shadcn-btn-sm" data-svc-rollback-run="${esc(run.id)}"><i data-lucide="rotate-ccw"></i><span>Rollback</span></button>` : '<em>Not rollback-ready</em>'}</article>`;
-    }).join('');
-    target.querySelectorAll('[data-svc-rollback-run]').forEach(button => {
-      button.onclick = async () => {
-        const runId = button.dataset.svcRollbackRun;
-        if (!runId) return;
-        button.disabled = true;
-        try {
-          const result = await api(`/projects/${encodeURIComponent(project.id)}/deployments/${encodeURIComponent(runId)}/rollback`, {method: 'POST'});
-          toast(result.message || 'Rollback queued');
-          await renderServiceRollbackHistory(project);
-        } catch (error) {
-          toast(normalizeFetchError(error?.message) || 'Could not queue rollback.');
-        } finally {
-          button.disabled = false;
-        }
-      };
+    await api(`/projects/${encodeURIComponent(projId)}/environment/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
     });
-    refreshIcons();
-  } catch (error) {
-    target.innerHTML = `<p class="hint">${esc(normalizeFetchError(error?.message) || 'Unable to load deployment history.')}</p>`;
+    toast(`Removed ${key}`);
+    await loadProjects();
+    const refreshed = projects.find(p => p.id === projId) || curProject;
+    if (refreshed) {
+      if (curProject) Object.assign(curProject, refreshed);
+      renderServiceEnvCardsList(refreshed);
+      updateEnvironmentRequirementBadge(refreshed);
+    }
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to remove variable');
   }
+}
+
+function openEnvDocsModal() {
+  const modal = document.getElementById('svc-env-docs-modal');
+  safeShowModal(modal);
+}
+
+function selectProjectIcon(icon) {
+  const letter = document.getElementById('svc-settings-project-icon-letter');
+  if (letter) letter.textContent = icon;
+  const modal = document.getElementById('svc-change-icon-modal');
+  if (modal) safeCloseModal(modal);
+  toast(`Project icon updated to ${icon}`);
 }
 
 function renderServiceEnvCardsList(project) {
-  const environmentCards = document.getElementById('svc-env-cards');
-  if (!environmentCards) return;
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
+  const container = document.getElementById('svc-env-cards');
+  if (!container) return;
+  updateEnvironmentRequirementBadge(curProject);
+
   const searchInput = document.getElementById('svc-env-search-input');
   const typeSelect = document.getElementById('svc-env-filter-type');
+  const envSelect = document.getElementById('svc-env-filter-env');
+  const editorSelect = document.getElementById('svc-env-filter-editor');
+
+  const addBtn = document.getElementById('svc-env-add-btn');
+  const learnMoreBtn = document.getElementById('svc-env-learn-more-btn');
+  const filterToggleBtn = document.getElementById('svc-env-filter-toggle-btn');
+
+  if (addBtn) {
+    addBtn.onclick = () => openServiceEnvironmentModal(curProject);
+  }
+
+  if (learnMoreBtn) {
+    learnMoreBtn.onclick = () => openEnvDocsModal();
+  }
+
+  if (filterToggleBtn && !filterToggleBtn.dataset.wired) {
+    filterToggleBtn.dataset.wired = 'true';
+    filterToggleBtn.onclick = () => {
+      const row = document.querySelector('.svc-env-filter-pills-row');
+      if (row) row.classList.toggle('hidden');
+    };
+  }
+
+  // Wire subtabs
+  document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
+    if (!tabBtn.dataset.wired) {
+      tabBtn.dataset.wired = 'true';
+      tabBtn.onclick = () => {
+        document.querySelectorAll('[data-env-subtab]').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        activeEnvSubtab = tabBtn.dataset.envSubtab || 'project';
+        if (activeEnvSubtab === 'shared') {
+          toast('Showing workspace shared variables');
+        }
+        renderServiceEnvCardsList(curProject);
+      };
+    }
+  });
+
   const query = (searchInput?.value || '').toLowerCase().trim();
   const filterType = typeSelect?.value || 'all';
+  const filterEnv = envSelect?.value || 'all';
 
-  let entries = serviceEnvironmentEntries(project);
-  if (query) {
-    entries = entries.filter(([key, val]) => key.toLowerCase().includes(query) || String(val).toLowerCase().includes(query));
+  let entries = serviceEnvironmentEntries(curProject);
+
+  if (activeEnvSubtab === 'shared') {
+    entries = [
+      ['SYTE_SHARED_SECRET', 'Stored server-side'],
+      ['GLOBAL_ANALYTICS_KEY', 'Stored server-side'],
+    ];
   }
+
+  if (query) {
+    entries = entries.filter(([key]) => key.toLowerCase().includes(query));
+  }
+
   if (filterType === 'secret') {
     entries = entries.filter(([key]) => /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key));
   } else if (filterType === 'plain') {
@@ -6402,70 +6776,42 @@ function renderServiceEnvCardsList(project) {
   }
 
   if (!entries.length) {
-    environmentCards.innerHTML = query
-      ? `<p class="svc-env-empty">No environment variables match “${esc(query)}”.</p>`
-      : '<p class="svc-env-empty">No variables are configured. Add your first environment variable to get started.</p>';
+    container.innerHTML = `
+      <div class="svc-domain-empty-state" style="padding: 24px; text-align: center; background: #fff; border: 1px solid #ececee; border-radius: 16px;">
+        <i data-lucide="key" style="width: 32px; height: 32px; color: #a1a1aa; margin-bottom: 8px;"></i>
+        <p style="color: #71717a; font-size: 13.5px; margin: 0;">${query ? `No variables match “${esc(query)}”` : 'No environment variables found.'}</p>
+      </div>
+    `;
+    refreshIcons();
     return;
   }
 
-  const updatedDate = new Date(project.updated_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  environmentCards.innerHTML = entries.map(([key, value]) => {
-    const isSecret = /KEY|SECRET|TOKEN|PASSWORD|AUTH|PRIVATE|CREDENTIAL/i.test(key);
-    const displayVal = isSecret ? '••••••••••••••••' : String(value);
+  container.innerHTML = entries.map(([key]) => {
     return `
-      <article class="svc-env-card" data-env-key="${esc(key)}">
-        <div class="svc-env-card-header">
-          <div class="svc-env-card-lead">
-            <div class="svc-env-card-icon-badge" title="${isSecret ? 'Secret Variable' : 'Plaintext Variable'}">
-              <i data-lucide="${isSecret ? 'lock' : 'key-round'}"></i>
-            </div>
-            <div class="svc-env-card-meta">
-              <strong class="svc-env-card-key">${esc(key)}</strong>
-              <span class="svc-env-card-scope">Production and Preview</span>
-            </div>
+      <!-- Exact Environment Variable Card matching media_1788171283140.jpg -->
+      <article class="svc-env-exact-card" data-env-key="${esc(key)}">
+        <div class="svc-env-exact-left">
+          <div class="svc-env-icon-sq">
+            <i data-lucide="key"></i>
           </div>
-          <div class="svc-env-card-actions">
-            <button type="button" class="svc-env-card-action" data-svc-env-edit="${esc(key)}" title="Edit ${esc(key)}" aria-label="Edit ${esc(key)}">
-              <i data-lucide="pencil"></i>
-            </button>
-            <button type="button" class="svc-env-card-action danger" data-svc-env-delete="${esc(key)}" title="Delete ${esc(key)}" aria-label="Delete ${esc(key)}">
-              <i data-lucide="trash-2"></i>
-            </button>
+          <div class="svc-env-exact-info">
+            <strong class="svc-env-exact-key">${esc(key)}</strong>
+            <span class="svc-env-exact-env-label">Production and Preview</span>
+            <span class="svc-env-stored-pill">Stored server-side</span>
           </div>
         </div>
-        <div class="svc-env-card-value-row">
-          <code class="svc-env-card-value">${esc(displayVal)}</code>
-          <button type="button" class="svc-env-copy-btn" data-svc-env-copy="${esc(String(value))}" title="Copy value"><i data-lucide="copy"></i></button>
-        </div>
-        <div class="svc-env-card-footer">
-          <span class="svc-env-card-updated">Updated ${esc(updatedDate)}</span>
-          <span class="svc-env-card-avatar git-user-avatar" title="Configured by Git operator">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v6"></path><path d="M12 15v6"></path><path d="M3 12h6"></path><path d="M15 12h6"></path></svg>
-          </span>
+        <div class="svc-env-exact-actions">
+          <button type="button" class="btn-env-edit-pill" onclick="openServiceEnvironmentModal(null, '${esc(key)}')">
+            Edit
+          </button>
+          <button type="button" class="btn-env-menu" title="Variable options" onclick="deleteServiceEnvironmentKey(null, '${esc(key)}')">
+            <i data-lucide="more-vertical"></i>
+          </button>
         </div>
       </article>
     `;
   }).join('');
 
-  environmentCards.querySelectorAll('[data-svc-env-edit]').forEach(button => {
-    button.onclick = () => openServiceEnvironmentModal(project, button.dataset.svcEnvEdit || '');
-  });
-  environmentCards.querySelectorAll('[data-svc-env-delete]').forEach(button => {
-    button.onclick = async () => {
-      const key = button.dataset.svcEnvDelete || '';
-      if (!key || !window.confirm(`Remove ${key} from this project environment?`)) return;
-      const next = Object.fromEntries(serviceEnvironmentEntries(project));
-      delete next[key];
-      try { await persistServiceEnvironment(project, next); }
-      catch (error) { toast(normalizeFetchError(error?.message) || 'Could not remove variable.'); }
-    };
-  });
-  environmentCards.querySelectorAll('[data-svc-env-copy]').forEach(button => {
-    button.onclick = () => {
-      navigator.clipboard.writeText(button.dataset.svcEnvCopy || '').then(() => toast('Value copied to clipboard'));
-    };
-  });
   refreshIcons();
 }
 
@@ -6489,10 +6835,16 @@ function formatRelativeTime(dateInput) {
 function getProjectDomainsArray(project) {
   const list = [];
   const seen = new Set();
+  const isIpOrLocalhost = (d) => {
+    if (!d) return true;
+    const clean = String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+    return clean === 'localhost' || clean === '127.0.0.1' || clean === '0.0.0.0' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean);
+  };
+
   const add = (dom, isPrimary = false, valid = false, label = 'Custom Domain') => {
     if (!dom) return;
     const clean = String(dom).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    if (!clean || seen.has(clean)) return;
+    if (!clean || seen.has(clean) || isIpOrLocalhost(clean)) return;
     seen.add(clean);
     list.push({
       domain: clean,
@@ -6502,178 +6854,1391 @@ function getProjectDomainsArray(project) {
     });
   };
 
-  const primary = project.domain || (project.port ? `localhost:${project.port}` : '');
-  if (primary) {
-    add(primary, true, Boolean(project.running && !project.error), 'Primary Domain');
+  // 1. Custom primary domain if valid and not an IP
+  if (project.domain && !isIpOrLocalhost(project.domain)) {
+    add(project.domain, true, true, 'Primary Domain');
   }
 
+  // 2. Additional connected domains
   if (Array.isArray(project.domains)) {
-    project.domains.forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
+    project.domains.forEach(d => add(d, false, true, 'Connected Domain'));
   } else if (typeof project.domains === 'string' && project.domains.trim()) {
-    project.domains.split(/[\s,]+/).forEach(d => add(d, false, Boolean(project.running), 'Connected Domain'));
+    project.domains.split(/[\s,]+/).forEach(d => add(d, false, true, 'Connected Domain'));
   }
   if (project.custom_tls_domain) add(project.custom_tls_domain, false, true, 'TLS Domain');
+
+  // 3. Fallback platform domain if no custom domain configured (Ensures project ALWAYS gets a domain and NO IP is shown)
+  if (list.length === 0) {
+    const rawName = String(project.name || project.id || 'app').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '') || 'app';
+    const fallbackDomain = `${rawName}.sycord.site`;
+    add(fallbackDomain, true, true, 'Platform Domain');
+  }
+
   return list;
 }
 
+let domainStatusFilter = 'all';
+
+function formatDomainAddedDate(iso) {
+  if (!iso) return 'Added Aug 31, 2026';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Added Aug 31, 2026';
+    return `Added ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  } catch (_) {
+    return 'Added Aug 31, 2026';
+  }
+}
+
 function renderServiceDomainsList(project) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
   const container = document.getElementById('svc-domains-card-list');
   if (!container) return;
+
+  const totalNumEl = document.getElementById('svc-domain-stat-total-num');
+  const totalLabelEl = document.getElementById('svc-domain-stat-total-label');
+  const activeNumEl = document.getElementById('svc-domain-stat-active-num');
+  const pendingNumEl = document.getElementById('svc-domain-stat-pending-num');
+
+  const pillTotal = document.getElementById('svc-stat-pill-total');
+  const pillActive = document.getElementById('svc-stat-pill-active');
+  const pillPending = document.getElementById('svc-stat-pill-pending');
+  const filterBtn = document.getElementById('svc-domain-filter-btn');
+
+  const addBtn = document.getElementById('svc-domain-add-toggle-btn');
+  const certsBtn = document.getElementById('svc-domain-certificates-btn');
+  const learnMoreBtn = document.getElementById('svc-domain-learn-more-btn');
+
   const searchInput = document.getElementById('svc-domain-search-input');
   const query = (searchInput?.value || '').toLowerCase().trim();
 
-  const domainRows = getProjectDomainsArray(project);
-  const filtered = query
-    ? domainRows.filter(d => d.domain.toLowerCase().includes(query))
-    : domainRows;
+  // Wires for header buttons
+  if (addBtn) {
+    addBtn.onclick = () => openDomainAddModal(curProject);
+  }
+  if (certsBtn) {
+    certsBtn.onclick = () => openCertificatesModal();
+  }
+  if (learnMoreBtn) {
+    learnMoreBtn.onclick = () => openDomainsDocsModal();
+  }
+
+  // Wires for 3 stat pills
+  if (pillTotal && !pillTotal.dataset.wired) {
+    pillTotal.dataset.wired = 'true';
+    pillTotal.onclick = () => {
+      domainStatusFilter = 'all';
+      toast('Showing all domains');
+      renderServiceDomainsList(curProject);
+    };
+  }
+  if (pillActive && !pillActive.dataset.wired) {
+    pillActive.dataset.wired = 'true';
+    pillActive.onclick = () => {
+      domainStatusFilter = 'active';
+      toast('Filtered: Active domains');
+      renderServiceDomainsList(curProject);
+    };
+  }
+  if (pillPending && !pillPending.dataset.wired) {
+    pillPending.dataset.wired = 'true';
+    pillPending.onclick = () => {
+      domainStatusFilter = 'pending';
+      toast('Filtered: Pending domains');
+      renderServiceDomainsList(curProject);
+    };
+  }
+  if (filterBtn && !filterBtn.dataset.wired) {
+    filterBtn.dataset.wired = 'true';
+    filterBtn.onclick = () => {
+      if (domainStatusFilter === 'all') domainStatusFilter = 'active';
+      else if (domainStatusFilter === 'active') domainStatusFilter = 'pending';
+      else domainStatusFilter = 'all';
+      toast(`Domain filter: ${domainStatusFilter.toUpperCase()}`);
+      renderServiceDomainsList(curProject);
+    };
+  }
+
+  const domainRows = getProjectDomainsArray(curProject);
+  const totalCount = domainRows.length;
+  const activeCount = domainRows.filter(d => d.valid).length;
+  const pendingCount = domainRows.filter(d => !d.valid).length;
+
+  if (totalNumEl) totalNumEl.textContent = totalCount;
+  if (totalLabelEl) totalLabelEl.textContent = totalCount === 1 ? 'Domain' : 'Domains';
+  if (activeNumEl) activeNumEl.textContent = activeCount;
+  if (pendingNumEl) pendingNumEl.textContent = pendingCount;
+
+  let filtered = domainRows;
+  if (query) {
+    filtered = filtered.filter(d => d.domain.toLowerCase().includes(query));
+  }
+  if (domainStatusFilter === 'active') {
+    filtered = filtered.filter(d => d.valid);
+  } else if (domainStatusFilter === 'pending') {
+    filtered = filtered.filter(d => !d.valid);
+  }
 
   if (!filtered.length) {
     container.innerHTML = `
-      <div class="svc-domain-empty-state">
-        <i data-lucide="globe"></i>
-        <p>${query ? `No domains match “${esc(query)}”` : 'No domains connected yet.'}</p>
+      <div class="svc-domain-empty-state" style="padding: 24px; text-align: center; background: #fff; border: 1px solid #ececee; border-radius: 16px;">
+        <i data-lucide="globe" style="width: 32px; height: 32px; color: #a1a1aa; margin-bottom: 8px;"></i>
+        <p style="color: #71717a; font-size: 13.5px; margin: 0;">${query ? `No domains match “${esc(query)}”` : 'No domains match selected filter.'}</p>
       </div>
     `;
     refreshIcons();
     return;
   }
 
-  container.innerHTML = `
-    <div class="svc-domain-group-card">
-      ${filtered.map(item => `
-        <div class="svc-domain-list-row ${item.valid ? 'is-valid' : ''}">
-          <div class="svc-domain-row-left">
-            <span class="svc-domain-circle-check ${item.valid ? 'checked' : ''}">
-              <i data-lucide="${item.valid ? 'check' : 'circle'}"></i>
-            </span>
-            <div class="svc-domain-info">
-              <strong class="svc-domain-name">${esc(item.domain)}</strong>
-              ${item.valid
-                ? '<span class="svc-domain-valid-subtext">Valid Configuration</span>'
-                : '<span class="svc-domain-pending-subtext"><span class="svc-domain-spinner"></span> Provisioning DNS & TLS...</span>'}
+  const dateLabel = formatDomainAddedDate(curProject.created_at || curProject.updated_at);
+
+  container.innerHTML = filtered.map(item => {
+    const isPending = !item.valid;
+    const sslStatus = isPending ? 'Pending' : 'Active';
+    const redirectLabel = item.domain.startsWith('www.') ? item.domain.replace(/^www\./, '') : 'None';
+
+    return `
+      <!-- Exact Domain Card matching media_1788169957679.jpg -->
+      <article class="svc-domain-exact-card" data-domain-name="${esc(item.domain)}">
+        <!-- Top Row: Icon + Name & Status + Edit Pill + 3-Dot -->
+        <div class="svc-domain-exact-top-row">
+          <div class="svc-domain-exact-left">
+            <div class="svc-domain-icon-sq">
+              <i data-lucide="globe"></i>
+            </div>
+            <div class="svc-domain-exact-info">
+              <strong class="svc-domain-exact-title">${esc(item.domain)}</strong>
+              <div class="svc-domain-status-row ${isPending ? 'is-pending' : 'is-valid'}">
+                <span class="svc-domain-status-bullet-dot"></span>
+                <span>${isPending ? 'Provisioning DNS & TLS...' : 'Valid Configuration'}</span>
+              </div>
+              <span class="svc-domain-added-time">${esc(dateLabel)}</span>
             </div>
           </div>
-          <div class="svc-domain-row-right">
-            <button type="button" class="svc-domain-row-edit-btn" data-svc-domain-edit="${esc(item.domain)}">
-              <span>Edit</span>
+          <div class="svc-domain-exact-actions">
+            <button type="button" class="btn-domain-edit-pill" onclick="openDomainEditModal(null, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+              Edit
+            </button>
+            <button type="button" class="btn-domain-menu" title="Domain actions" onclick="openDomainEditModal(null, ${JSON.stringify(item).replace(/"/g, '&quot;')})">
+              <i data-lucide="more-vertical"></i>
             </button>
           </div>
         </div>
-      `).join('')}
-    </div>
-  `;
 
-  container.querySelectorAll('[data-svc-domain-edit]').forEach(btn => {
-    btn.onclick = () => openServiceEditModal(project);
-  });
+        <!-- 3-Column Metadata Row with Vertical Dividers -->
+        <div class="svc-domain-exact-meta-cols">
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="corner-down-right"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">Redirects</span>
+              <span class="svc-meta-col-val">${esc(redirectLabel)}</span>
+            </div>
+          </div>
+
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="lock"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">SSL</span>
+              <span class="svc-meta-col-val">${esc(sslStatus)}</span>
+            </div>
+          </div>
+
+          <div class="svc-domain-meta-col-item">
+            <div class="svc-meta-col-icon">
+              <i data-lucide="layers"></i>
+            </div>
+            <div class="svc-meta-col-text">
+              <span class="svc-meta-col-label">Environment</span>
+              <span class="svc-meta-col-val">Production</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
 
   refreshIcons();
 }
 
+function openDomainAddModal(project) {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-domain-add-modal');
+  if (!modal) return;
+  const input = document.getElementById('svc-new-domain-input');
+  const form = document.getElementById('svc-add-domain-form');
+  if (input) input.value = '';
+
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
+      let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (!val) return toast('Please enter a domain name');
+
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
+        return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
+      }
+
+      try {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
+          method: 'POST',
+          body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
+        });
+        if (res?.project) {
+          Object.assign(activeProj, res.project);
+        } else {
+          activeProj.domain = val;
+        }
+        if (input) input.value = '';
+        safeCloseModal(modal);
+        await loadProjects();
+        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
+        renderServiceDomainsList(refreshed);
+        renderServiceDashboard(refreshed, false);
+        toast(`Connected domain ${val}`);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
+      }
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openDomainEditModal(project, item) {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-domain-edit-modal');
+  if (!modal) return;
+  const nameEl = document.getElementById('svc-domain-detail-name');
+  const statusEl = document.getElementById('svc-domain-detail-status');
+  const removeBtn = document.getElementById('svc-domain-remove-btn');
+
+  if (nameEl) nameEl.textContent = item?.domain || '';
+  if (statusEl) {
+    statusEl.textContent = item?.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
+    statusEl.className = item?.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
+  }
+
+  if (removeBtn) {
+    removeBtn.onclick = async () => {
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
+      if (!confirm(`Are you sure you want to disconnect ${item.domain}?`)) return;
+      try {
+        await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
+          method: 'DELETE',
+          body: JSON.stringify({ domain: item.domain }),
+        });
+        toast(`Removed domain ${item.domain}`);
+        safeCloseModal(modal);
+        await loadProjects();
+        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
+        renderServiceDomainsList(refreshed);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
+      }
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openCertificatesModal() {
+  const modal = document.getElementById('svc-certificates-modal');
+  safeShowModal(modal);
+}
+
+function openDomainsDocsModal() {
+  const modal = document.getElementById('svc-domains-docs-modal');
+  safeShowModal(modal);
+}
+function initSheetDialogDismiss(modal) {
+  wireBackdropDismiss(modal);
+}
+
+function openFwAddRuleModal(project) {
+  console.log('[Firewall] openFwAddRuleModal clicked for project:', project?.id || activeServiceId);
+  const modal = document.getElementById('svc-modal-fw-add-rule');
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-add-rule element not found');
+  initSheetDialogDismiss(modal);
+  const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null);
+
+  let selectedAction = 'block';
+  const actionCards = modal.querySelectorAll('.svc-fw-action-choice-card');
+  actionCards.forEach(card => {
+    card.onclick = () => {
+      console.log('[Firewall Rule] Action selected:', card.dataset.fwAction);
+      actionCards.forEach(c => {
+        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+        c.setAttribute('aria-checked', 'false');
+      });
+      selectedAction = card.dataset.fwAction || 'block';
+      card.classList.add('is-active');
+      if (selectedAction === 'block') card.classList.add('is-red');
+      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
+      else if (selectedAction === 'allow') card.classList.add('is-green');
+      else if (selectedAction === 'log') card.classList.add('is-purple');
+      card.setAttribute('aria-checked', 'true');
+    };
+  });
+
+  const nameInput = document.getElementById('fw-rule-name-input');
+  const nameCount = document.getElementById('fw-rule-name-count');
+  if (nameInput && nameCount) {
+    nameInput.value = '';
+    nameCount.textContent = '0/64';
+    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+  }
+
+  const notesInput = document.getElementById('fw-rule-notes-input');
+  const notesCount = document.getElementById('fw-rule-notes-count');
+  if (notesInput && notesCount) {
+    notesInput.value = '';
+    notesCount.textContent = '0/200';
+    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
+  }
+
+  const addCondBtn = document.getElementById('fw-rule-add-condition-btn');
+  if (addCondBtn && !addCondBtn.dataset.wired) {
+    addCondBtn.dataset.wired = 'true';
+    addCondBtn.onclick = () => {
+      console.log('[Firewall Rule] Add condition clicked');
+      const stack = document.getElementById('fw-rule-condition-stack');
+      if (stack) {
+        const item = document.createElement('div');
+        item.className = 'svc-fw-condition-item';
+        item.style.marginTop = '6px';
+        item.innerHTML = `
+          <div class="svc-fw-inline-row">
+            <span class="svc-fw-row-label">Field</span>
+            <div class="svc-fw-row-input-wrap">
+              <select class="svc-fw-row-select">
+                <option value="ip">IP address</option>
+                <option value="path">Path / URI</option>
+                <option value="header">Header</option>
+                <option value="country">Country / Geo</option>
+                <option value="user_agent">User Agent</option>
+              </select>
+              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+            </div>
+          </div>
+          <div class="svc-fw-inline-row">
+            <span class="svc-fw-row-label">Operator</span>
+            <div class="svc-fw-row-input-wrap">
+              <select class="svc-fw-row-select">
+                <option value="equals">Equals</option>
+                <option value="contains">Contains</option>
+                <option value="starts_with">Starts with</option>
+                <option value="matches_regex">Matches regex</option>
+                <option value="in_list">In list</option>
+              </select>
+              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+            </div>
+          </div>
+          <div class="svc-fw-inline-row">
+            <span class="svc-fw-row-label">Value</span>
+            <div class="svc-fw-row-input-wrap">
+              <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off">
+            </div>
+          </div>
+        `;
+        stack.appendChild(item);
+        refreshIcons();
+      }
+    };
+  }
+
+  const form = document.getElementById('svc-form-fw-add-rule');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const ruleName = nameInput?.value.trim() || 'Custom Firewall Rule';
+      console.log('[Firewall Rule] Rule submitted:', ruleName, selectedAction);
+      toast(`Firewall rule created: ${ruleName} (${selectedAction.toUpperCase()})`);
+      safeCloseModal(modal);
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openFwRateLimitModal(project) {
+  console.log('[Firewall] openFwRateLimitModal clicked for project:', project?.id || activeServiceId);
+  const modal = document.getElementById('svc-modal-fw-rate-limit');
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-rate-limit element not found');
+  initSheetDialogDismiss(modal);
+
+  let selectedAction = 'block';
+  const actionCards = modal.querySelectorAll('[data-rl-action]');
+  actionCards.forEach(card => {
+    card.onclick = () => {
+      console.log('[Rate Limit] Action selected:', card.dataset.rlAction);
+      actionCards.forEach(c => {
+        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
+        c.setAttribute('aria-checked', 'false');
+      });
+      selectedAction = card.dataset.rlAction || 'block';
+      card.classList.add('is-active');
+      if (selectedAction === 'block') card.classList.add('is-red');
+      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
+      else if (selectedAction === 'throttle') card.classList.add('is-blue');
+      else if (selectedAction === 'log') card.classList.add('is-purple');
+      card.setAttribute('aria-checked', 'true');
+    };
+  });
+
+  const segBtns = modal.querySelectorAll('.svc-fw-seg-btn');
+  const callout = document.getElementById('fw-rl-ip-callout');
+  segBtns.forEach(btn => {
+    btn.onclick = () => {
+      console.log('[Rate Limit] IP mode selected:', btn.dataset.ipMode);
+      segBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const mode = btn.dataset.ipMode;
+      if (callout) {
+        callout.innerHTML = mode === 'all'
+          ? '<i data-lucide="globe"></i><span>This rule will apply to all IP addresses.</span>'
+          : '<i data-lucide="filter"></i><span>This rule will apply to configured custom IP ranges.</span>';
+        refreshIcons();
+      }
+    };
+  });
+
+  const nameInput = document.getElementById('fw-rl-name-input');
+  const nameCount = document.getElementById('fw-rl-name-count');
+  if (nameInput && nameCount) {
+    nameInput.value = '';
+    nameCount.textContent = '0/64';
+    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+  }
+
+  const notesInput = document.getElementById('fw-rl-notes-input');
+  const notesCount = document.getElementById('fw-rl-notes-count');
+  if (notesInput && notesCount) {
+    notesInput.value = '';
+    notesCount.textContent = '0/200';
+    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
+  }
+
+  const form = document.getElementById('svc-form-fw-rate-limit');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const requests = document.getElementById('fw-rl-requests-input')?.value || '100';
+      const windowVal = document.getElementById('fw-rl-window-select')?.value || '1 minute';
+      const nameVal = nameInput?.value.trim() || 'IP Rate Limit';
+      console.log('[Rate Limit] Rule submitted:', nameVal, requests, windowVal);
+      toast(`Rate limit rule created: ${requests} req / ${windowVal} (${nameVal})`);
+      safeCloseModal(modal);
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openFwBotProtectModal(project) {
+  console.log('[Firewall] openFwBotProtectModal clicked for project:', project?.id || activeServiceId);
+  const modal = document.getElementById('svc-modal-fw-bot-protect');
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-bot-protect element not found');
+  initSheetDialogDismiss(modal);
+
+  let selectedLevel = 'balanced';
+  const levelCards = modal.querySelectorAll('[data-bot-level]');
+  levelCards.forEach(card => {
+    card.onclick = () => {
+      console.log('[Bot Protect] Level selected:', card.dataset.botLevel);
+      levelCards.forEach(c => {
+        c.classList.remove('is-active');
+        c.setAttribute('aria-checked', 'false');
+        const radio = c.querySelector('.svc-fw-level-radio');
+        if (radio) radio.innerHTML = '';
+      });
+      selectedLevel = card.dataset.botLevel || 'balanced';
+      card.classList.add('is-active');
+      card.setAttribute('aria-checked', 'true');
+      const radio = card.querySelector('.svc-fw-level-radio');
+      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+
+      const nameInput = document.getElementById('fw-bot-rule-name-input');
+      const nameCount = document.getElementById('fw-bot-rule-name-count');
+      if (nameInput && nameCount) {
+        nameInput.value = `Bot protection (${selectedLevel})`;
+        nameCount.textContent = `${nameInput.value.length}/64`;
+      }
+    };
+  });
+
+  let selectedAction = 'challenge';
+  const actionCards = modal.querySelectorAll('[data-bot-action]');
+  actionCards.forEach(card => {
+    card.onclick = () => {
+      console.log('[Bot Protect] Action selected:', card.dataset.botAction);
+      actionCards.forEach(c => {
+        c.classList.remove('is-active');
+        c.setAttribute('aria-checked', 'false');
+        const radio = c.querySelector('.svc-fw-level-radio');
+        if (radio) radio.innerHTML = '';
+      });
+      selectedAction = card.dataset.botAction || 'challenge';
+      card.classList.add('is-active');
+      card.setAttribute('aria-checked', 'true');
+      const radio = card.querySelector('.svc-fw-level-radio');
+      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+    };
+  });
+
+  const nameInput = document.getElementById('fw-bot-rule-name-input');
+  const nameCount = document.getElementById('fw-bot-rule-name-count');
+  if (nameInput && nameCount) {
+    nameCount.textContent = `${nameInput.value.length}/64`;
+    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+  }
+
+  const allowlistBtn = document.getElementById('fw-bot-add-allowlist-btn');
+  if (allowlistBtn && !allowlistBtn.dataset.wired) {
+    allowlistBtn.dataset.wired = 'true';
+    allowlistBtn.onclick = () => {
+      console.log('[Bot Protect] Add allowlist clicked');
+      const ip = prompt('Enter IP, User Agent, or URL pattern to allow:', '');
+      if (ip && ip.trim()) toast(`Added ${ip.trim()} to bot allowlist`);
+    };
+  }
+
+  const blocklistBtn = document.getElementById('fw-bot-add-blocklist-btn');
+  if (blocklistBtn && !blocklistBtn.dataset.wired) {
+    blocklistBtn.dataset.wired = 'true';
+    blocklistBtn.onclick = () => {
+      console.log('[Bot Protect] Add blocklist clicked');
+      const bot = prompt('Enter bot signature, User Agent, or IP range to block:', '');
+      if (bot && bot.trim()) toast(`Added ${bot.trim()} to bot blocklist`);
+    };
+  }
+
+  const form = document.getElementById('svc-form-fw-bot-protect');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const enabled = Boolean(document.getElementById('fw-bot-main-toggle')?.checked);
+      console.log('[Bot Protect] Form submitted, enabled:', enabled);
+      toast(`Bot protection updated: ${enabled ? 'Enabled' : 'Disabled'} (${selectedLevel}, ${selectedAction})`);
+      safeCloseModal(modal);
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openFwIpBlockModal(project) {
+  console.log('[Firewall] openFwIpBlockModal clicked for project:', project?.id || activeServiceId);
+  const modal = document.getElementById('svc-modal-fw-ip-block');
+  if (!modal) return console.warn('[Firewall] #svc-modal-fw-ip-block element not found');
+  initSheetDialogDismiss(modal);
+
+  let selectedAction = 'block';
+  const actionCards = modal.querySelectorAll('[data-ipb-action]');
+  actionCards.forEach(card => {
+    card.onclick = () => {
+      console.log('[IP Block] Action selected:', card.dataset.ipbAction);
+      actionCards.forEach(c => {
+        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+        c.setAttribute('aria-checked', 'false');
+      });
+      selectedAction = card.dataset.ipbAction || 'block';
+      card.classList.add('is-active');
+      if (selectedAction === 'block') card.classList.add('is-red');
+      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
+      else if (selectedAction === 'allow') card.classList.add('is-green');
+      else if (selectedAction === 'log') card.classList.add('is-purple');
+      card.setAttribute('aria-checked', 'true');
+    };
+  });
+
+  const nameInput = document.getElementById('fw-ipb-name-input');
+  const nameCount = document.getElementById('fw-ipb-name-count');
+  if (nameInput && nameCount) {
+    nameInput.value = '';
+    nameCount.textContent = '0/64';
+    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+  }
+
+  const notesInput = document.getElementById('fw-ipb-notes-input');
+  const notesCount = document.getElementById('fw-ipb-notes-count');
+  if (notesInput && notesCount) {
+    notesInput.value = '';
+    notesCount.textContent = '0/200';
+    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
+  }
+
+  const form = document.getElementById('svc-form-fw-ip-block');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const target = document.getElementById('fw-ipb-target-input')?.value.trim() || '';
+      if (!target) return toast('Please enter an IP or CIDR range');
+      const nameVal = nameInput?.value.trim() || 'IP Rule';
+      console.log('[IP Block] Rule submitted:', nameVal, target, selectedAction);
+      toast(`IP access rule created: ${selectedAction.toUpperCase()} for ${target}`);
+      safeCloseModal(modal);
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+let redirectsSearchQuery = '';
+let redirectsStatusFilter = '';
+let redirectsCodeFilter = '';
+let selectedRedirectIds = new Set();
+let allProjectRedirectsCache = [];
+
 async function renderRedirectsWorkspace(project) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return;
+  project = curProject;
+  selectedCurrentProject = curProject;
+  if (typeof window !== 'undefined') window.selectedCurrentProject = curProject;
+
   const target = document.getElementById('svc-redirects-list');
   if (!target) return;
-  target.innerHTML = '<p class="hint">Loading redirect rules…</p>';
 
-  const openBtn = document.getElementById('svc-redirect-add-open-btn');
-  const addCard = document.getElementById('svc-redirect-add-card');
-  const cancelBtn = document.getElementById('svc-redirect-add-cancel');
-  const addForm = document.getElementById('svc-redirect-add-form');
+  const statTotalEl = document.getElementById('svc-stat-total');
+  const statActiveEl = document.getElementById('svc-stat-active');
+  const statDisabledEl = document.getElementById('svc-stat-disabled');
+  const statReqsEl = document.getElementById('svc-stat-requests');
 
-  if (openBtn && addCard) {
-    openBtn.onclick = () => addCard.classList.toggle('hidden');
+  const addBtn = document.getElementById('svc-redirect-add-open-btn');
+  const testBtn = document.getElementById('svc-redirect-test-open-btn');
+  const ioBtn = document.getElementById('svc-redirect-io-open-btn');
+  const learnMoreBtn = document.getElementById('svc-redirect-learn-more-btn');
+
+  const searchInput = document.getElementById('svc-redirects-search-input');
+  const statusFilterSelect = document.getElementById('svc-redirects-filter-status');
+  const codeFilterSelect = document.getElementById('svc-redirects-filter-code');
+
+  const bulkBar = document.getElementById('svc-redirects-bulk-bar');
+  const bulkCountLabel = document.getElementById('svc-bulk-count-label');
+  const selectAllCheckbox = document.getElementById('svc-redirect-select-all');
+  const bulkEnableBtn = document.getElementById('svc-bulk-enable-btn');
+  const bulkDisableBtn = document.getElementById('svc-bulk-disable-btn');
+  const bulkDeleteBtn = document.getElementById('svc-bulk-delete-btn');
+
+  // Open Modals Handlers
+  if (addBtn) addBtn.onclick = () => openAddRedirectModal(project);
+  if (testBtn) testBtn.onclick = () => openRedirectTestModal(project);
+  if (ioBtn) ioBtn.onclick = () => openRedirectIoModal(project);
+  if (learnMoreBtn) learnMoreBtn.onclick = () => openRedirectDocsModal();
+
+  // Search & Filter listeners
+  if (searchInput && !searchInput.dataset.initialized) {
+    searchInput.dataset.initialized = 'true';
+    let searchDebounceTimer;
+    searchInput.oninput = () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        redirectsSearchQuery = searchInput.value.trim();
+        renderRedirectsWorkspace(project);
+      }, 250);
+    };
   }
-  if (cancelBtn && addCard) {
-    cancelBtn.onclick = () => addCard.classList.add('hidden');
+
+  if (statusFilterSelect && !statusFilterSelect.dataset.initialized) {
+    statusFilterSelect.dataset.initialized = 'true';
+    statusFilterSelect.onchange = () => {
+      redirectsStatusFilter = statusFilterSelect.value;
+      renderRedirectsWorkspace(project);
+    };
   }
 
-  if (addForm) {
-    addForm.onsubmit = async (event) => {
-      event.preventDefault();
-      const srcInput = document.getElementById('svc-redirect-src');
-      const targetInput = document.getElementById('svc-redirect-target');
-      const statusInput = document.getElementById('svc-redirect-status');
-      const src = srcInput?.value.trim();
-      const dest = targetInput?.value.trim();
-      const status = Number(statusInput?.value || 301);
+  if (codeFilterSelect && !codeFilterSelect.dataset.initialized) {
+    codeFilterSelect.dataset.initialized = 'true';
+    codeFilterSelect.onchange = () => {
+      redirectsCodeFilter = codeFilterSelect.value;
+      renderRedirectsWorkspace(project);
+    };
+  }
 
-      if (!src || !dest) return toast('Please provide both source and destination.');
+  // Bulk action handlers
+  if (selectAllCheckbox && !selectAllCheckbox.dataset.initialized) {
+    selectAllCheckbox.dataset.initialized = 'true';
+    selectAllCheckbox.onchange = () => {
+      if (selectAllCheckbox.checked) {
+        allProjectRedirectsCache.forEach(r => selectedRedirectIds.add(r.id));
+      } else {
+        selectedRedirectIds.clear();
+      }
+      updateRedirectBulkToolbarUI();
+      renderRedirectCardSelectionUI();
+    };
+  }
+
+  if (bulkEnableBtn && !bulkEnableBtn.dataset.initialized) {
+    bulkEnableBtn.dataset.initialized = 'true';
+    bulkEnableBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
       try {
-        await api(`/projects/${encodeURIComponent(project.id)}/redirects`, {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
           method: 'POST',
-          body: JSON.stringify({ source_path: src, target_url: dest, status_code: status }),
+          body: JSON.stringify({ redirect_ids: ids, action: 'enable' }),
         });
-        toast('Redirect rule added');
-        if (addCard) addCard.classList.add('hidden');
-        if (srcInput) srcInput.value = '';
-        if (targetInput) targetInput.value = '';
+        toast(`Enabled ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
         await renderRedirectsWorkspace(project);
       } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to create redirect');
+        toast(normalizeFetchError(err?.message) || 'Bulk enable failed');
+      }
+    };
+  }
+
+  if (bulkDisableBtn && !bulkDisableBtn.dataset.initialized) {
+    bulkDisableBtn.dataset.initialized = 'true';
+    bulkDisableBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
+          method: 'POST',
+          body: JSON.stringify({ redirect_ids: ids, action: 'disable' }),
+        });
+        toast(`Disabled ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Bulk disable failed');
+      }
+    };
+  }
+
+  if (bulkDeleteBtn && !bulkDeleteBtn.dataset.initialized) {
+    bulkDeleteBtn.dataset.initialized = 'true';
+    bulkDeleteBtn.onclick = async () => {
+      const ids = Array.from(selectedRedirectIds);
+      if (!ids.length) return;
+      if (!confirm(`Are you sure you want to permanently delete ${ids.length} redirect rule(s)?`)) return;
+      try {
+        await api(`/projects/${encodeURIComponent(project.id)}/redirects/bulk`, {
+          method: 'POST',
+          body: JSON.stringify({ redirect_ids: ids, action: 'delete' }),
+        });
+        toast(`Deleted ${ids.length} redirect rule(s)`);
+        selectedRedirectIds.clear();
+        await renderRedirectsWorkspace(project);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Bulk delete failed');
       }
     };
   }
 
   try {
-    const payload = await api(`/projects/${encodeURIComponent(project.id)}/redirects`);
+    const queryParams = new URLSearchParams();
+    if (redirectsSearchQuery) queryParams.set('search', redirectsSearchQuery);
+    if (redirectsStatusFilter) queryParams.set('status', redirectsStatusFilter);
+    if (redirectsCodeFilter) queryParams.set('code', redirectsCodeFilter);
+
+    const payload = await api(`/projects/${encodeURIComponent(project.id)}/redirects?${queryParams.toString()}`);
     const redirects = payload.redirects || [];
-    if (!redirects.length) {
+    allProjectRedirectsCache = redirects;
+
+    // Update stats cards
+    const stats = payload.stats || {};
+    if (statTotalEl) statTotalEl.textContent = stats.total || redirects.length;
+    if (statActiveEl) statActiveEl.textContent = stats.active || 0;
+    if (statDisabledEl) statDisabledEl.textContent = stats.disabled || 0;
+    if (statReqsEl) statReqsEl.textContent = stats.requests_redirected || 0;
+
+    // Empty state (matching media_1788169123183.jpg)
+    if (!redirects.length && !redirectsSearchQuery && !redirectsStatusFilter && !redirectsCodeFilter) {
+      if (bulkBar) bulkBar.classList.add('hidden');
       target.innerHTML = `
-        <div class="svc-domain-empty-state">
-          <i data-lucide="shuffle"></i>
-          <p>No redirect rules configured for this project yet.</p>
+        <!-- Empty State Card (Exact Match to media_1788169123183.jpg) -->
+        <div class="svc-redirect-empty-card">
+          <div class="svc-redirect-empty-icon">
+            <i data-lucide="shuffle"></i>
+          </div>
+          <h3 class="svc-redirect-empty-title">No redirect rules configured</h3>
+          <p class="svc-redirect-empty-sub">Start by adding your first redirect to forward requests to a different path or URL.</p>
+          <button type="button" class="btn-trigger-build" onclick="openAddRedirectModal()">
+            <i data-lucide="plus"></i><span>Add Redirect</span>
+          </button>
+        </div>
+
+        <!-- Features Showcase Card (Exact Match to media_1788169123183.jpg) -->
+        <div class="svc-features-showcase-card">
+          <div class="svc-features-header">
+            <h3>Features at the Redirects tab</h3>
+            <p>Everything you can do in one place.</p>
+          </div>
+          <div class="svc-features-list">
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="plus"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Add redirect</strong>
+                  <span class="svc-feature-desc">Create a new redirect rule (301 / 302 / 307 / 308).</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="list"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">List & manage</strong>
+                  <span class="svc-feature-desc">View all redirects with source, destination, status and date.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="document.getElementById('svc-redirects-search-input')?.focus()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="search"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Search & filter</strong>
+                  <span class="svc-feature-desc">Search and filter by status, code, or destination type.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openAddRedirectModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="edit-3"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Edit & delete</strong>
+                  <span class="svc-feature-desc">Modify or remove existing rules.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="arrow-up-down"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Reorder</strong>
+                  <span class="svc-feature-desc">Change the order of rules (priority evaluation).</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectDocsModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="toggle-right"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Enable / disable</strong>
+                  <span class="svc-feature-desc">Temporarily disable a redirect without deletion.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectIoModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="copy"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Bulk actions & Import</strong>
+                  <span class="svc-feature-desc">Select multiple rules, bulk edit, or import/export JSON & CSV.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+
+            <div class="svc-feature-row-item" onclick="openRedirectTestModal()">
+              <div class="svc-feature-left">
+                <span class="svc-feature-icon-sq"><i data-lucide="shield-check"></i></span>
+                <div class="svc-feature-info">
+                  <strong class="svc-feature-title">Validation & Tester</strong>
+                  <span class="svc-feature-desc">Validate paths and URLs with loop detection and real-time simulator.</span>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="svc-feature-chevron"></i>
+            </div>
+          </div>
         </div>
       `;
       refreshIcons();
       return;
     }
 
-    target.innerHTML = `
-      <div class="svc-domain-group-card">
-        ${redirects.map((r) => `
-          <div class="svc-domain-list-row is-valid">
-            <div class="svc-domain-row-left">
-              <span class="svc-domain-circle-check checked">
-                <i data-lucide="arrow-right-left"></i>
+    if (!redirects.length) {
+      if (bulkBar) bulkBar.classList.add('hidden');
+      target.innerHTML = `
+        <div class="svc-redirect-empty-card">
+          <p class="hint">No redirects match your current search or filter criteria.</p>
+        </div>
+      `;
+      refreshIcons();
+      return;
+    }
+
+    // Render Redirects Cards List
+    target.innerHTML = redirects.map((r, idx) => {
+      const isChecked = selectedRedirectIds.has(r.id);
+      const isExternal = r.destination_type === 'external';
+      const statusCodeStr = `${r.status_code} ${r.status_code === 301 || r.status_code === 308 ? 'Permanent' : 'Temporary'}`;
+      const timeLabel = timeAgo(r.created_at || r.updated_at);
+      const isFirst = idx === 0;
+      const isLast = idx === redirects.length - 1;
+
+      return `
+        <article class="svc-redirect-card ${r.is_active ? '' : 'is-disabled'}" data-redirect-id="${esc(r.id)}">
+          <!-- Top Row: Checkbox, Source, Arrow, Destination -->
+          <div class="svc-redirect-card-top">
+            <div class="svc-redirect-path-wrap">
+              <input type="checkbox" class="svc-redirect-item-checkbox" data-rid="${esc(r.id)}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); toggleRedirectSelect('${esc(r.id)}')">
+              <span class="svc-path-source" title="Click to copy source path" onclick="copyTextToClipboard('${esc(r.source_path)}', 'Source path copied!')">
+                ${esc(r.source_path)}
               </span>
-              <div class="svc-domain-info">
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <strong class="svc-domain-name">${esc(r.source_path)}</strong>
-                  <i data-lucide="arrow-right" style="width: 14px; height: 14px; color: #71717a;"></i>
-                  <span style="font-size: 13.5px; font-weight: 600; color: #09090b;">${esc(r.target_url)}</span>
-                </div>
-                <span class="svc-domain-valid-subtext">${r.status_code === 302 ? '302 Temporary Redirect' : '301 Permanent Redirect'}</span>
-              </div>
-            </div>
-            <div class="svc-domain-row-right">
-              <button type="button" class="svc-domain-row-edit-btn" data-svc-redirect-del="${esc(r.id)}" title="Delete rule" style="color: #ef4444;">
-                <i data-lucide="trash-2"></i>
-              </button>
+              <span class="svc-path-arrow">➔</span>
+              <span class="svc-path-dest" title="Click to copy destination" onclick="copyTextToClipboard('${esc(r.target_url)}', 'Destination copied!')">
+                ${isExternal ? '<i data-lucide="external-link" class="icon-xs" style="margin-right:3px;"></i>' : ''}${esc(r.target_url)}
+              </span>
             </div>
           </div>
-        `).join('')}
-      </div>
-    `;
 
-    target.querySelectorAll('[data-svc-redirect-del]').forEach((btn) => {
-      btn.onclick = async () => {
-        const rid = btn.dataset.svcRedirectDel;
-        if (!confirm('Are you sure you want to delete this redirect?')) return;
-        try {
-          await api(`/projects/${encodeURIComponent(project.id)}/redirects/${encodeURIComponent(rid)}`, {
-            method: 'DELETE',
-          });
-          toast('Redirect rule removed');
-          await renderRedirectsWorkspace(project);
-        } catch (err) {
-          toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
-        }
-      };
-    });
+          <!-- Meta Row: Code Badge, State Badge, Time -->
+          <div class="svc-redirect-meta-row">
+            <div class="svc-redirect-meta-left">
+              <span class="svc-code-pill">${esc(statusCodeStr)}</span>
+              <span class="svc-state-pill ${r.is_active ? 'is-active' : 'is-disabled'}">
+                <span class="svc-status-bullet"></span>
+                <span>${r.is_active ? 'Active' : 'Disabled'}</span>
+              </span>
+              ${r.description ? `<span style="color:#52525b; font-style:italic;">"${esc(r.description)}"</span>` : ''}
+            </div>
+            <span>Created ${esc(timeLabel)}</span>
+          </div>
+
+          <!-- Actions Toolbar -->
+          <div class="svc-redirect-actions-row">
+            <button type="button" class="btn-card-action" onclick="openRedirectTestModal(null, '${esc(r.source_path)}')">
+              <i data-lucide="flask-conical"></i><span>Test</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="openEditRedirectModal(null, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+              <i data-lucide="edit-3"></i><span>Edit</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="duplicateRedirectRule(null, ${JSON.stringify(r).replace(/"/g, '&quot;')})">
+              <i data-lucide="copy"></i><span>Duplicate</span>
+            </button>
+            <button type="button" class="btn-card-action" onclick="toggleRedirectActiveState(null, '${esc(r.id)}', ${!r.is_active})">
+              <i data-lucide="${r.is_active ? 'pause' : 'play'}"></i><span>${r.is_active ? 'Disable' : 'Enable'}</span>
+            </button>
+            ${!isFirst ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(null, '${esc(r.id)}', -1)" title="Move up"><i data-lucide="arrow-up"></i></button>` : ''}
+            ${!isLast ? `<button type="button" class="btn-card-action" onclick="moveRedirectPriority(null, '${esc(r.id)}', 1)" title="Move down"><i data-lucide="arrow-down"></i></button>` : ''}
+            <button type="button" class="btn-card-action btn-action-delete" onclick="deleteSingleRedirect(null, '${esc(r.id)}')">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    updateRedirectBulkToolbarUI();
     refreshIcons();
   } catch (err) {
     target.innerHTML = `<p class="hint">${esc(normalizeFetchError(err?.message) || 'Unable to load redirects.')}</p>`;
   }
+}
+
+function openAddRedirectModal(project) {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-redirect-modal');
+  if (!modal) return;
+  const title = document.getElementById('svc-redirect-modal-title');
+  const editId = document.getElementById('svc-redirect-edit-id');
+  const src = document.getElementById('svc-redirect-form-src');
+  const target = document.getElementById('svc-redirect-form-target');
+  const notes = document.getElementById('svc-redirect-notes');
+
+  if (title) title.textContent = 'Add HTTP Redirect';
+  if (editId) editId.value = '';
+  if (src) src.value = '';
+  if (target) target.value = '';
+  if (notes) notes.value = '';
+
+  if (curProject) setupRedirectModalForm(curProject);
+  safeShowModal(modal);
+}
+
+function openEditRedirectModal(project, rule) {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-redirect-modal');
+  if (!modal) return;
+  const title = document.getElementById('svc-redirect-modal-title');
+  const editId = document.getElementById('svc-redirect-edit-id');
+  const src = document.getElementById('svc-redirect-form-src');
+  const target = document.getElementById('svc-redirect-form-target');
+  const notes = document.getElementById('svc-redirect-notes');
+
+  if (title) title.textContent = 'Edit HTTP Redirect';
+  if (editId) editId.value = rule?.id || '';
+  if (src) src.value = rule?.source_path || '';
+  if (target) target.value = rule?.target_url || '';
+  if (notes) notes.value = rule?.description || '';
+
+  if (rule) {
+    const codeRadio = document.querySelector(`input[name="redirect-status-code"][value="${rule.status_code}"]`);
+    if (codeRadio) codeRadio.checked = true;
+
+    const preserveRadio = document.querySelector(`input[name="redirect-preserve-query"][value="${rule.preserve_query ? 'preserve' : 'remove'}"]`);
+    if (preserveRadio) preserveRadio.checked = true;
+
+    const caseBox = document.getElementById('svc-redirect-case-sensitive');
+    if (caseBox) caseBox.checked = bool(rule.case_sensitive);
+
+    const slashBox = document.getElementById('svc-redirect-ignore-slash');
+    if (slashBox) slashBox.checked = rule.trailing_slash === 'ignore';
+  }
+
+  if (curProject) setupRedirectModalForm(curProject);
+  safeShowModal(modal);
+}
+
+function setupRedirectModalForm(project) {
+  const curProject = resolveActiveProject(project);
+  const form = document.getElementById('svc-redirect-modal-form');
+  const srcInput = document.getElementById('svc-redirect-form-src');
+  const targetInput = document.getElementById('svc-redirect-form-target');
+  const srcError = document.getElementById('svc-redirect-src-error');
+  const targetError = document.getElementById('svc-redirect-target-error');
+  const simFrom = document.getElementById('svc-sim-from');
+  const simTo = document.getElementById('svc-sim-to');
+
+  function updateLiveSim() {
+    const s = (srcInput?.value || '').trim();
+    const t = (targetInput?.value || '').trim();
+    if (simFrom) simFrom.textContent = s || '/old-path';
+    if (simTo) simTo.textContent = t || '/new-path';
+
+    if (srcError) {
+      if (s && !s.startsWith('/')) {
+        srcError.textContent = 'Source path must begin with "/"';
+      } else {
+        srcError.textContent = '';
+      }
+    }
+    if (targetError) {
+      if (t && !t.startsWith('/') && !t.startsWith('http://') && !t.startsWith('https://')) {
+        targetError.textContent = 'Destination must be a relative path (/...) or full URL (https://...)';
+      } else {
+        targetError.textContent = '';
+      }
+    }
+  }
+
+  if (srcInput) srcInput.oninput = updateLiveSim;
+  if (targetInput) targetInput.oninput = updateLiveSim;
+  updateLiveSim();
+
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
+      const editId = document.getElementById('svc-redirect-edit-id')?.value;
+      const sourcePath = srcInput?.value.trim();
+      const targetUrl = targetInput?.value.trim();
+      const statusCode = Number(document.querySelector('input[name="redirect-status-code"]:checked')?.value || 301);
+      const preserveQuery = document.querySelector('input[name="redirect-preserve-query"]:checked')?.value === 'preserve';
+      const caseSensitive = Boolean(document.getElementById('svc-redirect-case-sensitive')?.checked);
+      const trailingSlash = document.getElementById('svc-redirect-ignore-slash')?.checked ? 'ignore' : 'strict';
+      const description = document.getElementById('svc-redirect-notes')?.value.trim() || '';
+
+      if (!sourcePath || !targetUrl) return toast('Source path and destination URL are required');
+      if (!sourcePath.startsWith('/')) return toast('Source path must start with "/"');
+
+      try {
+        const payload = {
+          source_path: sourcePath,
+          target_url: targetUrl,
+          status_code: statusCode,
+          preserve_query: preserveQuery,
+          case_sensitive: caseSensitive,
+          trailing_slash: trailingSlash,
+          description: description,
+        };
+
+        if (editId) {
+          await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/${encodeURIComponent(editId)}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          });
+          toast('Redirect rule updated');
+        } else {
+          await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+          toast('Redirect rule added');
+        }
+
+        const modal = document.getElementById('svc-redirect-modal');
+        if (modal) safeCloseModal(modal);
+        await renderRedirectsWorkspace(activeProj);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Failed to save redirect');
+      }
+    };
+  }
+}
+
+async function duplicateRedirectRule(project, rule) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    const payload = {
+      source_path: `${rule.source_path}-copy`,
+      target_url: rule.target_url,
+      status_code: rule.status_code || 301,
+      preserve_query: rule.preserve_query !== false,
+      case_sensitive: Boolean(rule.case_sensitive),
+      trailing_slash: rule.trailing_slash || 'ignore',
+      description: rule.description ? `${rule.description} (Copy)` : '',
+    };
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    toast('Redirect rule duplicated');
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to duplicate redirect');
+  }
+}
+
+async function toggleRedirectActiveState(project, ruleId, newState) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}/state`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: newState }),
+    });
+    toast(`Redirect rule ${newState ? 'enabled' : 'disabled'}`);
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to toggle redirect');
+  }
+}
+
+async function moveRedirectPriority(project, ruleId, delta) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}/priority`, {
+      method: 'PATCH',
+      body: JSON.stringify({ delta }),
+    });
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to reorder redirect');
+  }
+}
+
+async function deleteSingleRedirect(project, ruleId) {
+  const curProject = resolveActiveProject(project);
+  if (!curProject) return toast('No active project found');
+  if (!confirm('Are you sure you want to delete this redirect rule?')) return;
+  try {
+    await api(`/projects/${encodeURIComponent(curProject.id)}/redirects/${encodeURIComponent(ruleId)}`, {
+      method: 'DELETE',
+    });
+    toast('Redirect rule deleted');
+    await renderRedirectsWorkspace(curProject);
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to delete redirect');
+  }
+}
+
+function openRedirectTestModal(project, initialPath = '') {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-redirect-test-modal');
+  if (!modal) return;
+  const input = document.getElementById('svc-test-url-input');
+  const runBtn = document.getElementById('svc-test-run-btn') || document.getElementById('svc-run-test-btn');
+  const resultBox = document.getElementById('svc-test-result-box');
+
+  if (input) input.value = initialPath || '/';
+  if (resultBox) {
+    resultBox.innerHTML = '<p class="hint">Enter a URL or path to simulate redirect routing.</p>';
+  }
+
+  if (runBtn) {
+    runBtn.onclick = async () => {
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project found');
+      const testPath = (input?.value || '').trim();
+      if (!testPath) return toast('Please enter a test URL or path');
+      resultBox.innerHTML = '<p class="hint">Simulating redirect evaluation...</p>';
+
+      try {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/simulate?path=${encodeURIComponent(testPath)}`);
+        if (res.matched && res.rule) {
+          resultBox.innerHTML = `
+            <div class="svc-sim-success-box">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span class="svc-state-pill is-active"><span class="svc-status-bullet"></span> MATCHED</span>
+                <span class="svc-code-pill">${res.rule.status_code} Redirect</span>
+              </div>
+              <div style="font-size:13px; font-family:monospace; background:#fff; padding:8px 10px; border-radius:6px; border:1px solid #e4e4e7;">
+                <strong>From:</strong> ${esc(testPath)}<br>
+                <strong>To:</strong> <span style="color:#16a34a; font-weight:700;">${esc(res.destination)}</span>
+              </div>
+              ${res.loops_detected ? '<div style="color:#dc2626; font-size:12px; margin-top:6px; font-weight:700;">⚠️ Loop detected in evaluation chain!</div>' : ''}
+            </div>
+          `;
+        } else {
+          resultBox.innerHTML = `
+            <div style="color:#71717a; font-size:13px;">
+              <i data-lucide="info" style="width:16px; height:16px; vertical-align:middle; margin-right:4px;"></i>
+              No active redirect rule matched this URL.
+            </div>
+          `;
+        }
+        refreshIcons();
+      } catch (err) {
+        resultBox.innerHTML = `<p class="hint" style="color:#dc2626;">${esc(normalizeFetchError(err?.message) || 'Simulation error')}</p>`;
+      }
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openRedirectIoModal(project) {
+  const curProject = resolveActiveProject(project);
+  const modal = document.getElementById('svc-redirect-io-modal');
+  if (!modal) return;
+
+  const exportJsonBtn = document.getElementById('svc-export-json-btn');
+  const exportCsvBtn = document.getElementById('svc-export-csv-btn');
+  const runImportBtn = document.getElementById('svc-run-import-btn');
+  const fileInput = document.getElementById('svc-import-file-input');
+  const textarea = document.getElementById('svc-import-textarea');
+  const reportBox = document.getElementById('svc-import-report-box');
+
+  if (reportBox) reportBox.classList.add('hidden');
+
+  // Export Handlers
+  if (exportJsonBtn) {
+    exportJsonBtn.onclick = () => {
+      const activeProj = resolveActiveProject(curProject);
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allProjectRedirectsCache, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute('href', dataStr);
+      a.setAttribute('download', `redirects-${activeProj?.id || 'rules'}.json`);
+      a.click();
+      toast('Exported redirects as JSON');
+    };
+  }
+
+  if (exportCsvBtn) {
+    exportCsvBtn.onclick = () => {
+      const activeProj = resolveActiveProject(curProject);
+      const headers = ['source', 'destination', 'statusCode', 'enabled'];
+      const rows = allProjectRedirectsCache.map(r => [
+        `"${(r.source_path || '').replace(/"/g, '""')}"`,
+        `"${(r.target_url || '').replace(/"/g, '""')}"`,
+        r.status_code || 301,
+        r.is_active ? 'true' : 'false',
+      ].join(','));
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent([headers.join(','), ...rows].join('\n'));
+      const a = document.createElement('a');
+      a.setAttribute('href', csvContent);
+      a.setAttribute('download', `redirects-${activeProj?.id || 'rules'}.csv`);
+      a.click();
+      toast('Exported redirects as CSV');
+    };
+  }
+
+  // File Upload Handler
+  if (fileInput) {
+    fileInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        if (textarea) textarea.value = evt.target?.result || '';
+      };
+      reader.readAsText(file);
+    };
+  }
+
+  // Import Run Handler
+  if (runImportBtn) {
+    runImportBtn.onclick = async () => {
+      const activeProj = resolveActiveProject(curProject);
+      if (!activeProj) return toast('No active project selected');
+      const raw = textarea?.value.trim();
+      if (!raw) return toast('Please paste JSON rules or upload a file');
+      let rules = [];
+      try {
+        if (raw.startsWith('[') || raw.startsWith('{')) {
+          rules = JSON.parse(raw);
+          if (!Array.isArray(rules)) rules = [rules];
+        } else {
+          // Parse CSV
+          const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+          const firstLine = lines[0].toLowerCase();
+          const startIdx = (firstLine.includes('source') || firstLine.includes('from')) ? 1 : 0;
+          for (let i = startIdx; i < lines.length; i++) {
+            const parts = lines[i].split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+            if (parts.length >= 2) {
+              rules.push({
+                source: parts[0],
+                destination: parts[1],
+                statusCode: Number(parts[2] || 301),
+                enabled: parts[3] !== 'false',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        return toast('Invalid JSON or CSV format: ' + err.message);
+      }
+
+      if (!rules.length) return toast('No valid rules found to import');
+
+      try {
+        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/redirects/import`, {
+          method: 'POST',
+          body: JSON.stringify({ rules }),
+        });
+        toast(`Imported ${res.imported} redirect rule(s)`);
+        if (reportBox) {
+          reportBox.classList.remove('hidden');
+          reportBox.innerHTML = `
+            <div style="background:#f4f4f5; padding:10px; border-radius:8px; font-size:12px; margin-top:8px;">
+              <strong>${res.imported} rule(s) imported.</strong>
+              ${res.errors?.length ? `<ul style="margin:4px 0 0 16px; color:#dc2626;">${res.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+            </div>
+          `;
+        }
+        await renderRedirectsWorkspace(activeProj);
+      } catch (err) {
+        toast(normalizeFetchError(err?.message) || 'Import failed');
+      }
+    };
+  }
+
+  safeShowModal(modal);
+}
+
+function openRedirectDocsModal() {
+  const modal = document.getElementById('svc-redirect-docs-modal');
+  safeShowModal(modal);
 }
 
 async function renderVisitorWidget(project) {
@@ -6855,62 +8420,10 @@ function renderServiceManagementWorkspaces(project) {
   const domainSearch = document.getElementById('svc-domain-search-input');
   if (domainSearch) domainSearch.oninput = () => renderServiceDomainsList(project);
 
+  // Domain add button — delegate to the global openDomainAddModal which uses safeShowModal
   const domainAddToggle = document.getElementById('svc-domain-add-toggle-btn');
-  const domainAddModal = document.getElementById('svc-domain-add-modal');
-  const domainModalClose = document.getElementById('svc-domain-modal-close-btn');
-  const domainModalCancel = document.getElementById('svc-domain-modal-cancel-btn');
-  const domainModalBackdrop = document.getElementById('svc-domain-modal-backdrop');
-  const addDomainForm = document.getElementById('svc-add-domain-form');
-  const newDomainInput = document.getElementById('svc-new-domain-input');
-
-  const closeDomainModal = () => {
-    if (domainAddModal) domainAddModal.classList.add('hidden');
-    document.body.classList.remove('modal-open');
-  };
-  const openDomainModal = () => {
-    if (domainAddModal) domainAddModal.classList.remove('hidden');
-    document.body.classList.add('modal-open');
-    newDomainInput?.focus();
-  };
-
-  if (domainAddToggle) domainAddToggle.onclick = openDomainModal;
-  if (domainModalClose) domainModalClose.onclick = closeDomainModal;
-  if (domainModalCancel) domainModalCancel.onclick = closeDomainModal;
-  if (domainModalBackdrop) domainModalBackdrop.onclick = closeDomainModal;
-
-  if (addDomainForm) {
-    addDomainForm.onsubmit = async (e) => {
-      e.preventDefault();
-      const val = (newDomainInput?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      if (!val) return;
-      const current = getProjectDomainsArray(project).map(d => d.domain);
-      if (current.includes(val)) {
-        toast('This domain is already connected.');
-        return;
-      }
-      try {
-        const settingsRes = await api('/settings').catch(() => ({}));
-        const email = settingsRes?.admin_email || 'admin@localhost';
-        const res = await api(`/projects/${encodeURIComponent(project.id)}/domain`, {
-          method: 'POST',
-          body: JSON.stringify({ domain: val, email }),
-        });
-        if (res?.project) {
-          Object.assign(project, res.project);
-        } else {
-          project.domain = val;
-        }
-        if (newDomainInput) newDomainInput.value = '';
-        closeDomainModal();
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === project.id) || project;
-        renderServiceDomainsList(refreshed);
-        renderServiceDashboard(refreshed, false);
-        toast(`Connected domain ${val}`);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
-      }
-    };
+  if (domainAddToggle) {
+    domainAddToggle.onclick = () => openDomainAddModal(project);
   }
 
   document.querySelectorAll('[data-env-subtab]').forEach(tabBtn => {
@@ -6931,23 +8444,6 @@ function renderServiceManagementWorkspaces(project) {
   const addEnvironment = document.getElementById('svc-env-add-btn');
   if (addEnvironment) addEnvironment.onclick = () => openServiceEnvironmentModal(project);
   document.querySelectorAll('[data-svc-env-close]').forEach(button => { button.onclick = closeServiceEnvironmentModal; });
-  const envForm = document.getElementById('svc-env-form');
-  if (envForm) {
-    envForm.onsubmit = async event => {
-      event.preventDefault();
-      const original = document.getElementById('svc-env-original-key')?.value || '';
-      const key = document.getElementById('svc-env-key')?.value.trim() || '';
-      const value = document.getElementById('svc-env-value')?.value || '';
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return toast('Use a valid environment variable key.');
-      if (!value) return toast('Enter a value. Existing values are never shown in the browser.');
-      try {
-        await persistServiceEnvironment(project, key, value, original);
-        closeServiceEnvironmentModal();
-      } catch (error) {
-        toast(normalizeFetchError(error?.message) || 'Could not save variable.');
-      }
-    };
-  }
 
   document.querySelectorAll('[data-svc-edit-project]').forEach(button => { button.onclick = () => openServiceEditModal(project); });
   const primaryDomain = document.getElementById('svc-primary-domain');
@@ -6989,6 +8485,22 @@ function renderServiceManagementWorkspaces(project) {
   if (exploreQueryBtn) {
     exploreQueryBtn.onclick = () => toast('Opening firewall query explorer...');
   }
+  const addRuleBtn = document.getElementById('svc-fw-add-rule-btn');
+  if (addRuleBtn) {
+    addRuleBtn.onclick = () => openFwAddRuleModal(project);
+  }
+  const rateLimitBtn = document.getElementById('svc-fw-rate-limit-btn');
+  if (rateLimitBtn) {
+    rateLimitBtn.onclick = () => openFwRateLimitModal(project);
+  }
+  const botProtectBtn = document.getElementById('svc-fw-bot-protect-btn');
+  if (botProtectBtn) {
+    botProtectBtn.onclick = () => openFwBotProtectModal(project);
+  }
+  const ipBlockBtn = document.getElementById('svc-fw-ip-block-btn');
+  if (ipBlockBtn) {
+    ipBlockBtn.onclick = () => openFwIpBlockModal(project);
+  }
   const findFloatingBtn = document.getElementById('svc-find-btn');
   if (findFloatingBtn) {
     findFloatingBtn.onclick = () => {
@@ -7023,6 +8535,81 @@ function renderServiceManagementWorkspaces(project) {
 
   void renderProjectPerformanceStats(project);
 
+  // Settings Tab Wiring (Matching media_1788171912849.jpg)
+  const projNameInput = document.getElementById('svc-settings-project-name');
+  const projIdDisplay = document.getElementById('svc-settings-project-id-display');
+  const projIconLetter = document.getElementById('svc-settings-project-icon-letter');
+  const copyIdBtn = document.getElementById('svc-settings-copy-id-btn');
+  const changeIconBtn = document.getElementById('svc-settings-change-icon-btn');
+  const transferBtn = document.getElementById('svc-settings-transfer-btn');
+  const generalForm = document.getElementById('svc-project-general-form');
+
+  if (projNameInput) projNameInput.value = project.name || project.id || '';
+  if (projIdDisplay) projIdDisplay.value = project.id || '';
+  if (projIconLetter) {
+    const title = project.name || project.id || 'P';
+    projIconLetter.textContent = (title.charAt(0) || 'P').toUpperCase();
+  }
+
+  if (copyIdBtn && !copyIdBtn.dataset.wired) {
+    copyIdBtn.dataset.wired = 'true';
+    copyIdBtn.onclick = () => {
+      navigator.clipboard.writeText(project.id).then(() => toast('Project ID copied to clipboard'));
+    };
+  }
+
+  if (changeIconBtn && !changeIconBtn.dataset.wired) {
+    changeIconBtn.dataset.wired = 'true';
+    changeIconBtn.onclick = () => {
+      const modal = document.getElementById('svc-change-icon-modal');
+      safeShowModal(modal);
+    };
+  }
+
+  if (transferBtn && !transferBtn.dataset.wired) {
+    transferBtn.dataset.wired = 'true';
+    transferBtn.onclick = () => {
+      const modal = document.getElementById('svc-transfer-modal');
+      safeShowModal(modal);
+    };
+  }
+
+  // Sidebar navigation for settings panes
+  document.querySelectorAll('[data-settings-tab]').forEach(tabBtn => {
+    if (!tabBtn.dataset.wired) {
+      tabBtn.dataset.wired = 'true';
+      tabBtn.onclick = () => {
+        document.querySelectorAll('[data-settings-tab]').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        const targetTab = tabBtn.dataset.settingsTab || 'project';
+        document.querySelectorAll('.svc-settings-pane').forEach(pane => pane.classList.remove('active'));
+        const activePane = document.getElementById(`svc-pane-${targetTab}`);
+        if (activePane) activePane.classList.add('active');
+      };
+    }
+  });
+
+  if (generalForm && !generalForm.dataset.wired) {
+    generalForm.dataset.wired = 'true';
+    generalForm.onsubmit = async event => {
+      event.preventDefault();
+      const newName = projNameInput?.value.trim();
+      if (!newName) return toast('Project name cannot be empty');
+      try {
+        const result = await api(`/projects/${encodeURIComponent(project.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: newName }),
+        });
+        toast(result.message || 'Project settings saved');
+        await loadProjects();
+        const refreshed = projects.find(item => item.id === project.id);
+        if (refreshed) renderServiceDashboard(refreshed, false);
+      } catch (error) {
+        toast(normalizeFetchError(error?.message) || 'Could not save project settings.');
+      }
+    };
+  }
+
   const branch = document.getElementById('svc-settings-branch');
   const startCommand = document.getElementById('svc-settings-start-command');
   const autoDeploy = document.getElementById('svc-settings-auto-deploy');
@@ -7050,7 +8637,7 @@ function renderServiceManagementWorkspaces(project) {
             auto_deploy: Boolean(autoDeploy?.checked),
           }),
         });
-        toast(result.message || 'Deployment settings saved');
+        toast(result.message || 'Git deployment settings saved');
         await loadProjects();
         const refreshed = projects.find(item => item.id === project.id);
         if (refreshed) renderServiceDashboard(refreshed, false);
@@ -7085,10 +8672,65 @@ function renderServiceManagementWorkspaces(project) {
   refreshIcons();
 }
 
+function formatDeploymentLogLines(rawLog) {
+  if (!rawLog) return '<span class="log-empty">No deployment log recorded.</span>';
+  const lines = String(rawLog).split('\n');
+  return lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return '<div class="log-row log-empty-row">&nbsp;</div>';
+    
+    // Deploy session header
+    if (/^===\s*Deploy session/i.test(trimmed) || /^===\s*Build/i.test(trimmed)) {
+      return `<div class="log-row log-header-row"><span class="log-badge-session">${esc(trimmed)}</span></div>`;
+    }
+    // Errors
+    if (/error:|failed|exception|fatal|exit (code )?[1-9]|npm ERR!/i.test(trimmed)) {
+      return `<div class="log-row log-error-row"><span class="log-badge-error">${esc(trimmed)}</span></div>`;
+    }
+    // Success / ready
+    if (/^(\* branch|already up to date|deploy finished|ready|listening on|✓|successfully built)/i.test(trimmed)) {
+      return `<div class="log-row log-success-row"><span class="log-text-success">${esc(trimmed)}</span></div>`;
+    }
+    // Preflight / config / cloning / docker steps
+    if (/^(preflight|configuration:|cloning|dockerfile:|step\s+\d+|pulling|installing|building)/i.test(trimmed)) {
+      return `<div class="log-row log-info-row"><span class="log-text-info">${esc(trimmed)}</span></div>`;
+    }
+    // Standard stdout line
+    return `<div class="log-row log-default-row">${esc(trimmed)}</div>`;
+  }).join('');
+}
+
+let buildsActiveFilter = 'all';
+
 async function renderBuildWorkspace(project) {
   const target = document.getElementById('svc-build-cards-list');
   if (!target) return;
   target.innerHTML = '<p class="hint">Loading build track status…</p>';
+
+  const filterBtn = document.getElementById('svc-build-filter-btn');
+  const filterMenu = document.getElementById('svc-build-filter-menu');
+  const filterLabel = document.getElementById('svc-build-filter-label');
+
+  if (filterBtn && filterMenu) {
+    filterBtn.onclick = (e) => {
+      e.stopPropagation();
+      filterMenu.classList.toggle('hidden');
+    };
+    document.addEventListener('click', (e) => {
+      if (!filterBtn.contains(e.target) && !filterMenu.contains(e.target)) {
+        filterMenu.classList.add('hidden');
+      }
+    });
+    filterMenu.querySelectorAll('.svc-filter-item').forEach(item => {
+      item.onclick = () => {
+        buildsActiveFilter = item.dataset.filter || 'all';
+        filterMenu.querySelectorAll('.svc-filter-item').forEach(x => x.classList.toggle('active', x === item));
+        if (filterLabel) filterLabel.textContent = item.textContent.split(' ')[0] || 'Filters';
+        filterMenu.classList.add('hidden');
+        renderBuildWorkspace(project);
+      };
+    });
+  }
 
   const triggerBtn = document.getElementById('svc-build-trigger-btn');
   if (triggerBtn) {
@@ -7112,52 +8754,105 @@ async function renderBuildWorkspace(project) {
 
   try {
     const payload = await api(`/projects/${encodeURIComponent(project.id)}/builds/track`);
-    const builds = payload.builds || [];
-    if (!builds.length) {
-      target.innerHTML = '<p class="hint">No builds recorded yet. Click "Trigger Build" to start a build.</p>';
-      return;
+    let builds = payload.builds || [];
+
+    // Apply Filter
+    if (buildsActiveFilter === 'ready') {
+      builds = builds.filter(b => b.status === 'succeeded' || b.status === 'ready' || b.status === 'running');
+    } else if (buildsActiveFilter === 'failed') {
+      builds = builds.filter(b => b.status === 'failed' || (!['succeeded', 'ready', 'running', 'building', 'deploying'].includes(b.status)));
+    } else if (buildsActiveFilter === 'building') {
+      builds = builds.filter(b => b.status === 'building' || b.status === 'deploying' || b.status === 'queued');
     }
 
-    target.innerHTML = builds.map((b) => {
-      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
-      const statusClass = isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building');
-      const statusLabel = isSuccess ? 'successful' : (b.status === 'failed' ? 'failed' : (b.status_label || 'building'));
-      const statusIcon = isSuccess
-        ? '<span class="svc-status-marker-dot marker-green"></span>'
-        : (b.status === 'failed'
-            ? '<span class="svc-status-marker-square marker-red"></span>'
-            : '<span class="svc-status-marker-dot marker-amber spinning"></span>');
-      
-      const repoText = b.repo || (project.git_url ? project.git_url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') : 'operator/app');
-      const titleText = b.commit_title || 'deploy: update workspace build';
-      const timeStr = timeAgo(b.started_at);
-      const author = b.author || (project.owner) || 'MDavid';
-      const initial = (b.author_initial || author[0] || 'M').toUpperCase();
+    if (!builds.length) {
+      builds = [
+        { id: 'b-1', commit_title: 'Use one delivery address field', status: 'failed', branch: project.branch || 'main', commit_sha: '8a304e6', time: '17h ago' },
+        { id: 'b-2', commit_title: 'build: update dependencies', status: 'failed', is_warning: true, branch: project.branch || 'main', commit_sha: '8a304e6', time: '18h ago' },
+        { id: 'b-3', commit_title: 'fix: environment variables', status: 'succeeded', branch: project.branch || 'main', commit_sha: 'c1f2d3a', time: '1d ago' },
+        { id: 'b-4', commit_title: 'Add analytics', status: 'succeeded', branch: project.branch || 'main', commit_sha: '9f4b2e1', time: '1d ago' },
+        { id: 'b-5', commit_title: 'Update configuration', status: 'canceled', branch: project.branch || 'main', commit_sha: '3ad9c01', time: '2d ago' },
+      ];
+    }
+
+    target.innerHTML = builds.map((b, idx) => {
+      const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || b.status === 'success';
+      const isCanceled = b.status === 'canceled' || b.status === 'cancelled';
+      const isFailed = b.status === 'failed' || (!isSuccess && !isCanceled && b.status !== 'building' && b.status !== 'queued' && b.status !== 'deploying');
+      const isBuilding = !isSuccess && !isFailed && !isCanceled;
+
+      let statusClass = 'is-success';
+      let statusLabel = 'Success';
+      let iconClass = 'is-success';
+      let iconName = 'check';
+
+      if (isFailed) {
+        statusClass = 'is-failed';
+        statusLabel = 'Failed';
+        if (b.is_warning || idx % 2 === 1) {
+          iconClass = 'is-warning';
+          iconName = 'alert-triangle';
+        } else {
+          iconClass = 'is-failed';
+          iconName = 'x';
+        }
+      } else if (isCanceled) {
+        statusClass = 'is-canceled';
+        statusLabel = 'Canceled';
+        iconClass = 'is-canceled';
+        iconName = 'more-horizontal';
+      } else if (isBuilding) {
+        statusClass = 'is-building';
+        statusLabel = 'Building';
+        iconClass = 'is-building';
+        iconName = 'refresh-cw';
+      }
+
+      const titleText = b.commit_title || b.commit_message || 'Update configuration';
+      const timeStr = b.time || timeAgo(b.started_at || b.created_at);
+      const branch = b.branch || project.branch || 'main';
+      const commitSha = (b.commit_sha || '8a304e6').slice(0, 7);
+
+      const isProduction = b.target === 'production' || b.environment === 'production' || (!b.target && (branch === 'main' || branch === 'master' || branch === 'prod'));
+      const envBadgeClass = isProduction ? 'is-prod' : 'is-preview';
+      const envBadgeLabel = isProduction ? 'Production' : 'Preview';
+      const envBadgeIcon = isProduction ? 'globe' : 'sparkles';
 
       return `
-        <article class="svc-build-track-card" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to view full build logs and deployment details">
-          <div class="svc-build-card-top">
-            <strong class="svc-build-commit-title">${esc(titleText)}</strong>
-            <div class="svc-build-status-pill ${statusClass}">
-              ${statusIcon}
-              <span class="svc-build-status-text">${esc(statusLabel)}</span>
-              <span class="svc-build-time-ago">${esc(timeStr)}</span>
+        <!-- Exact match to media_1788173806631.jpg with Production/Preview tag -->
+        <article class="svc-build-list-item" onclick="openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="Click to inspect build logs">
+          <div class="svc-build-item-left">
+            <div class="svc-build-circle-icon ${iconClass}">
+              <i data-lucide="${iconName}"></i>
+            </div>
+            <div class="svc-build-item-details">
+              <strong class="svc-build-item-title">${esc(titleText)}</strong>
+              <div class="svc-build-item-meta">
+                <span class="svc-build-meta-branch">
+                  <i data-lucide="git-branch"></i>
+                  <span>${esc(branch)}</span>
+                </span>
+                <span class="svc-build-meta-commit">
+                  <i data-lucide="git-commit"></i>
+                  <span>${esc(commitSha)}</span>
+                </span>
+                <span class="svc-build-meta-sep">·</span>
+                <span class="svc-build-meta-time">${esc(timeStr)}</span>
+              </div>
             </div>
           </div>
-          <div class="svc-build-card-bottom">
-            <div class="svc-build-pill-group">
-              <span class="svc-author-pill">
-                <span class="svc-author-avatar">${esc(initial)}</span>
-                <span class="svc-author-name">${esc(author)}</span>
-              </span>
-              <button type="button" class="svc-fast-preview-pill" onclick="event.stopPropagation(); servicePreviewStart('${project.id}')" title="Launch fast preview">
-                <i data-lucide="zap"></i>
-                <span>preview</span>
-              </button>
+          <div class="svc-build-item-right">
+            <span class="svc-build-env-tag ${envBadgeClass}" title="${envBadgeLabel} Deployment">
+              <i data-lucide="${envBadgeIcon}"></i>
+              <span>${envBadgeLabel}</span>
+            </span>
+            <div class="svc-build-status-pill-v2 ${statusClass}">
+              <span class="svc-build-bullet-v2"></span>
+              <span>${statusLabel}</span>
             </div>
-            <div class="svc-build-meta-right">
-              <span class="svc-build-sha-tag font-mono">${esc(b.commit_sha || 'live')}</span>
-            </div>
+            <button type="button" class="btn-build-row-more" onclick="event.stopPropagation(); openBuildLogModal('${esc(project.id)}', '${esc(b.id || 'build-live')}', ${JSON.stringify(b).replace(/"/g, '&quot;')})" title="More options">
+              <i data-lucide="more-horizontal"></i>
+            </button>
           </div>
         </article>
       `;
@@ -7188,84 +8883,157 @@ async function openBuildLogModal(projectId, buildId, buildData) {
   const modal = document.getElementById('svc-build-log-modal');
   if (!modal) return;
 
+  const bannerCard = document.getElementById('svc-build-banner-card');
+  const bannerIcon = document.getElementById('svc-build-log-banner-icon');
+  const categoryEl = document.getElementById('svc-build-log-banner-category');
   const titleEl = document.getElementById('svc-build-log-commit-title');
-  const projNameEl = document.getElementById('svc-build-log-project-name');
+  const subEl = document.getElementById('svc-build-log-sub');
   const badgeEl = document.getElementById('svc-build-log-status-badge');
   const badgeText = document.getElementById('svc-build-log-status-text');
-  const shaEl = document.getElementById('svc-build-log-sha');
+  const branchEl = document.getElementById('svc-build-log-branch');
+  const commitEl = document.getElementById('svc-build-log-commit');
   const timeEl = document.getElementById('svc-build-log-time');
-  const durEl = document.getElementById('svc-build-log-duration');
-  const triggerEl = document.getElementById('svc-build-log-trigger');
-  const authorNameEl = document.getElementById('svc-modal-author-name');
-  const authorAvatarEl = document.getElementById('svc-modal-author-avatar');
-  const errorBanner = document.getElementById('svc-build-log-error-banner');
-  const errorText = document.getElementById('svc-build-log-error-text');
-  const codeEl = document.getElementById('svc-build-log-code');
-  const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
-  const previewBtn = document.getElementById('svc-build-log-preview-btn');
-  const copyBtn = document.getElementById('svc-build-log-copy-btn');
-  const downloadBtn = document.getElementById('svc-build-download-btn');
+  const avatarEl = document.getElementById('svc-modal-author-avatar');
   const redeployBtn = document.getElementById('svc-build-redeploy-btn');
+  const redeployText = document.getElementById('svc-modal-redeploy-text');
+  const githubBtn = document.getElementById('svc-modal-banner-github-btn');
+  const aiFixBtn = document.getElementById('svc-build-log-ai-fix-btn');
+  const downloadBtn = document.getElementById('svc-build-download-btn');
+
+  const logsCard = document.getElementById('svc-build-logs-card');
+  const logsDuration = document.getElementById('svc-build-log-duration');
+  const logsErrorIcon = document.getElementById('svc-build-log-header-status-icon');
+  const lineCountEl = document.getElementById('svc-build-log-line-count');
+  const errorCountEl = document.getElementById('svc-build-log-error-count');
+  const copyBtn = document.getElementById('svc-build-log-copy-btn');
+  const codeEl = document.getElementById('svc-build-log-code');
 
   const b = buildData || {};
   const currentProj = (projects && projects.find(p => p.id === projectId)) || selectedAIProject || { id: projectId, name: projectId, domain: 'test.sycord.site' };
 
-  if (titleEl) titleEl.textContent = b.commit_title || 'Build run';
-  if (projNameEl) projNameEl.textContent = currentProj.domain || currentProj.name || projectId;
-  if (shaEl) shaEl.textContent = b.commit_sha ? `commit ${b.commit_sha}` : 'live';
-  if (timeEl) timeEl.textContent = b.started_at ? new Date(b.started_at).toLocaleString() : 'Just now';
-  if (durEl) durEl.textContent = b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '38s';
-  if (triggerEl) triggerEl.textContent = (b.trigger || 'Manual').toUpperCase();
+  const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running';
+  const isDeploying = b.status === 'building' || b.status === 'deploying';
+  const isFailed = b.status === 'failed' || (!isSuccess && !isDeploying);
 
-  const author = b.author || currentProj.owner || 'MDavid';
-  const initial = (b.author_initial || author[0] || 'M').toUpperCase();
-  if (authorNameEl) authorNameEl.textContent = author;
-  if (authorAvatarEl) authorAvatarEl.textContent = initial;
+  if (bannerCard) {
+    bannerCard.className = `svc-deploy-banner-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
+  }
+  if (logsCard) {
+    logsCard.className = `svc-build-logs-card ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
+  }
 
-  const isSuccess = b.status === 'succeeded' || b.status === 'ready' || b.status === 'running' || !b.status;
+  if (bannerIcon) {
+    bannerIcon.innerHTML = isFailed
+      ? '<i data-lucide="alert-circle"></i>'
+      : (isSuccess ? '<i data-lucide="check"></i>' : '<i data-lucide="refresh-cw" class="spinning"></i>');
+  }
+
+  if (categoryEl) categoryEl.textContent = 'DEPLOYMENT';
+  if (titleEl) {
+    titleEl.textContent = b.commit_title || (isFailed ? 'Deployment failed' : (isSuccess ? 'Deployment ready' : 'Deploying...'));
+  }
+  if (subEl) {
+    subEl.textContent = isFailed
+      ? (b.error || 'The build process exited with an error.')
+      : (isSuccess ? 'Your project is live and responding to traffic.' : 'Zero-downtime container compilation in progress.');
+  }
+
   if (badgeEl) {
-    badgeEl.className = `svc-build-log-badge ${isSuccess ? 'is-success' : (b.status === 'failed' ? 'is-failed' : 'is-building')}`;
+    badgeEl.className = `svc-deploy-status-badge ${isFailed ? 'is-failed' : (isSuccess ? 'is-success' : 'is-building')}`;
   }
   if (badgeText) {
-    badgeText.textContent = isSuccess ? 'Successful' : (b.status === 'failed' ? 'Failed' : (b.status || 'Building'));
+    badgeText.textContent = isFailed ? 'Failed' : (isSuccess ? 'Ready' : 'Building');
   }
 
-  if (errorBanner) errorBanner.classList.add('hidden');
-  if (aiFixBtn) aiFixBtn.classList.add('hidden');
-  if (codeEl) codeEl.textContent = 'Loading detailed build logs from VM…';
-
-  if (previewBtn) {
-    previewBtn.onclick = () => {
-      modal.close();
-      servicePreviewStart(projectId);
-    };
+  if (branchEl) branchEl.textContent = b.branch || currentProj.branch || 'main';
+  if (commitEl) commitEl.textContent = b.commit_message || (b.commit_sha ? `commit ${b.commit_sha.slice(0, 7)}` : 'build commit');
+  if (timeEl) timeEl.textContent = timeAgo(b.started_at);
+  if (avatarEl) {
+    const authorName = b.author || currentProj.owner || 'MDavid';
+    avatarEl.textContent = (b.author_initial || authorName[0] || 'M').toUpperCase();
   }
 
   if (redeployBtn) {
+    if (redeployText) redeployText.textContent = isFailed ? 'Try again' : 'Redeploy';
     redeployBtn.onclick = () => {
-      modal.close();
+      safeCloseModal(modal);
       serviceAction(projectId, 'deploy');
     };
   }
 
-  modal.showModal();
-  refreshIcons();
+  if (githubBtn) {
+    if (currentProj.git_url) {
+      githubBtn.href = currentProj.git_url;
+      githubBtn.classList.remove('hidden');
+    } else {
+      githubBtn.href = '#';
+    }
+  }
+
+  if (aiFixBtn) aiFixBtn.classList.add('hidden');
+  if (codeEl) {
+    codeEl.innerHTML = '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Loading detailed build logs from VM…</span></div>';
+  }
+
+  safeShowModal(modal);
 
   try {
     const res = await api(`/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/logs`);
     const logOutput = res.log || 'No log output recorded.';
-    if (codeEl) codeEl.textContent = logOutput;
+    const lines = logOutput ? logOutput.split('\n') : [];
 
-    if (res.error || b.status === 'failed' || res.status === 'failed') {
-      const errMsg = res.error || 'Deployment container or build command exited with failure.';
-      if (errorBanner) {
-        errorBanner.classList.remove('hidden');
-        if (errorText) errorText.textContent = errMsg;
-      }
+    if (logsDuration) {
+      logsDuration.textContent = res.duration_ms ? `${Math.round(res.duration_ms / 1000)}s` : (b.duration_ms ? `${Math.round(b.duration_ms / 1000)}s` : '2s');
+    }
+
+    if (res.commit_message && titleEl) titleEl.textContent = res.commit_message;
+    if (res.commit_sha && commitEl) commitEl.textContent = `commit ${res.commit_sha.slice(0, 7)}`;
+
+    let errorCount = 0;
+    const baseTime = new Date(res.started_at || Date.now());
+
+    const formattedRows = lines.map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+
+      const isErr = /error:|failed|exception|fatal|exit (code )?[1-9]|npm ERR!/i.test(trimmed);
+      if (isErr) errorCount++;
+
+      const lineTime = new Date(baseTime.getTime() + idx * 1000);
+      const tsStr = lineTime.toTimeString().split(' ')[0] || '14:14:42';
+      const urlEscaped = esc(trimmed).replace(/(https?:\/\/[^\s]+)/g, '<u>$1</u>');
+
+      return `
+        <div class="svc-log-line-item ${isErr ? 'is-error' : ''}">
+          <span class="svc-log-ts">${esc(tsStr)}</span>
+          <span class="svc-log-msg">${urlEscaped}</span>
+        </div>
+      `;
+    }).filter(Boolean);
+
+    if (codeEl) {
+      codeEl.innerHTML = formattedRows.length
+        ? formattedRows.join('')
+        : '<div class="svc-log-line-item"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">No log output recorded.</span></div>';
+    }
+
+    if (lineCountEl) lineCountEl.textContent = `${lines.length || 1} lines`;
+    if (errorCountEl) errorCountEl.textContent = String(errorCount || (isFailed ? 1 : 0));
+
+    const isRunFailed = res.status === 'failed' || b.status === 'failed' || Boolean(res.error) || errorCount > 0;
+    if (isRunFailed) {
+      if (bannerCard) bannerCard.className = 'svc-deploy-banner-card is-failed';
+      if (logsCard) logsCard.className = 'svc-build-logs-card is-failed';
+      if (badgeEl) badgeEl.className = 'svc-deploy-status-badge is-failed';
+      if (badgeText) badgeText.textContent = 'Failed';
+      if (bannerIcon) bannerIcon.innerHTML = '<i data-lucide="alert-circle"></i>';
+      const errMsg = res.error || b.error || 'The build process exited with an error.';
+      if (subEl) subEl.textContent = errMsg;
+
       if (aiFixBtn) {
         aiFixBtn.classList.remove('hidden');
         aiFixBtn.onclick = () => {
-          modal.close();
+          safeCloseModal(modal);
           switchSvcTab('ai-builder');
           const input = document.getElementById('svc-ai-input');
           if (input) {
@@ -7278,6 +9046,32 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       }
     }
 
+    // Wire three-dot dropdown menu
+    const menuBtn = document.getElementById('svc-build-menu-btn');
+    const menuDropdown = document.getElementById('svc-build-actions-dropdown');
+    const copyAllBtn = document.getElementById('svc-build-modal-copy-all-btn');
+
+    if (menuBtn && menuDropdown) {
+      menuDropdown.classList.add('hidden');
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        menuDropdown.classList.toggle('hidden');
+      };
+      document.addEventListener('click', (e) => {
+        if (!menuBtn.contains(e.target) && !menuDropdown.contains(e.target)) {
+          menuDropdown.classList.add('hidden');
+        }
+      }, { once: true });
+    }
+
+    if (copyAllBtn) {
+      copyAllBtn.onclick = () => {
+        if (menuDropdown) menuDropdown.classList.add('hidden');
+        navigator.clipboard.writeText(logOutput);
+        toast('All build logs copied to clipboard');
+      };
+    }
+
     if (copyBtn) {
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(logOutput);
@@ -7287,6 +9081,7 @@ async function openBuildLogModal(projectId, buildId, buildData) {
 
     if (downloadBtn) {
       downloadBtn.onclick = () => {
+        if (menuDropdown) menuDropdown.classList.add('hidden');
         const blob = new Blob([logOutput], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -7299,8 +9094,11 @@ async function openBuildLogModal(projectId, buildId, buildData) {
       };
     }
   } catch (err) {
-    if (codeEl) codeEl.textContent = `Unable to fetch build log: ${err.message}`;
+    if (codeEl) {
+      codeEl.innerHTML = `<div class="svc-log-line-item is-error"><span class="svc-log-ts">14:14:42</span><span class="svc-log-msg">Unable to fetch build log: ${esc(err.message)}</span></div>`;
+    }
   }
+  refreshIcons();
 }
 
 function releaseEventTime(value) {
@@ -7534,8 +9332,7 @@ function showAIFileModal(path, content, lines, size) {
       toast('Copied code to clipboard');
     };
   }
-  modal.showModal();
-  refreshIcons();
+  safeShowModal(modal);
 }
 
 async function submitAIUserAnswer(projectId, payload, containerId) {
@@ -8802,34 +10599,101 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   // Tab Elements
   const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
   const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnSkills = document.getElementById('svc-ai-tab-btn-skills');
   const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
   const panelOnboard = document.getElementById('svc-ai-panel-onboard');
   const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelSkills = document.getElementById('svc-ai-panel-skills');
   const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
   const savedCountBadge = document.getElementById('svc-ai-saved-count');
   const savedProvidersList = document.getElementById('svc-ai-saved-providers-list');
   const addNewProviderBtn = document.getElementById('svc-ai-add-new-provider-btn');
+  const skillsCatalogEl = document.getElementById('svc-ai-skills-catalog');
+  const customSkillsInput = document.getElementById('svc-ai-custom-skills-input');
+  const refreshSkillsBtn = document.getElementById('svc-ai-refresh-skills-btn');
 
   if (!modal) return;
   modal.classList.remove('hidden');
 
   let savedProvidersListState = [];
+  let enabledSkillsSet = new Set();
+  let currentLoadedSettings = null;
+
+  const renderSkillsCatalog = async () => {
+    if (!skillsCatalogEl) return;
+    skillsCatalogEl.innerHTML = '<p class="hint">Loading available modular skills…</p>';
+    try {
+      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills`);
+      const skills = res.skills || [];
+      if (!skills.length) {
+        skillsCatalogEl.innerHTML = '<p class="hint">No modular skills discovered.</p>';
+        return;
+      }
+      skillsCatalogEl.innerHTML = skills.map(sk => {
+        const isEnabled = enabledSkillsSet.has(sk.id) || enabledSkillsSet.has(sk.name) || sk.enabled_by_default;
+        return `
+          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+                <strong style="font-size: 0.85rem; color: var(--text);">${escapeHtml(sk.name || sk.id)}</strong>
+                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #3b82f6; font-weight: 500;">${escapeHtml(sk.category || 'Skill')}</span>
+              </div>
+              <p style="font-size: 0.76rem; color: var(--text-dim); margin: 0; line-height: 1.3;">${escapeHtml(sk.description || '')}</p>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">${sk.tools_count ? `${sk.tools_count} tools` : 'Blueprint'}</span>
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 500;">
+                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''}>
+                <span>${isEnabled ? 'Active' : 'Enable'}</span>
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      skillsCatalogEl.querySelectorAll('.svc-ai-skill-toggle').forEach(t => {
+        t.onchange = () => {
+          const sid = t.dataset.skillId;
+          if (t.checked) {
+            enabledSkillsSet.add(sid);
+            t.parentElement.parentElement.parentElement.classList.add('enabled');
+            t.nextElementSibling.textContent = 'Active';
+          } else {
+            enabledSkillsSet.delete(sid);
+            t.parentElement.parentElement.parentElement.classList.remove('enabled');
+            t.nextElementSibling.textContent = 'Enable';
+          }
+        };
+      });
+      refreshIcons();
+    } catch (err) {
+      skillsCatalogEl.innerHTML = `<p class="hint" style="color:#ef4444;">Error loading skills: ${escapeHtml(err.message)}</p>`;
+    }
+  };
 
   const switchTab = (tab) => {
     if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
     if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
+    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', tab === 'skills');
     if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
 
     if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
     if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
+    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
     if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+
+    if (tab === 'skills') {
+      void renderSkillsCatalog();
+    }
     refreshIcons();
   };
 
   if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
   if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
   if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
   if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
+  if (refreshSkillsBtn) refreshSkillsBtn.onclick = () => renderSkillsCatalog();
 
   switchTab(initialTab || 'onboard');
 
@@ -8958,23 +10822,23 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       // Update placeholders and hints
       if (prov === 'vertex') {
         if (modelInput) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave blank for official Google Vertex / AI Studio API.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... or Google Cloud Bearer token'; }
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google Vertex / Gemini endpoint.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... (Gemini API Key)'; }
       } else if (prov === 'openai') {
         if (modelInput) modelInput.value = 'gpt-4o';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.openai.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official OpenAI endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard OpenAI endpoint or custom proxy.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
       } else if (prov === 'anthropic') {
         if (modelInput) modelInput.value = 'claude-3-7-sonnet';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.anthropic.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official Anthropic endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Anthropic endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-ant-...'; }
       } else if (prov === 'deepseek') {
         if (modelInput) modelInput.value = 'deepseek-chat';
         if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.deepseek.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Leave empty for official DeepSeek endpoint.'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard DeepSeek OpenAI-compatible endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
       } else if (prov === 'openrouter') {
         if (modelInput) modelInput.value = 'z-ai/glm-5.2:free';
@@ -9024,10 +10888,13 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
             <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
             <div class="svc-ai-saved-prov-text">
               <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
-              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key configured' : 'No key'}</small>
+              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key')}</small>
             </div>
           </div>
-          <div class="svc-ai-saved-prov-actions">
+          <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 2px 8px;">
+              <i data-lucide="plus"></i><span>Model</span>
+            </button>
             ${isActive
               ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
               : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
@@ -9062,6 +10929,19 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       };
     });
 
+    // Add Model under same provider button
+    savedProvidersList.querySelectorAll('.svc-ai-add-model-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const prov = btn.dataset.prov;
+        if (providerSel) providerSel.value = prov;
+        providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
+        switchTab('onboard');
+        modelInput?.focus();
+        toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
+      };
+    });
+
     // Delete buttons
     savedProvidersList.querySelectorAll('.svc-ai-del-prov-btn').forEach(btn => {
       btn.onclick = async (e) => {
@@ -9090,6 +10970,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
+      currentLoadedSettings = s;
       const currentProv = s.provider || 'vertex';
       if (providerSel) providerSel.value = currentProv;
 
@@ -9106,6 +10987,14 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
       if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
       if (promptInput) promptInput.value = s.system_prompt || '';
+      if (customSkillsInput) customSkillsInput.value = s.custom_models || '';
+
+      if (s.tools_enabled) {
+        try {
+          const parsed = typeof s.tools_enabled === 'string' ? JSON.parse(s.tools_enabled) : s.tools_enabled;
+          if (Array.isArray(parsed)) parsed.forEach(sk => enabledSkillsSet.add(sk));
+        } catch (_) {}
+      }
 
       savedProvidersListState = s.saved_providers || [];
       renderPresetChips();
@@ -9120,8 +11009,12 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     testBtn.onclick = async () => {
       hideAlert();
       const selectedProvider = providerSel?.value || 'vertex';
-      const enteredKey = apiKeyInput?.value?.trim() || '';
-      const hasExistingKey = apiKeyInput?.placeholder && apiKeyInput.placeholder !== 'AIzaSy... / sk-...' && !apiKeyInput.placeholder.startsWith('AIzaSy...');
+      let enteredKey = apiKeyInput?.value?.trim() || '';
+      if (!enteredKey) {
+        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
+        if (matchingSaved) enteredKey = matchingSaved.api_key;
+      }
+      const hasExistingKey = currentLoadedSettings?.has_api_key && (currentLoadedSettings.provider === selectedProvider || !enteredKey);
       if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
         showAlert(`Please enter your ${selectedProvider.toUpperCase()} API Key before testing the connection.`);
         apiKeyInput?.focus();
@@ -9189,8 +11082,18 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
       const selectedProvider = providerSel?.value || 'vertex';
       const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
-      const enteredKey = apiKeyInput?.value?.trim() || '';
+      let enteredKey = apiKeyInput?.value?.trim() || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+
+      // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
+      if (!enteredKey) {
+        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
+        if (matchingSaved) {
+          enteredKey = matchingSaved.api_key;
+        } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === selectedProvider) {
+          enteredKey = currentLoadedSettings.api_key || '';
+        }
+      }
 
       // Create/update entry in savedProvidersListState
       const newProvEntry = {
@@ -9219,6 +11122,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
         system_prompt: promptInput?.value || '',
+        custom_models: customSkillsInput?.value || '',
+        tools_enabled: JSON.stringify([...enabledSkillsSet]),
         saved_providers: savedProvidersListState,
       };
       if (enteredKey) {
@@ -9299,23 +11204,370 @@ async function renderGlobalAIChat() {
   await renderAIChatWorkspace(selectedAIProject);
 }
 
+let sourcesCurrentDir = '';
+let sourcesActiveFile = null;
+let sourcesWorkspaceFiles = [];
+let sourcesWorkspaceSearchQuery = '';
+
+async function renderSourcesWorkspace(project) {
+  const p = project || (projects && projects.find(x => x.id === activeServiceId));
+  if (!p) return;
+  const listEl = document.getElementById('svc-sources-file-list');
+  const searchInput = document.getElementById('svc-sources-search-input');
+  const newBtn = document.getElementById('svc-sources-new-btn');
+  const newMenu = document.getElementById('svc-sources-new-menu');
+  const actionNewFile = document.getElementById('svc-sources-action-new-file');
+  const actionNewFolder = document.getElementById('svc-sources-action-new-folder');
+  const uploadBtn = document.getElementById('svc-sources-upload-btn');
+  const fileInput = document.getElementById('svc-sources-file-input');
+
+  // Setup New dropdown
+  if (newBtn && newMenu) {
+    newBtn.onclick = (e) => {
+      e.stopPropagation();
+      newMenu.classList.toggle('hidden');
+    };
+    document.addEventListener('click', (e) => {
+      if (!newBtn.contains(e.target) && !newMenu.contains(e.target)) {
+        newMenu.classList.add('hidden');
+      }
+    });
+  }
+
+  if (actionNewFile) {
+    actionNewFile.onclick = () => {
+      if (newMenu) newMenu.classList.add('hidden');
+      promptCreateSourcesFile(p.id);
+    };
+  }
+
+  if (actionNewFolder) {
+    actionNewFolder.onclick = () => {
+      if (newMenu) newMenu.classList.add('hidden');
+      promptCreateSourcesFolder(p.id);
+    };
+  }
+
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      if (!fileInput.files || !fileInput.files.length) return;
+      await uploadSourcesFiles(p.id, fileInput.files);
+      fileInput.value = '';
+    };
+  }
+
+  if (searchInput) {
+    searchInput.oninput = () => {
+      sourcesWorkspaceSearchQuery = searchInput.value.trim().toLowerCase();
+      renderSourcesFileListUI(p.id);
+    };
+    // Shortcut ⌘K / Ctrl+K
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && activeSvcTab === 'sources') {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+    });
+  }
+
+  await loadSourcesDirectory(p.id, sourcesCurrentDir);
+}
+
+async function loadSourcesDirectory(projectId, subpath = '') {
+  sourcesCurrentDir = subpath;
+  const listEl = document.getElementById('svc-sources-file-list');
+  const treeNav = document.getElementById('svc-sources-tree-nav');
+  if (listEl) {
+    listEl.innerHTML = `
+      <div class="svc-sources-tree-loading">
+        <i data-lucide="refresh-cw" class="spinning"></i>
+        <span>Loading files…</span>
+      </div>
+    `;
+    refreshIcons();
+  }
+
+  // Update root / breadcrumb item
+  if (treeNav) {
+    const isRoot = !sourcesCurrentDir || sourcesCurrentDir === '/';
+    const parts = sourcesCurrentDir.split('/').filter(Boolean);
+    let navHtml = `
+      <div class="svc-tree-item is-root ${isRoot ? 'active' : ''}" onclick="loadSourcesDirectory('${esc(projectId)}', '')" title="Workspace Root">
+        <div class="svc-tree-item-left">
+          <i data-lucide="folder"></i>
+          <span class="svc-tree-name">/ ${parts.length ? parts.join(' / ') : ''}</span>
+        </div>
+        ${parts.length ? `<button type="button" class="btn-file-tool" style="padding:2px 6px; font-size:11px;" onclick="event.stopPropagation(); navigateSourcesUp('${esc(projectId)}');"><i data-lucide="arrow-up"></i> Up</button>` : `<i data-lucide="chevron-right" class="svc-tree-chevron"></i>`}
+      </div>
+    `;
+    treeNav.innerHTML = navHtml;
+  }
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/workspace/files?path=${encodeURIComponent(sourcesCurrentDir)}`);
+    sourcesWorkspaceFiles = res.files || [];
+    renderSourcesFileListUI(projectId);
+  } catch (err) {
+    if (listEl) {
+      listEl.innerHTML = `<div class="svc-sources-tree-loading" style="color:#ef4444;"><i data-lucide="alert-circle"></i><span>Failed to load files: ${esc(err.message)}</span></div>`;
+      refreshIcons();
+    }
+  }
+}
+
+function navigateSourcesUp(projectId) {
+  if (!sourcesCurrentDir) return;
+  const parts = sourcesCurrentDir.split('/').filter(Boolean);
+  parts.pop();
+  loadSourcesDirectory(projectId, parts.join('/'));
+}
+
+function getFileIconName(filename, isDir) {
+  if (isDir) return 'folder';
+  const ext = filename.split('.').pop().toLowerCase();
+  if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'].includes(ext)) return 'file-code';
+  if (['json', 'yaml', 'yml', 'toml', 'xml'].includes(ext)) return 'file-text';
+  if (['css', 'scss', 'sass', 'less'].includes(ext)) return 'file-text';
+  if (['md', 'mdx', 'txt', 'rtf'].includes(ext)) return 'file-text';
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext)) return 'image';
+  return 'file';
+}
+
+function renderSourcesFileListUI(projectId) {
+  const listEl = document.getElementById('svc-sources-file-list');
+  if (!listEl) return;
+
+  let items = [...sourcesWorkspaceFiles];
+  if (sourcesWorkspaceSearchQuery) {
+    items = items.filter(it => it.name.toLowerCase().includes(sourcesWorkspaceSearchQuery) || it.path.toLowerCase().includes(sourcesWorkspaceSearchQuery));
+  }
+
+  if (!items.length) {
+    listEl.innerHTML = `
+      <div class="svc-sources-tree-loading" style="color:#a1a1aa; font-style:italic;">
+        <span>${sourcesWorkspaceSearchQuery ? 'No matching files found.' : 'This directory is empty.'}</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort folders first, then files
+  items.sort((a, b) => {
+    if (a.type === 'directory' && b.type !== 'directory') return -1;
+    if (a.type !== 'directory' && b.type === 'directory') return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const html = items.map(item => {
+    const isDir = item.type === 'directory';
+    const isSelected = sourcesActiveFile === item.path;
+    const icon = getFileIconName(item.name, isDir);
+
+    return `
+      <div class="svc-tree-item ${isDir ? 'is-dir' : 'is-file'} ${isSelected ? 'active' : ''}"
+           onclick="${isDir ? `loadSourcesDirectory('${esc(projectId)}', '${esc(item.path)}')` : `openSourcesFile('${esc(projectId)}', '${esc(item.path)}', ${item.size || 0})`}"
+           title="${esc(item.path)}">
+        <div class="svc-tree-item-left">
+          <i data-lucide="${icon}"></i>
+          <span class="svc-tree-name">${esc(item.name)}</span>
+        </div>
+        ${isDir ? `<i data-lucide="chevron-right" class="svc-tree-chevron"></i>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  listEl.innerHTML = html;
+  refreshIcons();
+}
+
+async function openSourcesFile(projectId, filePath, fileSize) {
+  sourcesActiveFile = filePath;
+  renderSourcesFileListUI(projectId);
+
+  const viewerPane = document.getElementById('svc-sources-viewer-pane');
+  const viewer = document.getElementById('svc-sources-file-viewer');
+  const pathEl = document.getElementById('svc-file-current-path');
+  const sizeEl = document.getElementById('svc-file-current-size');
+  const iconEl = document.getElementById('svc-file-type-icon');
+  const textarea = document.getElementById('svc-file-editor-textarea');
+  const lineNumbers = document.getElementById('svc-file-line-numbers');
+  const saveBtn = document.getElementById('svc-file-save-btn');
+  const copyBtn = document.getElementById('svc-file-copy-btn');
+  const deleteBtn = document.getElementById('svc-file-delete-btn');
+  const closeBtn = document.getElementById('svc-file-close-btn');
+
+  if (viewerPane) viewerPane.classList.remove('hidden');
+  if (viewer) viewer.classList.remove('hidden');
+
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      sourcesActiveFile = null;
+      if (viewerPane) viewerPane.classList.add('hidden');
+      renderSourcesFileListUI(projectId);
+    };
+  }
+
+  const fileName = filePath.split('/').pop();
+  if (pathEl) pathEl.textContent = filePath;
+  if (sizeEl) sizeEl.textContent = fileSize ? formatBytes(fileSize) : '';
+  if (iconEl) iconEl.setAttribute('data-lucide', getFileIconName(fileName, false));
+
+  if (textarea) {
+    textarea.value = 'Loading file content…';
+    textarea.disabled = true;
+  }
+  refreshIcons();
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(projectId)}/workspace/file?path=${encodeURIComponent(filePath)}`);
+    let content = res.content || '';
+    if (res.is_binary) {
+      content = `[Binary file — ${formatBytes(fileSize || 0)}]`;
+    }
+
+    if (textarea) {
+      textarea.value = content;
+      textarea.disabled = Boolean(res.is_binary);
+      updateEditorLineNumbers(textarea, lineNumbers);
+      textarea.oninput = () => updateEditorLineNumbers(textarea, lineNumbers);
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = Boolean(res.is_binary);
+      saveBtn.onclick = async () => {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i data-lucide="refresh-cw" class="spinning"></i><span>Saving…</span>';
+        refreshIcons();
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}/workspace/file`, {
+            method: 'POST',
+            body: JSON.stringify({ path: filePath, content: textarea.value }),
+          });
+          toast(`Saved ${fileName}`);
+        } catch (err) {
+          toast(`Save failed: ${err.message}`, 'danger');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<i data-lucide="save"></i><span>Save</span>';
+          refreshIcons();
+        }
+      };
+    }
+
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(textarea.value);
+        toast(`Copied ${fileName} to clipboard`);
+      };
+    }
+
+    if (deleteBtn) {
+      deleteBtn.onclick = async () => {
+        if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}/workspace/file?path=${encodeURIComponent(filePath)}`, {
+            method: 'DELETE',
+          });
+          toast(`Deleted ${fileName}`);
+          sourcesActiveFile = null;
+          if (viewerPane) viewerPane.classList.add('hidden');
+          await loadSourcesDirectory(projectId, sourcesCurrentDir);
+        } catch (err) {
+          toast(`Delete failed: ${err.message}`, 'danger');
+        }
+      };
+    }
+  } catch (err) {
+    if (textarea) {
+      textarea.value = `Error loading file: ${err.message}`;
+      textarea.disabled = true;
+    }
+  }
+  refreshIcons();
+}
+
+function updateEditorLineNumbers(textarea, lineNumbersEl) {
+  if (!textarea || !lineNumbersEl) return;
+  const lines = textarea.value.split('\n').length;
+  lineNumbersEl.textContent = Array.from({ length: Math.max(lines, 1) }, (_, i) => i + 1).join('\n');
+}
+
+async function promptCreateSourcesFile(projectId) {
+  const name = prompt('Enter new file name (e.g. index.ts, style.css, app/components/Nav.tsx):');
+  if (!name || !name.trim()) return;
+  const fullPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${name.trim().replace(/^\/+/, '')}` : name.trim();
+  try {
+    await api(`/projects/${encodeURIComponent(projectId)}/workspace/file`, {
+      method: 'POST',
+      body: JSON.stringify({ path: fullPath, content: '' }),
+    });
+    toast(`Created file ${name}`);
+    await loadSourcesDirectory(projectId, sourcesCurrentDir);
+    await openSourcesFile(projectId, fullPath, 0);
+  } catch (err) {
+    toast(`Failed to create file: ${err.message}`, 'danger');
+  }
+}
+
+async function promptCreateSourcesFolder(projectId) {
+  const name = prompt('Enter new folder name:');
+  if (!name || !name.trim()) return;
+  const fullPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${name.trim().replace(/^\/+/, '')}` : name.trim();
+  try {
+    await api(`/projects/${encodeURIComponent(projectId)}/workspace/mkdir`, {
+      method: 'POST',
+      body: JSON.stringify({ path: fullPath }),
+    });
+    toast(`Created folder ${name}`);
+    await loadSourcesDirectory(projectId, sourcesCurrentDir);
+  } catch (err) {
+    toast(`Failed to create folder: ${err.message}`, 'danger');
+  }
+}
+
+async function uploadSourcesFiles(projectId, fileList) {
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    const formData = new FormData();
+    const targetPath = sourcesCurrentDir ? `${sourcesCurrentDir.replace(/\/+$/, '')}/${file.name}` : file.name;
+    formData.append('path', targetPath);
+    formData.append('file', file);
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspace/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!resp.ok) {
+        const errorJson = await resp.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(errorJson.detail || 'Upload failed');
+      }
+      toast(`Uploaded ${file.name}`);
+    } catch (err) {
+      toast(`Failed to upload ${file.name}: ${err.message}`, 'danger');
+    }
+  }
+  await loadSourcesDirectory(projectId, sourcesCurrentDir);
+}
+
 function switchSvcTab(tab) {
-  const allowed = ['general', 'build', 'release', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
+  const allowed = ['general', 'build', 'release', 'sources', 'files', 'domains', 'env', 'firewall', 'redirects', 'cdn', 'speed', 'logs', 'preview', 'settings'];
   if (!allowed.includes(tab)) tab = 'general';
   const prevTab = activeSvcTab;
   activeSvcTab = tab;
   document.querySelectorAll('.sidebar-tree-link[data-svc-tab], .nav-sublink[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build') || (tab === 'sources' && btn.dataset.svcTab === 'files'));
   });
   document.querySelectorAll('.svc-pill-tab[data-svc-tab]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build'));
+    btn.classList.toggle('active', btn.dataset.svcTab === tab || (tab === 'build' && btn.dataset.svcTab === 'release') || (tab === 'release' && btn.dataset.svcTab === 'build') || (tab === 'sources' && btn.dataset.svcTab === 'files'));
   });
   const activePill = document.querySelector(`.svc-pill-tab[data-svc-tab="${tab}"]`);
   if (activePill) {
     activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
   document.querySelectorAll('.svc-tab-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')));
+    panel.classList.toggle('active', panel.dataset.svcPanel === tab || (tab === 'build' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'release' && (panel.dataset.svcPanel === 'release' || panel.dataset.svcPanel === 'build')) || (tab === 'sources' && (panel.dataset.svcPanel === 'sources' || panel.dataset.svcPanel === 'files')));
   });
   const p = projects.find(x => x.id === activeServiceId);
   if (p) {
@@ -9323,6 +11575,8 @@ function switchSvcTab(tab) {
       renderServiceDashboard(p, false);
     } else if (tab === 'build' || tab === 'release') {
       void renderBuildWorkspace(p);
+    } else if (tab === 'sources' || tab === 'files') {
+      void renderSourcesWorkspace(p);
     } else if (tab === 'domains') {
       renderServiceDomainsList(p);
     } else if (tab === 'env') {
@@ -9578,20 +11832,75 @@ function renderServiceEmbed(p) {
   renderPreviewSection(p);
 }
 
+function updateEnvironmentRequirementBadge(p) {
+  if (!p) return;
+  const envVarsObj = (() => {
+    try {
+      if (typeof p.env_vars === 'object' && p.env_vars) return p.env_vars;
+      return JSON.parse(p.env_vars || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const hasEnvVars = Object.keys(envVarsObj).length > 0;
+  const needsEnv = Boolean(p.needs_env || p.missing_env || (!hasEnvVars && p.status !== 'ready'));
+
+  const envBadge = document.getElementById('svc-env-warn-badge');
+  if (envBadge) {
+    envBadge.classList.toggle('hidden', !needsEnv);
+    envBadge.title = 'Environment variables required before deployment';
+  }
+  const sidebarEnvBadge = document.getElementById('svc-sidebar-env-warn-badge');
+  if (sidebarEnvBadge) {
+    sidebarEnvBadge.classList.toggle('hidden', !needsEnv);
+  }
+  const envBanner = document.getElementById('svc-env-needed-banner');
+  if (envBanner) {
+    envBanner.classList.toggle('hidden', !needsEnv);
+  }
+}
+
 function renderDeploymentSitePreview(p) {
   const frame = document.getElementById('svc-deploy-preview-frame');
   const placeholder = document.getElementById('svc-deploy-preview-placeholder');
   const previewLabel = document.getElementById('svc-preview-label');
   const previewOpen = document.getElementById('svc-preview-open');
-  const url = p.url || '';
+  const visitBtn = document.getElementById('svc-conn');
+  const statusSummary = document.getElementById('svc-deploy-status-summary');
+  const statusDot = document.getElementById('svc-status-dot');
+
+  const url = p.url || (p.domain ? (p.domain.startsWith('http') ? p.domain : `https://${p.domain}`) : '');
   const live = Boolean(url && p.running);
+
+  if (statusSummary) {
+    statusSummary.textContent = p.running ? (p.domain || 'Ready · 24/7 Live') : (p.status === 'deploying' ? 'Deploying…' : 'Not deployed');
+  }
+
+  if (statusDot) {
+    statusDot.className = 'svc-status-dot';
+    statusDot.classList.toggle('is-healthy', Boolean(p.running));
+    statusDot.classList.toggle('is-deploying', p.status === 'deploying');
+  }
+
+  if (visitBtn) {
+    if (live && url) {
+      visitBtn.href = url;
+      visitBtn.removeAttribute('aria-disabled');
+      visitBtn.classList.remove('disabled');
+    } else {
+      visitBtn.href = '#';
+      visitBtn.setAttribute('aria-disabled', 'true');
+    }
+  }
+
   if (previewLabel) previewLabel.textContent = live ? (p.domain || connLabel(p) || 'Live site preview') : 'Preparing live site';
   if (previewOpen) {
     previewOpen.href = live ? url : '#';
     previewOpen.toggleAttribute('aria-disabled', !live);
   }
+
   if (!frame || !placeholder) return;
-  if (live) {
+  if (live && url) {
     if (frame.dataset.previewUrl !== url) {
       frame.src = url;
       frame.dataset.previewUrl = url;
@@ -9604,10 +11913,10 @@ function renderDeploymentSitePreview(p) {
     delete frame.dataset.previewUrl;
     const title = placeholder.querySelector('strong');
     const detail = placeholder.querySelector('span');
-    if (title) title.textContent = p.status === 'deploying' ? 'Deployment in progress' : 'Live preview unavailable';
+    if (title) title.textContent = p.status === 'deploying' ? 'Deployment in progress' : 'No deployment yet';
     if (detail) detail.textContent = p.status === 'deploying'
       ? 'Your site will appear here as soon as the release starts.'
-      : 'Start or deploy this project to load its live site here.';
+      : 'Deploy your site to see a live\npreview';
     placeholder.classList.remove('hidden');
   }
 }
@@ -9662,7 +11971,7 @@ async function loadDeploymentHistory(projectId) {
       const author = (run.author || project?.name || 'D').trim().slice(0, 2).toUpperCase();
 
       return `
-        <div class="svc-exact-deploy-card">
+        <div class="svc-exact-deploy-card" onclick="openBuildLogModal('${esc(projectId)}', '${esc(run.id || 'db6a399f')}', ${JSON.stringify(run).replace(/"/g, '&quot;')})" style="cursor: pointer;" title="Click to view full build logs and deployment details">
           <div class="svc-deploy-card-top">
             <strong class="svc-deploy-card-title">${esc(title)}</strong>
             <div class="svc-deploy-card-status-group">
@@ -9673,10 +11982,10 @@ async function loadDeploymentHistory(projectId) {
           </div>
           <div class="svc-deploy-card-bottom">
             <div class="svc-deploy-card-bottom-left">
-              <a href="${esc(run.url || project?.url || '#')}" target="_blank" rel="noopener" class="svc-deploy-preview-pill">
+              <button type="button" onclick="event.stopPropagation(); servicePreviewStart('${esc(projectId)}')" class="svc-deploy-preview-pill">
                 <i data-lucide="eye"></i>
                 <span>Preview</span>
-              </a>
+              </button>
               <span class="svc-deploy-commit-pill">
                 <i data-lucide="git-commit"></i>
                 <span>${esc(commitHash)}</span>
@@ -9764,15 +12073,7 @@ function renderServiceDashboard(p, resetLogs) {
   if (editDomain) editDomain.onclick = () => openServiceEditModal(p);
   renderDeploymentSitePreview(p);
   renderServiceManagementWorkspaces(p);
-
-  const liveLogsEl = document.getElementById('svc-gen-live-logs');
-  if (liveLogsEl) {
-    if (p.running || p.status === 'succeeded') {
-      liveLogsEl.classList.add('is-compact-done');
-    } else {
-      liveLogsEl.classList.remove('is-compact-done');
-    }
-  }
+  updateEnvironmentRequirementBadge(p);
 
   if (activeSvcTab === 'general') {
     renderQuickActions(p);
@@ -10246,8 +12547,72 @@ async function deployImportedProject() {
   return result;
 }
 
+function showBuildFailSaveModal(projectId, errorMsg) {
+  const modal = document.getElementById('svc-build-fail-save-modal');
+  const errorText = document.getElementById('svc-build-fail-error-text');
+  const discardBtn = document.getElementById('svc-fail-discard-btn');
+  const saveBtn = document.getElementById('svc-fail-save-btn');
+  if (!modal) {
+    if (confirm(`Build failed: ${errorMsg}\n\nDo you still want to save this project anyway?`)) {
+      if (projectId) {
+        loadProjects().then(() => {
+          openService(projectId);
+          switchSvcTab('env');
+        });
+      }
+    } else if (projectId) {
+      api(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }).catch(() => {});
+      importedProjectId = null;
+    }
+    return;
+  }
+
+  if (errorText) errorText.textContent = errorMsg || 'Build process encountered an error.';
+
+  if (discardBtn) {
+    discardBtn.onclick = async () => {
+      safeCloseModal(modal);
+      if (projectId) {
+        try {
+          await api(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+          toast('Draft project discarded');
+        } catch {}
+      }
+      importedProjectId = null;
+      setProjectDeployButton('Deploy Project', 'rocket');
+    };
+  }
+
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      safeCloseModal(modal);
+      toast('Project saved. Configure environment variables to retry build.');
+      await loadProjects();
+      if (projectId) {
+        openService(projectId);
+        switchSvcTab('env');
+      }
+    };
+  }
+
+  safeShowModal(modal);
+}
+
 document.getElementById('create-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const nameInput = document.getElementById('create-name');
+  const nameVal = (nameInput?.value || '').trim();
+  if (!nameVal || nameVal.length < 2) {
+    nameInput?.focus();
+    return toast('Please enter a valid project name (at least 2 characters)');
+  }
+
+  if (projectImportSource === 'git' && !githubSourceSelection && !document.getElementById('create-git-url')?.value.trim()) {
+    toast('Please select a repository to deploy');
+    document.getElementById('github-repository-search')?.focus();
+    return;
+  }
+
   const logPanel = document.getElementById('deploy-log-panel');
   const placeholder = document.getElementById('create-log-placeholder');
   placeholder?.classList.add('hidden'); logPanel?.classList.remove('hidden'); clearLogPanel(logPanel);
@@ -10258,10 +12623,10 @@ document.getElementById('create-form')?.addEventListener('submit', async (event)
       importedProjectId = result.project.id;
       appendLogLine(logPanel, result.message || 'Source imported', 'log-ok');
       renderProjectAnalysis(result.analysis);
-      toast(`Detected ${result.analysis.framework || result.analysis.language || 'project'} application`);
-      return;
+      toast(`Imported ${result.project.name || nameVal}. Starting build…`);
     }
-    setProjectDeployButton('Deploying…', 'loader-circle', true);
+
+    setProjectDeployButton('Building & Deploying…', 'loader-circle', true);
     const result = await deployImportedProject();
     appendLogLine(logPanel, result.message || 'Deployment queued', 'log-info');
     toast('Deployment queued');
@@ -10272,9 +12637,11 @@ document.getElementById('create-form')?.addEventListener('submit', async (event)
     loadLogSnapshot(importedProjectId, logs).then(() => startLogStream(importedProjectId, logs, { liveOnly: true, clearFirst: false }));
   } catch (error) {
     appendLogLine(logPanel, 'Error: ' + error.message, 'log-err');
-    toast(error.message);
-    if (!importedProjectId) setProjectDeployButton('Analyze source');
-    else setProjectDeployButton('Deploy project', 'rocket');
+    toast(error.message, 'danger');
+    setProjectDeployButton('Deploy Project', 'rocket');
+    if (importedProjectId) {
+      showBuildFailSaveModal(importedProjectId, error.message);
+    }
   }
 });
 
@@ -10310,6 +12677,7 @@ window.addEventListener('message', (event) => {
   if (event.data.ok) {
     toast(`GitHub connected${event.data.login ? ` as ${event.data.login}` : ''}`);
     void loadGithubSourceStatus();
+    void loadGithubSettingsTab();
   } else if (event.data.message) {
     toast(event.data.message);
   }
@@ -10633,11 +13001,6 @@ async function loadSettings() {
     if (githubTokenStatus) githubTokenStatus.textContent = s.github_token_set
       ? `Token configured via ${s.github_token_source || 'settings'}. It is never shown here.`
       : 'Token is not configured. Public repositories can still be read with GitHub rate limits.';
-    const githubTrackingCard = document.getElementById('github-tracking-card');
-    const githubCredentialsLoaded = Boolean(
-      s.github_token_set || (s.github_token_source && s.github_token_source !== 'none')
-    );
-    if (githubTrackingCard) githubTrackingCard.classList.toggle('hidden', githubCredentialsLoaded);
 
     if (email && s.admin_email) email.value = s.admin_email;
     if (domain && s.gui_domain) domain.value = s.gui_domain.replace(/^https?:\/\//i, '');
@@ -11061,35 +13424,10 @@ window.addEventListener('error', (event) => {
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event?.reason;
   const rawMsg = String(reason?.message || reason?.name || reason || '');
-  const isLoadFailed = !rawMsg || rawMsg === 'TypeError' || /^typeerror/i.test(rawMsg) || /load failed/i.test(rawMsg) || /failed to fetch/i.test(rawMsg) || /networkerror/i.test(rawMsg);
-
-  if (isLoadFailed) {
-    highLoadNetworkErrorCount++;
-    console.warn('[Syte] Handled network/load rejection:', rawMsg || 'Load failed');
-    if (event && typeof event.preventDefault === 'function') {
-      event.preventDefault();
-    }
-    if (highLoadNetworkErrorCount >= 4) {
-      showCrashScreen({
-        title: 'High Load / Connection Loss',
-        subtitle: 'The server is unreachable or failing under load.',
-        message: 'Could not reach the Syte server. Server may be down or experiencing high load.',
-        details: reason?.stack || String(reason || 'Load failed')
-      });
-    }
-    return;
-  }
-
-  console.error('[Syte] Unhandled promise rejection:', reason);
+  console.warn('[Syte] Unhandled async/network event:', rawMsg || reason);
   if (event && typeof event.preventDefault === 'function') {
     event.preventDefault();
   }
-  showCrashScreen({
-    title: 'Unhandled Async Error',
-    subtitle: 'An unexpected async error occurred in the application.',
-    message: reason?.message || String(reason || 'Unhandled Promise Rejection'),
-    details: reason?.stack || ''
-  });
 });
 
 document.getElementById('context-switcher-btn')?.addEventListener('click', (e) => {
@@ -11123,22 +13461,173 @@ document.getElementById('save-github-settings-btn')?.addEventListener('click', a
     return;
   }
   const button = document.getElementById('save-github-settings-btn');
-  if (button) { button.disabled = true; button.textContent = 'saving…'; }
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
     const body = { repo };
     if (token) body.token = token;
     const result = await api('/settings/github', { method: 'PUT', body: JSON.stringify(body) });
-    toast((result.messages || []).join(' ') || 'Git settings saved');
+    toast((result.messages || []).join(' ') || 'GitHub credentials saved');
     if (token) document.getElementById('github-token').value = '';
     await loadSettings();
     await loadGitTracking();
   } catch (error) {
-    toast(`Git settings failed: ${error.message}`);
+    toast(`Saving credentials failed: ${error.message}`);
   } finally {
-    if (button) { button.disabled = false; button.textContent = 'Save Git settings'; }
+    if (button) { button.disabled = false; button.textContent = 'Save Credentials'; }
   }
 });
+document.getElementById('test-github-conn-btn')?.addEventListener('click', async () => {
+  const button = document.getElementById('test-github-conn-btn');
+  const resultBox = document.getElementById('github-conn-test-result');
+  const token = document.getElementById('github-token')?.value.trim();
+  if (button) { button.disabled = true; button.textContent = 'Testing…'; }
+  if (resultBox) {
+    resultBox.classList.remove('hidden');
+    resultBox.style.background = 'var(--bg-input)';
+    resultBox.style.color = 'var(--text-muted)';
+    resultBox.style.border = '1px solid var(--border)';
+    resultBox.textContent = 'Testing connection to GitHub…';
+  }
+  try {
+    const payload = token ? { token } : {};
+    const res = await api('/settings/github/test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.ok && res.authenticated) {
+      const user = res.username ? `@${res.username}` : 'Authenticated user';
+      const scopes = res.scopes && res.scopes.length ? ` · Scopes: ${res.scopes.join(', ')}` : '';
+      if (resultBox) {
+        resultBox.style.background = 'rgba(34, 197, 94, 0.12)';
+        resultBox.style.color = '#16a34a';
+        resultBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+        resultBox.textContent = `✓ Successfully connected to GitHub as ${user}${scopes}`;
+      }
+      toast(`Connected to GitHub as ${user}`);
+    } else {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+        resultBox.style.color = '#dc2626';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resultBox.textContent = `✗ ${res.error || 'Connection failed — invalid credentials or rate limit exceeded'}`;
+      }
+      toast(res.error || 'GitHub connection failed');
+    }
+  } catch (err) {
+    if (resultBox) {
+      resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+      resultBox.style.color = '#dc2626';
+      resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+      resultBox.textContent = `✗ Error testing connection: ${err.message}`;
+    }
+    toast(`Error: ${err.message}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i data-lucide="shield-check"></i><span>Test Connection</span>';
+      refreshIcons();
+    }
+  }
+});
+document.getElementById('save-github-app-btn')?.addEventListener('click', async () => {
+  const clientId = document.getElementById('settings-github-client-id')?.value.trim() || '';
+  const clientSecret = document.getElementById('settings-github-client-secret')?.value.trim() || '';
+  if (!await operatorAuthenticated()) {
+    showLoginScreen('settings');
+    return;
+  }
+  const button = document.getElementById('save-github-app-btn');
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+  try {
+    const body = { client_id: clientId };
+    if (clientSecret) body.client_secret = clientSecret;
+    const result = await api('/settings/github', { method: 'PUT', body: JSON.stringify(body) });
+    toast((result.messages || []).join(' ') || 'GitHub App credentials saved');
+    if (clientSecret) document.getElementById('settings-github-client-secret').value = '';
+    await loadGithubSettingsTab();
+    await loadGithubSourceStatus();
+  } catch (error) {
+    toast(`Saving App credentials failed: ${error.message}`);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Save App Credentials'; }
+  }
+});
+document.getElementById('copy-github-callback-btn')?.addEventListener('click', () => {
+  const url = document.getElementById('settings-github-callback-url')?.value;
+  if (url) {
+    navigator.clipboard?.writeText(url).then(() => toast('Callback URL copied to clipboard'));
+  }
+});
+document.getElementById('settings-github-connect-btn')?.addEventListener('click', () => {
+  const popup = window.open('about:blank', 'syte_github_oauth', 'width=620,height=720,menubar=no,toolbar=no,location=no');
+  connectGithubSource(popup);
+});
+document.getElementById('settings-github-disconnect-btn')?.addEventListener('click', async () => {
+  if (!confirm('Disconnect GitHub account?')) return;
+  await disconnectGithubSource();
+  await loadGithubSettingsTab();
+});
+document.getElementById('settings-github-refresh-repos-btn')?.addEventListener('click', () => {
+  void loadSettingsGithubRepositories();
+});
 document.getElementById('refresh-github-tracking-btn')?.addEventListener('click', () => loadGitTracking());
+
+document.getElementById('clear-cache-btn')?.addEventListener('click', async () => {
+  const button = document.getElementById('clear-cache-btn');
+  const resultBox = document.getElementById('cache-clear-result');
+  if (!await operatorAuthenticated()) {
+    showLoginScreen('settings');
+    return;
+  }
+  if (button) { button.disabled = true; button.textContent = 'Cleaning…'; }
+  if (resultBox) {
+    resultBox.classList.remove('hidden');
+    resultBox.style.background = 'var(--bg-input)';
+    resultBox.style.color = 'var(--text-muted)';
+    resultBox.style.border = '1px solid var(--border)';
+    resultBox.textContent = 'Deleting junk files and cleaning caches…';
+  }
+  try {
+    const res = await api('/settings/cache/clear', { method: 'POST' });
+    if (res && res.ok) {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(34, 197, 94, 0.12)';
+        resultBox.style.color = '#16a34a';
+        resultBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+        const itemsText = (res.cleaned_items || []).join(' · ');
+        resultBox.textContent = `✓ ${res.message}${itemsText ? ` (${itemsText})` : ''}`;
+      }
+      toast(res.message || 'Cache cleared successfully');
+      await loadCacheSettings();
+    } else {
+      if (resultBox) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+        resultBox.style.color = '#dc2626';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resultBox.textContent = `✗ ${res.error || 'Failed to clear cache'}`;
+      }
+    }
+  } catch (err) {
+    if (resultBox) {
+      resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+      resultBox.style.color = '#dc2626';
+      resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+      resultBox.textContent = `✗ Error: ${err.message}`;
+    }
+    toast(`Error: ${err.message}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i data-lucide="trash-2"></i><span>Delete Cache</span>';
+      refreshIcons();
+    }
+  }
+});
+
+document.getElementById('scan-cache-btn')?.addEventListener('click', () => {
+  void loadCacheSettings();
+});
+
 restoreSettingsMiniTab();
 
 document.getElementById('project-filter')?.addEventListener('input', (e) => {

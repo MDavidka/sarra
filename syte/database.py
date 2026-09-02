@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -415,6 +416,20 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ai_builder_cols = {row[1] for row in await cur.fetchall()}
     if ai_builder_cols and "saved_providers" not in ai_builder_cols:
         await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN saved_providers TEXT DEFAULT '[]'")
+    async with db.execute("PRAGMA table_info(project_redirects)") as cur:
+        redir_cols = {row[1] for row in await cur.fetchall()}
+    if redir_cols and "preserve_query" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN preserve_query INTEGER DEFAULT 1")
+    if redir_cols and "case_sensitive" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN case_sensitive INTEGER DEFAULT 0")
+    if redir_cols and "trailing_slash" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN trailing_slash TEXT DEFAULT 'ignore'")
+    if redir_cols and "environments" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN environments TEXT DEFAULT '[\"production\",\"preview\",\"development\"]'")
+    if redir_cols and "priority" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN priority INTEGER DEFAULT 0")
+    if redir_cols and "description" not in redir_cols:
+        await db.execute("ALTER TABLE project_redirects ADD COLUMN description TEXT DEFAULT ''")
     for new_key, old_key in AGENT_SETTING_MIGRATIONS:
         await db.execute(
             "INSERT OR IGNORE INTO system_settings (key, value) "
@@ -886,16 +901,92 @@ async def delete_pwa_push_subscription(endpoint: str) -> bool:
         return bool(cursor.rowcount)
 
 
-async def list_project_redirects(project_id: str) -> list[dict[str, Any]]:
+async def list_project_redirects(
+    project_id: str,
+    search: str = "",
+    status: str = "",
+    code: str = "",
+    dest_type: str = "",
+) -> list[dict[str, Any]]:
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM project_redirects WHERE project_id = ? ORDER BY created_at DESC", (project_id,)
+            """SELECT * FROM project_redirects 
+            WHERE project_id = ? 
+            ORDER BY priority ASC, created_at DESC""", 
+            (project_id,)
         ) as cur:
             rows = [dict(row) for row in await cur.fetchall()]
+    
+    results = []
     for r in rows:
         r["is_active"] = bool(r.get("is_active"))
-    return rows
+        r["preserve_query"] = bool(r.get("preserve_query", 1))
+        r["case_sensitive"] = bool(r.get("case_sensitive", 0))
+        r["trailing_slash"] = r.get("trailing_slash") or "ignore"
+        r["priority"] = int(r.get("priority") or 0)
+        r["description"] = r.get("description") or ""
+        envs_raw = r.get("environments")
+        try:
+            r["environments"] = json.loads(envs_raw) if envs_raw else ["production", "preview", "development"]
+        except Exception:
+            r["environments"] = ["production", "preview", "development"]
+        
+        target = r.get("target_url") or ""
+        r["destination_type"] = "internal" if target.startswith("/") else "external"
+
+        # Filter by search
+        if search:
+            q = search.lower().strip()
+            src = (r.get("source_path") or "").lower()
+            dst = target.lower()
+            desc = (r.get("description") or "").lower()
+            code_str = str(r.get("status_code") or "")
+            if q not in src and q not in dst and q not in desc and q != code_str:
+                continue
+
+        # Filter by status
+        if status == "active" and not r["is_active"]:
+            continue
+        if status == "disabled" and r["is_active"]:
+            continue
+
+        # Filter by code
+        if code and str(r.get("status_code")) != str(code):
+            continue
+
+        # Filter by destination type
+        if dest_type and r["destination_type"] != dest_type:
+            continue
+
+        results.append(r)
+    return results
+
+
+async def get_project_redirect(project_id: str, redirect_id: str) -> dict[str, Any] | None:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM project_redirects WHERE id = ? AND project_id = ?",
+            (redirect_id, project_id),
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            r = dict(row)
+    r["is_active"] = bool(r.get("is_active"))
+    r["preserve_query"] = bool(r.get("preserve_query", 1))
+    r["case_sensitive"] = bool(r.get("case_sensitive", 0))
+    r["trailing_slash"] = r.get("trailing_slash") or "ignore"
+    r["priority"] = int(r.get("priority") or 0)
+    r["description"] = r.get("description") or ""
+    envs_raw = r.get("environments")
+    try:
+        r["environments"] = json.loads(envs_raw) if envs_raw else ["production", "preview", "development"]
+    except Exception:
+        r["environments"] = ["production", "preview", "development"]
+    r["destination_type"] = "internal" if (r.get("target_url") or "").startswith("/") else "external"
+    return r
 
 
 async def create_project_redirect(
@@ -903,29 +994,97 @@ async def create_project_redirect(
     source_path: str,
     target_url: str,
     status_code: int = 301,
+    is_active: bool = True,
+    preserve_query: bool = True,
+    case_sensitive: bool = False,
+    trailing_slash: str = "ignore",
+    environments: list[str] | None = None,
+    description: str = "",
 ) -> dict[str, Any]:
     redirect_id = str(uuid.uuid4())
     now = _now()
     clean_src = "/" + source_path.strip().lstrip("/")
     clean_target = target_url.strip()
-    code = 302 if int(status_code) == 302 else 301
+    code = int(status_code) if int(status_code) in (301, 302, 307, 308) else 301
+    env_json = json.dumps(environments or ["production", "preview", "development"])
+
     async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute("SELECT COALESCE(MAX(priority), 0) FROM project_redirects WHERE project_id = ?", (project_id,)) as cur:
+            row = await cur.fetchone()
+            max_priority = row[0] if row else 0
+
         await db.execute(
-            """INSERT INTO project_redirects (id, project_id, source_path, target_url, status_code, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
-            (redirect_id, project_id, clean_src, clean_target, code, now, now),
+            """INSERT INTO project_redirects (
+                id, project_id, source_path, target_url, status_code, is_active, 
+                preserve_query, case_sensitive, trailing_slash, environments, 
+                priority, description, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                redirect_id, project_id, clean_src, clean_target, code, 1 if is_active else 0,
+                1 if preserve_query else 0, 1 if case_sensitive else 0, trailing_slash, env_json,
+                max_priority + 1, description, now, now
+            ),
         )
         await db.commit()
+
     return {
         "id": redirect_id,
         "project_id": project_id,
         "source_path": clean_src,
         "target_url": clean_target,
         "status_code": code,
-        "is_active": True,
+        "is_active": is_active,
+        "preserve_query": preserve_query,
+        "case_sensitive": case_sensitive,
+        "trailing_slash": trailing_slash,
+        "environments": environments or ["production", "preview", "development"],
+        "destination_type": "internal" if clean_target.startswith("/") else "external",
+        "priority": max_priority + 1,
+        "description": description,
         "created_at": now,
         "updated_at": now,
     }
+
+
+async def update_project_redirect(
+    project_id: str,
+    redirect_id: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    existing = await get_project_redirect(project_id, redirect_id)
+    if not existing:
+        return None
+
+    now = _now()
+    clean_src = "/" + kwargs.get("source_path", existing["source_path"]).strip().lstrip("/")
+    clean_target = kwargs.get("target_url", existing["target_url"]).strip()
+    code = int(kwargs.get("status_code", existing["status_code"]))
+    if code not in (301, 302, 307, 308):
+        code = 301
+    is_active = bool(kwargs.get("is_active", existing["is_active"]))
+    preserve_query = bool(kwargs.get("preserve_query", existing["preserve_query"]))
+    case_sensitive = bool(kwargs.get("case_sensitive", existing["case_sensitive"]))
+    trailing_slash = str(kwargs.get("trailing_slash", existing["trailing_slash"]))
+    description = str(kwargs.get("description", existing["description"]))
+    environments = kwargs.get("environments", existing["environments"])
+    env_json = json.dumps(environments)
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            """UPDATE project_redirects SET
+                source_path = ?, target_url = ?, status_code = ?, is_active = ?,
+                preserve_query = ?, case_sensitive = ?, trailing_slash = ?,
+                environments = ?, description = ?, updated_at = ?
+            WHERE id = ? AND project_id = ?""",
+            (
+                clean_src, clean_target, code, 1 if is_active else 0,
+                1 if preserve_query else 0, 1 if case_sensitive else 0, trailing_slash,
+                env_json, description, now, redirect_id, project_id
+            ),
+        )
+        await db.commit()
+
+    return await get_project_redirect(project_id, redirect_id)
 
 
 async def delete_project_redirect(project_id: str, redirect_id: str) -> bool:
@@ -935,6 +1094,66 @@ async def delete_project_redirect(project_id: str, redirect_id: str) -> bool:
         )
         await db.commit()
         return bool(cursor.rowcount)
+
+
+async def reorder_project_redirects(project_id: str, redirect_ids: list[str]) -> bool:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        for idx, rid in enumerate(redirect_ids):
+            await db.execute(
+                "UPDATE project_redirects SET priority = ? WHERE id = ? AND project_id = ?",
+                (idx + 1, rid, project_id)
+            )
+        await db.commit()
+    return True
+
+
+async def bulk_update_project_redirects(project_id: str, redirect_ids: list[str], action: str) -> int:
+    if not redirect_ids:
+        return 0
+    now = _now()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        placeholders = ",".join("?" for _ in redirect_ids)
+        if action == "enable":
+            cur = await db.execute(
+                f"UPDATE project_redirects SET is_active = 1, updated_at = ? WHERE project_id = ? AND id IN ({placeholders})",
+                (now, project_id, *redirect_ids)
+            )
+            count = cur.rowcount
+        elif action == "disable":
+            cur = await db.execute(
+                f"UPDATE project_redirects SET is_active = 0, updated_at = ? WHERE project_id = ? AND id IN ({placeholders})",
+                (now, project_id, *redirect_ids)
+            )
+            count = cur.rowcount
+        elif action == "delete":
+            cur = await db.execute(
+                f"DELETE FROM project_redirects WHERE project_id = ? AND id IN ({placeholders})",
+                (project_id, *redirect_ids)
+            )
+            count = cur.rowcount
+        else:
+            count = 0
+        await db.commit()
+        return count
+
+
+async def get_project_redirect_stats(project_id: str) -> dict[str, Any]:
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute("SELECT COUNT(*) FROM project_redirects WHERE project_id = ?", (project_id,)) as cur:
+            row = await cur.fetchone()
+            total = row[0] if row else 0
+        async with db.execute("SELECT COUNT(*) FROM project_redirects WHERE project_id = ? AND is_active = 1", (project_id,)) as cur:
+            row = await cur.fetchone()
+            active = row[0] if row else 0
+        async with db.execute("SELECT COUNT(*) FROM project_router_logs WHERE project_id = ? AND status_code IN (301, 302, 307, 308)", (project_id,)) as cur:
+            row = await cur.fetchone()
+            redirected_reqs = row[0] if row else 0
+    return {
+        "total": total,
+        "active": active,
+        "disabled": total - active,
+        "requests_redirected": redirected_reqs,
+    }
 
 
 async def list_project_router_logs(
