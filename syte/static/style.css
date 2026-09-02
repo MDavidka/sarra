@@ -16933,7 +16933,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   background: #27272a;
 }
 
-/* Mobile Dialog & Bottom Sheet Adaptation */
+/* Mobile Dialog & Bottom Sheet Adaptation (Exact match to reference screenshots) */
 @media (max-width: 640px) {
   .svc-clean-dialog,
   .svc-sheet-dialog {
@@ -16942,6 +16942,9 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
     justify-content: flex-end !important;
     align-items: center !important;
     padding: 0 !important;
+    background: rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: blur(2px) !important;
+    -webkit-backdrop-filter: blur(2px) !important;
   }
 
   .svc-clean-dialog.hidden,
@@ -16958,76 +16961,20 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
     width: 100vw !important;
     margin-bottom: 0 !important;
     margin-top: auto !important;
-    padding: 20px 18px !important;
+    padding: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.25) !important;
   }
-}
 
-/* ========================================================
-   Dedicated Pages (Full View UI for Bot, Firewall, etc.)
-   ======================================================== */
-.dedicated-view-wrapper {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 16px 16px 64px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  box-sizing: border-box;
-}
+  .svc-sheet-card .svc-clean-dialog-header {
+    padding: 8px 18px 12px !important;
+    border-bottom: none !important;
+  }
 
-.dedicated-view-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 4px;
-  border-bottom: 1px solid #f0f0f2;
-}
-
-.btn-dedicated-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid #e4e4e7;
-  background: #ffffff;
-  color: #18181b;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-dedicated-back:hover {
-  background: #f4f4f5;
-  border-color: #d4d4d8;
-}
-
-.btn-dedicated-back svg {
-  width: 16px;
-  height: 16px;
-}
-
-.dedicated-view-project-tag {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: #f4f4f5;
-  color: #71717a;
-  padding: 4px 10px;
-  border-radius: 999px;
-}
-
-.dedicated-view-card {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  border-radius: 24px;
-  padding: 22px 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  .svc-sheet-form-body {
+    padding: 6px 16px calc(env(safe-area-inset-bottom, 0px) + 20px) !important;
+  }
 }
 
