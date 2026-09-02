@@ -3121,6 +3121,8 @@ _GUI_PATHS = [
     "/audit", "/ssh-keys", "/ai", "/tags", "/git", "/registry", "/secrets",
     "/dns", "/s3", "/certificates", "/notifications", "/billing", "/license",
     "/sso", "/docs", "/support",
+    "/bot", "/rate-limit", "/firewall-rule", "/ip-block", "/firewall", "/env", "/redirects",
+    "/env/add", "/redirects/add",
 ]
 
 
@@ -3130,7 +3132,16 @@ app.mount("/static", VersionedStaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/{path:path}", include_in_schema=False)
 async def gui_path(path: str):
     normalized = "/" + path.strip("/")
-    if normalized in _GUI_PATHS or (normalized.startswith("/projects/") and normalized.count("/") == 3):
+    if (
+        normalized in _GUI_PATHS
+        or normalized.startswith("/bot")
+        or normalized.startswith("/rate-limit")
+        or normalized.startswith("/firewall")
+        or normalized.startswith("/ip-block")
+        or normalized.startswith("/env")
+        or normalized.startswith("/redirects")
+        or (normalized.startswith("/projects/") and normalized.count("/") >= 2)
+    ):
         return _index_response()
     raise HTTPException(404, "Not found")
 
