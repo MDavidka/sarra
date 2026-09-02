@@ -13670,6 +13670,27 @@ document.getElementById('svc-top-nav-bar')?.addEventListener('click', (event) =>
   event.stopPropagation();
   switchSvcTab(btn.dataset.svcTab);
 });
+
+// Service panels are re-rendered as tabs change. Keep the primary mobile actions
+// wired from the stable document root so an action cannot lose its handler when
+// a panel is replaced or when an inline handler is unavailable in a webview.
+document.addEventListener('click', (event) => {
+  const target = event.target.closest?.('#svc-domain-add-toggle-btn, #svc-domain-filter-btn, #svc-domain-learn-more-btn, #svc-domain-certificates-btn, #svc-env-add-btn, #svc-env-learn-more-btn, #svc-fw-add-rule-btn, #svc-fw-rate-limit-btn, #svc-fw-bot-protect-btn, #svc-fw-ip-block-btn');
+  if (!target) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (target.id === 'svc-domain-add-toggle-btn') openDomainAddModal();
+  else if (target.id === 'svc-domain-filter-btn') target.closest('.svc-domain-toolbar')?.querySelector('.svc-filter-menu')?.classList.toggle('hidden');
+  else if (target.id === 'svc-domain-learn-more-btn') openDomainsDocsModal();
+  else if (target.id === 'svc-domain-certificates-btn') openCertificatesModal();
+  else if (target.id === 'svc-env-add-btn') openServiceEnvironmentModal();
+  else if (target.id === 'svc-env-learn-more-btn') openEnvDocsModal();
+  else if (target.id === 'svc-fw-add-rule-btn') openFwAddRuleModal();
+  else if (target.id === 'svc-fw-rate-limit-btn') openFwRateLimitModal();
+  else if (target.id === 'svc-fw-bot-protect-btn') openFwBotProtectModal();
+  else if (target.id === 'svc-fw-ip-block-btn') openFwIpBlockModal();
+}, true);
+
 document.getElementById('global-ai-project')?.addEventListener('change', async (event) => {
   const projectId = event.target.value;
   if (!projectId) {
