@@ -4501,6 +4501,52 @@ body.ai-settings-open { overflow: hidden; }
 .ai-debug-env-row code { font-size: 0.72rem; background: #f4f4f5; padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 @media (max-width: 768px) {
+  /* Keep service navigation and action controls reliably tappable on touch devices. */
+  .svc-top-nav-bar,
+  .svc-top-nav-bar * {
+    touch-action: pan-x;
+  }
+
+  .svc-pill-tab {
+    min-height: 44px;
+    height: 44px;
+    position: relative;
+    z-index: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .svc-pill-tab svg,
+  .svc-pill-tab i,
+  .svc-pill-tab span {
+    pointer-events: none;
+  }
+
+  .svc-tab-panel.active {
+    position: relative;
+    z-index: 1;
+  }
+
+  .svc-tab-panel.active button,
+  .svc-tab-panel.active a {
+    position: relative;
+    z-index: 1;
+    touch-action: manipulation;
+  }
+
+  .btn-learn-more,
+  .btn-env-add-icon,
+  .btn-domain-filter,
+  .svc-action-btn,
+  .svc-split-actions-row button {
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .svc-env-header-actions {
+    flex-wrap: wrap;
+  }
+
   #view-ai.active ~ .content,
   #view-ai.active { }
   .content:has(#view-ai.active) { padding: 0; padding-bottom: 0; }
